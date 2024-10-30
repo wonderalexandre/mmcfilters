@@ -1,0 +1,2 @@
+include README.md LICENSE CMakeLists.txt pybind11.cmake
+recursive-include mmcfilters *.cpp *.hpp CMakeLists.txt

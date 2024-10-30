@@ -1,21 +1,8 @@
-# MorphologicalAttributeFilters
-MorphologicalAttributeFilters is a C++/Python library for connected image filtering based on morphological trees (component tree and tree os shapes).
-
-
-# How to install?
-> ``pip install mmcfilters``
-
-
-# Example: extracting AP and AAP from a given image
-
-1. Importing common libraries
-```
 import numpy as np
 import mmcfilters
-```
+#import cv2 as cv
+#img = cv.imread('imgTeste.png', cv.IMREAD_GRAYSCALE)
 
-2. Input: an image
-```
 img = np.array([
 [122,127,166,201,152, 96, 54, 44, 40, 41, 42, 43, 44, 44, 37],
 [133,143,213,246,236,196,137, 85, 55, 43, 44, 45, 35, 40, 42],
@@ -36,19 +23,26 @@ img = np.array([
 [ 49, 45, 44, 48, 71, 89, 49, 47, 71, 95,162,156,119,122,111]
 ])
 
-numRows, numCols = img.shape
+num_rows, num_cols = img.shape
 img_vector = img.ravel()
-```
-
-3. Filtering
 
 tree = mmcfilters.ComponentTree(img_vector, num_rows, num_cols, True, 1.5)
-filter = mmcfilters.AttributeFilters(tree)
+
 
 dic, attrs = mmcfilters.Attribute.computerBasicAttributes(tree)
-attr_area = attrs[:,dic['AREA']]
+import pandas as pd
+df = pd.DataFrame(data=attrs, columns=[key for key in dic.keys()])
 
-img_vector_filtered = filter.filteringDirectRule(attr_area > 10) #keep only areas > 10
-img_filtered = img_vector_filtered.reshape(num_rows, num_cols)
-print("Filtered image:")
-print( img_filtered )
+attr_area = attrs[:,0]
+filter = mmcfilters.AttributeFilters(tree)
+print( filter.filteringMax(attr_area < 10).reshape(num_rows, num_cols))
+img_vector_filtered_min = filter.filteringMin(attr_area, 10)
+img_filtered_min = img_vector_filtered_min.reshape(num_rows, num_cols)
+print("Filtered image (min):")
+print( img_filtered_min )
+
+img_vector_filtered_max = filter.filteringMax(attr_area, 10)
+img_filtered_max = img_vector_filtered_max.reshape(num_rows, num_cols)
+print("Filtered image (max):")
+print( img_filtered_max )
+

@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "(lldb) Launch",
+      "type": "lldb",  // Mudar para lldb, fornecido pela extensão CodeLLDB
+      "request": "launch",
+      "program": "${workspaceFolder}/build/testeResidualTree",  // Caminho para o executável de teste
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "preLaunchTask": "Build mmcfilters",  // Rodar a task de build antes de iniciar o debug
+      "internalConsoleOptions": "openOnSessionStart"
+    }
+  ]
+}

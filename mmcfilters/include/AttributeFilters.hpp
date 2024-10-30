@@ -5,6 +5,7 @@
 #include "../include/NodeRes.hpp"
 #include "../include/AttributeOpeningPrimitivesFamily.hpp"
 #include "../include/ResidualTree.hpp"
+#include "../include/ComputerMSER.hpp"
 
 #include <stack>
 #include <vector>
@@ -26,6 +27,8 @@ class AttributeFilters{
     AttributeFilters(ComponentTree *tree);
 
     ~AttributeFilters();
+
+    std::vector<bool> getAdaptativeCriterion(std::vector<bool> criterion, int delta);
 
     int* filteringByPruningMin(float* attr, float threshold);
 
@@ -286,6 +289,87 @@ class AttributeFilters{
             }
         }
     }
+
+
+    static std::vector<bool> getAdaptativeCriterion(ComponentTree *tree, double *attribute, float threshold, int delta){
+		
+        ComputerMSER mser(tree);
+		std::vector<bool> isMSER = mser.computerMSER(delta);
+
+		std::vector<double> stability = mser.getStabilities();
+		std::vector<bool> isPruned(tree->getNumNodes(), false);
+		for(NodeCT *node: tree->getListNodes()){
+            if(attribute[node->getIndex()] < threshold){ //node pruned
+
+                if(stability[node->getIndex()] == UNDEF){
+                    isPruned[node->getIndex()] = true;
+                }else{
+                    
+                    //NodeCT* nodeMax = mser.getNodeInPathWithMaxStability(node, isMSER);
+                    //isPruned[nodeMax->getIndex()] = true;
+                    
+                    double max = stability[node->getIndex()];
+                    int indexDescMaxStability = mser.descendantWithMaxStability(node)->getIndex();
+                    int indexAscMaxStability = mser.ascendantWithMaxStability(node)->getIndex();
+                    double maxDesc = stability[indexDescMaxStability];
+                    double maxAnc = stability[indexAscMaxStability];
+                    
+                    if(max >= maxDesc && max >= maxAnc) {
+                        isPruned[node->getIndex()] = true;
+                    }else if (maxDesc >= max && maxDesc >= maxAnc) {
+                        isPruned[indexDescMaxStability] = true;
+                    }else {
+                        isPruned[indexAscMaxStability] = true;
+                    }
+                    
+                }
+			}
+			
+		}
+        return isPruned;
+    }
+
+    static std::vector<bool> getAdaptativeCriterion(ComponentTree *tree, std::vector<bool> criterion, int delta){
+		
+        ComputerMSER mser(tree);
+		std::vector<bool> isMSER = mser.computerMSER(delta);
+
+		std::vector<double> stability = mser.getStabilities();
+		std::vector<bool> isPruned(tree->getNumNodes(), false);
+		for(NodeCT *node: tree->getListNodes()){
+            if(!criterion[node->getIndex()]){ //node pruned
+
+                if(stability[node->getIndex()] == UNDEF){
+                    isPruned[node->getIndex()] = true;
+                }else{
+                    
+                    //NodeCT* nodeMax = mser.getNodeInPathWithMaxStability(node, isMSER);
+                    //isPruned[nodeMax->getIndex()] = true;
+                    
+                    double max = stability[node->getIndex()];
+                    int indexDescMaxStability = mser.descendantWithMaxStability(node)->getIndex();
+                    int indexAscMaxStability = mser.ascendantWithMaxStability(node)->getIndex();
+                    double maxDesc = stability[indexDescMaxStability];
+                    double maxAnc = stability[indexAscMaxStability];
+                    
+                    if(max >= maxDesc && max >= maxAnc) {
+                        isPruned[node->getIndex()] = true;
+                    }else if (maxDesc >= max && maxDesc >= maxAnc) {
+                        isPruned[indexDescMaxStability] = true;
+                    }else {
+                        isPruned[indexAscMaxStability] = true;
+                    }
+                    
+                }
+			}
+			
+		}
+        return isPruned;
+    }
+		
+
+
+
 };
 
 

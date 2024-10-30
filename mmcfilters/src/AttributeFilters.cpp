@@ -68,3 +68,7 @@
         return imgOutput;
 
     }
+
+    std::vector<bool> AttributeFilters::getAdaptativeCriterion(std::vector<bool> criterion, int delta){
+        return AttributeFilters::getAdaptativeCriterion(this->tree, criterion, delta);
+    }

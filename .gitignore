@@ -1,0 +1,13 @@
+build/* 
+mmcfilters.egg-info/*
+mmcfilters/__pycache__/*
+.eggs/*
+dist/*
+build_setup_py/*
+.DS_Store
+.virtual_documents/*
+Pipfile
+*.d
+*.o
+notebooks/.ipynb_checkpoints/*
+notebooks/.virtual_documents/*

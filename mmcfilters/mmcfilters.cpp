@@ -91,7 +91,10 @@ void init_ComponentTree(py::module &m){
 
 void init_AttributeComputedIncrementally(py::module &m){
     	py::class_<AttributeComputedIncrementallyPybind>(m, "Attribute")
-        //.def_static("computerAttribute", &AttributeComputedIncrementally::computerAttribute)
+        .def_static("computerAttribute", static_cast<void(*)(NodeCT*, 
+                                                             std::function<void(NodeCT*)>, 
+                                                             std::function<void(NodeCT*, NodeCT*)>, 
+                                                             std::function<void(NodeCT*)>)>(&AttributeComputedIncrementally::computerAttribute))
         .def_static("computerBasicAttributes", &AttributeComputedIncrementallyPybind::computerBasicAttributes)
         .def_static("computerArea", &AttributeComputedIncrementallyPybind::computerArea);
 }

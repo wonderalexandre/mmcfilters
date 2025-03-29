@@ -1,6 +1,6 @@
 #include <array>
-#include "../include/NodeCT.hpp"
-#include "../include/ComponentTree.hpp"
+#include "../include/NodeMT.hpp"
+#include "../include/MorphologicalTree.hpp"
 #include "../include/ComputerMSER.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
 
@@ -13,22 +13,22 @@ class UltimateAttributeOpening{
   protected:
     int maxCriterion;
     std::vector<float> attrs_increasing;
-    ComponentTree* tree;
+    MorphologicalTreePtr tree;
     int* maxContrastLUT;
     int* associatedIndexLUT;
     
-    void computeUAO(NodeCT* currentNode, int levelNodeNotInNR, bool qPropag, bool isCalculateResidue);
+    void computeUAO(NodeMTPtr currentNode, int levelNodeNotInNR, bool qPropag, bool isCalculateResidue);
     void execute(int maxCriterion, std::vector<bool> selectedForFiltering);
     
-    bool isSelectedForPruning(NodeCT* currentNode); //first Node in Nr(i)
-    bool hasNodeSelectedInPrimitive(NodeCT* currentNode); //has node selected inside Nr(i)
+    bool isSelectedForPruning(NodeMTPtr currentNode); //first Node in Nr(i)
+    bool hasNodeSelectedInPrimitive(NodeMTPtr currentNode); //has node selected inside Nr(i)
     std::vector<bool> selectedForFiltering; //mappping between nodes and selected nodes
    
     
 
   public:
 
-    UltimateAttributeOpening(ComponentTree* tree,  std::vector<float> attrs_increasing);
+    UltimateAttributeOpening(MorphologicalTreePtr tree,  std::vector<float> attrs_increasing);
 
     ~UltimateAttributeOpening();
 

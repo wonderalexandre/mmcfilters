@@ -1,6 +1,6 @@
 
-#include "../include/NodeCT.hpp"
-#include "../include/ComponentTree.hpp"
+#include "../include/NodeMT.hpp"
+#include "../include/MorphologicalTree.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
 #include "../include/NodeRes.hpp"
 #include "../include/AttributeOpeningPrimitivesFamily.hpp"
@@ -20,44 +20,44 @@
 
 class AttributeFilters{
     protected:
-        ComponentTree *tree;
+        MorphologicalTreePtr tree;
 
     public:
 
-    AttributeFilters(ComponentTree *tree);
+    AttributeFilters(MorphologicalTreePtr tree);
 
     ~AttributeFilters();
 
-    std::vector<bool> getAdaptativeCriterion(std::vector<bool> criterion, int delta);
+    std::vector<bool> getAdaptativeCriterion(std::vector<bool>& criterion, int delta);
 
     int* filteringByPruningMin(float* attr, float threshold);
 
     int* filteringByPruningMax(float* attr, float threshold);
 
-    int* filteringByPruningMin(std::vector<bool> criterion);
+    int* filteringByPruningMin(std::vector<bool>& criterion);
 
-    int* filteringByPruningMax(std::vector<bool> criterion);
+    int* filteringByPruningMax(std::vector<bool>& criterion);
 
-    int* filteringByDirectRule(std::vector<bool> criterion);
+    int* filteringByDirectRule(std::vector<bool>& criterion);
 
-    int* filteringBySubtractiveRule(std::vector<bool> criterion);
+    int* filteringBySubtractiveRule(std::vector<bool>& criterion);
 
-    float* filteringBySubtractiveScoreRule(std::vector<float> prob);
+    float* filteringBySubtractiveScoreRule(std::vector<float>& prob);
 
-    static void filteringBySubtractiveScoreRule(ComponentTree *tree, std::vector<float> prob, float *imgOutput){
+    static void filteringBySubtractiveScoreRule(MorphologicalTreePtr tree, std::vector<float>& prob, float *imgOutput){
         float mapLevel[tree->getNumNodes()];
         
         //the root is always kept
         mapLevel[0] = tree->getRoot()->getLevel();
 
-        for(NodeCT* node: tree->getListNodes()){
+        for(NodeMTPtr node: tree->getListNodes()){
             if(node->getParent() != nullptr){ 
                 int h = (int)std::abs(node->getLevel() - node->getParent()->getLevel());
                 mapLevel[node->getIndex()] = (float) mapLevel[node->getParent()->getIndex()] + (h * prob[node->getIndex()]);
             }
 
         }
-        for(NodeCT* node: tree->getListNodes()){
+        for(NodeMTPtr node: tree->getListNodes()){
             for (int pixel : node->getCNPs()){
                 imgOutput[pixel] = mapLevel[node->getIndex()];
             }
@@ -71,15 +71,15 @@ class AttributeFilters{
         for (NodeRes *node : rtree->getRoot()->getChildren()){
             s.push(node);
         }
-        ComponentTree* ctree = rtree->getCTree();
+        MorphologicalTreePtr ctree = rtree->getCTree();
         int mapLevel[ctree->getNumNodes()];
-        for(NodeCT* nodeCT: ctree->getListNodes()){
+        for(NodeMTPtr nodeCT: ctree->getListNodes()){
             mapLevel[nodeCT->getIndex()] = 0;
         } 
 
         while (!s.empty()){
             NodeRes *node = s.top(); s.pop();
-            for (NodeCT *nodeCT : node->getNodeInNr()){
+            for (NodeMTPtr nodeCT : node->getNodeInNr()){
                 if(nodeCT->getParent() != nullptr){
                     if(attribute[node->getRootNr()->getIndex()] > threshold)
                         mapLevel[nodeCT->getIndex()] =  mapLevel[nodeCT->getParent()->getIndex()] + nodeCT->getResidue();
@@ -93,7 +93,7 @@ class AttributeFilters{
         }
 
         int* restOfImage = rtree->getRestOfImage();
-        for(NodeCT* node:  ctree->getListNodes()){
+        for(NodeMTPtr node:  ctree->getListNodes()){
             for (int pixel : node->getCNPs()){
                 if(ctree->isMaxtree())
                     imgOutput[pixel] = restOfImage[pixel] + mapLevel[node->getIndex()];
@@ -104,13 +104,13 @@ class AttributeFilters{
 
     }
 
-    static void filteringBySubtractiveRule(ComponentTree *tree, std::vector<bool> criterion, int *imgOutput){
+    static void filteringBySubtractiveRule(MorphologicalTreePtr tree, std::vector<bool>& criterion, int *imgOutput){
         int mapLevel[tree->getNumNodes()];
         
         //the root is always kept
         mapLevel[0] = tree->getRoot()->getLevel();
 
-        for(NodeCT* node: tree->getListNodes()){
+        for(NodeMTPtr node: tree->getListNodes()){
             if(node->getParent() != nullptr){ 
                 if(criterion[node->getIndex()]){
                     int h = (int)std::abs(node->getLevel() - node->getParent()->getLevel());
@@ -123,20 +123,20 @@ class AttributeFilters{
             }
 
         }
-        for(NodeCT* node: tree->getListNodes()){
+        for(NodeMTPtr node: tree->getListNodes()){
             for (int pixel : node->getCNPs()){
                 imgOutput[pixel] = mapLevel[node->getIndex()];
             }
         }
     }
 
-    static void filteringByDirectRule(ComponentTree *tree, std::vector<bool> criterion, int *imgOutput){
+    static void filteringByDirectRule(MorphologicalTreePtr tree, std::vector<bool>& criterion, int *imgOutput){
         int mapLevel[tree->getNumNodes()];
 
         //the root is always kept
         mapLevel[0] = tree->getRoot()->getLevel();
 
-        for(NodeCT* node: tree->getListNodes()){
+        for(NodeMTPtr node: tree->getListNodes()){
             if(node->getParent() != nullptr){ 
                 if(criterion[node->getIndex()])
                     mapLevel[node->getIndex()] = node->getLevel();
@@ -145,12 +145,12 @@ class AttributeFilters{
             }
 
         }
-        for(NodeCT* node: tree->getListNodes()){
+        for(NodeMTPtr node: tree->getListNodes()){
             for (int pixel : node->getCNPs()){
                 imgOutput[pixel] = mapLevel[node->getIndex()];
             }
         }
-        /*std::stack<NodeCT*> s;
+        /*std::stack<NodeCTPtr> s;
         s.push(tree->getRoot());
         std::stack<int> sLevel;
         sLevel.push(tree->getRoot()->getLevel());
@@ -174,15 +174,15 @@ class AttributeFilters{
         }*/
     }
 
-    static void filteringByPruningMin(ComponentTree *tree, std::vector<bool> criterion, int *imgOutput){
-        std::stack<NodeCT*> s;
+    static void filteringByPruningMin(MorphologicalTreePtr tree, std::vector<bool>& criterion, int *imgOutput){
+        std::stack<NodeMTPtr> s;
         s.push(tree->getRoot());
         while(!s.empty()){
-            NodeCT *node = s.top(); s.pop();
+            NodeMTPtr node = s.top(); s.pop();
             for (int pixel : node->getCNPs()){
                 imgOutput[pixel] = node->getLevel();;
             }
-            for (NodeCT *child: node->getChildren()){
+            for (NodeMTPtr child: node->getChildren()){
                 if(criterion[child->getIndex()]){
                     s.push(child);
                 }else{
@@ -194,32 +194,32 @@ class AttributeFilters{
         }
     }
 
-    static void filteringByPruningMax(ComponentTree *tree, std::vector<bool> _criterion, int *imgOutput){
+    static void filteringByPruningMax(MorphologicalTreePtr tree, std::vector<bool>& _criterion, int *imgOutput){
         
         bool criterion[tree->getNumNodes()];
         AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
-            [&criterion, _criterion](NodeCT* node) -> void { //pre-processing
+            [&criterion, _criterion](NodeMTPtr node) -> void { //pre-processing
                 if(!_criterion[node->getIndex()])
                     criterion[node->getIndex()] = true;
                 else
                     criterion[node->getIndex()] = false;
             },
-            [&criterion](NodeCT* parent, NodeCT* child) -> void { 
+            [&criterion](NodeMTPtr parent, NodeMTPtr child) -> void { 
                 criterion[parent->getIndex()] = (criterion[parent->getIndex()] & criterion[child->getIndex()]);
             },
-            [](NodeCT* node) -> void { //post-processing
+            [](NodeMTPtr node) -> void { //post-processing
                                         
             }
         );
 
-        std::stack<NodeCT*> s;
+        std::stack<NodeMTPtr> s;
         s.push(tree->getRoot());
         while(!s.empty()){
-            NodeCT *node = s.top(); s.pop();
+            NodeMTPtr node = s.top(); s.pop();
             for (int pixel : node->getCNPs()){
                 imgOutput[pixel] = node->getLevel();
             }
-            for (NodeCT *child: node->getChildren()){
+            for (NodeMTPtr child: node->getChildren()){
                 if(!criterion[child->getIndex()]){
                     s.push(child);
                 }else{
@@ -232,15 +232,15 @@ class AttributeFilters{
     }
 
 
-    static void filteringByPruningMin(ComponentTree *tree, float *attribute, float threshold, int *imgOutput){
-        std::stack<NodeCT*> s;
+    static void filteringByPruningMin(MorphologicalTreePtr tree, float *attribute, float threshold, int *imgOutput){
+        std::stack<NodeMTPtr> s;
         s.push(tree->getRoot());
         while(!s.empty()){
-            NodeCT *node = s.top(); s.pop();
+            NodeMTPtr node = s.top(); s.pop();
             for (int pixel : node->getCNPs()){
                 imgOutput[pixel] = node->getLevel();
             }
-            for (NodeCT *child: node->getChildren()){
+            for (NodeMTPtr child: node->getChildren()){
                 if(attribute[child->getIndex()] > threshold){
                     s.push(child);
                 }else{
@@ -253,32 +253,32 @@ class AttributeFilters{
         }
     }
 
-    static void filteringByPruningMax(ComponentTree *tree, float *attribute, float threshold, int *imgOutput){
+    static void filteringByPruningMax(MorphologicalTreePtr tree, float *attribute, float threshold, int *imgOutput){
         
         bool criterion[tree->getNumNodes()];
         AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
-            [&criterion, attribute, threshold](NodeCT* node) -> void { //pre-processing
+            [&criterion, attribute, threshold](NodeMTPtr node) -> void { //pre-processing
                 if(attribute[node->getIndex()] <= threshold)
                     criterion[node->getIndex()] = true;
                 else
                     criterion[node->getIndex()] = false;
             },
-            [&criterion, attribute, threshold](NodeCT* parent, NodeCT* child) -> void { 
+            [&criterion, attribute, threshold](NodeMTPtr parent, NodeMTPtr child) -> void { 
                 criterion[parent->getIndex()] = (criterion[parent->getIndex()] & criterion[child->getIndex()]);
             },
-            [&criterion, attribute, threshold](NodeCT* node) -> void { //post-processing
+            [&criterion, attribute, threshold](NodeMTPtr node) -> void { //post-processing
                                         
             }
         );
 
-        std::stack<NodeCT*> s;
+        std::stack<NodeMTPtr> s;
         s.push(tree->getRoot());
         while(!s.empty()){
-            NodeCT *node = s.top(); s.pop();
+            NodeMTPtr node = s.top(); s.pop();
             for (int pixel : node->getCNPs()){
                 imgOutput[pixel] = node->getLevel();
             }
-            for (NodeCT *child: node->getChildren()){
+            for (NodeMTPtr child: node->getChildren()){
                 if(!criterion[child->getIndex()]){
                     s.push(child);
                 }else{
@@ -291,21 +291,21 @@ class AttributeFilters{
     }
 
 
-    static std::vector<bool> getAdaptativeCriterion(ComponentTree *tree, double *attribute, float threshold, int delta){
+    static std::vector<bool> getAdaptativeCriterion(MorphologicalTreePtr tree, double *attribute, float threshold, int delta){
 		
         ComputerMSER mser(tree);
 		std::vector<bool> isMSER = mser.computerMSER(delta);
 
 		std::vector<double> stability = mser.getStabilities();
 		std::vector<bool> isPruned(tree->getNumNodes(), false);
-		for(NodeCT *node: tree->getListNodes()){
+		for(NodeMTPtr node: tree->getListNodes()){
             if(attribute[node->getIndex()] < threshold){ //node pruned
 
                 if(stability[node->getIndex()] == UNDEF){
                     isPruned[node->getIndex()] = true;
                 }else{
                     
-                    //NodeCT* nodeMax = mser.getNodeInPathWithMaxStability(node, isMSER);
+                    //NodeCTPtr nodeMax = mser.getNodeInPathWithMaxStability(node, isMSER);
                     //isPruned[nodeMax->getIndex()] = true;
                     
                     double max = stability[node->getIndex()];
@@ -329,21 +329,21 @@ class AttributeFilters{
         return isPruned;
     }
 
-    static std::vector<bool> getAdaptativeCriterion(ComponentTree *tree, std::vector<bool> criterion, int delta){
+    static std::vector<bool> getAdaptativeCriterion(MorphologicalTreePtr tree, std::vector<bool>& criterion, int delta){
 		
         ComputerMSER mser(tree);
 		std::vector<bool> isMSER = mser.computerMSER(delta);
 
 		std::vector<double> stability = mser.getStabilities();
 		std::vector<bool> isPruned(tree->getNumNodes(), false);
-		for(NodeCT *node: tree->getListNodes()){
+		for(NodeMTPtr node: tree->getListNodes()){
             if(!criterion[node->getIndex()]){ //node pruned
 
                 if(stability[node->getIndex()] == UNDEF){
                     isPruned[node->getIndex()] = true;
                 }else{
                     
-                    //NodeCT* nodeMax = mser.getNodeInPathWithMaxStability(node, isMSER);
+                    //NodeCTPtr nodeMax = mser.getNodeInPathWithMaxStability(node, isMSER);
                     //isPruned[nodeMax->getIndex()] = true;
                     
                     double max = stability[node->getIndex()];

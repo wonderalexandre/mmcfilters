@@ -1,6 +1,6 @@
 #include <list>
 
-#include "../include/NodeCT.hpp"
+#include "../include/NodeMT.hpp"
 #include "../include/NodeRes.hpp"
 #include "../include/AttributeOpeningPrimitivesFamily.hpp"
 
@@ -13,7 +13,7 @@ class ResidualTree{
     protected:
       NodeRes* root;
       AttributeOpeningPrimitivesFamily* primitivesFamily;
-      ComponentTree* tree;
+      MorphologicalTreePtr tree;
       int* maxContrastLUT;
       int* associatedIndexesLUT;
       int numNodes;
@@ -38,7 +38,7 @@ class ResidualTree{
 
         NodeRes* getRoot();
 
-        NodeRes* getNodeRes(NodeCT* node);
+        NodeRes* getNodeRes(NodeMTPtr node);
 
         int* getMaxConstrastImage();
 
@@ -54,7 +54,7 @@ class ResidualTree{
 
         int* getNegativeResidues();
 
-        ComponentTree* getCTree();
+        MorphologicalTreePtr getCTree();
 
 };
 

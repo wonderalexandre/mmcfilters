@@ -1,10 +1,10 @@
 #include <iostream>
 #include "../include/BuilderTreeOfShapeByUnionFind.hpp"
-#include "../include/NodeCT.hpp"
+#include "../include/NodeMT.hpp"
 #include "../include/ImageUtils.hpp"
-#include "../include/ComponentTree.hpp"
+#include "../include/MorphologicalTree.hpp"
 
-void printTree(NodeCT* root, int indent = 0) {
+void printTree(NodeMT* root, int indent = 0) {
     
     // Imprime o nó atual com indentação
     for (int i = 0; i < indent; ++i) {
@@ -13,7 +13,7 @@ void printTree(NodeCT* root, int indent = 0) {
     std::cout << "Node: " << root->getIndex() <<  ", Level: " << root->getLevel()<< ", cnps: " << root->getCNPs().size() << std::endl;
 
     // Chama recursivamente a função para cada filho
-    for (NodeCT* child : root->getChildren()) {
+    for (NodeMT* child : root->getChildren()) {
         printTree(child, indent + 1);
     }
 }
@@ -111,7 +111,7 @@ int main() {
     }
 
 
-    printTree( ComponentTree(image, num_rows, num_cols).getRoot() );
+    printTree( MorphologicalTree(image, num_rows, num_cols).getRoot() );
 
      
     return 0;

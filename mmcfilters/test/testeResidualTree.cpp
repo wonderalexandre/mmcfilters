@@ -1,4 +1,4 @@
-#include "../include/ComponentTree.hpp"
+#include "../include/MorphologicalTree.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
 #include "../include/AttributeOpeningPrimitivesFamily.hpp"
 #include "../include/ResidualTree.hpp"
@@ -103,7 +103,7 @@ int main(int argc, char const *argv[])
     std::cout << "img_pointer ok" << std::endl;
     
     // Criar um ComponentTree
-    ComponentTree* tree = new ComponentTree(img_pointer, numRows, numCols, true);
+    MorphologicalTree* tree = new MorphologicalTree(img_pointer, numRows, numCols, true);
     std::cout << "tree ok" << std::endl;
     
 

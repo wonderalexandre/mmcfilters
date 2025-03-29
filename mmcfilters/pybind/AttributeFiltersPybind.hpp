@@ -2,10 +2,10 @@
 #ifndef ATTRIBUTE_FILTERS_PYBIND_H
 #define ATTRIBUTE_FILTERS_PYBIND_H
 
-#include "../include/NodeCT.hpp"
+#include "../include/NodeMT.hpp"
 #include "../include/AttributeFilters.hpp"
 
-#include "../pybind/ComponentTreePybind.hpp"
+#include "../pybind/MorphologicalTreePybind.hpp"
 #include "../pybind/AttributeComputedIncrementallyPybind.hpp"
 #include "../pybind/PybindUtils.hpp"
 
@@ -24,7 +24,7 @@ class AttributeFiltersPybind : public AttributeFilters{
     public:
     using AttributeFilters::AttributeFilters;
 
-    AttributeFiltersPybind(ComponentTreePybind* tree): AttributeFilters(tree){}
+    AttributeFiltersPybind(MorphologicalTreePybindPtr tree): AttributeFilters(tree){}
 
     py::array_t<int> filteringByPruningMin(py::array_t<float> &attr, float threshold){
 
@@ -52,7 +52,7 @@ class AttributeFiltersPybind : public AttributeFilters{
 
     }
 
-    py::array_t<int> filteringByPruningMin(std::vector<bool> criterion){
+    py::array_t<int> filteringByPruningMin(std::vector<bool>& criterion){
         int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
         int* imgOutput = new int[n];
 
@@ -61,7 +61,7 @@ class AttributeFiltersPybind : public AttributeFilters{
         return PybindUtils::toNumpy(imgOutput, n);
     }
 
-    py::array_t<int> filteringByDirectRule(std::vector<bool> criterion){
+    py::array_t<int> filteringByDirectRule(std::vector<bool>& criterion){
         int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
         int* imgOutput = new int[n];
 
@@ -70,7 +70,7 @@ class AttributeFiltersPybind : public AttributeFilters{
         return PybindUtils::toNumpy(imgOutput, n);
     }
 
-    py::array_t<int> filteringByPruningMax(std::vector<bool> criterion){
+    py::array_t<int> filteringByPruningMax(std::vector<bool>& criterion){
         int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
         int* imgOutput = new int[n];
 
@@ -80,7 +80,7 @@ class AttributeFiltersPybind : public AttributeFilters{
 
     }
 
-    py::array_t<int> filteringBySubtractiveRule(std::vector<bool> criterion){
+    py::array_t<int> filteringBySubtractiveRule(std::vector<bool>& criterion){
         int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
         int* imgOutput = new int[n];
 
@@ -90,7 +90,7 @@ class AttributeFiltersPybind : public AttributeFilters{
 
     }
 
-    py::array_t<float> filteringBySubtractiveScoreRuleNumpy(std::vector<float> prob){
+    py::array_t<float> filteringBySubtractiveScoreRuleNumpy(std::vector<float>& prob){
         int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
         float* imgOutput = new float[n];
 

@@ -3,12 +3,12 @@
 #define ULTIMATE_ATTR_OPENING_PYBIND_H
 
 #include <array>
-#include "../include/NodeCT.hpp"
+#include "../include/NodeMT.hpp"
 #include "../include/ComputerMSER.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
 #include "../include/UltimateAttributeOpening.hpp"
 
-#include "../pybind/ComponentTreePybind.hpp"
+#include "../pybind/MorphologicalTreePybind.hpp"
 #include "../pybind/PybindUtils.hpp"
 #include <pybind11/pybind11.h>
 
@@ -20,7 +20,7 @@ class UltimateAttributeOpeningPybind: public UltimateAttributeOpening{
 public:
     using UltimateAttributeOpening::UltimateAttributeOpening;
 
-    UltimateAttributeOpeningPybind(ComponentTreePybind* tree,  std::vector<float> attrs_increasing) : UltimateAttributeOpening(tree, attrs_increasing){}
+    UltimateAttributeOpeningPybind(MorphologicalTreePybindPtr tree,  std::vector<float> attrs_increasing) : UltimateAttributeOpening(tree, attrs_increasing){}
 
     py::array_t<int> getMaxConstrastImage(){
         return PybindUtils::toNumpy(UltimateAttributeOpening::getMaxConstrastImage(), this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage());

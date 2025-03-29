@@ -1,6 +1,6 @@
 
-#include "../include/NodeCT.hpp"
-#include "../include/ComponentTree.hpp"
+#include "../include/NodeMT.hpp"
+#include "../include/MorphologicalTree.hpp"
 #include <vector>
 
 #ifndef COMPUTER_MSER_H
@@ -13,25 +13,25 @@
 class ComputerMSER {
 private:
 	
-	ComponentTree* tree;
+	MorphologicalTreePtr tree;
 	double maxVariation;
 	int minArea;
 	int maxArea;
 	int num;
-	std::vector<NodeCT*> ascendants;
-	std::vector<NodeCT*> descendants;
+	std::vector<NodeMTPtr> ascendants;
+	std::vector<NodeMTPtr> descendants;
 	std::vector<double> stability;
 	
 	double* attr_mser;
 	double* attr_area;
 
-	NodeCT* getNodeAscendant(NodeCT* node, int h);
+	NodeMTPtr getNodeAscendant(NodeMTPtr node, int h);
 
-	void maxAreaDescendants(NodeCT* nodeAsc, NodeCT* nodeDes);
+	void maxAreaDescendants(NodeMTPtr nodeAsc, NodeMTPtr nodeDes);
 	
 public:
-	ComputerMSER(ComponentTree* tree);
-	ComputerMSER(ComponentTree* tree, double* attr_increasing);
+	ComputerMSER(MorphologicalTreePtr tree);
+	ComputerMSER(MorphologicalTreePtr tree, double* attr_increasing);
 	
 	~ComputerMSER();
 
@@ -39,23 +39,23 @@ public:
 
 	int getNumNodes();
 
-	NodeCT* descendantWithMaxStability(NodeCT* node);
+	NodeMTPtr descendantWithMaxStability(NodeMTPtr node);
 	
-	NodeCT* ascendantWithMaxStability(NodeCT* node);
+	NodeMTPtr ascendantWithMaxStability(NodeMTPtr node);
 
 	std::vector<double> getStabilities();
 
-	double getStability(NodeCT* node);
+	double getStability(NodeMTPtr node);
 
-	std::vector<NodeCT*> getAscendants();
+	std::vector<NodeMTPtr> getAscendants();
 
-	std::vector<NodeCT*> getDescendants();
+	std::vector<NodeMTPtr> getDescendants();
 
-	NodeCT* getAscendant(NodeCT* node);
+	NodeMTPtr getAscendant(NodeMTPtr node);
 	
-	NodeCT* getDescendant(NodeCT* node);
+	NodeMTPtr getDescendant(NodeMTPtr node);
 
-	NodeCT* getNodeInPathWithMaxStability(NodeCT* node, std::vector<bool> isMSER);
+	NodeMTPtr getNodeInPathWithMaxStability(NodeMTPtr node, std::vector<bool> isMSER);
 
 	void setMaxVariation(double maxVariation);
 	void setMinArea(int minArea);

@@ -4,7 +4,7 @@
 #include <stack>
 #include <utility> // Para std::pair e std::make_pair
 
-#include "../include/NodeCT.hpp"
+#include "../include/NodeMT.hpp"
 #include "../include/NodeRes.hpp"
 #include "../include/ImageUtils.hpp"
 #include "../include/ResidualTree.hpp"
@@ -27,11 +27,11 @@ void ResidualTree::createTree(){
   this->numNodes = 0;
   
   this->restOfImage = this->primitivesFamily->getRestOfImage();
-  std::list<NodeCT*> nodesWithMaximumCriterium = this->primitivesFamily->getNodesWithMaximumCriterium();
+  std::list<NodeMTPtr> nodesWithMaximumCriterium = this->primitivesFamily->getNodesWithMaximumCriterium();
   bool isDesirableResidue = false;
   this->root = new NodeRes(nullptr, this->numNodes++, isDesirableResidue);
   //this->listNodes.push_back(this->root);  
-  for (NodeCT *nodeMaxCriterion : nodesWithMaximumCriterium){
+  for (NodeMTPtr nodeMaxCriterion : nodesWithMaximumCriterium){
     this->nodes[nodeMaxCriterion->getParent()->getIndex()] = this->root; 
     this->nodes[nodeMaxCriterion->getParent()->getIndex()]->setLevelNodeNotInNR(nodeMaxCriterion->getParent()->getLevel());
     this->nodes[nodeMaxCriterion->getParent()->getIndex()]->setParent(nullptr);
@@ -39,7 +39,7 @@ void ResidualTree::createTree(){
     //computerNodeRes(nodeMaxCriterion);
     
     //connect the nodes in the residual tree
-    for (NodeCT* currentNode: nodeMaxCriterion->getNodesDescendants()){
+    for (NodeMTPtr currentNode: nodeMaxCriterion->getNodesDescendants()){
       NodeRes* parent = this->nodes[currentNode->getParent()->getIndex()];
       if (this->primitivesFamily->isSelectedForPruning(currentNode)){ // first node in Nr(i)
       
@@ -69,11 +69,11 @@ NodeRes* ResidualTree::getRoot(){
   return this->root;
 }
 
-NodeRes* ResidualTree::getNodeRes(NodeCT* node){
+NodeRes* ResidualTree::getNodeRes(NodeMTPtr node){
   return this->nodes[node->getIndex()];
 }
 
-ComponentTree* ResidualTree::getCTree(){
+MorphologicalTreePtr ResidualTree::getCTree(){
   return this->tree;
 }
 
@@ -92,11 +92,11 @@ void ResidualTree::computerMaximumResidues(){
   while(!s.empty()){
     NodeRes* nodeRes = s.top(); s.pop();
 
-    for (NodeCT *nodeCT : nodeRes->getNodeInNr()){
+    for (NodeMTPtr nodeCT : nodeRes->getNodeInNr()){
       int levelNodeNotInNR = nodeRes->getLevelNodeNotInNR();
       int levelNodeInNR = nodeCT->getLevel();
       int contrast = 0;
-      NodeCT *parentNodeCT = nodeCT->getParent();
+      NodeMTPtr parentNodeCT = nodeCT->getParent();
       if (nodeRes->isDesirableResidue()) // is desirable residue?
         contrast = (int)std::abs(levelNodeInNR - levelNodeNotInNR);  
       
@@ -195,13 +195,13 @@ int* ResidualTree::filtering(std::vector<bool> criterion, int* imgOutput){
   }
   
   int mapLevel[this->tree->getNumNodes()];
-  for(NodeCT* nodeCT: this->tree->getListNodes()){
+  for(NodeMTPtr nodeCT: this->tree->getListNodes()){
     mapLevel[nodeCT->getIndex()] = 0;
   } 
 
   while (!s.empty()){
     NodeRes *node = s.top(); s.pop();
-    for (NodeCT *nodeCT : node->getNodeInNr()){
+    for (NodeMTPtr nodeCT : node->getNodeInNr()){
       if(nodeCT->getParent() != nullptr){
         if(criterion[node->getRootNr()->getIndex()]){
             mapLevel[nodeCT->getIndex()] =  mapLevel[nodeCT->getParent()->getIndex()] + nodeCT->getResidue();
@@ -216,7 +216,7 @@ int* ResidualTree::filtering(std::vector<bool> criterion, int* imgOutput){
     }
   }
 
-  for(NodeCT* node: tree->getListNodes()){
+  for(NodeMTPtr node: tree->getListNodes()){
     for (int pixel : node->getCNPs()){
       if(this->tree->isMaxtree())
         imgOutput[pixel] = this->restOfImage[pixel] + mapLevel[node->getIndex()];
@@ -237,13 +237,13 @@ int* ResidualTree::getPositiveResidues(){
   }
   
   int mapLevelPos[this->tree->getNumNodes()];
-  for(NodeCT* nodeCT: this->tree->getListNodes()){
+  for(NodeMTPtr nodeCT: this->tree->getListNodes()){
     mapLevelPos[nodeCT->getIndex()] = 0;
   } 
 
   while (!s.empty()){
     NodeRes *node = s.top(); s.pop();
-    for (NodeCT *nodeCT : node->getNodeInNr()){
+    for (NodeMTPtr nodeCT : node->getNodeInNr()){
       if(nodeCT->getParent() != nullptr){
         if(nodeCT->isMaxtreeNode()){
           mapLevelPos[nodeCT->getIndex()] =  mapLevelPos[nodeCT->getParent()->getIndex()] + nodeCT->getResidue();
@@ -260,9 +260,9 @@ int* ResidualTree::getPositiveResidues(){
   int* imgOutput = new int[this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage()];
   //for(int p = 0; p < this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage(); p++)
   //  imgOutput[p] = 0;
-  for(NodeCT* node: tree->getListNodes()){
+  for(NodeMTPtr node: tree->getListNodes()){
     for (int pixel : node->getCNPs()){
-      if(this->tree->getTreeType() != ComponentTree::MIN_TREE)
+      if(this->tree->getTreeType() != MorphologicalTree::MIN_TREE)
         imgOutput[pixel] = mapLevelPos[node->getIndex()];
       else
         imgOutput[pixel] = 0;
@@ -281,13 +281,13 @@ int* ResidualTree::getNegativeResidues(){
   }
   
   int mapLevelNeg[this->tree->getNumNodes()];
-  for(NodeCT* nodeCT: this->tree->getListNodes()){
+  for(NodeMTPtr nodeCT: this->tree->getListNodes()){
     mapLevelNeg[nodeCT->getIndex()] = 0;
   } 
 
   while (!s.empty()){
     NodeRes *node = s.top(); s.pop();
-    for (NodeCT *nodeCT : node->getNodeInNr()){
+    for (NodeMTPtr nodeCT : node->getNodeInNr()){
       if(nodeCT->getParent() != nullptr){
         if(!nodeCT->isMaxtreeNode()){
           mapLevelNeg[nodeCT->getIndex()] =  mapLevelNeg[nodeCT->getParent()->getIndex()] + nodeCT->getResidue();
@@ -304,9 +304,9 @@ int* ResidualTree::getNegativeResidues(){
   int* imgOutput = new int[this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage()];
   //for(int p = 0; p < this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage(); p++)
   //  imgOutput[p] = 0;
-  for(NodeCT* node: tree->getListNodes()){
+  for(NodeMTPtr node: tree->getListNodes()){
     for (int pixel : node->getCNPs()){
-      if(this->tree->getTreeType() != ComponentTree::MAX_TREE)
+      if(this->tree->getTreeType() != MorphologicalTree::MAX_TREE)
         imgOutput[pixel] = mapLevelNeg[node->getIndex()];
       else
         imgOutput[pixel] = 0;
@@ -327,14 +327,14 @@ int* ResidualTree::reconstruction(){
   
   int mapLevelPos[this->tree->getNumNodes()];
   int mapLevelNeg[this->tree->getNumNodes()];
-  for(NodeCT* nodeCT: this->tree->getListNodes()){
+  for(NodeMTPtr nodeCT: this->tree->getListNodes()){
     mapLevelPos[nodeCT->getIndex()] = 0;
     mapLevelNeg[nodeCT->getIndex()] = 0;
   } 
 
   while (!s.empty()){
     NodeRes *node = s.top(); s.pop();
-    for (NodeCT *nodeCT : node->getNodeInNr()){
+    for (NodeMTPtr nodeCT : node->getNodeInNr()){
       if(nodeCT->getParent() != nullptr){
         if(nodeCT->isMaxtreeNode()){
           mapLevelPos[nodeCT->getIndex()] =  mapLevelPos[nodeCT->getParent()->getIndex()] + nodeCT->getResidue();
@@ -352,7 +352,7 @@ int* ResidualTree::reconstruction(){
   }
 
   int* imgOutput = new int[this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage()];
-  for(NodeCT* node: tree->getListNodes()){
+  for(NodeMTPtr node: tree->getListNodes()){
     for (int pixel : node->getCNPs()){
        imgOutput[pixel] = this->restOfImage[pixel] - mapLevelNeg[node->getIndex()] + mapLevelPos[node->getIndex()];
     }

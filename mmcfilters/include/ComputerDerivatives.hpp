@@ -1,6 +1,6 @@
 
-#include "../include/ComponentTree.hpp"
-#include "../include/NodeCT.hpp"
+#include "../include/MorphologicalTree.hpp"
+#include "../include/NodeMT.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
 
 #include <vector>
@@ -18,13 +18,13 @@ class ComputerDerivatives {
 
     public:
 
-        static std::tuple<float*, float*, float*> gradients(ComponentTree* tree, float* attributes, std::vector<float> sigmoid, float* gradLoss) {
+        static std::tuple<float*, float*, float*> gradients(MorphologicalTreePtr tree, float* attributes, std::vector<float> sigmoid, float* gradLoss) {
             int rows = tree->getNumRowsOfImage();
             int cols = tree->getNumColsOfImage();
             
             float *dWeight = new float[rows * cols];
             float *dBias = new float[rows];
-            for(NodeCT* node: tree->getListNodes()){
+            for(NodeMTPtr node: tree->getListNodes()){
                 int id = node->getIndex();
                 dBias[id] = (sigmoid[id] * (1 - sigmoid[id])) * node->getResidue();
                 for (int j = 0; j < cols; j++)
@@ -48,17 +48,17 @@ class ComputerDerivatives {
             float *summationGrad = new float[tree->getNumNodes()];
             float *gradInput = new float[tree->getNumRowsOfImage() * tree->getNumColsOfImage()];
             AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
-                    [&summationGrad, &gradLoss, &sigmoid](NodeCT* node) -> void { //pre-processing
+                    [&summationGrad, &gradLoss, &sigmoid](NodeMTPtr node) -> void { //pre-processing
                         summationGrad[node->getIndex()] = 0;
                         for(int p: node->getCNPs()){
                             summationGrad[node->getIndex()] += gradLoss[p];
                         }
                         summationGrad[node->getIndex()] = summationGrad[node->getIndex()] * sigmoid[node->getIndex()]; 
                     },
-                    [&summationGrad](NodeCT* parent, NodeCT* child) -> void { //merge-processing
+                    [&summationGrad](NodeMTPtr parent, NodeMTPtr child) -> void { //merge-processing
                         summationGrad[parent->getIndex()] += summationGrad[child->getIndex()];
                     },
-                    [&summationGrad, &gradInput, &gradWeight,&gradBias, &dBias, &dWeight, &rows, &cols, &gradLoss ](NodeCT* node) -> void { //post-processing	
+                    [&summationGrad, &gradInput, &gradWeight,&gradBias, &dBias, &dWeight, &rows, &cols, &gradLoss ](NodeMTPtr node) -> void { //post-processing	
                         for(int p: node->getCNPs()){
                             gradInput[p] = summationGrad[node->getIndex()]; 
                             gradBias[0] += gradLoss[p] * dBias[node->getIndex()];

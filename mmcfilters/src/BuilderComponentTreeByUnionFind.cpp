@@ -10,7 +10,7 @@
 
 
 
-BuilderComponentTreeByUnionFind::BuilderComponentTreeByUnionFind(int* img, int numRows, int numCols, bool isMaxtree, AdjacencyRelation* adj){
+BuilderComponentTreeByUnionFind::BuilderComponentTreeByUnionFind(int* img, int numRows, int numCols, bool isMaxtree, AdjacencyRelationPtr adj){
     this->sort(img, numRows, numCols, isMaxtree);
     this->createTreeByUnionFind(img, numRows, numCols, isMaxtree, adj);
 }
@@ -72,7 +72,7 @@ int BuilderComponentTreeByUnionFind::findRoot(int *zPar, int x) {
 	}
 }
 
-void BuilderComponentTreeByUnionFind::createTreeByUnionFind(int* img, int numRows, int numCols, bool isMaxtree, AdjacencyRelation* adj) {
+void BuilderComponentTreeByUnionFind::createTreeByUnionFind(int* img, int numRows, int numCols, bool isMaxtree, AdjacencyRelationPtr adj) {
 	const int n = numRows * numCols;
 	int *zPar = new int[n];
 	this->parent = new int[n];

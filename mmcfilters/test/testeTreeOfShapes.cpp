@@ -4,7 +4,7 @@
 #include "../include/ImageUtils.hpp"
 #include "../include/MorphologicalTree.hpp"
 
-void printTree(NodeMT* root, int indent = 0) {
+void printTree(NodeMTPtr root, int indent = 0) {
     
     // Imprime o nó atual com indentação
     for (int i = 0; i < indent; ++i) {
@@ -13,7 +13,7 @@ void printTree(NodeMT* root, int indent = 0) {
     std::cout << "Node: " << root->getIndex() <<  ", Level: " << root->getLevel()<< ", cnps: " << root->getCNPs().size() << std::endl;
 
     // Chama recursivamente a função para cada filho
-    for (NodeMT* child : root->getChildren()) {
+    for (NodeMTPtr child : root->getChildren()) {
         printTree(child, indent + 1);
     }
 }

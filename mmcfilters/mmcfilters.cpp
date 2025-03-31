@@ -58,48 +58,39 @@ void init_NodeCT(py::module &m){
 
 void init_NodeCT_Iterators(py::module &m) {
 
-    py::class_<NodeMT::IteratorPixelsOfCC>(m, "IteratorPixelsOfCC")
-    .def(py::init<NodeMTPtr, int>())
-    .def_property_readonly("begin", &NodeMT::IteratorPixelsOfCC::begin )
-    .def_property_readonly("end", &NodeMT::IteratorPixelsOfCC::end )
-    .def("__iter__", [](NodeMT::IteratorPixelsOfCC &iter) {
-        return py::make_iterator(iter.begin(), iter.end());
-        }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
-        
-
-    py::class_<NodeMT::IteratorNodesOfPathToRoot>(m, "IteratorNodesOfPathToRoot")
-    .def(py::init<NodeMTPtr>())
-    .def_property_readonly("begin", &NodeMT::IteratorNodesOfPathToRoot::begin )
-    .def_property_readonly("end", &NodeMT::IteratorNodesOfPathToRoot::end )
-    .def("__iter__", [](NodeMT::IteratorNodesOfPathToRoot &iter) {
-        return py::make_iterator(iter.begin(), iter.end());
-        }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
-        
-    py::class_<NodeMT::IteratorNodesDescendants>(m, "IteratorNodesDescendants")
-    .def(py::init<NodeMTPtr, int>())
-    .def_property_readonly("begin", &NodeMT::IteratorNodesDescendants::begin )
-    .def_property_readonly("end", &NodeMT::IteratorNodesDescendants::end )
-    .def("__iter__", [](NodeMT::IteratorNodesDescendants &iter) {
-        return py::make_iterator(iter.begin(), iter.end());
-        }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+    py::class_<typename NodeMT::IteratorPixelsOfCC>(m, "IteratorPixelsOfCC")
+        .def(py::init<std::shared_ptr<NodeMT>, int>())
+        .def("__iter__", [](typename NodeMT::IteratorPixelsOfCC &iter) {
+            return py::make_iterator(iter.begin(), iter.end());
+        }, py::keep_alive<0, 1>());
 
 
+    py::class_<typename NodeMT::IteratorNodesOfPathToRoot>(m, "IteratorNodesOfPathToRoot")
+        .def(py::init<std::shared_ptr<NodeMT>>())
+        .def("__iter__", [](typename NodeMT::IteratorNodesOfPathToRoot &iter) {
+            return py::make_iterator(iter.begin(), iter.end());
+        }, py::keep_alive<0, 1>());
 
     py::class_<typename NodeMT::IteratorPostOrderTraversal>(m, "IteratorPostOrderTraversal")
-        .def(py::init<NodeMTPtr>())
-        .def_property_readonly("begin", &NodeMT::IteratorPostOrderTraversal::begin )
-        .def_property_readonly("end", &NodeMT::IteratorPostOrderTraversal::end )
+        .def(py::init<std::shared_ptr<NodeMT>>())
         .def("__iter__", [](typename NodeMT::IteratorPostOrderTraversal &iter) {
             return py::make_iterator(iter.begin(), iter.end());
         }, py::keep_alive<0, 1>());
 
     py::class_<typename NodeMT::IteratorBreadthFirstTraversal>(m, "IteratorBreadthFirstTraversal")
-        .def(py::init<NodeMTPtr>())
-        .def_property_readonly("begin", &NodeMT::IteratorBreadthFirstTraversal::begin )
-        .def_property_readonly("end", &NodeMT::IteratorBreadthFirstTraversal::end )
+        .def(py::init<std::shared_ptr<NodeMT>>())
         .def("__iter__", [](typename NodeMT::IteratorBreadthFirstTraversal &iter) {
             return py::make_iterator(iter.begin(), iter.end());
         }, py::keep_alive<0, 1>());
+
+         
+    py::class_<typename NodeMT::IteratorNodesDescendants>(m, "IteratorNodesDescendants")
+    .def(py::init<std::shared_ptr<NodeMT>, int>())
+    .def("__iter__", [](NodeMT::IteratorNodesDescendants &iter) {
+        return py::make_iterator(iter.begin(), iter.end());
+        }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+
+
 
 
 
@@ -114,6 +105,7 @@ void init_MorphologicalTree(py::module &m){
 		.def_property_readonly("numNodes", &MorphologicalTreePybind::getNumNodes )
         .def_property_readonly("listNodes", &MorphologicalTreePybind::getListNodes )
         .def_property_readonly("root", &MorphologicalTreePybind::getRoot )
+        .def_property_readonly("depth", &MorphologicalTreePybind::getDepth )
         //.def_static("computerParent", &ComponentTreePybind::computerParent)
 		//.def_property_readonly("parent", &ComponentTreePybind::getParent )
         //.def_property_readonly("orderedPixels", &ComponentTreePybind::getOrderedPixels )

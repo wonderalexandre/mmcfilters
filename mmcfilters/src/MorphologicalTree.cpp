@@ -41,7 +41,7 @@ MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols){
 	int* parent = builder->getParent();
 	
 	int size = builder->getInterpNumCols() * builder->getInterpNumRows();
-    std::vector<NodeMTPtr> nodes(size);
+    std::vector<NodeMTPtr> nodesTmp(size);
     
 	
     this->numNodes = 0;
@@ -51,40 +51,26 @@ MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols){
 		int pixelUnterpolate = (px/2) + (py/2) * numCols;
             
 		if (p == parent[p]) { //representante do node raiz
-            this->root = nodes[p] = std::make_shared<NodeMT>(this->numNodes, pixelUnterpolate, nullptr, imgU[p]);
+            this->root = nodesTmp[p] = std::make_shared<NodeMT>(this->numNodes, pixelUnterpolate, nullptr, imgU[p]);
 		}
 		else if (imgU[p] != imgU[parent[p]]) { //representante de um node
-			nodes[p] = std::make_shared<NodeMT>(this->numNodes, pixelUnterpolate, nodes[parent[p]], imgU[p]);
-			nodes[parent[p]]->addChild(nodes[p]);
+			nodesTmp[p] = std::make_shared<NodeMT>(this->numNodes, pixelUnterpolate, nodesTmp[parent[p]], imgU[p]);
+			nodesTmp[parent[p]]->addChild(nodesTmp[p]);
 		}
 		else if (imgU[p] == imgU[parent[p]]) {
-			nodes[p] = nodes[parent[p]];
+			nodesTmp[p] = nodesTmp[parent[p]];
 		}
 
 		if(px % 2 == 1 && py % 2 == 1){
-			nodes[p]->addCNPs(pixelUnterpolate);
-			this->nodes[pixelUnterpolate] = nodes[p];					
+			nodesTmp[p]->addCNPs(pixelUnterpolate);
+			this->nodes[pixelUnterpolate] = nodesTmp[p];					
 		}
 	}
 	if(this->root->getCNPs().size() == 0){
 		this->root->setResidue(0);
 	}
-	AttributeComputedIncrementally::computerAttribute(this->root,
-		[this](NodeMTPtr _node) -> void { //pre-processing
-			_node->setAreaCC( _node->getCNPs().size() );
-			_node->setNumDescendants( _node->getChildren().size() );
-			_node->setIndex(this->numNodes++);
-			this->listNodes.push_back(_node);
-		},
-		[](NodeMTPtr _root, NodeMTPtr _child) -> void { //merge-processing
-			_root->setAreaCC( _root->getAreaCC() + _child->getAreaCC() );
-			_root->setNumDescendants( _root->getNumDescendants() + _child->getNumDescendants() );
-		},
-		[](NodeMTPtr node) -> void { //post-processing
-									
-		}
-	);
-	
+
+	computerTreeAttribute();
 	delete builder;
 	imgR = nullptr;
 	imgU = nullptr;
@@ -92,6 +78,43 @@ MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols){
 	interpolationMin = nullptr;
 	interpolationMax = nullptr;
 } 
+
+void MorphologicalTree::computerTreeAttribute(){
+	this->numNodes = 0;
+	AttributeComputedIncrementally::computerAttribute(this->root,
+		[this](NodeMTPtr node) -> void { //pre-processing
+			node->setIndex(this->numNodes++);
+			this->listNodes.push_back(node);
+		},
+		[](NodeMTPtr parent, NodeMTPtr child) -> void { //merge-processing
+			
+		},
+		[](NodeMTPtr node) -> void { // post-processing
+		}
+	);
+
+	int timer = 0;
+	int maxDepth = 0;
+	int* depth = new int[this->numNodes];
+	AttributeComputedIncrementally::computerAttribute(this->root,
+		[this, &timer, depth](NodeMTPtr node) -> void { //pre-processing
+			node->setAreaCC( node->getCNPs().size() );
+			node->setNumDescendants( node->getChildren().size() );
+			node->setTimePreOrder(timer++);
+			depth[node->getIndex()] =  node->getParent() == nullptr ? 0 : depth[node->getParent()->getIndex()] + 1;
+		},
+		[](NodeMTPtr parent, NodeMTPtr child) -> void { //merge-processing
+			parent->setAreaCC( parent->getAreaCC() + child->getAreaCC() );
+			parent->setNumDescendants( parent->getNumDescendants() + child->getNumDescendants() );
+		},
+		[&timer, depth, &maxDepth](NodeMTPtr node) -> void { // post-processing
+			node->setTimePostOrder(timer++);
+			maxDepth = std::max(maxDepth, depth[node->getIndex()]);
+		}
+	);
+	this->depth = maxDepth;
+	delete[] depth;
+}
 
  
 MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols, bool isMaxtree, double radiusOfAdjacencyRelation){
@@ -113,12 +136,10 @@ MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols, bool is
 		int p = orderedPixels[i];
 		if (p == parent[p]) { //representante do node raiz
 			this->root = this->nodes[p] = std::make_shared<NodeMT>(this->numNodes++, p, nullptr, img[p]);
-			this->listNodes.push_back(this->nodes[p]);
 			this->nodes[p]->addCNPs(p);
 		}
 		else if (img[p] != img[parent[p]]) { //representante de um node
 			this->nodes[p] = std::make_shared<NodeMT>(this->numNodes++, p, this->nodes[parent[p]], img[p]);
-			this->listNodes.push_back(this->nodes[p]);
 			this->nodes[p]->addCNPs(p);
 			this->nodes[parent[p]]->addChild(this->nodes[p]);
 		}
@@ -128,27 +149,19 @@ MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols, bool is
 		}
 	}
 	
-	int timer = 0;
-	AttributeComputedIncrementally::computerAttribute(this->root,
-		[&timer](NodeMTPtr _node) -> void { // pre-processing
-			_node->setAreaCC(_node->getCNPs().size());
-			_node->setNumDescendants(_node->getChildren().size());
-			_node->setTimePreOrder(timer++);
-		},
-		[](NodeMTPtr _root, NodeMTPtr _child) -> void { // merge-processing
-			_root->setAreaCC(_root->getAreaCC() + _child->getAreaCC());
-			_root->setNumDescendants(_root->getNumDescendants() + _child->getNumDescendants());
-		},
-		[&timer](NodeMTPtr node) -> void { // post-processing
-			node->setTimePostOrder(timer++);
-		}
-	);
+
+	computerTreeAttribute();
 	
 	delete builder;
 	builder = nullptr;
 	orderedPixels = nullptr;
 	parent = nullptr;
 }
+
+int MorphologicalTree::getDepth(){
+	return this->depth;
+}
+
 
 NodeMTPtr MorphologicalTree::getSC(int pixel){
 	return this->nodes[pixel];

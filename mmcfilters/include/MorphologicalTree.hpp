@@ -20,8 +20,10 @@ protected:
 	std::list<NodeMTPtr> listNodes;
 	std::vector<NodeMTPtr> nodes;
 	AdjacencyRelationPtr adj;
+	int depth;
 	
 	void reconstruction(NodeMTPtr node, int* imgOut);
+	void computerTreeAttribute();
 
 public:
    	static const int MAX_TREE = 0;
@@ -72,7 +74,7 @@ public:
 	
 	bool isStrictComparable(NodeMTPtr u, NodeMTPtr v);
 	
-	
+	int getDepth();
 };
 
 #endif

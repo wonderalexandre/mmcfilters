@@ -73,3 +73,7 @@ void NodeMT::setTimePostOrder(int time) { this->timePostOrder = time; }
 int NodeMT::getTimePreOrder() { return this->timePreOrder; }
 
 void NodeMT::setTimePreOrder(int time) { this->timePreOrder = time; }
+
+bool NodeMT::isLeaf() {
+    return this->children.empty();
+}

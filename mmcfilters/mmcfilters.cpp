@@ -90,10 +90,6 @@ void init_NodeCT_Iterators(py::module &m) {
         return py::make_iterator(iter.begin(), iter.end());
         }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
 
-
-
-
-
 }
 
 void init_MorphologicalTree(py::module &m){

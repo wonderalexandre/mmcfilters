@@ -50,6 +50,7 @@ public:
     int getTimePreOrder();
     void setTimePostOrder(int time);
     void setTimePreOrder(int time);
+    bool isLeaf();
 
 	
 //============= Iterator para iterar os nodes do caminho até o root==============//

@@ -80,6 +80,12 @@ class AttributeFiltersPybind : public AttributeFilters{
 
     }
 
+    std::vector<bool> getAdaptativeCriterion(std::vector<bool> criterion, int delta){
+        return AttributeFilters::getAdaptativeCriterion(criterion, delta);
+    }
+
+
+
     py::array_t<int> filteringBySubtractiveRule(std::vector<bool>& criterion){
         int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
         int* imgOutput = new int[n];
@@ -90,7 +96,7 @@ class AttributeFiltersPybind : public AttributeFilters{
 
     }
 
-    py::array_t<float> filteringBySubtractiveScoreRuleNumpy(std::vector<float>& prob){
+    py::array_t<float> filteringBySubtractiveScoreRule(std::vector<float>& prob){
         int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
         float* imgOutput = new float[n];
 
@@ -99,6 +105,8 @@ class AttributeFiltersPybind : public AttributeFilters{
         return PybindUtils::toNumpyFloat(imgOutput, n);
 
     }
+
+
 
 
 

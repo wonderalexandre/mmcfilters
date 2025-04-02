@@ -1,4 +1,4 @@
-
+#include "../include/Common.hpp"
 #include "../include/NodeMT.hpp"
 #include "../include/MorphologicalTree.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
@@ -45,7 +45,7 @@ class AttributeFilters{
     float* filteringBySubtractiveScoreRule(std::vector<float>& prob);
 
     static void filteringBySubtractiveScoreRule(MorphologicalTreePtr tree, std::vector<float>& prob, float *imgOutput){
-        float mapLevel[tree->getNumNodes()];
+        std::unique_ptr<float[]> mapLevel(new float[tree->getNumNodes()]);
         
         //the root is always kept
         mapLevel[0] = tree->getRoot()->getLevel();
@@ -72,7 +72,7 @@ class AttributeFilters{
             s.push(node);
         }
         MorphologicalTreePtr ctree = rtree->getCTree();
-        int mapLevel[ctree->getNumNodes()];
+        std::unique_ptr<int[]> mapLevel(new int[ctree->getNumNodes()]);
         for(NodeMTPtr nodeCT: ctree->getListNodes()){
             mapLevel[nodeCT->getIndex()] = 0;
         } 
@@ -105,8 +105,7 @@ class AttributeFilters{
     }
 
     static void filteringBySubtractiveRule(MorphologicalTreePtr tree, std::vector<bool>& criterion, int *imgOutput){
-        int mapLevel[tree->getNumNodes()];
-        
+        std::unique_ptr<int[]> mapLevel(new int[tree->getNumNodes()]);
         //the root is always kept
         mapLevel[0] = tree->getRoot()->getLevel();
 
@@ -131,7 +130,7 @@ class AttributeFilters{
     }
 
     static void filteringByDirectRule(MorphologicalTreePtr tree, std::vector<bool>& criterion, int *imgOutput){
-        int mapLevel[tree->getNumNodes()];
+        std::unique_ptr<int[]> mapLevel(new int[tree->getNumNodes()]);
 
         //the root is always kept
         mapLevel[0] = tree->getRoot()->getLevel();
@@ -150,20 +149,20 @@ class AttributeFilters{
                 imgOutput[pixel] = mapLevel[node->getIndex()];
             }
         }
-        /*std::stack<NodeCTPtr> s;
+        /*std::stack<NodeMTPtr> s;
         s.push(tree->getRoot());
         std::stack<int> sLevel;
         sLevel.push(tree->getRoot()->getLevel());
         criterion[0] = true; //the root is always kept
         
         while(!s.empty()){
-            NodeCT *node = s.top(); s.pop();
+            NodeMTPtr node = s.top(); s.pop();
             int level = sLevel.top(); sLevel.pop();
             for (int pixel : node->getCNPs()){
                 imgOutput[pixel] = level;
             }
 
-            for (NodeCT *child: node->getChildren()){
+            for (NodeMTPtr child: node->getChildren()){
                 s.push(child);
                 if(criterion[child->getIndex()]){
                     sLevel.push(child->getLevel());
@@ -195,8 +194,7 @@ class AttributeFilters{
     }
 
     static void filteringByPruningMax(MorphologicalTreePtr tree, std::vector<bool>& _criterion, int *imgOutput){
-        
-        bool criterion[tree->getNumNodes()];
+        std::unique_ptr<bool[]> criterion(new bool[tree->getNumNodes()]);
         AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
             [&criterion, _criterion](NodeMTPtr node) -> void { //pre-processing
                 if(!_criterion[node->getIndex()])
@@ -255,7 +253,7 @@ class AttributeFilters{
 
     static void filteringByPruningMax(MorphologicalTreePtr tree, float *attribute, float threshold, int *imgOutput){
         
-        bool criterion[tree->getNumNodes()];
+        std::unique_ptr<bool[]> criterion(new bool[tree->getNumNodes()]);
         AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
             [&criterion, attribute, threshold](NodeMTPtr node) -> void { //pre-processing
                 if(attribute[node->getIndex()] <= threshold)
@@ -305,7 +303,7 @@ class AttributeFilters{
                     isPruned[node->getIndex()] = true;
                 }else{
                     
-                    //NodeCTPtr nodeMax = mser.getNodeInPathWithMaxStability(node, isMSER);
+                    //NodeMTPtr nodeMax = mser.getNodeInPathWithMaxStability(node, isMSER);
                     //isPruned[nodeMax->getIndex()] = true;
                     
                     double max = stability[node->getIndex()];
@@ -343,7 +341,7 @@ class AttributeFilters{
                     isPruned[node->getIndex()] = true;
                 }else{
                     
-                    //NodeCTPtr nodeMax = mser.getNodeInPathWithMaxStability(node, isMSER);
+                    //NodeMTPtr nodeMax = mser.getNodeInPathWithMaxStability(node, isMSER);
                     //isPruned[nodeMax->getIndex()] = true;
                     
                     double max = stability[node->getIndex()];

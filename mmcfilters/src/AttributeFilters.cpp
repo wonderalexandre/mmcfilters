@@ -9,7 +9,7 @@
     AttributeFilters::~AttributeFilters(){
         
     }
-
+                           
     int* AttributeFilters::filteringByPruningMin(float* attribute, float threshold){
         int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
         int* imgOutput = new int[n];

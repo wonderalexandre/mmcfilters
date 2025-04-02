@@ -5,8 +5,8 @@
 #include <iostream>
 #include <unordered_set>
 
-#include "../mmcfilters/include/NodeMT.hpp"
-#include "../mmcfilters/include/MorphologicalTree.hpp"
+#include "../include/NodeMT.hpp"
+#include "../include/MorphologicalTree.hpp"
 
 #include <iomanip>
 #include <fstream>
@@ -33,7 +33,7 @@ inline void printMappingSC(MorphologicalTreePtr tree, std::string nomeArquivo = 
     int numRows = tree->getNumRowsOfImage();
     int numCols = tree->getNumColsOfImage();
     int n = numRows*numCols;
-    int map[n];
+    std::unique_ptr<int[]> map = std::unique_ptr<int[]>(new int[n]);
     for (int p=0; p < n; p++){
         map[p] = tree->getSC(p)->getIndex();
     }
@@ -160,7 +160,7 @@ inline bool isEquals(int* imgOut1, int* imgOut2, int size){
     }
 
     //Teste: Verifica se o Iterator getPixelsOfCC está correto
-    int area = tree->getRoot()->getArea();
+    int area = tree->getRoot()->getAreaCC();
     int count_area = 0;
     for(int p : tree->getRoot()->getPixelsOfCC()){
         count_area++;
@@ -173,7 +173,7 @@ inline bool isEquals(int* imgOut1, int* imgOut2, int size){
         
 
     //Teste: Verifica se o Iterator getCNPs está correto
-    int num_cnps = tree->getRoot()->getNumCNPs();
+    int num_cnps = tree->getRoot()->getCNPs().size();
     int count_cnps= 0;
     for(int p : tree->getRoot()->getCNPs()){
         count_cnps++;
@@ -262,16 +262,6 @@ inline bool isEquals(int* imgOut1, int* imgOut2, int size){
     }
     
 
-}
-
-inline bool computerArea(NodeFZPtr node){
-	long int area = node->getNumCNPs();
-	for(NodeFZPtr child: node->getChildren()){
-		if(!computerArea(child))
-            return false;
-		area += child->getArea();
-	}
-    return node->getArea() == area;
 }
 
 inline NodeMTPtr getNodeByIndex(MorphologicalTreePtr tree, int index){

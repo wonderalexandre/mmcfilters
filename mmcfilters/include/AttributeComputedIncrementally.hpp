@@ -10,7 +10,6 @@
 #include <iostream>
 #include <limits> // Para usar std::numeric_limits<float>::epsilon()
 #include <unordered_map>
-#include "../include/Common.hpp"
 
 #define PI 3.14159265358979323846
 
@@ -78,10 +77,12 @@ public:
 										std::function<void(NodeMTPtr)> postProcessing ){
 		
 		preProcessing(root);
+			
 		for(NodeMTPtr child: root->getChildren()){
 			AttributeComputedIncrementally::computerAttribute(child, preProcessing, mergeChildren, postProcessing);
 			mergeChildren(root, child);
 		}
+
 		postProcessing(root);
 	}
 
@@ -193,23 +194,24 @@ public:
 		27 - momentos de Hu 6
 		28 - momentos de Hu 7
 		*/
-		const int n = tree->getNumNodes();
+		int n = tree->getNumNodes();
 		AttributeNames attributeNames(n);
 		
 		float *attrs = new float[n * attributeNames.NUM_ATTRIBUTES];
 		std::unordered_map<std::string, int> ATTR = attributeNames.mapIndexes;
 		
 
-		int xmax[n]; //min value
-		int ymax[n]; //min value
-		int xmin[n]; //max value
-		int ymin[n]; //max value
-
+		std::unique_ptr<int[]> xmax(new int[n]);
+		std::unique_ptr<int[]> ymax(new int[n]);
+		std::unique_ptr<int[]> xmin(new int[n]);
+		std::unique_ptr<int[]> ymin(new int[n]);
+		
 		//momentos geometricos para calcular o centroide
-		long int sumX[n]; //sum x
-		long int sumY[n]; //sum y
+		std::unique_ptr<long int[]> sumX(new long int[n]);//sum x
+		std::unique_ptr<long int[]> sumY(new long int[n]);//sum y
+		
 
-		long sumGrayLevelSquare[n];
+		std::unique_ptr<long[]> sumGrayLevelSquare(new long[n]);
 		int numCols = tree->getNumColsOfImage();
 		int numRows = tree->getNumRowsOfImage();
 		

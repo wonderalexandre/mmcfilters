@@ -25,9 +25,9 @@ class ImageUtils{
                     max = img[i];
             }
 
-            int r[max + 1];
-            int g[max + 1];
-            int b[max + 1];
+            std::unique_ptr<int[]> r(new int[max + 1]);
+            std::unique_ptr<int[]> g(new int[max + 1]);
+            std::unique_ptr<int[]> b(new int[max + 1]);
             r[0] = 0;
             g[0] = 0;
             r[0] = 0;

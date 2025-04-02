@@ -84,6 +84,10 @@ if(BUILD_TESTS)
     )
     target_link_libraries(testeTreeOfShapes PRIVATE mmcfilters_lib)
 
-
+    # Adicionar o executável de testes: 
+    add_executable(TesteCountors 
+        mmcfilters/test/TesteCountors.cpp
+    )
+    target_link_libraries(TesteCountors PRIVATE mmcfilters_lib)
 
 endif()

@@ -75,6 +75,15 @@ public:
 	bool isStrictComparable(NodeMTPtr u, NodeMTPtr v);
 	
 	int getDepth();
+
+	std::vector<std::vector<NodeMTPtr>> getNodesByDepth();
+
+	static void extractDepthMap(NodeMTPtr node, int depth, std::vector<std::vector<NodeMTPtr>>& nodesByDepth){
+		nodesByDepth[depth].push_back(node);
+		for (NodeMTPtr child : node->getChildren()) {
+		  extractDepthMap(child, depth + 1, nodesByDepth);
+		}
+	}
 };
 
 #endif

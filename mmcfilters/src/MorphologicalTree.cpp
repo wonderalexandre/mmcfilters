@@ -293,3 +293,9 @@ void MorphologicalTree::reconstruction(NodeMTPtr node, int* imgOut){
 		reconstruction(child, imgOut);
 	}
 }
+
+std::vector<std::vector<NodeMTPtr>> MorphologicalTree::getNodesByDepth(){
+	std::vector<std::vector<NodeMTPtr>> nodesByDepth(this->depth + 1);
+	MorphologicalTree::extractDepthMap(this->root, 0, nodesByDepth);
+	return nodesByDepth;
+}

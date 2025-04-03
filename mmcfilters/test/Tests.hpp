@@ -274,8 +274,10 @@ inline NodeMTPtr getNodeByIndex(MorphologicalTreePtr tree, int index){
 }
 
 inline int* get2CsImage(int& numRows, int& numCols){
-    int* img = new int[90]{
+    int* img = new int[110]{
         4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+        4, 5, 5, 5, 5, 5, 5, 4, 4, 4,
+        4, 5, 5, 5, 5, 5, 5, 4, 4, 4,
         4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
         4, 4, 0, 0, 0, 7, 7, 7, 4, 4,
         4, 4, 0, 0, 0, 7, 7, 7, 4, 4,
@@ -287,7 +289,7 @@ inline int* get2CsImage(int& numRows, int& numCols){
     };
 
     numCols = 10;
-    numRows = 9;
+    numRows = 11;
     return img;
 }
 

@@ -12,7 +12,7 @@
 int main() {
     // Definição da imagem e parâmetros
     int numRows, numCols;
-    int* img = getWonderImage(numRows, numCols);
+    int* img = getPassatImage(numRows, numCols);
     int n = numRows * numCols;
     double radioAdj = 1.5;
     AdjacencyRelationPtr adj = std::make_shared<AdjacencyRelation>(numRows, numCols, 1);
@@ -83,8 +83,10 @@ int main() {
     
             std::cout << "\nContorno incremental" << std::endl;
             printImage(contoursInc, numRows, numCols);
-        }
 
+            break;
+        }
+        
         delete[] contoursInc;
         delete[] contoursNonInc;
     }

@@ -98,26 +98,44 @@ public:
 			[](NodeMTPtr node) -> void { // pre-processing
 
 			},
-			[](NodeMTPtr _root, NodeMTPtr _child) -> void { // merge-processing
+			[](NodeMTPtr _root, NodeMTPtr child) -> void { // merge-processing
 				
 			},
 			[&contours, &ncount, tree, adj4](NodeMTPtr node) -> void { // post-processing
 				// Initialise contours of node "N"
 				std::unordered_set<int> &Ncontour = contours[node->getIndex()];
 				for (NodeMTPtr child : node->getChildren()) {
-					for (int p : contours[child->getIndex()])
-						Ncontour.insert(p);
+					for (int p : contours[child->getIndex()]){
+						bool valid = false;
+						for (int q : adj4->getAdjPixels(p)) {
+							NodeMTPtr nodeQ = tree->getSC(q); 
+							if(! (node != nodeQ && !tree->isComparable(node, nodeQ))){
+								valid = true;
+							}
+						}
+						if(valid)
+							Ncontour.insert(p);
+					}
 				}
 			
 				for (int p : node->getCNPs()) {
-					auto [px, py] = ImageUtils::to2D(p, tree->getNumColsOfImage());
+					std::pair<int, int> xy = ImageUtils::to2D(p, tree->getNumColsOfImage());
+					int px = xy.first;
+					int py = xy.second;
+					if(px == 82 && py==1){
+						;
+					}
 					if (px == 0 || py == 0 || px == tree->getNumColsOfImage() - 1 || py == tree->getNumRowsOfImage() - 1){
 						ncount[p]++;
 					}
 					for (int q : adj4->getAdjPixels(p)) {
-						if(tree->isStrictDescendant(node, tree->getSC(q)))  //maxtree:  SC(p) \subset SC(q) <=> f(p) > f(q)
+						NodeMTPtr nodeQ = tree->getSC(q); 
+						if(node != nodeQ && !tree->isComparable(node, nodeQ)){
+							ncount[p]++;
+						}
+						if(tree->isStrictDescendant(node, nodeQ))  //maxtree:  SC(p) \subset SC(q) <=> f(p) > f(q)
 					  		ncount[p]++;
-						else if (tree->isStrictAncestor(node, tree->getSC(q))) { ////maxtree:  SC(q) \subset SC(p) <=> f(p) < f(q)
+						else if (tree->isStrictAncestor(node, nodeQ)) { ////maxtree:  SC(q) \subset SC(p) <=> f(p) < f(q)
 					  		ncount[q]--;
 					  		if (ncount[q] == 0) 
 								Ncontour.erase(q);

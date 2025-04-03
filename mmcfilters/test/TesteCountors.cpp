@@ -12,7 +12,7 @@
 int main() {
     // Definição da imagem e parâmetros
     int numRows, numCols;
-    int* img = getPassatImage(numRows, numCols);
+    int* img = getWonderImage(numRows, numCols);
     int n = numRows * numCols;
     double radioAdj = 1.5;
     AdjacencyRelationPtr adj = std::make_shared<AdjacencyRelation>(numRows, numCols, 1);
@@ -21,7 +21,7 @@ int main() {
     std::cout << "Resolution: " << numCols << " x " << numRows << std::endl;
 
     //imagem binaria
-    bool* imgBin = new bool[n]();
+    
 
 
     // Criação das Component Trees
@@ -32,27 +32,39 @@ int main() {
     for(int depth=tree->getDepth(); depth >= 0; depth--){
         std::vector<NodeMTPtr> nodesDepth = nodesByDepth[depth];
 
-        std::vector<bool> contoursInc(numRows * numCols, false);
+        int* contoursInc = new int[n]();
+        int* contoursNonInc = new int[n]();
         for(NodeMTPtr node: nodesDepth){
             std::unordered_set<int> contourNode = countors[node->getIndex()];
             for(int p: contourNode){
-                contoursInc[p] = true;
+                contoursInc[p] = 1;
             }
-            for(int p: node->getCNPs()){
-                imgBin[p] = true;
+            int* imgBin = new int[n]();
+            for(int p: node->getPixelsOfCC()){
+                imgBin[p] = 1;
             }
-        }
-        
-        std::vector<bool> contoursNonInc(numRows * numCols, false);
-        for (int p=0; p < numRows*numCols; p++ ) {
-            for (int q : adj->getAdjPixels(p)) {
-                if (imgBin[p] && !imgBin[q]) {
-                    contoursNonInc[p] = true;
+            for (int p=0; p < n; p++ ) {
+                auto [px, py] = ImageUtils::to2D(p, numCols);
+                if(imgBin[p]==1 && (px ==0 || py ==0 || px == numCols-1 || py == numRows-1)){
+                    contoursNonInc[p] = 1;
+                }else{
+                    for (int q : adj->getAdjPixels(p)) {
+                        if (imgBin[p]==1 && imgBin[q]==0) {
+                            contoursNonInc[p] = 1;
+                        }
+                    }
                 }
             }
+            delete[] imgBin;
         }
+       
+       
+        
+       
+
+
         bool isEqualsDepth = true;
-        for (int p=0; p < (numRows*numCols); p++ ) {
+        for (int p=0; p < n; p++ ) {
             if(contoursNonInc[p] != contoursInc[p]){
                 isEquals = false;
                 isEqualsDepth = false;
@@ -62,7 +74,22 @@ int main() {
         }
         std::cout << "Depth:"<< depth << "\tSão iguais:" << isEqualsDepth << std::endl;
         
+        if(!isEqualsDepth){
+            //std::cout << "\nImagem binaria:" << std::endl;
+            //printImage(imgBin, numRows, numCols);
+
+            std::cout << "\nContorno não incremental" << std::endl;
+            printImage(contoursNonInc, numRows, numCols);
+    
+            std::cout << "\nContorno incremental" << std::endl;
+            printImage(contoursInc, numRows, numCols);
+        }
+
+        delete[] contoursInc;
+        delete[] contoursNonInc;
     }
+    
+    //delete[] imgBin;
 
     if(isEquals){
         std::cout << "\nSão iguais" << std::endl;

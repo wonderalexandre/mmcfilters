@@ -4,6 +4,7 @@
 #define ATTRIBUTE_COMPUTED_INCREMENTALLY_H
 
 #include "../include/NodeMT.hpp"
+#include "../include/ImageUtils.hpp"
 #include "../include/MorphologicalTree.hpp"
 #include <algorithm>
 #include <cmath>
@@ -89,7 +90,7 @@ public:
 
 	static std::vector<std::unordered_set<int>> extractCountors(MorphologicalTreePtr tree){
 		std::vector<std::unordered_set<int>> contours(tree->getNumNodes());
-		std::vector<int> ncount(tree->getNumRowsOfImage() * tree->getNumColsOfImage());
+		std::vector<int> ncount(tree->getNumRowsOfImage() * tree->getNumColsOfImage(), 0);
 		AdjacencyRelationPtr adj4 = std::make_shared<AdjacencyRelation>(tree->getNumRowsOfImage(), tree->getNumColsOfImage(), 1);
 		
 	
@@ -104,22 +105,26 @@ public:
 				// Initialise contours of node "N"
 				std::unordered_set<int> &Ncontour = contours[node->getIndex()];
 				for (NodeMTPtr child : node->getChildren()) {
-					for (int pidx : contours[child->getIndex()])
-						Ncontour.insert(pidx);
+					for (int p : contours[child->getIndex()])
+						Ncontour.insert(p);
 				}
 			
-				for (int pidx : node->getCNPs()) {
-					for (int qidx : adj4->getAdjPixels(pidx)) {
-						if (tree->isStrictDescendant(node, tree->getSC(qidx)))  //maxtree:  SC(p) \subset SC(q) <=> f(p) > f(q)
-					  		ncount[pidx]++;
-						else if (tree->isStrictAncestor(node, tree->getSC(qidx))) { ////maxtree:  SC(q) \subset SC(p) <=> f(p) < f(q)
-					  		ncount[qidx]--;
-					  		if (ncount[qidx] == 0) 
-								Ncontour.erase(qidx);
+				for (int p : node->getCNPs()) {
+					auto [px, py] = ImageUtils::to2D(p, tree->getNumColsOfImage());
+					if (px == 0 || py == 0 || px == tree->getNumColsOfImage() - 1 || py == tree->getNumRowsOfImage() - 1){
+						ncount[p]++;
+					}
+					for (int q : adj4->getAdjPixels(p)) {
+						if(tree->isStrictDescendant(node, tree->getSC(q)))  //maxtree:  SC(p) \subset SC(q) <=> f(p) > f(q)
+					  		ncount[p]++;
+						else if (tree->isStrictAncestor(node, tree->getSC(q))) { ////maxtree:  SC(q) \subset SC(p) <=> f(p) < f(q)
+					  		ncount[q]--;
+					  		if (ncount[q] == 0) 
+								Ncontour.erase(q);
 						}
 				  	}
-				  	if (ncount[pidx] > 0)
-						Ncontour.insert(pidx);
+				  	if (ncount[p] > 0)
+						Ncontour.insert(p);
 				}
 			}
 		);

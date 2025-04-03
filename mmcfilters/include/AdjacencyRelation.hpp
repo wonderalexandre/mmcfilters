@@ -16,6 +16,7 @@ private:
     int numCols;
     int numRows;
     int n;
+    bool validatePixels;
  
     std::unique_ptr<int[]> offsetRow;
     std::unique_ptr<int[]> offsetCol;
@@ -25,11 +26,14 @@ private:
 public:
 
     AdjacencyRelation(int numRows, int numCols, double radius);
+    AdjacencyRelation(int numRows, int numCols, double radius, bool validatePixels);
     ~AdjacencyRelation();
     int nextValid();
     int getSize();
     AdjacencyRelation& getAdjPixels(int row, int col);
     AdjacencyRelation& getAdjPixels(int index);
+    bool isValid(int index);
+    bool isValid(int row, int col);
 
     class IteratorAdjacency{ 
         private:

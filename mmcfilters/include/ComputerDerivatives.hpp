@@ -24,7 +24,7 @@ class ComputerDerivatives {
             
             float *dWeight = new float[rows * cols];
             float *dBias = new float[rows];
-            for(NodeMTPtr node: tree->getListNodes()){
+            for(NodeMTPtr node: tree->getIndexNode()){
                 int id = node->getIndex();
                 dBias[id] = (sigmoid[id] * (1 - sigmoid[id])) * node->getResidue();
                 for (int j = 0; j < cols; j++)

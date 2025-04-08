@@ -4,6 +4,7 @@
 #include "../include/NodeMT.hpp"
 #include "../include/AdjacencyRelation.hpp"
 #include "../include/Common.hpp"
+#include <iostream>
 
 #ifndef COMPONENT_TREE_H
 #define COMPONENT_TREE_H
@@ -17,7 +18,7 @@ protected:
 	int treeType; //0-mintree, 1-maxtree, 2-tree of shapes
 	NodeMTPtr root;
 	int numNodes;
-	std::list<NodeMTPtr> listNodes;
+	std::vector<NodeMTPtr> indexToNode;
 	std::vector<NodeMTPtr> nodes;
 	AdjacencyRelationPtr adj;
 	int depth;
@@ -48,7 +49,9 @@ public:
 
 	NodeMTPtr getSC(int pixel);
 
-	std::list<NodeMTPtr> getListNodes();
+    NodeMTPtr getNodeByIndex(int index);
+
+	std::vector<NodeMTPtr>& getIndexNode();
 
 	int getNumNodes();
 
@@ -74,6 +77,8 @@ public:
 	
 	bool isStrictComparable(NodeMTPtr u, NodeMTPtr v);
 	
+	NodeMTPtr findLowestCommonAncestor(NodeMTPtr u, NodeMTPtr v);
+
 	int getDepth();
 
 	std::vector<std::vector<NodeMTPtr>> getNodesByDepth();
@@ -85,5 +90,80 @@ public:
 		}
 	}
 };
+
+
+
+
+class LCAEulerRMQ {
+private:
+    std::vector<int> euler;            // timePreOrder dos nós na ordem de visita
+    std::vector<int> depth;            // profundidade associada a cada posição em euler
+    std::vector<int> firstOccurrence;  // [timePreOrder] = posição no vetor euler
+    std::vector<std::vector<int>> st;  // Sparse Table para RMQ
+    std::vector<NodeMTPtr> indexToNode;  // acesso direto aos nós via timePreOrder
+
+public:
+    LCAEulerRMQ(const MorphologicalTreePtr& tree) {
+        indexToNode = tree->getIndexNode(); // indexado por timePreOrder
+        int n = indexToNode.size();
+        firstOccurrence.resize(n, -1);
+
+        dfs(tree->getRoot(), 0);
+        buildSparseTable();
+    }
+
+	NodeMTPtr findLowestCommonAncestor(const NodeMTPtr& u, const NodeMTPtr& v) {
+        int uTime = u->getIndex();
+        int vTime = v->getIndex();
+        int i = firstOccurrence[uTime];
+        int j = firstOccurrence[vTime];
+        if (i > j) std::swap(i, j);
+        int idx = rmq(i, j);
+        return indexToNode[euler[idx]];
+    }
+
+
+private:
+    void dfs(const NodeMTPtr& node, int d) {
+        int time = node->getIndex();
+        if (firstOccurrence[time] == -1)
+            firstOccurrence[time] = euler.size();
+
+        euler.push_back(time);
+        depth.push_back(d);
+
+        for (const auto& child : node->getChildren()) {
+            dfs(child, d + 1);
+            euler.push_back(time);
+            depth.push_back(d);
+        }
+    }
+
+    void buildSparseTable() {
+        int n = depth.size();
+        int logn = std::log2(n) + 1;
+        st.assign(n, std::vector<int>(logn));
+
+        for (int i = 0; i < n; ++i)
+            st[i][0] = i;
+
+        for (int j = 1; (1 << j) <= n; ++j) {
+            for (int i = 0; i + (1 << j) <= n; ++i) {
+                int l = st[i][j - 1];
+                int r = st[i + (1 << (j - 1))][j - 1];
+                st[i][j] = (depth[l] < depth[r]) ? l : r;
+            }
+        }
+    }
+
+    int rmq(int l, int r) {
+        int len = r - l + 1;
+        int k = std::log2(len);
+        int a = st[l][k];
+        int b = st[r - (1 << k) + 1][k];
+        return (depth[a] < depth[b]) ? a : b;
+    }
+};
+
 
 #endif

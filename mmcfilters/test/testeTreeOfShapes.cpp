@@ -10,7 +10,7 @@ void printTree(NodeMTPtr root, int indent = 0) {
     for (int i = 0; i < indent; ++i) {
         std::cout << "|-";
     }
-    std::cout << "Node: " << root->getIndex() <<  ", Level: " << root->getLevel()<< ", cnps: " << root->getCNPs().size() << std::endl;
+    std::cout << "Node: " << root->getIndex() <<  ", Level: " << root->getLevel()<< ", cnps: " << root->getCNPs().size() << ", |children|:" << root->getChildren().size() << std::endl;
 
     // Chama recursivamente a função para cada filho
     for (NodeMTPtr child : root->getChildren()) {
@@ -68,7 +68,7 @@ int main() {
     std::cout << "Interpolação: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
     for (int y = 0; y < builder.getInterpNumRows(); ++y) {
         for (int x = 0; x < builder.getInterpNumCols(); ++x) {
-            int index = ImageUtils::to1D(x, y, builder.getInterpNumCols());
+            int index = ImageUtils::to1D(y, x, builder.getInterpNumCols());
             std::cout << "[" << interpolationMin[index] << ", " << interpolationMax[index] << "] ";
         }
         std::cout << std::endl;
@@ -85,7 +85,7 @@ int main() {
     // Imprimir os resultados da interpolação ordenada
     for (int y = 0; y < builder.getInterpNumRows(); ++y) {    
         for (int x = 0; x < builder.getInterpNumCols(); ++x) {
-            int index = ImageUtils::to1D(x, y, builder.getInterpNumCols());
+            int index = ImageUtils::to1D(y, x, builder.getInterpNumCols());
             std::cout  << imgU[index] << ", ";
         }
         std::cout << std::endl;
@@ -93,7 +93,7 @@ int main() {
     std::cout << "imgR: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
     for (int y = 0; y < builder.getInterpNumRows(); ++y) {
         for (int x = 0; x < builder.getInterpNumCols(); ++x) {
-            int index = ImageUtils::to1D(x, y, builder.getInterpNumCols());
+            int index = ImageUtils::to1D(y, x, builder.getInterpNumCols());
             std::cout << imgR[index] << ", ";
         }
         std::cout << std::endl;
@@ -104,7 +104,7 @@ int main() {
     std::cout << "parent: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
     for (int y = 0; y < builder.getInterpNumRows(); ++y) {
         for (int x = 0; x < builder.getInterpNumCols(); ++x) {
-            int index = ImageUtils::to1D(x, y, builder.getInterpNumCols());
+            int index = ImageUtils::to1D(y, x, builder.getInterpNumCols());
             std::cout << parent[index] << ", ";
         }
         std::cout << std::endl;

@@ -75,7 +75,10 @@
         "csetjmp": "cpp",
         "csignal": "cpp",
         "queue": "cpp",
-        "shared_mutex": "cpp"
+        "shared_mutex": "cpp",
+        "execution": "cpp",
+        "memory": "cpp",
+        "print": "cpp"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

@@ -1,5 +1,6 @@
 
 #include "../include/Common.hpp"
+#include "../include/ImageUtils.hpp"
 
 #ifndef ADJACENCY_H
 #define ADJACENCY_H
@@ -26,7 +27,6 @@ private:
 public:
 
     AdjacencyRelation(int numRows, int numCols, double radius);
-    AdjacencyRelation(int numRows, int numCols, double radius, bool validatePixels);
     ~AdjacencyRelation();
     int nextValid();
     int getSize();
@@ -56,7 +56,8 @@ public:
             }
 
             int operator*() const { 
-                return (instance.row + instance.offsetRow[index]) * instance.numCols + (instance.col + instance.offsetCol[index]); 
+                return ImageUtils::to1D(instance.row + instance.offsetRow[index], instance.col + instance.offsetCol[index], instance.numCols);
+                //return (instance.row + instance.offsetRow[index]) * instance.numCols + (instance.col + instance.offsetCol[index]); 
             }    
     };
     IteratorAdjacency begin();

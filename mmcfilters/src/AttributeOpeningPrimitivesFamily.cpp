@@ -29,7 +29,7 @@ AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily(Morphological
   
   this->numPrimitives = 0;
   float maxThreshold = 0;
-  for(NodeMTPtr node: this->tree->getListNodes()){
+  for(NodeMTPtr node: this->tree->getIndexNode()){
     if(this->attrs_increasing[node->getIndex()] <= this->maxCriterion && this->isSelectedForPruning(node)){
       this->numPrimitives++;
       if(this->attrs_increasing[node->getIndex()] > maxThreshold)
@@ -48,7 +48,7 @@ int AttributeOpeningPrimitivesFamily::getNumPrimitives(){
 
 std::list<float> AttributeOpeningPrimitivesFamily::getThresholdsPrimitive(){
   if(this->thresholds.size() == 0){
-    for(NodeMTPtr node: this->tree->getListNodes()){
+    for(NodeMTPtr node: this->tree->getIndexNode()){
       if(this->attrs_increasing[node->getIndex()] <= this->maxCriterion && this->isSelectedForPruning(node)){
         this->thresholds.push_back(this->attrs_increasing[node->getIndex()]);
       }

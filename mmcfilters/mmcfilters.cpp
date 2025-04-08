@@ -99,7 +99,7 @@ void init_MorphologicalTree(py::module &m){
         .def(py::init<py::array_t<int>, int, int>())
         .def("reconstructionImage", &MorphologicalTreePybind::reconstructionImage )
 		.def_property_readonly("numNodes", &MorphologicalTreePybind::getNumNodes )
-        .def_property_readonly("listNodes", &MorphologicalTreePybind::getListNodes )
+        .def_property_readonly("listNodes", &MorphologicalTreePybind::getIndexNode )
         .def_property_readonly("root", &MorphologicalTreePybind::getRoot )
         .def_property_readonly("depth", &MorphologicalTreePybind::getDepth )
         //.def_static("computerParent", &ComponentTreePybind::computerParent)

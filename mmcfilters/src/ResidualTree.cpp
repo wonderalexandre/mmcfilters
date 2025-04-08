@@ -195,7 +195,7 @@ int* ResidualTree::filtering(std::vector<bool> criterion, int* imgOutput){
   }
   
   std::unique_ptr<int[]> mapLevel(new int[this->tree->getNumNodes()]);
-  for(NodeMTPtr  nodeCT: this->tree->getListNodes()){
+  for(NodeMTPtr  nodeCT: this->tree->getIndexNode()){
     mapLevel[nodeCT->getIndex()] = 0;
   } 
 
@@ -216,7 +216,7 @@ int* ResidualTree::filtering(std::vector<bool> criterion, int* imgOutput){
     }
   }
 
-  for(NodeMTPtr  node: tree->getListNodes()){
+  for(NodeMTPtr  node: tree->getIndexNode()){
     for (int pixel : node->getCNPs()){
       if(this->tree->isMaxtree())
         imgOutput[pixel] = this->restOfImage[pixel] + mapLevel[node->getIndex()];
@@ -237,7 +237,7 @@ int* ResidualTree::getPositiveResidues(){
   }
   
   std::unique_ptr<int[]> mapLevelPos(new int[this->tree->getNumNodes()]);
-  for(NodeMTPtr  nodeCT: this->tree->getListNodes()){
+  for(NodeMTPtr  nodeCT: this->tree->getIndexNode()){
     mapLevelPos[nodeCT->getIndex()] = 0;
   } 
 
@@ -260,7 +260,7 @@ int* ResidualTree::getPositiveResidues(){
   int* imgOutput = new int[this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage()];
   //for(int p = 0; p < this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage(); p++)
   //  imgOutput[p] = 0;
-  for(NodeMTPtr  node: tree->getListNodes()){
+  for(NodeMTPtr  node: tree->getIndexNode()){
     for (int pixel : node->getCNPs()){
       if(this->tree->getTreeType() != MorphologicalTree::MIN_TREE)
         imgOutput[pixel] = mapLevelPos[node->getIndex()];
@@ -281,7 +281,7 @@ int* ResidualTree::getNegativeResidues(){
   }
   
   std::unique_ptr<int[]> mapLevelNeg(new int[this->tree->getNumNodes()]);
-  for(NodeMTPtr  nodeCT: this->tree->getListNodes()){
+  for(NodeMTPtr  nodeCT: this->tree->getIndexNode()){
     mapLevelNeg[nodeCT->getIndex()] = 0;
   } 
 
@@ -304,7 +304,7 @@ int* ResidualTree::getNegativeResidues(){
   int* imgOutput = new int[this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage()];
   //for(int p = 0; p < this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage(); p++)
   //  imgOutput[p] = 0;
-  for(NodeMTPtr  node: tree->getListNodes()){
+  for(NodeMTPtr  node: tree->getIndexNode()){
     for (int pixel : node->getCNPs()){
       if(this->tree->getTreeType() != MorphologicalTree::MAX_TREE)
         imgOutput[pixel] = mapLevelNeg[node->getIndex()];
@@ -327,7 +327,7 @@ int* ResidualTree::reconstruction(){
   
   std::unique_ptr<int[]> mapLevelNeg(new int[this->tree->getNumNodes()]);
   std::unique_ptr<int[]> mapLevelPos(new int[this->tree->getNumNodes()]);
-  for(NodeMTPtr  nodeCT: this->tree->getListNodes()){
+  for(NodeMTPtr  nodeCT: this->tree->getIndexNode()){
     mapLevelPos[nodeCT->getIndex()] = 0;
     mapLevelNeg[nodeCT->getIndex()] = 0;
   } 
@@ -352,7 +352,7 @@ int* ResidualTree::reconstruction(){
   }
 
   int* imgOutput = new int[this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage()];
-  for(NodeMTPtr  node: tree->getListNodes()){
+  for(NodeMTPtr  node: tree->getIndexNode()){
     for (int pixel : node->getCNPs()){
        imgOutput[pixel] = this->restOfImage[pixel] - mapLevelNeg[node->getIndex()] + mapLevelPos[node->getIndex()];
     }

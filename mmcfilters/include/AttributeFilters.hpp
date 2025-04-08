@@ -50,14 +50,14 @@ class AttributeFilters{
         //the root is always kept
         mapLevel[0] = tree->getRoot()->getLevel();
 
-        for(NodeMTPtr node: tree->getListNodes()){
+        for(NodeMTPtr node: tree->getIndexNode()){
             if(node->getParent() != nullptr){ 
                 int h = (int)std::abs(node->getLevel() - node->getParent()->getLevel());
                 mapLevel[node->getIndex()] = (float) mapLevel[node->getParent()->getIndex()] + (h * prob[node->getIndex()]);
             }
 
         }
-        for(NodeMTPtr node: tree->getListNodes()){
+        for(NodeMTPtr node: tree->getIndexNode()){
             for (int pixel : node->getCNPs()){
                 imgOutput[pixel] = mapLevel[node->getIndex()];
             }
@@ -73,7 +73,7 @@ class AttributeFilters{
         }
         MorphologicalTreePtr ctree = rtree->getCTree();
         std::unique_ptr<int[]> mapLevel(new int[ctree->getNumNodes()]);
-        for(NodeMTPtr nodeCT: ctree->getListNodes()){
+        for(NodeMTPtr nodeCT: ctree->getIndexNode()){
             mapLevel[nodeCT->getIndex()] = 0;
         } 
 
@@ -93,7 +93,7 @@ class AttributeFilters{
         }
 
         int* restOfImage = rtree->getRestOfImage();
-        for(NodeMTPtr node:  ctree->getListNodes()){
+        for(NodeMTPtr node:  ctree->getIndexNode()){
             for (int pixel : node->getCNPs()){
                 if(ctree->isMaxtree())
                     imgOutput[pixel] = restOfImage[pixel] + mapLevel[node->getIndex()];
@@ -109,7 +109,7 @@ class AttributeFilters{
         //the root is always kept
         mapLevel[0] = tree->getRoot()->getLevel();
 
-        for(NodeMTPtr node: tree->getListNodes()){
+        for(NodeMTPtr node: tree->getIndexNode()){
             if(node->getParent() != nullptr){ 
                 if(criterion[node->getIndex()]){
                     int h = (int)std::abs(node->getLevel() - node->getParent()->getLevel());
@@ -122,7 +122,7 @@ class AttributeFilters{
             }
 
         }
-        for(NodeMTPtr node: tree->getListNodes()){
+        for(NodeMTPtr node: tree->getIndexNode()){
             for (int pixel : node->getCNPs()){
                 imgOutput[pixel] = mapLevel[node->getIndex()];
             }
@@ -135,7 +135,7 @@ class AttributeFilters{
         //the root is always kept
         mapLevel[0] = tree->getRoot()->getLevel();
 
-        for(NodeMTPtr node: tree->getListNodes()){
+        for(NodeMTPtr node: tree->getIndexNode()){
             if(node->getParent() != nullptr){ 
                 if(criterion[node->getIndex()])
                     mapLevel[node->getIndex()] = node->getLevel();
@@ -144,7 +144,7 @@ class AttributeFilters{
             }
 
         }
-        for(NodeMTPtr node: tree->getListNodes()){
+        for(NodeMTPtr node: tree->getIndexNode()){
             for (int pixel : node->getCNPs()){
                 imgOutput[pixel] = mapLevel[node->getIndex()];
             }
@@ -296,7 +296,7 @@ class AttributeFilters{
 
 		std::vector<double> stability = mser.getStabilities();
 		std::vector<bool> isPruned(tree->getNumNodes(), false);
-		for(NodeMTPtr node: tree->getListNodes()){
+		for(NodeMTPtr node: tree->getIndexNode()){
             if(attribute[node->getIndex()] < threshold){ //node pruned
 
                 if(stability[node->getIndex()] == UNDEF){
@@ -334,7 +334,7 @@ class AttributeFilters{
 
 		std::vector<double> stability = mser.getStabilities();
 		std::vector<bool> isPruned(tree->getNumNodes(), false);
-		for(NodeMTPtr node: tree->getListNodes()){
+		for(NodeMTPtr node: tree->getIndexNode()){
             if(!criterion[node->getIndex()]){ //node pruned
 
                 if(stability[node->getIndex()] == UNDEF){

@@ -83,13 +83,13 @@
 		std::vector<double> tmp_stab (this->tree->getNumNodes(), UNDEF);
 		this->stability = tmp_stab;
 		
-		for(NodeMTPtr node: tree->getListNodes()){
+		for(NodeMTPtr node: tree->getIndexNode()){
 			NodeMTPtr nodeAsc = this->getNodeAscendant(node, delta);
 			this->maxAreaDescendants(nodeAsc, node);
 			this->ascendants[node->getIndex()] = nodeAsc;
 		}
 		
-		for(NodeMTPtr node: tree->getListNodes()){
+		for(NodeMTPtr node: tree->getIndexNode()){
 			if(this->ascendants[node->getIndex()] != nullptr && this->descendants[node->getIndex()] != nullptr){
 				this->stability[node->getIndex()] = this->getStability(node);
 			}
@@ -98,7 +98,7 @@
 		this->num = 0;
 		double maxStabilityDesc, maxStabilityAsc;
 		std::vector<bool> mser(this->tree->getNumNodes(), false);
-		for(NodeMTPtr node: tree->getListNodes()){
+		for(NodeMTPtr node: tree->getIndexNode()){
 			if(this->stability[node->getIndex()] != UNDEF && this->stability[this->getAscendant(node)->getIndex()] != UNDEF && this->stability[this->getDescendant(node)->getIndex()] != UNDEF){
 				maxStabilityDesc = this->stability[this->getDescendant(node)->getIndex()];
 				maxStabilityAsc = this->stability[this->getAscendant(node)->getIndex()];

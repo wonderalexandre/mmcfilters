@@ -47,21 +47,21 @@ MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols){
     this->numNodes = 0;
     for (int i = 0; i < size; i++) {
 		int p = imgR[i];
-        auto [px, py] = ImageUtils::to2D(p, builder->getInterpNumCols());
-		int pixelUnterpolate = (px/2) + (py/2) * numCols;
+        auto [row, col] = ImageUtils::to2D(p, builder->getInterpNumCols());
+		int pixelUnterpolate =  ImageUtils::to1D(row/2, col/2, numCols);
             
 		if (p == parent[p]) { //representante do node raiz
-            this->root = nodesTmp[p] = std::make_shared<NodeMT>(this->numNodes, pixelUnterpolate, nullptr, imgU[p]);
+            this->root = nodesTmp[p] = std::make_shared<NodeMT>(this->numNodes++, pixelUnterpolate, nullptr, imgU[p]);
 		}
 		else if (imgU[p] != imgU[parent[p]]) { //representante de um node
-			nodesTmp[p] = std::make_shared<NodeMT>(this->numNodes, pixelUnterpolate, nodesTmp[parent[p]], imgU[p]);
+			nodesTmp[p] = std::make_shared<NodeMT>(this->numNodes++, pixelUnterpolate, nodesTmp[parent[p]], imgU[p]);
 			nodesTmp[parent[p]]->addChild(nodesTmp[p]);
 		}
 		else if (imgU[p] == imgU[parent[p]]) {
 			nodesTmp[p] = nodesTmp[parent[p]];
 		}
 
-		if(px % 2 == 1 && py % 2 == 1){
+		if(row % 2 == 1 && col % 2 == 1){
 			nodesTmp[p]->addCNPs(pixelUnterpolate);
 			this->nodes[pixelUnterpolate] = nodesTmp[p];					
 		}
@@ -69,7 +69,7 @@ MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols){
 	if(this->root->getCNPs().size() == 0){
 		this->root->setResidue(0);
 	}
-
+	
 	computerTreeAttribute();
 	delete builder;
 	imgR = nullptr;
@@ -77,14 +77,16 @@ MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols){
 	parent = nullptr;
 	interpolationMin = nullptr;
 	interpolationMax = nullptr;
+	
 } 
 
 void MorphologicalTree::computerTreeAttribute(){
+	this->indexToNode.resize(this->numNodes);
 	this->numNodes = 0;
 	AttributeComputedIncrementally::computerAttribute(this->root,
 		[this](NodeMTPtr node) -> void { //pre-processing
+			this->indexToNode[this->numNodes] = node;
 			node->setIndex(this->numNodes++);
-			this->listNodes.push_back(node);
 		},
 		[](NodeMTPtr parent, NodeMTPtr child) -> void { //merge-processing
 			
@@ -149,9 +151,8 @@ MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols, bool is
 		}
 	}
 	
-
-	computerTreeAttribute();
 	
+	computerTreeAttribute();
 	delete builder;
 	builder = nullptr;
 	orderedPixels = nullptr;
@@ -167,6 +168,10 @@ NodeMTPtr MorphologicalTree::getSC(int pixel){
 	return this->nodes[pixel];
 }
 	
+NodeMTPtr MorphologicalTree::getNodeByIndex(int index){
+	return this->indexToNode[index];
+}
+
 NodeMTPtr MorphologicalTree::getRoot() {
 	return this->root;
 }
@@ -179,8 +184,8 @@ int MorphologicalTree::getTreeType(){
 	return this->treeType;
 }
 
-std::list<NodeMTPtr> MorphologicalTree::getListNodes(){
-	return this->listNodes;
+std::vector<NodeMTPtr>& MorphologicalTree::getIndexNode(){
+	return this->indexToNode;
 }
 
 int MorphologicalTree::getNumNodes(){
@@ -223,6 +228,16 @@ bool MorphologicalTree::isStrictComparable(NodeMTPtr u, NodeMTPtr v) {
     return isStrictAncestor(u, v) || isStrictAncestor(v, u);
 }
 
+NodeMTPtr MorphologicalTree::findLowestCommonAncestor(NodeMTPtr u, NodeMTPtr v){
+    // Troca para garantir que u não é mais profundo que v
+    if (u->getTimePreOrder() > v->getTimePreOrder())
+        std::swap(u, v);
+
+    while (!isAncestor(u, v)) {
+        u = u->getParent();
+    }
+    return u;
+}
 
 
 

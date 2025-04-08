@@ -5,6 +5,7 @@
 #include <iostream>
 #include <unordered_set>
 
+#include "../include/ImageUtils.hpp"
 #include "../include/NodeMT.hpp"
 #include "../include/MorphologicalTree.hpp"
 
@@ -13,22 +14,37 @@
 #include <iostream>
 
 
+/*
 inline void printTree(NodeMTPtr root, int indent = 0) {
     
     // Imprime o nó atual com indentação
     for (int i = 0; i < indent; ++i) {
         std::cout << "|-";
     }
-    std::cout << "Node: " << root->getIndex() <<  ", Level: " << root->getLevel()<< std::endl;
+    std::cout << "Node: " << root->getIndex() <<  ", Level: " << root->getLevel()<< ", cnps: " << root->getCNPs().size() << ", |children|:" << root->getChildren().size() << std::endl;
 
     // Chama recursivamente a função para cada filho
     for (NodeMTPtr child : root->getChildren()) {
         printTree(child, indent + 1);
     }
+}*/
+
+inline void printTree(NodeMTPtr root, std::string prefix = "", bool isLast = true) {
+    std::cout << prefix;
+    std::cout << (isLast ? "└──" : "├──");
+    std::cout << "ID: " << root->getIndex() <<  ", Level: " <<  root->getLevel()<< ", |cnps|: " << root->getCNPs().size() << std::endl;
+
+    prefix += (isLast ? "   " : "│  ");
+
+    int cont = 0;
+    for (NodeMTPtr child: root->getChildren()) {
+        printTree(child, prefix, cont == root->getChildren().size() - 1);
+        cont++;
+    }
 }
 
 
-inline void printMappingSC(MorphologicalTreePtr tree, std::string nomeArquivo = "") {
+inline void printMappingSC(MorphologicalTreePtr tree, int setw=4, std::string nomeArquivo = "") {
 
     int numRows = tree->getNumRowsOfImage();
     int numCols = tree->getNumColsOfImage();
@@ -50,15 +66,26 @@ inline void printMappingSC(MorphologicalTreePtr tree, std::string nomeArquivo = 
         }
         streamSaida = &arquivoSaida;
     }
-    if(tree->isMaxtree()){
-        *streamSaida << "---- max-tree ----" << "\n";
+    if(tree->getTreeType() == 0){
+        *streamSaida << "---- Mapping from pixel to small component of max-tree ----" << "\n";
+    }else if(tree->getTreeType() == 1){
+        *streamSaida << "---- Mapping from pixel to small component of min-tree ----" << "\n";
     }else{
-        *streamSaida << "---- min-tree ----" << "\n";
+        *streamSaida << "---- Mapping from pixel to small component of ToS ----" << "\n";
     }
-    // Impressão bidimensional
-   for (int i = 0; i < tree->getNumRowsOfImage(); ++i) {
-        for (int j = 0; j < tree->getNumColsOfImage(); ++j) {
-            *streamSaida << std::setw(2) <<  map[i * tree->getNumColsOfImage() + j] << " ";
+
+    // Imprime o cabeçalho de colunas
+    *streamSaida << std::setw(setw) << " "; // espaço para a primeira coluna (índice da linha)
+    for (int col = 0; col < numCols; col++) {
+        *streamSaida << std::setw(setw) << col;
+    }
+    *streamSaida << "\n";
+
+    // Impressão bidimensional com índice de linha
+    for (int row = 0; row < numRows; row++) {
+        *streamSaida << std::setw(setw) << row; // índice da linha
+        for (int col = 0; col < numCols; col++) {
+            *streamSaida << std::setw(setw) << map[ImageUtils::to1D(row, col, numCols)]; // ou ImageUtils::to1D(row, col, numCols)
         }
         *streamSaida << "\n";
     }
@@ -67,8 +94,7 @@ inline void printMappingSC(MorphologicalTreePtr tree, std::string nomeArquivo = 
     }
 
 }
-
-inline  void printConnectedComponent(NodeMTPtr node, MorphologicalTreePtr tree, std::string nomeArquivo = "") {
+inline void printConnectedComponents(MorphologicalTreePtr tree, int setw=3, std::string nomeArquivo = ""){
     int numRows = tree->getNumRowsOfImage();
     int numCols = tree->getNumColsOfImage();
     int n = numRows*numCols;
@@ -85,18 +111,81 @@ inline  void printConnectedComponent(NodeMTPtr node, MorphologicalTreePtr tree, 
         }
         streamSaida = &arquivoSaida;
     }
-    if(tree->isMaxtree()){
-        *streamSaida << "---- max-tree ----" << "\n";
-    }else{
-        *streamSaida << "---- min-tree ----" << "\n";
+    auto printTreeType = [](int tipo) {
+        if (tipo == 0)
+            return "max-tree";
+        else if (tipo == 1)
+            return "min-tree";
+        else
+            return "tree of shapes";
+    };
+    *streamSaida << "----------- Connected components of "<< printTreeType(tree->getTreeType()) <<"  -----------\n" << std::endl;
+    for(NodeMTPtr node: tree->getRoot()->getIteratorBreadthFirstTraversal()){
+        *streamSaida << "---- ID: " << node->getIndex() 
+                    << ", level:" << node->getLevel() 
+                    << ", |cnps|:" << node->getCNPs().size()
+                    << ", Area:" << node->getAreaCC()  << " ---\n";
+        
+        // Imprime o cabeçalho de colunas
+        *streamSaida << std::setw(setw) << " "; // espaço para a primeira coluna (índice da linha)
+        for (int col = 0; col < numCols; col++) {
+            *streamSaida << std::setw(setw) << col;
+        }
+        *streamSaida << "\n";
+        // Impressão bidimensional
+        for (int row = 0; row < numRows; ++row) {
+            *streamSaida << std::setw(setw) << row; // índice da linha
+            for (int col = 0; col < numCols; ++col) {
+                if(tree->isDescendant(tree->getSC(ImageUtils::to1D(row, col, numCols)), node)){
+                    *streamSaida << std::setw(setw) << 1;
+                }else{
+                    *streamSaida << std::setw(setw) << 0;
+                }
+            }
+            *streamSaida << "\n";
+        }
     }
+    if (streamSaida != &std::cout){
+        dynamic_cast<std::ofstream*>(streamSaida)->close(); // std::cout não precisa ser fechado explicitamente
+    }
+}
+
+inline  void printConnectedComponent(NodeMTPtr node, MorphologicalTreePtr tree, int setw=3, std::string nomeArquivo = "") {
+    int numRows = tree->getNumRowsOfImage();
+    int numCols = tree->getNumColsOfImage();
+    int n = numRows*numCols;
+    std::ostream* streamSaida;
+    std::ofstream arquivoSaida;
+
+    if (nomeArquivo.empty()) {
+        streamSaida = &std::cout;
+    } else {
+        arquivoSaida.open(nomeArquivo); 
+        if (!arquivoSaida.is_open()) {
+            std::cerr << "Erro ao abrir o arquivo para escrita." << std::endl;
+            return;
+        }
+        streamSaida = &arquivoSaida;
+    }
+    *streamSaida << "---- ID: " << node->getIndex() 
+                 << ", level:" << node->getLevel() 
+                 << ", |cnps|:" << node->getCNPs().size()
+                 << ", Area:" << node->getAreaCC()  << " ---\n";
+    
+    // Imprime o cabeçalho de colunas
+    *streamSaida << std::setw(setw) << " "; // espaço para a primeira coluna (índice da linha)
+    for (int col = 0; col < numCols; col++) {
+        *streamSaida << std::setw(setw) << col;
+    }
+    *streamSaida << "\n";                 
     // Impressão bidimensional
-   for (int i = 0; i < numRows; ++i) {
-        for (int j = 0; j < numCols; ++j) {
-            if(tree->getSC(i * numCols + j) == node){
-                *streamSaida <<  1 << " ";
+    for (int row = 0; row < numRows; ++row) {
+        *streamSaida << std::setw(setw) << row; // índice da linha
+        for (int col = 0; col < numCols; ++col) {
+            if(tree->isDescendant(tree->getSC(ImageUtils::to1D(row, col, numCols)), node)){
+                *streamSaida << std::setw(setw) << 1;
             }else{
-                *streamSaida <<  0 << " ";
+                *streamSaida << std::setw(setw) << 0;
             }
         }
         *streamSaida << "\n";
@@ -107,10 +196,11 @@ inline  void printConnectedComponent(NodeMTPtr node, MorphologicalTreePtr tree, 
 
 }
 
-inline  void printImage(int* img, int numRows, int numCols, std::string nomeArquivo = "") {
-    int n = numRows*numCols;
+inline void printImage(int* img, int numRows, int numCols, int setw=4, std::string nomeArquivo = "") {
+    int n = numRows * numCols;
     std::ostream* streamSaida;
     std::ofstream arquivoSaida;
+
     if (nomeArquivo.empty()) {
         streamSaida = &std::cout;
     } else {
@@ -122,17 +212,25 @@ inline  void printImage(int* img, int numRows, int numCols, std::string nomeArqu
         streamSaida = &arquivoSaida;
     }
 
-    // Impressão bidimensional
-   for (int i = 0; i < numRows; ++i) {
-        for (int j = 0; j < numCols; ++j) {
-            *streamSaida << std::setw(2) <<  img[i * numCols + j] << " ";
+    // Imprime o cabeçalho de colunas
+    *streamSaida << std::setw(setw) << " "; // espaço para a primeira coluna (índice da linha)
+    for (int col = 0; col < numCols; col++) {
+        *streamSaida << std::setw(setw) << col;
+    }
+    *streamSaida << "\n";
+
+    // Impressão bidimensional com índice de linha
+    for (int row = 0; row < numRows; row++) {
+        *streamSaida << std::setw(setw) << row; // índice da linha
+        for (int col = 0; col < numCols; col++) {
+            *streamSaida << std::setw(setw) << img[ImageUtils::to1D(row, col, numCols)]; // ou ImageUtils::to1D(row, col, numCols)
         }
         *streamSaida << "\n";
     }
-    if (streamSaida != &std::cout){
-        dynamic_cast<std::ofstream*>(streamSaida)->close(); // std::cout não precisa ser fechado explicitamente
-    }
 
+    if (streamSaida != &std::cout) {
+        dynamic_cast<std::ofstream*>(streamSaida)->close();
+    }
 }
 
 
@@ -149,8 +247,6 @@ inline bool isEquals(int* imgOut1, int* imgOut2, int size){
  }
 
 
-
- template <typename CNPsType>
  inline  void testComponentTree(MorphologicalTreePtr tree, const std::string& treeType, int* img, int numRows, int numCols) {
     std::cout << "🔍 Testando " << treeType << "..." << std::endl;
 
@@ -274,24 +370,36 @@ inline NodeMTPtr getNodeByIndex(MorphologicalTreePtr tree, int index){
 }
 
 inline int* get2CsImage(int& numRows, int& numCols){
-    int* img = new int[110]{
-        4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-        4, 5, 5, 5, 5, 5, 5, 4, 4, 4,
-        4, 5, 5, 5, 5, 5, 5, 4, 4, 4,
-        4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-        4, 4, 0, 0, 0, 7, 7, 7, 4, 4,
-        4, 4, 0, 0, 0, 7, 7, 7, 4, 4,
-        4, 4, 0, 0, 4, 4, 7, 7, 4, 4,
-        4, 4, 0, 0, 0, 7, 7, 7, 4, 4,
-        4, 4, 0, 0, 0, 7, 7, 7, 4, 4,
-        4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-        4, 4, 4, 4, 4, 4, 4, 4, 4, 4
+    int* img = new int[100]{
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 4,        
+        4, 4, 1, 1, 1, 7, 7, 7, 4, 4,
+        4, 4, 1, 1, 1, 7, 7, 7, 4, 4,
+        4, 4, 1, 1, 4, 4, 7, 7, 4, 4,
+        4, 4, 1, 1, 4, 4, 7, 7, 4, 4,
+        4, 4, 1, 1, 4, 4, 7, 7, 4, 4,
+        4, 4, 1, 1, 1, 7, 7, 7, 4, 4,
+        4, 4, 1, 1, 1, 7, 7, 7, 4, 4,
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 3,
+        3, 3, 3, 3, 3, 3, 3, 3, 3, 4
     };
 
     numCols = 10;
-    numRows = 11;
+    numRows = 10;
     return img;
 }
+inline int* getCriticalImage(int& numRows, int& numCols){
+    int* img = new int[30]{
+        2, 2, 2, 2, 2, 2,
+        2, 0, 0, 0, 0, 2,
+        2, 0, 2, 2, 0, 2,
+        2, 2, 0, 0, 0, 2,
+        2, 2, 2, 2, 2, 2};
+        
+    numCols = 6;
+    numRows = 5;
+    return img;
+}
+
 
 inline int* getWonderImage(int& numRows, int& numCols){
     int* img = new int[625]{
@@ -765,28 +873,65 @@ inline int* getLenaCropImage(int& numRows, int& numCols){
 
 
 inline int* getSimpleImage(int& numRows, int& numCols){
-    
+    /*
     int* img=new int[255]{
-        122, 127, 166, 201, 152,  96,  54,  44,  40,  41,  42,  43,  44,
-        44,  37, 133, 143, 213, 246, 236, 196, 137,  85,  55,  43,  44,
-        45,  35,  40,  42, 133, 168, 231, 242, 246, 246, 228, 172, 111,
-        74,  76,  80,  54,  52,  41, 147, 215, 222, 199, 220, 235, 244,
-       237, 205, 172, 181, 186, 106,  57,  47, 164, 235, 224, 149, 168,
-       208, 231, 244, 248, 246, 246, 230, 133,  58,  62, 140, 224, 237,
-       161, 128, 149, 180, 227, 245, 248, 247, 243, 189, 103,  94, 134,
-       211, 240, 181, 109, 105, 120, 168, 223, 240, 241, 246, 237, 176,
-       110, 117, 188, 244, 210, 111,  74,  86, 144, 215, 230, 219, 227,
-       232, 212, 133,  66, 159, 242, 238, 149,  75,  78, 163, 238, 212,
-       172, 198, 219, 175, 111,  75, 144, 231, 244, 171,  81, 113, 212,
-       222, 149, 108, 115, 137, 118,  99,  78, 139, 222, 245, 185, 115,
-       176, 229, 176,  85,  62,  79,  95,  98, 107,  48, 102, 199, 241,
-       220, 171, 220, 208, 125,  47,  45,  73,  90,  98, 104,  41,  72,
-       171, 240, 242, 233, 226, 149,  65,  39,  60,  97, 104, 106, 112,
-        54,  68, 140, 228, 238, 236, 194, 100,  44,  48,  85, 100, 104,
-       107, 122,  54,  54,  94, 181, 222, 214, 141,  67,  40,  72,  99,
-       105, 106, 109, 123,  54,  48,  59,  95, 145, 158,  84,  52,  60,
-        96, 110, 115, 116, 110, 113,  49,  45,  44,  48,  71,  89,  49,
-        47,  71,  95, 162, 156, 119, 122, 111};
+        122, 127, 166, 201, 152,  96,  54,  44,  40,  41,  42,  43,  44,  44,  37, 
+        133, 143, 213, 246, 236, 196, 137,  85,  55,  43,  44,  45,  35,  40,  42, 
+        133, 168, 231, 242, 246, 246, 228, 172, 111,  74,  76,  80,  54,  52,  41, 
+        147, 215, 222, 199, 220, 235, 244, 237, 205, 172, 181, 186, 106,  57,  47, 
+        164, 235, 224, 149, 168, 208, 231, 244, 248, 246, 246, 230, 133,  58,  62,
+        140, 224, 237, 161, 128, 149, 180, 227, 245, 248, 247, 243, 189, 103,  94, 
+        134, 211, 240, 181, 109, 105, 120, 168, 223, 240, 241, 246, 237, 176, 110, 
+        117, 188, 244, 210, 111,  74,  86, 144, 215, 230, 219, 227, 232, 212, 133,  
+        66, 159,  242, 238, 149,  75,  78, 163, 238, 212, 172, 198, 219, 175, 111,  
+        75, 144,  231, 244, 171,  81, 113, 212, 222, 149, 108, 115, 137, 118,  99,
+        78, 139,  222, 245, 185, 115, 176, 229, 176,  85,  62,  79,  95,  98, 107,  
+        48, 102,  199, 241, 220, 171, 220, 208, 125,  47,  45,  73,  90,  98, 104,  
+        41,  72,  171, 240, 242, 233, 226, 149,  65,  39,  60,  97, 104, 106, 112,
+        54,  68,  140, 228, 238, 236, 194, 100,  44,  48,  85, 100, 104, 107, 122,  
+        54,  54,   94, 181, 222, 214, 141,  67,  40,  72,  99, 105, 106, 109, 123,  
+        54,  48,   59,  95, 145, 158,  84,  52,  60,  96, 110, 115, 116, 110, 113,  
+        49,  45,   44,  48,  71,  89,  49,  47,  71,  95, 162, 156, 119, 122, 111};
+        */
+   /* int* img=new int[255]{
+        14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14,
+        14, 14,213,253,241,193,122, 60, 14, 14, 14, 14, 14, 14, 14,
+        14,159,235,248,253,253,231,164, 91, 47, 49, 14, 14, 14, 14,
+        14,215,224,196,221,239,250,242,204,164,175,181, 85, 14, 14,
+        14,239,226,136,159,207,235,250,255,253,253,233,117, 14, 14,
+        14,226,242,151, 14, 14,174,230,251,255,254,249,184, 81, 14,
+        14,211,245,175, 14, 14, 14, 159,225,245,247,253,242,169,14,
+        14,183,250,210, 14, 14, 14, 130,215,233,220,230,236,212,14,
+        14,148,248,243,136, 14, 14, 153,243,212,164,195,220,168,14,
+        14,130,235,250,163, 14, 93, 212,224,136, 87, 96,122, 99,14,
+        14,125,224,251,180, 96,169, 232,169, 60, 32, 53, 72, 14,14,
+        14, 80,196,247,221,163,221, 207,108, 14, 12, 14, 14, 14,14,
+        14, 44,163,245,248,237,229, 136, 36, 14, 14, 14, 14, 14,14,
+        14, 40,126,231,243,241,190,  78, 14, 16, 14, 14, 14, 14,14,
+        14, 14, 71,175,224,214,127,  14, 14, 14, 14, 14, 14, 14,14,
+        14, 14, 29, 72,132,147, 59,  14, 14, 14, 14, 14, 14, 14,14,
+        14, 14, 14, 14, 14, 14, 14,  14, 14, 14, 14, 14, 14, 14,14};
+        */
+
+        int* img=new int[255]{
+            10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+            10, 10,215,255,255,150,150, 10, 10, 10, 10, 10, 10, 10, 10,
+            10,150,255,255,255,255,255,150, 10, 10, 10, 10, 10, 10, 10,
+            10,215,225,150,225,255,255,255,255,150,150,150, 10, 10, 10,
+            10,225,225,150,150,215,255,255,255,255,255,255,150, 10, 10,
+            10,225,255,150, 10, 10,150,255,255,255,255,255,150, 10, 10,
+            10,215,255,150, 10, 10, 10, 150,225,255,255,255,255,150,10,
+            10,150,255,255, 10, 10, 10, 150,225,255,255,255,255,215,10,
+            10,150,255,255,150, 10, 10, 150,225,150,150,150,255,150,10,
+            10,150,255,255,150, 10, 10, 215,215, 10, 10, 10,150, 10,10,
+            10,150,255,255,150, 10,150, 215,150, 10, 10, 10, 10, 10,10,
+            10, 10,150,255,225,150,225, 215,150, 10, 10, 10, 10, 10,10,
+            10, 10,150,255,255,255,225, 150, 10, 10, 10, 10, 10, 10,10,
+            10, 10,150,255,255,255,150,  10, 10, 10, 10, 10, 10, 10,10,
+            10, 10, 10,150,225,255,150,  10, 10, 10, 10, 10, 10, 10,10,
+            10, 10, 10, 10,150,150, 10,  10, 10, 10, 10, 10, 10, 10,10,
+            10, 10, 10, 10, 10, 10, 10,  10, 10, 10, 10, 10, 10, 10,10};
+
 
     numRows=17;
     numCols=15;

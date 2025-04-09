@@ -12,7 +12,7 @@
 int main() {
     // Definição da imagem e parâmetros
     int numRows, numCols;
-    int* img = getSimpleImage(numRows, numCols);
+    int* img = getLenaCropImage(numRows, numCols);
     int n = numRows * numCols;
     double radioAdj = 1.5;
     AdjacencyRelationPtr adj = std::make_shared<AdjacencyRelation>(numRows, numCols, 1);
@@ -22,20 +22,22 @@ int main() {
 
     //imagem binaria
     
-    printImage(img, numRows, numCols);
+    //printImage(img, numRows, numCols);
 
     // Criação das Component Trees
     MorphologicalTreePtr tree = std::make_shared<MorphologicalTree>(img, numRows, numCols);
-
-    testComponentTree(tree, "ToS", img, numRows, numCols);
     std::cout << "Depth:" << tree->getDepth() << std::endl;
+    /*
+    testComponentTree(tree, "ToS", img, numRows, numCols);
     std::cout << "--- Tree --- "<< std::endl;
     printTree(tree->getRoot());
     std::cout << std::endl;
     
     printConnectedComponents(tree);
     std::cout << std::endl;
-    printMappingSC(tree, 3);
+    */
+    printMappingSC(tree, 4);
+    
 
     std::vector<std::unordered_set<int>> countors = AttributeComputedIncrementally::extractCountors(tree);
     std::vector<std::vector<NodeMTPtr>> nodesByDepth = tree->getNodesByDepth();
@@ -52,9 +54,17 @@ int main() {
                 contoursInc[p] = 1;
             }
             int* imgBin = new int[n]();
-            for(int p: node->getPixelsOfCC()){
+            /*for(int p: node->getPixelsOfCC()){
                 imgBin[p] = 1;
+            }*/
+            for (int row = 0; row < numRows; ++row) {
+                for (int col = 0; col < numCols; ++col) {
+                    if(tree->isDescendant(tree->getSC(ImageUtils::to1D(row, col, numCols)), node)){
+                        imgBin[ImageUtils::to1D(row, col, numCols)] = 1;
+                    }
+                }
             }
+
             for (int p=0; p < n; p++ ) {
                 auto [row, col] = ImageUtils::to2D(p, numCols);
                 if(imgBin[p]==1 && (row ==0 || col ==0 || col == numCols-1 || row == numRows-1)){
@@ -68,7 +78,11 @@ int main() {
                 }
             }
            // std::cout << "\nCBinaria" << std::endl;
-           // printImage(imgBin, numRows, numCols);
+           /*if(depth==0){
+                std::cout << "|nodesDepth|: " << nodesDepth.size() << std::endl;
+                printConnectedComponent(node, tree);
+                printImage(imgBin, numRows, numCols);
+           }*/
             delete[] imgBin;
         }
        

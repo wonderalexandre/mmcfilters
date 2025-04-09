@@ -92,7 +92,42 @@ public:
 };
 
 
+/**
+ * Método Euler Tour + RMQ
+  
+ Etapa 1: Euler Tour
+    Realiza um DFS na árvore e registra:
+	1.	A ordem dos nós visitados → euler[]
+	2.	A profundidade de cada nó na árvore durante o percurso → depth[]
+	3.	A índice da primeira ocorrência de cada nó no vetor euler → firstOccurrence[]
 
+  Etapa 2: RMQ na profundidade
+    Para responder LCA(u, v):
+	1.	Pegue i = firstOccurrence[u], 
+              j = firstOccurrence[v]
+	2.	Realize um RMQ (Range Minimum Query) sobre o vetor depth[] entre as posições min(i, j) e max(i, j) no vetor euler[].
+	3.	O resultado do RMQ será o índice do nó com menor profundidade entre u e v no caminho — ou seja, o LCA!
+
+    Exemplo:
+      0
+     / \
+    1   2
+   /
+  3
+  Índices:         0  1  2  3  4  5  6
+  euler =         [0, 1, 3, 1, 0, 2, 0]
+  depth =         [0, 1, 2, 1, 0, 1, 0]
+  firstOccurrence=[0, 1, 5, 2         ]
+    
+  LCA(3, 2) = 0
+    i = firstOccurrence[3] = 2
+    j = firstOccurrence[2] = 5
+    RMQ: 
+      1. Descobrir o intervalo no vetor depth: depth[2..5] = [2, 1, 0, 1]
+      2. Encontrar a posição do menor valor: O mínimo é 0, que ocorre em depth[4]
+      3. O correspondente em no vetor euler: euler[4] = 0 que é o indice do LCA
+	
+ */
 
 class LCAEulerRMQ {
 private:
@@ -103,16 +138,16 @@ private:
     std::vector<NodeMTPtr> indexToNode;  // acesso direto aos nós via timePreOrder
 
 public:
-    LCAEulerRMQ(const MorphologicalTreePtr& tree) {
+    LCAEulerRMQ(MorphologicalTreePtr tree) {
         indexToNode = tree->getIndexNode(); // indexado por timePreOrder
         int n = indexToNode.size();
         firstOccurrence.resize(n, -1);
 
-        dfs(tree->getRoot(), 0);
+        depthFirstTraversal(tree->getRoot(), 0);
         buildSparseTable();
     }
 
-	NodeMTPtr findLowestCommonAncestor(const NodeMTPtr& u, const NodeMTPtr& v) {
+	NodeMTPtr findLowestCommonAncestor(NodeMTPtr u, NodeMTPtr v) {
         int uTime = u->getIndex();
         int vTime = v->getIndex();
         int i = firstOccurrence[uTime];
@@ -124,7 +159,7 @@ public:
 
 
 private:
-    void dfs(const NodeMTPtr& node, int d) {
+    void depthFirstTraversal(NodeMTPtr node, int d) {
         int time = node->getIndex();
         if (firstOccurrence[time] == -1)
             firstOccurrence[time] = euler.size();
@@ -132,8 +167,8 @@ private:
         euler.push_back(time);
         depth.push_back(d);
 
-        for (const auto& child : node->getChildren()) {
-            dfs(child, d + 1);
+        for (NodeMTPtr child : node->getChildren()) {
+            depthFirstTraversal(child, d + 1);
             euler.push_back(time);
             depth.push_back(d);
         }

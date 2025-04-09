@@ -93,11 +93,8 @@ public:
 		std::vector<std::unordered_set<int>> contoursToRemove(tree->getNumNodes());
 		std::vector<int> ncount(tree->getNumRowsOfImage() * tree->getNumColsOfImage(), 0);
 		AdjacencyRelationPtr adj4 = std::make_shared<AdjacencyRelation>(tree->getNumRowsOfImage(), tree->getNumColsOfImage(), 1);
-		AdjacencyRelationPtr adj4_2 = std::make_shared<AdjacencyRelation>(tree->getNumRowsOfImage(), tree->getNumColsOfImage(), 1);
-
 		LCAEulerRMQ lca(tree);	
-		const int ROW = 8;
-		const int COL = 8;
+
 		AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
 			[](NodeMTPtr node) -> void { // pre-processing
 
@@ -107,99 +104,50 @@ public:
 				for (int p : contours[child->getIndex()]){
 					Ncontour.insert(p);
 				}
-
-				
-
 			},
-			[&contours, &contoursToRemove, &lca, &ncount, tree, adj4, adj4_2](NodeMTPtr node) -> void { // post-processing
+			[&contours, &contoursToRemove, &lca, &ncount, tree, adj4](NodeMTPtr node) -> void { // post-processing
 				// Initialise contours of node "N"
 				std::unordered_set<int> &Ncontour = contours[node->getIndex()];
-
 				std::unordered_set<int> &NcontourToRemove = contoursToRemove[node->getIndex()];
 				for(int p: NcontourToRemove){
-					std::pair<int, int> coordsP = ImageUtils::to2D(p, tree->getNumColsOfImage());
-					int pRow = coordsP.first;
-					int pCol = coordsP.second;
 					bool isRemoved = true;
-					for (int q : adj4->getAdjPixels(p)) {
-						std::pair<int, int> coordsQ = ImageUtils::to2D(q, tree->getNumColsOfImage());
-						int qRow = coordsQ.first;
-						int qCol = coordsQ.second;
+					for (int q : adj4->getNeighboringPixels(p)) {
 						NodeMTPtr nodeQ = tree->getSC(q); 
-						
-						if (p != q && tree->isStrictDescendant(node, nodeQ)) { ////maxtree:  SC(q) \subset SC(p) <=> f(p) < f(q)
+						if (tree->isStrictDescendant(node, nodeQ) || !tree->isComparable(node, nodeQ)) { 
+							contoursToRemove[nodeQ->getIndex()].insert(p);
 							isRemoved = false;	
 							break;
 					  	}
 					}
-					if(isRemoved){
-						ncount[p]=0;
+					if(!adj4->isBorderDomainImage(p) && isRemoved){
+						//ncount[p]--;
 						Ncontour.erase(p);
 					}
 				}
 			
 				for (int p : node->getCNPs()) {
-					std::pair<int, int> coordsP = ImageUtils::to2D(p, tree->getNumColsOfImage());
-					int pRow = coordsP.first;
-					int pCol = coordsP.second;
-					if(pRow == ROW && pCol == COL){
-						std::cout << "---- P -> NodeID:" << node->getIndex() << "\tPixelP: " << p << " ----- " << std::endl;
-					}
-					if (pRow == 0 || pCol == 0 || pCol == tree->getNumColsOfImage() - 1 || pRow == tree->getNumRowsOfImage() - 1){
+					if (adj4->isBorderDomainImage(p)){
 						ncount[p]++;
-						if(pRow == ROW && pCol == COL){
-							std::cout <<"Ncount+:  P-NodeID:" << node->getIndex() << "\tPixelP: " << p << std::endl;
-						}
 					}
-					for (int q : adj4->getAdjPixels(p)) {
-						
-						std::pair<int, int> coordsQ = ImageUtils::to2D(q, tree->getNumColsOfImage());
-						int qRow = coordsQ.first;
-						int qCol = coordsQ.second;
+					for (int q : adj4->getNeighboringPixels(p)) {
 						NodeMTPtr nodeQ = tree->getSC(q); 
-						if(qRow == ROW && qCol == COL){
-							std::cout <<"VizinhançaP: P-NodeID:" << node->getIndex() << " => Q-NodeID:" << nodeQ->getIndex()<< "\tPixelP: " << p << "\tPixelQ: " << q << std::endl;
-						}
-						if(!(qRow == 0 || qCol == 0 || qCol == tree->getNumColsOfImage() - 1 || qRow == tree->getNumRowsOfImage() - 1) 
-							&& !(pRow == 0 || pCol == 0 || pCol == tree->getNumColsOfImage() - 1 || pRow == tree->getNumRowsOfImage() - 1) 
-							&& node != nodeQ 
-							&& !tree->isComparable(node, nodeQ)){
+						if(!tree->isComparable(node, tree->getSC(q))){
 							NodeMTPtr nodeLCA = lca.findLowestCommonAncestor(node, nodeQ);
-							if(p == 128){
-								std::cout <<"nodeID:" << nodeLCA->getIndex() << std::endl;
-							}
 							std::unordered_set<int> &NcontourToRemove = contoursToRemove[nodeLCA->getIndex()];
 							NcontourToRemove.insert(p);
 							ncount[p]++;
-							if(qRow == ROW && qCol == COL){
-								std::cout <<"NonComp:  P-NodeID:" << node->getIndex() << " => Q-NodeID:" << nodeQ->getIndex()<< "\tPixelP: " << p << "\tPixelQ: " << q << std::endl;
-							}
-							
 						}
 						else if(tree->isStrictDescendant(node, nodeQ)){  //maxtree:  SC(p) \subset SC(q) <=> f(p) > f(q)
 					  		ncount[p]++;
-							if(qRow == ROW && qCol == COL){
-								std::cout <<"Ncount++:  P-NodeID:" << node->getIndex() << " => Q-NodeID:" << nodeQ->getIndex()<< "\tPixelP: " << p << "\tPixelQ: " << q << std::endl;
-							}
 						}else if (tree->isStrictAncestor(node, nodeQ)) { ////maxtree:  SC(q) \subset SC(p) <=> f(p) < f(q)
 					  		ncount[q]--;
-
-					  		if (ncount[q] == 0) {
+							if (ncount[q] == 0) {
 								Ncontour.erase(q);
-							}
-							if(qRow == ROW && qCol == COL){
-								std::cout <<"Del:  P-NodeID:" << node->getIndex() << " => Q-NodeID:" << nodeQ->getIndex()<< "\tPixelP: " << p << "\tPixelQ: " << q << std::endl;
 							}
 						}
 				  	}
 
 				  	if (ncount[p] > 0){
-						std::pair<int, int> coordsP = ImageUtils::to2D(p, tree->getNumColsOfImage());
-						int pRow = coordsP.first;
-						int pCol = coordsP.second;
-						if(pRow == ROW && pCol == COL){
-							std::cout <<"Add  P-NodeID:" << node->getIndex()<< std::endl;
-						}
 						Ncontour.insert(p);
 					}
 				}

@@ -157,6 +157,26 @@ AdjacencyRelation& AdjacencyRelation::getAdjPixels(int index){
     return getAdjPixels(row, col);
 }
 
+AdjacencyRelation& AdjacencyRelation::getNeighboringPixels(int row, int col){
+    this->row = row;
+    this->col = col;
+    this->id = 0;
+    return *this;
+}
+
+AdjacencyRelation& AdjacencyRelation::getNeighboringPixels(int index){
+	auto [row, col] = ImageUtils::to2D(index, this->numCols);
+    return getNeighboringPixels(row, col);
+}
+
+bool AdjacencyRelation::isBorderDomainImage(int index){
+	auto[row, col] = ImageUtils::to2D(index, this->numCols);
+	return isBorderDomainImage(row, col);
+}
+bool AdjacencyRelation::isBorderDomainImage(int row, int col){
+	return row == 0 || col == 0 || row == this->numRows - 1 || col == this->numCols - 1;
+}
+
 bool AdjacencyRelation::isValid(int index){
 	auto [row, col] = ImageUtils::to2D(index, this->numCols);
 	return isValid(row, col);

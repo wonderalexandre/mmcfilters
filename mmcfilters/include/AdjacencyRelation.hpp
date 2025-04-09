@@ -32,9 +32,12 @@ public:
     int getSize();
     AdjacencyRelation& getAdjPixels(int row, int col);
     AdjacencyRelation& getAdjPixels(int index);
+    AdjacencyRelation& getNeighboringPixels(int row, int col);
+    AdjacencyRelation& getNeighboringPixels(int index);
     bool isValid(int index);
     bool isValid(int row, int col);
-
+    bool isBorderDomainImage(int index);
+    bool isBorderDomainImage(int row, int col);
     class IteratorAdjacency{ 
         private:
     	    int index;

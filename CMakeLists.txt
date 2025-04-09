@@ -87,7 +87,10 @@ if(BUILD_TESTS)
     # Adicionar o executável de testes: 
     add_executable(TesteCountors 
         mmcfilters/test/TesteCountors.cpp
+        external/stb/stb_image.cpp
     )
     target_link_libraries(TesteCountors PRIVATE mmcfilters_lib)
+    target_compile_options(TesteCountors PRIVATE -Wno-deprecated-declarations)
+    
 
 endif()

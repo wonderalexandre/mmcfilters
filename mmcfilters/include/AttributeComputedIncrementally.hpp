@@ -110,17 +110,15 @@ public:
 				std::unordered_set<int> &Ncontour = contours[node->getIndex()];
 				std::unordered_set<int> &NcontourToRemove = contoursToRemove[node->getIndex()];
 				for(int p: NcontourToRemove){
-					bool isRemoved = true;
+					bool isPixelToBeRemoved = true;
 					for (int q : adj4->getNeighboringPixels(p)) {
 						NodeMTPtr nodeQ = tree->getSC(q); 
 						if (tree->isStrictDescendant(node, nodeQ) || !tree->isComparable(node, nodeQ)) { 
 							contoursToRemove[nodeQ->getIndex()].insert(p);
-							isRemoved = false;	
-							break;
+							isPixelToBeRemoved = false;	
 					  	}
 					}
-					if(!adj4->isBorderDomainImage(p) && isRemoved){
-						//ncount[p]--;
+					if(!adj4->isBorderDomainImage(p) && isPixelToBeRemoved){
 						Ncontour.erase(p);
 					}
 				}

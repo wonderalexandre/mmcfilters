@@ -114,9 +114,30 @@ public:
 			[&contours, &contoursToRemove, &lca, &ncount, tree, adj4, adj4_2](NodeMTPtr node) -> void { // post-processing
 				// Initialise contours of node "N"
 				std::unordered_set<int> &Ncontour = contours[node->getIndex()];
-					
 
-
+				std::unordered_set<int> &NcontourToRemove = contoursToRemove[node->getIndex()];
+				for(int p: NcontourToRemove){
+					std::pair<int, int> coordsP = ImageUtils::to2D(p, tree->getNumColsOfImage());
+					int pRow = coordsP.first;
+					int pCol = coordsP.second;
+					bool isRemoved = true;
+					for (int q : adj4->getAdjPixels(p)) {
+						std::pair<int, int> coordsQ = ImageUtils::to2D(q, tree->getNumColsOfImage());
+						int qRow = coordsQ.first;
+						int qCol = coordsQ.second;
+						NodeMTPtr nodeQ = tree->getSC(q); 
+						
+						if (p != q && tree->isStrictDescendant(node, nodeQ)) { ////maxtree:  SC(q) \subset SC(p) <=> f(p) < f(q)
+							isRemoved = false;	
+							break;
+					  	}
+					}
+					if(isRemoved){
+						ncount[p]=0;
+						Ncontour.erase(p);
+					}
+				}
+			
 				for (int p : node->getCNPs()) {
 					std::pair<int, int> coordsP = ImageUtils::to2D(p, tree->getNumColsOfImage());
 					int pRow = coordsP.first;
@@ -139,13 +160,12 @@ public:
 						if(qRow == ROW && qCol == COL){
 							std::cout <<"VizinhançaP: P-NodeID:" << node->getIndex() << " => Q-NodeID:" << nodeQ->getIndex()<< "\tPixelP: " << p << "\tPixelQ: " << q << std::endl;
 						}
-						if( 
-							!(qRow == 0 || qCol == 0 || qCol == tree->getNumColsOfImage() - 1 || qRow == tree->getNumRowsOfImage() - 1) 
+						if(!(qRow == 0 || qCol == 0 || qCol == tree->getNumColsOfImage() - 1 || qRow == tree->getNumRowsOfImage() - 1) 
 							&& !(pRow == 0 || pCol == 0 || pCol == tree->getNumColsOfImage() - 1 || pRow == tree->getNumRowsOfImage() - 1) 
 							&& node != nodeQ 
 							&& !tree->isComparable(node, nodeQ)){
 							NodeMTPtr nodeLCA = lca.findLowestCommonAncestor(node, nodeQ);
-							if(p == 157){
+							if(p == 128){
 								std::cout <<"nodeID:" << nodeLCA->getIndex() << std::endl;
 							}
 							std::unordered_set<int> &NcontourToRemove = contoursToRemove[nodeLCA->getIndex()];
@@ -181,19 +201,6 @@ public:
 							std::cout <<"Add  P-NodeID:" << node->getIndex()<< std::endl;
 						}
 						Ncontour.insert(p);
-					}
-				}
-
-				std::unordered_set<int> &NcontourToRemove = contoursToRemove[node->getIndex()];
-				for(int p: NcontourToRemove){
-					std::pair<int, int> coordsP = ImageUtils::to2D(p, tree->getNumColsOfImage());
-					int pRow = coordsP.first;
-					int pCol = coordsP.second;
-					Ncontour.erase(p);
-					
-
-					if(pRow == ROW && pCol == COL){
-						std::cout <<"ToRemove - NodeID:" << node->getIndex() << "\tPixelP: " << p << std::endl;
 					}
 				}
 

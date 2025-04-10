@@ -90,7 +90,7 @@ public:
 
 	static std::vector<std::unordered_set<int>> extractCountors(MorphologicalTreePtr tree){
 		std::vector<std::unordered_set<int>> contours(tree->getNumNodes());
-		std::vector<std::unordered_set<int>> contoursToRemove(tree->getNumNodes());
+		std::vector<std::list<int>> contoursToRemove(tree->getNumNodes());
 		std::vector<int> ncount(tree->getNumRowsOfImage() * tree->getNumColsOfImage(), 0);
 		AdjacencyRelationPtr adj4 = std::make_shared<AdjacencyRelation>(tree->getNumRowsOfImage(), tree->getNumColsOfImage(), 1);
 		LCAEulerRMQ lca(tree);	
@@ -108,13 +108,13 @@ public:
 			[&contours, &contoursToRemove, &lca, &ncount, tree, adj4](NodeMTPtr node) -> void { // post-processing
 				// Initialise contours of node "N"
 				std::unordered_set<int> &Ncontour = contours[node->getIndex()];
-				std::unordered_set<int> &NcontourToRemove = contoursToRemove[node->getIndex()];
+				std::list<int> &NcontourToRemove = contoursToRemove[node->getIndex()];
 				for(int p: NcontourToRemove){
 					bool isPixelToBeRemoved = true;
 					for (int q : adj4->getNeighboringPixels(p)) {
 						NodeMTPtr nodeQ = tree->getSC(q); 
 						if (tree->isStrictDescendant(node, nodeQ) || !tree->isComparable(node, nodeQ)) { 
-							contoursToRemove[nodeQ->getIndex()].insert(p);
+							contoursToRemove[nodeQ->getIndex()].push_back(p);
 							isPixelToBeRemoved = false;	
 					  	}
 					}
@@ -131,8 +131,8 @@ public:
 						NodeMTPtr nodeQ = tree->getSC(q); 
 						if(!tree->isComparable(node, tree->getSC(q))){
 							NodeMTPtr nodeLCA = lca.findLowestCommonAncestor(node, nodeQ);
-							std::unordered_set<int> &NcontourToRemove = contoursToRemove[nodeLCA->getIndex()];
-							NcontourToRemove.insert(p);
+							std::list<int> &NcontourToRemove = contoursToRemove[nodeLCA->getIndex()];
+							NcontourToRemove.push_back(p);
 							ncount[p]++;
 						}
 						else if(tree->isStrictDescendant(node, nodeQ)){  //maxtree:  SC(p) \subset SC(q) <=> f(p) > f(q)

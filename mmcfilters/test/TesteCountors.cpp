@@ -27,13 +27,13 @@ int* openImage(std::string filename, int& numRows, int& numCols){
 int main(int argc, char* argv[]) {
     // Definição da imagem e parâmetros
     int numRows, numCols;
-    int* img = get2CsImage(numRows, numCols);
+    //int* img = get2CsImage(numRows, numCols);
     
     if(argc != 2){
         std::cout << "Execute assim: " << argv[0] << " <filename>" << std::endl;
         return 1;
     }
-    //int* img = openImage(argv[1], numRows, numCols);
+    int* img = openImage(argv[1], numRows, numCols);
     
 
     int n = numRows * numCols;
@@ -42,13 +42,13 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Resolution (cols x rows): " << numCols << " x " << numRows << std::endl;
     
-    printImage(img, numRows, numCols);
+    //printImage(img, numRows, numCols);
 
     // Criação das Component Trees
     MorphologicalTreePtr tree = std::make_shared<MorphologicalTree>(img, numRows, numCols);
     std::cout << "Depth:" << tree->getDepth() << std::endl;
     
-    
+    /*
     testComponentTree(tree, "ToS", img, numRows, numCols);
     std::cout << std::endl;
     
@@ -59,7 +59,7 @@ int main(int argc, char* argv[]) {
     printTree(tree->getRoot());
     std::cout << std::endl;
     printMappingSC(tree, 3);
-    
+    */
 
     std::vector<std::unordered_set<int>> countors = AttributeComputedIncrementally::extractCountors(tree);
     std::vector<std::vector<NodeMTPtr>> nodesByDepth = tree->getNodesByDepth();

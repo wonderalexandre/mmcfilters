@@ -50,6 +50,7 @@ attr_area = attrs[:,dic['AREA']]
 
 img_vector_filtered = filter.filteringDirectRule(attr_area > 10) #keep only areas > 10
 img_filtered = img_vector_filtered.reshape(num_rows, num_cols)
-```
+
 print("Filtered image:")
 print( img_filtered )
+```

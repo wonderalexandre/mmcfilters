@@ -1,9 +1,10 @@
 
-#include "include/NodeCT.hpp"
+#include "include/NodeMT.hpp"
 #include "include/AdjacencyRelation.hpp"
+#include "include/Common.hpp"
 
 #include "pybind/AttributeComputedIncrementallyPybind.hpp"
-#include "pybind/ComponentTreePybind.hpp"
+#include "pybind/MorphologicalTreePybind.hpp"
 #include "pybind/AttributeFiltersPybind.hpp"
 #include "pybind/UltimateAttributeOpeningPybind.hpp"
 #include "pybind/AttributeOpeningPrimitivesFamilyPybind.hpp"
@@ -22,64 +23,90 @@ namespace py = pybind11;
 
 
 void init_NodeCT(py::module &m){
-    py::class_<NodeCT>(m, "NodeCT")
+    py::class_<NodeMT, std::shared_ptr<NodeMT>>(m, "NodeMT")
 		.def(py::init<>())
-		.def_property_readonly("id", &NodeCT::getIndex )
-        .def_property_readonly("rep", &NodeCT::getRep )
-		.def_property_readonly("cnps", &NodeCT::getCNPs )
-		.def_property_readonly("level", &NodeCT::getLevel )
-		.def_property_readonly("children", &NodeCT::getChildren )
-		.def_property_readonly("parent", &NodeCT::getParent )
-        .def_property_readonly("areaCC", &NodeCT::getAreaCC )
-        .def_property_readonly("numDescendants", &NodeCT::getNumDescendants )
-        .def_property_readonly("isMaxtree", &NodeCT::isMaxtreeNode )
-        .def_property_readonly("numSiblings", &NodeCT::getNumSiblings )
-        .def_property_readonly("residue", &NodeCT::getResidue ) 
-        .def("pixelsOfCC",&NodeCT::getPixelsOfCC )
-        .def("nodesOfPathToRoot",&NodeCT::getNodesOfPathToRoot )
-        .def("nodesDescendants",&NodeCT::getNodesDescendants );
+		.def_property_readonly("id", &NodeMT::getIndex )
+        .def("__str__", [](NodeMT &node) {
+            std::ostringstream oss;
+            oss << "NodeCT(id=" << node.getIndex() 
+                << ", level=" << node.getLevel() 
+                << ", numCNPs=" << node.getCNPs().size() 
+                << ", area=" << node.getAreaCC(); 
+            return oss.str();
+        })
+        .def("__repr__", [](NodeMT &node) { 
+            std::ostringstream oss;
+            oss << "NodeCT(id=" << node.getIndex() << ", level=" << node.getLevel() << ")";
+            return oss.str();
+        })
+        .def_property_readonly("rep", &NodeMT::getRep )
+		.def_property_readonly("cnps", &NodeMT::getCNPs )
+		.def_property_readonly("level", &NodeMT::getLevel )
+		.def_property_readonly("children", &NodeMT::getChildren )
+		.def_property_readonly("parent", &NodeMT::getParent )
+        .def_property_readonly("areaCC", &NodeMT::getAreaCC )
+        .def_property_readonly("numDescendants", &NodeMT::getNumDescendants )
+        .def_property_readonly("isMaxtree", &NodeMT::isMaxtreeNode )
+        .def_property_readonly("numSiblings", &NodeMT::getNumSiblings )
+        .def_property_readonly("residue", &NodeMT::getResidue ) 
+        .def("pixelsOfCC",&NodeMT::getPixelsOfCC )
+        .def("nodesOfPathToRoot",&NodeMT::getNodesOfPathToRoot )
+        .def("nodesDescendants",&NodeMT::getNodesDescendants );
         
-    py::class_<NodeCT::IteratorPixelsOfCC>(m, "IteratorPixelsOfCC")
-		.def(py::init<NodeCT *, int>())
-		.def_property_readonly("begin", &NodeCT::IteratorPixelsOfCC::begin )
-        .def_property_readonly("end", &NodeCT::IteratorPixelsOfCC::end )
-        .def("__iter__", [](NodeCT::IteratorPixelsOfCC &iter) {
-            return py::make_iterator(iter.begin(), iter.end());
-            }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
-
-    py::class_<NodeCT::IteratorNodesOfPathToRoot>(m, "IteratorNodesOfPathToRoot")
-		.def(py::init<NodeCT *>())
-		.def_property_readonly("begin", &NodeCT::IteratorNodesOfPathToRoot::begin )
-        .def_property_readonly("end", &NodeCT::IteratorNodesOfPathToRoot::end )
-        .def("__iter__", [](NodeCT::IteratorNodesOfPathToRoot &iter) {
-            return py::make_iterator(iter.begin(), iter.end());
-            }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
-            
-    py::class_<NodeCT::IteratorNodesDescendants>(m, "IteratorNodesDescendants")
-		.def(py::init<NodeCT *, int>())
-		.def_property_readonly("begin", &NodeCT::IteratorNodesDescendants::begin )
-        .def_property_readonly("end", &NodeCT::IteratorNodesDescendants::end )
-        .def("__iter__", [](NodeCT::IteratorNodesDescendants &iter) {
-            return py::make_iterator(iter.begin(), iter.end());
-            }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
 }
 
 
+void init_NodeCT_Iterators(py::module &m) {
 
-void init_ComponentTree(py::module &m){
-      py::class_<ComponentTreePybind>(m, "ComponentTree")
+    py::class_<typename NodeMT::IteratorPixelsOfCC>(m, "IteratorPixelsOfCC")
+        .def(py::init<std::shared_ptr<NodeMT>, int>())
+        .def("__iter__", [](typename NodeMT::IteratorPixelsOfCC &iter) {
+            return py::make_iterator(iter.begin(), iter.end());
+        }, py::keep_alive<0, 1>());
+
+
+    py::class_<typename NodeMT::IteratorNodesOfPathToRoot>(m, "IteratorNodesOfPathToRoot")
+        .def(py::init<std::shared_ptr<NodeMT>>())
+        .def("__iter__", [](typename NodeMT::IteratorNodesOfPathToRoot &iter) {
+            return py::make_iterator(iter.begin(), iter.end());
+        }, py::keep_alive<0, 1>());
+
+    py::class_<typename NodeMT::IteratorPostOrderTraversal>(m, "IteratorPostOrderTraversal")
+        .def(py::init<std::shared_ptr<NodeMT>>())
+        .def("__iter__", [](typename NodeMT::IteratorPostOrderTraversal &iter) {
+            return py::make_iterator(iter.begin(), iter.end());
+        }, py::keep_alive<0, 1>());
+
+    py::class_<typename NodeMT::IteratorBreadthFirstTraversal>(m, "IteratorBreadthFirstTraversal")
+        .def(py::init<std::shared_ptr<NodeMT>>())
+        .def("__iter__", [](typename NodeMT::IteratorBreadthFirstTraversal &iter) {
+            return py::make_iterator(iter.begin(), iter.end());
+        }, py::keep_alive<0, 1>());
+
+         
+    py::class_<typename NodeMT::IteratorNodesDescendants>(m, "IteratorNodesDescendants")
+    .def(py::init<std::shared_ptr<NodeMT>, int>())
+    .def("__iter__", [](NodeMT::IteratorNodesDescendants &iter) {
+        return py::make_iterator(iter.begin(), iter.end());
+        }, py::keep_alive<0, 1>()); /* Keep vector alive while iterator is used */
+
+}
+
+void init_MorphologicalTree(py::module &m){
+      py::class_<MorphologicalTreePybind, std::shared_ptr<MorphologicalTreePybind>>(m, "MorphologicalTree")
         .def(py::init<py::array_t<int>, int, int, bool, double>())
         .def(py::init<py::array_t<int>, int, int, bool>())
         .def(py::init<py::array_t<int>, int, int>())
-        .def("reconstructionImage", &ComponentTreePybind::reconstructionImage )
-		.def_property_readonly("numNodes", &ComponentTreePybind::getNumNodes )
-        .def_property_readonly("listNodes", &ComponentTreePybind::getListNodes )
-        .def_property_readonly("root", &ComponentTreePybind::getRoot )
+        .def("reconstructionImage", &MorphologicalTreePybind::reconstructionImage )
+		.def_property_readonly("numNodes", &MorphologicalTreePybind::getNumNodes )
+        .def_property_readonly("listNodes", &MorphologicalTreePybind::getIndexNode )
+        .def_property_readonly("root", &MorphologicalTreePybind::getRoot )
+        .def_property_readonly("depth", &MorphologicalTreePybind::getDepth )
         //.def_static("computerParent", &ComponentTreePybind::computerParent)
 		//.def_property_readonly("parent", &ComponentTreePybind::getParent )
         //.def_property_readonly("orderedPixels", &ComponentTreePybind::getOrderedPixels )
-        .def_property_readonly("treeType", &ComponentTreePybind::getTreeType)
-        .def("getSC", &ComponentTreePybind::getSC );
+        .def_property_readonly("treeType", &MorphologicalTreePybind::getTreeType)
+        .def("getSC", &MorphologicalTreePybind::getSC );
         
         
         //.def("prunningMin", py::overload_cast<py::array_t<double> &, double>(&ComponentTree::prunningMin))
@@ -91,26 +118,26 @@ void init_ComponentTree(py::module &m){
 
 void init_AttributeComputedIncrementally(py::module &m){
     	py::class_<AttributeComputedIncrementallyPybind>(m, "Attribute")
-        .def_static("computerAttribute", static_cast<void(*)(NodeCT*, 
-                                                             std::function<void(NodeCT*)>, 
-                                                             std::function<void(NodeCT*, NodeCT*)>, 
-                                                             std::function<void(NodeCT*)>)>(&AttributeComputedIncrementally::computerAttribute))
+        .def_static("computerAttribute", static_cast<void(*)(NodeMTPtr, 
+                                                             std::function<void(NodeMTPtr)>, 
+                                                             std::function<void(NodeMTPtr, NodeMTPtr)>, 
+                                                             std::function<void(NodeMTPtr)>)>(&AttributeComputedIncrementally::computerAttribute))
         .def_static("computerBasicAttributes", &AttributeComputedIncrementallyPybind::computerBasicAttributes)
+        .def_static("extractCountors", &AttributeComputedIncrementallyPybind::extractCountors)
         .def_static("computerArea", &AttributeComputedIncrementallyPybind::computerArea);
 }
 
 void init_AttributeFilters(py::module &m){
     py::class_<AttributeFiltersPybind>(m, "AttributeFilters")
-    .def(py::init<ComponentTreePybind *>())
+    .def(py::init<MorphologicalTreePybindPtr>())
     .def("filteringMin", py::overload_cast<py::array_t<float> &, float>(&AttributeFiltersPybind::filteringByPruningMin))
-    .def("filteringMin", py::overload_cast<std::vector<bool>>(&AttributeFiltersPybind::filteringByPruningMin))
-    .def("filteringMax", py::overload_cast<std::vector<bool>>(&AttributeFiltersPybind::filteringByPruningMax))
-    .def("filteringDirectRule", py::overload_cast<std::vector<bool>>(&AttributeFiltersPybind::filteringByDirectRule))
-    .def("filteringSubtractiveRule", py::overload_cast<std::vector<bool>>(&AttributeFiltersPybind::filteringBySubtractiveRule))
-    .def("filteringSubtractiveScoreRule", py::overload_cast<std::vector<float>>(&AttributeFiltersPybind::filteringBySubtractiveScoreRule))
+    .def("filteringMin", py::overload_cast<std::vector<bool>&>(&AttributeFiltersPybind::filteringByPruningMin))
+    .def("filteringMax", py::overload_cast<std::vector<bool>&>(&AttributeFiltersPybind::filteringByPruningMax))
+    .def("filteringDirectRule", py::overload_cast<std::vector<bool>&>(&AttributeFiltersPybind::filteringByDirectRule))
+    .def("filteringSubtractiveRule", py::overload_cast<std::vector<bool>&>(&AttributeFiltersPybind::filteringBySubtractiveRule))
+    .def("filteringSubtractiveScoreRule", py::overload_cast<std::vector<float>&>(&AttributeFiltersPybind::filteringBySubtractiveScoreRule))
     .def("filteringMax", py::overload_cast<py::array_t<float> &, float>(&AttributeFiltersPybind::filteringByPruningMax))
-    .def("getAdaptativeCriterion", py::overload_cast<std::vector<bool>, int>(&AttributeFiltersPybind::getAdaptativeCriterion))
-    ;   
+    .def("getAdaptativeCriterion", &AttributeFiltersPybind::getAdaptativeCriterion);   
 }
 
 
@@ -124,7 +151,7 @@ void init_AdjacencyRelation(py::module &m){
 
 void init_UltimateAttributeOpening(py::module &m){
     	py::class_<UltimateAttributeOpeningPybind>(m, "UltimateAttributeOpening")
-        .def(py::init<ComponentTreePybind *, std::vector<float>>())
+        .def(py::init<MorphologicalTreePybindPtr, std::vector<float>>())
         .def("execute", py::overload_cast<int>(&UltimateAttributeOpeningPybind::execute))
         .def("executeWithMSER", &UltimateAttributeOpeningPybind::executeWithMSER)
         .def("getMaxConstrastImage", &UltimateAttributeOpeningPybind::getMaxConstrastImage)
@@ -148,8 +175,8 @@ void init_ResidualTree(py::module &m){
 
 void init_AttributeOpeningPrimitivesFamily(py::module &m){
     	py::class_<AttributeOpeningPrimitivesFamilyPybind>(m, "AttributeOpeningPrimitivesFamily")
-        .def(py::init<ComponentTreePybind *, py::array_t<float>, float>())
-        .def(py::init<ComponentTreePybind *, py::array_t<float>, float, int>())
+        .def(py::init<MorphologicalTreePybindPtr, py::array_t<float>, float>())
+        .def(py::init<MorphologicalTreePybindPtr, py::array_t<float>, float, int>())
         .def_property_readonly("numPrimitives", &AttributeOpeningPrimitivesFamilyPybind::getNumPrimitives)
         .def("getPrimitive", &AttributeOpeningPrimitivesFamilyPybind::getPrimitive)
         .def_property_readonly("restOfImage", &AttributeOpeningPrimitivesFamilyPybind::getRestOfNumpyImage)
@@ -164,7 +191,8 @@ PYBIND11_MODULE(mmcfilters, m) {
     m.doc() = "A simple library for connected filters based on morphological trees";
     
     init_NodeCT(m);
-    init_ComponentTree(m);
+    init_NodeCT_Iterators(m);
+    init_MorphologicalTree(m);
     init_AttributeComputedIncrementally(m);
     init_AttributeFilters(m);
     init_AdjacencyRelation(m);

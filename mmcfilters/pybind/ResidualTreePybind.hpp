@@ -1,6 +1,6 @@
 #include <list>
 
-#include "../include/NodeCT.hpp"
+#include "../include/NodeMT.hpp"
 #include "../include/NodeRes.hpp"
 #include "../include/AttributeOpeningPrimitivesFamily.hpp"
 #include "../include/ResidualTree.hpp"

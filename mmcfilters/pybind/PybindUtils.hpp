@@ -8,28 +8,36 @@ namespace py = pybind11;
 
 class PybindUtils{
     public:
-        static py::array_t<int> toNumpy(int *data, int size){
-            return py::array(py::buffer_info(
-                data,            /* Pointer to data (nullptr -> ask NumPy to allocate!) */
-                sizeof(int),     /* Size of one item */
-                py::format_descriptor<int>::value, /* Buffer format */
-                1,          /* How many dimensions? */
-                { size },  /* Number of elements for each dimension */
-                { sizeof(int) }  /* Strides for each dimension */
-            ));
+        static py::array_t<int> toNumpy(int* data, int size) {
+            // Cria um capsule que sabe como liberar o ponteiro
+            py::capsule free_when_done(data, [](void* f) {
+                delete[] static_cast<int*>(f);
+            });
+        
+            // Cria o py::array com o capsule responsável por liberar a memória
+            return py::array_t<int>(
+                { size },               // shape (tamanho do vetor)
+                { sizeof(int) },        // strides (distância entre elementos)
+                data,                   // ponteiro para os dados
+                free_when_done          // capsule que cuida da liberação
+            );
         }
-
-        static py::array_t<float> toNumpyFloat(float *data, int size){
-            return py::array(py::buffer_info(
-                data,            /* Pointer to data (nullptr -> ask NumPy to allocate!) */
-                sizeof(float),     /* Size of one item */
-                py::format_descriptor<float>::value, /* Buffer format */
-                1,          /* How many dimensions? */
-                { size },  /* Number of elements for each dimension */
-                { sizeof(float) }  /* Strides for each dimension */
-            ));
+    
+        static py::array_t<float> toNumpyFloat(float* data, int size) {
+            // Cria capsule com função de destruição
+            py::capsule free_when_done(data, [](void* f) {
+                delete[] static_cast<float*>(f);
+            });
+        
+            // Cria o array NumPy com os dados e o capsule
+            return py::array_t<float>(
+                { size },                // shape (1D)
+                { sizeof(float) },       // strides
+                data,                    // ponteiro para os dados
+                free_when_done           // capsule que cuida da liberação
+            );
         }
-
+        
 
 
 

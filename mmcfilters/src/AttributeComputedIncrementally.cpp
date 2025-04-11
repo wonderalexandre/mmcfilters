@@ -2,15 +2,15 @@
 #include "../include/AttributeComputedIncrementally.hpp"
 
 
-void AttributeComputedIncrementally::preProcessing(NodeCT *v){}
+void AttributeComputedIncrementally::preProcessing(NodeMTPtr v){}
 
-void AttributeComputedIncrementally::mergeChildren(NodeCT *parent, NodeCT *child){}
+void AttributeComputedIncrementally::mergeChildren(NodeMTPtr parent, NodeMTPtr child){}
 
-void AttributeComputedIncrementally::postProcessing(NodeCT *parent){}
+void AttributeComputedIncrementally::postProcessing(NodeMTPtr parent){}
 
-void AttributeComputedIncrementally::computerAttribute(NodeCT *root) {
+void AttributeComputedIncrementally::computerAttribute(NodeMTPtr root) {
         preProcessing(root);
-        for (NodeCT *child : root->getChildren())
+        for (NodeMTPtr child : root->getChildren())
         {
             computerAttribute(child);
             mergeChildren(root, child);

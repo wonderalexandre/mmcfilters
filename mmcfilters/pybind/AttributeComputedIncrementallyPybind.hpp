@@ -3,9 +3,9 @@
 
 
 #include "../include/AttributeComputedIncrementally.hpp"
-#include "../include/NodeCT.hpp"
+#include "../include/NodeMT.hpp"
 
-#include "../pybind/ComponentTreePybind.hpp"
+#include "../pybind/MorphologicalTreePybind.hpp"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -20,30 +20,52 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
     using AttributeComputedIncrementally::AttributeComputedIncrementally;
 
 
-	static py::array_t<float> computerArea(ComponentTreePybind *tree){
+	static py::array_t<float> computerArea(MorphologicalTreePybindPtr tree){
 		const int n = tree->getNumNodes();
 		float *attrs = new float[n];
 		AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
-			[&attrs](NodeCT* node) -> void { //pre-processing
+			[&attrs](NodeMTPtr node) -> void { //pre-processing
 				attrs[node->getIndex()] = node->getCNPs().size(); //area
 			},
-			[&attrs](NodeCT* parent, NodeCT* child) -> void { //merge-processing
+			[&attrs](NodeMTPtr parent, NodeMTPtr child) -> void { //merge-processing
 				attrs[parent->getIndex()] += attrs[child->getIndex()];
 			},
-			[](NodeCT* node) -> void { //post-processing			
+			[](NodeMTPtr node) -> void { //post-processing			
 		});
-	    py::array_t<float> numpy = py::array(py::buffer_info(
-			attrs,            
-			sizeof(float),     
-			py::format_descriptor<float>::value, 
-			1,         
-			{  n }, 
+	    
+		py::capsule free_when_done(attrs, [](void *f) {
+			delete[] reinterpret_cast<float*>(f);
+		});
+		
+		py::array_t<float> numpy = py::array(py::buffer_info(
+			attrs,
+			sizeof(float),
+			py::format_descriptor<float>::value,
+			1,
+			{ n },
 			{ sizeof(float) }
-	    ));
+		), free_when_done);
+
 		return numpy;
 	}
 
-    static std::pair<py::dict, py::array_t<float>> computerBasicAttributes(ComponentTreePybind *tree){
+	static py::dict extractCountors(MorphologicalTreePybindPtr tree) {
+		auto contours = AttributeComputedIncrementally::extractCountors(tree);  // chama o método original
+	
+		py::dict pyContours;
+		for (size_t nodeIdx = 0; nodeIdx < contours.size(); ++nodeIdx) {
+			py::set pySet;
+			for (int pixel : contours[nodeIdx]) {
+				pySet.add(pixel);
+			}
+			pyContours[py::int_(nodeIdx)] = pySet;
+		}
+	
+		return pyContours;
+	}
+	
+
+    static std::pair<py::dict, py::array_t<float>> computerBasicAttributes(MorphologicalTreePybindPtr tree){
         
 		auto [attributeNames, ptrValues] = AttributeComputedIncrementally::computerBasicAttributes(tree);
 		const int numAttribute = attributeNames.NUM_ATTRIBUTES;
@@ -69,14 +91,19 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
 			dict[py::str( keys[indices[i]] )] = values[indices[i]] / n; 
 		}
 
-	    py::array_t<float> numpy = py::array(py::buffer_info(
-			ptrValues,            
-			sizeof(float),     
-			py::format_descriptor<float>::value, 
-			2,         
+		py::capsule free_when_done(ptrValues, [](void *f) {
+			delete[] reinterpret_cast<float*>(f);
+		});
+		
+		py::array_t<float> numpy = py::array(py::buffer_info(
+			ptrValues,
+			sizeof(float),
+			py::format_descriptor<float>::value,
+			2,
 			{  n,  numAttribute }, 
 			{ sizeof(float), sizeof(float) * n }
-	    ));
+		), free_when_done);
+
 		
 		return std::make_pair(dict, numpy);
 	}

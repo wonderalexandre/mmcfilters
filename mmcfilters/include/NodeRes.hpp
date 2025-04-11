@@ -1,8 +1,8 @@
 #include <list>
 #include <algorithm>
 
-#include "../include/NodeCT.hpp"
-#include "../include/ComponentTree.hpp"
+#include "../include/NodeMT.hpp"
+#include "../include/MorphologicalTree.hpp"
 
 #ifndef NODE_RES_H
 #define NODE_RES_H
@@ -17,24 +17,24 @@ class NodeRes {
         int levelNodeNotInNR;
 
         //Nr(i) is subtree of the component tree where the variable root is the root of the subtree
-        NodeCT* rootNr; //first node in Nr(i)
-        std::list<NodeCT*> nodes; //nodes belongs to Nr(i)
+        NodeMTPtr rootNr; //first node in Nr(i)
+        std::list<NodeMTPtr> nodes; //nodes belongs to Nr(i)
     public:
         
-        NodeRes(NodeCT* rootNr, int associeatedIndex, bool desirableResidue);
+        NodeRes(NodeMTPtr rootNr, int associeatedIndex, bool desirableResidue);
 
-        void addNodeInNr(NodeCT* node);
+        void addNodeInNr(NodeMTPtr node);
         void addChild(NodeRes* child);
         void setParent(NodeRes* parent);
         NodeRes* getParent();
         int getAssocieatedIndex();
         bool isDesirableResidue();
         std::list<NodeRes*> getChildren();
-        std::list<NodeCT*> getNodeInNr();
-        NodeCT* getRootNr();
+        std::list<NodeMTPtr> getNodeInNr();
+        NodeMTPtr getRootNr();
         int getLevelNodeNotInNR();
         void setLevelNodeNotInNR(int level);
-        bool belongsToNr(NodeCT* node){
+        bool belongsToNr(NodeMTPtr node){
             return std::find(this->nodes.begin(), this->nodes.end(), node) != this->nodes.end();
         }
 
@@ -42,8 +42,8 @@ class NodeRes {
         
    class InternalIteratorPixelsOfCNPs{
 		private:
-			NodeCT *currentNode;
-			std::stack<NodeCT*> s;
+            NodeMTPtr currentNode;
+			std::stack<NodeMTPtr> s;
 			std::list<int>::iterator iter;
 			int countCNPs;
 			using iterator_category = std::input_iterator_tag;
@@ -51,7 +51,7 @@ class NodeRes {
 		public:
 			InternalIteratorPixelsOfCNPs(NodeRes* instance, int numCNPs)  {
 				this->countCNPs = numCNPs;
-				for (NodeCT *child: instance->nodes){
+				for (NodeMTPtr child: instance->nodes){
 					s.push(child);
 				}
                 this->currentNode = s.top(); s.pop();
@@ -89,7 +89,7 @@ class NodeRes {
 	};	
 	IteratorPixelsOfCNPs& getPixelsOfCNPs(){
         int sumCPNs = 0;
-        for(NodeCT* node: this->nodes){
+        for(NodeMTPtr node: this->nodes){
             sumCPNs += node->getCNPs().size();
         }
 	    IteratorPixelsOfCNPs *iter = new IteratorPixelsOfCNPs(this, sumCPNs);

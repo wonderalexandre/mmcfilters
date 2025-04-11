@@ -1,16 +1,17 @@
 #include "../include/AdjacencyRelation.hpp"
+#include "../include/ImageUtils.hpp"
+
 #include <math.h>
 #define PI 3.14159265358979323846
 
 AdjacencyRelation::~AdjacencyRelation(){
-    delete[] this->offsetCol;
-    delete[] this->offsetRow;
+
 }
 
 AdjacencyRelation::AdjacencyRelation(int numRows, int numCols, double radius){
     this->numRows = numRows;
     this->numCols = numCols;
- 
+
     int i, j, k, dx, dy, r0, r2, i0 = 0;
     this->n = 0;
     r0 = (int) radius;
@@ -21,8 +22,8 @@ AdjacencyRelation::AdjacencyRelation(int numRows, int numCols, double radius){
 				this->n++;
 	
 	i = 0;
-    this->offsetCol = new int[this->n];
-    this->offsetRow = new int[this->n];
+    this->offsetCol = std::unique_ptr<int[]>(new int[n]);
+    this->offsetRow = std::unique_ptr<int[]>(new int[n]);
 
 	for (dy = -r0; dy <= r0; dy++) {
 		for (dx = -r0; dx <= r0; dx++) {
@@ -37,8 +38,8 @@ AdjacencyRelation::AdjacencyRelation(int numRows, int numCols, double radius){
 	}
 		
 	double aux;
-	double da[this->n];
-	double dr[this->n];
+	std::unique_ptr<double[]> da(new double[this->n]);
+	std::unique_ptr<double[]> dr(new double[this->n]);
 
 	/* Set clockwise */
 	for (i = 0; i < n; i++) {
@@ -126,11 +127,13 @@ int AdjacencyRelation::getSize(){
 
 int AdjacencyRelation::nextValid(){
     this->id += 1;
-    while (this->id < this->n){
-        if (0 <= this->row + this->offsetRow[this->id] && this->row + this->offsetRow[this->id] < this->numRows && 0 <= this->col + this->offsetCol[this->id] && this->col + this->offsetCol[this->id] < this->numCols)
-            break;
-        this->id += 1;
-    }
+	while (this->id < this->n){
+		if (0 <= this->row + this->offsetRow[this->id] && this->row + this->offsetRow[this->id] < this->numRows && 
+			0 <= this->col + this->offsetCol[this->id] && this->col + this->offsetCol[this->id] < this->numCols){
+			break;
+		}
+		this->id += 1;
+	}
     return this->id;
 } 
 
@@ -149,6 +152,37 @@ AdjacencyRelation& AdjacencyRelation::getAdjPixels(int row, int col){
     return *this;
 }
 
-AdjacencyRelation& AdjacencyRelation::getAdjPixels(int indexVector){
-    return getAdjPixels(indexVector / this->numCols, indexVector % this->numCols);
+AdjacencyRelation& AdjacencyRelation::getAdjPixels(int index){
+	auto [row, col] = ImageUtils::to2D(index, this->numCols);
+    return getAdjPixels(row, col);
+}
+
+AdjacencyRelation& AdjacencyRelation::getNeighboringPixels(int row, int col){
+    this->row = row;
+    this->col = col;
+    this->id = 0;
+    return *this;
+}
+
+AdjacencyRelation& AdjacencyRelation::getNeighboringPixels(int index){
+	auto [row, col] = ImageUtils::to2D(index, this->numCols);
+    return getNeighboringPixels(row, col);
+}
+
+bool AdjacencyRelation::isBorderDomainImage(int index){
+	auto[row, col] = ImageUtils::to2D(index, this->numCols);
+	return isBorderDomainImage(row, col);
+}
+bool AdjacencyRelation::isBorderDomainImage(int row, int col){
+	return row == 0 || col == 0 || row == this->numRows - 1 || col == this->numCols - 1;
+}
+
+bool AdjacencyRelation::isValid(int index){
+	auto [row, col] = ImageUtils::to2D(index, this->numCols);
+	return isValid(row, col);
+}
+
+bool AdjacencyRelation::isValid(int row, int col){
+	return row >= 0 && col >= 0 && row < this->numRows && col < this->numCols;
+		
 }

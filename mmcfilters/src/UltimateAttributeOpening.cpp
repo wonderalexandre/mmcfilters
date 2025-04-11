@@ -1,7 +1,7 @@
 
 
-#include "../include/NodeCT.hpp"
-#include "../include/ComponentTree.hpp"
+#include "../include/NodeMT.hpp"
+#include "../include/MorphologicalTree.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
 #include "../include/UltimateAttributeOpening.hpp"
 #include "../include/ComputerMSER.hpp"
@@ -30,12 +30,12 @@ void UltimateAttributeOpening::execute(int maxCriterion, std::vector<bool> selec
     associatedIndexLUT[id] = 0;
   }
 
-  for (NodeCT *son : this->tree->getRoot()->getChildren()){
+  for (NodeMTPtr son : this->tree->getRoot()->getChildren()){
     computeUAO(son, this->tree->getRoot()->getLevel(), false, false);
   }
 }
 
-UltimateAttributeOpening::UltimateAttributeOpening(ComponentTree *tree, std::vector<float> attrs_increasing){
+UltimateAttributeOpening::UltimateAttributeOpening(MorphologicalTreePtr tree, std::vector<float> attrs_increasing){
   this->tree = tree;
   this->maxContrastLUT = new int[this->tree->getNumNodes()];
   this->associatedIndexLUT = new int[this->tree->getNumNodes()];
@@ -72,8 +72,8 @@ int* UltimateAttributeOpening::getAssociatedColorImage(){
   return ImageUtils::createRandomColor(this->getAssociatedImage(), this->tree->getNumColsOfImage(), this->tree->getNumRowsOfImage());
 }
 
-void UltimateAttributeOpening::computeUAO(NodeCT *currentNode, int levelNodeNotInNR, bool qPropag, bool isCalculateResidue){
-  NodeCT *parentNode = currentNode->getParent();
+void UltimateAttributeOpening::computeUAO(NodeMTPtr currentNode, int levelNodeNotInNR, bool qPropag, bool isCalculateResidue){
+  NodeMTPtr parentNode = currentNode->getParent();
   int levelNodeInNR = currentNode->getLevel();
   bool flagPropag = false;
   int contrast = 0;
@@ -106,27 +106,27 @@ void UltimateAttributeOpening::computeUAO(NodeCT *currentNode, int levelNodeNotI
     }
   }
 
-  for (NodeCT *son : currentNode->getChildren()){
+  for (NodeMTPtr son : currentNode->getChildren()){
     this->computeUAO(son, levelNodeNotInNR, flagPropag, isCalculateResidue);
   }
 }
 
-bool UltimateAttributeOpening::isSelectedForPruning(NodeCT *currentNode){
+bool UltimateAttributeOpening::isSelectedForPruning(NodeMTPtr currentNode){
   // primitiva: attribute opening
   return this->attrs_increasing[currentNode->getIndex()] != this->attrs_increasing[currentNode->getParent()->getIndex()];
 }
 
-bool UltimateAttributeOpening::hasNodeSelectedInPrimitive(NodeCT *currentNode){
-  std::stack<NodeCT *> s;
+bool UltimateAttributeOpening::hasNodeSelectedInPrimitive(NodeMTPtr currentNode){
+  std::stack<NodeMTPtr> s;
   s.push(currentNode);
   while (!s.empty()){
-    NodeCT *node = s.top();
+    NodeMTPtr node = s.top();
     s.pop();
     if (selectedForFiltering[node->getIndex()]){
       return true;
     }
 
-    for (NodeCT *n : node->getChildren()){
+    for (NodeMTPtr n : node->getChildren()){
       if (this->attrs_increasing[n->getIndex()] == this->attrs_increasing[n->getParent()->getIndex()]){ // if n in Nr?
         s.push(n);
       }

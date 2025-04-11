@@ -3,8 +3,9 @@
 #ifndef ATTRIBUTE_COMPUTED_INCREMENTALLY_H
 #define ATTRIBUTE_COMPUTED_INCREMENTALLY_H
 
-#include "../include/NodeCT.hpp"
-#include "../include/ComponentTree.hpp"
+#include "../include/NodeMT.hpp"
+#include "../include/ImageUtils.hpp"
+#include "../include/MorphologicalTree.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -63,22 +64,22 @@ class AttributeComputedIncrementally{
 public:
 
  
-    virtual void preProcessing(NodeCT *v);
+    virtual void preProcessing(NodeMTPtr v);
 
-    virtual void mergeChildren(NodeCT *parent, NodeCT *child);
+    virtual void mergeChildren(NodeMTPtr parent, NodeMTPtr child);
 
-    virtual void postProcessing(NodeCT *parent);
+    virtual void postProcessing(NodeMTPtr parent);
 
-    void computerAttribute(NodeCT *root);
+    void computerAttribute(NodeMTPtr root);
 
-	static void computerAttribute(NodeCT* root, 
-										std::function<void(NodeCT*)> preProcessing,
-										std::function<void(NodeCT*, NodeCT*)> mergeChildren,
-										std::function<void(NodeCT*)> postProcessing ){
+	static void computerAttribute(NodeMTPtr root, 
+										std::function<void(NodeMTPtr)> preProcessing,
+										std::function<void(NodeMTPtr, NodeMTPtr)> mergeChildren,
+										std::function<void(NodeMTPtr)> postProcessing ){
 		
 		preProcessing(root);
 			
-		for(NodeCT *child: root->getChildren()){
+		for(NodeMTPtr child: root->getChildren()){
 			AttributeComputedIncrementally::computerAttribute(child, preProcessing, mergeChildren, postProcessing);
 			mergeChildren(root, child);
 		}
@@ -86,7 +87,77 @@ public:
 		postProcessing(root);
 	}
 
-	static float* computerAttribute(ComponentTree *tree, std::string attrName){
+
+	static std::vector<std::unordered_set<int>> extractCountors(MorphologicalTreePtr tree){
+		std::vector<std::unordered_set<int>> contours(tree->getNumNodes());
+		std::vector<std::list<int>> contoursToRemove(tree->getNumNodes());
+		std::vector<int> ncount(tree->getNumRowsOfImage() * tree->getNumColsOfImage(), 0);
+		AdjacencyRelationPtr adj4 = std::make_shared<AdjacencyRelation>(tree->getNumRowsOfImage(), tree->getNumColsOfImage(), 1);
+		LCAEulerRMQ lca(tree);	
+
+		AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+			[](NodeMTPtr node) -> void { // pre-processing
+
+			},
+			[&contours, &ncount, tree, adj4](NodeMTPtr parent, NodeMTPtr child) -> void { // merge-processing
+				std::unordered_set<int> &Ncontour = contours[parent->getIndex()];
+				for (int p : contours[child->getIndex()]){
+					Ncontour.insert(p);
+				}
+			},
+			[&contours, &contoursToRemove, &lca, &ncount, tree, adj4](NodeMTPtr node) -> void { // post-processing
+				// Initialise contours of node "N"
+				std::unordered_set<int> &Ncontour = contours[node->getIndex()];
+				std::list<int> &NcontourToRemove = contoursToRemove[node->getIndex()];
+				for(int p: NcontourToRemove){
+					bool isPixelToBeRemoved = true;
+					for (int q : adj4->getNeighboringPixels(p)) {
+						NodeMTPtr nodeQ = tree->getSC(q); 
+						if (tree->isStrictDescendant(node, nodeQ) || !tree->isComparable(node, nodeQ)) { 
+							contoursToRemove[nodeQ->getIndex()].push_back(p);
+							isPixelToBeRemoved = false;	
+					  	}
+					}
+					if(!adj4->isBorderDomainImage(p) && isPixelToBeRemoved){
+						Ncontour.erase(p);
+					}
+				}
+			
+				for (int p : node->getCNPs()) {
+					if (adj4->isBorderDomainImage(p)){
+						ncount[p]++;
+					}
+					for (int q : adj4->getNeighboringPixels(p)) {
+						NodeMTPtr nodeQ = tree->getSC(q); 
+						if(!tree->isComparable(node, tree->getSC(q))){
+							NodeMTPtr nodeLCA = lca.findLowestCommonAncestor(node, nodeQ);
+							std::list<int> &NcontourToRemove = contoursToRemove[nodeLCA->getIndex()];
+							NcontourToRemove.push_back(p);
+							ncount[p]++;
+						}
+						else if(tree->isStrictDescendant(node, nodeQ)){  //maxtree:  SC(p) \subset SC(q) <=> f(p) > f(q)
+					  		ncount[p]++;
+						}else if (tree->isStrictAncestor(node, nodeQ)) { ////maxtree:  SC(q) \subset SC(p) <=> f(p) < f(q)
+					  		ncount[q]--;
+							if (ncount[q] == 0) {
+								Ncontour.erase(q);
+							}
+						}
+				  	}
+
+				  	if (ncount[p] > 0){
+						Ncontour.insert(p);
+					}
+				}
+
+			}
+		);
+				  
+		return contours;
+	  }
+
+
+	static float* computerAttribute(MorphologicalTreePtr tree, std::string attrName){
 		const int n = tree->getNumNodes();
 		float *attr = new float[n];
 		auto [attributeNames, ptrValues] = AttributeComputedIncrementally::computerBasicAttributes(tree);
@@ -98,7 +169,7 @@ public:
 		return attr;
 	}
 
-	static float* computerStructTreeAttributes(ComponentTree *tree){
+	static float* computerStructTreeAttributes(MorphologicalTreePtr tree){
 		const int numAttribute = 10;
 		const int n = tree->getNumNodes();
 		float *attrs = new float[n * numAttribute];
@@ -118,7 +189,7 @@ public:
 		return attrs;
 	}
 
-	static std::pair<AttributeNames, float*> computerBasicAttributes(ComponentTree *tree){
+	static std::pair<AttributeNames, float*> computerBasicAttributes(MorphologicalTreePtr tree){
 	    
 		/*
 		0 - area
@@ -152,30 +223,31 @@ public:
 		27 - momentos de Hu 6
 		28 - momentos de Hu 7
 		*/
-		const int n = tree->getNumNodes();
+		int n = tree->getNumNodes();
 		AttributeNames attributeNames(n);
 		
 		float *attrs = new float[n * attributeNames.NUM_ATTRIBUTES];
 		std::unordered_map<std::string, int> ATTR = attributeNames.mapIndexes;
 		
 
-		int xmax[n]; //min value
-		int ymax[n]; //min value
-		int xmin[n]; //max value
-		int ymin[n]; //max value
-
+		std::unique_ptr<int[]> xmax(new int[n]);
+		std::unique_ptr<int[]> ymax(new int[n]);
+		std::unique_ptr<int[]> xmin(new int[n]);
+		std::unique_ptr<int[]> ymin(new int[n]);
+		
 		//momentos geometricos para calcular o centroide
-		long int sumX[n]; //sum x
-		long int sumY[n]; //sum y
+		std::unique_ptr<long int[]> sumX(new long int[n]);//sum x
+		std::unique_ptr<long int[]> sumY(new long int[n]);//sum y
+		
 
-		long sumGrayLevelSquare[n];
+		std::unique_ptr<long[]> sumGrayLevelSquare(new long[n]);
 		int numCols = tree->getNumColsOfImage();
 		int numRows = tree->getNumRowsOfImage();
 		
 
 		//computação dos atributos: area, volume, gray level, mean of gray level, variance of gray level, standard deviation gray level, Box width, Box height, rectangularity, ratio (Box width, Box height) e momentos geometricos 
 	    AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
-						[&ATTR, &attrs, n,  &xmax, &ymax, &xmin, &ymin, &sumX, &sumY, &sumGrayLevelSquare, numCols, numRows](NodeCT* node) -> void {
+						[&ATTR, &attrs, n,  &xmax, &ymax, &xmin, &ymin, &sumX, &sumY, &sumGrayLevelSquare, numCols, numRows](NodeMTPtr node) -> void {
 							attrs[node->getIndex() + ATTR["AREA"]  ] = node->getCNPs().size(); //area
 							attrs[node->getIndex() + ATTR["VOLUME"]] = node->getCNPs().size() * node->getLevel(); //volume =>  \sum{ f }
 							attrs[node->getIndex() + ATTR["LEVEL"] ] = node->getLevel(); //level
@@ -199,7 +271,7 @@ public:
 								sumY[node->getIndex()] += y;
 							}
 						},
-						[&ATTR, &attrs, n, &xmax, &ymax, &xmin, &ymin, &sumX, &sumY, &sumGrayLevelSquare](NodeCT* parent, NodeCT* child) -> void {
+						[&ATTR, &attrs, n, &xmax, &ymax, &xmin, &ymin, &sumX, &sumY, &sumGrayLevelSquare](NodeMTPtr parent, NodeMTPtr child) -> void {
 							attrs[parent->getIndex() + ATTR["AREA"]  ] += attrs[child->getIndex()]; //area
 							attrs[parent->getIndex() + ATTR["VOLUME"]] += attrs[child->getIndex() + n]; //volume
 							
@@ -214,7 +286,7 @@ public:
 							sumY[parent->getIndex()] += sumY[child->getIndex()];
 							
 						},
-						[&ATTR, &attrs, n, &xmax, &ymax, &xmin, &ymin, &sumGrayLevelSquare](NodeCT* node) -> void {
+						[&ATTR, &attrs, n, &xmax, &ymax, &xmin, &ymin, &sumGrayLevelSquare](NodeMTPtr node) -> void {
 							
 							float area = attrs[node->getIndex() + ATTR["AREA"]];
 							float volume = attrs[node->getIndex() + ATTR["VOLUME"]]; 
@@ -243,7 +315,7 @@ public:
 
 		//Computação dos momentos centrais e momentos de Hu
 		AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
-			[&ATTR, &attrs, n,  &sumX, &sumY, numCols](NodeCT* node) -> void {				
+			[&ATTR, &attrs, n,  &sumX, &sumY, numCols](NodeMTPtr node) -> void {				
 				attrs[node->getIndex() + ATTR["CENTRAL_MOMENT_20"]] = 0; // momento central 20
 				attrs[node->getIndex() + ATTR["CENTRAL_MOMENT_02"]] = 0; // momento central 02
 				attrs[node->getIndex() + ATTR["CENTRAL_MOMENT_11"]] = 0; // momento central 11
@@ -273,7 +345,7 @@ public:
 				}
 
 			},
-			[&ATTR, &attrs, n](NodeCT* parent, NodeCT* child) -> void {
+			[&ATTR, &attrs, n](NodeMTPtr parent, NodeMTPtr child) -> void {
 				attrs[parent->getIndex() + ATTR["CENTRAL_MOMENT_20"]] += attrs[child->getIndex() + ATTR["CENTRAL_MOMENT_20"]];
 				attrs[parent->getIndex() + ATTR["CENTRAL_MOMENT_02"]] += attrs[child->getIndex() + ATTR["CENTRAL_MOMENT_02"]];
 				attrs[parent->getIndex() + ATTR["CENTRAL_MOMENT_11"]] += attrs[child->getIndex() + ATTR["CENTRAL_MOMENT_11"]];
@@ -283,7 +355,7 @@ public:
 				attrs[parent->getIndex() + ATTR["CENTRAL_MOMENT_12"]] += attrs[child->getIndex() + ATTR["CENTRAL_MOMENT_12"]];
 			
 			},
-			[&ATTR, &attrs, n](NodeCT* node) -> void {
+			[&ATTR, &attrs, n](NodeMTPtr node) -> void {
 				
 				float area = attrs[node->getIndex() + ATTR["AREA"]]; // area
 				auto normMoment = [area](float moment, int p, int q){ 

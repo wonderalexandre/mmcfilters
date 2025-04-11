@@ -1,5 +1,5 @@
-#include "../include/NodeCT.hpp"
-#include "../include/ComponentTree.hpp"
+#include "../include/NodeMT.hpp"
+#include "../include/MorphologicalTree.hpp"
 #include "../include/ComputerMSER.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
 
@@ -15,10 +15,10 @@ class AttributeOpeningPrimitivesFamily{
     float* attrs_increasing;
     float maxCriterion;
     std::list<float> thresholds;
-    std::list<NodeCT*> nodesWithMaximumCriterium;
+    std::list<NodeMTPtr> nodesWithMaximumCriterium;
 
     //PrimitivesFamily
-    ComponentTree* tree;
+    MorphologicalTreePtr tree;
     std::vector<bool> selectedForFiltering; //mappping between index nodes and selected nodes
     int* restOfImage;
     int numPrimitives;
@@ -28,22 +28,22 @@ class AttributeOpeningPrimitivesFamily{
     void initializeNodesWithMaximumCriterium();
     
   public:
-    AttributeOpeningPrimitivesFamily(ComponentTree* tree,  float* attr, float maxCriterion);
+    AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree,  float* attr, float maxCriterion);
 
-    AttributeOpeningPrimitivesFamily(ComponentTree* tree,  float* attrs_increasing, float maxCriterion, int deltaMSER);
+    AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree,  float* attrs_increasing, float maxCriterion, int deltaMSER);
     
     ~AttributeOpeningPrimitivesFamily();
 
     std::list<float> getThresholdsPrimitive();
 
     //PrimitivesFamily
-    bool isSelectedForPruning(NodeCT* node) ; //first Node in Nr(i)
+    bool isSelectedForPruning(NodeMTPtr node) ; //first Node in Nr(i)
 
-    bool hasNodeSelectedInPrimitive(NodeCT* node) ; //has node selected inside Nr(i)
+    bool hasNodeSelectedInPrimitive(NodeMTPtr node) ; //has node selected inside Nr(i)
 
-    std::list<NodeCT*> getNodesWithMaximumCriterium() ; 
+    std::list<NodeMTPtr> getNodesWithMaximumCriterium() ; 
 
-    ComponentTree* getTree() ;
+    MorphologicalTreePtr getTree() ;
 
     int* getRestOfImage() ;
 

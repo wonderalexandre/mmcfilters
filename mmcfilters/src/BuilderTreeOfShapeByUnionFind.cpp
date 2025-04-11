@@ -25,40 +25,42 @@
     }
 
      /**
-      * Implementation based on the paper: N.Boutry, T.Géraud, L.Najman, "How to Make nD Functions Digitally Well-Composed in a Self-dual Way", ISMM 2015.
+      * Implementation based on the paper: 
+      * - N.Boutry, T.Géraud, L.Najman, "How to Make nD Functions Digitally Well-Composed in a Self-dual Way", ISMM 2015.
+      * - N.Boutry, T.Géraud, L.Najman, "On Making {$n$D} Images Well-Composed by a Self-Dual Local Interpolation", DGCI 2014
       */
-    void BuilderTreeOfShapeByUnionFind::interpolateImage(int* img, int num_rows, int num_cols) {
-        constexpr int adjCircleX[] = {-1, +1, -1, +1};
-        constexpr int adjCircleY[] = {-1, -1, +1, +1};
+    void BuilderTreeOfShapeByUnionFind::interpolateImage(int* img, int numRows, int numCols) {
+        constexpr int adjCircleCol[] = {-1, +1, -1, +1};
+        constexpr int adjCircleRow[] = {-1, -1, +1, +1};
 
-        constexpr int adjRetHorX[] = {0, 0};
-        constexpr int adjRetHorY[] = {-1, +1};
+        constexpr int adjRetHorCol[] = {0, 0};
+        constexpr int adjRetHorRow[] = {-1, +1};
 
-        constexpr int adjRetVerX[] = {+1, -1};
-        constexpr int adjRetVerY[] = {0, 0};
+        constexpr int adjRetVerCol[] = {+1, -1};
+        constexpr int adjRetVerRow[] = {0, 0};
 
-        this->interpNumCols = num_cols * 2 + 1;
-        this->interpNumRows = num_rows * 2 + 1;
+        this->interpNumCols = numCols * 2 + 1;
+        this->interpNumRows = numRows * 2 + 1;
 
         // Aloca memória para os resultados de interpolação (mínimo e máximo)
         this->interpolationMin = new int[interpNumCols * interpNumRows];
         this->interpolationMax = new int[interpNumCols * interpNumRows];
 
-        int numBoundary = 2 * (num_rows + num_cols) - 4;
+        int numBoundary = 2 * (numRows + numCols) - 4;
         int* pixels = new int[numBoundary];  // Para calcular a mediana
 
-        int x, y, pT, i = 0; // i é um contador para o array pixels
+        int pT, i = 0; // i é um contador para o array pixels
         
-        for (int p = 0; p < num_cols * num_rows; p++) {
-            auto [x, y] = ImageUtils::to2D(p, num_cols);
+        for (int p = 0; p < numCols * numRows; p++) {
+            auto [row, col] = ImageUtils::to2D(p, numCols);
 
             // Verifica se o pixel está na borda
-            if (x == 0 || x == num_cols - 1 || y == 0 || y == num_rows - 1) {
+            if (row == 0 || row == numRows - 1 || col == 0 || col == numCols - 1) {
                 pixels[i++] = img[p]; // Adiciona o pixel ao array pixels
             }
 
             // Calcula o índice para imagem interpolada
-            pT = ImageUtils::to1D(2 * x + 1, 2 * y + 1, this->interpNumCols);
+            pT = ImageUtils::to1D(2 * row + 1, 2 * col + 1, this->interpNumCols);
 
             // Define os valores de interpolação
             this->interpolationMin[pT] = this->interpolationMax[pT] = img[p];
@@ -75,30 +77,30 @@
         delete[] pixels;
 
         
-        int qT, qX, qY, min, max;
-        const int* adjX = nullptr;
-        const int* adjY = nullptr;
+        int qT, qCol, qRow, min, max;
+        const int* adjCol = nullptr;
+        const int* adjRow = nullptr;
         int adjSize;
 
-        for (y=0; y < this->interpNumRows; y++){
-            for (x=0; x < this->interpNumCols; x++){
-                if (x % 2 == 1 && y % 2 == 1) continue;
-                pT = ImageUtils::to1D(x, y, this->interpNumCols);
-                if(x == 0 || x == this->interpNumCols - 1 || y == 0 || y == this->interpNumRows - 1){
+        for (int row=0; row < this->interpNumRows; row++){
+            for (int col=0; col < this->interpNumCols; col++){
+                if (col % 2 == 1 && row % 2 == 1) continue;
+                pT = ImageUtils::to1D(row, col, this->interpNumCols);
+                if(col == 0 || col == this->interpNumCols - 1 || row == 0 || row == this->interpNumRows - 1){
                     max = median;
                     min = median;
                 }else{
-                    if (x % 2 == 0 && y % 2 == 0) { 
-                        adjX = adjCircleX;
-                        adjY = adjCircleY;
+                    if (col % 2 == 0 && row % 2 == 0) { 
+                        adjCol = adjCircleCol;
+                        adjRow = adjCircleRow;
                         adjSize = 4;
-                    } else if (x % 2 == 0 && y % 2 == 1) {
-                        adjX = adjRetVerX;
-                        adjY = adjRetVerY;
+                    } else if (col % 2 == 0 && row % 2 == 1) {
+                        adjCol = adjRetVerCol;
+                        adjRow = adjRetVerRow;
                         adjSize = 2;
-                    } else if (x % 2 == 1 && y % 2 == 0) {
-                        adjX = adjRetHorX;
-                        adjY = adjRetHorY;
+                    } else if (col % 2 == 1 && row % 2 == 0) {
+                        adjCol = adjRetHorCol;
+                        adjRow = adjRetHorRow;
                         adjSize = 2;
                     } else {
                         continue;
@@ -107,11 +109,11 @@
                     min = INT_MAX;
                     max = INT_MIN;
                     for (int i = 0; i < adjSize; i++) {
-                        qY = y + adjY[i];
-                        qX = x + adjX[i];
+                        qRow = row + adjRow[i];
+                        qCol = col + adjCol[i];
 
-                        if (qY >= 0 && qX >= 0 && qY < this->interpNumRows && qX < this->interpNumCols) {
-                            qT = ImageUtils::to1D(qX, qY, this->interpNumCols);
+                        if (qRow >= 0 && qCol >= 0 && qRow < this->interpNumRows && qCol < this->interpNumCols) {
+                            qT = ImageUtils::to1D(qRow, qCol, this->interpNumCols);
 
                             if (interpolationMax[qT] > max) {
                                 max = this->interpolationMax[qT];

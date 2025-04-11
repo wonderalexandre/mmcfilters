@@ -1,12 +1,12 @@
 #include "../include/NodeRes.hpp"
 
-NodeRes::NodeRes(NodeCT* rootNr, int associeatedIndex, bool desirableResidue){
+NodeRes::NodeRes(NodeMTPtr rootNr, int associeatedIndex, bool desirableResidue){
     this->rootNr = rootNr;
     this->associeatedIndex = associeatedIndex;
     this->desirableResidue = desirableResidue;
 }
 
-void NodeRes::addNodeInNr(NodeCT* node){
+void NodeRes::addNodeInNr(NodeMTPtr node){
     this->nodes.push_back(node);
 }
 
@@ -26,7 +26,7 @@ bool NodeRes::isDesirableResidue(){
     return this->desirableResidue;
 }
 
-std::list<NodeCT*> NodeRes::getNodeInNr(){
+std::list<NodeMTPtr> NodeRes::getNodeInNr(){
     return this->nodes;
 }
 
@@ -34,7 +34,7 @@ std::list<NodeRes*> NodeRes::getChildren(){
     return this->children;
 }
 
-NodeCT* NodeRes::getRootNr(){
+NodeMTPtr NodeRes::getRootNr(){
     return this->rootNr;
 }
 

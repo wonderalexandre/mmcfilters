@@ -67,7 +67,18 @@
         "variant": "cpp",
         "algorithm": "cpp",
         "source_location": "cpp",
-        "span": "cpp"
+        "span": "cpp",
+        "any": "cpp",
+        "cfenv": "cpp",
+        "codecvt": "cpp",
+        "condition_variable": "cpp",
+        "csetjmp": "cpp",
+        "csignal": "cpp",
+        "queue": "cpp",
+        "shared_mutex": "cpp",
+        "execution": "cpp",
+        "memory": "cpp",
+        "print": "cpp"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

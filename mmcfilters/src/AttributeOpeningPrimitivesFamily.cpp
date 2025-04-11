@@ -1,6 +1,6 @@
 #include "../include/AttributeOpeningPrimitivesFamily.hpp"
 #include "../include/AttributeFilters.hpp"
-#include "../include/NodeCT.hpp"
+#include "../include/NodeMT.hpp"
 #include "../include/ComputerMSER.hpp"
 
 #include <vector>
@@ -12,7 +12,7 @@ AttributeOpeningPrimitivesFamily::~AttributeOpeningPrimitivesFamily(){
     delete[] this->restOfImage;
 }
 
-AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily(ComponentTree* tree,  float* attrs_increasing, float maxCriterion, int deltaMSER){
+AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree,  float* attrs_increasing, float maxCriterion, int deltaMSER){
   this->tree = tree;
   this->attrs_increasing = attrs_increasing;
   this->maxCriterion = maxCriterion;
@@ -29,7 +29,7 @@ AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily(ComponentTree
   
   this->numPrimitives = 0;
   float maxThreshold = 0;
-  for(NodeCT* node: this->tree->getListNodes()){
+  for(NodeMTPtr node: this->tree->getIndexNode()){
     if(this->attrs_increasing[node->getIndex()] <= this->maxCriterion && this->isSelectedForPruning(node)){
       this->numPrimitives++;
       if(this->attrs_increasing[node->getIndex()] > maxThreshold)
@@ -40,7 +40,7 @@ AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily(ComponentTree
   this->initializeNodesWithMaximumCriterium();
 }
 
-AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily(ComponentTree* tree,  float* attrs_increasing, float maxCriterion): AttributeOpeningPrimitivesFamily(tree, attrs_increasing, maxCriterion, 0){ }
+AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree,  float* attrs_increasing, float maxCriterion): AttributeOpeningPrimitivesFamily(tree, attrs_increasing, maxCriterion, 0){ }
 
 int AttributeOpeningPrimitivesFamily::getNumPrimitives(){
   return this->numPrimitives;
@@ -48,7 +48,7 @@ int AttributeOpeningPrimitivesFamily::getNumPrimitives(){
 
 std::list<float> AttributeOpeningPrimitivesFamily::getThresholdsPrimitive(){
   if(this->thresholds.size() == 0){
-    for(NodeCT* node: this->tree->getListNodes()){
+    for(NodeMTPtr node: this->tree->getIndexNode()){
       if(this->attrs_increasing[node->getIndex()] <= this->maxCriterion && this->isSelectedForPruning(node)){
         this->thresholds.push_back(this->attrs_increasing[node->getIndex()]);
       }
@@ -59,18 +59,18 @@ std::list<float> AttributeOpeningPrimitivesFamily::getThresholdsPrimitive(){
   return thresholds;
 }
 
-bool AttributeOpeningPrimitivesFamily::hasNodeSelectedInPrimitive(NodeCT *currentNode){
+bool AttributeOpeningPrimitivesFamily::hasNodeSelectedInPrimitive(NodeMTPtr currentNode){
   if(!this->selectedForFiltering[currentNode->getIndex()]){
-    std::stack<NodeCT *> s;
+    std::stack<NodeMTPtr> s;
     s.push(currentNode);
     while (!s.empty()){
-      NodeCT *node = s.top();
+      NodeMTPtr node = s.top();
       s.pop();
       if (selectedForFiltering[node->getIndex()]){
         return true;
       }
 
-      for (NodeCT* son : node->getChildren()){
+      for (NodeMTPtr son : node->getChildren()){
         if (this->attrs_increasing[son->getIndex()] == this->attrs_increasing[son->getParent()->getIndex()]){ //same primitive?
           s.push(son);
         }
@@ -81,7 +81,7 @@ bool AttributeOpeningPrimitivesFamily::hasNodeSelectedInPrimitive(NodeCT *curren
   return true;
 }
 
-bool AttributeOpeningPrimitivesFamily::isSelectedForPruning(NodeCT* node){
+bool AttributeOpeningPrimitivesFamily::isSelectedForPruning(NodeMTPtr node){
   return node->getParent() != nullptr && this->attrs_increasing[node->getIndex()] != this->attrs_increasing[node->getParent()->getIndex()];
 }
 
@@ -97,18 +97,18 @@ void AttributeOpeningPrimitivesFamily::initializeRestOfImage(float thrRestImage)
 }
 
 void AttributeOpeningPrimitivesFamily::initializeNodesWithMaximumCriterium(){
-  std::stack<NodeCT*> s;
-  for(NodeCT* child: this->tree->getRoot()->getChildren()){
+  std::stack<NodeMTPtr> s;
+  for(NodeMTPtr child: this->tree->getRoot()->getChildren()){
     s.push(child);
   }
 
   while(!s.empty()){
-    NodeCT* node = s.top();s.pop();
+    NodeMTPtr node = s.top();s.pop();
     if(this->attrs_increasing[this->tree->getRoot()->getIndex()] != this->attrs_increasing[node->getIndex()] && this->attrs_increasing[node->getIndex()] <= this->maxCriterion){
       this->nodesWithMaximumCriterium.push_back(node);
     }
     else{
-      for(NodeCT* child: node->getChildren()){
+      for(NodeMTPtr child: node->getChildren()){
         s.push(child);
       }
     }
@@ -116,12 +116,12 @@ void AttributeOpeningPrimitivesFamily::initializeNodesWithMaximumCriterium(){
 
 }
 
-std::list<NodeCT*> AttributeOpeningPrimitivesFamily::getNodesWithMaximumCriterium(){
+std::list<NodeMTPtr> AttributeOpeningPrimitivesFamily::getNodesWithMaximumCriterium(){
   return this->nodesWithMaximumCriterium;
 }
 
 
 
-ComponentTree* AttributeOpeningPrimitivesFamily::getTree(){
+MorphologicalTreePtr AttributeOpeningPrimitivesFamily::getTree(){
   return this->tree;
 }

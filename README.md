@@ -41,7 +41,7 @@ img_vector = img.ravel()
 ```
 
 3. Filtering
-
+```
 tree = mmcfilters.ComponentTree(img_vector, num_rows, num_cols, True, 1.5)
 filter = mmcfilters.AttributeFilters(tree)
 
@@ -50,5 +50,7 @@ attr_area = attrs[:,dic['AREA']]
 
 img_vector_filtered = filter.filteringDirectRule(attr_area > 10) #keep only areas > 10
 img_filtered = img_vector_filtered.reshape(num_rows, num_cols)
+
 print("Filtered image:")
 print( img_filtered )
+```

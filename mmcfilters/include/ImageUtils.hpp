@@ -7,15 +7,19 @@
 
 class ImageUtils{
     public:
-        
-        static int to1D(int x, int y, int numCols) {
-            return y * numCols + x;
+
+    
+        // Converte (row, col) para índice 1D (row-major)
+        static int to1D(int row, int col, int numCols) {
+            return row * numCols + col;
         }
 
+        // Converte índice 1D para (row, col) (row-major)
         static std::pair<int, int> to2D(int index, int numCols) {
-            return std::make_pair(index % numCols, index / numCols);
+            int row = index / numCols;
+            int col = index % numCols;
+            return std::make_pair(row, col);
         }
-
 
         static int* createRandomColor(int* img, int numColsOfImage, int numRowsOfImage){
             int max = 0;
@@ -25,9 +29,9 @@ class ImageUtils{
                     max = img[i];
             }
 
-            int r[max + 1];
-            int g[max + 1];
-            int b[max + 1];
+            std::unique_ptr<int[]> r(new int[max + 1]);
+            std::unique_ptr<int[]> g(new int[max + 1]);
+            std::unique_ptr<int[]> b(new int[max + 1]);
             r[0] = 0;
             g[0] = 0;
             r[0] = 0;

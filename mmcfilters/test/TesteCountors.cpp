@@ -11,7 +11,7 @@
 #include "../../external/stb/stb_image_write.h"
 
 int* openImage(std::string filename, int& numRows, int& numCols){
-    std::cout << "filename:" << filename << std::endl;
+    //std::cout << "filename:" << filename << std::endl;
     int nchannels;
     unsigned char* data = stbi_load(filename.c_str(), &numCols, &numRows, &nchannels, 1);
     
@@ -27,39 +27,38 @@ int* openImage(std::string filename, int& numRows, int& numCols){
 int main(int argc, char* argv[]) {
     // Definição da imagem e parâmetros
     int numRows, numCols;
-    //int* img = get2CsImage(numRows, numCols);
+    int* img = getLenaCropImage(numRows, numCols);
     
     if(argc != 2){
         std::cout << "Execute assim: " << argv[0] << " <filename>" << std::endl;
         return 1;
     }
-    int* img = openImage(argv[1], numRows, numCols);
+    //int* img = openImage(argv[1], numRows, numCols);
     
 
     int n = numRows * numCols;
-    double radioAdj = 1.5;
     AdjacencyRelationPtr adj = std::make_shared<AdjacencyRelation>(numRows, numCols, 1);
 
-    std::cout << "Resolution (cols x rows): " << numCols << " x " << numRows << std::endl;
+    std::cout << "\nImage:"<< argv[1] << " \tResolution (cols x rows): " << numCols << " x " << numRows << std::endl;
     
     //printImage(img, numRows, numCols);
 
     // Criação das Component Trees
-    MorphologicalTreePtr tree = std::make_shared<MorphologicalTree>(img, numRows, numCols);
-    std::cout << "Depth:" << tree->getDepth() << std::endl;
+    MorphologicalTreePtr tree = std::make_shared<MorphologicalTree>(img, numRows, numCols, "self-dual");
+    //std::cout << "Depth:" << tree->getDepth() << std::endl;
     
-    /*
-    testComponentTree(tree, "ToS", img, numRows, numCols);
-    std::cout << std::endl;
     
-    printConnectedComponents(tree);
-    std::cout << std::endl;
+    //testComponentTree(tree, "ToS", img, numRows, numCols);
+    //std::cout << std::endl;
+    
+    //printConnectedComponents(tree);
+    //std::cout << std::endl;
 
-    std::cout << "--- Tree --- "<< std::endl;
-    printTree(tree->getRoot());
-    std::cout << std::endl;
-    printMappingSC(tree, 3);
-    */
+    //std::cout << "--- Tree --- "<< std::endl;
+    //printTree(tree->getRoot());
+    //std::cout << std::endl;
+    //printMappingSC(tree, 3);
+    
 
     std::vector<std::unordered_set<int>> countors = AttributeComputedIncrementally::extractCountors(tree);
     std::vector<std::vector<NodeMTPtr>> nodesByDepth = tree->getNodesByDepth();
@@ -83,6 +82,7 @@ int main(int argc, char* argv[]) {
                 contoursInc[p] = 1;
             }
             
+            
             for (int row = 0; row < numRows; ++row) {
                 for (int col = 0; col < numCols; ++col) {
                     if(tree->isDescendant(tree->getSC(ImageUtils::to1D(row, col, numCols)), node)){
@@ -103,6 +103,7 @@ int main(int argc, char* argv[]) {
                     }
                 }
             }
+
             
         }
        
@@ -125,6 +126,8 @@ int main(int argc, char* argv[]) {
     
             std::cout << "\nContorno incremental" << std::endl;
             printImage(contoursInc, numRows, numCols, 3);
+            
+            
             break;
         }
         
@@ -132,9 +135,9 @@ int main(int argc, char* argv[]) {
     }
     
     if(isEquals){
-        std::cout << "\nSão iguais" << std::endl;
+        std::cout <<"\tFilename:" << argv[1] << "\tIs equals? Yes" << std::endl;
     }else{
-        std::cout << "\nSão diferentes" << std::endl;
+        std::cout <<"\tFilename:" << argv[1] << "\tIs equals? No" << std::endl;
     }
     delete[] imgBin;
     delete[] contoursInc;

@@ -1,4 +1,7 @@
+#include <iomanip>
+#include <fstream>
 #include <iostream>
+
 #include "../include/BuilderTreeOfShapeByUnionFind.hpp"
 #include "../include/NodeMT.hpp"
 #include "../include/ImageUtils.hpp"
@@ -10,7 +13,7 @@ void printTree(NodeMTPtr root, int indent = 0) {
     for (int i = 0; i < indent; ++i) {
         std::cout << "|-";
     }
-    std::cout << "Node: " << root->getIndex() <<  ", Level: " << root->getLevel()<< ", cnps: " << root->getCNPs().size() << ", |children|:" << root->getChildren().size() << std::endl;
+    std::cout << "Node: " << root->getIndex() <<  ", Level: " << root->getLevel()<< ", cnps: " << root->getCNPs().size() << ", |children|:" << root->getChildren().size() << ", Area:" << root->getAreaCC() << std::endl;
 
     // Chama recursivamente a função para cada filho
     for (NodeMTPtr child : root->getChildren()) {
@@ -21,7 +24,7 @@ void printTree(NodeMTPtr root, int indent = 0) {
 
 int main() {
     // Exemplo de teste com imagem representada como ponteiro 1D
-    
+    /*
     int image[] = {
         2, 2, 0, 0,
         2, 1, 1, 0,
@@ -29,14 +32,28 @@ int main() {
     };
     int num_rows = 3;
     int num_cols = 4;
-    /*
-   int image[] = {
-        1, 3,
-        4, 1
-    };
-    int num_rows = 2;
-    int num_cols = 2;
     
+
+    int image[] = {
+        5, 5, 5, 5, 5, 5, 5, 9, 9,
+        5, 5, 0, 0, 5, 5, 9, 5, 5,
+        5, 0, 5, 0, 5, 5, 9, 9, 5,
+        5, 0, 0, 5, 5, 5, 9, 9, 5,
+        5, 0, 0, 5, 5, 5, 5, 5, 5
+    };
+    int num_rows = 5;
+    int num_cols = 9;
+*/
+    
+   int image[] = {
+        3, 3, 3, 3,
+        3, 0, 8, 3,
+        3, 9, 4, 3,
+        3, 3, 3, 3,
+    };
+    int num_rows = 4;
+    int num_cols = 4;
+    /*
     int image[] = {
         9, 11, 15,
         7, 1,  13,
@@ -60,58 +77,79 @@ int main() {
     BuilderTreeOfShapeByUnionFind builder;
 
     // Receber os ponteiros de interpolação (mínimo e máximo)
-    builder.interpolateImage(image, num_rows, num_cols);
+    builder.interpolateImage4c8c(image, num_rows, num_cols);
     int* interpolationMin = builder.getInterpolationMin();
     int* interpolationMax = builder.getInterpolationMax();
 
     // Imprimir os resultados da interpolação
-    std::cout << "Interpolação: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
-    for (int y = 0; y < builder.getInterpNumRows(); ++y) {
-        for (int x = 0; x < builder.getInterpNumCols(); ++x) {
-            int index = ImageUtils::to1D(y, x, builder.getInterpNumCols());
-            std::cout << "[" << interpolationMin[index] << ", " << interpolationMax[index] << "] ";
+    std::cout << "\nInterpolação: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
+    for (int r = 0; r < builder.getInterpNumRows(); ++r) {
+        for (int c = 0; c < builder.getInterpNumCols(); ++c) {
+            int index = ImageUtils::to1D(r, c, builder.getInterpNumCols());
+            if(r%2==1 && c%2==1){
+                std::cout << std::setw(3) << interpolationMin[index] << std::setw(3);
+            }else{
+                std::cout << "[" << interpolationMin[index] << "," << interpolationMax[index] << "]" << std::setw(1);
+            }
+            
         }
         std::cout << std::endl;
     }
     std::cout << std::endl;
     
+    AdjacencyUC* adj = builder.getAdjacency();
+    for(int index : adj->getNeighboringPixels(3, 3)){
+        auto [r, c] = ImageUtils::to2D(index, builder.getInterpNumCols());
+        std::cout << "(" << r << ", " << c << ") = " <<  "[" << interpolationMin[index] << "," << interpolationMax[index] << "]" << std::endl;
+    }
+
+
     
     // Ordenar a interpolação mínima
     builder.sort();
     int* imgR = builder.getImgR();
     int* imgU = builder.getImgU();
 
-    std::cout << "imgU: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
+    std::cout << "\nimgU: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
     // Imprimir os resultados da interpolação ordenada
-    for (int y = 0; y < builder.getInterpNumRows(); ++y) {    
-        for (int x = 0; x < builder.getInterpNumCols(); ++x) {
-            int index = ImageUtils::to1D(y, x, builder.getInterpNumCols());
-            std::cout  << imgU[index] << ", ";
+    for (int row = 0; row < builder.getInterpNumRows(); ++row) {    
+        for (int col = 0; col < builder.getInterpNumCols(); ++col) {
+            int index = ImageUtils::to1D(row, col, builder.getInterpNumCols());
+            std::cout << std::setw(2) << imgU[index] << ", ";
         }
         std::cout << std::endl;
     }
-    std::cout << "imgR: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
-    for (int y = 0; y < builder.getInterpNumRows(); ++y) {
-        for (int x = 0; x < builder.getInterpNumCols(); ++x) {
-            int index = ImageUtils::to1D(y, x, builder.getInterpNumCols());
-            std::cout << imgR[index] << ", ";
+    std::cout << "\nimgR: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
+    int index = 0;
+    int* imgRInv = new int[builder.getInterpNumRows() * builder.getInterpNumCols()];
+    for(int i=0 ; i < builder.getInterpNumRows() * builder.getInterpNumCols(); i++){
+        imgRInv[imgR[i]] = i;
+    }
+
+    for (int row = 0; row < builder.getInterpNumRows(); ++row) {
+        for (int col = 0; col < builder.getInterpNumCols(); ++col) {
+            int index = ImageUtils::to1D(row, col, builder.getInterpNumCols());
+
+            std::cout << std::setw(3) << imgRInv[index] << ", ";
         }
         std::cout << std::endl;
     }
+    delete[] imgRInv;
 
     builder.createTreeByUnionFind();
     int* parent = builder.getParent();
-    std::cout << "parent: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
-    for (int y = 0; y < builder.getInterpNumRows(); ++y) {
-        for (int x = 0; x < builder.getInterpNumCols(); ++x) {
-            int index = ImageUtils::to1D(y, x, builder.getInterpNumCols());
-            std::cout << parent[index] << ", ";
+    std::cout << "\nparent: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
+    for (int row = 0; row < builder.getInterpNumRows(); ++row) {
+        for (int col = 0; col < builder.getInterpNumCols(); ++col) {
+            int index = ImageUtils::to1D(row, col, builder.getInterpNumCols());
+            std::cout << std::setw(3) << parent[index] << ", ";
         }
         std::cout << std::endl;
     }
 
-
-    printTree( MorphologicalTree(image, num_rows, num_cols).getRoot() );
+    std::cout << std::endl;
+    MorphologicalTree tree(image, num_rows, num_cols);
+    printTree( tree.getRoot() );
 
      
     return 0;

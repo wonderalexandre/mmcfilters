@@ -5,7 +5,7 @@
 #include <array>
 #include <list>
 
-#include "../include/AdjacencyRelation.hpp"
+#include "../include/AdjacencyUC.hpp"
 
 
 #ifndef BUILDER_TREE_OF_SHAPE_BY_UNION_FIND_H
@@ -20,7 +20,7 @@ private:
     int* parent;
     int* imgR; 
     int* imgU;
-    AdjacencyRelation* adj;
+    AdjacencyUC* adj;
 
 
     class PriorityQueueToS {
@@ -63,14 +63,7 @@ private:
                 int i = currentPriority;
                 int j = currentPriority;
                 while (true) {
-                    // Tentar aumentar a prioridade
-                    if (i < 256 && buckets[i].empty()) {
-                        i++;
-                    }
-                    if (i < 256 && !buckets[i].empty()) { // Encontrou o próximo bucket não vazio aumentando a prioridade
-                        currentPriority = i;
-                        break;
-                    }
+
                     // Tentar diminuir a prioridade
                     if (j > 0 && buckets[j].empty()) {
                         j--;
@@ -79,11 +72,23 @@ private:
                         currentPriority = j;
                         break;
                     }
+
+                    // Tentar aumentar a prioridade
+                    if (i < 256 && buckets[i].empty()) {
+                        i++;
+                    }
+                    if (i < 256 && !buckets[i].empty()) { // Encontrou o próximo bucket não vazio aumentando a prioridade
+                        currentPriority = i;
+                        break;
+                    }
                 }
             }
 
             int element = buckets[currentPriority].at(buckets[currentPriority].size() - 1); // Mudança aqui!
             buckets[currentPriority].pop_back();
+           //int element = buckets[currentPriority].front();
+           //buckets[currentPriority].erase(buckets[currentPriority].begin());
+
             numElements--;  
             return element;
         }
@@ -99,13 +104,15 @@ public:
     int* getImgR();
     int* getImgU();
     int* getParent();
-
+    AdjacencyUC* getAdjacency();
     BuilderTreeOfShapeByUnionFind();
     ~BuilderTreeOfShapeByUnionFind();
     void interpolateImage(int* img, int num_rows, int num_cols);
+    void interpolateImage4c8c(int* img, int numRows, int numCols);
     void sort();
     int findRoot(int zPar[], int x);
     void createTreeByUnionFind();
+
 
 };
 

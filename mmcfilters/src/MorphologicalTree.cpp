@@ -18,18 +18,17 @@
 	//nodes = nullptr;
  }
 
-MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols, bool isMaxtree) 
-	: MorphologicalTree(img, numRows, numCols, isMaxtree, 1.5){ }
-
-
-MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols){
+MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols, std::string ToSInperpolation){
 	this->numRows = numRows;
 	this->numCols = numCols;
 	this->treeType = TREE_OF_SHAPES;
 	this->nodes.resize(this->numRows * this->numCols, nullptr);
 
 	BuilderTreeOfShapeByUnionFind* builder = new BuilderTreeOfShapeByUnionFind();
-	builder->interpolateImage(img, numRows, numCols);
+	if(ToSInperpolation == "4c8c")
+		builder->interpolateImage4c8c(img, numRows, numCols);
+	else
+		builder->interpolateImage(img, numRows, numCols);
 	int* interpolationMin = builder->getInterpolationMin();
 	int* interpolationMax = builder->getInterpolationMax();
 	
@@ -62,8 +61,8 @@ MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols){
 		}
 
 		if(row % 2 == 1 && col % 2 == 1){
-			nodesTmp[p]->addCNPs(pixelUnterpolate);
 			this->nodes[pixelUnterpolate] = nodesTmp[p];					
+			this->nodes[pixelUnterpolate]->addCNPs(pixelUnterpolate);
 		}
 	}
 	if(this->root->getCNPs().size() == 0){

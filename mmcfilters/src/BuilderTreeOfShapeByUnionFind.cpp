@@ -1,5 +1,6 @@
 #include "../include/BuilderTreeOfShapeByUnionFind.hpp"
 #include "../include/ImageUtils.hpp"
+#include "../include/AdjacencyRelation.hpp"
 #include <iostream>
     
     int BuilderTreeOfShapeByUnionFind::getInterpNumRows() {return this->interpNumRows;}
@@ -9,7 +10,7 @@
     int* BuilderTreeOfShapeByUnionFind::getImgR() {return this->imgR;}
     int* BuilderTreeOfShapeByUnionFind::getImgU() {return this->imgU;}
     int* BuilderTreeOfShapeByUnionFind::getParent() {return this->parent;}
-
+    AdjacencyUC* BuilderTreeOfShapeByUnionFind::getAdjacency(){ return this->adj;}
 
     BuilderTreeOfShapeByUnionFind::BuilderTreeOfShapeByUnionFind(){
         
@@ -26,10 +27,11 @@
 
      /**
       * Implementation based on the paper: 
+      * - T. Géraud, E. Carlinet, and S. Crozet, Self-Duality and Digital Topology: Links Between the Morphological Tree of Shapes and Well-Composed Gray-Level Images, ISMM 2015
       * - N.Boutry, T.Géraud, L.Najman, "How to Make nD Functions Digitally Well-Composed in a Self-dual Way", ISMM 2015.
       * - N.Boutry, T.Géraud, L.Najman, "On Making {$n$D} Images Well-Composed by a Self-Dual Local Interpolation", DGCI 2014
       */
-    void BuilderTreeOfShapeByUnionFind::interpolateImage(int* img, int numRows, int numCols) {
+     void BuilderTreeOfShapeByUnionFind::interpolateImage(int* img, int numRows, int numCols) {
         constexpr int adjCircleCol[] = {-1, +1, -1, +1};
         constexpr int adjCircleRow[] = {-1, -1, +1, +1};
 
@@ -81,6 +83,7 @@
         const int* adjCol = nullptr;
         const int* adjRow = nullptr;
         int adjSize;
+        this->adj = new AdjacencyUC(interpNumRows, interpNumCols);
 
         for (int row=0; row < this->interpNumRows; row++){
             for (int col=0; col < this->interpNumCols; col++){
@@ -102,9 +105,7 @@
                         adjCol = adjRetHorCol;
                         adjRow = adjRetHorRow;
                         adjSize = 2;
-                    } else {
-                        continue;
-                    }
+                    } 
 
                     min = INT_MAX;
                     max = INT_MIN;
@@ -138,7 +139,195 @@
        
     }
 
-    
+    void BuilderTreeOfShapeByUnionFind::interpolateImage4c8c(int* img, int numRows, int numCols) {
+        this->interpNumCols = numCols * 2 + 1;
+        this->interpNumRows = numRows * 2 + 1;
+        this->adj = new AdjacencyUC(interpNumRows, interpNumCols);
+
+
+        // Aloca memória para os resultados de interpolação (mínimo e máximo)
+        this->interpolationMin = new int[interpNumCols * interpNumRows];
+        this->interpolationMax = new int[interpNumCols * interpNumRows];
+        int pT, i = 0; // i é um contador para o array pixels
+        
+         // Compute interval from 2-faces.
+        for (int p = 0; p < numCols * numRows; p++) {
+            auto [row, col] = ImageUtils::to2D(p, numCols);
+
+            // Calcula o índice para imagem interpolada
+            pT = ImageUtils::to1D(2 * row + 1, 2 * col + 1, this->interpNumCols);
+
+            // Define os valores de interpolação
+            this->interpolationMin[pT] = this->interpolationMax[pT] = img[p];
+        }
+
+        int qT, qCol, qRow, min, max;
+        const int* adjCol = nullptr;
+        const int* adjRow = nullptr;
+        int adjSize;
+
+        auto getValue = [&](int row, int col) -> int {
+            int origRow = (row - 1) / 2;
+            int origCol = (col - 1) / 2;
+            return img[ImageUtils::to1D(origRow, origCol, numCols)];
+        };
+
+        // Bordas
+        for (int row=0; row < this->interpNumRows; row++){
+            int col;
+            if(row % 2 == 1){ //horizontal e vertical
+                col = 0;
+                int v1 = getValue(row, col+1);
+                this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+                this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+
+                col = this->interpNumCols - 1;
+                v1 = getValue(row, col -1);
+                this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+                this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+            }else{ //circulos
+                if(row == 0){
+                    col = 0;
+                    int v1 = getValue(row+1, col+1);
+                    this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+                    this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+
+                    col = this->interpNumCols - 1;
+                    v1 = getValue(row+1, col -1);
+                    this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+                    this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+
+                }else if(row == this->interpNumRows-1){
+                    col = 0;
+                    int v1 = getValue(row-1, 1);
+                    this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+                    this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+
+                    col = this->interpNumCols - 1;
+                    v1 = getValue(row-1, col - 1);
+                    this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+                    this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+                }else{
+                    col = 0;
+                    int v1 = getValue(row-1, col+1);
+                    int v2 = getValue(row+1, col+1);
+                    this->interpolationMin[ImageUtils::to1D(row, 0, this->interpNumCols)] = std::min(v1, v2);
+                    this->interpolationMax[ImageUtils::to1D(row, 0, this->interpNumCols)] = std::max(v1, v2);
+
+                    col = this->interpNumCols - 1;
+                    v1 = getValue(row-1, col-1);
+                    v2 = getValue(row+1, col-1);
+                    this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = std::min(v1, v2);
+                    this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = std::max(v1, v2);
+                }
+            }
+        }
+        
+        for (int col=1; col < this->interpNumCols-1; col++){
+            int row;
+            if(col % 2 == 1){ //horizontal e vertical
+                row = 0;
+                int v1 = getValue(row+1, col);
+                this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+                this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+
+                row = this->interpNumRows - 1;
+                v1 = getValue(row-1, col);
+                this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+                this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+            }else{ //circulos
+                row = 0;
+                int v1 = getValue(row+1, col-1);
+                int v2 = getValue(row+1, col+1);
+                this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = std::min(v1, v2);
+                this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = std::max(v1, v2);
+
+                row = this->interpNumRows - 1;
+                v1 = getValue(row-1, col-1);
+                v2 = getValue(row-1, col+1);
+                this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = std::min(v1, v2);
+                this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = std::max(v1, v2);
+            }
+        }
+
+        // Compute interval from 1-faces 
+        for (int row=1; row < this->interpNumRows-1; row++){
+            for (int col=1; col < this->interpNumCols-1; col++){
+                if (row % 2 == 1 && col % 2 == 1) continue;  // já definido
+
+                pT = ImageUtils::to1D(row, col, this->interpNumCols);
+                if (col % 2 == 0 && row % 2 == 1) {
+                    int v1 = getValue(row, col+1);
+                    int v2 = getValue(row, col-1);
+                    this->interpolationMin[pT] = std::min(v1, v2);
+                    this->interpolationMax[pT] = std::max(v1, v2);
+                } else if (col % 2 == 1 && row % 2 == 0) {
+                    int v1 = getValue(row+1, col);
+                    int v2 = getValue(row-1, col);
+                    this->interpolationMin[pT] = std::min(v1, v2);
+                    this->interpolationMax[pT] = std::max(v1, v2);
+                } 
+            }
+        }
+         // Compute interval from 0-faces 
+         for (int row=1; row < this->interpNumRows-1; row++){
+            for (int col=1; col < this->interpNumCols-1; col++){
+                if (row % 2 == 1 && col % 2 == 1) continue;  // já definido
+                pT = ImageUtils::to1D(row, col, this->interpNumCols);
+                if (row % 2 == 0 && col % 2 == 0) {
+                    // | v0 | v1 |
+                    // | v2 | v3 |
+                    int v0 = getValue(row - 1, col - 1);
+                    int v1 = getValue(row + 1, col - 1);
+                    int v2 = getValue(row - 1, col + 1);
+                    int v3 = getValue(row + 1, col + 1);
+
+
+                    int min_v0v3 = std::min(v0, v3);
+                    int max_v0v3 = std::max(v0, v3);
+                    int min_v1v2 = std::min(v1, v2);
+                    int max_v1v2 = std::max(v1, v2);
+                    if (max_v1v2 < min_v0v3) {
+                        
+                        // Saddle point configuration 1
+                        this->adj->setDiagonalConnection(row, col-1, DiagonalConnection::SE);
+                        this->adj->setDiagonalConnection(row+1, col, DiagonalConnection::NW);
+                        
+                        this->adj->setDiagonalConnection(row - 1, col - 1, DiagonalConnection::SE);
+                        this->adj->setDiagonalConnection(row, col, DiagonalConnection::SE | DiagonalConnection::NW);
+                        this->adj->setDiagonalConnection(row + 1, col + 1, DiagonalConnection::NW);
+
+                        this->adj->setDiagonalConnection(row-1, col, DiagonalConnection::SE);
+                        this->adj->setDiagonalConnection(row, col+1, DiagonalConnection::NW);
+
+                        this->interpolationMin[pT] = min_v0v3;
+                        this->interpolationMax[pT] = max_v0v3;
+                    }
+                    else if (max_v0v3 < min_v1v2) {
+                        // Saddle point configuration 2
+                        this->adj->setDiagonalConnection(row, col-1, DiagonalConnection::NE);
+                        this->adj->setDiagonalConnection(row-1, col, DiagonalConnection::SW);
+
+                        this->adj->setDiagonalConnection(row-1, col+1, DiagonalConnection::SW);
+                        this->adj->setDiagonalConnection(row, col, DiagonalConnection::SW | DiagonalConnection::NE);
+                        this->adj->setDiagonalConnection(row + 1, col - 1, DiagonalConnection::NE);
+
+                        this->adj->setDiagonalConnection(row+1, col, DiagonalConnection::NE);
+                        this->adj->setDiagonalConnection(row, col+1, DiagonalConnection::SW);
+
+                        this->interpolationMin[pT] = min_v1v2;
+                        this->interpolationMax[pT] = max_v1v2;
+                    }else{
+                        // Non-critical configuration.
+                        this->interpolationMin[pT] = std::min(min_v0v3, min_v1v2);
+                        this->interpolationMax[pT] = std::min(max_v0v3, max_v1v2);
+                    }
+                }
+
+            }
+        }
+       
+    }
 
     void BuilderTreeOfShapeByUnionFind::sort() {
         int size = this->interpNumCols * this->interpNumRows;
@@ -147,32 +336,37 @@
         this->imgU = new int[size];        // Níveis de cinza da imagem
         
         PriorityQueueToS queue;  // Fila de prioridade
-        int pInfinito = 0;
-        queue.initial(pInfinito, this->interpolationMin[pInfinito]);  
+        int pInfinito = ImageUtils::to1D(0, 0, interpNumCols);
+        int lambdaOld = this->interpolationMin[pInfinito];
+        queue.initial(pInfinito, lambdaOld);  
         dejavu[pInfinito] = true;
 
-        this->adj = new AdjacencyRelation(interpNumRows, interpNumCols, 1);
 
         int i = 0;  // Contador para preencher imgR na ordem correta
+        int d = 0;
         while (!queue.isEmpty()) {
             //queue.printCurrentPriority();
             int priorityQueue = queue.getCurrentPriority();
             int h = queue.priorityPop();  // Retirar o elemento com maior prioridade
-
+            std::pair pointH = ImageUtils::to2D(h, interpNumCols);
             // Preencher imgU com o valor da prioridade corrente da fila
-            imgU[h] = queue.getCurrentPriority();  // Prioridade corrente
+            int lambda = queue.getCurrentPriority(); // Prioridade corrente
+            if(lambda != lambdaOld) d++;
+            imgU[h] = d;   
 
             // Armazenar o índice h em imgR na ordem correta
             this->imgR[i] = h;
             
             // Adjacências
-            for(int n: adj->getAdjPixels(h)){
+            for(int n: adj->getNeighboringPixels(h)){
+                std::pair pointN = ImageUtils::to2D(n, interpNumCols);
                 if (!dejavu[n]) {
                     queue.priorityPush(n, this->interpolationMin[n], this->interpolationMax[n]);
                     dejavu[n] = true;  // Marcar como processado
                 }
             }
             i++;
+            lambdaOld = lambda;
         }
         delete[] dejavu;
     }
@@ -193,13 +387,12 @@
         for (int p = 0; p < interpNumCols * interpNumRows; p++) {
             zPar[p] = NIL; // Assumindo que NIL é uma constante definida em outro lugar
         }
-
         for (int i = this->interpNumCols * this->interpNumRows - 1; i >= 0; i--) {
             int p = this->imgR[i];
             this->parent[p] = p;
             zPar[p] = p;
 
-            for(int n: adj->getAdjPixels(p)){
+            for(int n: adj->getNeighboringPixels(p)){
                 if (zPar[n] != NIL) {
                     int r = findRoot(zPar, n);
                     if (p != r) {

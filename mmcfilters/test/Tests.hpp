@@ -262,11 +262,43 @@ inline bool isEquals(int* imgOut1, int* imgOut2, int size){
         count_area++;
     }
     if (area == count_area) {
-        std::cout << "✅ Iterator getPixelsOfCC da " << treeType << " está correto." << std::endl;
+        std::cout << "✅ Iterator getPixelsOfCC da " << treeType << " contém a quantidade de pixels correto." << std::endl;
     }else{
         std::cout << "❌ Erro: Iterator getPixelsOfCC da " << treeType << ". Valor de count_area:" << count_area << std::endl;
     }
-        
+    
+    std::unordered_set<int> seen;
+    bool hasDuplicates = false;
+    for(int p : tree->getRoot()->getPixelsOfCC()) {
+        if (seen.count(p)) {
+            std::cout << "❌ Erro: Pixel repetido: " << p << std::endl;
+            hasDuplicates = true;
+        }
+        seen.insert(p);
+    }
+    if (!hasDuplicates) {
+        std::cout << "✅ Iterator getPixelsOfCC da " << treeType << " está correto." << std::endl;
+    }else{
+        std::cout << "❌ Erro: Iterator getPixelsOfCC da " << treeType << " contém pixels repetidos." << std::endl;
+    }
+
+    hasDuplicates = false;
+    for(NodeMTPtr node: tree->getIndexNode()){
+        std::unordered_set<int> seen;
+        for(int p : node->getCNPs()) {
+            if (seen.count(p)) {
+                std::cout << "❌ Erro: Pixel repetido: " << p << " no nodeID:" << node->getIndex() << std::endl;
+                hasDuplicates = true;
+            }
+            seen.insert(p);
+        } 
+    }
+    if (!hasDuplicates) {
+        std::cout << "✅ Os nós da " << treeType << " não contém CNPs repetidos." << std::endl;
+    }else{
+        std::cout << "❌ Erro: Existem nós na " << treeType << " contendo cnps repetidos." << std::endl;
+    }
+
 
     //Teste: Verifica se o Iterator getCNPs está correto
     int num_cnps = tree->getRoot()->getCNPs().size();
@@ -372,13 +404,13 @@ inline NodeMTPtr getNodeByIndex(MorphologicalTreePtr tree, int index){
 inline int* get2CsImage(int& numRows, int& numCols){
     int* img = new int[110]{
         4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-        4, 6, 7, 1, 1, 1, 7, 7, 7, 4, 4,
-        4, 6, 7, 1, 1, 1, 7, 7, 7, 4, 4,
-        4, 6, 7, 1, 1, 4, 4, 7, 7, 4, 4,
-        4, 6, 6, 1, 0, 4, 4, 7, 6, 4, 4,
-        4, 6, 7, 1, 1, 4, 4, 7, 7, 4, 4,
-        4, 6, 7, 1, 1, 1, 7, 7, 7, 4, 4,
-        4, 6, 7, 1, 1, 1, 7, 7, 7, 4, 4,
+        4, 4, 4, 1, 1, 1, 7, 7, 7, 4, 4,
+        4, 4, 1, 1, 1, 1, 7, 7, 7, 4, 4,
+        4, 4, 1, 1, 1, 1, 7, 7, 7, 4, 4,
+        4, 4, 1, 1, 4, 4, 4, 7, 7, 4, 4,
+        4, 4, 1, 1, 1, 1, 7, 7, 7, 4, 4,
+        4, 4, 1, 1, 1, 1, 7, 7, 7, 4, 4,
+        4, 4, 4, 1, 1, 1, 7, 7, 7, 4, 4,
         4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
         4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4
     };
@@ -873,7 +905,7 @@ inline int* getLenaCropImage(int& numRows, int& numCols){
 
 
 inline int* getSimpleImage(int& numRows, int& numCols){
-    
+    /*
     int* img=new int[255]{
         122, 127, 166, 201, 152,  96,  54,  44,  40,  41,  42,  43,  44,  44,  37, 
         133, 143, 213, 246, 236, 196, 137,  85,  55,  43,  44,  45,  35,  40,  42, 
@@ -892,7 +924,7 @@ inline int* getSimpleImage(int& numRows, int& numCols){
         54,  54,   94, 181, 222, 214, 141,  67,  40,  72,  99, 105, 106, 109, 123,  
         54,  48,   59,  95, 145, 158,  84,  52,  60,  96, 110, 115, 116, 110, 113,  
         49,  45,   44,  48,  71,  89,  49,  47,  71,  95, 162, 156, 119, 122, 111};
-      /*
+      
     int* img=new int[255]{
         14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14,
         14, 14,213,253,241,193,122, 60, 14, 14, 14, 14, 14, 14, 14,
@@ -911,8 +943,10 @@ inline int* getSimpleImage(int& numRows, int& numCols){
         14, 14, 71,175,224,214,127,  14, 14, 14, 14, 14, 14, 14,14,
         14, 14, 29, 72,132,147, 59,  14, 14, 14, 14, 14, 14, 14,14,
         14, 14, 14, 14, 14, 14, 14,  14, 14, 14, 14, 14, 14, 14,14};
-        */  
-        /*
+         
+        */
+        
+
         int* img=new int[255]{
             10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
             10, 10,215,255,255,150,150, 10, 10, 10, 10, 10, 10, 10, 10,
@@ -931,7 +965,7 @@ inline int* getSimpleImage(int& numRows, int& numCols){
             10, 10, 10,150,225,255,150,  10, 10, 10, 10, 10, 10, 10,10,
             10, 10, 10, 10,150,150, 10,  10, 10, 10, 10, 10, 10, 10,10,
             10, 10, 10, 10, 10, 10, 10,  10, 10, 10, 10, 10, 10, 10,10};
-    */
+    
 
     numRows=17;
     numCols=15;

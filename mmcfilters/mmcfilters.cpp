@@ -15,12 +15,13 @@
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
 
+
 #include <iterator>
 #include <utility>
 
 
 namespace py = pybind11;
-
+using namespace pybind11::literals;
 
 void init_NodeCT(py::module &m){
     py::class_<NodeMT, std::shared_ptr<NodeMT>>(m, "NodeMT")
@@ -39,8 +40,7 @@ void init_NodeCT(py::module &m){
             oss << "NodeCT(id=" << node.getIndex() << ", level=" << node.getLevel() << ")";
             return oss.str();
         })
-        .def_property_readonly("rep", &NodeMT::getRep )
-		.def_property_readonly("cnps", &NodeMT::getCNPs )
+ 		.def_property_readonly("cnps", &NodeMT::getCNPs )
 		.def_property_readonly("level", &NodeMT::getLevel )
 		.def_property_readonly("children", &NodeMT::getChildren )
 		.def_property_readonly("parent", &NodeMT::getParent )
@@ -51,7 +51,13 @@ void init_NodeCT(py::module &m){
         .def_property_readonly("residue", &NodeMT::getResidue ) 
         .def("pixelsOfCC",&NodeMT::getPixelsOfCC )
         .def("nodesOfPathToRoot",&NodeMT::getNodesOfPathToRoot )
-        .def("nodesDescendants",&NodeMT::getNodesDescendants );
+        .def("nodesDescendants",&NodeMT::getNodesDescendants )
+        .def("bfsTraversal", &NodeMT::getIteratorBreadthFirstTraversal)
+        .def("postOrderTraversal", &NodeMT::getIteratorPostOrderTraversal)
+        .def("recNode", [](NodeMTPtr node) {
+            return MorphologicalTreePybind::recNode(node);
+        });
+
         
 }
 
@@ -94,9 +100,10 @@ void init_NodeCT_Iterators(py::module &m) {
 
 void init_MorphologicalTree(py::module &m){
       py::class_<MorphologicalTreePybind, std::shared_ptr<MorphologicalTreePybind>>(m, "MorphologicalTree")
-        .def(py::init<py::array_t<int>, int, int, bool, double>())
-        .def(py::init<py::array_t<int>, int, int, bool>())
-        .def(py::init<py::array_t<int>, int, int>())
+        .def(py::init<py::array_t<int>, int, int, bool, double>(),
+            "input"_a, "rows"_a, "cols"_a, "isMaxtree"_a, "radius"_a = 1.5)
+        .def(py::init<py::array_t<int>, int, int, std::string>(),
+            "input"_a, "rows"_a, "cols"_a, "ToSInperpolation"_a = "self-dual")
         .def("reconstructionImage", &MorphologicalTreePybind::reconstructionImage )
 		.def_property_readonly("numNodes", &MorphologicalTreePybind::getNumNodes )
         .def_property_readonly("listNodes", &MorphologicalTreePybind::getIndexNode )

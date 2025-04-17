@@ -6,9 +6,8 @@
 
 NodeMT::NodeMT(){}
 
-NodeMT::NodeMT(int index, int rep, NodeMTPtr parent, int level) {
+NodeMT::NodeMT(int index, NodeMTPtr parent, int level) {
 		this->index = index;
-        this->rep = rep;
         this->parent = parent;
         this->level = level;
         if(parent == nullptr)
@@ -28,7 +27,15 @@ void NodeMT::addChild(NodeMTPtr child) {
 	this->children.push_back(child);
 }
 
-int NodeMT::getRep(){ return this->rep; }
+void NodeMT::setLevel(int level){
+    this->level = level;
+    if(this->parent == nullptr)
+        this->residue = this->level;
+    else{
+        this->isMaxtree = this->level > this->parent->level;
+        this->residue = abs(this->level - this->parent->level);
+    }
+}
 
 int NodeMT::getIndex(){ return this->index; }
 

@@ -10,7 +10,7 @@ int main() {
 
     int numRows = 100;
     int numCols = 100;
-    AdjacencyUC adj(numRows, numCols);
+    AdjacencyUC adj(numRows, numCols, true);
 
     int pRow = 2;
     int pCol = 2;

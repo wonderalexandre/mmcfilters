@@ -2,8 +2,8 @@
 #include <climits>
 #include <vector>
 #include <utility>
-#include <array>
 #include <list>
+#include <deque>
 
 #include "../include/AdjacencyUC.hpp"
 
@@ -25,15 +25,15 @@ private:
 
     class PriorityQueueToS {
     private:
-        std::array<std::vector<int>, 256> buckets; 
+        std::vector<std::deque<int>> buckets;
         int currentPriority;
         int numElements;
+        int maxPriorityLevels;
+        
 
     public:
-        PriorityQueueToS() : currentPriority(0), numElements(0) {
-            for (int i = 0; i < 256; ++i) {
-                buckets[i] = std::vector<int>(); // Inicializar cada bucket como um vetor vazio
-            }
+        PriorityQueueToS(int depthOfImage=8) : currentPriority(0), numElements(0), maxPriorityLevels(1 << depthOfImage){
+            buckets.resize(maxPriorityLevels);
         }
 
         void initial(int element, int priority) {
@@ -74,20 +74,18 @@ private:
                     }
 
                     // Tentar aumentar a prioridade
-                    if (i < 256 && buckets[i].empty()) {
+                    if (i < maxPriorityLevels && buckets[i].empty()) {
                         i++;
                     }
-                    if (i < 256 && !buckets[i].empty()) { // Encontrou o próximo bucket não vazio aumentando a prioridade
+                    if (i < maxPriorityLevels && !buckets[i].empty()) { // Encontrou o próximo bucket não vazio aumentando a prioridade
                         currentPriority = i;
                         break;
                     }
                 }
             }
 
-            int element = buckets[currentPriority].at(buckets[currentPriority].size() - 1); // Mudança aqui!
-            buckets[currentPriority].pop_back();
-           //int element = buckets[currentPriority].front();
-           //buckets[currentPriority].erase(buckets[currentPriority].begin());
+            int element = buckets[currentPriority].front(); 
+            buckets[currentPriority].pop_front();           
 
             numElements--;  
             return element;

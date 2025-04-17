@@ -10,6 +10,9 @@
 #include "../../external/stb/stb_image.h"
 #include "../../external/stb/stb_image_write.h"
 
+#include <chrono>
+#include <iostream>
+
 int* openImage(std::string filename, int& numRows, int& numCols){
     //std::cout << "filename:" << filename << std::endl;
     int nchannels;
@@ -44,8 +47,13 @@ int main(int argc, char* argv[]) {
     //printImage(img, numRows, numCols);
 
     // Criação das Component Trees
+    auto start = std::chrono::high_resolution_clock::now();
     MorphologicalTreePtr tree = std::make_shared<MorphologicalTree>(img, numRows, numCols, tosType);
-    //std::cout << "Depth:" << tree->getDepth() << std::endl;
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = end - start;
+    std::cout << "Tempo para construir a árvore: " << elapsed.count() << " segundos" << std::endl;
+    
+    std::cout << "Depth:" << tree->getDepth() << ", |nodes|:" << tree->getNumNodes() << std::endl;
     
     
     //testComponentTree(tree, "ToS", img, numRows, numCols);

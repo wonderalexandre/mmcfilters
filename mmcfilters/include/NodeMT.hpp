@@ -12,7 +12,6 @@
 class NodeMT : public std::enable_shared_from_this<NodeMT> {
 private:
 	int index; 
-    int rep;
     int level;
 	int residue;
 	NodeMTPtr parent;
@@ -27,10 +26,10 @@ private:
 public:
 	
     NodeMT();
-    NodeMT(int index, int rep, NodeMTPtr parent, int level);
+    NodeMT(int index, NodeMTPtr parent, int level);
     void addCNPs(int p);
+    void setLevel(int level);
     void addChild(NodeMTPtr child);
-	int getRep();
 	int getIndex();
 	void setIndex(int index);
 	int getResidue();

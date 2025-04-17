@@ -1,9 +1,8 @@
 #ifndef ADJACENCY_UC_HPP
 #define ADJACENCY_UC_HPP
 
-#include <vector>
 #include <cstdint>
-#include <iterator>
+#include <vector>
 #include "../include/ImageUtils.hpp"
 
 enum class DiagonalConnection : uint8_t {
@@ -14,110 +13,125 @@ enum class DiagonalConnection : uint8_t {
   NW = 1 << 3
 };
 
-  inline DiagonalConnection operator|(DiagonalConnection a, DiagonalConnection b) {
-    return static_cast<DiagonalConnection>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
-  }
-  
-  inline DiagonalConnection& operator|=(DiagonalConnection &a, DiagonalConnection b) {
-    a = a | b;
-    return a;
-  }
-  
-  inline bool operator&(DiagonalConnection a, DiagonalConnection b) {
-    return static_cast<uint8_t>(a) & static_cast<uint8_t>(b);
-  }
+// Operadores auxiliares
+inline DiagonalConnection operator|(DiagonalConnection a, DiagonalConnection b) {
+  return static_cast<DiagonalConnection>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
+}
+
+inline DiagonalConnection& operator|=(DiagonalConnection &a, DiagonalConnection b) {
+  a = a | b;
+  return a;
+}
+
+inline bool operator&(DiagonalConnection a, DiagonalConnection b) {
+  return static_cast<uint8_t>(a) & static_cast<uint8_t>(b);
+}
 
 class AdjacencyUC {
+private:
+  int numRows, numCols;
+  uint8_t* dconnFlags = nullptr;     // 4-connect.  +  diag. connect.
+                                    //  N, W, S, E,   SW, NE, SE, NW
+  const std::vector<int> offsetRows = {-1, 0, 1, 0,    1, -1,  1, -1}; 
+  const std::vector<int> offsetCols = {0, -1, 0, 1,    -1,  1,  1, -1};
+  bool enableDiagonalConnection;
+  const std::vector<DiagonalConnection> requiredDiagonal = {
+    DiagonalConnection::SW, DiagonalConnection::NE,
+    DiagonalConnection::SE, DiagonalConnection::NW
+  };
 
+public:
+  AdjacencyUC(int rows, int cols, bool enableDiagonalConnection) : numRows(rows), numCols(cols), enableDiagonalConnection(enableDiagonalConnection){
+    if(enableDiagonalConnection)
+      dconnFlags = new uint8_t[rows * cols]();
+  }
+
+  ~AdjacencyUC() {
+    delete[] dconnFlags;
+  }
+
+  void setDiagonalConnection(int row, int col, DiagonalConnection conn) {
+    dconnFlags[ImageUtils::to1D(row, col, numCols)] |= static_cast<uint8_t>(conn);
+  }
+
+  void setDiagonalConnection(int idx, DiagonalConnection conn) {
+    dconnFlags[idx] |= static_cast<uint8_t>(conn);
+  }
+
+  bool hasConnection(int row, int col, DiagonalConnection conn) const {
+    return dconnFlags[ImageUtils::to1D(row, col, numCols)] & static_cast<uint8_t>(conn);
+  }
+
+  uint8_t getConnections(int row, int col) const {
+    return dconnFlags[ImageUtils::to1D(row, col, numCols)];
+  }
+
+  class NeighborIterator {
   private:
-    int numRows, numCols;
-    std::vector<DiagonalConnection> dconn_;
+    AdjacencyUC &instance;
+    int row, col, id;
 
-    // offsets: N, W, S, E, SW, NE, SE, NW
-    const std::vector<int> dr_ = {-1, 0, 1, 0,  1, -1, 1, -1};
-    const std::vector<int> dc_ = {0, -1, 0, 1, -1,  1, 1, -1};
-
-    const std::vector<DiagonalConnection> required_diag_ = {
-      DiagonalConnection::SW,
-      DiagonalConnection::NE,
-      DiagonalConnection::SE,
-      DiagonalConnection::NW
-    };
+    void advanceToValid() {
+      while (id< instance.offsetRows.size()) {
+        int r = row + instance.offsetRows[id];
+        int c = col + instance.offsetCols[id];
+        if (r >= 0 && c >= 0 && r < instance.numRows && c < instance.numCols) {
+          if (id < 4 || (instance.enableDiagonalConnection && instance.dconnFlags[ImageUtils::to1D(row, col, instance.numCols)] & static_cast<uint8_t>(instance.requiredDiagonal[id - 4]))) {
+            return;
+          }
+        }
+        ++id;
+      }
+    }
 
   public:
-    AdjacencyUC(int numRows, int numCols) : numRows(numRows), numCols(numCols), dconn_(numRows * numCols, DiagonalConnection::None) {}
-    void setDiagonalConnection(int row, int col, DiagonalConnection conn) {
-      dconn_[ImageUtils::to1D(row, col, this->numCols)] |= conn;
+    NeighborIterator(AdjacencyUC &adj, int row, int col, int id): instance(adj), row(row), col(col), id(id){
+      advanceToValid();
     }
 
-    void setDiagonalConnection(int idx, DiagonalConnection conn) {
-      dconn_[idx] |= conn;
+    int operator*() const {
+      int dr = instance.offsetRows[id];
+      int dc = instance.offsetCols[id];
+      return ImageUtils::to1D(row + dr, col + dc, instance.numCols);
     }
 
-    class NeighborIterator {
-    private:
-      AdjacencyUC &adj_;
-      int row_, col_, id_;
+    NeighborIterator& operator++() {
+      ++id;
+      advanceToValid();
+      return *this;
+    }
 
-      void advanceToValid() {
-        while (id_ < adj_.dr_.size()) {
-          int r = row_ + adj_.dr_[id_];
-          int c = col_ + adj_.dc_[id_];
-          if (r >= 0 && c >= 0 && r < adj_.numRows && c < adj_.numCols) {
-            if (id_ < 4 || (adj_.dconn_[ImageUtils::to1D(row_, col_, adj_.numCols)] & adj_.required_diag_[id_ - 4])) {
-              return;
-            }
-          }
-          ++id_;
-        }
-      }
-    public:
-      NeighborIterator(AdjacencyUC &adj, int row, int col, int id)
-        : adj_(adj), row_(row), col_(col), id_(id)
-      {
-        advanceToValid();
-      }
+    bool operator==(const NeighborIterator &other) const {
+      return id == other.id;
+    }
 
-      int operator*() const {
-        int dr = adj_.dr_[id_];
-        int dc = adj_.dc_[id_];
-        return ImageUtils::to1D(row_ + dr, col_ + dc, adj_.numCols);
-      }
+    bool operator!=(const NeighborIterator &other) const {
+      return !(*this == other);
+    }
+  };
 
-      NeighborIterator& operator++() {
-        ++id_;
-        advanceToValid();
-        return *this;
-      }
-
-      bool operator==(const NeighborIterator &other) const {
-        return id_ == other.id_;
-      }
-
-      bool operator!=(const NeighborIterator &other) const {
-        return !(*this == other);
-      }
-    };
-
-    class NeighborRange {
-      private:
-        AdjacencyUC &adj_;
-        int row_, col_;
-      public:
-        NeighborRange(AdjacencyUC &adj, int row, int col) : adj_(adj), row_(row), col_(col) {}
-        NeighborIterator begin() { return NeighborIterator(adj_, row_, col_, 0); }
-        NeighborIterator end() { return NeighborIterator(adj_, row_, col_, 8); }
-      };
+  class NeighborRange {
+  private:
+    AdjacencyUC &instance;
+    int row, col;
     
-      NeighborRange getNeighboringPixels(int p) {
-        auto [pRow, pCol] = ImageUtils::to2D(p, numCols);
-        return NeighborRange(*this, pRow, pCol);
-      }
-      
+  public:
+    NeighborRange(AdjacencyUC &instance, int row, int col)
+      : instance(instance), row(row), col(col) {}
 
-      NeighborRange getNeighboringPixels(int row, int col) {
-        return NeighborRange(*this, row, col);
-      }
+    NeighborIterator begin() { return NeighborIterator(instance, row, col, 0); }
+    NeighborIterator end() { return NeighborIterator(instance, row, col, 8); }
+  };
+
+  NeighborRange getNeighboringPixels(int p) {
+    auto [row, col] = ImageUtils::to2D(p, numCols);
+    return NeighborRange(*this, row, col);
+  }
+
+  NeighborRange getNeighboringPixels(int row, int col) {
+    return NeighborRange(*this, row, col);
+  }
+
 
 };
 

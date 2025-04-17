@@ -15,7 +15,7 @@
 
 
  MorphologicalTree::~MorphologicalTree(){
-	//nodes = nullptr;
+	
  }
 
 MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols, std::string ToSInperpolation){
@@ -47,13 +47,12 @@ MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols, std::st
     for (int i = 0; i < size; i++) {
 		int p = imgR[i];
         auto [row, col] = ImageUtils::to2D(p, builder->getInterpNumCols());
-		int pixelUnterpolate =  ImageUtils::to1D(row/2, col/2, numCols);
-            
+		    
 		if (p == parent[p]) { //representante do node raiz
-            this->root = nodesTmp[p] = std::make_shared<NodeMT>(this->numNodes++, pixelUnterpolate, nullptr, imgU[p]);
+            this->root = nodesTmp[p] = std::make_shared<NodeMT>(this->numNodes++, nullptr, imgU[p]);
 		}
 		else if (imgU[p] != imgU[parent[p]]) { //representante de um node
-			nodesTmp[p] = std::make_shared<NodeMT>(this->numNodes++, pixelUnterpolate, nodesTmp[parent[p]], imgU[p]);
+			nodesTmp[p] = std::make_shared<NodeMT>(this->numNodes++, nodesTmp[parent[p]], imgU[p]);
 			nodesTmp[parent[p]]->addChild(nodesTmp[p]);
 		}
 		else if (imgU[p] == imgU[parent[p]]) {
@@ -61,10 +60,22 @@ MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols, std::st
 		}
 
 		if(row % 2 == 1 && col % 2 == 1){
+			int pixelUnterpolate =  ImageUtils::to1D(row/2, col/2, numCols);
 			this->nodes[pixelUnterpolate] = nodesTmp[p];					
 			this->nodes[pixelUnterpolate]->addCNPs(pixelUnterpolate);
 		}
 	}
+	
+	if(ToSInperpolation == "4c8c"){
+		AttributeComputedIncrementally::computerAttribute(this->root,
+			[&img](NodeMTPtr node) -> void { //pre-processing
+				node->setLevel(img[node->getCNPs().front()]);
+			},
+			[](NodeMTPtr parent, NodeMTPtr child) -> void { },
+			[](NodeMTPtr node) -> void {}
+		);
+	}
+
 	if(this->root->getCNPs().size() == 0){
 		this->root->setResidue(0);
 	}
@@ -136,11 +147,11 @@ MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols, bool is
 	for (int i = 0; i < n; i++) {
 		int p = orderedPixels[i];
 		if (p == parent[p]) { //representante do node raiz
-			this->root = this->nodes[p] = std::make_shared<NodeMT>(this->numNodes++, p, nullptr, img[p]);
+			this->root = this->nodes[p] = std::make_shared<NodeMT>(this->numNodes++, nullptr, img[p]);
 			this->nodes[p]->addCNPs(p);
 		}
 		else if (img[p] != img[parent[p]]) { //representante de um node
-			this->nodes[p] = std::make_shared<NodeMT>(this->numNodes++, p, this->nodes[parent[p]], img[p]);
+			this->nodes[p] = std::make_shared<NodeMT>(this->numNodes++, this->nodes[parent[p]], img[p]);
 			this->nodes[p]->addCNPs(p);
 			this->nodes[parent[p]]->addChild(this->nodes[p]);
 		}

@@ -27,6 +27,7 @@
 
      /**
       * Implementation based on the paper: 
+      *  - Thesi of the N.Boutry
       * - T. Géraud, E. Carlinet, and S. Crozet, Self-Duality and Digital Topology: Links Between the Morphological Tree of Shapes and Well-Composed Gray-Level Images, ISMM 2015
       * - N.Boutry, T.Géraud, L.Najman, "How to Make nD Functions Digitally Well-Composed in a Self-dual Way", ISMM 2015.
       * - N.Boutry, T.Géraud, L.Najman, "On Making {$n$D} Images Well-Composed by a Self-Dual Local Interpolation", DGCI 2014
@@ -84,7 +85,7 @@
         const int* adjCol = nullptr;
         const int* adjRow = nullptr;
         int adjSize;
-        this->adj = new AdjacencyUC(interpNumRows, interpNumCols);
+        this->adj = new AdjacencyUC(interpNumRows, interpNumCols, false);
 
         for (int row=0; row < this->interpNumRows; row++){
             for (int col=0; col < this->interpNumCols; col++){
@@ -144,7 +145,7 @@
         this->is4c8cConnectivity = true;
         this->interpNumCols = numCols * 2 + 1;
         this->interpNumRows = numRows * 2 + 1;
-        this->adj = new AdjacencyUC(interpNumRows, interpNumCols);
+        this->adj = new AdjacencyUC(interpNumRows, interpNumCols, true);
 
 
         // Aloca memória para os resultados de interpolação (mínimo e máximo)

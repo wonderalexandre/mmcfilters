@@ -76,10 +76,6 @@ MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols, std::st
 		);
 	}
 
-	if(this->root->getCNPs().size() == 0){
-		this->root->setResidue(0);
-	}
-	
 	computerTreeAttribute();
 	delete builder;
 	imgR = nullptr;
@@ -111,13 +107,11 @@ void MorphologicalTree::computerTreeAttribute(){
 	AttributeComputedIncrementally::computerAttribute(this->root,
 		[this, &timer, depth](NodeMTPtr node) -> void { //pre-processing
 			node->setAreaCC( node->getCNPs().size() );
-			node->setNumDescendants( node->getChildren().size() );
 			node->setTimePreOrder(timer++);
 			depth[node->getIndex()] =  node->getParent() == nullptr ? 0 : depth[node->getParent()->getIndex()] + 1;
 		},
 		[](NodeMTPtr parent, NodeMTPtr child) -> void { //merge-processing
 			parent->setAreaCC( parent->getAreaCC() + child->getAreaCC() );
-			parent->setNumDescendants( parent->getNumDescendants() + child->getNumDescendants() );
 		},
 		[&timer, depth, &maxDepth](NodeMTPtr node) -> void { // post-processing
 			node->setTimePostOrder(timer++);
@@ -285,13 +279,10 @@ void MorphologicalTree::pruning(NodeMTPtr nodePruning){
 			nodePruning->getParent()->addCNPs(p);
 			this->nodes[p] = nodePruning->getParent()->getParent();
 		}
-		int numDescendants = nodePruning->getParent()->getNumDescendants();
-		int numDescendantsChild = nodePruning->getNumDescendants() + 1;
-		nodePruning->getParent()->setNumDescendants(numDescendants - numDescendantsChild); 
 		nodePruning->getParent()->getChildren().remove(nodePruning);
 		nodePruning->setParent(nullptr);
 		nodePruning = nullptr;
-		
+		this->computerTreeAttribute();
 	}
 }
 

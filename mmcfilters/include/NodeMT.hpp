@@ -13,16 +13,12 @@ class NodeMT : public std::enable_shared_from_this<NodeMT> {
 private:
 	int index; 
     int level;
-	int residue;
+	int areaCC;
+    int timePostOrder;
+    int timePreOrder;
 	NodeMTPtr parent;
     std::list<NodeMTPtr> children;
 	std::list<int> cnps;
-    bool isMaxtree;
-	int areaCC;
-	int numDescendants;
-    int timePostOrder;
-    int timePreOrder;
-
 public:
 	
     NodeMT();
@@ -33,13 +29,11 @@ public:
 	int getIndex();
 	void setIndex(int index);
 	int getResidue();
-	void setResidue(int residue);
 	int getLevel();
 	int getAreaCC();
 	bool isMaxtreeNode();
 	void setAreaCC(int area);
 	int getNumDescendants();
-	void setNumDescendants(int num);
 	NodeMTPtr getParent();
 	void setParent(NodeMTPtr parent);
 	std::list<int>& getCNPs();
@@ -431,7 +425,7 @@ class InternalIteratorPixelsOfCC{
             InternalIteratorNodesDescendants end(){ return InternalIteratorNodesDescendants(instance, numDescendants+1); }
 	};	
 	IteratorNodesDescendants& getNodesDescendants(){
-	    IteratorNodesDescendants *iter = new IteratorNodesDescendants(this->shared_from_this(), this->numDescendants);
+	    IteratorNodesDescendants *iter = new IteratorNodesDescendants(this->shared_from_this(), this->getNumDescendants());
     	return *iter;
 	}
 	

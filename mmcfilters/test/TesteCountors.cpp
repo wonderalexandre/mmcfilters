@@ -30,7 +30,7 @@ int* openImage(std::string filename, int& numRows, int& numCols){
 int main(int argc, char* argv[]) {
     // Definição da imagem e parâmetros
     int numRows, numCols;
-    //int* img = getLenaCropImage(numRows, numCols);
+    //int* img = getSimpleImage(numRows, numCols);
     
     if(argc != 3){
         std::cout << "Execute assim: " << argv[0] << " <ToS_type> <filename>" << std::endl;

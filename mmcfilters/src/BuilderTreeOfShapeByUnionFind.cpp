@@ -290,7 +290,7 @@
                     int max_v0v3 = std::max(v0, v3);
                     int min_v1v2 = std::min(v1, v2);
                     int max_v1v2 = std::max(v1, v2);
-                    if (max_v1v2 < min_v0v3) {
+                    if (max_v1v2 > min_v0v3) {
                         
                         // Saddle point configuration 1
                         this->adj->setDiagonalConnection(row, col-1, DiagonalConnection::SE);
@@ -306,7 +306,7 @@
                         this->interpolationMin[pT] = min_v0v3;
                         this->interpolationMax[pT] = max_v0v3;
                     }
-                    else if (max_v0v3 < min_v1v2) {
+                    else if (max_v0v3 > min_v1v2) {
                         // Saddle point configuration 2
                         this->adj->setDiagonalConnection(row, col-1, DiagonalConnection::NE);
                         this->adj->setDiagonalConnection(row-1, col, DiagonalConnection::SW);

@@ -7,7 +7,9 @@
 #include "../include/NodeMT.hpp"
 #include "../include/ImageUtils.hpp"
 #include "../include/MorphologicalTree.hpp"
+#include "Tests.hpp"
 
+/*
 void printTree(NodeMTPtr root, int indent = 0) {
     
     // Imprime o nó atual com indentação
@@ -21,7 +23,7 @@ void printTree(NodeMTPtr root, int indent = 0) {
         printTree(child, indent + 1);
     }
 }
-
+*/
 
 int main() {
     // Exemplo de teste com imagem representada como ponteiro 1D
@@ -63,7 +65,7 @@ int main() {
     int num_rows = 3;
     int num_cols = 3;
     */
-    
+    /*
     int image[] = {
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1,
@@ -76,7 +78,9 @@ int main() {
     };
     int num_rows = 8;
     int num_cols = 16;
-    
+    */
+   int num_rows, num_cols;
+    int* image = getSimpleImage(num_rows, num_cols);
 /*
     int image[] = {
         4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
@@ -186,6 +190,7 @@ int main() {
 
     std::cout << std::endl;
     MorphologicalTree tree(image, num_rows, num_cols, "4c8c");
+    std::cout << "Depth:" << tree.getDepth() << ", |nodes|:" << tree.getNumNodes() << std::endl;
     printTree( tree.getRoot() );
 
      

@@ -32,6 +32,7 @@
       * - N.Boutry, T.Géraud, L.Najman, "On Making {$n$D} Images Well-Composed by a Self-Dual Local Interpolation", DGCI 2014
       */
      void BuilderTreeOfShapeByUnionFind::interpolateImage(int* img, int numRows, int numCols) {
+        this->is4c8cConnectivity = false;
         constexpr int adjCircleCol[] = {-1, +1, -1, +1};
         constexpr int adjCircleRow[] = {-1, -1, +1, +1};
 
@@ -140,6 +141,7 @@
     }
 
     void BuilderTreeOfShapeByUnionFind::interpolateImage4c8c(int* img, int numRows, int numCols) {
+        this->is4c8cConnectivity = true;
         this->interpNumCols = numCols * 2 + 1;
         this->interpNumRows = numRows * 2 + 1;
         this->adj = new AdjacencyUC(interpNumRows, interpNumCols);
@@ -337,36 +339,33 @@
         
         PriorityQueueToS queue;  // Fila de prioridade
         int pInfinito = ImageUtils::to1D(0, 0, interpNumCols);
-        int lambdaOld = this->interpolationMin[pInfinito];
-        queue.initial(pInfinito, lambdaOld);  
+        int priorityQueueOld = this->interpolationMin[pInfinito];
+        queue.initial(pInfinito, priorityQueueOld);  
         dejavu[pInfinito] = true;
 
-
-        int i = 0;  // Contador para preencher imgR na ordem correta
-        int d = 0;
+        int order = 0; 
+        int depth = 0;
         while (!queue.isEmpty()) {
-            //queue.printCurrentPriority();
-            int priorityQueue = queue.getCurrentPriority();
             int h = queue.priorityPop();  // Retirar o elemento com maior prioridade
-            std::pair pointH = ImageUtils::to2D(h, interpNumCols);
-            // Preencher imgU com o valor da prioridade corrente da fila
-            int lambda = queue.getCurrentPriority(); // Prioridade corrente
-            if(lambda != lambdaOld) d++;
-            imgU[h] = d;   
-
+            int priorityQueue = queue.getCurrentPriority(); // Prioridade corrente
+            if(this->is4c8cConnectivity){
+                if(priorityQueue != priorityQueueOld) depth++;
+                imgU[h] = depth;
+            }else{
+                imgU[h] = priorityQueue;
+            }
+            
             // Armazenar o índice h em imgR na ordem correta
-            this->imgR[i] = h;
+            this->imgR[order++] = h;
             
             // Adjacências
             for(int n: adj->getNeighboringPixels(h)){
-                std::pair pointN = ImageUtils::to2D(n, interpNumCols);
                 if (!dejavu[n]) {
                     queue.priorityPush(n, this->interpolationMin[n], this->interpolationMax[n]);
                     dejavu[n] = true;  // Marcar como processado
                 }
             }
-            i++;
-            lambdaOld = lambda;
+            priorityQueueOld = priorityQueue;
         }
         delete[] dejavu;
     }

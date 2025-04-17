@@ -118,10 +118,6 @@ class AdjacencyUC {
       NeighborRange getNeighboringPixels(int row, int col) {
         return NeighborRange(*this, row, col);
       }
-      
-
-
-
 
 };
 

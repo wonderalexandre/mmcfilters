@@ -1,6 +1,7 @@
 #include <iomanip>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 
 #include "../include/BuilderTreeOfShapeByUnionFind.hpp"
 #include "../include/NodeMT.hpp"
@@ -43,7 +44,7 @@ int main() {
     };
     int num_rows = 5;
     int num_cols = 9;
-*/
+
     
    int image[] = {
         3, 3, 3, 3,
@@ -53,7 +54,7 @@ int main() {
     };
     int num_rows = 4;
     int num_cols = 4;
-    /*
+    
     int image[] = {
         9, 11, 15,
         7, 1,  13,
@@ -61,7 +62,37 @@ int main() {
     };
     int num_rows = 3;
     int num_cols = 3;
-   
+    */
+    
+    int image[] = {
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1,
+    1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1,
+    1, 2, 2, 1, 1, 2, 2, 1, 1, 0, 0, 1, 1, 0, 0, 1,
+    1, 2, 2, 1, 1, 2, 2, 1, 1, 0, 0, 1, 1, 0, 0, 1,
+    1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1,
+    1, 1, 1, 2, 2, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+    };
+    int num_rows = 8;
+    int num_cols = 16;
+    
+/*
+    int image[] = {
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+        4, 4, 4, 1, 1, 1, 7, 7, 7, 4, 4,
+        4, 4, 1, 1, 1, 1, 7, 7, 7, 4, 4,
+        4, 4, 1, 1, 1, 1, 7, 7, 7, 4, 4,
+        4, 4, 1, 1, 4, 4, 4, 7, 7, 4, 4,
+        4, 4, 1, 1, 1, 1, 7, 7, 7, 4, 4,
+        4, 4, 1, 1, 1, 1, 7, 7, 7, 4, 4,
+        4, 4, 4, 1, 1, 1, 7, 7, 7, 4, 4,
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4
+    };
+    int num_cols = 11;
+    int num_rows = 10;
+
     
    int image[] = {
     128, 124, 150, 137, 106,
@@ -86,12 +117,18 @@ int main() {
     for (int r = 0; r < builder.getInterpNumRows(); ++r) {
         for (int c = 0; c < builder.getInterpNumCols(); ++c) {
             int index = ImageUtils::to1D(r, c, builder.getInterpNumCols());
-            if(r%2==1 && c%2==1){
-                std::cout << std::setw(3) << interpolationMin[index] << std::setw(3);
-            }else{
-                std::cout << "[" << interpolationMin[index] << "," << interpolationMax[index] << "]" << std::setw(1);
+    
+            std::ostringstream cell;
+            if (r % 2 == 1 && c % 2 == 1) {
+                cell << "  " << interpolationMax[index] << "  ";
+            } else {
+                cell << "[" << interpolationMin[index] << "," << interpolationMax[index] << "]";
             }
-            
+    
+            std::string cellStr = cell.str();
+    
+            // Garante que a célula tenha exatamente 8 caracteres (alinha à direita)
+            std::cout << std::setw(8) << cellStr;
         }
         std::cout << std::endl;
     }
@@ -148,7 +185,7 @@ int main() {
     }
 
     std::cout << std::endl;
-    MorphologicalTree tree(image, num_rows, num_cols);
+    MorphologicalTree tree(image, num_rows, num_cols, "4c8c");
     printTree( tree.getRoot() );
 
      

@@ -21,7 +21,7 @@ private:
     int* imgR; 
     int* imgU;
     AdjacencyUC* adj;
-
+    bool is4c8cConnectivity;
 
     class PriorityQueueToS {
     private:

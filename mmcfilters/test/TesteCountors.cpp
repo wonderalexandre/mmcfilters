@@ -27,24 +27,24 @@ int* openImage(std::string filename, int& numRows, int& numCols){
 int main(int argc, char* argv[]) {
     // Definição da imagem e parâmetros
     int numRows, numCols;
-    int* img = getLenaCropImage(numRows, numCols);
+    //int* img = getLenaCropImage(numRows, numCols);
     
-    if(argc != 2){
-        std::cout << "Execute assim: " << argv[0] << " <filename>" << std::endl;
+    if(argc != 3){
+        std::cout << "Execute assim: " << argv[0] << " <ToS_type> <filename>" << std::endl;
         return 1;
     }
-    //int* img = openImage(argv[1], numRows, numCols);
-    
+    int* img = openImage(argv[2], numRows, numCols);
+    std::string tosType = (std::string(argv[1])=="self-dual"? "self-dual":"4c8c");
 
     int n = numRows * numCols;
     AdjacencyRelationPtr adj = std::make_shared<AdjacencyRelation>(numRows, numCols, 1);
 
-    std::cout << "\nImage:"<< argv[1] << " \tResolution (cols x rows): " << numCols << " x " << numRows << std::endl;
+    std::cout << "\nImage:"<< argv[2] << " \tResolution (cols x rows): " << numCols << " x " << numRows << std::endl;
     
     //printImage(img, numRows, numCols);
 
     // Criação das Component Trees
-    MorphologicalTreePtr tree = std::make_shared<MorphologicalTree>(img, numRows, numCols, "self-dual");
+    MorphologicalTreePtr tree = std::make_shared<MorphologicalTree>(img, numRows, numCols, tosType);
     //std::cout << "Depth:" << tree->getDepth() << std::endl;
     
     

@@ -11,11 +11,11 @@
 
 class NodeMT : public std::enable_shared_from_this<NodeMT> {
 private:
-	int index; 
+	int index; //tempo de entrada durante o percurso pos-ordem (1 incremento) 
     int level;
 	int areaCC;
-    int timePostOrder;
-    int timePreOrder;
+    int timePostOrder;  //tempo de entrada durante o percurso pos-ordem (2 incremento) 
+    int timePreOrder;  //tempo de saia durante o percurso pos-ordem (2 incremento) 
 	NodeMTPtr parent;
     std::list<NodeMTPtr> children;
 	std::list<int> cnps;

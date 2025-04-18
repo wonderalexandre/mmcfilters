@@ -31,11 +31,10 @@ public:
 	static const int MIN_TREE = 1;
 	static const int TREE_OF_SHAPES = 2;
 
-	MorphologicalTree(int* img, int numRows, int numCols, bool isMaxtree, double radiusOfAdjacencyRelation);
-
-	MorphologicalTree(int* img, int numRows, int numCols, bool isMaxtree);
-
-	MorphologicalTree(int* img, int numRows, int numCols);
+	
+	MorphologicalTree(int* img, int numRows, int numCols, std::string ToSInperpolation="self-dual");
+	explicit MorphologicalTree(int* img, int numRows, int numCols, bool isMaxtree, double radius = 1.5);
+    MorphologicalTree(int* img, int numRows, int numCols, const char* ToSInterpolation) : MorphologicalTree(img, numRows, numCols, std::string(ToSInterpolation)) {}
 
     ~MorphologicalTree();
 

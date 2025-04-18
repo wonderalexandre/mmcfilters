@@ -3,6 +3,7 @@
   "configurations": [
 
 
+
     {
       "name": "testeResidualTree",
       "type": "lldb",  // Mudar para lldb, fornecido pela extensão CodeLLDB
@@ -21,6 +22,20 @@
       "type": "lldb",  // Mudar para lldb, fornecido pela extensão CodeLLDB
       "request": "launch",
       "program": "${workspaceFolder}/build/TesteCountors",  // Caminho para o executável de teste
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": false,
+      "preLaunchTask": "Build mmcfilters",  // Rodar a task de build antes de iniciar o debug
+      "internalConsoleOptions": "openOnSessionStart"
+    },
+
+    {
+      "name": "testeTreeOfShapes",
+      "type": "lldb",  // Mudar para lldb, fornecido pela extensão CodeLLDB
+      "request": "launch",
+      "program": "${workspaceFolder}/build/testeTreeOfShapes",  // Caminho para o executável de teste
       "args": [],
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}",

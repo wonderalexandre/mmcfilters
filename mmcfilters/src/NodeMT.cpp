@@ -6,18 +6,10 @@
 
 NodeMT::NodeMT(){}
 
-NodeMT::NodeMT(int index, int rep, NodeMTPtr parent, int level) {
+NodeMT::NodeMT(int index, NodeMTPtr parent, int level) {
 		this->index = index;
-        this->rep = rep;
         this->parent = parent;
         this->level = level;
-        if(parent == nullptr)
-            this->residue = this->level;
-        else{
-            this->isMaxtree = level > parent->level;
-            this->residue = abs(this->level - parent->level);
-        }
-
 }
 
 void NodeMT::addCNPs(int p) {
@@ -28,17 +20,24 @@ void NodeMT::addChild(NodeMTPtr child) {
 	this->children.push_back(child);
 }
 
-int NodeMT::getRep(){ return this->rep; }
+void NodeMT::setLevel(int level){
+    this->level = level;
+}
 
 int NodeMT::getIndex(){ return this->index; }
 
 void NodeMT::setIndex(int index) {this->index = index;}
 
-bool NodeMT::isMaxtreeNode(){ return this->isMaxtree; }
+bool NodeMT::isMaxtreeNode(){ 
+    return parent != nullptr && level > parent->level;
+}
 
-int NodeMT::getResidue(){ return this->residue; }
-
-void NodeMT::setResidue(int residue){ this->residue = residue; }
+int NodeMT::getResidue(){ 
+    if(parent == nullptr)
+        return this->level;
+    else    
+        return abs(this->level - parent->level);
+ }
 
 int NodeMT::getLevel(){ return this->level; }
 
@@ -46,9 +45,9 @@ int NodeMT::getAreaCC() { return this->areaCC; }
 
 void NodeMT::setAreaCC(int area) { this->areaCC = area; }
 
-int NodeMT::getNumDescendants() { return this->numDescendants; }
-
-void NodeMT::setNumDescendants(int num) { this->numDescendants = num; }
+int NodeMT::getNumDescendants() { 
+    return (this->getTimePostOrder() - this->getTimePreOrder() - 1) / 2;
+ }
 
 NodeMTPtr NodeMT::getParent(){  return this->parent; }
 

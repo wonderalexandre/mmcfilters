@@ -91,6 +91,15 @@ if(BUILD_TESTS)
     )
     target_link_libraries(TesteCountors PRIVATE mmcfilters_lib)
     target_compile_options(TesteCountors PRIVATE -Wno-deprecated-declarations)
+
+        
+    add_executable(TesteAdjacencyUC 
+        mmcfilters/test/TesteAdjacencyUC.cpp
+        external/stb/stb_image.cpp
+    )
+    target_link_libraries(TesteAdjacencyUC PRIVATE mmcfilters_lib)
+    target_compile_options(TesteAdjacencyUC PRIVATE -Wno-deprecated-declarations)
     
+
 
 endif()

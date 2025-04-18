@@ -1,5 +1,5 @@
 # MorphologicalAttributeFilters
-MorphologicalAttributeFilters is a C++/Python library for connected image filtering based on morphological trees (component tree and tree os shapes).
+MorphologicalAttributeFilters is a C++/Python library for connected image filtering based on morphological trees (component trees and tree os shapes).
 
 
 # How to install?
@@ -42,9 +42,12 @@ img_vector = img.ravel()
 
 3. Filtering
 ```
-tree = mmcfilters.ComponentTree(img_vector, num_rows, num_cols, True, 1.5)
-filter = mmcfilters.AttributeFilters(tree)
+isMaxtree = True
+radioAdj = 1.5 # 8-connectivity
+tree = mmcfilters.MorphologicalTree(img_vector, num_rows, num_cols, isMaxtree, radioAdj)
+#tree = mmcfilters.MorphologicalTree(img_vector, num_rows, num_cols) #tree of shapes
 
+filter = mmcfilters.AttributeFilters(tree)
 dic, attrs = mmcfilters.Attribute.computerBasicAttributes(tree)
 attr_area = attrs[:,dic['AREA']]
 

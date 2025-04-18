@@ -113,7 +113,7 @@ public:
 					bool isPixelToBeRemoved = true;
 					for (int q : adj4->getNeighboringPixels(p)) { //Existe um nodeQ ascendente de NodeAtual contendo p como contorno? (p, q) in A
 						NodeMTPtr nodeQ = tree->getSC(q); 
-						if (tree->isStrictAncestor(nodeQ, node) || !tree->isComparable(nodeQ, node)) { 
+						if (tree->isStrictAncestor(nodeQ, node) ) { 
 							contoursToRemove[nodeQ->getIndex()].push_back(p); 
 							isPixelToBeRemoved = false;	
 					  	}

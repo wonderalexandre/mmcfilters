@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 #include "../include/ImageUtils.hpp"
+#include "../include/Common.hpp"
 
 enum class DiagonalConnection : uint8_t {
   None = 0,

@@ -3,6 +3,7 @@
 #include "../include/MorphologicalTree.hpp"
 #include "../include/ComputerMSER.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
+#include "../include/Common.hpp"
 
 #ifndef ULTIMATE_ATTR_OPENING_H
 #define ULTIMATE_ATTR_OPENING_H

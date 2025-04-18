@@ -1,6 +1,8 @@
 
 #include "../include/NodeMT.hpp"
 #include "../include/MorphologicalTree.hpp"
+#include "../include/Common.hpp"
+
 #include <vector>
 
 #ifndef COMPUTER_MSER_H

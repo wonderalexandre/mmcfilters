@@ -3,6 +3,7 @@
 
 #include "../include/NodeMT.hpp"
 #include "../include/MorphologicalTree.hpp"
+#include "../include/Common.hpp"
 
 #ifndef NODE_RES_H
 #define NODE_RES_H

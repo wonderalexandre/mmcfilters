@@ -3,6 +3,7 @@
 #include "../include/NodeMT.hpp"
 #include "../include/NodeRes.hpp"
 #include "../include/AttributeOpeningPrimitivesFamily.hpp"
+#include "../include/Common.hpp"
 
 #ifndef RESIDUAL_TREE_H
 #define RESIDUAL_TREE_H

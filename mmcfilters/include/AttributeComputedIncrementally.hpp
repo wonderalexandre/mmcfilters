@@ -6,6 +6,8 @@
 #include "../include/NodeMT.hpp"
 #include "../include/ImageUtils.hpp"
 #include "../include/MorphologicalTree.hpp"
+#include "../include/Common.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <iostream>

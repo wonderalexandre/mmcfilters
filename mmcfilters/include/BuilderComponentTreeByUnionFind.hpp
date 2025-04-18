@@ -6,6 +6,7 @@
 #include <list>
 
 #include "../include/AdjacencyRelation.hpp"
+#include "../include/Common.hpp"
 
 
 #ifndef BUILDER_COMPONENT_TREE_BY_UNION_FIND_H

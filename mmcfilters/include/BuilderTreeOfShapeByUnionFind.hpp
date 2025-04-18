@@ -6,6 +6,7 @@
 #include <deque>
 
 #include "../include/AdjacencyUC.hpp"
+#include "../include/Common.hpp"
 
 
 #ifndef BUILDER_TREE_OF_SHAPE_BY_UNION_FIND_H

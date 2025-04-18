@@ -2,6 +2,7 @@
 #include "../include/MorphologicalTree.hpp"
 #include "../include/NodeMT.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
+#include "../include/Common.hpp"
 
 #include <vector>
 #include <tuple>

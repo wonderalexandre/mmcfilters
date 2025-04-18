@@ -5,6 +5,8 @@
 #include "../include/AdjacencyRelation.hpp"
 #include "../include/Common.hpp"
 #include <iostream>
+#include <cmath>
+
 
 #ifndef COMPONENT_TREE_H
 #define COMPONENT_TREE_H

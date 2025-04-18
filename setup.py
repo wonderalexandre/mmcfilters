@@ -107,7 +107,7 @@ else:
 
 setup(
     name="mmcfilters",
-    version="0.0.6",
+    version="0.0.7",
     description="A simple library for connected image filtering based on morphological trees",
     long_description="",
     author="Wonder Alexandre Luz Alves",

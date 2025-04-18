@@ -37,14 +37,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Incluir pybind11 se BUILD_PYBIND estiver ativado
 if(BUILD_PYBIND)
     
-    include(FetchContent)
-    FetchContent_Declare(
-        pybind11
-        GIT_REPOSITORY https://github.com/pybind/pybind11.git
-        GIT_TAG v2.10.4
-    )
-    FetchContent_MakeAvailable(pybind11)
-
+    include(pybind11.cmake)
     file (GLOB SOURCE_FILES "mmcfilters/src/*.cpp")
     file (GLOB HEADER_FILES "mmcfilters/include/*.hpp" "mmcfilters/pybind/*.hpp")
 

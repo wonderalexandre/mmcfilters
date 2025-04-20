@@ -3,6 +3,8 @@
 
 
 #include "../include/MorphologicalTree.hpp"
+#include "../include/Common.hpp"
+
 #include "../pybind/PybindUtils.hpp"
 
 #include <pybind11/numpy.h>
@@ -19,16 +21,12 @@ class MorphologicalTreePybind : public MorphologicalTree {
 
  public:
     using MorphologicalTree::MorphologicalTree;
-
-    //MorphologicalTreePybind(py::array_t<int> input, int numRows, int numCols)
-    //    : MorphologicalTree(static_cast<int*>(input.request().ptr), numRows, numCols) { }
-
     
-    MorphologicalTreePybind(py::array_t<int> input, int numRows, int numCols, std::string ToSInperpolation="self-dual")
-        : MorphologicalTree(static_cast<int*>(input.request().ptr), numRows, numCols, ToSInperpolation) { }
+    MorphologicalTreePybind(py::array_t<PixelValueType> input, int numRows, int numCols, std::string ToSInperpolation="self-dual")
+        : MorphologicalTree(Image::fromExternal(static_cast<PixelValueType*>(input.request().ptr), numRows, numCols), ToSInperpolation) { }
 
-	MorphologicalTreePybind(py::array_t<int> input, int numRows, int numCols, bool isMaxtree, double radiusOfAdjacencyRelation=1.5)
-        : MorphologicalTree(static_cast<int*>(input.request().ptr), numRows, numCols, isMaxtree, radiusOfAdjacencyRelation) { }
+	MorphologicalTreePybind(py::array_t<PixelValueType> input, int numRows, int numCols, bool isMaxtree, double radiusOfAdjacencyRelation=1.5)
+        : MorphologicalTree(Image::fromExternal(static_cast<PixelValueType*>(input.request().ptr), numRows, numCols), isMaxtree, radiusOfAdjacencyRelation) { }
    
 
     /*
@@ -42,15 +40,15 @@ class MorphologicalTreePybind : public MorphologicalTree {
         return PybindUtils::toNumpy(this->parent, n);
     }*/
 
-    py::array_t<int> getImageAferPruning(NodeMTPtr node){
+    py::array_t<PixelValueType> getImageAferPruning(NodeMTPtr node){
         int n = this->numRows * this->numCols;
-        int* imgOut = MorphologicalTree::getImageAferPruning(node); // Chamar método da superclasse
-        return PybindUtils::toNumpy(imgOut, n);
+        ImagePtr imgOut = MorphologicalTree::getImageAferPruning(node); // Chamar método da superclasse
+        return PybindUtils::toNumpy(imgOut->rawData(), n);
     }
 
-    py::array_t<int> reconstructionImage(){
+    py::array_t<PixelValueType> reconstructionImage(){
         int n = this->numRows * this->numCols;
-        int* imgOut = new int[n];
+        PixelValueType* imgOut = new PixelValueType[n];
         MorphologicalTree::reconstruction(this->root, imgOut);
         return PybindUtils::toNumpy(imgOut, n);
     }
@@ -63,7 +61,7 @@ class MorphologicalTreePybind : public MorphologicalTree {
 	}*/
 
 
-    static py::array_t<int> recNode(NodeMTPtr _node) {
+    static py::array_t<PixelValueType> recNode(NodeMTPtr _node) {
         int n = _node->getAreaCC();
         NodeMTPtr parent = _node->getParent();
         while (parent != nullptr) {
@@ -72,11 +70,11 @@ class MorphologicalTreePybind : public MorphologicalTree {
         }
 
         auto img_numpy = py::array(py::buffer_info(
-            nullptr, sizeof(int), py::format_descriptor<int>::value,
-            1, {n}, {sizeof(int)}
+            nullptr, sizeof(PixelValueType), py::format_descriptor<PixelValueType>::value,
+            1, {n}, {sizeof(PixelValueType)}
         ));
         auto buf_img = img_numpy.request();
-        int* imgOut = (int*) buf_img.ptr;
+        PixelValueType* imgOut = (PixelValueType*) buf_img.ptr;
         for (int p = 0; p < n; p++)
             imgOut[p] = 0;
         for(int p: _node->getPixelsOfCC()){

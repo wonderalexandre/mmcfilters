@@ -18,23 +18,21 @@
 	
  }
 
-MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols, std::string ToSInperpolation){
-	this->numRows = numRows;
-	this->numCols = numCols;
+MorphologicalTree::MorphologicalTree(ImagePtr imgPtr, std::string ToSInperpolation){
 	this->treeType = TREE_OF_SHAPES;
-	this->nodes.resize(this->numRows * this->numCols, nullptr);
+	this->numRows = imgPtr->numRows;
+	this->numCols = imgPtr->numCols;
+	this->nodes.resize(numRows * numCols, nullptr);
 
 	BuilderTreeOfShapeByUnionFind* builder = new BuilderTreeOfShapeByUnionFind();
 	if(ToSInperpolation == "4c8c")
-		builder->interpolateImage4c8c(img, numRows, numCols);
+		builder->interpolateImage4c8c(imgPtr);
 	else
-		builder->interpolateImage(img, numRows, numCols);
-	int* interpolationMin = builder->getInterpolationMin();
-	int* interpolationMax = builder->getInterpolationMax();
+		builder->interpolateImage(imgPtr);
 	
 	builder->sort();
 	int* imgR = builder->getImgR();
-	int* imgU = builder->getImgU();
+	PixelValueType* imgU = builder->getImgU();
 	
 	builder->createTreeByUnionFind();
 	int* parent = builder->getParent();
@@ -68,8 +66,8 @@ MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols, std::st
 	
 	if(ToSInperpolation == "4c8c"){
 		AttributeComputedIncrementally::computerAttribute(this->root,
-			[&img](NodeMTPtr node) -> void { //pre-processing
-				node->setLevel(img[node->getCNPs().front()]);
+			[&](NodeMTPtr node) -> void { //pre-processing
+				node->setLevel((imgPtr->data)[node->getCNPs().front()]);
 			},
 			[](NodeMTPtr parent, NodeMTPtr child) -> void { },
 			[](NodeMTPtr node) -> void {}
@@ -81,8 +79,6 @@ MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols, std::st
 	imgR = nullptr;
 	imgU = nullptr;
 	parent = nullptr;
-	interpolationMin = nullptr;
-	interpolationMax = nullptr;
 	
 } 
 
@@ -123,15 +119,17 @@ void MorphologicalTree::computerTreeAttribute(){
 }
 
  
-MorphologicalTree::MorphologicalTree(int* img, int numRows, int numCols, bool isMaxtree, double radiusOfAdjacencyRelation){
-	this->numRows = numRows;
-	this->numCols = numCols;
+MorphologicalTree::MorphologicalTree(ImagePtr imgPtr, bool isMaxtree, double radiusOfAdjacencyRelation){
+	this->numRows = imgPtr->numRows;
+	this->numCols = imgPtr->numCols;
+	PixelValueType* img = imgPtr->rawData();
+	
 	this->treeType = isMaxtree? MAX_TREE : MIN_TREE;
 
 	this->adj = std::make_shared<AdjacencyRelation>(numRows, numCols, radiusOfAdjacencyRelation);	
-	BuilderComponentTreeByUnionFind* builder = new BuilderComponentTreeByUnionFind(img, numRows, numCols, isMaxtree, adj);
+	BuilderComponentTreeByUnionFind* builder = new BuilderComponentTreeByUnionFind(imgPtr, isMaxtree, adj);
 	
-	int n = this->numRows * this->numCols;
+	int n = numRows * numCols;
 	int* orderedPixels = builder->getOrderedPixels();
 	int* parent = builder->getParent();
 		
@@ -246,9 +244,8 @@ NodeMTPtr MorphologicalTree::findLowestCommonAncestor(NodeMTPtr u, NodeMTPtr v){
 
 
 
-int* MorphologicalTree::getImageAferPruning(NodeMTPtr nodePruning){
-	int n = this->numRows * this->numCols;
-	int* imgOut = new int[n];
+ImagePtr MorphologicalTree::getImageAferPruning(NodeMTPtr nodePruning){
+	ImagePtr imgOut = Image::create(getNumRowsOfImage(), getNumColsOfImage());
 	std::stack<NodeMTPtr> s;
 	s.push(this->root);
 	while(!s.empty()){
@@ -256,14 +253,14 @@ int* MorphologicalTree::getImageAferPruning(NodeMTPtr nodePruning){
 		if(node->getIndex() == nodePruning->getIndex()){
 			for(int p: node->getPixelsOfCC()){
 				if(node->getParent() != nullptr)
-					imgOut[p] = node->getParent()->getLevel();
+					imgOut->data[p] = node->getParent()->getLevel();
 				else
-					imgOut[p] = node->getLevel();
+					imgOut->data[p] = node->getLevel();
 			}
 		}
 		else{
 			for(int p: node->getCNPs()){
-				imgOut[p] = node->getLevel();
+				imgOut->data[p] = node->getLevel();
 			}
 			for(NodeMTPtr child: node->getChildren()){
 				s.push(child);
@@ -286,27 +283,19 @@ void MorphologicalTree::pruning(NodeMTPtr nodePruning){
 	}
 }
 
-int* MorphologicalTree::reconstructionImage(){
-	int n = this->numRows * this->numCols;
-	int *imgOut = new int[n];
-	this->reconstruction(this->root, imgOut);
+ImagePtr MorphologicalTree::reconstructionImage(){
+	ImagePtr imgOut = Image::create(getNumRowsOfImage(), getNumColsOfImage());
+	this->reconstruction(this->root, imgOut->rawData());
 	return imgOut;
 }
 
-int* MorphologicalTree::getInputImage(){
-	int n = this->numRows * this->numCols;
-	int* img = new int[n];
-	this->reconstruction(this->root, img);
-	return img;
-}
-	
 
-void MorphologicalTree::reconstruction(NodeMTPtr node, int* imgOut){
+void MorphologicalTree::reconstruction(NodeMTPtr node, PixelValueType* dataOut){
 	for (int p : node->getCNPs()){
-		imgOut[p] = node->getLevel();
+		dataOut[p] = node->getLevel();
 	}
 	for(NodeMTPtr child: node->getChildren()){
-		reconstruction(child, imgOut);
+		reconstruction(child, dataOut);
 	}
 }
 

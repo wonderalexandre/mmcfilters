@@ -37,7 +37,7 @@ void UltimateAttributeOpening::execute(int maxCriterion, std::vector<bool> selec
 
 UltimateAttributeOpening::UltimateAttributeOpening(MorphologicalTreePtr tree, std::vector<float> attrs_increasing){
   this->tree = tree;
-  this->maxContrastLUT = new int[this->tree->getNumNodes()];
+  this->maxContrastLUT = new PixelValueType[this->tree->getNumNodes()];
   this->associatedIndexLUT = new int[this->tree->getNumNodes()];
   this->attrs_increasing = attrs_increasing;
 }
@@ -48,9 +48,9 @@ UltimateAttributeOpening::~UltimateAttributeOpening(){
 }
 
 
-int* UltimateAttributeOpening::getMaxConstrastImage(){
+PixelValueType* UltimateAttributeOpening::getMaxConstrastImage(){
   int size = this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage();
-  int *out = new int[size];
+  PixelValueType *out = new PixelValueType[size];
 
   for (int pidx = 0; pidx < size; pidx++){
     out[pidx] = this->maxContrastLUT[this->tree->getSC(pidx)->getIndex()];
@@ -58,7 +58,7 @@ int* UltimateAttributeOpening::getMaxConstrastImage(){
   return out;
 }
 
-int *UltimateAttributeOpening::getAssociatedImage(){
+int* UltimateAttributeOpening::getAssociatedImage(){
   int size = this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage();
   int *out = new int[size];
 

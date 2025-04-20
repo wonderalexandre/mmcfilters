@@ -10,50 +10,43 @@
         
     }
                            
-    int* AttributeFilters::filteringByPruningMin(float* attribute, float threshold){
-        int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-        int* imgOutput = new int[n];
-        AttributeFilters::filteringByPruningMin(this->tree, attribute, threshold, imgOutput);
+    ImagePtr AttributeFilters::filteringByPruningMin(float* attribute, float threshold){
+        ImagePtr imgOutput = Image::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
+        AttributeFilters::filteringByPruningMin(this->tree, attribute, threshold, imgOutput->rawData());
         return imgOutput;
     }
 
-    int* AttributeFilters::filteringByPruningMax(float* attribute, float threshold){
-        int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-        int* imgOutput = new int[n];
-        AttributeFilters::filteringByPruningMax(this->tree, attribute, threshold, imgOutput);
+    ImagePtr AttributeFilters::filteringByPruningMax(float* attribute, float threshold){
+        ImagePtr imgOutput = Image::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
+        AttributeFilters::filteringByPruningMax(this->tree, attribute, threshold, imgOutput->rawData());
         return imgOutput;
     }
 
-    int* AttributeFilters::filteringByPruningMin(std::vector<bool>& criterion){
-        int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-        int* imgOutput = new int[n];
-        AttributeFilters::filteringByPruningMin(this->tree, criterion, imgOutput);
+    ImagePtr AttributeFilters::filteringByPruningMin(std::vector<bool>& criterion){
+        ImagePtr imgOutput = Image::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
+        AttributeFilters::filteringByPruningMin(this->tree, criterion, imgOutput->rawData());
         return imgOutput;
     }
 
-    int* AttributeFilters::filteringByDirectRule(std::vector<bool>& criterion){
-        int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-        int* imgOutput = new int[n];
-        AttributeFilters::filteringByDirectRule(this->tree, criterion, imgOutput);
+    ImagePtr AttributeFilters::filteringByDirectRule(std::vector<bool>& criterion){
+        ImagePtr imgOutput = Image::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
+        AttributeFilters::filteringByDirectRule(this->tree, criterion, imgOutput->rawData());
         return imgOutput;
     }
 
-    int* AttributeFilters::filteringByPruningMax(std::vector<bool>& criterion){
-        int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-        int* imgOutput = new int[n];
+    ImagePtr AttributeFilters::filteringByPruningMax(std::vector<bool>& criterion){
+        ImagePtr imgOutput = Image::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
 
-        AttributeFilters::filteringByPruningMax(this->tree, criterion, imgOutput);
+        AttributeFilters::filteringByPruningMax(this->tree, criterion, imgOutput->rawData());
 
         return imgOutput;
 
     }
 
-    int* AttributeFilters::filteringBySubtractiveRule(std::vector<bool>& criterion){
+    ImagePtr AttributeFilters::filteringBySubtractiveRule(std::vector<bool>& criterion){
 
-        int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-        int* imgOutput = new int[n];
-
-        AttributeFilters::filteringBySubtractiveRule(this->tree, criterion, imgOutput);
+        ImagePtr imgOutput = Image::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
+        AttributeFilters::filteringBySubtractiveRule(this->tree, criterion, imgOutput->rawData());
 
         return imgOutput;
 

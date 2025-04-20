@@ -15,10 +15,10 @@ class ResidualTree{
       NodeRes* root;
       AttributeOpeningPrimitivesFamily* primitivesFamily;
       MorphologicalTreePtr tree;
-      int* maxContrastLUT;
+      PixelValueType* maxContrastLUT;
       int* associatedIndexesLUT;
       int numNodes;
-      int* restOfImage;
+      ImagePtr restOfImage;
       //std::list<NodeRes*> listNodes;
       NodeRes** nodes;
 
@@ -31,7 +31,7 @@ class ResidualTree{
 
         void createTree();
 
-        int* reconstruction();
+        ImagePtr reconstruction();
 
         ~ResidualTree();
 
@@ -41,19 +41,19 @@ class ResidualTree{
 
         NodeRes* getNodeRes(NodeMTPtr node);
 
-        int* getMaxConstrastImage();
+        ImagePtr getMaxConstrastImage();
 
-        int* filtering(std::vector<bool> criterion, int* imgOutput);
+        ImagePtr filtering(std::vector<bool> criterion);
 
         int* getAssociatedImage();
 
         int* getAssociatedColorImage();   
 
-        int* getRestOfImage();
+        ImagePtr getRestOfImage();
 
-        int* getPositiveResidues();
+        ImagePtr getPositiveResidues();
 
-        int* getNegativeResidues();
+        ImagePtr getNegativeResidues();
 
         MorphologicalTreePtr getCTree();
 

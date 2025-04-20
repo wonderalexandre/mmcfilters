@@ -4,42 +4,28 @@
 
 #include "../include/NodeMT.hpp"
 #include "../include/ImageUtils.hpp"
+#include "../include/Common.hpp"
 
 #include "../include/MorphologicalTree.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
-#include "../../external/stb/stb_image.h"
-#include "../../external/stb/stb_image_write.h"
 
-#include <chrono>
-#include <iostream>
 
-int* openImage(std::string filename, int& numRows, int& numCols){
-    //std::cout << "filename:" << filename << std::endl;
-    int nchannels;
-    unsigned char* data = stbi_load(filename.c_str(), &numCols, &numRows, &nchannels, 1);
-    
-    int* img = new int[numCols * numRows];
-    for (int i = 0; i < numCols * numRows; i++) {
-        img[i] = static_cast<int>(data[i]);  // Converte de `unsigned char` para `int`
-    }
-    stbi_image_free(data); // Liberar a memória da imagem carregada
-
-    return img;
-}
 
 int main(int argc, char* argv[]) {
     // Definição da imagem e parâmetros
-    int numRows, numCols;
-    //int* img = getSimpleImage(numRows, numCols);
+    
+    //ImagePtr img = getLenaCropImage();
     
     if(argc != 3){
         std::cout << "Execute assim: " << argv[0] << " <ToS_type> <filename>" << std::endl;
         return 1;
     }
-    int* img = openImage(argv[2], numRows, numCols);
-    std::string tosType = (std::string(argv[1])=="self-dual"? "self-dual":"4c8c");
-
+    ImagePtr image = openImage(argv[2]);
+    
+    int numRows = image->numRows;
+    int numCols = image->numCols;
     int n = numRows * numCols;
+
     AdjacencyRelationPtr adj = std::make_shared<AdjacencyRelation>(numRows, numCols, 1);
 
     std::cout << "\nImage:"<< argv[2] << " \tResolution (cols x rows): " << numCols << " x " << numRows << std::endl;
@@ -47,11 +33,22 @@ int main(int argc, char* argv[]) {
     //printImage(img, numRows, numCols);
 
     // Criação das Component Trees
-    auto start = std::chrono::high_resolution_clock::now();
-    MorphologicalTreePtr tree = std::make_shared<MorphologicalTree>(img, numRows, numCols, tosType);
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed = end - start;
-    std::cout << "Tempo para construir a árvore: " << elapsed.count() << " segundos" << std::endl;
+    
+    MorphologicalTreePtr tree = nullptr;
+    std::string treeType = std::string(argv[1]);
+    if(treeType=="mintree"){
+        tree = std::make_shared<MorphologicalTree>(image, false);
+        std::cout << "mintree" << std::endl;
+    }else if(treeType=="maxtree"){
+        tree = std::make_shared<MorphologicalTree>(image, true);
+        std::cout << "maxtree" << std::endl;
+    }else{
+        treeType = treeType=="ToS-4c8c"? "4c8c":"self-dual";
+        tree = std::make_shared<MorphologicalTree>(image, treeType);
+        std::cout << "tree of shapes - "<< treeType << std::endl;
+    }
+    
+    
     
     std::cout << "Depth:" << tree->getDepth() << ", |nodes|:" << tree->getNumNodes() << std::endl;
     
@@ -67,17 +64,73 @@ int main(int argc, char* argv[]) {
     //std::cout << std::endl;
     //printMappingSC(tree, 3);
     
-
-    std::vector<std::unordered_set<int>> countors = AttributeComputedIncrementally::extractCountors(tree);
+    AttributeComputedIncrementally::ContoursMT contoursMT = AttributeComputedIncrementally::extractCompactCountors(tree);
+    //std::vector<std::unordered_set<int>> countors =  AttributeComputedIncrementally::extractCountors(tree);
     std::vector<std::vector<NodeMTPtr>> nodesByDepth = tree->getNodesByDepth();
-    int* imgBin = new int[n];
-    int* contoursInc = new int[n];
-    int* contoursNonInc = new int[n];
-    bool isEquals = true;
-    for(int depth=tree->getDepth(); depth >= 0; depth--){
-        std::vector<NodeMTPtr> nodesDepth = nodesByDepth[depth];
+    ImagePtr imgBin = Image::create(numRows, numCols, 0);
+    ImagePtr contoursInc = Image::create(numRows, numCols, 0);
+    ImagePtr contoursNonInc = Image::create(numRows, numCols, 0);
 
-        for(NodeMTPtr node: nodesDepth){
+    bool isEquals = true;
+    contoursMT.visitContoursAndCCs(tree, [&](NodeMTPtr node, const std::list<int>& cc, const std::unordered_set<int>& contourNode) {
+       
+
+        //contorno incremental
+        for(int p: contourNode){
+            (*contoursInc)[p] = 1;
+        }
+        
+        //contorno nao-incremental
+        for(int p: cc){
+            if(tree->isDescendant(tree->getSC(p), node)){
+                (*imgBin)[p] = 1;
+            }        
+        }
+
+        for(int p: cc){
+            auto [row, col] = ImageUtils::to2D(p, numCols);
+            if((*imgBin)[p]==1 && (row ==0 || col ==0 || col == numCols-1 || row == numRows-1)){
+                (*contoursNonInc)[p] = 1;
+            }else{
+                for (int q : adj->getAdjPixels(p)) {
+                    if ((*imgBin)[p]==1 && (*imgBin)[q]==0) {
+                        (*contoursNonInc)[p] = 1;
+                    }
+                }
+            }
+        }
+
+        bool isEqualsCC = true;
+        for(int p: cc){
+            if((*contoursNonInc)[p] != (*contoursInc)[p]){
+                isEquals = false;
+                isEqualsCC = false;
+                std::pair<int, int> point = ImageUtils::to2D(p, numCols);
+                std::cout << "(row, col) = (" << point.first << ", " << point.second << ")\n";
+            }
+        }
+       // std::cout << "CC(nodeID):"<< node->getIndex() << "\t is equals? " << isEqualsCC << std::endl;
+        
+        if(!isEqualsCC){
+            std::cout << "\nContorno não incremental" << std::endl;
+            printImage(contoursNonInc, 3);
+    
+            std::cout << "\nContorno incremental" << std::endl;
+            printImage(contoursInc, 3);
+        }
+        
+        //limpa as estruturas para o proximo nó
+        for(int p: cc){
+            (*imgBin)[p] = 0;
+            (*contoursInc)[p] = 0;
+            (*contoursNonInc)[p] = 0;
+        }
+        
+    });
+  
+/*
+    
+        for(NodeMTPtr node: tree->getRoot()->getIteratorPostOrderTraversal()){
 
             for(int p=0; p < n; p++){
                 imgBin[p] = 0;
@@ -85,7 +138,8 @@ int main(int argc, char* argv[]) {
                 contoursNonInc[p] = 0;
             }
             
-            std::unordered_set<int> contourNode = countors[node->getIndex()];
+            
+            std::unordered_set<int> contourNode = contoursMT.getContour(node);//countors[node->getIndex()];
             for(int p: contourNode){
                 contoursInc[p] = 1;
             }
@@ -113,42 +167,38 @@ int main(int argc, char* argv[]) {
             }
 
             
-        }
-       
-    
-        bool isEqualsDepth = true;
-        for (int p=0; p < n; p++ ) {
-            if(contoursNonInc[p] != contoursInc[p]){
-                isEquals = false;
-                isEqualsDepth = false;
-                std::pair<int, int> point = ImageUtils::to2D(p, numCols);
-                std::cout << "(row, col) = (" << point.first << ", " << point.second << ")\n";
+        
+            bool isEqualsDepth = true;
+            for (int p=0; p < n; p++ ) {
+                if(contoursNonInc[p] != contoursInc[p]){
+                    isEquals = false;
+                    isEqualsDepth = false;
+                    std::pair<int, int> point = ImageUtils::to2D(p, numCols);
+                    std::cout << "(row, col) = (" << point.first << ", " << point.second << ")\n";
+                }
             }
-        }
-        std::cout << "Depth:"<< depth << "\tSão iguais:" << isEqualsDepth << std::endl;
-        
-        if(!isEqualsDepth){
+            std::cout << "nodeID:"<< node->getIndex() << "\tSão iguais:" << isEqualsDepth << std::endl;
+            if(!isEqualsDepth){
+                std::cout << "\nImagem binaria" << std::endl;
+                printImage(imgBin, numRows, numCols, 3);
 
-            std::cout << "\nContorno não incremental" << std::endl;
-            printImage(contoursNonInc, numRows, numCols, 3);
-    
-            std::cout << "\nContorno incremental" << std::endl;
-            printImage(contoursInc, numRows, numCols, 3);
-            
-            
-            break;
-        }
+                std::cout << "\nContorno não incremental" << std::endl;
+                printImage(contoursNonInc, numRows, numCols, 3);
         
-        
-    }
-    
+                std::cout << "\nContorno incremental" << std::endl;
+                printImage(contoursInc, numRows, numCols, 3);
+                
+                
+                break;
+            }
+           
+        }*/
+       
+      
     if(isEquals){
-        std::cout <<"\tFilename:" << argv[1] << "\tIs equals? Yes" << std::endl;
+        std::cout <<"\tFilename:" << argv[2] << "\tIs equals? Yes" << std::endl;
     }else{
-        std::cout <<"\tFilename:" << argv[1] << "\tIs equals? No" << std::endl;
+        std::cout <<"\tFilename:" << argv[2] << "\tIs equals? No" << std::endl;
     }
-    delete[] imgBin;
-    delete[] contoursInc;
-    delete[] contoursNonInc;
     return 0;
 }

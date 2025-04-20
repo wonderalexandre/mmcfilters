@@ -15,7 +15,7 @@ class UltimateAttributeOpening{
     int maxCriterion;
     std::vector<float> attrs_increasing;
     MorphologicalTreePtr tree;
-    int* maxContrastLUT;
+    PixelValueType* maxContrastLUT;
     int* associatedIndexLUT;
     
     void computeUAO(NodeMTPtr currentNode, int levelNodeNotInNR, bool qPropag, bool isCalculateResidue);
@@ -33,7 +33,7 @@ class UltimateAttributeOpening{
 
     ~UltimateAttributeOpening();
 
-    int* getMaxConstrastImage();
+    PixelValueType* getMaxConstrastImage();
 
     int* getAssociatedImage();
 

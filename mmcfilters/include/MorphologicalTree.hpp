@@ -25,7 +25,7 @@ protected:
 	AdjacencyRelationPtr adj;
 	int depth;
 	
-	void reconstruction(NodeMTPtr node, PixelValueType* imgOut);
+	void reconstruction(NodeMTPtr node, PixelType* imgOut);
 	void computerTreeAttribute();
 
 public:

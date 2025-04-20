@@ -27,25 +27,25 @@ class AttributeFiltersPybind : public AttributeFilters{
 
     AttributeFiltersPybind(MorphologicalTreePybindPtr tree): AttributeFilters(tree){}
 
-    py::array_t<PixelValueType> filteringByPruningMin(py::array_t<float> &attr, float threshold){
+    py::array_t<PixelType> filteringByPruningMin(py::array_t<float> &attr, float threshold){
 
         auto bufAttribute = attr.request();
         float *attribute = (float *) bufAttribute.ptr;
         int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-        PixelValueType* imgOutput = new PixelValueType[n];
+        PixelType* imgOutput = new PixelType[n];
 
         AttributeFilters::filteringByPruningMin(this->tree, attribute, threshold, imgOutput);
 
         return PybindUtils::toNumpy(imgOutput, n);
     }
 
-    py::array_t<PixelValueType> filteringByPruningMax(py::array_t<float> &attr, float threshold){
+    py::array_t<PixelType> filteringByPruningMax(py::array_t<float> &attr, float threshold){
 
         auto bufAttribute = attr.request();
         
         float *attribute = (float *) bufAttribute.ptr;
         int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-        PixelValueType* imgOutput = new PixelValueType[n];
+        PixelType* imgOutput = new PixelType[n];
 
         AttributeFilters::filteringByPruningMax(this->tree, attribute, threshold, imgOutput);
 
@@ -53,27 +53,27 @@ class AttributeFiltersPybind : public AttributeFilters{
 
     }
 
-    py::array_t<PixelValueType> filteringByPruningMin(std::vector<bool>& criterion){
+    py::array_t<PixelType> filteringByPruningMin(std::vector<bool>& criterion){
         int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-        PixelValueType* imgOutput = new PixelValueType[n];
+        PixelType* imgOutput = new PixelType[n];
 
         AttributeFilters::filteringByPruningMin(this->tree, criterion, imgOutput);
 
         return PybindUtils::toNumpy(imgOutput, n);
     }
 
-    py::array_t<PixelValueType> filteringByDirectRule(std::vector<bool>& criterion){
+    py::array_t<PixelType> filteringByDirectRule(std::vector<bool>& criterion){
         int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-        PixelValueType* imgOutput = new PixelValueType[n];
+        PixelType* imgOutput = new PixelType[n];
 
         AttributeFilters::filteringByDirectRule(this->tree, criterion, imgOutput);
 
         return PybindUtils::toNumpy(imgOutput, n);
     }
 
-    py::array_t<PixelValueType> filteringByPruningMax(std::vector<bool>& criterion){
+    py::array_t<PixelType> filteringByPruningMax(std::vector<bool>& criterion){
         int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-        PixelValueType* imgOutput = new PixelValueType[n];
+        PixelType* imgOutput = new PixelType[n];
 
         AttributeFilters::filteringByPruningMax(this->tree, criterion, imgOutput);
 
@@ -87,9 +87,9 @@ class AttributeFiltersPybind : public AttributeFilters{
 
 
 
-    py::array_t<PixelValueType> filteringBySubtractiveRule(std::vector<bool>& criterion){
+    py::array_t<PixelType> filteringBySubtractiveRule(std::vector<bool>& criterion){
         int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-        PixelValueType* imgOutput = new PixelValueType[n];
+        PixelType* imgOutput = new PixelType[n];
 
         AttributeFilters::filteringBySubtractiveRule(this->tree, criterion, imgOutput);
 

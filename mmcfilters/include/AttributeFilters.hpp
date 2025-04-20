@@ -66,7 +66,7 @@ class AttributeFilters{
 
 
 
-    static void filteringByResidualRule(ResidualTree* rtree, float* attribute, float threshold, PixelValueType* imgOutput){
+    static void filteringByResidualRule(ResidualTree* rtree, float* attribute, float threshold, PixelType* imgOutput){
         std::stack<NodeRes*> s;
         for (NodeRes *node : rtree->getRoot()->getChildren()){
             s.push(node);
@@ -92,7 +92,7 @@ class AttributeFilters{
             }
         }
 
-        PixelValueType* restOfImage = rtree->getRestOfImage()->rawData();
+        PixelType* restOfImage = rtree->getRestOfImage()->rawData();
         for(NodeMTPtr node:  ctree->getIndexNode()){
             for (int pixel : node->getCNPs()){
                 if(ctree->isMaxtree())
@@ -104,7 +104,7 @@ class AttributeFilters{
 
     }
 
-    static void filteringBySubtractiveRule(MorphologicalTreePtr tree, std::vector<bool>& criterion, PixelValueType *imgOutput){
+    static void filteringBySubtractiveRule(MorphologicalTreePtr tree, std::vector<bool>& criterion, PixelType *imgOutput){
         std::unique_ptr<int[]> mapLevel(new int[tree->getNumNodes()]);
         //the root is always kept
         mapLevel[0] = tree->getRoot()->getLevel();
@@ -129,7 +129,7 @@ class AttributeFilters{
         }
     }
 
-    static void filteringByDirectRule(MorphologicalTreePtr tree, std::vector<bool>& criterion, PixelValueType *imgOutput){
+    static void filteringByDirectRule(MorphologicalTreePtr tree, std::vector<bool>& criterion, PixelType *imgOutput){
         std::unique_ptr<int[]> mapLevel(new int[tree->getNumNodes()]);
 
         //the root is always kept
@@ -173,7 +173,7 @@ class AttributeFilters{
         }*/
     }
 
-    static void filteringByPruningMin(MorphologicalTreePtr tree, std::vector<bool>& criterion, PixelValueType* imgOutput){
+    static void filteringByPruningMin(MorphologicalTreePtr tree, std::vector<bool>& criterion, PixelType* imgOutput){
         std::stack<NodeMTPtr> s;
         s.push(tree->getRoot());
         while(!s.empty()){
@@ -193,7 +193,7 @@ class AttributeFilters{
         }
     }
 
-    static void filteringByPruningMax(MorphologicalTreePtr tree, std::vector<bool>& _criterion, PixelValueType* imgOutput){
+    static void filteringByPruningMax(MorphologicalTreePtr tree, std::vector<bool>& _criterion, PixelType* imgOutput){
         std::unique_ptr<bool[]> criterion(new bool[tree->getNumNodes()]);
         AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
             [&criterion, _criterion](NodeMTPtr node) -> void { //pre-processing
@@ -230,7 +230,7 @@ class AttributeFilters{
     }
 
 
-    static void filteringByPruningMin(MorphologicalTreePtr tree, float *attribute, float threshold, PixelValueType* imgOutput){
+    static void filteringByPruningMin(MorphologicalTreePtr tree, float *attribute, float threshold, PixelType* imgOutput){
         std::stack<NodeMTPtr> s;
         s.push(tree->getRoot());
         while(!s.empty()){
@@ -251,7 +251,7 @@ class AttributeFilters{
         }
     }
 
-    static void filteringByPruningMax(MorphologicalTreePtr tree, float *attribute, float threshold, PixelValueType* imgOutput){
+    static void filteringByPruningMax(MorphologicalTreePtr tree, float *attribute, float threshold, PixelType* imgOutput){
         
         std::unique_ptr<bool[]> criterion(new bool[tree->getNumNodes()]);
         AttributeComputedIncrementally::computerAttribute(tree->getRoot(),

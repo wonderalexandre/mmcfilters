@@ -18,8 +18,8 @@ int main() {
 
     // Receber os ponteiros de interpolação (mínimo e máximo)
     builder.interpolateImage4c8c(image);
-    PixelValueType* interpolationMin = builder.getInterpolationMin();
-    PixelValueType* interpolationMax = builder.getInterpolationMax();
+    PixelType* interpolationMin = builder.getInterpolationMin();
+    PixelType* interpolationMax = builder.getInterpolationMax();
 
     // Imprimir os resultados da interpolação
     std::cout << "\nInterpolação: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
@@ -54,7 +54,7 @@ int main() {
     // Ordenar a interpolação mínima
     builder.sort();
     int* imgR = builder.getImgR();
-    PixelValueType* imgU = builder.getImgU();
+    PixelType* imgU = builder.getImgU();
 
     std::cout << "\nimgU: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
     // Imprimir os resultados da interpolação ordenada

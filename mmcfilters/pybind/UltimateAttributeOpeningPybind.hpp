@@ -22,15 +22,15 @@ public:
 
     UltimateAttributeOpeningPybind(MorphologicalTreePybindPtr tree,  std::vector<float> attrs_increasing) : UltimateAttributeOpening(tree, attrs_increasing){}
 
-    py::array_t<PixelValueType> getMaxConstrastImage(){
+    py::array_t<PixelType> getMaxConstrastImage(){
         return PybindUtils::toNumpy(UltimateAttributeOpening::getMaxConstrastImage(), this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage());
     }       
 
     py::array_t<int> getAssociatedImage(){
         return PybindUtils::toNumpyInt(UltimateAttributeOpening::getAssociatedImage(), this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage());
     }
-    py::array_t<int> getAssociatedColorImage(){
-        return PybindUtils::toNumpyInt(UltimateAttributeOpening::getAssociatedColorImage(), this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage() * 3);
+    py::array_t<PixelType> getAssociatedColorImage(){
+        return PybindUtils::toNumpy(UltimateAttributeOpening::getAssociatedColorImage(), this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage() * 3);
     }
 
 

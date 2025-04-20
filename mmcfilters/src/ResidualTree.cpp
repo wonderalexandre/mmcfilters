@@ -18,7 +18,7 @@ ResidualTree::ResidualTree(AttributeOpeningPrimitivesFamily* primitivesFamily) {
   for(int i = 0; i < this->tree->getNumNodes(); i++){
     this->nodes[i] = nullptr;
   }
-  this->maxContrastLUT = new PixelValueType[this->tree->getNumNodes()];
+  this->maxContrastLUT = new PixelType[this->tree->getNumNodes()];
   this->associatedIndexesLUT = new int[this->tree->getNumNodes()];
   this->createTree();
 }
@@ -386,6 +386,6 @@ int* ResidualTree::getAssociatedImage(){
   return out;
 }
 
-int* ResidualTree::getAssociatedColorImage(){
+PixelType* ResidualTree::getAssociatedColorImage(){
   return ImageUtils::createRandomColor(this->getAssociatedImage(), this->tree->getNumColsOfImage(), this->tree->getNumRowsOfImage());
 }

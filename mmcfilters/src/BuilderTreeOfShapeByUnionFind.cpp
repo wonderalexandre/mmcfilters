@@ -5,10 +5,10 @@
     
     int BuilderTreeOfShapeByUnionFind::getInterpNumRows() {return this->interpNumRows;}
     int BuilderTreeOfShapeByUnionFind::getInterpNumCols() {return this->interpNumCols;}
-    PixelValueType* BuilderTreeOfShapeByUnionFind::getInterpolationMin() {return this->interpolationMin;}
-    PixelValueType* BuilderTreeOfShapeByUnionFind::getInterpolationMax() {return this->interpolationMax;}
+    PixelType* BuilderTreeOfShapeByUnionFind::getInterpolationMin() {return this->interpolationMin;}
+    PixelType* BuilderTreeOfShapeByUnionFind::getInterpolationMax() {return this->interpolationMax;}
     int* BuilderTreeOfShapeByUnionFind::getImgR() {return this->imgR;}
-    PixelValueType* BuilderTreeOfShapeByUnionFind::getImgU() {return this->imgU;}
+    PixelType* BuilderTreeOfShapeByUnionFind::getImgU() {return this->imgU;}
     int* BuilderTreeOfShapeByUnionFind::getParent() {return this->parent;}
     AdjacencyUC* BuilderTreeOfShapeByUnionFind::getAdjacency(){ return this->adj;}
 
@@ -33,7 +33,7 @@
       * - N.Boutry, T.Géraud, L.Najman, "On Making {$n$D} Images Well-Composed by a Self-Dual Local Interpolation", DGCI 2014
       */
      void BuilderTreeOfShapeByUnionFind::interpolateImage(ImagePtr imgPtr) {
-        PixelValueType* img = imgPtr->rawData();
+        PixelType* img = imgPtr->rawData();
         int numRows = imgPtr->numRows;
         int numCols = imgPtr->numCols;
 
@@ -51,8 +51,8 @@
         this->interpNumRows = numRows * 2 + 1;
 
         // Aloca memória para os resultados de interpolação (mínimo e máximo)
-        this->interpolationMin = new PixelValueType[interpNumCols * interpNumRows];
-        this->interpolationMax = new PixelValueType[interpNumCols * interpNumRows];
+        this->interpolationMin = new PixelType[interpNumCols * interpNumRows];
+        this->interpolationMax = new PixelType[interpNumCols * interpNumRows];
 
         int numBoundary = 2 * (numRows + numCols) - 4;
         int* pixels = new int[numBoundary];  // Para calcular a mediana
@@ -146,7 +146,7 @@
     }
 
     void BuilderTreeOfShapeByUnionFind::interpolateImage4c8c(ImagePtr imgPtr) {
-        PixelValueType* img = imgPtr->rawData();
+        PixelType* img = imgPtr->rawData();
         int numRows = imgPtr->numRows;
         int numCols = imgPtr->numCols;
 
@@ -157,8 +157,8 @@
 
 
         // Aloca memória para os resultados de interpolação (mínimo e máximo)
-        this->interpolationMin = new PixelValueType[interpNumCols * interpNumRows];
-        this->interpolationMax = new PixelValueType[interpNumCols * interpNumRows];
+        this->interpolationMin = new PixelType[interpNumCols * interpNumRows];
+        this->interpolationMax = new PixelType[interpNumCols * interpNumRows];
         int pT, i = 0; // i é um contador para o array pixels
         
          // Compute interval from 2-faces.
@@ -344,7 +344,7 @@
         int size = this->interpNumCols * this->interpNumRows;
         bool* dejavu = new bool[size]();  // Vetor de booleanos, inicializado com false
         this->imgR = new int[size];        // Pixels ordenados
-        this->imgU = new PixelValueType[size];        // Níveis de cinza da imagem
+        this->imgU = new PixelType[size];        // Níveis de cinza da imagem
         
         PriorityQueueToS queue;  // Fila de prioridade
         int pInfinito = ImageUtils::to1D(0, 0, interpNumCols);

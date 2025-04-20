@@ -16,11 +16,11 @@ class BuilderTreeOfShapeByUnionFind {
 private:
     int interpNumRows;
     int interpNumCols;
-    PixelValueType* interpolationMin;
-    PixelValueType* interpolationMax;
+    PixelType* interpolationMin;
+    PixelType* interpolationMax;
     int* parent;
     int* imgR; 
-    PixelValueType* imgU;
+    PixelType* imgU;
     AdjacencyUC* adj;
     bool is4c8cConnectivity;
 
@@ -98,10 +98,10 @@ public:
 
     int getInterpNumRows();
     int getInterpNumCols();
-    PixelValueType* getInterpolationMin();
-    PixelValueType* getInterpolationMax();
+    PixelType* getInterpolationMin();
+    PixelType* getInterpolationMax();
     int* getImgR();
-    PixelValueType* getImgU();
+    PixelType* getImgU();
     int* getParent();
     AdjacencyUC* getAdjacency();
     BuilderTreeOfShapeByUnionFind();

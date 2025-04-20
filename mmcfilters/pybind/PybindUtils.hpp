@@ -9,16 +9,16 @@ namespace py = pybind11;
 
 class PybindUtils{
     public:
-        static py::array_t<PixelValueType> toNumpy(PixelValueType* data, int size) {
+        static py::array_t<PixelType> toNumpy(PixelType* data, int size) {
             // Cria um capsule que sabe como liberar o ponteiro
             py::capsule free_when_done(data, [](void* f) {
                 delete[] static_cast<int*>(f);
             });
         
             // Cria o py::array com o capsule responsável por liberar a memória
-            return py::array_t<PixelValueType>(
+            return py::array_t<PixelType>(
                 { size },               // shape (tamanho do vetor)
-                { sizeof(PixelValueType) },        // strides (distância entre elementos)
+                { sizeof(PixelType) },        // strides (distância entre elementos)
                 data,                   // ponteiro para os dados
                 free_when_done          // capsule que cuida da liberação
             );

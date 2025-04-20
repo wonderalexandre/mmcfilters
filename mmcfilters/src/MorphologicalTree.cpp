@@ -32,7 +32,7 @@ MorphologicalTree::MorphologicalTree(ImagePtr imgPtr, std::string ToSInperpolati
 	
 	builder->sort();
 	int* imgR = builder->getImgR();
-	PixelValueType* imgU = builder->getImgU();
+	PixelType* imgU = builder->getImgU();
 	
 	builder->createTreeByUnionFind();
 	int* parent = builder->getParent();
@@ -122,7 +122,7 @@ void MorphologicalTree::computerTreeAttribute(){
 MorphologicalTree::MorphologicalTree(ImagePtr imgPtr, bool isMaxtree, double radiusOfAdjacencyRelation){
 	this->numRows = imgPtr->numRows;
 	this->numCols = imgPtr->numCols;
-	PixelValueType* img = imgPtr->rawData();
+	PixelType* img = imgPtr->rawData();
 	
 	this->treeType = isMaxtree? MAX_TREE : MIN_TREE;
 
@@ -290,7 +290,7 @@ ImagePtr MorphologicalTree::reconstructionImage(){
 }
 
 
-void MorphologicalTree::reconstruction(NodeMTPtr node, PixelValueType* dataOut){
+void MorphologicalTree::reconstruction(NodeMTPtr node, PixelType* dataOut){
 	for (int p : node->getCNPs()){
 		dataOut[p] = node->getLevel();
 	}

@@ -15,7 +15,7 @@ class ResidualTree{
       NodeRes* root;
       AttributeOpeningPrimitivesFamily* primitivesFamily;
       MorphologicalTreePtr tree;
-      PixelValueType* maxContrastLUT;
+      PixelType* maxContrastLUT;
       int* associatedIndexesLUT;
       int numNodes;
       ImagePtr restOfImage;
@@ -47,7 +47,7 @@ class ResidualTree{
 
         int* getAssociatedImage();
 
-        int* getAssociatedColorImage();   
+        PixelType* getAssociatedColorImage();   
 
         ImagePtr getRestOfImage();
 

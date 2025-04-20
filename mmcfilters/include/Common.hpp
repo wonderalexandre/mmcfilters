@@ -24,47 +24,47 @@ class NodeMT;
 using NodeMTPtr = std::shared_ptr<NodeMT>;
 using MorphologicalTreePtr = std::shared_ptr<MorphologicalTree>; 
 
-using PixelValueType = uint8_t;
+using PixelType = uint8_t;
 
 struct Image {
     int numRows;
     int numCols;
-    std::shared_ptr<PixelValueType[]> data;
+    std::shared_ptr<PixelType[]> data;
 
 
-    Image(int rows, int cols) : numRows(rows), numCols(cols), data(new PixelValueType[rows * cols], std::default_delete<PixelValueType[]>()) {}
+    Image(int rows, int cols) : numRows(rows), numCols(cols), data(new PixelType[rows * cols], std::default_delete<PixelType[]>()) {}
 
     static std::shared_ptr<Image> create(int rows, int cols) {
         return std::make_shared<Image>(rows, cols);
     }
 
-    static std::shared_ptr<Image> create(int rows, int cols, PixelValueType initValue) {
+    static std::shared_ptr<Image> create(int rows, int cols, PixelType initValue) {
         auto img = std::make_shared<Image>(rows, cols);
         img->fill(initValue);
         return img;
     }
 
-    static std::shared_ptr<Image> fromExternal(PixelValueType* rawPtr, int rows, int cols) {
+    static std::shared_ptr<Image> fromExternal(PixelType* rawPtr, int rows, int cols) {
         auto img = std::make_shared<Image>(rows, cols);
-        img->data = std::shared_ptr<PixelValueType[]>(rawPtr, [](PixelValueType*) {
+        img->data = std::shared_ptr<PixelType[]>(rawPtr, [](PixelType*) {
             // deleter vazio: não libera o ponteiro
         });
         return img;
     }
 
-    static std::shared_ptr<Image> fromRaw(PixelValueType* rawPtr, int rows, int cols) {
+    static std::shared_ptr<Image> fromRaw(PixelType* rawPtr, int rows, int cols) {
         auto img = std::make_shared<Image>(rows, cols);
-        img->data = std::shared_ptr<PixelValueType[]>(rawPtr, std::default_delete<PixelValueType[]>());
+        img->data = std::shared_ptr<PixelType[]>(rawPtr, std::default_delete<PixelType[]>());
         return img;
     }
 
-    PixelValueType* rawData() { return data.get(); }
+    PixelType* rawData() { return data.get(); }
 
-    PixelValueType& operator[](int index) { return data[index]; }
+    PixelType& operator[](int index) { return data[index]; }
 
-    const PixelValueType& operator[](int index) const { return data[index]; }
+    const PixelType& operator[](int index) const { return data[index]; }
 
-    void fill(PixelValueType value) {
+    void fill(PixelType value) {
         std::fill(data.get(), data.get() + numRows * numCols, value);
     }
 

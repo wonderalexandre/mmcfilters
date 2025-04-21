@@ -21,7 +21,7 @@ class ImageUtils{
             return std::make_pair(row, col);
         }
 
-        static int* createRandomColor(int* img, int numColsOfImage, int numRowsOfImage){
+        static PixelType* createRandomColor(int* img, int numColsOfImage, int numRowsOfImage){
             int max = 0;
             int sizeImage = numColsOfImage * numRowsOfImage;
             for (int i = 0; i < sizeImage; i++){
@@ -41,7 +41,7 @@ class ImageUtils{
                 b[i] = rand() % 256;
             }
 
-            int* output = new int[sizeImage * 3];
+            PixelType* output = new PixelType[sizeImage * 3];
             for (int pidx = 0; pidx < (sizeImage * 3); pidx++){
                 output[pidx] = 0;
             }

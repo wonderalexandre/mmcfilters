@@ -10,9 +10,9 @@
 
 
 
-BuilderComponentTreeByUnionFind::BuilderComponentTreeByUnionFind(int* img, int numRows, int numCols, bool isMaxtree, AdjacencyRelationPtr adj){
-    this->sort(img, numRows, numCols, isMaxtree);
-    this->createTreeByUnionFind(img, numRows, numCols, isMaxtree, adj);
+BuilderComponentTreeByUnionFind::BuilderComponentTreeByUnionFind(ImagePtr img, bool isMaxtree, AdjacencyRelationPtr adj){
+    this->sort(img, isMaxtree);
+    this->createTreeByUnionFind(img, isMaxtree, adj);
 }
 
 BuilderComponentTreeByUnionFind::~BuilderComponentTreeByUnionFind() {
@@ -29,8 +29,10 @@ int* BuilderComponentTreeByUnionFind::getOrderedPixels(){
 }
 
 
-void BuilderComponentTreeByUnionFind::sort(int* img, int numRows, int numCols, bool isMaxtree){
-	int n = numRows * numCols;
+void BuilderComponentTreeByUnionFind::sort(ImagePtr imgPtr, bool isMaxtree){
+	const int n = imgPtr->numRows * imgPtr->numCols;
+	PixelType* img = imgPtr->rawData();
+	
 	int maxvalue = img[0];
 	for (int i = 1; i < n; i++)
 		if(maxvalue < img[i]) maxvalue = img[i];
@@ -72,8 +74,9 @@ int BuilderComponentTreeByUnionFind::findRoot(int *zPar, int x) {
 	}
 }
 
-void BuilderComponentTreeByUnionFind::createTreeByUnionFind(int* img, int numRows, int numCols, bool isMaxtree, AdjacencyRelationPtr adj) {
-	const int n = numRows * numCols;
+void BuilderComponentTreeByUnionFind::createTreeByUnionFind(ImagePtr imgPtr, bool isMaxtree, AdjacencyRelationPtr adj) {
+	const int n = imgPtr->numRows * imgPtr->numCols;
+	PixelType* img = imgPtr->rawData();
 	int *zPar = new int[n];
 	this->parent = new int[n];
 	

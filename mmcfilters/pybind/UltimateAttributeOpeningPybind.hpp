@@ -7,7 +7,7 @@
 #include "../include/ComputerMSER.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
 #include "../include/UltimateAttributeOpening.hpp"
-
+#include "../include/Common.hpp"
 #include "../pybind/MorphologicalTreePybind.hpp"
 #include "../pybind/PybindUtils.hpp"
 #include <pybind11/pybind11.h>
@@ -22,14 +22,14 @@ public:
 
     UltimateAttributeOpeningPybind(MorphologicalTreePybindPtr tree,  std::vector<float> attrs_increasing) : UltimateAttributeOpening(tree, attrs_increasing){}
 
-    py::array_t<int> getMaxConstrastImage(){
+    py::array_t<PixelType> getMaxConstrastImage(){
         return PybindUtils::toNumpy(UltimateAttributeOpening::getMaxConstrastImage(), this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage());
     }       
 
     py::array_t<int> getAssociatedImage(){
-        return PybindUtils::toNumpy(UltimateAttributeOpening::getAssociatedImage(), this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage());
+        return PybindUtils::toNumpyInt(UltimateAttributeOpening::getAssociatedImage(), this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage());
     }
-    py::array_t<int> getAssociatedColorImage(){
+    py::array_t<PixelType> getAssociatedColorImage(){
         return PybindUtils::toNumpy(UltimateAttributeOpening::getAssociatedColorImage(), this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage() * 3);
     }
 

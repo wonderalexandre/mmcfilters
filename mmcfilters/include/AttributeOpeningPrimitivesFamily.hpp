@@ -21,7 +21,7 @@ class AttributeOpeningPrimitivesFamily{
     //PrimitivesFamily
     MorphologicalTreePtr tree;
     std::vector<bool> selectedForFiltering; //mappping between index nodes and selected nodes
-    int* restOfImage;
+    ImagePtr restOfImage;
     int numPrimitives;
     
 
@@ -46,7 +46,7 @@ class AttributeOpeningPrimitivesFamily{
 
     MorphologicalTreePtr getTree() ;
 
-    int* getRestOfImage() ;
+    ImagePtr getRestOfImage() ;
 
     int getNumPrimitives() ;
     

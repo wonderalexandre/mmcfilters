@@ -9,7 +9,7 @@
 #include <iostream>
 
 AttributeOpeningPrimitivesFamily::~AttributeOpeningPrimitivesFamily(){
-    delete[] this->restOfImage;
+    //delete[] this->restOfImage;
 }
 
 AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree,  float* attrs_increasing, float maxCriterion, int deltaMSER){
@@ -85,15 +85,15 @@ bool AttributeOpeningPrimitivesFamily::isSelectedForPruning(NodeMTPtr node){
   return node->getParent() != nullptr && this->attrs_increasing[node->getIndex()] != this->attrs_increasing[node->getParent()->getIndex()];
 }
 
-int* AttributeOpeningPrimitivesFamily::getRestOfImage(){
+ImagePtr AttributeOpeningPrimitivesFamily::getRestOfImage(){
   return this->restOfImage;
 }
 
 
 
 void AttributeOpeningPrimitivesFamily::initializeRestOfImage(float thrRestImage){
-  this->restOfImage = new int[this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage()];
-  AttributeFilters::filteringByPruningMin(this->tree, this->attrs_increasing, thrRestImage, restOfImage);
+  this->restOfImage = Image::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
+  AttributeFilters::filteringByPruningMin(this->tree, this->attrs_increasing, thrRestImage, restOfImage->rawData());
 }
 
 void AttributeOpeningPrimitivesFamily::initializeNodesWithMaximumCriterium(){

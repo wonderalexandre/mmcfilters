@@ -1,28 +1,22 @@
-#include "../tests/Tests.hpp"
-#include "../mmcfilters/include/AdjacencyRelation.hpp"
+#include "Tests.hpp"
+#include "../include/AdjacencyRelation.hpp"
+#include "../include/Common.hpp"
 
 int main() {
     // Definição da imagem e parâmetros
-    int numRows, numCols;
-    int* img = getPassatImage(numRows, numCols);
-    int n = numRows * numCols;
+    ImagePtr img = getPassatImage();
+    
     double radioAdj = 1.5;
 
     // Criação das Component Trees
-    MorphologicalTreePtr maxtree = std::make_shared<MorphologicalTree>(img, numRows, numCols, true, radioAdj);
-    MorphologicalTreePtr mintree = std::make_shared<MorphologicalTree>(img, numRows, numCols, false, radioAdj);
+    MorphologicalTreePtr maxtree = std::make_shared<MorphologicalTree>(img, true, radioAdj);
+    MorphologicalTreePtr mintree = std::make_shared<MorphologicalTree>(img, false, radioAdj);
 
     // Executar testes
-    testComponentTree(mintree, "Min-Tree", mintree->reconstructionImage(), numRows, numCols);
-    testComponentTree(maxtree, "Max-Tree", maxtree->reconstructionImage(), numRows, numCols);
+    testComponentTree(mintree, "Min-Tree", mintree->reconstructionImage());
+    testComponentTree(maxtree, "Max-Tree", maxtree->reconstructionImage());
 
 
-    // Liberação de memória
-    delete[] imgMaxtree;
-    delete[] imgMintree;
-    //delete maxtree;
-    //delete mintree;
-    delete[] img;
-
+    
     return 0;
 }

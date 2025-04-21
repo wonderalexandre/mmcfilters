@@ -4,6 +4,7 @@
 #include "../include/NodeRes.hpp"
 #include "../include/AttributeOpeningPrimitivesFamily.hpp"
 #include "../include/ResidualTree.hpp"
+#include "../include/Common.hpp"
 
 #include "../pybind/PybindUtils.hpp"
 
@@ -18,37 +19,32 @@ class ResidualTreePybind: public ResidualTree{
 
         ResidualTreePybind(AttributeOpeningPrimitivesFamily* primitivesFamily): ResidualTree(primitivesFamily){}
 
-        py::array_t<int> reconstruction(){
-            int* imgOutput = ResidualTree::reconstruction();
-            return PybindUtils::toNumpy(imgOutput, this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage());
+        py::array_t<PixelType> reconstruction(){
+            return PybindUtils::toNumpy(ResidualTree::reconstruction()->rawData(), this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage());
         }
 
-        py::array_t<int> filtering(std::vector<bool> criterion){
-            int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-            int* imgOutput = new int[n];
-
-            ResidualTree::filtering(criterion, imgOutput);
-            return PybindUtils::toNumpy(imgOutput, n);
+        py::array_t<PixelType> filtering(std::vector<bool> criterion){
+            return PybindUtils::toNumpy(ResidualTree::filtering(criterion)->rawData(), this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage());
         }
 
-        py::array_t<int> getMaxConstrastImage(){
-            return PybindUtils::toNumpy(ResidualTree::getMaxConstrastImage(), this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage());
+        py::array_t<PixelType> getMaxConstrastImage(){
+            return PybindUtils::toNumpy(ResidualTree::getMaxConstrastImage()->rawData(), this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage());
         }       
 
         py::array_t<int> getAssociatedImage(){
-            return PybindUtils::toNumpy(ResidualTree::getAssociatedImage(), this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage());
+            return PybindUtils::toNumpyInt(ResidualTree::getAssociatedImage(), this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage());
         }
 
-        py::array_t<int> getAssociatedColoredImage(){
+        py::array_t<PixelType> getAssociatedColoredImage(){
             return PybindUtils::toNumpy(ResidualTree::getAssociatedColorImage(), this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage() * 3);
         }
 
-        py::array_t<int> getNegativeResidues(){
-            return PybindUtils::toNumpy(ResidualTree::getNegativeResidues(),  this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage());
+        py::array_t<PixelType> getNegativeResidues(){
+            return PybindUtils::toNumpy(ResidualTree::getNegativeResidues()->rawData(),  this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage());
         }
 
-        py::array_t<int> getPositiveResidues(){
-            return PybindUtils::toNumpy(ResidualTree::getPositiveResidues(),  this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage());
+        py::array_t<PixelType> getPositiveResidues(){
+            return PybindUtils::toNumpy(ResidualTree::getPositiveResidues()->rawData(),  this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage());
         }
 };
 

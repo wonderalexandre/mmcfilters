@@ -15,8 +15,8 @@
 class MorphologicalTree {
 
 protected:
-	int numCols;
 	int numRows;
+    int numCols;
 	int treeType; //0-mintree, 1-maxtree, 2-tree of shapes
 	NodeMTPtr root;
 	int numNodes;
@@ -25,7 +25,7 @@ protected:
 	AdjacencyRelationPtr adj;
 	int depth;
 	
-	void reconstruction(NodeMTPtr node, int* imgOut);
+	void reconstruction(NodeMTPtr node, PixelType* imgOut);
 	void computerTreeAttribute();
 
 public:
@@ -34,13 +34,11 @@ public:
 	static const int TREE_OF_SHAPES = 2;
 
 	
-	MorphologicalTree(int* img, int numRows, int numCols, std::string ToSInperpolation="self-dual");
-	explicit MorphologicalTree(int* img, int numRows, int numCols, bool isMaxtree, double radius = 1.5);
-    MorphologicalTree(int* img, int numRows, int numCols, const char* ToSInterpolation) : MorphologicalTree(img, numRows, numCols, std::string(ToSInterpolation)) {}
+	MorphologicalTree(ImagePtr img, std::string ToSInperpolation="self-dual");
+	explicit MorphologicalTree(ImagePtr img, bool isMaxtree, double radius = 1.5);
+    MorphologicalTree(ImagePtr img, const char* ToSInterpolation) : MorphologicalTree(img, std::string(ToSInterpolation)) {}
 
     ~MorphologicalTree();
-
-	int* getInputImage();
 	
 	NodeMTPtr getRoot();
 
@@ -60,9 +58,9 @@ public:
 
 	int getNumColsOfImage();
 
-	int* reconstructionImage();
+	ImagePtr reconstructionImage();
 
-	int* getImageAferPruning(NodeMTPtr node);
+	ImagePtr getImageAferPruning(NodeMTPtr node);
 
 	void pruning(NodeMTPtr node);
 

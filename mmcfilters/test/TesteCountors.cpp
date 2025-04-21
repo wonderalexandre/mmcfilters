@@ -28,7 +28,7 @@ int main(int argc, char* argv[]) {
 
     AdjacencyRelationPtr adj = std::make_shared<AdjacencyRelation>(numRows, numCols, 1);
 
-    std::cout << "\nImage:"<< argv[2] << " \tResolution (cols x rows): " << numCols << " x " << numRows << std::endl;
+    //std::cout << "\nImage:"<< argv[2] << " \tResolution (cols x rows): " << numCols << " x " << numRows << std::endl;
     
     //printImage(img, numRows, numCols);
 
@@ -38,19 +38,19 @@ int main(int argc, char* argv[]) {
     std::string treeType = std::string(argv[1]);
     if(treeType=="mintree"){
         tree = std::make_shared<MorphologicalTree>(image, false);
-        std::cout << "mintree" << std::endl;
+        //std::cout << "mintree" << std::endl;
     }else if(treeType=="maxtree"){
         tree = std::make_shared<MorphologicalTree>(image, true);
-        std::cout << "maxtree" << std::endl;
+        //std::cout << "maxtree" << std::endl;
     }else{
         treeType = treeType=="ToS-4c8c"? "4c8c":"self-dual";
         tree = std::make_shared<MorphologicalTree>(image, treeType);
-        std::cout << "tree of shapes - "<< treeType << std::endl;
+        //std::cout << "tree of shapes - "<< treeType << std::endl;
     }
     
     
     
-    std::cout << "Depth:" << tree->getDepth() << ", |nodes|:" << tree->getNumNodes() << std::endl;
+    //std::cout << "Depth:" << tree->getDepth() << ", |nodes|:" << tree->getNumNodes() << std::endl;
     
     
     //testComponentTree(tree, "ToS", img, numRows, numCols);
@@ -194,11 +194,11 @@ int main(int argc, char* argv[]) {
            
         }*/
        
-      
+        //std::cout << "Depth:" << tree->getDepth() << ", |nodes|:" << tree->getNumNodes() << std::endl;
     if(isEquals){
-        std::cout <<"\tFilename:" << argv[2] << "\tIs equals? Yes" << std::endl;
+        std::cout <<"Filename:" << argv[2] <<", TreeType: "<< treeType <<  ", |nodes|:" << tree->getNumNodes() << "\tIs equals? Yes" << std::endl;
     }else{
-        std::cout <<"\tFilename:" << argv[2] << "\tIs equals? No" << std::endl;
+        std::cout <<"Filename:" << argv[2] << "\tIs equals? No" << std::endl;
     }
     return 0;
 }

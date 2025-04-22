@@ -8,11 +8,14 @@
 #ifndef NODE_RES_H
 #define NODE_RES_H
 
-class NodeRes {
+class NodeRes;
+using NodeResPtr = std::shared_ptr<NodeRes>;
+
+class NodeRes : public std::enable_shared_from_this<NodeRes> {
 
     private:
-        NodeRes* parent;
-        std::list<NodeRes*> children;
+        NodeResPtr parent;
+        std::list<NodeResPtr> children;
         int associeatedIndex;
         bool desirableResidue;
         int levelNodeNotInNR;
@@ -25,12 +28,12 @@ class NodeRes {
         NodeRes(NodeMTPtr rootNr, int associeatedIndex, bool desirableResidue);
 
         void addNodeInNr(NodeMTPtr node);
-        void addChild(NodeRes* child);
-        void setParent(NodeRes* parent);
-        NodeRes* getParent();
+        void addChild(NodeResPtr child);
+        void setParent(NodeResPtr parent);
+        NodeResPtr getParent();
         int getAssocieatedIndex();
         bool isDesirableResidue();
-        std::list<NodeRes*> getChildren();
+        std::list<NodeResPtr> getChildren();
         std::list<NodeMTPtr> getNodeInNr();
         NodeMTPtr getRootNr();
         int getLevelNodeNotInNR();
@@ -43,14 +46,14 @@ class NodeRes {
         
    class InternalIteratorPixelsOfCNPs{
 		private:
-            NodeMTPtr currentNode;
+			NodeMTPtr currentNode;
 			std::stack<NodeMTPtr> s;
 			std::list<int>::iterator iter;
 			int countCNPs;
 			using iterator_category = std::input_iterator_tag;
             using value_type = int; 
 		public:
-			InternalIteratorPixelsOfCNPs(NodeRes* instance, int numCNPs)  {
+			InternalIteratorPixelsOfCNPs(NodeResPtr instance, int numCNPs)  {
 				this->countCNPs = numCNPs;
 				for (NodeMTPtr child: instance->nodes){
 					s.push(child);
@@ -81,10 +84,10 @@ class NodeRes {
     };
 	class IteratorPixelsOfCNPs{
 		private:
-			NodeRes *instance;
+            NodeResPtr instance;
 			int sumCPNs;
 		public:
-			IteratorPixelsOfCNPs(NodeRes *obj, int _sumCNPs): instance(obj), sumCPNs(_sumCNPs) {}
+			IteratorPixelsOfCNPs(NodeResPtr obj, int _sumCNPs): instance(obj), sumCPNs(_sumCNPs) {}
 			InternalIteratorPixelsOfCNPs begin(){ return InternalIteratorPixelsOfCNPs(instance, 0); }
             InternalIteratorPixelsOfCNPs end(){ return InternalIteratorPixelsOfCNPs(instance, sumCPNs); }
 	};	
@@ -93,7 +96,7 @@ class NodeRes {
         for(NodeMTPtr node: this->nodes){
             sumCPNs += node->getCNPs().size();
         }
-	    IteratorPixelsOfCNPs *iter = new IteratorPixelsOfCNPs(this, sumCPNs);
+	    IteratorPixelsOfCNPs *iter = new IteratorPixelsOfCNPs(this->shared_from_this(), sumCPNs);
     	return *iter;
 	}
 

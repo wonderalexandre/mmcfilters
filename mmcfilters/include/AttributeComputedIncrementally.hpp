@@ -387,7 +387,7 @@ public:
 	}
 
 
-	static float* computerAttribute(MorphologicalTreePtr tree, std::string attrName){
+	static float* computerAttributeByIndex(MorphologicalTreePtr tree, std::string attrName){
 		const int n = tree->getNumNodes();
 		float *attr = new float[n];
 		auto [attributeNames, ptrValues] = AttributeComputedIncrementally::computerBasicAttributes(tree);

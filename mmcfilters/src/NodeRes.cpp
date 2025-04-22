@@ -10,11 +10,11 @@ void NodeRes::addNodeInNr(NodeMTPtr node){
     this->nodes.push_back(node);
 }
 
-void NodeRes::addChild(NodeRes* child){
+void NodeRes::addChild(NodeResPtr child){
     this->children.push_back(child);
 }
 
-void NodeRes::setParent(NodeRes* parent){
+void NodeRes::setParent(NodeResPtr parent){
     this->parent = parent;
 }
 
@@ -30,7 +30,7 @@ std::list<NodeMTPtr> NodeRes::getNodeInNr(){
     return this->nodes;
 }
 
-std::list<NodeRes*> NodeRes::getChildren(){
+std::list<NodeResPtr> NodeRes::getChildren(){
     return this->children;
 }
 
@@ -38,7 +38,7 @@ NodeMTPtr NodeRes::getRootNr(){
     return this->rootNr;
 }
 
-NodeRes *NodeRes::getParent(){
+NodeResPtr NodeRes::getParent(){
     return this->parent;
 }
 

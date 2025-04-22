@@ -69,18 +69,13 @@ class MorphologicalTreePybind : public MorphologicalTree {
             parent = parent->getParent();
         }
 
-        auto img_numpy = py::array(py::buffer_info(
-            nullptr, sizeof(PixelType), py::format_descriptor<PixelType>::value,
-            1, {n}, {sizeof(PixelType)}
-        ));
-        auto buf_img = img_numpy.request();
-        PixelType* imgOut = (PixelType*) buf_img.ptr;
+        PixelType* imgOut = new PixelType[n];
         for (int p = 0; p < n; p++)
             imgOut[p] = 0;
         for(int p: _node->getPixelsOfCC()){
             imgOut[p] = 255;
         }
-        return img_numpy;
+        return PybindUtils::toNumpy(imgOut, n);
     }
 
 };

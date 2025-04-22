@@ -12,7 +12,7 @@ class PybindUtils{
         static py::array_t<PixelType> toNumpy(PixelType* data, int size) {
             // Cria um capsule que sabe como liberar o ponteiro
             py::capsule free_when_done(data, [](void* f) {
-                delete[] static_cast<int*>(f);
+                delete[] static_cast<PixelType*>(f);
             });
         
             // Cria o py::array com o capsule responsável por liberar a memória

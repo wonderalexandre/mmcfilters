@@ -108,18 +108,12 @@ void init_MorphologicalTree(py::module &m){
 		.def_property_readonly("numNodes", &MorphologicalTreePybind::getNumNodes )
         .def_property_readonly("listNodes", &MorphologicalTreePybind::getIndexNode )
         .def_property_readonly("root", &MorphologicalTreePybind::getRoot )
-        .def_property_readonly("depth", &MorphologicalTreePybind::getDepth )
-        //.def_static("computerParent", &ComponentTreePybind::computerParent)
-		//.def_property_readonly("parent", &ComponentTreePybind::getParent )
-        //.def_property_readonly("orderedPixels", &ComponentTreePybind::getOrderedPixels )
         .def_property_readonly("treeType", &MorphologicalTreePybind::getTreeType)
+        .def_property_readonly("numRows", &MorphologicalTreePybind::getNumRowsOfImage )
+        .def_property_readonly("numCols", &MorphologicalTreePybind::getNumColsOfImage )
+        .def_property_readonly("depth", &MorphologicalTreePybind::getDepth )
         .def("getSC", &MorphologicalTreePybind::getSC );
         
-        
-        //.def("prunningMin", py::overload_cast<py::array_t<double> &, double>(&ComponentTree::prunningMin))
-        //.def("prunningMin", &ComponentTree::prunningMin)
-        //.def("computerArea", &ComponentTree::computerArea)
-        //.def("prunningMin", py::overload_cast<py::array_t<double> &, double>(&ComponentTree::prunningMin))
 }
 
 

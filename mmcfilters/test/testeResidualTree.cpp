@@ -30,7 +30,7 @@ int main(int argc, char const *argv[])
 
     // Criar um AttributeComputedIncrementally::computerArea
     const int n = tree->getNumNodes();	
-    float* attr = AttributeComputedIncrementally::computerAttribute(tree, "BOX_HEIGHT"); //size: n * numAttribute
+    float* attr = AttributeComputedIncrementally::computerAttributeByIndex(tree, "BOX_HEIGHT"); //size: n * numAttribute
     std::cout << "attributes ok" << std::endl;
 
     // Criar um AttributeOpeningPrimitivesFamily

@@ -81,7 +81,7 @@ class AttributeFiltersPybind : public AttributeFilters{
 
     }
 
-    std::vector<bool> getAdaptativeCriterion(std::vector<bool> criterion, int delta){
+    std::vector<bool> getAdaptativeCriterion(std::vector<bool>& criterion, int delta){
         return AttributeFilters::getAdaptativeCriterion(criterion, delta);
     }
 

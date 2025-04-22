@@ -12,15 +12,14 @@
 class ResidualTree{
 
     protected:
-      NodeRes* root;
+      NodeResPtr root;
       AttributeOpeningPrimitivesFamily* primitivesFamily;
       MorphologicalTreePtr tree;
-      PixelType* maxContrastLUT;
+      ImagePtr maxContrastLUT;
       int* associatedIndexesLUT;
       int numNodes;
       ImagePtr restOfImage;
-      //std::list<NodeRes*> listNodes;
-      NodeRes** nodes;
+      std::vector<NodeResPtr> nodes;
 
     public:
         ResidualTree(AttributeOpeningPrimitivesFamily* primitivesFamily);
@@ -37,9 +36,9 @@ class ResidualTree{
 
         //std::list<NodeRes*> getListNodes();
 
-        NodeRes* getRoot();
+        NodeResPtr getRoot();
 
-        NodeRes* getNodeRes(NodeMTPtr node);
+        NodeResPtr getNodeRes(NodeMTPtr node);
 
         ImagePtr getMaxConstrastImage();
 

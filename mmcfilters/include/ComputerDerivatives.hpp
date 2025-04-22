@@ -2,7 +2,6 @@
 #include "../include/MorphologicalTree.hpp"
 #include "../include/NodeMT.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
-#include "../include/Common.hpp"
 
 #include <vector>
 #include <tuple>
@@ -25,7 +24,7 @@ class ComputerDerivatives {
             
             float *dWeight = new float[rows * cols];
             float *dBias = new float[rows];
-            for(NodeMTPtr node: tree->getIndexNode()){
+            for(NodeMTPtr node: tree->getListNodes()){
                 int id = node->getIndex();
                 dBias[id] = (sigmoid[id] * (1 - sigmoid[id])) * node->getResidue();
                 for (int j = 0; j < cols; j++)
@@ -46,7 +45,7 @@ class ComputerDerivatives {
                 gradWeight[j] = 0;
             
 
-            float *summationGrad = new float[tree->getNumNodes()];
+            std::unique_ptr<float[]> summationGrad(new float[tree->getNumNodes()]);
             float *gradInput = new float[tree->getNumRowsOfImage() * tree->getNumColsOfImage()];
             AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
                     [&summationGrad, &gradLoss, &sigmoid](NodeMTPtr node) -> void { //pre-processing
@@ -68,7 +67,7 @@ class ComputerDerivatives {
                             }		
                     }
             );
-            delete[] summationGrad;
+            
             return {gradWeight, gradBias, gradInput};
         }
 

@@ -52,10 +52,12 @@ class AttributeFilters{
 
         for(NodeMTPtr node: tree->getIndexNode()){
             if(node->getParent() != nullptr){ 
-                int h = (int)std::abs(node->getLevel() - node->getParent()->getLevel());
-                mapLevel[node->getIndex()] = (float) mapLevel[node->getParent()->getIndex()] + (h * prob[node->getIndex()]);
+                int residue = node->getResidue();
+                if(node->isMaxtreeNode())
+                    mapLevel[node->getIndex()] =  (float)mapLevel[node->getParent()->getIndex()] + (residue * prob[node->getIndex()]);
+                else
+                    mapLevel[node->getIndex()] = (float) mapLevel[node->getParent()->getIndex()] - (residue * prob[node->getIndex()]);
             }
-
         }
         for(NodeMTPtr node: tree->getIndexNode()){
             for (int pixel : node->getCNPs()){
@@ -67,8 +69,8 @@ class AttributeFilters{
 
 
     static void filteringByResidualRule(ResidualTree* rtree, float* attribute, float threshold, PixelType* imgOutput){
-        std::stack<NodeRes*> s;
-        for (NodeRes *node : rtree->getRoot()->getChildren()){
+        std::stack<NodeResPtr> s;
+        for (NodeResPtr node : rtree->getRoot()->getChildren()){
             s.push(node);
         }
         MorphologicalTreePtr ctree = rtree->getCTree();
@@ -78,7 +80,7 @@ class AttributeFilters{
         } 
 
         while (!s.empty()){
-            NodeRes *node = s.top(); s.pop();
+            NodeResPtr node = s.top(); s.pop();
             for (NodeMTPtr nodeCT : node->getNodeInNr()){
                 if(nodeCT->getParent() != nullptr){
                     if(attribute[node->getRootNr()->getIndex()] > threshold)
@@ -87,7 +89,7 @@ class AttributeFilters{
                         mapLevel[nodeCT->getIndex()] =  mapLevel[nodeCT->getParent()->getIndex()];
                 }
             }            
-            for (NodeRes *child : node->getChildren()){
+            for (NodeResPtr child : node->getChildren()){
                 s.push(child);
             }
         }
@@ -112,10 +114,10 @@ class AttributeFilters{
         for(NodeMTPtr node: tree->getIndexNode()){
             if(node->getParent() != nullptr){ 
                 if(criterion[node->getIndex()]){
-                    int h = (int)std::abs(node->getLevel() - node->getParent()->getLevel());
-                    if(!node->isMaxtreeNode())
-                        h = -h;
-                    mapLevel[node->getIndex()] = mapLevel[node->getParent()->getIndex()] + h;
+                    if(node->isMaxtreeNode())
+                        mapLevel[node->getIndex()] = mapLevel[node->getParent()->getIndex()] + node->getResidue();
+                    else
+                        mapLevel[node->getIndex()] = mapLevel[node->getParent()->getIndex()] - node->getResidue();
                 }
                 else
                     mapLevel[node->getIndex()] = mapLevel[node->getParent()->getIndex()];
@@ -149,28 +151,6 @@ class AttributeFilters{
                 imgOutput[pixel] = mapLevel[node->getIndex()];
             }
         }
-        /*std::stack<NodeMTPtr> s;
-        s.push(tree->getRoot());
-        std::stack<int> sLevel;
-        sLevel.push(tree->getRoot()->getLevel());
-        criterion[0] = true; //the root is always kept
-        
-        while(!s.empty()){
-            NodeMTPtr node = s.top(); s.pop();
-            int level = sLevel.top(); sLevel.pop();
-            for (int pixel : node->getCNPs()){
-                imgOutput[pixel] = level;
-            }
-
-            for (NodeMTPtr child: node->getChildren()){
-                s.push(child);
-                if(criterion[child->getIndex()]){
-                    sLevel.push(child->getLevel());
-                }else{
-                    sLevel.push(level);
-                }
-            }
-        }*/
     }
 
     static void filteringByPruningMin(MorphologicalTreePtr tree, std::vector<bool>& criterion, PixelType* imgOutput){

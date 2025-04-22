@@ -8,14 +8,14 @@ from .version import __version__
 import mmcfilters
 
 # Expor as classes do módulo Pybind11
-ComponentTree = mmcfilters.ComponentTree
+MorphologicalTree = mmcfilters.MorphologicalTree
 AdjacencyRelation = mmcfilters.AdjacencyRelation
 AttributeFilters = mmcfilters.AttributeFilters
 AttributeOpeningPrimitivesFamily = mmcfilters.AttributeOpeningPrimitivesFamily
 IteratorNodesDescendants = mmcfilters.IteratorNodesDescendants
 IteratorNodesOfPathToRoot = mmcfilters.IteratorNodesOfPathToRoot
 IteratorPixelsOfCC = mmcfilters.IteratorPixelsOfCC
-NodeCT = mmcfilters.NodeCT
+NodeMT = mmcfilters.NodeMT
 ResidualTree = mmcfilters.ResidualTree
 UltimateAttributeOpening = mmcfilters.UltimateAttributeOpening
 Attribute = mmcfilters.Attribute
@@ -23,14 +23,14 @@ Attribute = mmcfilters.Attribute
 __all__ = [
     '__version__',
     # Classes Pybind11
-    'ComponentTree',
+    'MorphologicalTree',
     'AdjacencyRelation',
     'AttributeFilters',
     'AttributeOpeningPrimitivesFamily',
     'IteratorNodesDescendants',
     'IteratorNodesOfPathToRoot',
     'IteratorPixelsOfCC',
-    'NodeCT',
+    'NodeMT',
     'Attribute',
     'ResidualTree',
     'UltimateAttributeOpening',

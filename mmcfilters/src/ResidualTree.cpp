@@ -14,11 +14,8 @@
 ResidualTree::ResidualTree(AttributeOpeningPrimitivesFamily* primitivesFamily) {
   this->primitivesFamily = primitivesFamily;
   this->tree = primitivesFamily->getTree();
-  this->nodes = new NodeRes*[this->tree->getNumNodes()];
-  for(int i = 0; i < this->tree->getNumNodes(); i++){
-    this->nodes[i] = nullptr;
-  }
-  this->maxContrastLUT = new PixelType[this->tree->getNumNodes()];
+  this->nodes.resize(this->tree->getNumNodes());
+  this->maxContrastLUT = Image::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
   this->associatedIndexesLUT = new int[this->tree->getNumNodes()];
   this->createTree();
 }
@@ -29,8 +26,7 @@ void ResidualTree::createTree(){
   this->restOfImage = this->primitivesFamily->getRestOfImage();
   std::list<NodeMTPtr > nodesWithMaximumCriterium = this->primitivesFamily->getNodesWithMaximumCriterium();
   bool isDesirableResidue = false;
-  this->root = new NodeRes(nullptr, this->numNodes++, isDesirableResidue);
-  //this->listNodes.push_back(this->root);  
+  this->root = std::make_shared<NodeRes>(nullptr, this->numNodes++, isDesirableResidue);
   for (NodeMTPtr nodeMaxCriterion : nodesWithMaximumCriterium){
     this->nodes[nodeMaxCriterion->getParent()->getIndex()] = this->root; 
     this->nodes[nodeMaxCriterion->getParent()->getIndex()]->setLevelNodeNotInNR(nodeMaxCriterion->getParent()->getLevel());
@@ -40,11 +36,11 @@ void ResidualTree::createTree(){
     
     //connect the nodes in the residual tree
     for (NodeMTPtr  currentNode: nodeMaxCriterion->getNodesDescendants()){
-      NodeRes* parent = this->nodes[currentNode->getParent()->getIndex()];
+      NodeResPtr parent = this->nodes[currentNode->getParent()->getIndex()];
       if (this->primitivesFamily->isSelectedForPruning(currentNode)){ // first node in Nr(i)
       
         bool isDesirableResidue = this->primitivesFamily->hasNodeSelectedInPrimitive(currentNode);
-        this->nodes[currentNode->getIndex()] = new NodeRes(currentNode, this->numNodes++, isDesirableResidue);
+        this->nodes[currentNode->getIndex()] = std::make_shared<NodeRes>(currentNode, this->numNodes++, isDesirableResidue);
         this->nodes[currentNode->getIndex()]->addNodeInNr(currentNode); 
         
         this->nodes[currentNode->getIndex()]->setLevelNodeNotInNR( currentNode->getParent()->getLevel() );
@@ -65,11 +61,11 @@ void ResidualTree::createTree(){
   
 }
 
-NodeRes* ResidualTree::getRoot(){
+NodeResPtr ResidualTree::getRoot(){
   return this->root;
 }
 
-NodeRes* ResidualTree::getNodeRes(NodeMTPtr  node){
+NodeResPtr ResidualTree::getNodeRes(NodeMTPtr  node){
   return this->nodes[node->getIndex()];
 }
 
@@ -82,15 +78,15 @@ ImagePtr ResidualTree::getRestOfImage(){
 }
 
 void ResidualTree::computerMaximumResidues(){
-
+  PixelType* maxContrastLUTRaw = this->maxContrastLUT->rawData();
   for (int id = 0; id < this->tree->getNumNodes(); id++){
-    this->maxContrastLUT[id] = 0;
+    maxContrastLUTRaw[id] = 0;
     this->associatedIndexesLUT[id] = 0;
   }
-  std::stack<NodeRes*> s;
+  std::stack<NodeResPtr> s;
   s.push( this->root );
   while(!s.empty()){
-    NodeRes* nodeRes = s.top(); s.pop();
+    NodeResPtr nodeRes = s.top(); s.pop();
 
     for (NodeMTPtr nodeCT : nodeRes->getNodeInNr()){
       int levelNodeNotInNR = nodeRes->getLevelNodeNotInNR();
@@ -100,17 +96,17 @@ void ResidualTree::computerMaximumResidues(){
       if (nodeRes->isDesirableResidue()) // is desirable residue?
         contrast = (int)std::abs(levelNodeInNR - levelNodeNotInNR);  
       
-      if (this->maxContrastLUT[parentNodeCT->getIndex()] >= contrast){ //propagate max contrast e associeated index
-        this->maxContrastLUT[nodeCT->getIndex()] = this->maxContrastLUT[parentNodeCT->getIndex()];
+      if (maxContrastLUTRaw[parentNodeCT->getIndex()] >= contrast){ //propagate max contrast e associeated index
+        maxContrastLUTRaw[nodeCT->getIndex()] = maxContrastLUTRaw[parentNodeCT->getIndex()];
         this->associatedIndexesLUT[nodeCT->getIndex()] =  this->associatedIndexesLUT[parentNodeCT->getIndex()];
       }
       else{ //new max contrast
 
-        this->maxContrastLUT[nodeCT->getIndex()] = contrast;
+        maxContrastLUTRaw[nodeCT->getIndex()] = contrast;
 
         bool regionWithMaxContrastIsPropagated = false;
         if(parentNodeCT->getParent() != nullptr){
-          regionWithMaxContrastIsPropagated = this->maxContrastLUT[parentNodeCT->getParent()->getIndex()] < this->maxContrastLUT[parentNodeCT->getIndex()];
+          regionWithMaxContrastIsPropagated = maxContrastLUTRaw[parentNodeCT->getParent()->getIndex()] < maxContrastLUTRaw[parentNodeCT->getIndex()];
         }
 
         if (regionWithMaxContrastIsPropagated){   
@@ -123,7 +119,7 @@ void ResidualTree::computerMaximumResidues(){
       }
     }
     
-    for (NodeRes *child : nodeRes->getChildren()){
+    for (NodeResPtr child : nodeRes->getChildren()){
       s.push( child ); 
     }
   }
@@ -134,7 +130,7 @@ void ResidualTree::computerMaximumResidues(){
 /*
 void ResidualTree::computerNodeRes(NodeMTPtr currentNode){
   NodeMTPtr parentNode = currentNode->getParent();
-  NodeRes* parent = this->nodes[currentNode->getParent()->getIndex()];
+  NodeResPtr parent = this->nodes[currentNode->getParent()->getIndex()];
 
   if (this->primitivesFamily->isSelectedForPruning(currentNode)){ // first node in Nr(i)
     
@@ -189,8 +185,8 @@ void ResidualTree::computerNodeRes(NodeMTPtr currentNode){
 */    
 
 ImagePtr ResidualTree::filtering(std::vector<bool> criterion){
-  std::stack<NodeRes*> s;
-  for (NodeRes *node : this->root->getChildren()){
+  std::stack<NodeResPtr> s;
+  for (NodeResPtr node : this->root->getChildren()){
     s.push(node);
   }
   
@@ -200,7 +196,7 @@ ImagePtr ResidualTree::filtering(std::vector<bool> criterion){
   } 
 
   while (!s.empty()){
-    NodeRes *node = s.top(); s.pop();
+    NodeResPtr node = s.top(); s.pop();
     for (NodeMTPtr nodeCT : node->getNodeInNr()){
       if(nodeCT->getParent() != nullptr){
         if(criterion[node->getRootNr()->getIndex()]){
@@ -211,7 +207,7 @@ ImagePtr ResidualTree::filtering(std::vector<bool> criterion){
       }
     }
     
-    for (NodeRes *child : node->getChildren()){
+    for (NodeResPtr child : node->getChildren()){
       s.push(child);
     }
   }
@@ -231,8 +227,8 @@ ImagePtr ResidualTree::filtering(std::vector<bool> criterion){
 
 ImagePtr ResidualTree::getPositiveResidues(){
 
-  std::stack<NodeRes*> s;
-  for (NodeRes *node : this->root->getChildren()){
+  std::stack<NodeResPtr> s;
+  for (NodeResPtr node : this->root->getChildren()){
     s.push(node);
   }
   
@@ -242,7 +238,7 @@ ImagePtr ResidualTree::getPositiveResidues(){
   } 
 
   while (!s.empty()){
-    NodeRes *node = s.top(); s.pop();
+    NodeResPtr node = s.top(); s.pop();
     for (NodeMTPtr nodeCT : node->getNodeInNr()){
       if(nodeCT->getParent() != nullptr){
         if(nodeCT->isMaxtreeNode()){
@@ -252,7 +248,7 @@ ImagePtr ResidualTree::getPositiveResidues(){
         }
       }
     }
-    for (NodeRes *child : node->getChildren()){
+    for (NodeResPtr child : node->getChildren()){
       s.push(child);
     }
   }
@@ -273,8 +269,8 @@ ImagePtr ResidualTree::getPositiveResidues(){
 
 ImagePtr ResidualTree::getNegativeResidues(){
 
-  std::stack<NodeRes*> s;
-  for (NodeRes *node : this->root->getChildren()){
+  std::stack<NodeResPtr> s;
+  for (NodeResPtr node : this->root->getChildren()){
     s.push(node);
   }
   
@@ -284,7 +280,7 @@ ImagePtr ResidualTree::getNegativeResidues(){
   } 
 
   while (!s.empty()){
-    NodeRes *node = s.top(); s.pop();
+    NodeResPtr node = s.top(); s.pop();
     for (NodeMTPtr nodeCT : node->getNodeInNr()){
       if(nodeCT->getParent() != nullptr){
         if(!nodeCT->isMaxtreeNode()){
@@ -294,7 +290,7 @@ ImagePtr ResidualTree::getNegativeResidues(){
         }
       }
     }
-    for (NodeRes *child : node->getChildren()){
+    for (NodeResPtr child : node->getChildren()){
       s.push(child);
     }
   }
@@ -316,8 +312,8 @@ ImagePtr ResidualTree::getNegativeResidues(){
 
 ImagePtr ResidualTree::reconstruction(){
 
-  std::stack<NodeRes*> s;
-  for (NodeRes *node : this->root->getChildren()){
+  std::stack<NodeResPtr> s;
+  for (NodeResPtr node : this->root->getChildren()){
     s.push(node);
   }
   
@@ -329,7 +325,7 @@ ImagePtr ResidualTree::reconstruction(){
   } 
 
   while (!s.empty()){
-    NodeRes *node = s.top(); s.pop();
+    NodeResPtr node = s.top(); s.pop();
     for (NodeMTPtr nodeCT : node->getNodeInNr()){
       if(nodeCT->getParent() != nullptr){
         if(nodeCT->isMaxtreeNode()){
@@ -342,7 +338,7 @@ ImagePtr ResidualTree::reconstruction(){
       }
     }
 
-    for (NodeRes *child : node->getChildren()){
+    for (NodeResPtr child : node->getChildren()){
       s.push(child);
     }
   }
@@ -359,22 +355,15 @@ ImagePtr ResidualTree::reconstruction(){
 
 
 ResidualTree::~ResidualTree(){
-  delete[] this->nodes;
-  delete[] this->maxContrastLUT;
-  delete[] this->associatedIndexesLUT;
-  delete this->root;
+
 }
 
-/*std::list<NodeRes*> ResidualTree::getListNodes(){
+/*std::list<NodeResPtr> ResidualTree::getListNodes(){
   return this->listNodes;
 }*/
 
 ImagePtr ResidualTree::getMaxConstrastImage(){
-  ImagePtr imgOut = Image::create(this->getCTree()->getNumRowsOfImage(), this->getCTree()->getNumColsOfImage());
-  for (int pidx = 0; pidx < imgOut->numCols*imgOut->numRows; pidx++){
-    (*imgOut)[pidx] = this->maxContrastLUT[this->tree->getSC(pidx)->getIndex()];
-  }
-  return imgOut;
+  return this->maxContrastLUT;
 }
 
 int* ResidualTree::getAssociatedImage(){

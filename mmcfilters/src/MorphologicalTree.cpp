@@ -304,3 +304,12 @@ std::vector<std::vector<NodeMTPtr>> MorphologicalTree::getNodesByDepth(){
 	MorphologicalTree::extractDepthMap(this->root, 0, nodesByDepth);
 	return nodesByDepth;
 }
+
+std::list<NodeMTPtr> MorphologicalTree::getLeaves(){
+	std::list<NodeMTPtr> listLeaves;
+	for(NodeMTPtr node: this->indexToNode){
+		if(node->getChildren().empty())
+			listLeaves.push_back(node);	
+	}
+	return listLeaves;
+}

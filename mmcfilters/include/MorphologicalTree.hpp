@@ -80,6 +80,8 @@ public:
 
 	int getDepth();
 
+    std::list<NodeMTPtr> getLeaves();
+
 	std::vector<std::vector<NodeMTPtr>> getNodesByDepth();
 
 	static void extractDepthMap(NodeMTPtr node, int depth, std::vector<std::vector<NodeMTPtr>>& nodesByDepth){
@@ -88,6 +90,7 @@ public:
 		  extractDepthMap(child, depth + 1, nodesByDepth);
 		}
 	}
+    
 };
 
 

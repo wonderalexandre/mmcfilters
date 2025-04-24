@@ -13,6 +13,7 @@
 #include <iostream>
 #include <limits> // Para usar std::numeric_limits<float>::epsilon()
 #include <unordered_map>
+#include <utility>
 #include <array>
 
 #define PI 3.14159265358979323846
@@ -28,6 +29,7 @@ public:
 	AttributeNames(std::unordered_map<std::string, int>&& map)
 		: mapIndexes(std::move(map)), NUM_ATTRIBUTES(mapIndexes.size()) {}
 
+	
 	static AttributeNames geometric(int n) {
 		return AttributeNames( {
             {"AREA", 0 * n},
@@ -80,6 +82,90 @@ public:
 
 };
 
+/*
+enum class GeometricAttribute {
+    AREA,
+    VOLUME,
+    LEVEL,
+    MEAN_LEVEL,
+    VARIANCE_LEVEL,
+    STANDARD_DEVIATION,
+    BOX_WIDTH,
+    BOX_HEIGHT,
+    RECTANGULARITY,
+    RATIO_WH,
+    CENTRAL_MOMENT_20,
+    CENTRAL_MOMENT_02,
+    CENTRAL_MOMENT_11,
+    CENTRAL_MOMENT_30,
+    CENTRAL_MOMENT_03,
+    CENTRAL_MOMENT_21,
+    CENTRAL_MOMENT_12,
+    ORIENTATION,
+    LENGTH_MAJOR_AXIS,
+    LENGTH_MINOR_AXIS,
+    ECCENTRICITY,
+    COMPACTNESS,
+    HU_MOMENT_1_INERTIA,
+    HU_MOMENT_2,
+    HU_MOMENT_3,
+    HU_MOMENT_4,
+    HU_MOMENT_5,
+    HU_MOMENT_6,
+    HU_MOMENT_7
+};
+
+enum class StructuralAttribute {
+    HEIGHT,
+    DEPTH,
+    IS_LEAF,
+    IS_ROOT,
+    NUM_CHILDREN,
+    NUM_SIBLINGS,
+    NUM_DESCENDANTS,
+    NUM_LEAF_DESCENDANTS,
+    LEAF_RATIO,
+    BALANCE,
+    AVG_CHILD_HEIGHT
+};
+
+class AttributeNames {
+public:
+    std::unordered_map<int, int> indexMap; // Usa int representando os enums convertidos para int
+    const int NUM_ATTRIBUTES;
+
+    AttributeNames(std::unordered_map<int, int>&& map)
+        : indexMap(std::move(map)), NUM_ATTRIBUTES(indexMap.size()) {}
+
+    static AttributeNames geometric(int n) {
+        std::unordered_map<int, int> map;
+        int i = 0;
+        for (int attr = static_cast<int>(GeometricAttribute::AREA);
+             attr <= static_cast<int>(GeometricAttribute::HU_MOMENT_7); ++attr) {
+            map[attr] = i++ * n;
+        }
+        return AttributeNames(std::move(map));
+    }
+
+    static AttributeNames structural(int n) {
+        std::unordered_map<int, int> map;
+        int i = 0;
+        for (int attr = static_cast<int>(StructuralAttribute::HEIGHT);
+             attr <= static_cast<int>(StructuralAttribute::AVG_CHILD_HEIGHT); ++attr) {
+            map[attr] = i++ * n;
+        }
+        return AttributeNames(std::move(map));
+    }
+
+    int getIndex(GeometricAttribute attr) const {
+        return indexMap.at(static_cast<int>(attr));
+    }
+
+    int getIndex(StructuralAttribute attr) const {
+        return indexMap.at(static_cast<int>(attr));
+    }
+};
+*/
 
 class AttributeComputedIncrementally{
 
@@ -733,7 +819,56 @@ public:
 		return std::make_pair(attributeNames, attrs);
     }
 
+	struct ExtinctionValues{
+		NodeMTPtr leaf;
+		NodeMTPtr cutoffNode;
+		float extinction;
+		ExtinctionValues(NodeMTPtr leaf, NodeMTPtr cutoffNode, float extinction)
+			: leaf(leaf), cutoffNode(cutoffNode), extinction(extinction) {}
+		
+		// Operador de comparação para ordenação	
+		bool operator<(const ExtinctionValues& other) const {
+			return extinction < other.extinction;
+		}
+	};
 
+	std::list<AttributeComputedIncrementally::ExtinctionValues> getExtinctionValue(MorphologicalTreePtr tree, std::string attrName, int valueMin, int valueMax){
+		
+		float* attr = computerAttributeByIndex(tree, attrName);
+		std::list<NodeMTPtr> leaves = tree->getLeaves();
+		std::list<AttributeComputedIncrementally::ExtinctionValues> leavesByExtinction;
+		std::unique_ptr<bool[]> visited(new bool[tree->getNumNodes()]()); //inicializa com false
+		for(NodeMTPtr leaf: leaves){
+			float extinction = std::numeric_limits<float>::max();
+			NodeMTPtr cutoffNode = leaf;
+			NodeMTPtr parent = cutoffNode->getParent();
+			bool flag = true;
+			while (flag  &&  parent != nullptr) {
+				if (parent->getChildren().size() > 1) {
+					for(NodeMTPtr son: parent->getChildren()){  // verifica se possui irmao com atributo maior
+						if(flag){
+							if (visited[son->getIndex()]  &&  son != cutoffNode  &&  attr[son->getIndex()] == attr[cutoffNode->getIndex()]) { //EMPATE Grimaud,92
+								flag = false;
+							}
+							else if (son != cutoffNode  &&  attr[son->getIndex()] > attr[cutoffNode->getIndex()]) {
+								flag = false;
+							}
+							visited[son->getIndex()] = true;
+						}
+					}
+				}
+				if (flag) {
+					cutoffNode = parent;
+					parent = cutoffNode->getParent();
+				}
+			}
+			if(parent != nullptr)
+				extinction = attr[cutoffNode->getIndex()];
+			leavesByExtinction.push_back(AttributeComputedIncrementally::ExtinctionValues(leaf, cutoffNode, extinction));
+			
+		}
+		return leavesByExtinction;
+	}
 
 };
 

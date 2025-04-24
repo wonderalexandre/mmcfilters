@@ -359,17 +359,24 @@ public:
 			},
 			[&contoursMT, &contoursToRemoveLCA, &lca, &ncount, tree, adj4](NodeMTPtr nodeP) -> void { // post-processing
 				std::list<int> &NcontourToRemoveLCA = contoursToRemoveLCA[nodeP->getIndex()];
-				for(int r: NcontourToRemoveLCA){ //pixels que sao contornos de nodes descendentes ao NodeAtual
+
+				NodeMTPtr nodeLCA = nodeP;
+				for(int p: NcontourToRemoveLCA){ //pixels que sao contornos de nodes descendentes ao NodeAtual
 					bool isPixelToBeRemoved = true;
-					for (int q : adj4->getNeighboringPixels(r)) { //Existe um nodeQ ascendente de NodeAtual contendo p como contorno? (p, q) in A
-						NodeMTPtr nodeQ = tree->getSC(q); 
-						if (tree->isStrictAncestor(nodeQ, nodeP) || !tree->isComparable(nodeP, nodeQ) ) { 
-							contoursToRemoveLCA[nodeQ->getIndex()].push_back(r); 
+					for (int r : adj4->getNeighboringPixels(p)) { //Existe um nodeQ ascendente de NodeAtual contendo p como contorno? (p, q) in A
+						NodeMTPtr nodeR = tree->getSC(r); 
+						if (tree->isStrictAncestor(nodeR, nodeLCA)){
+							contoursToRemoveLCA[nodeR->getIndex()].push_back(p); 
 							isPixelToBeRemoved = false;	
-					  	}
+					  	}else if(!tree->isComparable(nodeLCA, nodeR)) {
+							NodeMTPtr otherNodeLCA = lca.findLowestCommonAncestor(nodeLCA, nodeR);
+							contoursToRemoveLCA[otherNodeLCA->getIndex()].push_back(p);
+							isPixelToBeRemoved = false;
+							ncount[p]++;
+						}
 					}
-					if(!adj4->isBorderDomainImage(r) && isPixelToBeRemoved){
-						contoursMT.remove(nodeP, r);
+					if(!adj4->isBorderDomainImage(p) && isPixelToBeRemoved){
+						contoursMT.remove(nodeLCA, p);
 					}
 				}
 			
@@ -377,6 +384,7 @@ public:
 					if (adj4->isBorderDomainImage(p)){
 						ncount[p]++;
 					}
+
 					for (int q : adj4->getNeighboringPixels(p)) {
 						NodeMTPtr nodeQ = tree->getSC(q); 
 						if(!tree->isComparable(nodeP, nodeQ)){ //se os nodeP e nodeQ não sao comparaveis, então p pode ser removido pelo LCA de nodeP e nodeQ 

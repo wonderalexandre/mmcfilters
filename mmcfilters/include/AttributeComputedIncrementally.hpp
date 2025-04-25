@@ -840,7 +840,7 @@ public:
 		}
 	};
 
-	std::list<AttributeComputedIncrementally::ExtinctionValues> getExtinctionValue(MorphologicalTreePtr tree, std::string attrName, int valueMin, int valueMax){
+	std::list<AttributeComputedIncrementally::ExtinctionValues> getExtinctionValue(MorphologicalTreePtr tree, std::string attrName){
 		
 		float* attr = computerAttributeByIndex(tree, attrName);
 		std::list<NodeMTPtr> leaves = tree->getLeaves();

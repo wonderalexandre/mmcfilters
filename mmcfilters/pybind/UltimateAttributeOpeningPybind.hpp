@@ -20,7 +20,7 @@ class UltimateAttributeOpeningPybind: public UltimateAttributeOpening{
 public:
     using UltimateAttributeOpening::UltimateAttributeOpening;
 
-    UltimateAttributeOpeningPybind(MorphologicalTreePybindPtr tree,  std::vector<float> attrs_increasing) : UltimateAttributeOpening(tree, attrs_increasing){}
+    UltimateAttributeOpeningPybind(MorphologicalTreePybindPtr tree,  py::array_t<float> &attr) : UltimateAttributeOpening(tree, static_cast<float*>(attr.request().ptr)){}
 
     py::array_t<PixelType> getMaxConstrastImage(){
         return PybindUtils::toNumpy(UltimateAttributeOpening::getMaxConstrastImage(), this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage());

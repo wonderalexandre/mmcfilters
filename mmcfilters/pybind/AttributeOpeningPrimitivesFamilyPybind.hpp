@@ -18,10 +18,10 @@ class AttributeOpeningPrimitivesFamilyPybind: public AttributeOpeningPrimitivesF
     public:
     using AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily;
 
-    AttributeOpeningPrimitivesFamilyPybind(MorphologicalTreePybindPtr tree, py::array_t<float> attr, float maxCriterion)
+    AttributeOpeningPrimitivesFamilyPybind(MorphologicalTreePybindPtr tree, py::array_t<float>& attr, float maxCriterion)
         : AttributeOpeningPrimitivesFamily(tree, static_cast<float*>(attr.request().ptr), maxCriterion) {}
 
-    AttributeOpeningPrimitivesFamilyPybind(MorphologicalTreePybindPtr tree, py::array_t<float> attr, float maxCriterion, int deltaMSER)
+    AttributeOpeningPrimitivesFamilyPybind(MorphologicalTreePybindPtr tree, py::array_t<float>& attr, float maxCriterion, int deltaMSER)
         : AttributeOpeningPrimitivesFamily(tree, static_cast<float*>(attr.request().ptr), maxCriterion, deltaMSER) {}
 
     py::array_t<PixelType> getPrimitive(float threshold){

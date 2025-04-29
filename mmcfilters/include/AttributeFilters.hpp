@@ -44,6 +44,46 @@ class AttributeFilters{
 
     float* filteringBySubtractiveScoreRule(std::vector<float>& prob);
 
+    ImagePtr filteringByExtinctionValue(MorphologicalTreePtr tree, float *attribute, int k);
+
+    static void filteringByExtinctionValue(MorphologicalTreePtr tree, float *attribute, int leafToKeep, PixelType* imgOutput){
+        std::vector<AttributeComputedIncrementally::ExtinctionValues> extinctionValuesLeaf = AttributeComputedIncrementally::getExtinctionValue(tree, attribute);
+        std::sort(extinctionValuesLeaf.begin(), extinctionValuesLeaf.end(), 
+            [](const AttributeComputedIncrementally::ExtinctionValues& a, const AttributeComputedIncrementally::ExtinctionValues& b) {
+                return a.extinction > b.extinction;
+            }
+        );
+
+        std::unique_ptr<bool[]> criterion(new bool[tree->getNumNodes()]());
+        for(int i=0; i < leafToKeep; i++){
+            criterion[extinctionValuesLeaf[i].leaf->getIndex()] = true;
+        }
+        for(NodeMTPtr node: tree->getRoot()->getIteratorPostOrderTraversal()){
+            NodeMTPtr parent = node->getParent();
+            if (parent != nullptr && !criterion[parent->getIndex()]) {
+                criterion[parent->getIndex()] = criterion[node->getIndex()];
+            }
+        }
+        std::stack<NodeMTPtr> s;
+        s.push(tree->getRoot());
+        while(!s.empty()){
+            NodeMTPtr node = s.top(); s.pop();
+            int level = node->getLevel();
+            for (int pixel : node->getCNPs()){
+                imgOutput[pixel] = level;
+            }
+            for (NodeMTPtr child: node->getChildren()){
+                if(criterion[child->getIndex()]){
+                    s.push(child);
+                }else{
+                    for(int pixel: child->getPixelsOfCC()){
+                        imgOutput[pixel] = level;
+                    }
+                }
+            }
+        }
+    }
+
     static void filteringBySubtractiveScoreRule(MorphologicalTreePtr tree, std::vector<float>& prob, float *imgOutput){
         std::unique_ptr<float[]> mapLevel(new float[tree->getNumNodes()]);
         

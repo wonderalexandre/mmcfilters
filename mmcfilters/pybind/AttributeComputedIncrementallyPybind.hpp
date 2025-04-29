@@ -67,7 +67,9 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
 
     static std::pair<py::dict, py::array_t<float>> computerBasicAttributes(MorphologicalTreePybindPtr tree){
         
-		auto [attributeNames, ptrValues] = AttributeComputedIncrementally::computerBasicAttributes(tree);
+		std::pair<AttributeNames, float*> pair = AttributeComputedIncrementally::computerBasicAttributes(tree);
+		AttributeNames attributeNames = pair.first;
+		float* ptrValues = pair.second;
 		const int numAttribute = attributeNames.NUM_ATTRIBUTES;
 		const int n = tree->getNumNodes();
         
@@ -76,9 +78,12 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
 		std::vector<int> values;
 
 		// 1. Copiar chaves e valores para vetores separados
-		for (const auto& pair : attributeNames.mapIndexes) {
-			keys.push_back(pair.first);
-			values.push_back(pair.second);
+		for (const auto& pair : attributeNames.indexMap) {
+			Attribute attribute = pair.first;
+			int offset = pair.second;
+
+			keys.push_back( attributeNames.toString(attribute) );
+			values.push_back(offset);
 		}
 
 		// 2. Criar um vetor de índices para ordenar os valores
@@ -91,8 +96,8 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
 			dict[py::str( keys[indices[i]] )] = values[indices[i]] / n; 
 		}
 
-		py::capsule free_when_done(ptrValues, [](void *f) {
-			delete[] reinterpret_cast<float*>(f);
+		py::capsule free_when_done(ptrValues, [](void* f) {
+			delete[] static_cast<float*>(f);
 		});
 		
 		py::array_t<float> numpy = py::array(py::buffer_info(
@@ -103,6 +108,8 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
 			{  n,  numAttribute }, 
 			{ sizeof(float), sizeof(float) * n }
 		), free_when_done);
+
+		
 
 		
 		return std::make_pair(dict, numpy);

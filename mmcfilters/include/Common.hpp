@@ -24,7 +24,7 @@ class NodeMT;
 using NodeMTPtr = std::shared_ptr<NodeMT>;
 using MorphologicalTreePtr = std::shared_ptr<MorphologicalTree>; 
 
-using PixelType = uint8_t;
+using PixelType = std::uint8_t;
 
 struct Image {
     int numRows;
@@ -65,7 +65,9 @@ struct Image {
     const PixelType& operator[](int index) const { return data[index]; }
 
     void fill(PixelType value) {
-        std::fill(data.get(), data.get() + numRows * numCols, value);
+        for(int i = 0; i < numRows * numCols; ++i) {
+            data[i] = value;
+        }
     }
 
     bool isEqual(std::shared_ptr<Image> other) const {

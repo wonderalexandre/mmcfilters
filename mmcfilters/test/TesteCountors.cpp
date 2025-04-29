@@ -14,13 +14,13 @@
 int main(int argc, char* argv[]) {
     // Definição da imagem e parâmetros
     
-    //ImagePtr img = getLenaCropImage();
+    ImagePtr image = getSimpleImage();
     
     if(argc != 3){
         std::cout << "Execute assim: " << argv[0] << " <ToS_type> <filename>" << std::endl;
         return 1;
     }
-    ImagePtr image = openImage(argv[2]);
+   // ImagePtr image = openImage(argv[2]);
     
     int numRows = image->numRows;
     int numCols = image->numCols;

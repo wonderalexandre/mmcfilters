@@ -138,6 +138,7 @@ void init_AttributeFilters(py::module &m){
     .def("filteringSubtractiveRule", py::overload_cast<std::vector<bool>&>(&AttributeFiltersPybind::filteringBySubtractiveRule))
     .def("filteringSubtractiveScoreRule", py::overload_cast<std::vector<float>&>(&AttributeFiltersPybind::filteringBySubtractiveScoreRule))
     .def("filteringMax", py::overload_cast<py::array_t<float> &, float>(&AttributeFiltersPybind::filteringByPruningMax))
+    .def("filteringByExtinctionValue", py::overload_cast<py::array_t<float> &, int>(&AttributeFiltersPybind::filteringByExtinctionValue))
     .def("getAdaptativeCriterion", &AttributeFiltersPybind::getAdaptativeCriterion);   
 }
 
@@ -152,7 +153,7 @@ void init_AdjacencyRelation(py::module &m){
 
 void init_UltimateAttributeOpening(py::module &m){
     	py::class_<UltimateAttributeOpeningPybind>(m, "UltimateAttributeOpening")
-        .def(py::init<MorphologicalTreePybindPtr, std::vector<float>>())
+        .def(py::init<MorphologicalTreePybindPtr, py::array_t<float>&>())
         .def("execute", py::overload_cast<int>(&UltimateAttributeOpeningPybind::execute))
         .def("executeWithMSER", &UltimateAttributeOpeningPybind::executeWithMSER)
         .def("getMaxConstrastImage", &UltimateAttributeOpeningPybind::getMaxConstrastImage)
@@ -176,8 +177,8 @@ void init_ResidualTree(py::module &m){
 
 void init_AttributeOpeningPrimitivesFamily(py::module &m){
     	py::class_<AttributeOpeningPrimitivesFamilyPybind>(m, "AttributeOpeningPrimitivesFamily")
-        .def(py::init<MorphologicalTreePybindPtr, py::array_t<float>, float>())
-        .def(py::init<MorphologicalTreePybindPtr, py::array_t<float>, float, int>())
+        .def(py::init<MorphologicalTreePybindPtr, py::array_t<float>&, float>())
+        .def(py::init<MorphologicalTreePybindPtr, py::array_t<float>&, float, int>())
         .def_property_readonly("numPrimitives", &AttributeOpeningPrimitivesFamilyPybind::getNumPrimitives)
         .def("getPrimitive", &AttributeOpeningPrimitivesFamilyPybind::getPrimitive)
         .def_property_readonly("restOfImage", &AttributeOpeningPrimitivesFamilyPybind::getRestOfNumpyImage)

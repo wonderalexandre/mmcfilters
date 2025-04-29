@@ -30,7 +30,7 @@ int main(int argc, char const *argv[])
 
     // Criar um AttributeComputedIncrementally::computerArea
     const int n = tree->getNumNodes();	
-    float* attr = AttributeComputedIncrementally::computerAttributeByIndex(tree, "BOX_HEIGHT"); //size: n * numAttribute
+    float* attr = AttributeComputedIncrementally::computerAttributeByIndex(tree, GeometricAttribute::BOX_HEIGHT); //size: n * numAttribute
     std::cout << "attributes ok" << std::endl;
 
     // Criar um AttributeOpeningPrimitivesFamily
@@ -58,8 +58,7 @@ int main(int argc, char const *argv[])
     //printImage(contrast);
     std::cout << "contrast ok" << std::endl;
     
-    std::vector<float> attrVector(attr, attr + n);
-    UltimateAttributeOpening *uao = new UltimateAttributeOpening(tree, attrVector);
+    UltimateAttributeOpening *uao = new UltimateAttributeOpening(tree, attr);
     uao->execute(maxCriterion);
     ImagePtr contrastUAO = residualTree->getMaxConstrastImage();
     //printImage(contrastUAO);

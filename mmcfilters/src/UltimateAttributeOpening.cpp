@@ -35,7 +35,7 @@ void UltimateAttributeOpening::execute(int maxCriterion, std::vector<bool> selec
   }
 }
 
-UltimateAttributeOpening::UltimateAttributeOpening(MorphologicalTreePtr tree, std::vector<float> attrs_increasing){
+UltimateAttributeOpening::UltimateAttributeOpening(MorphologicalTreePtr tree, float* attrs_increasing){
   this->tree = tree;
   this->maxContrastLUT = new PixelType[this->tree->getNumNodes()];
   this->associatedIndexLUT = new int[this->tree->getNumNodes()];

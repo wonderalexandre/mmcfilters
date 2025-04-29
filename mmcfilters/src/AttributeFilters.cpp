@@ -16,6 +16,12 @@
         return imgOutput;
     }
 
+    ImagePtr AttributeFilters::filteringByExtinctionValue(MorphologicalTreePtr tree, float *attribute, int k){
+        ImagePtr imgOutput = Image::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
+        AttributeFilters::filteringByExtinctionValue(this->tree, attribute, k, imgOutput->rawData());
+        return imgOutput;
+    }
+
     ImagePtr AttributeFilters::filteringByPruningMax(float* attribute, float threshold){
         ImagePtr imgOutput = Image::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
         AttributeFilters::filteringByPruningMax(this->tree, attribute, threshold, imgOutput->rawData());

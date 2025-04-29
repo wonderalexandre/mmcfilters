@@ -31,6 +31,7 @@ class AttributeFiltersPybind : public AttributeFilters{
 
         auto bufAttribute = attr.request();
         float *attribute = (float *) bufAttribute.ptr;
+
         int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
         PixelType* imgOutput = new PixelType[n];
 
@@ -107,7 +108,18 @@ class AttributeFiltersPybind : public AttributeFilters{
 
     }
 
+    py::array_t<PixelType> filteringByExtinctionValue(py::array_t<float>& attr, int k){
 
+        auto bufAttribute = attr.request();
+        float *attribute = (float *) bufAttribute.ptr;
+
+        int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
+        PixelType* imgOutput = new PixelType[n];
+
+        AttributeFilters::filteringByExtinctionValue(this->tree, attribute, k, imgOutput);
+
+        return PybindUtils::toNumpy(imgOutput, n);
+    }
 
 
 

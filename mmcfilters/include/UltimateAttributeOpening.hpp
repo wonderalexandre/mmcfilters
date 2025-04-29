@@ -13,7 +13,7 @@ class UltimateAttributeOpening{
 
   protected:
     int maxCriterion;
-    std::vector<float> attrs_increasing;
+    float* attrs_increasing;
     MorphologicalTreePtr tree;
     PixelType* maxContrastLUT;
     int* associatedIndexLUT;
@@ -29,7 +29,7 @@ class UltimateAttributeOpening{
 
   public:
 
-    UltimateAttributeOpening(MorphologicalTreePtr tree,  std::vector<float> attrs_increasing);
+    UltimateAttributeOpening(MorphologicalTreePtr tree,  float* attrs_increasing);
 
     ~UltimateAttributeOpening();
 

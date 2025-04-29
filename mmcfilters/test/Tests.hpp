@@ -200,8 +200,9 @@ inline  void printConnectedComponent(NodeMTPtr node, MorphologicalTreePtr tree, 
 
 }
 
-inline void printImage(ImagePtr img, int setw=4, std::string nomeArquivo = "") {
-    int n = img->numRows * img->numCols;
+inline void printImage(ImagePtr imgPtr, int setw=4, std::string nomeArquivo = "") {
+    int n = imgPtr->numRows * imgPtr->numCols;
+    PixelType* img = imgPtr->rawData();
     std::ostream* streamSaida;
     std::ofstream arquivoSaida;
 
@@ -218,16 +219,16 @@ inline void printImage(ImagePtr img, int setw=4, std::string nomeArquivo = "") {
 
     // Imprime o cabeçalho de colunas
     *streamSaida << std::setw(setw) << " "; // espaço para a primeira coluna (índice da linha)
-    for (int col = 0; col < img->numCols; col++) {
+    for (int col = 0; col < imgPtr->numCols; col++) {
         *streamSaida << std::setw(setw) << col;
     }
     *streamSaida << "\n";
 
     // Impressão bidimensional com índice de linha
-    for (int row = 0; row < img->numRows; row++) {
+    for (int row = 0; row < imgPtr->numRows; row++) {
         *streamSaida << std::setw(setw) << row; // índice da linha
-        for (int col = 0; col < img->numCols; col++) {
-            *streamSaida << std::setw(setw) << img->data[ImageUtils::to1D(row, col, img->numCols)]; // ou ImageUtils::to1D(row, col, numCols)
+        for (int col = 0; col < imgPtr->numCols; col++) {
+            *streamSaida << std::setw(setw) << ((int)img[ImageUtils::to1D(row, col, imgPtr->numCols)]); // ou ImageUtils::to1D(row, col, numCols)
         }
         *streamSaida << "\n";
     }

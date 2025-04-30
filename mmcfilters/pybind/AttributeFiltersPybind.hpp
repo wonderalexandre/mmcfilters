@@ -122,6 +122,21 @@ class AttributeFiltersPybind : public AttributeFilters{
     }
 
 
+    py::array_t<float> saliencyMapByExtinction(py::array_t<float>& attr, int k){
+
+        auto bufAttribute = attr.request();
+        float *attribute = (float *) bufAttribute.ptr;
+
+        int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
+        float* map = new float[n];
+
+        AttributeFilters::saliencyMapByExtinction(this->tree, attribute, k, map);
+
+        return PybindUtils::toNumpyFloat(map, n);
+    }
+
+
+
 
 };
 

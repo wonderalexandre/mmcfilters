@@ -139,6 +139,7 @@ void init_AttributeFilters(py::module &m){
     .def("filteringSubtractiveScoreRule", py::overload_cast<std::vector<float>&>(&AttributeFiltersPybind::filteringBySubtractiveScoreRule))
     .def("filteringMax", py::overload_cast<py::array_t<float> &, float>(&AttributeFiltersPybind::filteringByPruningMax))
     .def("filteringByExtinctionValue", py::overload_cast<py::array_t<float> &, int>(&AttributeFiltersPybind::filteringByExtinctionValue))
+    .def("saliencyMapByExtinction", py::overload_cast<py::array_t<float> &, int>(&AttributeFiltersPybind::saliencyMapByExtinction))
     .def("getAdaptativeCriterion", &AttributeFiltersPybind::getAdaptativeCriterion);   
 }
 

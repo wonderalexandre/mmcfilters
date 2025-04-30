@@ -926,7 +926,7 @@ public:
 		leavesByExtinction.reserve(leaves.size());
 		std::unique_ptr<bool[]> visited(new bool[tree->getNumNodes()]()); //inicializa com false
 		for(NodeMTPtr leaf: leaves){
-			float extinction = std::numeric_limits<float>::max();
+			float extinction = 0;
 			NodeMTPtr cutoffNode = leaf;
 			NodeMTPtr parent = cutoffNode->getParent();
 			bool flag = true;
@@ -950,7 +950,7 @@ public:
 				}
 			}
 			if(parent != nullptr)
-				extinction = std::abs(attr[leaf->getIndex()] - attr[cutoffNode->getIndex()]);
+				extinction = attr[cutoffNode->getIndex()];
 			leavesByExtinction.push_back( AttributeComputedIncrementally::ExtinctionValues(leaf, cutoffNode, extinction) );
 			
 		}

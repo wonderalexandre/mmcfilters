@@ -950,7 +950,7 @@ public:
 				}
 			}
 			if(parent != nullptr)
-				extinction = attr[cutoffNode->getIndex()];
+				extinction = std::abs(attr[leaf->getIndex()] - attr[cutoffNode->getIndex()]);
 			leavesByExtinction.push_back( AttributeComputedIncrementally::ExtinctionValues(leaf, cutoffNode, extinction) );
 			
 		}

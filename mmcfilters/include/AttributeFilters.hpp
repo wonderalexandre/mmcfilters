@@ -64,6 +64,9 @@ class AttributeFilters{
             keep[leaf->getIndex()] = true;
             extinctionByNode[leaf->getIndex()] = extValues[i].extinction;
         }
+
+        
+
         for (auto node : tree->getRoot()->getIteratorPostOrderTraversal()) {
             auto parent = node->getParent();
             if (parent && keep[node->getIndex()]) {
@@ -79,8 +82,10 @@ class AttributeFilters{
     
         auto contoursMT = AttributeComputedIncrementally::extractCompactCountors(tree);
         contoursMT.visitContours(tree, [&](NodeMTPtr node, const std::unordered_set<int>& contourNode) {
-            for (int p : contourNode) {
-                saliencyOutput[p] = extinctionByNode[node->getIndex()];;
+            if (keep[node->getIndex()]){
+                for (int p : contourNode) {
+                    saliencyOutput[p] = extinctionByNode[node->getIndex()];;
+                }
             }
         });
     }

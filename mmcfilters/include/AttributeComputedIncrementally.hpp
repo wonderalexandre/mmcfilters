@@ -301,6 +301,10 @@ public:
 				contoursToRemove[node->getIndex()].push_back(pixel);
 			}
 
+			std::vector<std::vector<int>>& getCompactContours() {
+				return contours;
+			}
+
 			std::unordered_set<int> getContour(NodeMTPtr node) {
 				std::unordered_set<int> contour;
 				AttributeComputedIncrementally::computerAttribute(node,

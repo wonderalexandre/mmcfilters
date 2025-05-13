@@ -19,35 +19,40 @@
 
 #define PI 3.14159265358979323846
 
+
 enum class InvalidAttribute{
 	INVALID
 }; 
 
 enum class GeometricAttribute {
-    AREA,
+    AREA, 
     VOLUME,
     LEVEL,
 	DYNAMICS,
     MEAN_LEVEL,
     VARIANCE_LEVEL,
-    STANDARD_DEVIATION,
+	BOUNDING_BOX,	
     BOX_WIDTH,
     BOX_HEIGHT,
     RECTANGULARITY,
     RATIO_WH,
-    CENTRAL_MOMENT_20,
+	CENTRAL_MOMENT,
+    CENTRAL_MOMENT_00,
+	CENTRAL_MOMENT_20,
     CENTRAL_MOMENT_02,
     CENTRAL_MOMENT_11,
     CENTRAL_MOMENT_30,
     CENTRAL_MOMENT_03,
     CENTRAL_MOMENT_21,
     CENTRAL_MOMENT_12,
-    ORIENTATION,
+    AXIS_ORIENTATION, 
     LENGTH_MAJOR_AXIS,
     LENGTH_MINOR_AXIS,
     ECCENTRICITY,
     COMPACTNESS,
-    HU_MOMENT_1_INERTIA,
+	HU_MOMENT,
+	INERTIA,
+    HU_MOMENT_1,
     HU_MOMENT_2,
     HU_MOMENT_3,
     HU_MOMENT_4,
@@ -55,6 +60,7 @@ enum class GeometricAttribute {
     HU_MOMENT_6,
     HU_MOMENT_7
 };
+
 
 enum class StructuralAttribute {
     HEIGHT,
@@ -69,6 +75,8 @@ enum class StructuralAttribute {
     BALANCE,
     AVG_CHILD_HEIGHT
 };
+
+
 
 using Attribute = std::variant<GeometricAttribute, StructuralAttribute, InvalidAttribute>;
 
@@ -129,8 +137,8 @@ class AttributeNames {
 			return indexMap.at(attr);
 		}
 	
-		int linearIndex(const Attribute& attr, int nodeIndex) const {
-			return getIndex(attr) + nodeIndex;
+		int linearIndex(int nodeIndex, const Attribute& attr) const {
+			return nodeIndex * NUM_ATTRIBUTES + getIndex(attr);
 		}
 
 		static std::string toString(const Attribute& attr) {
@@ -147,7 +155,7 @@ class AttributeNames {
 				case GeometricAttribute::DYNAMICS: return "DYNAMICS";
 				case GeometricAttribute::MEAN_LEVEL: return "MEAN_LEVEL";
 				case GeometricAttribute::VARIANCE_LEVEL: return "VARIANCE_LEVEL";
-				case GeometricAttribute::STANDARD_DEVIATION: return "STANDARD_DEVIATION";
+				//case GeometricAttribute::STANDARD_DEVIATION: return "STANDARD_DEVIATION";
 				case GeometricAttribute::BOX_WIDTH: return "BOX_WIDTH";
 				case GeometricAttribute::BOX_HEIGHT: return "BOX_HEIGHT";
 				case GeometricAttribute::RECTANGULARITY: return "RECTANGULARITY";
@@ -159,12 +167,13 @@ class AttributeNames {
 				case GeometricAttribute::CENTRAL_MOMENT_03: return "CENTRAL_MOMENT_03";
 				case GeometricAttribute::CENTRAL_MOMENT_21: return "CENTRAL_MOMENT_21";
 				case GeometricAttribute::CENTRAL_MOMENT_12: return "CENTRAL_MOMENT_12";
-				case GeometricAttribute::ORIENTATION: return "ORIENTATION";
+				case GeometricAttribute::AXIS_ORIENTATION: return "AXIS_ORIENTATION";
 				case GeometricAttribute::LENGTH_MAJOR_AXIS: return "LENGTH_MAJOR_AXIS";
 				case GeometricAttribute::LENGTH_MINOR_AXIS: return "LENGTH_MINOR_AXIS";
 				case GeometricAttribute::ECCENTRICITY: return "ECCENTRICITY";
 				case GeometricAttribute::COMPACTNESS: return "COMPACTNESS";
-				case GeometricAttribute::HU_MOMENT_1_INERTIA: return "HU_MOMENT_1_INERTIA";
+				case GeometricAttribute::INERTIA: return "INERTIA";
+				case GeometricAttribute::HU_MOMENT_1: return "HU_MOMENT_1";
 				case GeometricAttribute::HU_MOMENT_2: return "HU_MOMENT_2";
 				case GeometricAttribute::HU_MOMENT_3: return "HU_MOMENT_3";
 				case GeometricAttribute::HU_MOMENT_4: return "HU_MOMENT_4";
@@ -213,7 +222,7 @@ class AttributeNames {
 			else if (str == "DYNAMICS") return GeometricAttribute::DYNAMICS;
 			else if (str == "MEAN_LEVEL") return GeometricAttribute::MEAN_LEVEL;
 			else if (str == "VARIANCE_LEVEL") return GeometricAttribute::VARIANCE_LEVEL;
-			else if (str == "STANDARD_DEVIATION") return GeometricAttribute::STANDARD_DEVIATION;
+			//else if (str == "STANDARD_DEVIATION") return GeometricAttribute::STANDARD_DEVIATION;
 			else if (str == "BOX_WIDTH") return GeometricAttribute::BOX_WIDTH;
 			else if (str == "BOX_HEIGHT") return GeometricAttribute::BOX_HEIGHT;
 			else if (str == "RECTANGULARITY") return GeometricAttribute::RECTANGULARITY;
@@ -225,12 +234,13 @@ class AttributeNames {
 			else if (str == "CENTRAL_MOMENT_03") return GeometricAttribute::CENTRAL_MOMENT_03;
 			else if (str == "CENTRAL_MOMENT_21") return GeometricAttribute::CENTRAL_MOMENT_21;
 			else if (str == "CENTRAL_MOMENT_12") return GeometricAttribute::CENTRAL_MOMENT_12;
-			else if (str == "ORIENTATION") return GeometricAttribute::ORIENTATION;
+			else if (str == "AXIS_ORIENTATION") return GeometricAttribute::AXIS_ORIENTATION;
 			else if (str == "LENGTH_MAJOR_AXIS") return GeometricAttribute::LENGTH_MAJOR_AXIS;
 			else if (str == "LENGTH_MINOR_AXIS") return GeometricAttribute::LENGTH_MINOR_AXIS;
 			else if (str == "ECCENTRICITY") return GeometricAttribute::ECCENTRICITY;
 			else if (str == "COMPACTNESS") return GeometricAttribute::COMPACTNESS;
-			else if (str == "HU_MOMENT_1_INERTIA") return GeometricAttribute::HU_MOMENT_1_INERTIA;
+			else if (str == "INERTIA") return GeometricAttribute::INERTIA;
+			else if (str == "HU_MOMENT_1") return GeometricAttribute::HU_MOMENT_1;
 			else if (str == "HU_MOMENT_2") return GeometricAttribute::HU_MOMENT_2;
 			else if (str == "HU_MOMENT_3") return GeometricAttribute::HU_MOMENT_3;
 			else if (str == "HU_MOMENT_4") return GeometricAttribute::HU_MOMENT_4;
@@ -255,6 +265,29 @@ class AttributeNames {
 			return std::nullopt; // inválido
 		}
 };
+
+
+class AttributeComputer {
+	public:
+		virtual ~AttributeComputer() = default;
+	
+		/// Executa a computação dos atributos produzidos por essa classe
+		virtual void compute(
+			MorphologicalTreePtr tree,
+			std::shared_ptr<float[]> buffer,
+			std::shared_ptr<AttributeNames> attrNames,
+			const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {}
+		) const = 0;
+	
+		/// Atributos produzidos
+		virtual std::vector<Attribute> attributes() const = 0;
+	
+		/// Atributos requeridos para o cálculo (apenas metadado)
+		virtual std::vector<Attribute> requiredAttributes() const { return {}; }
+	
+};
+
+using DependencyMap = std::unordered_map<Attribute, std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>>>;
 
 
 class AttributeComputedIncrementally{
@@ -585,36 +618,36 @@ public:
 		AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
 			[&](NodeMTPtr node) {
 				int idx = node->getIndex();
-				int parentDepth = node->getParent() ? attrs[attrNames.linearIndex(DEPTH, node->getParent()->getIndex())] : 0;
+				int parentDepth = node->getParent() ? attrs[attrNames.linearIndex(node->getParent()->getIndex(), DEPTH)] : 0;
 	
-				attrs[attrNames.linearIndex(HEIGHT, idx)] = 0.0f; // altura
-				attrs[attrNames.linearIndex(DEPTH, idx)] = node->getParent() ? parentDepth + 1 : 0; // profundidade
-				attrs[attrNames.linearIndex(IS_LEAF, idx)] = node->getChildren().empty() ? 1.0f : 0.0f; // é folha
-				attrs[attrNames.linearIndex(IS_ROOT, idx)] = node->getParent() == nullptr ? 1.0f : 0.0f; // é raiz
-				attrs[attrNames.linearIndex(NUM_CHILDREN, idx)] = node->getChildren().size();
-				attrs[attrNames.linearIndex(NUM_SIBLINGS, idx)] = node->getParent() ? node->getParent()->getChildren().size() - 1 : 0;
-				attrs[attrNames.linearIndex(NUM_DESCENDANTS, idx)] = 0.0f;
-				attrs[attrNames.linearIndex(NUM_LEAF_DESCENDANTS, idx)] = attrs[attrNames.linearIndex(IS_LEAF, idx)];
-				attrs[attrNames.linearIndex(LEAF_RATIO, idx)] = 0.0f;
-				attrs[attrNames.linearIndex(BALANCE, idx)] = 0.0f;
-				attrs[attrNames.linearIndex(AVG_CHILD_HEIGHT, idx)] = 0.0f;
+				attrs[attrNames.linearIndex(idx, HEIGHT)] = 0.0f; // altura
+				attrs[attrNames.linearIndex(idx, DEPTH)] = node->getParent() ? parentDepth + 1 : 0; // profundidade
+				attrs[attrNames.linearIndex(idx, IS_LEAF)] = node->getChildren().empty() ? 1.0f : 0.0f; // é folha
+				attrs[attrNames.linearIndex(idx, IS_ROOT)] = node->getParent() == nullptr ? 1.0f : 0.0f; // é raiz
+				attrs[attrNames.linearIndex(idx, NUM_CHILDREN)] = node->getChildren().size();
+				attrs[attrNames.linearIndex(idx, NUM_SIBLINGS)] = node->getParent() ? node->getParent()->getChildren().size() - 1 : 0;
+				attrs[attrNames.linearIndex(idx, NUM_DESCENDANTS)] = 0.0f;
+				attrs[attrNames.linearIndex(idx, NUM_LEAF_DESCENDANTS)] = attrs[attrNames.linearIndex(idx, IS_LEAF)];
+				attrs[attrNames.linearIndex(idx, LEAF_RATIO)] = 0.0f;
+				attrs[attrNames.linearIndex(idx, BALANCE)] = 0.0f;
+				attrs[attrNames.linearIndex(idx, AVG_CHILD_HEIGHT)] = 0.0f;
 			},
 			[&](NodeMTPtr parent, NodeMTPtr child) {
 				int pIdx = parent->getIndex();
 				int cIdx = child->getIndex();
 
 				// Acumulando descendentes
-				attrs[attrNames.linearIndex(NUM_DESCENDANTS, pIdx)] += attrs[attrNames.linearIndex(NUM_DESCENDANTS, cIdx)] + 1;
-				attrs[attrNames.linearIndex(NUM_LEAF_DESCENDANTS, pIdx)] += attrs[attrNames.linearIndex(NUM_LEAF_DESCENDANTS, cIdx)];
+				attrs[attrNames.linearIndex(pIdx, NUM_DESCENDANTS)] += attrs[attrNames.linearIndex(cIdx, NUM_DESCENDANTS)] + 1;
+				attrs[attrNames.linearIndex(pIdx, NUM_LEAF_DESCENDANTS)] += attrs[attrNames.linearIndex(cIdx, NUM_LEAF_DESCENDANTS)];
 
 				// Altura
-				float childHeight = attrs[attrNames.linearIndex(HEIGHT, cIdx)];
-				float& parentHeight = attrs[attrNames.linearIndex(HEIGHT, pIdx)];
+				float childHeight = attrs[attrNames.linearIndex(cIdx, HEIGHT)];
+				float& parentHeight = attrs[attrNames.linearIndex(pIdx, HEIGHT)];
 				parentHeight = std::max(parentHeight, childHeight + 1);
 
 				// Balanceamento
-				float& minH = attrs[attrNames.linearIndex(BALANCE, pIdx)]; // usado como mínimo temporário
-				float& sumH = attrs[attrNames.linearIndex(AVG_CHILD_HEIGHT, pIdx)];
+				float& minH = attrs[attrNames.linearIndex(pIdx, BALANCE)]; // usado como mínimo temporário
+				float& sumH = attrs[attrNames.linearIndex(pIdx, AVG_CHILD_HEIGHT)];
 				int numChildren = parent->getChildren().size();
 
 				if (numChildren == 1) {
@@ -628,19 +661,19 @@ public:
 			},
 			[&](NodeMTPtr node) {
 				int idx = node->getIndex();
-				float desc = attrs[attrNames.linearIndex(NUM_DESCENDANTS, idx)];
-				float folhas = attrs[attrNames.linearIndex(NUM_LEAF_DESCENDANTS, idx)];
+				float desc = attrs[attrNames.linearIndex(idx, NUM_DESCENDANTS)];
+				float folhas = attrs[attrNames.linearIndex(idx, NUM_LEAF_DESCENDANTS)];
 	
 				// Razão folhas/descendentes
-				attrs[attrNames.linearIndex(LEAF_RATIO, idx)] = desc > 0.0f ? folhas / (desc + 1.0f) : 1.0f;
+				attrs[attrNames.linearIndex(idx, LEAF_RATIO)] = desc > 0.0f ? folhas / (desc + 1.0f) : 1.0f;
 	
 				// Balanceamento e média
 				if (!node->getChildren().empty()) {
-					float alturaMax = attrs[attrNames.linearIndex(HEIGHT, idx)];
-					float alturaMin = attrs[attrNames.linearIndex(BALANCE, idx)];
-					attrs[attrNames.linearIndex(BALANCE, idx)] = alturaMax - alturaMin;
+					float alturaMax = attrs[attrNames.linearIndex(idx, HEIGHT)];
+					float alturaMin = attrs[attrNames.linearIndex(idx, BALANCE)];
+					attrs[attrNames.linearIndex(idx, BALANCE)] = alturaMax - alturaMin;
 	
-					attrs[attrNames.linearIndex(AVG_CHILD_HEIGHT, idx)] /= node->getChildren().size();
+					attrs[attrNames.linearIndex(idx, AVG_CHILD_HEIGHT)] /= node->getChildren().size();
 				}
 
 			}
@@ -655,7 +688,7 @@ public:
 		float* attr = new float[n];
 		auto [attrNames, attrs] = AttributeComputedIncrementally::computerBasicAttributes(tree);
 		for(int idx = 0; idx < n; idx++){
-			attr[idx] = attrs[ attrNames.linearIndex(attribute, idx) ];
+			attr[idx] = attrs[ attrNames.linearIndex(idx, attribute) ];
 		}
 		delete[] attrs;
 
@@ -683,7 +716,7 @@ public:
 		int numRows = tree->getNumRowsOfImage();
 		
 		auto indexOf = [&](int idxNode, GeometricAttribute attribute) {
-			return attrNames.linearIndex(attribute, idxNode);
+			return attrNames.linearIndex(idxNode, attribute);
 		};
 		using enum GeometricAttribute;
 
@@ -751,12 +784,12 @@ public:
 							float var = meanGrayLevelSquare - (meanGrayLevel * meanGrayLevel); //variance: E(f^2) - E(f)^2
 							attrs[ indexOf(node->getIndex(), VARIANCE_LEVEL) ] = var > 0? var : 0; //variance
 							
-							
+							/*
 							if (attrs[indexOf(node->getIndex(), VARIANCE_LEVEL)] >= 0.0f) {
 								attrs[indexOf(node->getIndex(), STANDARD_DEVIATION)] = std::sqrt(attrs[indexOf(node->getIndex(), VARIANCE_LEVEL)]);
 							} else {
 								attrs[indexOf(node->getIndex(), STANDARD_DEVIATION)] = 0.0f; // Se a variância for negativa, definir desvio padrão como 0
-							}
+							}*/
 							
 							attrs[indexOf(node->getIndex(), MEAN_LEVEL)] = meanGrayLevel;
 							attrs[indexOf(node->getIndex(), BOX_WIDTH)] = width;
@@ -846,9 +879,9 @@ public:
 					if (degrees < 0) { // Ajustar para o intervalo [0, 360] graus
 						degrees += 360.0;
 					}
-					attrs[indexOf(idx, ORIENTATION)] = degrees; // Armazenar a orientação em graus no intervalo [0, 360]
+					attrs[indexOf(idx, AXIS_ORIENTATION)] = degrees; // Armazenar a orientação em graus no intervalo [0, 360]
 				} else {
-					attrs[indexOf(idx, ORIENTATION)] = 0.0; // Se não for possível calcular a orientação, definir um valor padrão
+					attrs[indexOf(idx, AXIS_ORIENTATION)] = 0.0; // Se não for possível calcular a orientação, definir um valor padrão
 				}
 
 				// Verificar se o discriminante é positivo para evitar raiz quadrada de números negativos
@@ -893,7 +926,7 @@ public:
 				float eta12 = normMoment(mu12, 1, 2);
 
 				// Cálculo dos momentos de Hu
-				attrs[indexOf(idx, HU_MOMENT_1_INERTIA)] = eta20 + eta02; // primeiro momento de Hu => inertia
+				attrs[indexOf(idx, HU_MOMENT_1)] = eta20 + eta02; // primeiro momento de Hu => inertia
 				attrs[indexOf(idx, HU_MOMENT_2)]  = std::pow(eta20 - eta02, 2) + 4 * std::pow(eta11, 2);
 				attrs[indexOf(idx, HU_MOMENT_3)]  = std::pow(eta30 - 3 * eta12, 2) + std::pow(3 * eta21 - eta03, 2);
 				attrs[indexOf(idx, HU_MOMENT_4)]  = std::pow(eta30 + eta12, 2) + std::pow(eta21 + eta03, 2);
@@ -961,6 +994,929 @@ public:
 		return leavesByExtinction;
 	}
 
+	//using DependencyMap = std::unordered_map<Attribute, std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>>>;
+	//static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeSingleAttribute(MorphologicalTreePtr tree, AttributeComputer& comp, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]> >>& dependencySources={});
+//	static  std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeSingleAttribute(MorphologicalTreePtr tree, Attribute attr, const DependencyMap& available);
+
+	//static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeSingleAttribute(MorphologicalTreePtr tree, Attribute attribute, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {});
+	
+	//[atributoS do nó 0] [atributoS do nó 1] [atributoS do nó 2] ...
+	//static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeAttributes(MorphologicalTreePtr tree, const std::vector<Attribute>& computers, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {});
+
+
+//static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeAttributes(MorphologicalTreePtr tree, const std::vector<Attribute>& attributes, const DependencyMap& dependencies);
+
+	// Define isso no começo do .hpp
+
+	// computeSingleAttribute
+	static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeSingleAttribute(MorphologicalTreePtr tree, Attribute attr, const DependencyMap& available = {});
+
+	// computeAttributes
+	static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeAttributes(MorphologicalTreePtr tree, const std::vector<Attribute>& attributes, const DependencyMap& dependencies = {});
 };
 
+
+
+class AreaComputer : public AttributeComputer {
+	public:
+		using enum GeometricAttribute;
+		std::vector<Attribute> attributes() const override {
+			return {AREA};
+		}
+		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources= {}) const override {
+			std::cout << "\n==== AttributeComputer: Computing AREA" << std::endl;
+			auto indexOf = [&](int idx) {
+				return attrNames->linearIndex(idx, AREA);
+			};
+	
+			AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+				[&](NodeMTPtr node) {
+					buffer[indexOf(node->getIndex())] = node->getCNPs().size();
+				},
+				[&](NodeMTPtr parent, NodeMTPtr child) {
+					buffer[indexOf(parent->getIndex())] += buffer[indexOf(child->getIndex())];
+				},
+				[](NodeMTPtr node) {}
+			);
+		}
+};
+
+
+class VolumeComputer : public AttributeComputer {
+	public:
+		using enum GeometricAttribute;
+		std::vector<Attribute> attributes() const override {
+			return {VOLUME};
+		}
+		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources= {}) const override {
+			std::cout << "\n==== AttributeComputer: Computing VOLUME" << std::endl;
+			auto indexOf = [&](int idx) {
+				return attrNames->linearIndex(idx, VOLUME);
+			};
+	
+			AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+				[&](NodeMTPtr node) {
+					buffer[indexOf(node->getIndex())] = node->getCNPs().size() * node->getLevel();
+				},
+				[&](NodeMTPtr parent, NodeMTPtr child) {
+					buffer[indexOf(parent->getIndex())] += buffer[indexOf(child->getIndex())];
+				},
+				[](NodeMTPtr node) {}
+			);
+		}
+};
+
+class LevelComputer : public AttributeComputer {
+	public:
+		using enum GeometricAttribute;
+		std::vector<Attribute> attributes() const override {
+			return {LEVEL};
+		}
+		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources= {}) const override {
+			std::cout << "\n==== AttributeComputer: Computing LEVEL" << std::endl;
+			auto indexOf = [&](int idx) {
+				return attrNames->linearIndex(idx, LEVEL);
+			};
+	
+			AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+				[&](NodeMTPtr node) {
+					buffer[ indexOf(node->getIndex())] = node->getLevel();
+				},
+				[&](NodeMTPtr parent, NodeMTPtr child) { 
+					
+				},
+				[](NodeMTPtr node) {
+
+				}
+			);
+		}
+};
+
+class DynamicsComputer : public AttributeComputer {
+	public:
+		using enum GeometricAttribute;
+		std::vector<Attribute> attributes() const override {
+			return {DYNAMICS};
+		}
+		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources= {}) const override {
+			std::cout << "\n==== AttributeComputer: Computing DYNAMICS" << std::endl;
+			auto indexOf = [&](int idx) {
+				return attrNames->linearIndex(idx, DYNAMICS);
+			};
+	
+			AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+				[&](NodeMTPtr node) {
+					if (node->isMaxtreeNode()) {
+						buffer[ indexOf(node->getIndex())] = std::numeric_limits<int>::lowest(); // Procuramos máximo para max-tree
+					} else {
+						buffer[ indexOf(node->getIndex())] = std::numeric_limits<int>::max(); // Procuramos mínimo para min-tree
+					}
+				},
+				[&](NodeMTPtr parent, NodeMTPtr child) {
+					if (parent->isMaxtreeNode()) {
+						buffer[ indexOf(parent->getIndex()) ] = std::max(buffer[ indexOf(parent->getIndex())], buffer[ indexOf(child->getIndex())] );
+					} else {
+						buffer[ indexOf(parent->getIndex()) ] = std::min(buffer[ indexOf(parent->getIndex())], buffer[ indexOf(child->getIndex())] );
+					}
+				},
+				[&](NodeMTPtr node) {
+					if (node->getChildren().empty()) {
+						buffer[ indexOf(node->getIndex()) ] = 0; // Folhas têm dinâmica 0
+					} else {
+						buffer[ indexOf(node->getIndex()) ] = std::abs( node->getLevel() - buffer[ indexOf(node->getIndex())] ) + 1;
+					}
+				}
+			);
+		}
+};
+
+
+class MeanLevelComputer : public AttributeComputer {
+	public:
+		using enum GeometricAttribute;
+	
+		std::vector<Attribute> attributes() const override {
+			return { MEAN_LEVEL };
+		}
+	
+		std::vector<Attribute> requiredAttributes() const override {
+			return { AREA, VOLUME };
+		}
+	
+		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {}) const override {
+			
+			std::cout << "\n==== AttributeComputer: Computing MEAN_LEVEL" << std::endl;
+	
+			auto indexOf = [&](int idx) {
+				return attrNames->linearIndex(idx, MEAN_LEVEL);
+			};
+			
+			auto [dependencyAttrNamesArea, bufferArea] = dependencySources[0]; //area
+			auto indexOfArea = [&](int idx) {
+				return dependencyAttrNamesArea->linearIndex(idx, AREA);
+			};
+
+			auto [dependencyAttrNamesVol, bufferVol] = dependencySources[1]; //volume
+			auto indexOfVol = [&](int idx) {
+				return dependencyAttrNamesVol->linearIndex(idx, VOLUME);
+			};
+	
+			AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+				[&](NodeMTPtr node) {
+					
+				},
+				[&](NodeMTPtr parent, NodeMTPtr child) { 
+					
+				},
+				[&](NodeMTPtr node) {
+					buffer[ indexOf(node->getIndex()) ] = bufferVol[indexOfVol(node->getIndex())] / bufferArea[indexOfArea(node->getIndex())];
+				}
+			);
+		}
+};
+
+
+class VarianceLevelComputer : public AttributeComputer {
+	public:
+		using enum GeometricAttribute;
+	
+		std::vector<Attribute> attributes() const override {
+			return { VARIANCE_LEVEL };
+		}
+	
+		std::vector<Attribute> requiredAttributes() const override {
+			return { AREA, MEAN_LEVEL };
+		}
+	
+		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {}) const override {
+			
+			std::cout << "\n==== AttributeComputer: Computing VARIANCE_LEVEL" << std::endl;
+	
+			auto indexOf = [&](int idx) {
+				return attrNames->linearIndex(idx, VARIANCE_LEVEL);
+			};
+	
+			auto [namesArea, bufArea]     = dependencySources[0];
+			auto indexOfArea = [&](int idx) {
+				return namesArea->linearIndex(idx, AREA);
+			};
+	
+			auto [namesMean, bufMean]     = dependencySources[1];
+			auto indexOfMean = [&](int idx) {
+				return namesMean->linearIndex(idx, MEAN_LEVEL);
+			};
+	
+			const int numNodes = tree->getNumNodes();
+			std::unique_ptr<long[]> sumGrayLevelSquare(new long[numNodes]);
+	
+			AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+				[&](NodeMTPtr node) {
+					sumGrayLevelSquare[node->getIndex()] = node->getCNPs().size() * std::pow(node->getLevel(), 2);
+				},
+				[&](NodeMTPtr parent, NodeMTPtr child) {
+					sumGrayLevelSquare[parent->getIndex()] += sumGrayLevelSquare[child->getIndex()];
+				},
+				[&](NodeMTPtr node) {
+					int idx = node->getIndex();
+					float area = bufArea[indexOfArea(idx)];
+					
+					float meanGrayLevel = bufMean[indexOfMean(idx)]; //mean graylevel - // E(f)
+					double meanGrayLevelSquare = sumGrayLevelSquare[idx] / area; // E(f^2)
+					float var = meanGrayLevelSquare - (meanGrayLevel * meanGrayLevel); //variance: E(f^2) - E(f)^2
+					buffer[indexOf(idx)] = var > 0.0f ? var : 0.0f; //variance
+					
+					
+				}
+			);
+		}
+};
+
+class BoundingBoxComputer : public AttributeComputer {
+	public:
+		using enum GeometricAttribute;
+	
+		std::vector<Attribute> attributes() const override {
+			return { BOX_WIDTH, BOX_HEIGHT };
+		}
+	
+		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {}) const override {
+			
+			std::cout << "\n==== AttributeComputer: Computing BOX_WIDTH and BOX_HEIGHT" << std::endl;
+	
+			auto indexOfWidth  = [&](int idx) { return attrNames->linearIndex(idx, BOX_WIDTH); };
+			auto indexOfHeight = [&](int idx) { return attrNames->linearIndex(idx, BOX_HEIGHT); };
+	
+			int n = tree->getNumNodes();
+			int numCols = tree->getNumColsOfImage();
+			int numRows = tree->getNumRowsOfImage();
+	
+			std::unique_ptr<int[]> xmin(new int[n]);
+			std::unique_ptr<int[]> xmax(new int[n]);
+			std::unique_ptr<int[]> ymin(new int[n]);
+			std::unique_ptr<int[]> ymax(new int[n]);
+	
+			AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+				[&](NodeMTPtr node) {
+					int idx = node->getIndex();
+					xmin[idx] = numCols;
+					xmax[idx] = 0;
+					ymin[idx] = numRows;
+					ymax[idx] = 0;
+	
+					for (int p : node->getCNPs()) {
+						auto [y, x] = ImageUtils::to2D(p, numCols);
+						xmin[idx] = std::min(xmin[idx], x);
+						xmax[idx] = std::max(xmax[idx], x);
+						ymin[idx] = std::min(ymin[idx], y);
+						ymax[idx] = std::max(ymax[idx], y);
+					}
+				},
+				[&](NodeMTPtr parent, NodeMTPtr child) {
+					int pid = parent->getIndex();
+					int cid = child->getIndex();
+					xmin[pid] = std::min(xmin[pid], xmin[cid]);
+					xmax[pid] = std::max(xmax[pid], xmax[cid]);
+					ymin[pid] = std::min(ymin[pid], ymin[cid]);
+					ymax[pid] = std::max(ymax[pid], ymax[cid]);
+				},
+				[&](NodeMTPtr node) {
+					int idx = node->getIndex();
+					buffer[indexOfWidth(idx)]  = xmax[idx] - xmin[idx] + 1;
+					buffer[indexOfHeight(idx)] = ymax[idx] - ymin[idx] + 1;
+				}
+			);
+		}
+};
+
+class RectangularityComputer : public AttributeComputer {
+	public:
+		using enum GeometricAttribute;
+	
+		std::vector<Attribute> attributes() const override {
+			return { RECTANGULARITY };
+		}
+	
+		std::vector<Attribute> requiredAttributes() const override {
+			return { AREA, BOX_WIDTH, BOX_HEIGHT };
+		}
+	
+		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {}) const override {
+	
+			std::cout << "\n==== AttributeComputer: Computing RECTANGULARITY" << std::endl;
+	
+			auto indexOf = [&](int idx) {
+				return attrNames->linearIndex(idx, RECTANGULARITY);
+			};
+	
+			auto [namesArea, bufArea] = dependencySources[0];
+			auto indexArea      = [&](int idx) { return namesArea->linearIndex(idx, AREA); };
+			
+			auto [namesBox, bufBox] = dependencySources[1];
+			auto indexBoxWidth  = [&](int idx) { return namesBox->linearIndex(idx, BOX_WIDTH); };
+			auto indexBoxHeight = [&](int idx) { return namesBox->linearIndex(idx, BOX_HEIGHT); };
+	
+			AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+				[&](NodeMTPtr) { },
+				[&](NodeMTPtr, NodeMTPtr) { },
+				[&](NodeMTPtr node) {
+					int idx = node->getIndex();
+					float area  = bufArea[indexArea(idx)];
+					float width = bufBox[indexBoxWidth(idx)];
+					float height = bufBox[indexBoxHeight(idx)];
+					float denom = width * height;
+					buffer[indexOf(idx)] = (denom > 0.0f) ? (area / denom) : 0.0f;
+				}
+			);
+		}
+};
+
+class RatioWHComputer : public AttributeComputer {
+	public:
+		using enum GeometricAttribute;
+	
+		std::vector<Attribute> attributes() const override {
+			return { RATIO_WH };
+		}
+	
+		std::vector<Attribute> requiredAttributes() const override {
+			return { BOX_WIDTH, BOX_HEIGHT };
+		}
+	
+		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {}) const override {
+	
+			std::cout << "\n==== AttributeComputer: Computing RATIO_WH" << std::endl;
+	
+			auto indexOf = [&](int idx) {
+				return attrNames->linearIndex(idx, RATIO_WH);
+			};
+	
+			auto [namesWH, bufWH] = dependencySources[0];
+			auto indexBoxWidth  = [&](int idx) { return namesWH->linearIndex(idx, BOX_WIDTH); };
+			auto indexBoxHeight = [&](int idx) { return namesWH->linearIndex(idx, BOX_HEIGHT); };
+	
+			AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+				[&](NodeMTPtr) { },
+				[&](NodeMTPtr, NodeMTPtr) { },
+				[&](NodeMTPtr node) {
+					int idx = node->getIndex();
+					float width  = bufWH[indexBoxWidth(idx)];
+					float height = bufWH[indexBoxHeight(idx)];
+					if (width > 0 && height > 0) {
+						buffer[indexOf(idx)] = std::max(width, height) / std::min(width, height);
+					} else {
+						buffer[indexOf(idx)] = 0.0f;
+					}
+				}
+			);
+		}
+};
+
+class CentralMomentsComputer : public AttributeComputer {
+	public:
+		using enum GeometricAttribute;
+
+		std::vector<Attribute> attributes() const override {
+			return {CENTRAL_MOMENT_00,
+					CENTRAL_MOMENT_20,
+					CENTRAL_MOMENT_02,
+					CENTRAL_MOMENT_11,
+					CENTRAL_MOMENT_30,
+					CENTRAL_MOMENT_03,
+					CENTRAL_MOMENT_21,
+					CENTRAL_MOMENT_12};
+		}
+		
+
+		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources= {}) const override {
+			std::cout << "\n==== AttributeComputer: Computing CENTRAL_MOMENT" << std::endl;
+			//momentos geometricos para calcular o centroide
+			int numCols = tree->getNumColsOfImage();
+			int n = tree->getNumColsOfImage() * tree->getNumRowsOfImage();
+			std::unique_ptr<long int[]> sumX(new long int[n]);//sum x
+			std::unique_ptr<long int[]> sumY(new long int[n]);//sum y
+			
+			auto indexOf = [&](int idx, GeometricAttribute attr) {
+				return attrNames->linearIndex(idx, attr);
+			};
+			
+			//computa sumX e sumY para calcular os centroides
+			AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+				[&](NodeMTPtr node) -> void {
+					buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_00)] = node->getCNPs().size(); //area
+					sumX[node->getIndex()] = 0;
+					sumY[node->getIndex()] = 0;
+					for(int p: node->getCNPs()) {
+						auto [py, px] = ImageUtils::to2D(p, numCols); 
+						sumX[node->getIndex()] += px;
+						sumY[node->getIndex()] += py;
+					}
+				},
+				[&](NodeMTPtr parent, NodeMTPtr child) -> void {
+					buffer[indexOf(parent->getIndex(), CENTRAL_MOMENT_00)] += buffer[indexOf(child->getIndex(), CENTRAL_MOMENT_00)];
+					sumX[parent->getIndex()] += sumX[child->getIndex()];
+					sumY[parent->getIndex()] += sumY[child->getIndex()];				
+				},
+				[](NodeMTPtr node) -> void {
+					// Não é necessário fazer nada aqui
+				}
+			);
+	
+			
+			//Computação dos momentos centrais
+			AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+				[&](NodeMTPtr node) -> void {				
+					// Inicialização dos momentos centrais
+					buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_20)] = 0.0f;
+					buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_02)] = 0.0f;
+					buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_11)] = 0.0f;
+					buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_30)] = 0.0f;
+					buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_03)] = 0.0f;
+					buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_21)] = 0.0f;
+					buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_12)] = 0.0f;
+	
+					// Cálculo do centroide
+					float xCentroid = sumX[node->getIndex()] / buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_00)];
+					float yCentroid = sumY[node->getIndex()] / buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_00)];
+	
+					for (int p : node->getCNPs()) {
+						auto [py, px] = ImageUtils::to2D(p, numCols); 
+						float dx = px - xCentroid;
+						float dy = py - yCentroid;
+	
+						// Momentos centrais de segunda ordem
+						buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_20)] += std::pow(dx, 2);
+						buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_02)] += std::pow(dy, 2);
+						buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_11)] += dx * dy;
+	
+						// Momentos centrais de terceira ordem
+						buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_30)] += std::pow(dx, 3);
+						buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_03)] += std::pow(dy, 3);
+						buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_21)] += std::pow(dx, 2) * dy;
+						buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_12)] += dx * std::pow(dy, 2);
+					}
+	
+				},
+				[&](NodeMTPtr parent, NodeMTPtr child) -> void {
+					buffer[indexOf(parent->getIndex(), CENTRAL_MOMENT_20)] += buffer[indexOf(child->getIndex(), CENTRAL_MOMENT_20)];
+					buffer[indexOf(parent->getIndex(), CENTRAL_MOMENT_02)] += buffer[indexOf(child->getIndex(), CENTRAL_MOMENT_02)];
+					buffer[indexOf(parent->getIndex(), CENTRAL_MOMENT_11)] += buffer[indexOf(child->getIndex(), CENTRAL_MOMENT_11)];
+					buffer[indexOf(parent->getIndex(), CENTRAL_MOMENT_30)] += buffer[indexOf(child->getIndex(), CENTRAL_MOMENT_30)];
+					buffer[indexOf(parent->getIndex(), CENTRAL_MOMENT_03)] += buffer[indexOf(child->getIndex(), CENTRAL_MOMENT_03)];
+					buffer[indexOf(parent->getIndex(), CENTRAL_MOMENT_21)] += buffer[indexOf(child->getIndex(), CENTRAL_MOMENT_21)];
+					buffer[indexOf(parent->getIndex(), CENTRAL_MOMENT_12)] += buffer[indexOf(child->getIndex(), CENTRAL_MOMENT_12)];			
+				},
+				[](NodeMTPtr node) -> void {
+					// Não é necessário fazer nada aqui
+				}
+		);
+	}
+};
+
+class LengthMajorAxisComputer : public AttributeComputer {
+	public:
+		using enum GeometricAttribute;
+	
+		std::vector<Attribute> attributes() const override {
+			return { LENGTH_MAJOR_AXIS };
+		}
+	
+		std::vector<Attribute> requiredAttributes() const override {
+			return { CENTRAL_MOMENT_00, CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11 };
+		}
+	
+		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {}) const override {
+			
+			std::cout << "\n==== AttributeComputer: Computing LENGTH_MAJOR_AXIS" << std::endl;
+	
+			auto indexOf = [&](int idx) {
+				return attrNames->linearIndex(idx, LENGTH_MAJOR_AXIS);
+			};
+	
+			auto [names, buf] = dependencySources[0];
+			auto indexArea = [&](int idx) { return names->linearIndex(idx, CENTRAL_MOMENT_00); };
+			auto indexMu20 = [&](int idx) { return names->linearIndex(idx, CENTRAL_MOMENT_20); };
+			auto indexMu02 = [&](int idx) { return names->linearIndex(idx, CENTRAL_MOMENT_02); };
+			auto indexMu11 = [&](int idx) { return names->linearIndex(idx, CENTRAL_MOMENT_11); };
+	
+			AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+				[&](NodeMTPtr) {},
+				[&](NodeMTPtr, NodeMTPtr) {},
+				[&](NodeMTPtr node) {
+					int idx = node->getIndex();
+					float mu20 = buf[indexMu20(idx)];
+					float mu02 = buf[indexMu02(idx)];
+					float mu11 = buf[indexMu11(idx)];
+					float area = buf[indexArea(idx)];
+	
+					float discriminant = std::pow(mu20 - mu02, 2.0f) + 4.0f * std::pow(mu11, 2.0f);
+					discriminant = std::max(discriminant, 0.0f);
+	
+					float lambda1 = mu20 + mu02 + std::sqrt(discriminant);
+	
+					if (area > 0.0f && lambda1 > 0.0f) {
+						buffer[indexOf(idx)] = std::sqrt((2.0f * lambda1) / area);
+					} else {
+						buffer[indexOf(idx)] = 0.0f;
+					}
+				}
+			);
+		}
+};
+
+class LengthMinorAxisComputer : public AttributeComputer {
+	public:
+		using enum GeometricAttribute;
+	
+		std::vector<Attribute> attributes() const override {
+			return { LENGTH_MINOR_AXIS };
+		}
+	
+		std::vector<Attribute> requiredAttributes() const override {
+			return { CENTRAL_MOMENT_00, CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11 };
+		}
+	
+		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {}) const override {
+			
+			std::cout << "\n==== AttributeComputer: Computing LENGTH_MINOR_AXIS" << std::endl;
+	
+			auto indexOf = [&](int idx) {
+				return attrNames->linearIndex(idx, LENGTH_MINOR_AXIS);
+			};
+	
+			auto [names, buf] = dependencySources[0];
+			auto indexArea = [&](int idx) { return names->linearIndex(idx, CENTRAL_MOMENT_00); };
+			auto indexMu20 = [&](int idx) { return names->linearIndex(idx, CENTRAL_MOMENT_20); };
+			auto indexMu02 = [&](int idx) { return names->linearIndex(idx, CENTRAL_MOMENT_02); };
+			auto indexMu11 = [&](int idx) { return names->linearIndex(idx, CENTRAL_MOMENT_11); };
+	
+			AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+				[&](NodeMTPtr) {},
+				[&](NodeMTPtr, NodeMTPtr) {},
+				[&](NodeMTPtr node) {
+					int idx = node->getIndex();
+					float mu20 = buf[indexMu20(idx)];
+					float mu02 = buf[indexMu02(idx)];
+					float mu11 = buf[indexMu11(idx)];
+					float area = buf[indexArea(idx)];
+	
+					float discriminant = std::pow(mu20 - mu02, 2.0f) + 4.0f * std::pow(mu11, 2.0f);
+					discriminant = std::max(discriminant, 0.0f);
+	
+					float lambda2 = mu20 + mu02 - std::sqrt(discriminant);
+	
+					if (area > 0.0f && lambda2 > 0.0f) {
+						buffer[indexOf(idx)] = std::sqrt((2.0f * lambda2) / area);
+					} else {
+						buffer[indexOf(idx)] = 0.0f;
+					}
+				}
+			);
+		}
+};
+
+class EccentricityComputer : public AttributeComputer {
+	public:
+		using enum GeometricAttribute;
+	
+		std::vector<Attribute> attributes() const override {
+			return { ECCENTRICITY };
+		}
+	
+		std::vector<Attribute> requiredAttributes() const override {
+			return { CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11 };
+		}
+	
+		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {}) const override {
+	
+			std::cout << "\n==== AttributeComputer: Computing ECCENTRICITY" << std::endl;
+	
+			auto indexOf = [&](int idx) {
+				return attrNames->linearIndex(idx, ECCENTRICITY);
+			};
+	
+			auto [names, buf] = dependencySources[0];
+			auto indexMu20 = [&](int idx) { return names->linearIndex(idx, CENTRAL_MOMENT_20); };
+			auto indexMu02 = [&](int idx) { return names->linearIndex(idx, CENTRAL_MOMENT_02); };
+			auto indexMu11 = [&](int idx) { return names->linearIndex(idx, CENTRAL_MOMENT_11); };
+	
+			AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+				[&](NodeMTPtr) {},
+				[&](NodeMTPtr, NodeMTPtr) {},
+				[&](NodeMTPtr node) {
+					int idx = node->getIndex();
+					float mu20 = buf[indexMu20(idx)];
+					float mu02 = buf[indexMu02(idx)];
+					float mu11 = buf[indexMu11(idx)];
+	
+					float discriminant = std::pow(mu20 - mu02, 2.0f) + 4.0f * std::pow(mu11, 2.0f);
+					discriminant = std::max(discriminant, 0.0f);
+	
+					float lambda1 = mu20 + mu02 + std::sqrt(discriminant);  // maior autovalor
+					float lambda2 = mu20 + mu02 - std::sqrt(discriminant);  // menor autovalor
+	
+					if (std::abs(lambda2) > std::numeric_limits<float>::epsilon()) {
+						buffer[indexOf(idx)] = lambda1 / lambda2;
+					} else {
+						buffer[indexOf(idx)] = lambda1 / 0.1f; // fallback para evitar divisão por zero
+					}
+				}
+			);
+		}
+};
+
+class CompactnessComputer : public AttributeComputer {
+	public:
+		using enum GeometricAttribute;
+	
+		std::vector<Attribute> attributes() const override {
+			return { COMPACTNESS };
+		}
+	
+		std::vector<Attribute> requiredAttributes() const override {
+			return { CENTRAL_MOMENT_00, CENTRAL_MOMENT_20, CENTRAL_MOMENT_02 };
+		}
+	
+		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {}) const override {
+	
+			std::cout << "\n==== AttributeComputer: Computing COMPACTNESS" << std::endl;
+	
+			auto indexOf = [&](int idx) {
+				return attrNames->linearIndex(idx, COMPACTNESS);
+			};
+	
+			auto [names, buf] = dependencySources[0];
+			auto indexArea     = [&](int idx) { return names->linearIndex(idx, CENTRAL_MOMENT_00); };
+			auto indexMu20     = [&](int idx) { return names->linearIndex(idx, CENTRAL_MOMENT_20); };
+			auto indexMu02     = [&](int idx) { return names->linearIndex(idx, CENTRAL_MOMENT_02); };
+	
+			AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+				[&](NodeMTPtr) {},
+				[&](NodeMTPtr, NodeMTPtr) {},
+				[&](NodeMTPtr node) {
+					int idx = node->getIndex();
+					float area = buf[indexArea(idx)];
+					float mu20 = buf[indexMu20(idx)];
+					float mu02 = buf[indexMu02(idx)];
+					float denom = mu20 + mu02;
+	
+					if (denom > std::numeric_limits<float>::epsilon()) {
+						buffer[indexOf(idx)] = (1.0f / (2.0f * static_cast<float>(M_PI))) * (area / denom);
+					} else {
+						buffer[indexOf(idx)] = 0.0f;
+					}
+				}
+			);
+		}
+};
+
+class OrientationComputer : public AttributeComputer {
+	private:
+		bool normalize0to180;
+	public:
+		using enum GeometricAttribute;
+
+		OrientationComputer(): normalize0to180(false) {}
+		OrientationComputer(bool normalize0to180): normalize0to180(normalize0to180) {}
+
+		std::vector<Attribute> attributes() const override {
+			return {AXIS_ORIENTATION};
+		}
+		std::vector<Attribute> requiredAttributes() const override{ 
+			return {CENTRAL_MOMENT_00, CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11, CENTRAL_MOMENT_30, CENTRAL_MOMENT_03, CENTRAL_MOMENT_21, CENTRAL_MOMENT_12}; 
+		}
+
+		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources= {}) const override {
+			std::cout << "\n==== AttributeComputer: Computing AXIS_ORIENTATION" << std::endl;
+
+			int numCols = tree->getNumColsOfImage();
+			auto indexOf = [&](int idx) {
+				return attrNames->linearIndex(idx, AXIS_ORIENTATION);
+			};
+			
+			auto [dependencyAttrNamesMu, bufferMu] = dependencySources[0]; //momentos centrais
+			auto indexOfMu = [&](int idx, GeometricAttribute attr) {
+				return dependencyAttrNamesMu->linearIndex(idx, attr);
+			};
+			
+			//Computação da orientação em graus
+			AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+				[](NodeMTPtr node) -> void { },
+				[](NodeMTPtr parent, NodeMTPtr child) -> void { },
+				[&](NodeMTPtr node) -> void {
+					int idx = node->getIndex();
+					//Momentos centrais
+					float mu20 = bufferMu[indexOfMu(idx, CENTRAL_MOMENT_20)];
+					float mu02 = bufferMu[indexOfMu(idx, CENTRAL_MOMENT_02)];
+					float mu11 = bufferMu[indexOfMu(idx, CENTRAL_MOMENT_11)];
+					
+					// Verificar se o denominador é zero antes de calcular atan2 para evitar divisão por zero
+					if (mu20 != mu02 || mu11 != 0) {
+						float radians = 0.5 * std::atan2(2 * mu11, mu20 - mu02);// orientação em radianos
+						float degrees = radians * (180.0 / M_PI); // Converter para graus
+						if(normalize0to180)
+							buffer[indexOf(idx)] = std::fmod(std::abs(degrees), 180.0f); // Armazenar a orientação do eixo maior [0, 180]
+						else
+							buffer[indexOf(idx)] = std::fmod(std::abs(degrees), 360.0f); ; // Armazenar a orientação no intervalo [0, 360]
+					} else {
+						buffer[indexOf(idx)] = 0.0; // Se não for possível calcular a orientação, definir um valor padrão
+					}
+				}
+		);
+	}
+};
+
+
+class HuMomentsComputer : public AttributeComputer {
+	public:
+		using enum GeometricAttribute;
+
+		std::vector<Attribute> attributes() const override {
+			return {HU_MOMENT_1,
+					HU_MOMENT_2,
+					HU_MOMENT_3,
+					HU_MOMENT_4,
+					HU_MOMENT_5,
+					HU_MOMENT_6,
+					HU_MOMENT_7};
+		}
+		std::vector<Attribute> requiredAttributes() const override{ 
+			return {CENTRAL_MOMENT_00, CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11, CENTRAL_MOMENT_30, CENTRAL_MOMENT_03, CENTRAL_MOMENT_21, CENTRAL_MOMENT_12}; 
+		}
+
+		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources= {}) const override {
+			std::cout << "\n==== AttributeComputer: Computing HU_MOMENT" << std::endl;
+			int numCols = tree->getNumColsOfImage();
+			auto indexOf = [&](int idx, GeometricAttribute attr) {
+				return attrNames->linearIndex(idx, attr);
+			};
+			
+			auto [dependencyAttrNamesMu, bufferMu] = dependencySources[0]; //momentos centrais
+			auto indexOfMu = [&](int idx, GeometricAttribute attr) {
+				return dependencyAttrNamesMu->linearIndex(idx, attr);
+			};
+
+			auto normMoment = [](int area, float moment, int p, int q){ 
+				return moment / std::pow( area, (p + q + 2.0) / 2.0); 
+			}; //função para normalizacao dos momentos		
+
+			
+			//Computação dos momentos de Hu
+			AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+				[](NodeMTPtr node) -> void { },
+				[](NodeMTPtr parent, NodeMTPtr child) -> void { },
+				[&](NodeMTPtr node) -> void {
+					int idx = node->getIndex();
+					//Momentos centrais
+					float mu20 = bufferMu[indexOfMu(idx, CENTRAL_MOMENT_20)];
+					float mu02 = bufferMu[indexOfMu(idx, CENTRAL_MOMENT_02)];
+					float mu11 = bufferMu[indexOfMu(idx, CENTRAL_MOMENT_11)];
+					float mu30 = bufferMu[indexOfMu(idx, CENTRAL_MOMENT_30)];
+					float mu03 = bufferMu[indexOfMu(idx, CENTRAL_MOMENT_03)];
+					float mu21 = bufferMu[indexOfMu(idx, CENTRAL_MOMENT_21)];
+					float mu12 = bufferMu[indexOfMu(idx, CENTRAL_MOMENT_12)];
+					int area = bufferMu[indexOfMu(idx, CENTRAL_MOMENT_00)];
+
+					
+					// Calcular os momentos normalizados
+					float eta20 = normMoment(area, mu20, 2, 0);
+					float eta02 = normMoment(area, mu02, 0, 2);
+					float eta11 = normMoment(area, mu11, 1, 1);
+					float eta30 = normMoment(area, mu30, 3, 0);
+					float eta03 = normMoment(area, mu03, 0, 3);
+					float eta21 = normMoment(area, mu21, 2, 1);
+					float eta12 = normMoment(area, mu12, 1, 2);
+
+					// Cálculo dos momentos de Hu
+					buffer[indexOf(idx, HU_MOMENT_1)] = eta20 + eta02; // primeiro momento de Hu => inertia
+					buffer[indexOf(idx, HU_MOMENT_2)]  = std::pow(eta20 - eta02, 2) + 4 * std::pow(eta11, 2);
+					buffer[indexOf(idx, HU_MOMENT_3)]  = std::pow(eta30 - 3 * eta12, 2) + std::pow(3 * eta21 - eta03, 2);
+					buffer[indexOf(idx, HU_MOMENT_4)]  = std::pow(eta30 + eta12, 2) + std::pow(eta21 + eta03, 2);
+					
+					buffer[indexOf(idx, HU_MOMENT_5)] = (eta30 - 3 * eta12) * (eta30 + eta12) * (std::pow(eta30 + eta12, 2) - 3 * std::pow(eta21 + eta03, 2)) +
+														(3 * eta21 - eta03) * (eta21 + eta03) * (3 * std::pow(eta30 + eta12, 2) - std::pow(eta21 + eta03, 2));
+					
+					buffer[indexOf(idx, HU_MOMENT_6)] = (eta20 - eta02) * (std::pow(eta30 + eta12, 2) - std::pow(eta21 + eta03, 2)) + 
+														4 * eta11 * (eta30 + eta12) * (eta21 + eta03);
+					
+					buffer[indexOf(idx, HU_MOMENT_7)] = (3 * eta21 - eta03) * (eta30 + eta12) * (std::pow(eta30 + eta12, 2) - 3 * std::pow(eta21 + eta03, 2)) -
+														(eta30 - 3 * eta12) * (eta21 + eta03) * (3 * std::pow(eta30 + eta12, 2) - std::pow(eta21 + eta03, 2));
+
+				}
+		);
+	}
+};
+
+class InertiaComputer : public AttributeComputer {
+public:
+    using enum GeometricAttribute;
+
+    std::vector<Attribute> attributes() const override {
+        return { INERTIA };
+    }
+
+    std::vector<Attribute> requiredAttributes() const override {
+        return { CENTRAL_MOMENT_00, CENTRAL_MOMENT_20, CENTRAL_MOMENT_02 };
+    }
+
+    void compute(MorphologicalTreePtr tree,
+                 std::shared_ptr<float[]> buffer,
+                 std::shared_ptr<AttributeNames> attrNames,
+                 const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {}) const override {
+
+        std::cout << "\n==== AttributeComputer: Computing INERTIA" << std::endl;
+
+        auto indexOf = [&](int idx) {
+            return attrNames->linearIndex(idx, INERTIA);
+        };
+
+        auto [names, buf] = dependencySources[0];
+        auto indexMu00 = [&](int idx) { return names->linearIndex(idx, CENTRAL_MOMENT_00); };
+        auto indexMu20 = [&](int idx) { return names->linearIndex(idx, CENTRAL_MOMENT_20); };
+        auto indexMu02 = [&](int idx) { return names->linearIndex(idx, CENTRAL_MOMENT_02); };
+
+        AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+            [&](NodeMTPtr) {},
+            [&](NodeMTPtr, NodeMTPtr) {},
+            [&](NodeMTPtr node) {
+                int idx = node->getIndex();
+                float mu00 = buf[indexMu00(idx)];
+                float mu20 = buf[indexMu20(idx)];
+                float mu02 = buf[indexMu02(idx)];
+ 
+                float normMu20 = mu20 / std::pow(mu00, 2.0f);
+                float normMu02 = mu02 / std::pow(mu00, 2.0f);
+
+                buffer[indexOf(idx)] = normMu20 + normMu02;
+            }
+        );
+    }
+};
+
+
+class AttributeFactory {
+	public:
+		static std::shared_ptr<AttributeComputer> create(Attribute attr) {
+			using enum GeometricAttribute;
+	
+			switch (std::get<GeometricAttribute>(attr)) {
+				case AREA: return std::make_shared<AreaComputer>();
+				case VOLUME: return std::make_shared<VolumeComputer>();
+				case LEVEL: return std::make_shared<LevelComputer>();
+				case DYNAMICS: return std::make_shared<DynamicsComputer>();
+				case MEAN_LEVEL: return std::make_shared<MeanLevelComputer>();
+				case VARIANCE_LEVEL: return std::make_shared<VarianceLevelComputer>();
+				case BOX_HEIGHT:
+				case BOX_WIDTH:
+				case BOUNDING_BOX: return std::make_shared<BoundingBoxComputer>();
+				case RECTANGULARITY: return std::make_shared<RectangularityComputer>();
+				case RATIO_WH: return std::make_shared<RatioWHComputer>();
+				
+				case AXIS_ORIENTATION: return std::make_shared<OrientationComputer>();
+				case LENGTH_MAJOR_AXIS: return std::make_shared<LengthMajorAxisComputer>();
+				case LENGTH_MINOR_AXIS: return std::make_shared<LengthMinorAxisComputer>();
+				case ECCENTRICITY: return std::make_shared<EccentricityComputer>();
+				case COMPACTNESS: return std::make_shared<CompactnessComputer>();
+
+				case CENTRAL_MOMENT: 
+				case CENTRAL_MOMENT_00: 
+				case CENTRAL_MOMENT_20:
+				case CENTRAL_MOMENT_02:
+				case CENTRAL_MOMENT_11:
+				case CENTRAL_MOMENT_30:
+				case CENTRAL_MOMENT_03:
+				case CENTRAL_MOMENT_21:
+				case CENTRAL_MOMENT_12:
+					return std::make_shared<CentralMomentsComputer>();
+
+				case INERTIA:
+					return std::make_shared<InertiaComputer>();	
+				case HU_MOMENT:
+				case HU_MOMENT_1: 
+				case HU_MOMENT_2:
+				case HU_MOMENT_3:
+				case HU_MOMENT_4:
+				case HU_MOMENT_5:
+				case HU_MOMENT_6:
+				case HU_MOMENT_7:
+					return std::make_shared<HuMomentsComputer>();
+
+				default:
+					throw std::invalid_argument("AttributeFactory: atributo não suportado: " + AttributeNames::toString(attr));
+			}
+		}
+};
+
+
+
+
+
+
+
 #endif 
+
+
+
+
+
+
+		

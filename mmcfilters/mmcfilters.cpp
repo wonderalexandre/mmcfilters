@@ -118,14 +118,49 @@ void init_MorphologicalTree(py::module &m){
 
 
 void init_AttributeComputedIncrementally(py::module &m){
-    	py::class_<AttributeComputedIncrementallyPybind>(m, "Attribute")
+        auto cls = py::class_<AttributeComputedIncrementallyPybind>(m, "Attribute")	
         .def_static("computerAttribute", static_cast<void(*)(NodeMTPtr, 
                                                              std::function<void(NodeMTPtr)>, 
                                                              std::function<void(NodeMTPtr, NodeMTPtr)>, 
                                                              std::function<void(NodeMTPtr)>)>(&AttributeComputedIncrementally::computerAttribute))
         .def_static("computerBasicAttributes", &AttributeComputedIncrementallyPybind::computerBasicAttributes)
+        .def_static("computeAttributes", &AttributeComputedIncrementallyPybind::computeAttributesFromList)
         .def_static("extractCountors", &AttributeComputedIncrementallyPybind::extractCountors)
         .def_static("computerArea", &AttributeComputedIncrementallyPybind::computerArea);
+
+         py::enum_<GeometricAttribute>(cls, "Type")
+            .value("AREA", GeometricAttribute::AREA)
+            .value("VOLUME", GeometricAttribute::VOLUME)
+            .value("LEVEL", GeometricAttribute::LEVEL)
+            .value("DYNAMICS", GeometricAttribute::DYNAMICS)
+            .value("MEAN_LEVEL", GeometricAttribute::MEAN_LEVEL)
+            .value("VARIANCE_LEVEL", GeometricAttribute::VARIANCE_LEVEL)
+            .value("BOX_WIDTH", GeometricAttribute::BOX_WIDTH)
+            .value("BOX_HEIGHT", GeometricAttribute::BOX_HEIGHT)
+            .value("RECTANGULARITY", GeometricAttribute::RECTANGULARITY)
+            .value("RATIO_WH", GeometricAttribute::RATIO_WH)
+            .value("CENTRAL_MOMENT_00", GeometricAttribute::CENTRAL_MOMENT_00)
+            .value("CENTRAL_MOMENT_20", GeometricAttribute::CENTRAL_MOMENT_20)
+            .value("CENTRAL_MOMENT_02", GeometricAttribute::CENTRAL_MOMENT_02)
+            .value("CENTRAL_MOMENT_11", GeometricAttribute::CENTRAL_MOMENT_11)
+            .value("CENTRAL_MOMENT_30", GeometricAttribute::CENTRAL_MOMENT_30)
+            .value("CENTRAL_MOMENT_03", GeometricAttribute::CENTRAL_MOMENT_03)
+            .value("CENTRAL_MOMENT_21", GeometricAttribute::CENTRAL_MOMENT_21)
+            .value("CENTRAL_MOMENT_12", GeometricAttribute::CENTRAL_MOMENT_12)
+            .value("AXIS_ORIENTATION", GeometricAttribute::AXIS_ORIENTATION)
+            .value("LENGTH_MAJOR_AXIS", GeometricAttribute::LENGTH_MAJOR_AXIS)
+            .value("LENGTH_MINOR_AXIS", GeometricAttribute::LENGTH_MINOR_AXIS)
+            .value("ECCENTRICITY", GeometricAttribute::ECCENTRICITY)
+            .value("COMPACTNESS", GeometricAttribute::COMPACTNESS)
+            .value("INERTIA", GeometricAttribute::INERTIA)
+            .value("HU_MOMENT_1", GeometricAttribute::HU_MOMENT_1)
+            .value("HU_MOMENT_2", GeometricAttribute::HU_MOMENT_2)
+            .value("HU_MOMENT_3", GeometricAttribute::HU_MOMENT_3)
+            .value("HU_MOMENT_4", GeometricAttribute::HU_MOMENT_4)
+            .value("HU_MOMENT_5", GeometricAttribute::HU_MOMENT_5)
+            .value("HU_MOMENT_6", GeometricAttribute::HU_MOMENT_6)
+            .value("HU_MOMENT_7", GeometricAttribute::HU_MOMENT_7)
+            .export_values();
 }
 
 void init_AttributeFilters(py::module &m){
@@ -187,6 +222,9 @@ void init_AttributeOpeningPrimitivesFamily(py::module &m){
         .def("getThresholdsPrimitive", &AttributeOpeningPrimitivesFamilyPybind::getThresholdsPrimitive);
 
 }
+
+
+
 
 
 PYBIND11_MODULE(mmcfilters, m) {

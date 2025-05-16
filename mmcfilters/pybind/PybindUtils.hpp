@@ -54,6 +54,26 @@ class PybindUtils{
                 free_when_done           // capsule que cuida da liberação
             );
         }
+
+        static py::array_t<float> toNumpyShared_ptr(std::shared_ptr<float[]> buffer, int n){
+            std::shared_ptr<float[]> bufferCopy = buffer;
+
+            py::capsule free_when_done(new std::shared_ptr<float[]>(bufferCopy), [](void* ptr) {
+                // Converte de volta e destrói corretamente
+                delete reinterpret_cast<std::shared_ptr<float[]>*>(ptr);
+            });
+            
+            py::array_t<float> numpy = py::array(py::buffer_info(
+                buffer.get(),
+                sizeof(float),
+                py::format_descriptor<float>::value,
+                1,
+                { n },
+                { sizeof(float) }
+            ), free_when_done);
+            
+            return numpy;
+        }
         
 
 

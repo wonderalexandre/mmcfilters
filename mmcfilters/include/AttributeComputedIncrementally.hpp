@@ -96,6 +96,16 @@ enum class AttributeGroup {
 using AttributeOrGroup = std::variant<Attribute, AttributeGroup>;
 using enum Attribute;
 
+struct AttributeKey {
+    Attribute attr;
+    int delta = 0;
+
+    AttributeKey(Attribute a, int d = 0) : attr(a), delta(d) {}
+
+    bool operator==(const AttributeKey& other) const {
+        return attr == other.attr && delta == other.delta;
+    }
+};
 
 namespace std {
     template<>
@@ -118,6 +128,13 @@ namespace std {
             return std::visit([](auto&& a) -> size_t {
                 return std::hash<std::decay_t<decltype(a)>>{}(a);
             }, attr);
+        }
+    };
+
+	template<>
+    struct hash<AttributeKey> {
+        std::size_t operator()(const AttributeKey& k) const {
+            return std::hash<int>()(static_cast<int>(k.attr)) ^ (std::hash<int>()(k.delta) << 1);
         }
     };
 
@@ -204,6 +221,104 @@ static const std::unordered_map<AttributeGroup, std::vector<Attribute>> ATTRIBUT
         return all;
     }()}
 };
+
+
+class AttributeNamesWithDelta {
+public:
+    std::unordered_map<AttributeKey, int> indexMap;
+    const int NUM_ATTRIBUTES;
+
+    AttributeNamesWithDelta(std::unordered_map<AttributeKey, int>&& map)
+        : indexMap(std::move(map)), NUM_ATTRIBUTES(static_cast<int>(indexMap.size())) {}
+
+    static AttributeNamesWithDelta create(int n, int delta, const std::vector<Attribute>& attributes) {
+        std::unordered_map<AttributeKey, int> map;
+        int offset = 0;
+        for (int d = -delta; d <= delta; ++d) {
+            for (size_t i = 0; i < attributes.size(); ++i) {
+                map[AttributeKey{attributes[i], d}] = offset + int(i) * n;
+            }
+            offset += int(attributes.size()) * n;
+        }
+        return AttributeNamesWithDelta(std::move(map));
+    }
+
+    int getIndex(Attribute attr, int delta) const {
+        return indexMap.at(AttributeKey{attr, delta});
+    }
+
+    int linearIndex(int nodeIndex, Attribute attr, int delta) const {
+        return nodeIndex * NUM_ATTRIBUTES + getIndex(attr, delta);
+    }
+
+
+	static std::string toString(Attribute attr, int delta) {
+		std::string name;
+		switch (attr) {
+			case AREA: return "AREA";
+			case VOLUME: return "VOLUME";
+			case LEVEL: return "LEVEL";
+			case DYNAMICS: return "DYNAMICS";
+			case MEAN_LEVEL: return "MEAN_LEVEL";
+			case VARIANCE_LEVEL: return "VARIANCE_LEVEL";
+			case BOX_WIDTH: return "BOX_WIDTH";
+			case BOX_HEIGHT: return "BOX_HEIGHT";
+			case RECTANGULARITY: return "RECTANGULARITY";
+			case RATIO_WH: return "RATIO_WH";
+			case DIAGONAL_LENGTH: return "DIAGONAL_LENGTH";
+			case BOX_COL_MIN: return "BOX_COL_MIN";
+			case BOX_COL_MAX: return "BOX_COL_MAX";
+			case BOX_ROW_MIN: return "BOX_ROW_MIN";
+			case BOX_ROW_MAX: return "BOX_ROW_MAX";
+			case CENTRAL_MOMENT_20: return "CENTRAL_MOMENT_20";
+			case CENTRAL_MOMENT_02: return "CENTRAL_MOMENT_02";
+			case CENTRAL_MOMENT_11: return "CENTRAL_MOMENT_11";
+			case CENTRAL_MOMENT_30: return "CENTRAL_MOMENT_30";
+			case CENTRAL_MOMENT_03: return "CENTRAL_MOMENT_03";
+			case CENTRAL_MOMENT_21: return "CENTRAL_MOMENT_21";
+			case CENTRAL_MOMENT_12: return "CENTRAL_MOMENT_12";
+			case HU_MOMENT_1: return "HU_MOMENT_1";
+			case HU_MOMENT_2: return "HU_MOMENT_2";
+			case HU_MOMENT_3: return "HU_MOMENT_3";
+			case HU_MOMENT_4: return "HU_MOMENT_4";
+			case HU_MOMENT_5: return "HU_MOMENT_5";
+			case HU_MOMENT_6: return "HU_MOMENT_6";
+			case HU_MOMENT_7: return "HU_MOMENT_7";
+			case INERTIA: return "INERTIA";
+			case COMPACTNESS: return "COMPACTNESS";
+			case ECCENTRICITY: return "ECCENTRICITY";
+			case LENGTH_MAJOR_AXIS: return "LENGTH_MAJOR_AXIS";
+			case LENGTH_MINOR_AXIS: return "LENGTH_MINOR_AXIS";
+			case AXIS_ORIENTATION: return "AXIS_ORIENTATION";
+			case HEIGHT_NODE: return "HEIGHT_NODE";
+			case DEPTH_NODE: return "DEPTH_NODE";
+			case IS_LEAF_NODE: return "IS_LEAF_NODE";
+			case IS_ROOT_NODE: return "IS_ROOT_NODE";
+			case NUM_CHILDREN_NODE: return "NUM_CHILDREN_NODE";
+			case NUM_SIBLINGS_NODE: return "NUM_SIBLINGS_NODE";
+			case NUM_DESCENDANTS_NODE: return "NUM_DESCENDANTS_NODE";
+			case NUM_LEAF_DESCENDANTS_NODE: return "NUM_LEAF_DESCENDANTS_NODE";
+			case LEAF_RATIO_NODE: return "LEAF_RATIO_NODE";
+			case BALANCE_NODE: return "BALANCE_NODE";
+			case AVG_CHILD_HEIGHT_NODE: return "AVG_CHILD_HEIGHT_NODE";
+			default: name = "UNKNOWN";
+		}
+		// Se o atributo for válido, ajuste o nome (acima, retorna diretamente em cada case; só cai aqui em caso de erro)
+		if (name.empty())
+			name = "UNKNOWN";
+
+		// Adiciona o sufixo de delta
+		if (delta < 0)
+			name += "_Asc" + std::to_string(-delta);
+		else if (delta > 0)
+			name += "_Desc" + std::to_string(delta);
+		// delta == 0: sem sufixo
+
+		return name;
+	}
+
+};
+
 
 class AttributeNames {
 public:
@@ -392,6 +507,64 @@ class AttributeComputer {
 };
 
 using DependencyMap = std::unordered_map<Attribute, std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>>>;
+
+
+
+
+class PathAscendantsAndDescendants{
+	private:
+	MorphologicalTreePtr tree;
+	std::vector<NodeMTPtr> ascendants;
+	std::vector<NodeMTPtr> descendants;
+
+	public:
+	PathAscendantsAndDescendants(MorphologicalTreePtr tree): tree(tree){ }
+
+    NodeMTPtr getNodeAscendantBasedOnHierarchical(NodeMTPtr node, int h){
+		NodeMTPtr n = node;
+		int i=0;
+		while(i++ < h){
+			n = n->getParent();
+			if(n == nullptr)
+				return n;
+		}
+		return n;
+	}
+
+	void maxAreaDescendants(NodeMTPtr nodeAsc, NodeMTPtr nodeDes){
+		if(descendants[nodeAsc->getIndex()] == nullptr)
+			descendants[nodeAsc->getIndex()] = nodeDes;
+		
+		if(descendants[nodeAsc->getIndex()]->getAreaCC() < nodeDes->getAreaCC())
+			descendants[nodeAsc->getIndex()] = nodeDes;
+		
+	}
+
+	void computerAscendantsAndDescendants(int delta){
+		std::vector<NodeMTPtr> tmp_asc (this->tree->getNumNodes(), nullptr);
+		this->ascendants = tmp_asc;
+
+		std::vector<NodeMTPtr> tmp_des (this->tree->getNumNodes(), nullptr);
+		this->descendants = tmp_des;
+		
+		for(NodeMTPtr node: tree->getIndexNode()){
+			NodeMTPtr nodeAsc = this->getNodeAscendantBasedOnHierarchical(node, delta);
+			if(nodeAsc == nullptr) continue;
+			this->maxAreaDescendants(nodeAsc, node);
+			if(descendants[nodeAsc->getIndex()] != nullptr){
+				ascendants[node->getIndex()] = nodeAsc;
+			}
+		}
+	}
+	std::vector<NodeMTPtr>& getAscendants() {
+		return this->ascendants;
+	}
+
+	std::vector<NodeMTPtr>& getDescendants() {
+		return this->descendants;
+	}
+};
+
 
 
 class AttributeComputedIncrementally{
@@ -1051,6 +1224,9 @@ public:
 		return std::make_pair(attrNames, buffer);
     }
 
+
+	
+
 	struct ExtinctionValues{
 		NodeMTPtr leaf;
 		NodeMTPtr cutoffNode;
@@ -1099,7 +1275,9 @@ public:
 
 	static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeAttributesByComputer(MorphologicalTreePtr tree, std::shared_ptr<AttributeComputer> comp, const DependencyMap& available = {});
 	
-	static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeSingleAttribute(MorphologicalTreePtr tree, AttributeOrGroup attr, const DependencyMap& available = {});
+	static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeSingleAttribute(MorphologicalTreePtr tree, AttributeOrGroup attr, const DependencyMap& availableDeps = {});
+	static std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> computeSingleAttribute(MorphologicalTreePtr tree, int delta, std::string padding, Attribute attribute, const DependencyMap& availableDeps={});
+	static std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> computeSingleAttribute(MorphologicalTreePtr tree, Attribute attribute, int delta, std::string padding="null-padding", const DependencyMap& availableDeps={});
 
 	static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeAttributes(MorphologicalTreePtr tree, const std::vector<AttributeOrGroup>& attributes,const DependencyMap& providedDependencies={});
 };

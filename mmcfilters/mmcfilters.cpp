@@ -125,8 +125,10 @@ void init_AttributeComputedIncrementally(py::module &m){
                                                              std::function<void(NodeMTPtr)>)>(&AttributeComputedIncrementally::computerAttribute))
         .def_static("computerBasicAttributes", &AttributeComputedIncrementallyPybind::computerBasicAttributes)
         .def_static("computeAttributes", &AttributeComputedIncrementallyPybind::computeAttributesFromList)
-        .def_static("extractCountors", &AttributeComputedIncrementallyPybind::extractCountors)
-        .def_static("computerArea", &AttributeComputedIncrementallyPybind::computerArea);
+        .def_static("computeSingleAttribute", &AttributeComputedIncrementallyPybind::computeSingleAttribute)
+        .def_static("computeSingleAttributeWithDelta", &AttributeComputedIncrementallyPybind::computeSingleAttributeWithDelta)
+        .def_static("extractCountors", &AttributeComputedIncrementallyPybind::extractCountors);
+        
 
         py::enum_<AttributeGroup>(cls, "Group")
             .value("ALL", AttributeGroup::ALL)

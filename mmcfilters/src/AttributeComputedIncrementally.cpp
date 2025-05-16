@@ -1,6 +1,7 @@
 #include <set>
 #include <map>
 #include <typeindex>
+#include <limits>
 #include "../include/AttributeComputedIncrementally.hpp"
 
 
@@ -168,6 +169,148 @@ std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeCo
 
     return {attrNames, buffer};
 }
+
+
+
+std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> AttributeComputedIncrementally::computeSingleAttribute(MorphologicalTreePtr tree, Attribute attribute, int delta, std::string padding, const DependencyMap& availableDeps) {
+	/*
+		Valores de padding:
+		 - zero-padding: preenchimento com zero
+		 - same-padding: preenchimento com o valor do node referencia
+		 - last-padding: preenchimento com o ultimo valor valido
+		 - null-padding: preenchimento com 0 todo os nos do caminho
+	*/
+
+    // 1. Computa atributo base (delta = 0)
+    auto [attributeNamesBase, attrsBase] = AttributeComputedIncrementally::computeSingleAttribute(tree, attribute, availableDeps);
+
+    int n = tree->getNumNodes();
+    std::vector<Attribute> attrVec = {attribute};
+    auto attributeNamesDelta = std::make_shared<AttributeNamesWithDelta>(
+        AttributeNamesWithDelta::create(n, delta, attrVec)
+    );
+
+    // Aloca buffer do novo atributo delta (inicializado com zero)
+    std::shared_ptr<float[]> attrsDelta(new float[n * attributeNamesDelta->NUM_ATTRIBUTES]());
+
+    PathAscendantsAndDescendants pathAscDesc(tree);
+
+    // Para d = 0, copia valor do próprio nó SEMPRE
+    for (NodeMTPtr node : tree->getIndexNode()) {
+        int nodeIndex = node->getIndex();
+        int outIdx = attributeNamesDelta->linearIndex(nodeIndex, attribute, 0);
+        int baseIdx = attributeNamesBase->linearIndex(nodeIndex, attribute);
+        attrsDelta[outIdx] = attrsBase[baseIdx];
+    }
+
+    // Para d > 0, só copia se realmente existe ascendente/descendente (zero-padding padrão)
+    for (int d = 1; d <= delta; ++d) {
+        pathAscDesc.computerAscendantsAndDescendants(d);
+        const auto& ascendants = pathAscDesc.getAscendants();
+        const auto& descendants = pathAscDesc.getDescendants();
+
+        for (NodeMTPtr node : tree->getIndexNode()) {
+            int nodeIndex = node->getIndex();
+
+            // Ascendente (-d)
+            int ascIndex = (ascendants[nodeIndex] ? ascendants[nodeIndex]->getIndex() : nodeIndex);
+            if (ascIndex != nodeIndex) {
+                int outIdxAsc = attributeNamesDelta->linearIndex(nodeIndex, attribute, -d);
+                int baseIdxAsc = attributeNamesBase->linearIndex(ascIndex, attribute);
+                attrsDelta[outIdxAsc] = attrsBase[baseIdxAsc];
+            }
+            // Descendente (+d)
+            int descIndex = (descendants[nodeIndex] ? descendants[nodeIndex]->getIndex() : nodeIndex);
+            if (descIndex != nodeIndex) {
+                int outIdxDesc = attributeNamesDelta->linearIndex(nodeIndex, attribute, +d);
+                int baseIdxDesc = attributeNamesBase->linearIndex(descIndex, attribute);
+                attrsDelta[outIdxDesc] = attrsBase[baseIdxDesc];
+            }
+        }
+    }
+
+    // 4. Preenche delta > 0 (só copia se realmente existe ascendente/descendente)
+    for (int d = 1; d <= delta; ++d) {
+        pathAscDesc.computerAscendantsAndDescendants(d);
+        const auto& ascendants = pathAscDesc.getAscendants();
+        const auto& descendants = pathAscDesc.getDescendants();
+
+        for (NodeMTPtr node : tree->getIndexNode()) {
+            int nodeIndex = node->getIndex();
+
+            // Ascendente (-d)
+            int ascIndex = (ascendants[nodeIndex] ? ascendants[nodeIndex]->getIndex() : nodeIndex);
+            if (ascIndex != nodeIndex) {
+                int outIdxAsc = attributeNamesDelta->linearIndex(nodeIndex, attribute, -d);
+                int baseIdxAsc = attributeNamesBase->linearIndex(ascIndex, attribute);
+                attrsDelta[outIdxAsc] = attrsBase[baseIdxAsc];
+            }
+
+            // Descendente (+d)
+            int descIndex = (descendants[nodeIndex] ? descendants[nodeIndex]->getIndex() : nodeIndex);
+            if (descIndex != nodeIndex) {
+                int outIdxDesc = attributeNamesDelta->linearIndex(nodeIndex, attribute, +d);
+                int baseIdxDesc = attributeNamesBase->linearIndex(descIndex, attribute);
+                attrsDelta[outIdxDesc] = attrsBase[baseIdxDesc];
+            }
+        }
+    }
+
+    // 5. Aplica padding para modos diferentes de zero-padding
+    if (padding != "zero-padding") {
+        for (NodeMTPtr node : tree->getIndexNode()) {
+            int nodeIndex = node->getIndex();
+
+            // Ascendente (-d)
+            for (int d = 1; d <= delta; ++d) {
+                int outIdx = attributeNamesDelta->linearIndex(nodeIndex, attribute, -d);
+                int refIdx = attributeNamesDelta->linearIndex(nodeIndex, attribute, -(d - 1));
+
+                if (attrsDelta[outIdx] == 0) {
+                    if (padding == "last-padding") {
+                        attrsDelta[outIdx] = attrsDelta[refIdx];
+                    } else if (padding == "same-padding") {
+                        int baseIdx = attributeNamesBase->linearIndex(nodeIndex, attribute);
+                        attrsDelta[outIdx] = attrsBase[baseIdx];
+                    } else if (padding == "null-padding") {
+                        for (int k = 0; k <= d; ++k) {
+                            // Marca todos os deltas negativos e positivos até d como NaN
+                            attrsDelta[attributeNamesDelta->linearIndex(nodeIndex, attribute, -k)] = std::numeric_limits<float>::quiet_NaN();
+                            attrsDelta[attributeNamesDelta->linearIndex(nodeIndex, attribute, +k)] = std::numeric_limits<float>::quiet_NaN();
+                        }
+                    }
+                }
+            }
+
+            // Descendente (+d)
+            for (int d = 1; d <= delta; ++d) {
+                int outIdx = attributeNamesDelta->linearIndex(nodeIndex, attribute, +d);
+                int refIdx = attributeNamesDelta->linearIndex(nodeIndex, attribute, +(d - 1));
+
+                if (node->isLeaf() || attrsDelta[outIdx] == 0) {
+                    if (padding == "last-padding") {
+                        attrsDelta[outIdx] = attrsDelta[refIdx];
+                    } else if (padding == "same-padding") {
+                        int baseIdx = attributeNamesBase->linearIndex(nodeIndex, attribute);
+                        attrsDelta[outIdx] = attrsBase[baseIdx];
+                    }
+                }
+                if (attrsDelta[outIdx] == 0 && padding == "null-padding") {
+                    for (int k = 0; k <= d; ++k) {
+                        attrsDelta[attributeNamesDelta->linearIndex(nodeIndex, attribute, +k)] = std::numeric_limits<float>::quiet_NaN();
+                        attrsDelta[attributeNamesDelta->linearIndex(nodeIndex, attribute, -k)] = std::numeric_limits<float>::quiet_NaN();
+                    }
+                }
+            }
+        }
+    }
+
+    return {attributeNamesDelta, attrsDelta};
+}
+
+
+
+
 
 
 static std::vector<std::shared_ptr<AttributeComputer>> getOrderedComputers(const std::vector<AttributeOrGroup>& attrOrGroups) {

@@ -116,37 +116,59 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
 	}
 
 
-	static std::pair<py::dict, py::array_t<float>> computeAttributesFromList(MorphologicalTreePybindPtr tree, const std::vector<Attribute>& attributes) {
+	static std::pair<py::dict, py::array_t<float>> computeAttributesFromList(MorphologicalTreePybindPtr tree, const std::vector<AttributeOrGroup>& attributes) {
+		auto [attributeNames, buffer] = AttributeComputedIncrementally::computeAttributes(tree, attributes);
+		// Cria uma cópia do shared_ptr para manter ownership no Python
+		std::shared_ptr<float[]> bufferCopy = buffer;
 		
-		// Computa os atributos solicitados
-		auto [attrNames, buffer] = AttributeComputedIncrementally::computeAttributes(tree, attributes);
-
-		const int numAttributes = attrNames->NUM_ATTRIBUTES;
+		const int numAttribute = attributeNames->NUM_ATTRIBUTES;
 		const int n = tree->getNumNodes();
+        
+		std::vector<std::string> keys;
+		std::vector<int> values;
 
-		// Cria o dicionário nome → índice de atributo
-		py::dict dict;
-		for (const auto& [attr, offset] : attrNames->indexMap) {
-			dict[py::str(attrNames->toString(attr))] = offset;
+		// 1. Copiar chaves e valores para vetores separados
+		for (const auto& pair : attributeNames->indexMap) {
+			Attribute attribute = pair.first;
+			int offset = pair.second;
+
+			keys.push_back( attributeNames->toString(attribute) );
+			values.push_back(offset);
 		}
 
-		// Define o capsule com shared_ptr para não desalocar (sem ownership)
-		py::capsule free_when_done(buffer.get(), [](void* f) {
-			// O shared_ptr gerencia a memória, nada a fazer
+		// 2. Criar um vetor de índices para ordenar os valores
+		std::vector<size_t> indices(values.size());
+		std::iota(indices.begin(), indices.end(), 0);
+		std::sort(indices.begin(), indices.end(), [&values](size_t i1, size_t i2) { return values[i1] < values[i2]; });
+
+		py::dict dict;
+		for (size_t i = 0; i < indices.size(); ++i) {
+			dict[py::str( keys[indices[i]] )] = values[indices[i]];// / n; 
+
+			for (NodeMTPtr node : tree->getIndexNode()) {
+            	int nodeIndex = node->getIndex();
+				std::optional<Attribute> attr = AttributeNames::parse( keys[indices[i]] );
+            	std::cout << "Node " << nodeIndex << " - " << keys[indices[i]] << ": "  << buffer[attributeNames->linearIndex(nodeIndex, *attr)] << std::endl;
+            }
+		}
+
+		
+		py::capsule free_when_done(new std::shared_ptr<float[]>(bufferCopy), [](void* ptr) {
+			// Converte de volta e destrói corretamente
+			delete reinterpret_cast<std::shared_ptr<float[]>*>(ptr);
 		});
-
-		// Cria array numpy compartilhando o buffer
+		
 		py::array_t<float> numpy = py::array(py::buffer_info(
-			buffer.get(),                       // ponteiro para os dados
-			sizeof(float),                      // tamanho de cada elemento
-			py::format_descriptor<float>::value,// formato do tipo
-			2,                                  // rank (2D)
-			{n, numAttributes},                 // shape
-			{sizeof(float) * numAttributes,     // strides por linha
-			sizeof(float)}                     // strides por coluna
+			buffer.get(),
+			sizeof(float),
+			py::format_descriptor<float>::value,
+			2,
+			{  n,  numAttribute }, 
+			{ sizeof(float), sizeof(float) * n }
 		), free_when_done);
-
+		
 		return std::make_pair(dict, numpy);
+		
 	}
 
 };

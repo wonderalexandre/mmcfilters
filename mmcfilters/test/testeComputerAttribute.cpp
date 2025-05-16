@@ -23,23 +23,24 @@ int main(int argc, char const *argv[])
 
     // Criar um AttributeComputedIncrementally::computerArea
     int n = tree->getNumNodes();	
+
+    auto [attrNamesRectangularity, attrsRectangularity] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::RECTANGULARITY);
+
     
-    
-    auto [attrsNamesArea, attrsArea] = AttributeComputedIncrementally::computeSingleAttribute(tree, GeometricAttribute::AREA);
-    auto [attrNamesVolume, attrsVolume] = AttributeComputedIncrementally::computeSingleAttribute(tree, GeometricAttribute::VOLUME);
-    auto [attrNamesLevel, attrsLevel] = AttributeComputedIncrementally::computeSingleAttribute(tree, GeometricAttribute::LEVEL);
-    auto [attrNamesMeanLevel, attrsMeanLevel] = AttributeComputedIncrementally::computeSingleAttribute(tree, GeometricAttribute::MEAN_LEVEL);
-    auto [attrNamesVarianceLevel, attrsVarianceLevel] = AttributeComputedIncrementally::computeSingleAttribute(tree, GeometricAttribute::VARIANCE_LEVEL);
-    auto [attrsNamesDynamics, attrsDynamics] = AttributeComputedIncrementally::computeSingleAttribute(tree, GeometricAttribute::DYNAMICS);
-    auto [attrNamesRectangularity, attrsRectangularity] = AttributeComputedIncrementally::computeSingleAttribute(tree, GeometricAttribute::RECTANGULARITY);
-    auto [attrNamesRatio, attrsRatio] = AttributeComputedIncrementally::computeSingleAttribute(tree, GeometricAttribute::RATIO_WH);
-    auto [attrNamesBoxWidth, attrsBoxWidth] = AttributeComputedIncrementally::computeSingleAttribute(tree, GeometricAttribute::BOX_WIDTH);
-    auto [attrNamesBoxHeight, attrsBoxHeight] = AttributeComputedIncrementally::computeSingleAttribute(tree, GeometricAttribute::BOX_HEIGHT);
-    auto [attrNamesOrientation, attrsOrientation] = AttributeComputedIncrementally::computeSingleAttribute(tree, GeometricAttribute::AXIS_ORIENTATION);
-    auto [attrNamesInertia, attrsInertia] = AttributeComputedIncrementally::computeSingleAttribute(tree, GeometricAttribute::INERTIA);
-    auto [attrNamesLength, attrsLength] = AttributeComputedIncrementally::computeSingleAttribute(tree, GeometricAttribute::LENGTH_MINOR_AXIS);
-    auto [attrNamesEccentricity, attrsEccentricity] = AttributeComputedIncrementally::computeSingleAttribute(tree, GeometricAttribute::ECCENTRICITY);
-    auto [attrNamesCompactness, attrsCompactness] = AttributeComputedIncrementally::computeSingleAttribute(tree, GeometricAttribute::COMPACTNESS);
+    auto [attrsNamesArea, attrsArea] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::AREA);
+    auto [attrNamesVolume, attrsVolume] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::VOLUME);
+    auto [attrNamesLevel, attrsLevel] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::LEVEL);
+    auto [attrNamesMeanLevel, attrsMeanLevel] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::MEAN_LEVEL);
+    auto [attrNamesVarianceLevel, attrsVarianceLevel] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::VARIANCE_LEVEL);
+    auto [attrsNamesDynamics, attrsDynamics] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::DYNAMICS);
+    auto [attrNamesRatio, attrsRatio] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::RATIO_WH);
+    auto [attrNamesBoxWidth, attrsBoxWidth] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::BOX_WIDTH);
+    auto [attrNamesBoxHeight, attrsBoxHeight] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::BOX_HEIGHT);
+    auto [attrNamesOrientation, attrsOrientation] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::AXIS_ORIENTATION);
+    auto [attrNamesInertia, attrsInertia] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::INERTIA);
+    auto [attrNamesLength, attrsLength] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::LENGTH_MINOR_AXIS);
+    auto [attrNamesEccentricity, attrsEccentricity] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::ECCENTRICITY);
+    auto [attrNamesCompactness, attrsCompactness] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::COMPACTNESS);
     
     for(NodeMTPtr node : tree->getIndexNode()){
         int nodeIndex = node->getIndex();
@@ -63,35 +64,27 @@ int main(int argc, char const *argv[])
     }
 
 
-    auto [attrNames, attrsPtr] = AttributeComputedIncrementally::computeAttributes(tree, {  GeometricAttribute::AREA, 
-                                                                                            GeometricAttribute::DYNAMICS, 
-                                                                                            GeometricAttribute::AXIS_ORIENTATION,
-                                                                                            GeometricAttribute::VOLUME,
-                                                                                            GeometricAttribute::LEVEL,
-                                                                                            GeometricAttribute::MEAN_LEVEL,
-                                                                                            GeometricAttribute::VARIANCE_LEVEL,
-                                                                                            GeometricAttribute::RECTANGULARITY,
-                                                                                            GeometricAttribute::RATIO_WH,
-                                                                                            GeometricAttribute::LENGTH_MAJOR_AXIS,
-                                                                                            GeometricAttribute::LENGTH_MINOR_AXIS,
-                                                                                            GeometricAttribute::ECCENTRICITY,
-                                                                                            GeometricAttribute::COMPACTNESS,
-                                                                                            GeometricAttribute::BOX_WIDTH,
-                                                                                            GeometricAttribute::BOX_HEIGHT,
-                                                                                            GeometricAttribute::HU_MOMENT_1,
-                                                                                            GeometricAttribute::HU_MOMENT_2,
-                                                                                            GeometricAttribute::HU_MOMENT_3,
-                                                                                            GeometricAttribute::HU_MOMENT_4,
-                                                                                            GeometricAttribute::HU_MOMENT_5,
-                                                                                            GeometricAttribute::HU_MOMENT_6,
-                                                                                            GeometricAttribute::HU_MOMENT_7,
-                                                                                            GeometricAttribute::CENTRAL_MOMENT_20,
-                                                                                            GeometricAttribute::CENTRAL_MOMENT_02,
-                                                                                            GeometricAttribute::CENTRAL_MOMENT_11,
-                                                                                            GeometricAttribute::CENTRAL_MOMENT_30,
-                                                                                            GeometricAttribute::CENTRAL_MOMENT_03,
-                                                                                            GeometricAttribute::CENTRAL_MOMENT_21,
-                                                                                            GeometricAttribute::CENTRAL_MOMENT_12} );
+    auto [attrNames, attrsPtr] = AttributeComputedIncrementally::computeAttributes(tree, {  AttributeGroup::GEOMETRIC,
+                                                                                            Attribute::AREA, 
+                                                                                            Attribute::DYNAMICS, 
+                                                                                            Attribute::AXIS_ORIENTATION,
+                                                                                            Attribute::VOLUME,
+                                                                                            Attribute::LEVEL,
+                                                                                            Attribute::MEAN_LEVEL,
+                                                                                            Attribute::VARIANCE_LEVEL,
+                                                                                            Attribute::RECTANGULARITY,
+                                                                                            Attribute::RATIO_WH,
+                                                                                            Attribute::LENGTH_MAJOR_AXIS,
+                                                                                            Attribute::LENGTH_MINOR_AXIS,
+                                                                                            Attribute::ECCENTRICITY,
+                                                                                            Attribute::COMPACTNESS,
+                                                                                            Attribute::BOX_WIDTH,
+                                                                                            Attribute::BOX_HEIGHT,
+                                                                                            Attribute::INERTIA,
+                                                                                            AttributeGroup::TREE_TOPOLOGY
+                                                                                            } );
+
+
 
     
     // Depuração do mapeamento em `attributeNamesDelta`
@@ -120,7 +113,7 @@ int main(int argc, char const *argv[])
 
     /*
     AttributeFilters filter(tree);
-    float* attrDinamics = AttributeComputedIncrementally::computerAttributeByIndex(tree, GeometricAttribute::DYNAMICS);    
+    float* attrDinamics = AttributeComputedIncrementally::computerAttributeByIndex(tree, Attribute::DYNAMICS);    
     ImagePtr imgOut = filter.filteringByExtinctionValue(tree, attrDinamics, 1);
     printImage(imgOut);
     */

@@ -21,16 +21,33 @@ void AttributeComputedIncrementally::computerAttribute(NodeMTPtr root) {
 }
 
 
-std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeComputedIncrementally::computeSingleAttribute(MorphologicalTreePtr tree, Attribute attr, const DependencyMap& availableDeps){
-    // Cria instância do computador para o atributo solicitado
-    auto comp = AttributeFactory::create(attr);
+std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeComputedIncrementally::computeAttributesByComputer(MorphologicalTreePtr tree, std::shared_ptr<AttributeComputer> comp, const DependencyMap& availableDeps) {
+    // Lambda para obter os atributos de um grupo
+    auto attributesOf = [](AttributeGroup group) -> std::vector<Attribute> {
+        const auto it = ATTRIBUTE_GROUPS.find(group);
+        if (it != ATTRIBUTE_GROUPS.end()) return it->second;
+        throw std::runtime_error("Unknown AttributeGroup in attributesOf.");
+    };
 
-    // Cria um mapa local copiando availableDeps (para permitir recursão e resolução de dependências)
     DependencyMap available = availableDeps;
 
-    // Etapa 1: resolver dependências automaticamente
-    for (const Attribute& dep : comp->requiredAttributes()) {
-        if (!available.count(dep)) {
+    // Resolver dependências automaticamente
+    for (const AttributeOrGroup& dep : comp->requiredAttributes()) {
+        bool needsCompute = false;
+
+        if (std::holds_alternative<Attribute>(dep)) {
+            needsCompute = !available.count(std::get<Attribute>(dep));
+        } else {
+            const auto& groupAttrs = attributesOf(std::get<AttributeGroup>(dep));
+            for (const auto& attr : groupAttrs) {
+                if (!available.count(attr)) {
+                    needsCompute = true;
+                    break;
+                }
+            }
+        }
+
+        if (needsCompute) {
             auto [depNames, depBuf] = computeSingleAttribute(tree, dep, available);
             for (const auto& [a, _] : depNames->indexMap) {
                 available[a] = {depNames, depBuf};
@@ -38,69 +55,179 @@ std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeCo
         }
     }
 
-    // Etapa 2: extrair somente as dependências requeridas (na ordem esperada pela função compute)
+    // Coletar dependências em ordem
     std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>> dependencySources;
-    for (const Attribute& dep : comp->requiredAttributes()) {
-        dependencySources.push_back(available.at(dep));
+    for (const auto& dep : comp->requiredAttributes()) {
+        std::vector<Attribute> requiredAttrs;
+        if (std::holds_alternative<Attribute>(dep)) {
+            requiredAttrs.push_back(std::get<Attribute>(dep));
+        } else {
+            auto groupAttrs = attributesOf(std::get<AttributeGroup>(dep));
+            requiredAttrs.insert(requiredAttrs.end(), groupAttrs.begin(), groupAttrs.end());
+        }
+
+        for (const auto& attr : requiredAttrs) {
+            dependencySources.push_back(available.at(attr));
+        }
     }
 
-    // Etapa 3: construir o AttributeNames com offsets
+    // Todos os atributos produzidos por esse computador
+    const auto& computedAttrs = comp->attributes();
+
+    // Construir o objeto AttributeNames
     std::unordered_map<Attribute, int> attrOffsets;
-    const auto& attrs = comp->attributes();
-    for (int i = 0; i < attrs.size(); ++i) {
-        attrOffsets[attrs[i]] = i;
+    for (int i = 0; i < computedAttrs.size(); ++i) {
+        attrOffsets[computedAttrs[i]] = i;
     }
     auto attrNames = std::make_shared<AttributeNames>(std::move(attrOffsets));
 
-    // Etapa 4: alocar buffer de saída
+    // Alocar buffer
     int n = tree->getNumNodes();
     std::shared_ptr<float[]> buffer(new float[n * attrNames->NUM_ATTRIBUTES]());
 
-    // Etapa 5: computar os atributos
+    // Computar atributos (modo completo)
     comp->compute(tree, buffer, attrNames, dependencySources);
 
     return {attrNames, buffer};
 }
 
-std::vector<std::shared_ptr<AttributeComputer>> getOrderedComputers(const std::vector<Attribute>& attributes) {
+std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeComputedIncrementally::computeSingleAttribute(MorphologicalTreePtr tree, AttributeOrGroup attrOrGroup, const DependencyMap& availableDeps) {
+
+    // Lambda para obter os atributos de um grupo
+    auto attributesOf = [](AttributeGroup group) -> std::vector<Attribute> {
+        const auto it = ATTRIBUTE_GROUPS.find(group);
+        if (it != ATTRIBUTE_GROUPS.end()) return it->second;
+        throw std::runtime_error("Unknown AttributeGroup in attributesOf.");
+    };
+
+    auto comp = AttributeFactory::create(attrOrGroup);
+    DependencyMap available = availableDeps;
+
+    // Descobrir quais atributos estão sendo solicitados
+    std::vector<Attribute> requestedAttrs;
+    if (std::holds_alternative<Attribute>(attrOrGroup)) {
+        requestedAttrs.push_back(std::get<Attribute>(attrOrGroup));
+    } else {
+        requestedAttrs = attributesOf(std::get<AttributeGroup>(attrOrGroup));
+    }
+
+    // Resolver dependências automaticamente
+    for (const AttributeOrGroup& dep : comp->requiredAttributes()) {
+        // Verifica se todos os atributos do grupo (ou atributo individual) já estão disponíveis
+        bool needsCompute = false;
+
+        if (std::holds_alternative<Attribute>(dep)) {
+            needsCompute = !available.count(std::get<Attribute>(dep));
+        } else {
+            const auto& groupAttrs = attributesOf(std::get<AttributeGroup>(dep));
+            for (const auto& attr : groupAttrs) {
+                if (!available.count(attr)) {
+                    needsCompute = true;
+                    break;
+                }
+            }
+        }
+
+        if (needsCompute) {
+            auto [depNames, depBuf] = computeSingleAttribute(tree, dep, available);
+            for (const auto& [a, _] : depNames->indexMap) {
+                available[a] = {depNames, depBuf};
+            }
+        }
+    }
+
+    // Coletar dependências
+    std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>> dependencySources;
+    for (const AttributeOrGroup& dep : comp->requiredAttributes()) {
+        std::vector<Attribute> requiredList;
+        if (std::holds_alternative<Attribute>(dep)) {
+            requiredList.push_back(std::get<Attribute>(dep));
+        } else {
+            const auto& groupAttrs = attributesOf(std::get<AttributeGroup>(dep));
+            requiredList.insert(requiredList.end(), groupAttrs.begin(), groupAttrs.end());
+        }
+
+        for (const Attribute& attr : requiredList) {
+            dependencySources.push_back(available.at(attr));
+        }
+    }
+
+    // Construir AttributeNames com apenas os atributos solicitados
+    std::unordered_map<Attribute, int> attrOffsets;
+    for (int i = 0; i < requestedAttrs.size(); ++i) {
+        attrOffsets[requestedAttrs[i]] = i;
+    }
+    auto attrNames = std::make_shared<AttributeNames>(std::move(attrOffsets));
+
+    // Alocar buffer de saída
+    int n = tree->getNumNodes();
+    std::shared_ptr<float[]> buffer(new float[n * attrNames->NUM_ATTRIBUTES]());
+
+    // Computar atributos
+    comp->compute(tree, buffer, attrNames, requestedAttrs, dependencySources);
+
+    return {attrNames, buffer};
+}
+
+
+static std::vector<std::shared_ptr<AttributeComputer>> getOrderedComputers(const std::vector<AttributeOrGroup>& attrOrGroups) {
     using ACptr = std::shared_ptr<AttributeComputer>;
     using TIndex = std::type_index;
 
-    // Mapa: tipo do computador -> instância compartilhada
+    auto attributesOf = [](AttributeGroup group) -> std::vector<Attribute> {
+        const auto it = ATTRIBUTE_GROUPS.find(group);
+        if (it != ATTRIBUTE_GROUPS.end()) return it->second;
+        throw std::runtime_error("Unknown AttributeGroup in attributesOf.");
+    };
+
     std::map<TIndex, ACptr> computerMap;
-
-    // Grafo de dependência: tipo -> tipos dos requisitos
     std::map<TIndex, std::set<TIndex>> dependencyGraph;
+    std::set<Attribute> visitedAttrs;
 
-    // Fila de atributos pendentes (inclui transitivos)
-    std::set<Attribute> allAttributes(attributes.begin(), attributes.end());
-
-    // Expande os requisitos de forma transitiva
     std::function<void(Attribute)> collect = [&](Attribute attr) {
+        if (visitedAttrs.count(attr)) return;
+        visitedAttrs.insert(attr);
+
         auto comp = AttributeFactory::create(attr);
         const auto& ref = *comp;
         TIndex id(typeid(ref));
 
-        if (computerMap.count(id)) return; // já visitado
-
         computerMap[id] = comp;
-        dependencyGraph[id] = {};
+        dependencyGraph[id];
 
-        for (const auto& dep : comp->requiredAttributes()) {
-            auto depComp = AttributeFactory::create(dep);
-            const auto& depRef = *depComp;
-            TIndex depId(typeid(depRef));
-            dependencyGraph[id].insert(depId);
-            allAttributes.insert(dep);
-            collect(dep); // recursivo
+        for (const auto& depOrGroup : comp->requiredAttributes()) {
+            std::vector<Attribute> deps;
+            if (std::holds_alternative<Attribute>(depOrGroup)) {
+                deps.push_back(std::get<Attribute>(depOrGroup));
+            } else {
+                auto groupAttrs = attributesOf(std::get<AttributeGroup>(depOrGroup));
+                deps.insert(deps.end(), groupAttrs.begin(), groupAttrs.end());
+            }
+
+            for (const auto& depAttr : deps) {
+                collect(depAttr);
+                auto depComp = AttributeFactory::create(depAttr);
+                const auto& depRef = *depComp;
+                std::type_index depId(typeid(depRef));
+                dependencyGraph[id].insert(depId);
+            }
         }
     };
 
-    for (const auto& attr : attributes) {
-        collect(attr);
+    for (const auto& item : attrOrGroups) {
+        std::vector<Attribute> attrs;
+        if (std::holds_alternative<Attribute>(item)) {
+            attrs.push_back(std::get<Attribute>(item));
+        } else {
+            auto groupAttrs = attributesOf(std::get<AttributeGroup>(item));
+            attrs.insert(attrs.end(), groupAttrs.begin(), groupAttrs.end());
+        }
+
+        for (const auto& attr : attrs) {
+            collect(attr);
+        }
     }
 
-    // Ordenação topológica
     std::vector<ACptr> ordered;
     std::set<TIndex> visited;
 
@@ -120,69 +247,98 @@ std::vector<std::shared_ptr<AttributeComputer>> getOrderedComputers(const std::v
     return ordered;
 }
 
-std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeComputedIncrementally::computeAttributes(MorphologicalTreePtr tree, const std::vector<Attribute>& attributes, const DependencyMap& providedDependencies){
+std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeComputedIncrementally::computeAttributes(MorphologicalTreePtr tree, const std::vector<AttributeOrGroup>& attributes, const DependencyMap& providedDependencies) {
     DependencyMap available = providedDependencies;
-    std::set<std::type_index> addedComputers;
-    std::vector<std::shared_ptr<AttributeComputer>> computers;
 
-    // Etapa 1: criar lista de computadores únicos necessários
-    for (const auto& attr : attributes) {
-        auto comp = AttributeFactory::create(attr);
-        const auto& ref = *comp;
-        std::type_index id(typeid(ref));
-        if (!addedComputers.count(id)) {
-            addedComputers.insert(id);
-            computers.push_back(comp);
+    auto attributesOf = [](AttributeGroup group) -> std::vector<Attribute> {
+        const auto it = ATTRIBUTE_GROUPS.find(group);
+        if (it != ATTRIBUTE_GROUPS.end()) return it->second;
+        throw std::runtime_error("Unknown AttributeGroup.");
+    };
+
+    // Etapa 1: Expansão dos atributos
+    std::set<Attribute> uniqueExpandedAttrs;
+    std::unordered_map<std::type_index, std::vector<Attribute>> attributesPerComputer;
+
+    for (const auto& item : attributes) {
+        std::vector<Attribute> attrs;
+        if (std::holds_alternative<Attribute>(item)) {
+            attrs.push_back(std::get<Attribute>(item));
+        } else {
+            auto groupAttrs = attributesOf(std::get<AttributeGroup>(item));
+            attrs.insert(attrs.end(), groupAttrs.begin(), groupAttrs.end());
+        }
+
+        for (const auto& attr : attrs) {
+            uniqueExpandedAttrs.insert(attr);
+            auto comp = AttributeFactory::create(attr);
+            const auto& ref = *comp;
+            std::type_index id(typeid(ref));
+            attributesPerComputer[id].push_back(attr);
         }
     }
 
-    // Etapa 2: definir offsets no buffer final
+    // Etapa 2: Construção do buffer principal (apenas atributos solicitados)
     std::unordered_map<Attribute, int> attrOffsets;
     int offset = 0;
-    for (const auto& comp : computers) {
-        for (const auto& attr : comp->attributes()) {
-            attrOffsets[attr] = offset++;
-        }
+    for (const auto& attr : uniqueExpandedAttrs) {
+        attrOffsets[attr] = offset++;
     }
 
     auto attrNames = std::make_shared<AttributeNames>(std::move(attrOffsets));
     int n = tree->getNumNodes();
     std::shared_ptr<float[]> buffer(new float[n * attrNames->NUM_ATTRIBUTES]());
 
-    // Etapa 3: computar cada grupo de atributos com dependências resolvidas
+    // Etapa 3: Obter ordem de execução
     auto orderedComputers = getOrderedComputers(attributes);
+
+    // Etapa 4: Executar os computadores em ordem
     for (const auto& comp : orderedComputers) {
-        // Verifica se já estão disponíveis
-        bool alreadyAvailable = true;
-        for (const auto& attr : comp->attributes()) {
-            if (!available.count(attr)) {
-                alreadyAvailable = false;
-                break;
+        const auto& ref = *comp;
+        std::type_index id(typeid(ref));
+        
+        if (!attributesPerComputer.count(id)) { //Se o computador não tem atributos solicitados
+            auto [tempNames, tempBuffer] = computeAttributesByComputer(tree, comp, available);
+            for (const auto& attrTemp : comp->attributes()) {
+                available[attrTemp] = {tempNames, tempBuffer};
             }
+            continue;
         }
+
+        // Atributos solicitados para esse computador        
+        std::vector<Attribute> userRequestedAttrs  = attributesPerComputer.at(id); 
+        
+        // Verifica se os atributos solicitados já foram computados anteirmente. Se todos os atributos já estão disponíveis, não precisa computar novamente
+        bool alreadyAvailable = std::all_of(userRequestedAttrs.begin(), userRequestedAttrs.end(), [&](const Attribute& a) { return available.count(a); });
         if (alreadyAvailable) continue;
 
-        // Resolve dependências recursivamente
+        // Resolver dependências: 
+        std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>> depsForThis;
         for (const auto& req : comp->requiredAttributes()) {
-            if (!available.count(req)) {
-                auto [depNames, depBuf] = computeSingleAttribute(tree, req, available);
-                for (const auto& [a, _] : depNames->indexMap) {
-                    available[a] = {depNames, depBuf};
+            std::vector<Attribute> deps;
+            if (std::holds_alternative<Attribute>(req)) {
+                deps.push_back(std::get<Attribute>(req));
+            } else {
+                auto groupAttrs = attributesOf(std::get<AttributeGroup>(req));
+                deps.insert(deps.end(), groupAttrs.begin(), groupAttrs.end());
+            }
+
+            for (const auto& dep : deps) {
+                if (!available.count(dep)) {
+                    auto [depNames, depBuf] = computeSingleAttribute(tree, dep, available);
+                    for (const auto& [a, _] : depNames->indexMap) {
+                        available[a] = {depNames, depBuf};
+                    }
                 }
+                depsForThis.push_back(available.at(dep));
             }
         }
 
-        // Coleta dependências em ordem
-        std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>> depsForThis;
-        for (const auto& req : comp->requiredAttributes()) {
-            depsForThis.push_back(available.at(req));
-        }
+        // Computa os atributos solicitados no buffer principal
+        comp->compute(tree, buffer, attrNames, userRequestedAttrs, depsForThis);
 
-        // Computa os atributos no buffer final
-        comp->compute(tree, buffer, attrNames, depsForThis);
-
-        // Marca atributos como disponíveis
-        for (const auto& attr : comp->attributes()) {
+        // Marca os atributos solicitados como disponíveis
+        for (const auto& attr : userRequestedAttrs) {
             available[attr] = {attrNames, buffer};
         }
     }

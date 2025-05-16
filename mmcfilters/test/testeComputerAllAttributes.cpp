@@ -53,7 +53,7 @@ int main(int argc, char const *argv[])
     }
 
     AttributeFilters filter(tree);
-    float* attrDinamics = AttributeComputedIncrementally::computerAttributeByIndex(tree, GeometricAttribute::DYNAMICS);    
+    float* attrDinamics = AttributeComputedIncrementally::computerAttributeByIndex(tree, Attribute::DYNAMICS);    
     ImagePtr imgOut = filter.filteringByExtinctionValue(tree, attrDinamics, 1);
     printImage(imgOut);
 

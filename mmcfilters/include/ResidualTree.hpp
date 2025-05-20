@@ -9,20 +9,22 @@
 #define RESIDUAL_TREE_H
 
 
+class ResidualTree;
+using ResidualTreePtr = std::shared_ptr<ResidualTree>;
 class ResidualTree{
 
     protected:
       NodeResPtr root;
-      AttributeOpeningPrimitivesFamily* primitivesFamily;
+      std::shared_ptr<AttributeOpeningPrimitivesFamily> primitivesFamily;
       MorphologicalTreePtr tree;
-      ImagePtr maxContrastLUT;
-      int* associatedIndexesLUT;
+      ImageUInt8Ptr maxContrastLUT;
+      std::shared_ptr<int[]> associatedIndexesLUT;
       int numNodes;
-      ImagePtr restOfImage;
+      ImageUInt8Ptr restOfImage;
       std::vector<NodeResPtr> nodes;
 
     public:
-        ResidualTree(AttributeOpeningPrimitivesFamily* primitivesFamily);
+        ResidualTree(std::shared_ptr<AttributeOpeningPrimitivesFamily> primitivesFamily);
 
         //void computerNodeRes(NodeCT *currentNode);
 
@@ -30,7 +32,7 @@ class ResidualTree{
 
         void createTree();
 
-        ImagePtr reconstruction();
+        ImageUInt8Ptr reconstruction();
 
         ~ResidualTree();
 
@@ -40,19 +42,19 @@ class ResidualTree{
 
         NodeResPtr getNodeRes(NodeMTPtr node);
 
-        ImagePtr getMaxConstrastImage();
+        ImageUInt8Ptr getMaxConstrastImage();
 
-        ImagePtr filtering(std::vector<bool> criterion);
+        ImageUInt8Ptr filtering(std::vector<bool> criterion);
 
-        int* getAssociatedImage();
+        ImageInt32Ptr getAssociatedImage();
 
-        PixelType* getAssociatedColorImage();   
+        ImageUInt8Ptr getAssociatedColorImage();   
 
-        ImagePtr getRestOfImage();
+        ImageUInt8Ptr getRestOfImage();
 
-        ImagePtr getPositiveResidues();
+        ImageUInt8Ptr getPositiveResidues();
 
-        ImagePtr getNegativeResidues();
+        ImageUInt8Ptr getNegativeResidues();
 
         MorphologicalTreePtr getCTree();
 

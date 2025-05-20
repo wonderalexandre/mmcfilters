@@ -18,7 +18,7 @@ int main(int argc, char const *argv[])
 {
     
     
-    ImagePtr img = getPassatImage();
+    ImageUInt8Ptr img = getPassatImage();
     
     printImage(img);
     std::cout << "img_pointer ok" << std::endl;
@@ -30,37 +30,37 @@ int main(int argc, char const *argv[])
 
     // Criar um AttributeComputedIncrementally::computerArea
     const int n = tree->getNumNodes();	
-    float* attr = AttributeComputedIncrementally::computerAttributeByIndex(tree, Attribute::BOX_HEIGHT); //size: n * numAttribute
+    auto [names, attr] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::BOX_HEIGHT); //size: n * numAttribute
     std::cout << "attributes ok" << std::endl;
 
     // Criar um AttributeOpeningPrimitivesFamily
-    int maxCriterion = img->numRows; 
-    AttributeOpeningPrimitivesFamily* primitives = new AttributeOpeningPrimitivesFamily(tree, attr, maxCriterion);
+    int maxCriterion = img->getNumRows(); 
+    std::shared_ptr<AttributeOpeningPrimitivesFamily> primitives = std::make_shared<AttributeOpeningPrimitivesFamily>(tree, attr, maxCriterion);
     std::cout << "primitives ok" << std::endl;
     
     ResidualTree* residualTree = new ResidualTree(primitives);
     std::cout << "residualTree ok" << std::endl;
 
 
-    ImagePtr imgPos = residualTree->getPositiveResidues();
+    ImageUInt8Ptr imgPos = residualTree->getPositiveResidues();
     printImage(imgPos);
     std::cout << "imgPos ok" << std::endl;
     
-    ImagePtr imgNeg = residualTree->getNegativeResidues();
+    ImageUInt8Ptr imgNeg = residualTree->getNegativeResidues();
     printImage(imgNeg);
     std::cout << "imgNeg ok" << std::endl;
     
 
-    ImagePtr imgRec = residualTree->reconstruction();
+    ImageUInt8Ptr imgRec = residualTree->reconstruction();
     printImage(imgRec);
 
-    ImagePtr contrast = residualTree->getMaxConstrastImage();
+    ImageUInt8Ptr contrast = residualTree->getMaxConstrastImage();
     //printImage(contrast);
     std::cout << "contrast ok" << std::endl;
     
     UltimateAttributeOpening *uao = new UltimateAttributeOpening(tree, attr);
     uao->execute(maxCriterion);
-    ImagePtr contrastUAO = residualTree->getMaxConstrastImage();
+    ImageUInt8Ptr contrastUAO = residualTree->getMaxConstrastImage();
     //printImage(contrastUAO);
 
     

@@ -11,12 +11,12 @@
 #include "../include/AttributeOpeningPrimitivesFamily.hpp"
 
 
-ResidualTree::ResidualTree(AttributeOpeningPrimitivesFamily* primitivesFamily) {
+ResidualTree::ResidualTree(std::shared_ptr<AttributeOpeningPrimitivesFamily> primitivesFamily) {
   this->primitivesFamily = primitivesFamily;
   this->tree = primitivesFamily->getTree();
   this->nodes.resize(this->tree->getNumNodes());
-  this->maxContrastLUT = Image::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
-  this->associatedIndexesLUT = new int[this->tree->getNumNodes()];
+  this->maxContrastLUT = ImageUInt8::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage()); 
+  this->associatedIndexesLUT = std::shared_ptr<int[]>(new int[this->tree->getNumNodes()]);
   this->createTree();
 }
 
@@ -73,12 +73,12 @@ MorphologicalTreePtr ResidualTree::getCTree(){
   return this->tree;
 }
 
-ImagePtr ResidualTree::getRestOfImage(){
+ImageUInt8Ptr ResidualTree::getRestOfImage(){
   return this->restOfImage;
 }
 
 void ResidualTree::computerMaximumResidues(){
-  PixelType* maxContrastLUTRaw = this->maxContrastLUT->rawData();
+  auto maxContrastLUTRaw = this->maxContrastLUT->rawData();
   for (int id = 0; id < this->tree->getNumNodes(); id++){
     maxContrastLUTRaw[id] = 0;
     this->associatedIndexesLUT[id] = 0;
@@ -184,7 +184,7 @@ void ResidualTree::computerNodeRes(NodeMTPtr currentNode){
 }
 */    
 
-ImagePtr ResidualTree::filtering(std::vector<bool> criterion){
+ImageUInt8Ptr ResidualTree::filtering(std::vector<bool> criterion){
   std::stack<NodeResPtr> s;
   for (NodeResPtr node : this->root->getChildren()){
     s.push(node);
@@ -211,7 +211,7 @@ ImagePtr ResidualTree::filtering(std::vector<bool> criterion){
       s.push(child);
     }
   }
-  ImagePtr imgOut = Image::create(this->getCTree()->getNumRowsOfImage(), this->getCTree()->getNumColsOfImage());
+  ImageUInt8Ptr imgOut = ImageUInt8::create(this->getCTree()->getNumRowsOfImage(), this->getCTree()->getNumColsOfImage());
   for(NodeMTPtr  node: tree->getIndexNode()){
     for (int pixel : node->getCNPs()){
       if(this->tree->isMaxtree())
@@ -225,7 +225,7 @@ ImagePtr ResidualTree::filtering(std::vector<bool> criterion){
 
 }
 
-ImagePtr ResidualTree::getPositiveResidues(){
+ImageUInt8Ptr ResidualTree::getPositiveResidues(){
 
   std::stack<NodeResPtr> s;
   for (NodeResPtr node : this->root->getChildren()){
@@ -253,7 +253,7 @@ ImagePtr ResidualTree::getPositiveResidues(){
     }
   }
 
-  ImagePtr imgOut = Image::create(this->getCTree()->getNumRowsOfImage(), this->getCTree()->getNumColsOfImage());
+  ImageUInt8Ptr imgOut = ImageUInt8::create(this->getCTree()->getNumRowsOfImage(), this->getCTree()->getNumColsOfImage());
   for(NodeMTPtr  node: tree->getIndexNode()){
     for (int pixel : node->getCNPs()){
       if(this->tree->getTreeType() != MorphologicalTree::MIN_TREE)
@@ -267,7 +267,7 @@ ImagePtr ResidualTree::getPositiveResidues(){
 
 }
 
-ImagePtr ResidualTree::getNegativeResidues(){
+ImageUInt8Ptr ResidualTree::getNegativeResidues(){
 
   std::stack<NodeResPtr> s;
   for (NodeResPtr node : this->root->getChildren()){
@@ -295,7 +295,7 @@ ImagePtr ResidualTree::getNegativeResidues(){
     }
   }
 
-  ImagePtr imgOut = Image::create(this->getCTree()->getNumRowsOfImage(), this->getCTree()->getNumColsOfImage());
+  ImageUInt8Ptr imgOut = ImageUInt8::create(this->getCTree()->getNumRowsOfImage(), this->getCTree()->getNumColsOfImage());
   for(NodeMTPtr  node: tree->getIndexNode()){
     for (int pixel : node->getCNPs()){
       if(this->tree->getTreeType() != MorphologicalTree::MAX_TREE)
@@ -310,7 +310,7 @@ ImagePtr ResidualTree::getNegativeResidues(){
 
 }
 
-ImagePtr ResidualTree::reconstruction(){
+ImageUInt8Ptr ResidualTree::reconstruction(){
 
   std::stack<NodeResPtr> s;
   for (NodeResPtr node : this->root->getChildren()){
@@ -343,7 +343,7 @@ ImagePtr ResidualTree::reconstruction(){
     }
   }
 
-  ImagePtr imgOut = Image::create(this->getCTree()->getNumRowsOfImage(), this->getCTree()->getNumColsOfImage());
+  ImageUInt8Ptr imgOut = ImageUInt8::create(this->getCTree()->getNumRowsOfImage(), this->getCTree()->getNumColsOfImage());
   for(NodeMTPtr  node: tree->getIndexNode()){
     for (int pixel : node->getCNPs()){
       (*imgOut)[pixel] = (*this->restOfImage)[pixel] - mapLevelNeg[node->getIndex()] + mapLevelPos[node->getIndex()];
@@ -362,19 +362,19 @@ ResidualTree::~ResidualTree(){
   return this->listNodes;
 }*/
 
-ImagePtr ResidualTree::getMaxConstrastImage(){
+ImageUInt8Ptr ResidualTree::getMaxConstrastImage(){
   return this->maxContrastLUT;
 }
 
-int* ResidualTree::getAssociatedImage(){
+ImageInt32Ptr ResidualTree::getAssociatedImage(){
   int size = this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage();
-  int *out = new int[size];
+  ImageInt32Ptr out = ImageInt32::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
   for (int pidx = 0; pidx < size; pidx++){
-    out[pidx] = this->associatedIndexesLUT[this->tree->getSC(pidx)->getIndex()];
+    (*out)[pidx] = this->associatedIndexesLUT[this->tree->getSC(pidx)->getIndex()];
   }
   return out;
 }
 
-PixelType* ResidualTree::getAssociatedColorImage(){
-  return ImageUtils::createRandomColor(this->getAssociatedImage(), this->tree->getNumColsOfImage(), this->tree->getNumRowsOfImage());
+ImageUInt8Ptr ResidualTree::getAssociatedColorImage(){
+  return ImageUtils::createRandomColor(this->getAssociatedImage()->rawData(), this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
 }

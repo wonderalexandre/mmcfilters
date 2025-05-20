@@ -9,14 +9,16 @@
 #define ULTIMATE_ATTR_OPENING_H
 
 
+class UltimateAttributeOpening;
+using UltimateAttributeOpeningPtr = std::shared_ptr<UltimateAttributeOpening>;
 class UltimateAttributeOpening{
 
   protected:
     int maxCriterion;
-    float* attrs_increasing;
+    std::shared_ptr<float[]> attrs_increasing;
     MorphologicalTreePtr tree;
-    PixelType* maxContrastLUT;
-    int* associatedIndexLUT;
+    std::shared_ptr<uint8_t[]> maxContrastLUT;
+    std::shared_ptr<int[]> associatedIndexLUT;
     
     void computeUAO(NodeMTPtr currentNode, int levelNodeNotInNR, bool qPropag, bool isCalculateResidue);
     void execute(int maxCriterion, std::vector<bool> selectedForFiltering);
@@ -29,15 +31,15 @@ class UltimateAttributeOpening{
 
   public:
 
-    UltimateAttributeOpening(MorphologicalTreePtr tree,  float* attrs_increasing);
+    UltimateAttributeOpening(MorphologicalTreePtr tree,  std::shared_ptr<float[]> attrs_increasing);
 
     ~UltimateAttributeOpening();
 
-    PixelType* getMaxConstrastImage();
+    ImageUInt8Ptr getMaxConstrastImage();
 
-    int* getAssociatedImage();
+    ImageInt32Ptr getAssociatedImage();
 
-    PixelType* getAssociatedColorImage();    
+    ImageUInt8Ptr getAssociatedColorImage();    
 
     void execute(int maxCriterion);
     

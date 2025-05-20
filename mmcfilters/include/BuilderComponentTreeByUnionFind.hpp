@@ -19,12 +19,12 @@ private:
     
 public:
     
-    void sort(ImagePtr img, bool isMaxtree);
-	void createTreeByUnionFind(ImagePtr img, bool isMaxtree, AdjacencyRelationPtr adj);
+    void sort(ImageUInt8Ptr img, bool isMaxtree);
+	void createTreeByUnionFind(ImageUInt8Ptr img, bool isMaxtree, AdjacencyRelationPtr adj);
 	int findRoot(int *zPar, int x);
     int* getParent();
     int* getOrderedPixels();
-    BuilderComponentTreeByUnionFind(ImagePtr img, bool isMaxtree, AdjacencyRelationPtr adj);
+    BuilderComponentTreeByUnionFind(ImageUInt8Ptr img, bool isMaxtree, AdjacencyRelationPtr adj);
     ~BuilderComponentTreeByUnionFind();
 };
 

@@ -16,8 +16,8 @@ void UltimateAttributeOpening::execute(int maxCriterion){
 }
 
 void UltimateAttributeOpening::executeWithMSER(int maxCriterion, int deltaMSER){
-  ComputerMSER *mser = new ComputerMSER(this->tree);
-  execute(maxCriterion, mser->computerMSER(deltaMSER));
+  ComputerMSER mser(this->tree);
+  execute(maxCriterion, mser.computerMSER(deltaMSER));
 }
 
 void UltimateAttributeOpening::execute(int maxCriterion, std::vector<bool> selectedForFiltering){
@@ -35,41 +35,45 @@ void UltimateAttributeOpening::execute(int maxCriterion, std::vector<bool> selec
   }
 }
 
-UltimateAttributeOpening::UltimateAttributeOpening(MorphologicalTreePtr tree, float* attrs_increasing){
+UltimateAttributeOpening::UltimateAttributeOpening(MorphologicalTreePtr tree, std::shared_ptr<float[]> attrs_increasing){
   this->tree = tree;
-  this->maxContrastLUT = new PixelType[this->tree->getNumNodes()];
-  this->associatedIndexLUT = new int[this->tree->getNumNodes()];
+  this->maxContrastLUT = std::shared_ptr<uint8_t[]>(new uint8_t[this->tree->getNumNodes()]);
+  this->associatedIndexLUT = std::shared_ptr<int[]>(new int[this->tree->getNumNodes()]);
+  this->selectedForFiltering.assign(this->tree->getNumNodes(), true);
   this->attrs_increasing = attrs_increasing;
 }
 
 UltimateAttributeOpening::~UltimateAttributeOpening(){
-  free(maxContrastLUT);
-  free(associatedIndexLUT);
+  //free(maxContrastLUT);
+  //free(associatedIndexLUT);
 }
 
 
-PixelType* UltimateAttributeOpening::getMaxConstrastImage(){
+ImageUInt8Ptr UltimateAttributeOpening::getMaxConstrastImage(){
   int size = this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage();
-  PixelType *out = new PixelType[size];
+  ImageUInt8Ptr imgOut = ImageUInt8::create(this->tree->getNumColsOfImage(), this->tree->getNumRowsOfImage());
+  auto out = imgOut->rawData();
 
   for (int pidx = 0; pidx < size; pidx++){
     out[pidx] = this->maxContrastLUT[this->tree->getSC(pidx)->getIndex()];
   }
-  return out;
+  return imgOut;
 }
 
-int* UltimateAttributeOpening::getAssociatedImage(){
+ImageInt32Ptr UltimateAttributeOpening::getAssociatedImage(){
   int size = this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage();
-  int *out = new int[size];
+  ImageInt32Ptr imgOut = ImageInt32::create(this->tree->getNumColsOfImage(), this->tree->getNumRowsOfImage());
+  auto out = imgOut->rawData();
+
 
   for (int pidx = 0; pidx < size; pidx++){
     out[pidx] = this->associatedIndexLUT[this->tree->getSC(pidx)->getIndex()];
   }
-  return out;
+  return imgOut;
 }
  
-PixelType* UltimateAttributeOpening::getAssociatedColorImage(){
-  return ImageUtils::createRandomColor(this->getAssociatedImage(), this->tree->getNumColsOfImage(), this->tree->getNumRowsOfImage());
+ImageUInt8Ptr UltimateAttributeOpening::getAssociatedColorImage(){
+  return ImageUtils::createRandomColor(this->getAssociatedImage()->rawData(), this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
 }
 
 void UltimateAttributeOpening::computeUAO(NodeMTPtr currentNode, int levelNodeNotInNR, bool qPropag, bool isCalculateResidue){

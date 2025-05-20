@@ -12,19 +12,17 @@ AttributeOpeningPrimitivesFamily::~AttributeOpeningPrimitivesFamily(){
     //delete[] this->restOfImage;
 }
 
-AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree,  float* attrs_increasing, float maxCriterion, int deltaMSER){
+AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree, std::shared_ptr<float[]> attrs_increasing, float maxCriterion, int deltaMSER){
   this->tree = tree;
   this->attrs_increasing = attrs_increasing;
   this->maxCriterion = maxCriterion;
 
   if(deltaMSER > 0){
-    ComputerMSER *mser = new ComputerMSER(this->tree);
-    this->selectedForFiltering = mser->computerMSER(deltaMSER);
-    delete mser;
+    ComputerMSER mser(this->tree);
+    this->selectedForFiltering = mser.computerMSER(deltaMSER);
   }
   else{
-    std::vector<bool> tmp(this->tree->getNumNodes(), true);
-    this->selectedForFiltering = tmp;
+    this->selectedForFiltering.assign(this->tree->getNumNodes(), true);
   }
   
   this->numPrimitives = 0;
@@ -40,7 +38,7 @@ AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily(Morphological
   this->initializeNodesWithMaximumCriterium();
 }
 
-AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree,  float* attrs_increasing, float maxCriterion): AttributeOpeningPrimitivesFamily(tree, attrs_increasing, maxCriterion, 0){ }
+AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree, std::shared_ptr<float[]> attrs_increasing, float maxCriterion): AttributeOpeningPrimitivesFamily(tree, attrs_increasing, maxCriterion, 0){ }
 
 int AttributeOpeningPrimitivesFamily::getNumPrimitives(){
   return this->numPrimitives;
@@ -85,15 +83,15 @@ bool AttributeOpeningPrimitivesFamily::isSelectedForPruning(NodeMTPtr node){
   return node->getParent() != nullptr && this->attrs_increasing[node->getIndex()] != this->attrs_increasing[node->getParent()->getIndex()];
 }
 
-ImagePtr AttributeOpeningPrimitivesFamily::getRestOfImage(){
+ImageUInt8Ptr AttributeOpeningPrimitivesFamily::getRestOfImage(){
   return this->restOfImage;
 }
 
 
 
 void AttributeOpeningPrimitivesFamily::initializeRestOfImage(float thrRestImage){
-  this->restOfImage = Image::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
-  AttributeFilters::filteringByPruningMin(this->tree, this->attrs_increasing, thrRestImage, restOfImage->rawData());
+  this->restOfImage = ImageUInt8::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
+  AttributeFilters::filteringByPruningMin(this->tree, this->attrs_increasing, thrRestImage, restOfImage);
 }
 
 void AttributeOpeningPrimitivesFamily::initializeNodesWithMaximumCriterium(){

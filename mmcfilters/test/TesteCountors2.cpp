@@ -14,7 +14,7 @@
 int main(int argc, char* argv[]) {
     // Definição da imagem e parâmetros
     
-    ImagePtr image = getSimpleImage();
+    ImageUInt8Ptr image = getSimpleImage();
     
     if(argc != 3){
         std::cout << "Execute assim: " << argv[0] << " <ToS_type> <filename>" << std::endl;
@@ -22,8 +22,8 @@ int main(int argc, char* argv[]) {
     }
    // ImagePtr image = openImage(argv[2]);
     
-    int numRows = image->numRows;
-    int numCols = image->numCols;
+    int numRows = image->getNumRows();
+    int numCols = image->getNumCols();
     int n = numRows * numCols;
 
     AdjacencyRelationPtr adj = std::make_shared<AdjacencyRelation>(numRows, numCols, 1);
@@ -70,7 +70,7 @@ int main(int argc, char* argv[]) {
     bool isEquals = true;
     contoursMT.visitContours(tree, [&](NodeMTPtr node, const std::unordered_set<int>& contourNode) {
        
-        ImagePtr imgContours = Image::create(numRows, numCols, 0);
+        ImageUInt8Ptr imgContours = ImageUInt8::create(numRows, numCols, 0);
         //contorno incremental
         for(int p: contourNode){
             (*imgContours)[p] = 1;
@@ -82,7 +82,7 @@ int main(int argc, char* argv[]) {
     });
     
 
-    ImagePtr imgContours2 = Image::create(numRows, numCols, 0);
+    ImageUInt8Ptr imgContours2 = ImageUInt8::create(numRows, numCols, 0);
     for(int p: contoursMT.getContour(tree->getNodeByIndex(3))){
         (*imgContours2)[p] = 1;
     }

@@ -5,10 +5,10 @@
     
     int BuilderTreeOfShapeByUnionFind::getInterpNumRows() {return this->interpNumRows;}
     int BuilderTreeOfShapeByUnionFind::getInterpNumCols() {return this->interpNumCols;}
-    PixelType* BuilderTreeOfShapeByUnionFind::getInterpolationMin() {return this->interpolationMin;}
-    PixelType* BuilderTreeOfShapeByUnionFind::getInterpolationMax() {return this->interpolationMax;}
+    uint8_t* BuilderTreeOfShapeByUnionFind::getInterpolationMin() {return this->interpolationMin;}
+    uint8_t* BuilderTreeOfShapeByUnionFind::getInterpolationMax() {return this->interpolationMax;}
     int* BuilderTreeOfShapeByUnionFind::getImgR() {return this->imgR;}
-    PixelType* BuilderTreeOfShapeByUnionFind::getImgU() {return this->imgU;}
+    uint8_t* BuilderTreeOfShapeByUnionFind::getImgU() {return this->imgU;}
     int* BuilderTreeOfShapeByUnionFind::getParent() {return this->parent;}
     AdjacencyUC* BuilderTreeOfShapeByUnionFind::getAdjacency(){ return this->adj;}
 
@@ -32,10 +32,10 @@
       * - N.Boutry, T.Géraud, L.Najman, "How to Make nD Functions Digitally Well-Composed in a Self-dual Way", ISMM 2015.
       * - N.Boutry, T.Géraud, L.Najman, "On Making {$n$D} Images Well-Composed by a Self-Dual Local Interpolation", DGCI 2014
       */
-     void BuilderTreeOfShapeByUnionFind::interpolateImage(ImagePtr imgPtr) {
-        PixelType* img = imgPtr->rawData();
-        int numRows = imgPtr->numRows;
-        int numCols = imgPtr->numCols;
+     void BuilderTreeOfShapeByUnionFind::interpolateImage(ImageUInt8Ptr imgPtr) {
+        auto img = imgPtr->rawData();
+        int numRows = imgPtr->getNumRows();
+        int numCols = imgPtr->getNumCols();
 
         this->is4c8cConnectivity = false;
         constexpr int adjCircleCol[] = {-1, +1, -1, +1};
@@ -51,8 +51,8 @@
         this->interpNumRows = numRows * 2 + 1;
 
         // Aloca memória para os resultados de interpolação (mínimo e máximo)
-        this->interpolationMin = new PixelType[interpNumCols * interpNumRows];
-        this->interpolationMax = new PixelType[interpNumCols * interpNumRows];
+        this->interpolationMin = new uint8_t[interpNumCols * interpNumRows];
+        this->interpolationMax = new uint8_t[interpNumCols * interpNumRows];
 
         int numBoundary = 2 * (numRows + numCols) - 4;
         int* pixels = new int[numBoundary];  // Para calcular a mediana
@@ -145,10 +145,10 @@
        
     }
 
-    void BuilderTreeOfShapeByUnionFind::interpolateImage4c8c(ImagePtr imgPtr) {
-        PixelType* img = imgPtr->rawData();
-        int numRows = imgPtr->numRows;
-        int numCols = imgPtr->numCols;
+    void BuilderTreeOfShapeByUnionFind::interpolateImage4c8c(ImageUInt8Ptr imgPtr) {
+        auto img = imgPtr->rawData();
+        int numRows = imgPtr->getNumRows();
+        int numCols = imgPtr->getNumCols();
 
         this->is4c8cConnectivity = true;
         this->interpNumCols = numCols * 2 + 1;
@@ -157,8 +157,8 @@
 
 
         // Aloca memória para os resultados de interpolação (mínimo e máximo)
-        this->interpolationMin = new PixelType[interpNumCols * interpNumRows];
-        this->interpolationMax = new PixelType[interpNumCols * interpNumRows];
+        this->interpolationMin = new uint8_t[interpNumCols * interpNumRows];
+        this->interpolationMax = new uint8_t[interpNumCols * interpNumRows];
         int pT, i = 0; // i é um contador para o array pixels
         
          // Compute interval from 2-faces.
@@ -344,7 +344,7 @@
         int size = this->interpNumCols * this->interpNumRows;
         bool* dejavu = new bool[size]();  // Vetor de booleanos, inicializado com false
         this->imgR = new int[size];        // Pixels ordenados
-        this->imgU = new PixelType[size];        // Níveis de cinza da imagem
+        this->imgU = new uint8_t[size];        // Níveis de cinza da imagem
         
         PriorityQueueToS queue;  // Fila de prioridade
         int pInfinito = ImageUtils::to1D(0, 0, interpNumCols);

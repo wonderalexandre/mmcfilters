@@ -28,6 +28,9 @@ inline bool operator&(DiagonalConnection a, DiagonalConnection b) {
   return static_cast<uint8_t>(a) & static_cast<uint8_t>(b);
 }
 
+
+class AdjacencyUC;  // forward declaration
+using AdjacencyUCPtr = std::shared_ptr<AdjacencyUC>;
 class AdjacencyUC {
 private:
   int numRows, numCols;

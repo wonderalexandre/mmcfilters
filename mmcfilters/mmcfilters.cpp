@@ -44,7 +44,7 @@ void init_NodeCT(py::module &m){
 		.def_property_readonly("level", &NodeMT::getLevel )
 		.def_property_readonly("children", &NodeMT::getChildren )
 		.def_property_readonly("parent", &NodeMT::getParent )
-        .def_property_readonly("areaCC", &NodeMT::getAreaCC )
+        .def_property_readonly("area", &NodeMT::getAreaCC )
         .def_property_readonly("numDescendants", &NodeMT::getNumDescendants )
         .def_property_readonly("isMaxtree", &NodeMT::isMaxtreeNode )
         .def_property_readonly("numSiblings", &NodeMT::getNumSiblings )
@@ -144,7 +144,7 @@ void init_AttributeComputedIncrementally(py::module &m){
             .value("AREA", Attribute::AREA)
             .value("VOLUME", Attribute::VOLUME)
             .value("LEVEL", Attribute::LEVEL)
-            .value("DYNAMICS", Attribute::DYNAMICS)
+            .value("GRAY_HEIGHT", Attribute::GRAY_HEIGHT)
             .value("MEAN_LEVEL", Attribute::MEAN_LEVEL)
             .value("VARIANCE_LEVEL", Attribute::VARIANCE_LEVEL)
             .value("BOX_WIDTH", Attribute::BOX_WIDTH)
@@ -226,7 +226,7 @@ void init_UltimateAttributeOpening(py::module &m){
 
 void init_ResidualTree(py::module &m){
     	py::class_<ResidualTreePybind>(m, "ResidualTree")
-        .def(py::init<AttributeOpeningPrimitivesFamilyPybind *>())
+        .def(py::init<std::shared_ptr<AttributeOpeningPrimitivesFamilyPybind>>())
         .def("reconstruction", &ResidualTreePybind::reconstruction)
         .def("filtering", &ResidualTreePybind::filtering)
         .def("computerMaximumResidues", &ResidualTreePybind::computerMaximumResidues)
@@ -239,7 +239,7 @@ void init_ResidualTree(py::module &m){
 }
 
 void init_AttributeOpeningPrimitivesFamily(py::module &m){
-    	py::class_<AttributeOpeningPrimitivesFamilyPybind>(m, "AttributeOpeningPrimitivesFamily")
+    	py::class_<AttributeOpeningPrimitivesFamilyPybind, std::shared_ptr<AttributeOpeningPrimitivesFamilyPybind>>(m, "AttributeOpeningPrimitivesFamily")
         .def(py::init<MorphologicalTreePybindPtr, py::array_t<float>&, float>())
         .def(py::init<MorphologicalTreePybindPtr, py::array_t<float>&, float, int>())
         .def_property_readonly("numPrimitives", &AttributeOpeningPrimitivesFamilyPybind::getNumPrimitives)

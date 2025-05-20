@@ -9,7 +9,10 @@ namespace py = pybind11;
 
 class PybindUtils{
     public:
-        static py::array_t<PixelType> toNumpy(PixelType* data, int size) {
+        template <typename PixelType>
+        static py::array_t<PixelType> toNumpy(ImagePtr<PixelType> image) {
+            PixelType* data = image->rawData();
+            int size = image->getNumRows() * image->getNumCols();
             // Cria um capsule que sabe como liberar o ponteiro
             py::capsule free_when_done(data, [](void* f) {
                 delete[] static_cast<PixelType*>(f);
@@ -76,7 +79,13 @@ class PybindUtils{
         }
         
 
-
+        static std::shared_ptr<float[]> toShared_ptr(py::array_t<float>& arr) {
+            // Cria um capsule que sabe como liberar o ponteiro
+            return std::shared_ptr<float[]>(
+                static_cast<float*>(arr.request().ptr),
+                [obj = py::object(arr)](float*) mutable { obj.dec_ref(); }
+            );
+        }
 
 
 };

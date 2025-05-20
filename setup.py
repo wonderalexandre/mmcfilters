@@ -11,7 +11,7 @@ from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 import setuptools
 
-import shutil  # Adicione isso no topo do arquivo
+import shutil  
 
 class CMakeExtension(Extension):
     def __init__(self, name, sourcedir=""):

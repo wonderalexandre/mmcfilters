@@ -25,7 +25,7 @@ enum class Attribute {
     // Textura / intensidade agregada
     VOLUME,
     LEVEL,
-    DYNAMICS,
+    GRAY_HEIGHT,
     MEAN_LEVEL,
     VARIANCE_LEVEL,
 
@@ -197,7 +197,7 @@ static const std::unordered_map<AttributeGroup, std::vector<Attribute>> ATTRIBUT
     {AttributeGroup::TEXTURE, {
         VOLUME,
         LEVEL,
-        DYNAMICS,
+        GRAY_HEIGHT,
         MEAN_LEVEL,
         VARIANCE_LEVEL
     }},
@@ -222,7 +222,8 @@ static const std::unordered_map<AttributeGroup, std::vector<Attribute>> ATTRIBUT
     }()}
 };
 
-
+class AttributeNamesWithDelta;  // forward declaration
+using AttributeNamesWithDeltaPtr = std::shared_ptr<AttributeNamesWithDelta>;
 class AttributeNamesWithDelta {
 public:
     std::unordered_map<AttributeKey, int> indexMap;
@@ -231,95 +232,103 @@ public:
     AttributeNamesWithDelta(std::unordered_map<AttributeKey, int>&& map)
         : indexMap(std::move(map)), NUM_ATTRIBUTES(static_cast<int>(indexMap.size())) {}
 
-    static AttributeNamesWithDelta create(int n, int delta, const std::vector<Attribute>& attributes) {
-        std::unordered_map<AttributeKey, int> map;
-        int offset = 0;
-        for (int d = -delta; d <= delta; ++d) {
-            for (size_t i = 0; i < attributes.size(); ++i) {
-                map[AttributeKey{attributes[i], d}] = offset + int(i) * n;
-            }
-            offset += int(attributes.size()) * n;
-        }
-        return AttributeNamesWithDelta(std::move(map));
-    }
+
+	static AttributeNamesWithDelta create(int n, int delta, const std::vector<Attribute>& attributes) {
+		std::unordered_map<AttributeKey, int> map;
+		int offset = 0;
+		for (int d = -delta; d <= delta; ++d) {
+			for (int i = 0; i < attributes.size(); ++i) {
+				map[AttributeKey{attributes[i], d}] = offset++;
+			}
+		}
+		return AttributeNamesWithDelta(std::move(map));
+	}
 
     int getIndex(Attribute attr, int delta) const {
-        return indexMap.at(AttributeKey{attr, delta});
+        return getIndex(AttributeKey{attr, delta});
     }
+
+	int getIndex(AttributeKey attrKey) const {
+		return indexMap.at(attrKey);
+	}
 
     int linearIndex(int nodeIndex, Attribute attr, int delta) const {
         return nodeIndex * NUM_ATTRIBUTES + getIndex(attr, delta);
     }
 
+	int linearIndex(int nodeIndex, AttributeKey attrKey) const {
+		return linearIndex(nodeIndex, attrKey.attr, attrKey.delta);
+	}
+
+	static std::string toString(AttributeKey attrKey) {
+		return toString(attrKey.attr, attrKey.delta);
+	}
 
 	static std::string toString(Attribute attr, int delta) {
 		std::string name;
 		switch (attr) {
-			case AREA: return "AREA";
-			case VOLUME: return "VOLUME";
-			case LEVEL: return "LEVEL";
-			case DYNAMICS: return "DYNAMICS";
-			case MEAN_LEVEL: return "MEAN_LEVEL";
-			case VARIANCE_LEVEL: return "VARIANCE_LEVEL";
-			case BOX_WIDTH: return "BOX_WIDTH";
-			case BOX_HEIGHT: return "BOX_HEIGHT";
-			case RECTANGULARITY: return "RECTANGULARITY";
-			case RATIO_WH: return "RATIO_WH";
-			case DIAGONAL_LENGTH: return "DIAGONAL_LENGTH";
-			case BOX_COL_MIN: return "BOX_COL_MIN";
-			case BOX_COL_MAX: return "BOX_COL_MAX";
-			case BOX_ROW_MIN: return "BOX_ROW_MIN";
-			case BOX_ROW_MAX: return "BOX_ROW_MAX";
-			case CENTRAL_MOMENT_20: return "CENTRAL_MOMENT_20";
-			case CENTRAL_MOMENT_02: return "CENTRAL_MOMENT_02";
-			case CENTRAL_MOMENT_11: return "CENTRAL_MOMENT_11";
-			case CENTRAL_MOMENT_30: return "CENTRAL_MOMENT_30";
-			case CENTRAL_MOMENT_03: return "CENTRAL_MOMENT_03";
-			case CENTRAL_MOMENT_21: return "CENTRAL_MOMENT_21";
-			case CENTRAL_MOMENT_12: return "CENTRAL_MOMENT_12";
-			case HU_MOMENT_1: return "HU_MOMENT_1";
-			case HU_MOMENT_2: return "HU_MOMENT_2";
-			case HU_MOMENT_3: return "HU_MOMENT_3";
-			case HU_MOMENT_4: return "HU_MOMENT_4";
-			case HU_MOMENT_5: return "HU_MOMENT_5";
-			case HU_MOMENT_6: return "HU_MOMENT_6";
-			case HU_MOMENT_7: return "HU_MOMENT_7";
-			case INERTIA: return "INERTIA";
-			case COMPACTNESS: return "COMPACTNESS";
-			case ECCENTRICITY: return "ECCENTRICITY";
-			case LENGTH_MAJOR_AXIS: return "LENGTH_MAJOR_AXIS";
-			case LENGTH_MINOR_AXIS: return "LENGTH_MINOR_AXIS";
-			case AXIS_ORIENTATION: return "AXIS_ORIENTATION";
-			case HEIGHT_NODE: return "HEIGHT_NODE";
-			case DEPTH_NODE: return "DEPTH_NODE";
-			case IS_LEAF_NODE: return "IS_LEAF_NODE";
-			case IS_ROOT_NODE: return "IS_ROOT_NODE";
-			case NUM_CHILDREN_NODE: return "NUM_CHILDREN_NODE";
-			case NUM_SIBLINGS_NODE: return "NUM_SIBLINGS_NODE";
-			case NUM_DESCENDANTS_NODE: return "NUM_DESCENDANTS_NODE";
-			case NUM_LEAF_DESCENDANTS_NODE: return "NUM_LEAF_DESCENDANTS_NODE";
-			case LEAF_RATIO_NODE: return "LEAF_RATIO_NODE";
-			case BALANCE_NODE: return "BALANCE_NODE";
-			case AVG_CHILD_HEIGHT_NODE: return "AVG_CHILD_HEIGHT_NODE";
-			default: name = "UNKNOWN";
+			case AREA: name = "AREA"; break;
+			case VOLUME: name = "VOLUME"; break;
+			case LEVEL: name = "LEVEL"; break;
+			case GRAY_HEIGHT: name = "GRAY_HEIGHT"; break;
+			case MEAN_LEVEL: name = "MEAN_LEVEL"; break;
+			case VARIANCE_LEVEL: name = "VARIANCE_LEVEL"; break;
+			case BOX_WIDTH: name = "BOX_WIDTH"; break;
+			case BOX_HEIGHT: name = "BOX_HEIGHT"; break;
+			case RECTANGULARITY: name = "RECTANGULARITY"; break;
+			case RATIO_WH: name = "RATIO_WH"; break;
+			case DIAGONAL_LENGTH: name = "DIAGONAL_LENGTH"; break;
+			case BOX_COL_MIN: name = "BOX_COL_MIN"; break;
+			case BOX_COL_MAX: name = "BOX_COL_MAX"; break;
+			case BOX_ROW_MIN: name = "BOX_ROW_MIN"; break;
+			case BOX_ROW_MAX: name = "BOX_ROW_MAX"; break;
+			case CENTRAL_MOMENT_20: name = "CENTRAL_MOMENT_20"; break;
+			case CENTRAL_MOMENT_02: name = "CENTRAL_MOMENT_02"; break;
+			case CENTRAL_MOMENT_11: name = "CENTRAL_MOMENT_11"; break;
+			case CENTRAL_MOMENT_30: name = "CENTRAL_MOMENT_30"; break;
+			case CENTRAL_MOMENT_03: name = "CENTRAL_MOMENT_03"; break;
+			case CENTRAL_MOMENT_21: name = "CENTRAL_MOMENT_21"; break;
+			case CENTRAL_MOMENT_12: name = "CENTRAL_MOMENT_12"; break;
+			case HU_MOMENT_1: name = "HU_MOMENT_1"; break;
+			case HU_MOMENT_2: name = "HU_MOMENT_2"; break;
+			case HU_MOMENT_3: name = "HU_MOMENT_3"; break;
+			case HU_MOMENT_4: name = "HU_MOMENT_4"; break;
+			case HU_MOMENT_5: name = "HU_MOMENT_5"; break;
+			case HU_MOMENT_6: name = "HU_MOMENT_6"; break;
+			case HU_MOMENT_7: name = "HU_MOMENT_7"; break;
+			case INERTIA: name = "INERTIA"; break;
+			case COMPACTNESS: name = "COMPACTNESS"; break;
+			case ECCENTRICITY: name = "ECCENTRICITY"; break;
+			case LENGTH_MAJOR_AXIS: name = "LENGTH_MAJOR_AXIS"; break;
+			case LENGTH_MINOR_AXIS: name = "LENGTH_MINOR_AXIS"; break;
+			case AXIS_ORIENTATION: name = "AXIS_ORIENTATION"; break;
+			case HEIGHT_NODE: name = "HEIGHT_NODE"; break;
+			case DEPTH_NODE: name = "DEPTH_NODE"; break;
+			case IS_LEAF_NODE: name = "IS_LEAF_NODE"; break;
+			case IS_ROOT_NODE: name = "IS_ROOT_NODE"; break;
+			case NUM_CHILDREN_NODE: name = "NUM_CHILDREN_NODE"; break;
+			case NUM_SIBLINGS_NODE: name = "NUM_SIBLINGS_NODE"; break;
+			case NUM_DESCENDANTS_NODE: name = "NUM_DESCENDANTS_NODE"; break;
+			case NUM_LEAF_DESCENDANTS_NODE: name = "NUM_LEAF_DESCENDANTS_NODE"; break;
+			case LEAF_RATIO_NODE: name = "LEAF_RATIO_NODE"; break;
+			case BALANCE_NODE: name = "BALANCE_NODE"; break;
+			case AVG_CHILD_HEIGHT_NODE: name = "AVG_CHILD_HEIGHT_NODE"; break;
+			default: name = "UNKNOWN"; break;
 		}
-		// Se o atributo for válido, ajuste o nome (acima, retorna diretamente em cada case; só cai aqui em caso de erro)
-		if (name.empty())
-			name = "UNKNOWN";
 
-		// Adiciona o sufixo de delta
 		if (delta < 0)
-			name += "_Asc" + std::to_string(-delta);
+			name += "_ASC_" + std::to_string(-delta);
 		else if (delta > 0)
-			name += "_Desc" + std::to_string(delta);
-		// delta == 0: sem sufixo
+			name += "_DESC_" + std::to_string(delta);
+		// Para delta == 0: permanece só o nome do atributo
 
 		return name;
 	}
 
 };
 
-
+class AttributeNames;  // forward declaration
+using AttributeNamesPtr = std::shared_ptr<AttributeNames>;
 class AttributeNames {
 public:
     std::unordered_map<Attribute, int> indexMap;
@@ -355,7 +364,7 @@ public:
             case AREA: return "AREA";
             case VOLUME: return "VOLUME";
             case LEVEL: return "LEVEL";
-            case DYNAMICS: return "DYNAMICS";
+            case GRAY_HEIGHT: return "GRAY_HEIGHT";
             case MEAN_LEVEL: return "MEAN_LEVEL";
             case VARIANCE_LEVEL: return "VARIANCE_LEVEL";
             case BOX_WIDTH: return "BOX_WIDTH";
@@ -408,7 +417,7 @@ public:
             case Attribute::AREA: return "Area: Number of pixels in the connected component.";
             case Attribute::VOLUME: return "Volume: Sum of gray-level values of all pixels in the connected component.";
             case Attribute::LEVEL: return "Level: Threshold used to obtaned the smallest level-set containing the connected component.";
-            case Attribute::DYNAMICS: return "Dynamics: Difference between the node level and the level of its darkest ancestor.";
+            case Attribute::GRAY_HEIGHT: return "GRAY_HEIGHT: Difference between the node level and the level of its darkest ancestor.";
             case Attribute::MEAN_LEVEL: return "Mean level: Average gray-level intensity of the pixels in the connected component.";
             case Attribute::VARIANCE_LEVEL: return "Variance of level: Variance of the gray-level intensities in the connected component.";
 
@@ -485,7 +494,8 @@ public:
 
 
 
-
+class AttributeComputer;  // forward declaration
+using AttributeComputerPtr = std::shared_ptr<AttributeComputer>;
 class AttributeComputer {
 	public:
 		virtual ~AttributeComputer() = default;
@@ -507,8 +517,6 @@ class AttributeComputer {
 };
 
 using DependencyMap = std::unordered_map<Attribute, std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>>>;
-
-
 
 
 class PathAscendantsAndDescendants{
@@ -566,7 +574,8 @@ class PathAscendantsAndDescendants{
 };
 
 
-
+class AttributeComputedIncrementally;  // forward declaration
+using AttributeComputedIncrementallyPtr = std::shared_ptr<AttributeComputedIncrementally>;
 class AttributeComputedIncrementally{
 
 public:
@@ -1004,9 +1013,9 @@ public:
 							buffer[ indexOf(node->getIndex(), VOLUME) ] = node->getCNPs().size() * node->getLevel(); //volume =>  \sum{ f }
 							buffer[ indexOf(node->getIndex(), LEVEL) ] = node->getLevel(); //level
 							if (node->isMaxtreeNode()) {
-								buffer[ indexOf(node->getIndex(), DYNAMICS)] = std::numeric_limits<int>::lowest(); // Procuramos máximo para max-tree
+								buffer[ indexOf(node->getIndex(), GRAY_HEIGHT)] = std::numeric_limits<int>::lowest(); // Procuramos máximo para max-tree
 							} else {
-								buffer[ indexOf(node->getIndex(), DYNAMICS)] = std::numeric_limits<int>::max(); // Procuramos mínimo para min-tree
+								buffer[ indexOf(node->getIndex(), GRAY_HEIGHT)] = std::numeric_limits<int>::max(); // Procuramos mínimo para min-tree
 							}
 
 							xmax[node->getIndex()] = 0;
@@ -1032,9 +1041,9 @@ public:
 							buffer[ indexOf(parent->getIndex(), AREA) ] += buffer[ indexOf(child->getIndex(), AREA) ]; //area
 							buffer[ indexOf(parent->getIndex(), VOLUME) ] += buffer[ indexOf(child->getIndex(), VOLUME) ]; //volume
 							if (parent->isMaxtreeNode()) {
-								buffer[ indexOf(parent->getIndex(), DYNAMICS) ] = std::max(buffer[ indexOf(parent->getIndex(), DYNAMICS)], buffer[ indexOf(child->getIndex(), DYNAMICS)] );
+								buffer[ indexOf(parent->getIndex(), GRAY_HEIGHT) ] = std::max(buffer[ indexOf(parent->getIndex(), GRAY_HEIGHT)], buffer[ indexOf(child->getIndex(), GRAY_HEIGHT)] );
 							} else {
-								buffer[ indexOf(parent->getIndex(), DYNAMICS) ] = std::min(buffer[ indexOf(parent->getIndex(), DYNAMICS)], buffer[ indexOf(child->getIndex(), DYNAMICS)] );
+								buffer[ indexOf(parent->getIndex(), GRAY_HEIGHT) ] = std::min(buffer[ indexOf(parent->getIndex(), GRAY_HEIGHT)], buffer[ indexOf(child->getIndex(), GRAY_HEIGHT)] );
 							}
 
 							sumGrayLevelSquare[parent->getIndex()] += sumGrayLevelSquare[child->getIndex()]; //computando: \sum{ f^2 }
@@ -1074,9 +1083,9 @@ public:
 							buffer[indexOf(node->getIndex(), RATIO_WH)] = std::max(width, height) / std::min(width, height);
 							
 							if (node->getChildren().empty()) {
-								buffer[ indexOf(node->getIndex(), DYNAMICS)] = 0; // Folhas têm dinâmica 0
+								buffer[ indexOf(node->getIndex(), GRAY_HEIGHT)] = 0; // Folhas têm dinâmica 0
 							} else {
-								buffer[ indexOf(node->getIndex(), DYNAMICS)] = std::abs( node->getLevel() - buffer[ indexOf(node->getIndex(), DYNAMICS)] ) + 1;
+								buffer[ indexOf(node->getIndex(), GRAY_HEIGHT)] = std::abs( node->getLevel() - buffer[ indexOf(node->getIndex(), GRAY_HEIGHT)] ) + 1;
 							}
 
 
@@ -1236,7 +1245,7 @@ public:
 		
 	};
 
-	static std::vector<AttributeComputedIncrementally::ExtinctionValues> getExtinctionValue(MorphologicalTreePtr tree, float* attr){
+	static std::vector<AttributeComputedIncrementally::ExtinctionValues> getExtinctionValue(MorphologicalTreePtr tree, std::shared_ptr<float[]> attr){
 		std::list<NodeMTPtr> leaves = tree->getLeaves();
 		std::vector<AttributeComputedIncrementally::ExtinctionValues> leavesByExtinction;
 		leavesByExtinction.reserve(leaves.size());
@@ -1276,8 +1285,8 @@ public:
 	static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeAttributesByComputer(MorphologicalTreePtr tree, std::shared_ptr<AttributeComputer> comp, const DependencyMap& available = {});
 	
 	static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeSingleAttribute(MorphologicalTreePtr tree, AttributeOrGroup attr, const DependencyMap& availableDeps = {});
-	static std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> computeSingleAttribute(MorphologicalTreePtr tree, int delta, std::string padding, Attribute attribute, const DependencyMap& availableDeps={});
-	static std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> computeSingleAttribute(MorphologicalTreePtr tree, Attribute attribute, int delta, std::string padding="null-padding", const DependencyMap& availableDeps={});
+	
+	static std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> computeSingleAttributeWithDelta(MorphologicalTreePtr tree, Attribute attribute, int delta, std::string padding="last-padding", const DependencyMap& availableDeps={});
 
 	static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeAttributes(MorphologicalTreePtr tree, const std::vector<AttributeOrGroup>& attributes,const DependencyMap& providedDependencies={});
 };
@@ -1291,7 +1300,7 @@ class AreaComputer : public AttributeComputer {
 			return {AREA};
 		}
 		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources= {}) const override {
-			std::cout << "\n==== AttributeComputer: Computing AREA" << std::endl;
+			if(PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing AREA" << std::endl;
 			auto indexOf = [&](int idx) {
 				return attrNames->linearIndex(idx, AREA);
 			};
@@ -1311,7 +1320,7 @@ class AreaComputer : public AttributeComputer {
 			);*/
 		}
 };
-
+using AreaComputerPtr = std::shared_ptr<AreaComputer>;
 
 class VolumeComputer : public AttributeComputer {
 	public:
@@ -1319,7 +1328,7 @@ class VolumeComputer : public AttributeComputer {
 			return {VOLUME};
 		}
 		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources= {}) const override {
-			std::cout << "\n==== AttributeComputer: Computing VOLUME" << std::endl;
+			if(PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing VOLUME" << std::endl;
 			auto indexOf = [&](int idx) {
 				return attrNames->linearIndex(idx, VOLUME);
 			};
@@ -1335,44 +1344,7 @@ class VolumeComputer : public AttributeComputer {
 			);
 		}
 };
-
-class DynamicsComputer : public AttributeComputer {
-	public:
-		
-		std::vector<Attribute> attributes() const override {
-			return {DYNAMICS};
-		}
-		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources= {}) const override {
-			std::cout << "\n==== AttributeComputer: Computing DYNAMICS" << std::endl;
-			auto indexOf = [&](int idx) {
-				return attrNames->linearIndex(idx, DYNAMICS);
-			};
-	
-			AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
-				[&](NodeMTPtr node) {
-					if (node->isMaxtreeNode()) {
-						buffer[ indexOf(node->getIndex())] = std::numeric_limits<int>::lowest(); // Procuramos máximo para max-tree
-					} else {
-						buffer[ indexOf(node->getIndex())] = std::numeric_limits<int>::max(); // Procuramos mínimo para min-tree
-					}
-				},
-				[&](NodeMTPtr parent, NodeMTPtr child) {
-					if (parent->isMaxtreeNode()) {
-						buffer[ indexOf(parent->getIndex()) ] = std::max(buffer[ indexOf(parent->getIndex())], buffer[ indexOf(child->getIndex())] );
-					} else {
-						buffer[ indexOf(parent->getIndex()) ] = std::min(buffer[ indexOf(parent->getIndex())], buffer[ indexOf(child->getIndex())] );
-					}
-				},
-				[&](NodeMTPtr node) {
-					if (node->getChildren().empty()) {
-						buffer[ indexOf(node->getIndex()) ] = 0; // Folhas têm dinâmica 0
-					} else {
-						buffer[ indexOf(node->getIndex()) ] = std::abs( node->getLevel() - buffer[ indexOf(node->getIndex())] ) + 1;
-					}
-				}
-			);
-		}
-};
+using VolumeComputerPtr = std::shared_ptr<VolumeComputer>;
 
 
 class GrayLevelStatsComputer : public AttributeComputer {
@@ -1380,7 +1352,7 @@ class GrayLevelStatsComputer : public AttributeComputer {
 		
 	
 		std::vector<Attribute> attributes() const override {
-			return { LEVEL, MEAN_LEVEL, VARIANCE_LEVEL };
+			return { LEVEL, MEAN_LEVEL, VARIANCE_LEVEL, GRAY_HEIGHT };
 		}
 	
 		std::vector<AttributeOrGroup> requiredAttributes() const override {
@@ -1389,7 +1361,7 @@ class GrayLevelStatsComputer : public AttributeComputer {
 	
 		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {}) const override {
 			
-			std::cout << "\n==== AttributeComputer: Computing GrayLevelStatsComputer " << std::endl;
+			if(PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing GrayLevelStatsComputer " << std::endl;
 	
 			auto indexOfMean = [&](int idx) {
 				return attrNames->linearIndex(idx, MEAN_LEVEL);
@@ -1401,9 +1373,14 @@ class GrayLevelStatsComputer : public AttributeComputer {
 				return attrNames->linearIndex(idx, VARIANCE_LEVEL);
 			};
 
+			auto indexOfGrayHeight = [&](int idx) {
+				return attrNames->linearIndex(idx, GRAY_HEIGHT);
+			};
+
 			bool computeMeanLevel = std::find(requestedAttributes.begin(), requestedAttributes.end(), MEAN_LEVEL) != requestedAttributes.end();
 			bool computeVarianceLevel = std::find(requestedAttributes.begin(), requestedAttributes.end(), VARIANCE_LEVEL) != requestedAttributes.end();
 			bool computeLevel = std::find(requestedAttributes.begin(), requestedAttributes.end(), LEVEL) != requestedAttributes.end();
+			bool computeGrayHeight = std::find(requestedAttributes.begin(), requestedAttributes.end(), GRAY_HEIGHT) != requestedAttributes.end();
 			
 
 			auto [dependencyAttrNamesVol, bufferVol] = dependencySources[0]; //volume
@@ -1422,10 +1399,19 @@ class GrayLevelStatsComputer : public AttributeComputer {
 						sumGrayLevelSquare[node->getIndex()] = node->getCNPs().size() * std::pow(node->getLevel(), 2);
 					if(computeLevel)
 						buffer[ indexOfLevel(node->getIndex()) ] = node->getLevel();
+					if(computeGrayHeight)
+						buffer[ indexOfGrayHeight(node->getIndex()) ] = node->getLevel();
 				},
 				[&](NodeMTPtr parent, NodeMTPtr child) { 
 					if(computeVarianceLevel)
 						sumGrayLevelSquare[parent->getIndex()] += sumGrayLevelSquare[child->getIndex()];
+					if(computeGrayHeight){
+						if (tree->getTreeType()==tree->MAX_TREE || parent->isMaxtreeNode()) {
+							buffer[ indexOfGrayHeight(parent->getIndex()) ] = std::max(buffer[indexOfGrayHeight(parent->getIndex())], buffer[indexOfGrayHeight(child->getIndex())] );
+						} else {
+							buffer[ indexOfGrayHeight(parent->getIndex()) ] = std::min(buffer[indexOfGrayHeight(parent->getIndex())], buffer[indexOfGrayHeight(child->getIndex())] );
+						}
+					}
 				},
 				[&](NodeMTPtr node) {
 					float area = node->getAreaCC();
@@ -1439,14 +1425,20 @@ class GrayLevelStatsComputer : public AttributeComputer {
 						double meanGrayLevelSquare = sumGrayLevelSquare[idx] / area; // E(f^2)
 						float var = meanGrayLevelSquare - (meanGrayLevel * meanGrayLevel); //variance: E(f^2) - E(f)^2
 						buffer[indexOfVarianceLevel(idx)] = var > 0.0f ? var : 0.0f; //variance
-					}
-
-					
+					}					
 				}
 			);
+			if(computeGrayHeight) {
+				for(NodeMTPtr node: tree->getRoot()->getIteratorPostOrderTraversal()){
+					if(node->isLeaf())
+						buffer[indexOfGrayHeight(node->getIndex())] = 0;	
+					else
+						buffer[ indexOfGrayHeight(node->getIndex()) ] = std::abs( node->getLevel() - buffer[ indexOfGrayHeight(node->getIndex())] ) + 1;
+				}
+			}
 		}
 };
-
+using GrayLevelStatsComputerPtr = std::shared_ptr<GrayLevelStatsComputer>;
 
 
 class BoundingBoxComputer : public AttributeComputer {
@@ -1460,7 +1452,7 @@ class BoundingBoxComputer : public AttributeComputer {
 		
 		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {}) const override {
 			
-			std::cout << "\n==== AttributeComputer: Computing BOUNDING_BOX group" << std::endl;
+			if(PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing BOUNDING_BOX group" << std::endl;
 	
 			auto indexOfWidth  = [&](int idx) { return attrNames->linearIndex(idx, BOX_WIDTH); };
 			auto indexOfHeight = [&](int idx) { return attrNames->linearIndex(idx, BOX_HEIGHT); };
@@ -1555,6 +1547,7 @@ class BoundingBoxComputer : public AttributeComputer {
 			);
 		}
 };
+using BoundingBoxComputerPtr = std::shared_ptr<BoundingBoxComputer>;
 
 class CentralMomentsComputer : public AttributeComputer {
 	public:
@@ -1571,7 +1564,7 @@ class CentralMomentsComputer : public AttributeComputer {
 		}
 		
 		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources= {}) const override {
-			std::cout << "\n==== AttributeComputer: Computing CENTRAL_MOMENT group" << std::endl;
+			if(PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing CENTRAL_MOMENT group" << std::endl;
 			//momentos geometricos para calcular o centroide
 			int numCols = tree->getNumColsOfImage();
 			int n = tree->getNumColsOfImage() * tree->getNumRowsOfImage();
@@ -1683,6 +1676,7 @@ class CentralMomentsComputer : public AttributeComputer {
 		);
 	}
 };
+using CentralMomentsComputerPtr = std::shared_ptr<CentralMomentsComputer>;
 
 class MomentBasedAttributeComputer : public AttributeComputer {
 	public:
@@ -1698,7 +1692,7 @@ class MomentBasedAttributeComputer : public AttributeComputer {
 	
 		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {}) const override {
 			
-			std::cout << "\n==== AttributeComputer: Computing MOMENT_BASED group" << std::endl;
+			if(PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing MOMENT_BASED group" << std::endl;
 	
 			auto indexOfMajorAxis = [&](int idx) { return attrNames->linearIndex(idx, LENGTH_MAJOR_AXIS); };
 			auto indexOfMinorAxis = [&](int idx) { return attrNames->linearIndex(idx, LENGTH_MINOR_AXIS); };
@@ -1784,6 +1778,7 @@ class MomentBasedAttributeComputer : public AttributeComputer {
 			);
 		}
 };
+using MomentBasedAttributeComputerPtr = std::shared_ptr<MomentBasedAttributeComputer>;
 
 class HuMomentsComputer : public AttributeComputer {
 	public:
@@ -1801,7 +1796,7 @@ class HuMomentsComputer : public AttributeComputer {
 		}
 
 		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources= {}) const override {
-			std::cout << "\n==== AttributeComputer: Computing HU_MOMENT group" << std::endl;
+			if(PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing HU_MOMENT group" << std::endl;
 			int numCols = tree->getNumColsOfImage();
 			auto indexOf = [&](int idx, Attribute attr) {
 				return attrNames->linearIndex(idx, attr);
@@ -1872,6 +1867,7 @@ class HuMomentsComputer : public AttributeComputer {
 		);
 	}
 };
+using HuMomentsComputerPtr = std::shared_ptr<HuMomentsComputer>;
 
 class TreeTopologyComputer : public AttributeComputer {
 	public:
@@ -1891,7 +1887,7 @@ class TreeTopologyComputer : public AttributeComputer {
 		
 		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources= {}) const override {
 			
-			std::cout << "\n==== AttributeComputer: Computing STRUCTURE_TREE group" << std::endl;
+			if(PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing STRUCTURE_TREE group" << std::endl;
 
 			bool computeHeight = std::find(requestedAttributes.begin(), requestedAttributes.end(), HEIGHT_NODE) != requestedAttributes.end();
 			bool computeDepth = std::find(requestedAttributes.begin(), requestedAttributes.end(), DEPTH_NODE) != requestedAttributes.end();
@@ -2037,7 +2033,7 @@ class TreeTopologyComputer : public AttributeComputer {
 			
 		}
 };
-
+using TreeTopologyComputerPtr = std::shared_ptr<TreeTopologyComputer>;
 
 
 
@@ -2050,8 +2046,7 @@ class AttributeFactory {
 				case AREA: return std::make_shared<AreaComputer>();
 				case VOLUME: return std::make_shared<VolumeComputer>();
 				
-				case DYNAMICS: return std::make_shared<DynamicsComputer>();
-				
+				case GRAY_HEIGHT: 
 				case LEVEL: 
 				case MEAN_LEVEL:
 				case VARIANCE_LEVEL: return std::make_shared<GrayLevelStatsComputer>();

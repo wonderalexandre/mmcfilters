@@ -18,7 +18,7 @@ int main(int argc, char const *argv[])
     printImage(image);
     
     // Criar um ComponentTree
-    MorphologicalTreePtr tree = std::make_shared<MorphologicalTree>(image, false);
+    MorphologicalTreePtr tree = std::make_shared<MorphologicalTree>(image, true);
     printTree(tree->getRoot());
 
     // Criar um AttributeComputedIncrementally::computerArea
@@ -32,7 +32,7 @@ int main(int argc, char const *argv[])
     auto [attrNamesLevel, attrsLevel] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::LEVEL);
     auto [attrNamesMeanLevel, attrsMeanLevel] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::MEAN_LEVEL);
     auto [attrNamesVarianceLevel, attrsVarianceLevel] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::VARIANCE_LEVEL);
-    auto [attrsNamesDynamics, attrsDynamics] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::DYNAMICS);
+    auto [attrsNamesGrayHeight, attrsGrayHeight] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::GRAY_HEIGHT);
     auto [attrNamesRatio, attrsRatio] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::RATIO_WH);
     auto [attrNamesBoxWidth, attrsBoxWidth] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::BOX_WIDTH);
     auto [attrNamesBoxHeight, attrsBoxHeight] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::BOX_HEIGHT);
@@ -45,7 +45,7 @@ int main(int argc, char const *argv[])
     for(NodeMTPtr node : tree->getIndexNode()){
         int nodeIndex = node->getIndex();
         std::cout << "Atributo AREA do nó " << nodeIndex << ": " << attrsArea[nodeIndex] << std::endl;
-        std::cout << "Atributo DYNAMICS do nó " << nodeIndex << ": " << attrsDynamics[nodeIndex] << std::endl;
+        std::cout << "Atributo GRAY_HEIGHT do nó " << nodeIndex << ": " << attrsGrayHeight[nodeIndex] << std::endl;
         std::cout << "Atributo ORIENTATION do nó " << nodeIndex << ": " << attrsOrientation[nodeIndex] << std::endl;
         std::cout << "Atributo VOLUME do nó " << nodeIndex << ": " << attrsVolume[nodeIndex] << std::endl;
         std::cout << "Atributo LEVEL do nó " << nodeIndex << ": " << attrsLevel[nodeIndex] << std::endl;
@@ -66,7 +66,7 @@ int main(int argc, char const *argv[])
 
     auto [attrNames, attrsPtr] = AttributeComputedIncrementally::computeAttributes(tree, {  AttributeGroup::GEOMETRIC,
                                                                                             Attribute::AREA, 
-                                                                                            Attribute::DYNAMICS, 
+                                                                                            Attribute::GRAY_HEIGHT, 
                                                                                             Attribute::AXIS_ORIENTATION,
                                                                                             Attribute::VOLUME,
                                                                                             Attribute::LEVEL,
@@ -109,6 +109,22 @@ int main(int argc, char const *argv[])
 
     }
     
+    
+    auto [attrsNamesDelta, attrsAreaDelta] = AttributeComputedIncrementally::computeSingleAttributeWithDelta(tree, Attribute::GRAY_HEIGHT, 0, "zero-padding");
+
+    for (const auto& pair : attrsNamesDelta->indexMap) {
+        
+        AttributeKey attributeKey = pair.first;
+        int offset = pair.second;
+        std::cout << "\nAtributo: " << attrsNamesDelta->toString(attributeKey) << ", Offset: " << offset << std::endl;
+        // Exibir os valores dos atributos para cada nó
+        for (NodeMTPtr node : tree->getIndexNode()) {
+            int nodeIndex = node->getIndex();
+            std::cout << "Node " << nodeIndex << " - " << attrsNamesDelta->toString(attributeKey) << ": " << attrsAreaDelta[attrsNamesDelta->linearIndex(nodeIndex, attributeKey)] << std::endl;
+            
+        }
+    }
+
 
 
     /*

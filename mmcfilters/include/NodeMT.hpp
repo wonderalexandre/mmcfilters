@@ -8,6 +8,10 @@
 #ifndef NODECT_H
 #define NODECT_H
 
+// Forward declaration 
+class NodeMT;
+using NodeMTPtr = std::shared_ptr<NodeMT>;
+
 
 class NodeMT : public std::enable_shared_from_this<NodeMT> {
 private:
@@ -16,9 +20,11 @@ private:
 	int areaCC;
     int timePostOrder;  //tempo de entrada durante o percurso pos-ordem (2 incremento) 
     int timePreOrder;  //tempo de saia durante o percurso pos-ordem (2 incremento) 
-	NodeMTPtr parent;
+	
+    NodeMTPtr parent;
     std::list<NodeMTPtr> children;
 	std::list<int> cnps;
+    
 public:
 	
     NodeMT();

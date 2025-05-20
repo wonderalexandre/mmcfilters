@@ -172,11 +172,11 @@ std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeCo
 
 
 
-std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> AttributeComputedIncrementally::computeSingleAttribute(MorphologicalTreePtr tree, Attribute attribute, int delta, std::string padding, const DependencyMap& availableDeps) {
+std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> AttributeComputedIncrementally::computeSingleAttributeWithDelta(MorphologicalTreePtr tree, Attribute attribute, int delta, std::string padding, const DependencyMap& availableDeps) {
 	/*
 		Valores de padding:
 		 - zero-padding: preenchimento com zero
-		 - same-padding: preenchimento com o valor do node referencia
+		 - nan-padding: preenchimento com o valor NaN 
 		 - last-padding: preenchimento com o ultimo valor valido
 		 - null-padding: preenchimento com 0 todo os nos do caminho
 	*/
@@ -269,9 +269,8 @@ std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> At
                 if (attrsDelta[outIdx] == 0) {
                     if (padding == "last-padding") {
                         attrsDelta[outIdx] = attrsDelta[refIdx];
-                    } else if (padding == "same-padding") {
-                        int baseIdx = attributeNamesBase->linearIndex(nodeIndex, attribute);
-                        attrsDelta[outIdx] = attrsBase[baseIdx];
+                    } else if (padding == "nan-padding") {
+                        attrsDelta[outIdx] = std::numeric_limits<float>::quiet_NaN();
                     } else if (padding == "null-padding") {
                         for (int k = 0; k <= d; ++k) {
                             // Marca todos os deltas negativos e positivos até d como NaN
@@ -290,9 +289,8 @@ std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> At
                 if (node->isLeaf() || attrsDelta[outIdx] == 0) {
                     if (padding == "last-padding") {
                         attrsDelta[outIdx] = attrsDelta[refIdx];
-                    } else if (padding == "same-padding") {
-                        int baseIdx = attributeNamesBase->linearIndex(nodeIndex, attribute);
-                        attrsDelta[outIdx] = attrsBase[baseIdx];
+                    } else if (padding == "nan-padding") {
+                        attrsDelta[outIdx] = std::numeric_limits<float>::quiet_NaN();
                     }
                 }
                 if (attrsDelta[outIdx] == 0 && padding == "null-padding") {

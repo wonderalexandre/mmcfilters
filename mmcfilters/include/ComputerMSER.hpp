@@ -11,6 +11,8 @@
 
 #define UNDEF -999999999999
 
+class ComputerMSER;
+using ComputerMSERPtr = std::shared_ptr<ComputerMSER>;
 
 class ComputerMSER {
 private:
@@ -24,16 +26,15 @@ private:
 	std::vector<NodeMTPtr> descendants;
 	std::vector<double> stability;
 	
-	double* attr_mser;
-	double* attr_area;
-
+	std::shared_ptr<float[]> attr_mser;
+	
 	NodeMTPtr getNodeAscendant(NodeMTPtr node, int h);
 
 	void maxAreaDescendants(NodeMTPtr nodeAsc, NodeMTPtr nodeDes);
 	
 public:
 	ComputerMSER(MorphologicalTreePtr tree);
-	ComputerMSER(MorphologicalTreePtr tree, double* attr_increasing);
+	ComputerMSER(MorphologicalTreePtr tree, std::shared_ptr<float[]> attr_increasing);
 	
 	~ComputerMSER();
 
@@ -52,6 +53,8 @@ public:
 	std::vector<NodeMTPtr> getAscendants();
 
 	std::vector<NodeMTPtr> getDescendants();
+
+	float getAttrMSER(NodeMTPtr node);
 
 	NodeMTPtr getAscendant(NodeMTPtr node);
 	

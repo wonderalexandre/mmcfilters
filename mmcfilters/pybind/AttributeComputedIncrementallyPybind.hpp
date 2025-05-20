@@ -14,6 +14,9 @@
 #include <cmath>
 #include <iostream>
 
+class AttributeComputedIncrementallyPybind;
+using AttributeComputedIncrementallyPybindPtr = std::shared_ptr<AttributeComputedIncrementallyPybind>;
+
 class AttributeComputedIncrementallyPybind : public AttributeComputedIncrementally{
 
     public:
@@ -93,7 +96,7 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
 	}
 
 	static std::pair<py::dict, py::array_t<float>> computeSingleAttributeWithDelta(MorphologicalTreePybindPtr tree, Attribute attribute, int delta, std::string padding = "null-padding") {
-		auto [attributeNames, buffer] = AttributeComputedIncrementally::computeSingleAttribute(tree, delta, padding, attribute, /*deps*/{});
+		auto [attributeNames, buffer] = AttributeComputedIncrementally::computeSingleAttributeWithDelta(tree, attribute, delta, padding, /*deps*/{});
 
 		const int numAttribute = attributeNames->NUM_ATTRIBUTES;
 		const int n = tree->getNumNodes();

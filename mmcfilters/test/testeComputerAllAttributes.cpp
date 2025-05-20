@@ -14,7 +14,7 @@
 
 int main(int argc, char const *argv[])
 {
-    ImagePtr image = getSimpleImage();
+    ImageUInt8Ptr image = getSimpleImage();
 
    // printImage(img_pointer, numRows, numCols);
     std::cout << "img_pointer ok" << std::endl;
@@ -54,7 +54,7 @@ int main(int argc, char const *argv[])
 
     AttributeFilters filter(tree);
     float* attrDinamics = AttributeComputedIncrementally::computerAttributeByIndex(tree, Attribute::DYNAMICS);    
-    ImagePtr imgOut = filter.filteringByExtinctionValue(tree, attrDinamics, 1);
+    ImageUInt8Ptr imgOut = filter.filteringByExtinctionValue(tree, attrDinamics, 1);
     printImage(imgOut);
 
     return 0;

@@ -24,7 +24,7 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
 
 
 	static py::dict extractCountors(MorphologicalTreePybindPtr tree) {
-		auto contours = AttributeComputedIncrementally::extractCountors(tree);  // chama o método original
+		auto contours = AttributeComputedIncrementally::extractNonCompactCountors(tree);  // chama o método original
 	
 		py::dict pyContours;
 		for (size_t nodeIdx = 0; nodeIdx < contours.size(); ++nodeIdx) {
@@ -38,57 +38,6 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
 		return pyContours;
 	}
 	
-
-    static std::pair<py::dict, py::array_t<float>> computerBasicAttributes(MorphologicalTreePybindPtr tree){
-        
-		std::pair<AttributeNames, float*> pair = AttributeComputedIncrementally::computerBasicAttributes(tree);
-		AttributeNames attributeNames = pair.first;
-		float* ptrValues = pair.second;
-		const int numAttribute = attributeNames.NUM_ATTRIBUTES;
-		const int n = tree->getNumNodes();
-        
-		
-		std::vector<std::string> keys;
-		std::vector<int> values;
-
-		// 1. Copiar chaves e valores para vetores separados
-		for (const auto& pair : attributeNames.indexMap) {
-			Attribute attribute = pair.first;
-			int offset = pair.second;
-
-			keys.push_back( attributeNames.toString(attribute) );
-			values.push_back(offset);
-		}
-
-		// 2. Criar um vetor de índices para ordenar os valores
-		std::vector<size_t> indices(values.size());
-		std::iota(indices.begin(), indices.end(), 0);
-		std::sort(indices.begin(), indices.end(), [&values](size_t i1, size_t i2) { return values[i1] < values[i2]; });
-
-		py::dict dict;
-		for (size_t i = 0; i < indices.size(); ++i) {
-			dict[py::str( keys[indices[i]] )] = values[indices[i]] / n; 
-		}
-
-		py::capsule free_when_done(ptrValues, [](void* f) {
-			delete[] static_cast<float*>(f);
-		});
-		
-		py::array_t<float> numpy = py::array(py::buffer_info(
-			ptrValues,
-			sizeof(float),
-			py::format_descriptor<float>::value,
-			2,
-			{  n,  numAttribute }, 
-			{ sizeof(float), sizeof(float) * n }
-		), free_when_done);
-
-		
-
-		
-		return std::make_pair(dict, numpy);
-	}
-
 
 	static py::array_t<float> computeSingleAttribute(MorphologicalTreePybindPtr tree, Attribute attribute){
 		auto [attributeNames, buffer] = AttributeComputedIncrementally::computeSingleAttribute(tree, attribute);

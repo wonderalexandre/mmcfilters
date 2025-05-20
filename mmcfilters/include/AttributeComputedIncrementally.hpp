@@ -18,6 +18,13 @@
 #include <variant>
 
 #define PI 3.14159265358979323846
+
+
+
+class ContoursMT; //forward declaration
+using ContoursMTPtr = std::shared_ptr<ContoursMT>;
+
+
 enum class Attribute {
     // Geométricos básicos
     AREA,
@@ -605,636 +612,7 @@ public:
 	}
 
 
-	class ContoursMT{
-		private:
-			std::vector<std::vector<int>> contours;
-			std::vector<std::vector<int>> contoursToRemove;
 
-		public:
-			ContoursMT(int numNodes): contours(numNodes), contoursToRemove(numNodes){}
-
-			void add(NodeMTPtr node, int pixel){
-				contours[node->getIndex()].push_back(pixel);
-			}
-			void remove(NodeMTPtr node, int pixel){
-				contoursToRemove[node->getIndex()].push_back(pixel);
-			}
-
-			std::vector<std::vector<int>>& getCompactContours() {
-				return contours;
-			}
-
-			std::unordered_set<int> getContour(NodeMTPtr node) {
-				std::unordered_set<int> contour;
-				AttributeComputedIncrementally::computerAttribute(node,
-					[](NodeMTPtr node) -> void {},  // pre-processing
-					[](NodeMTPtr parent, NodeMTPtr child) -> void { }, // merge-processing
-					[&contour, this](NodeMTPtr node) -> void { //post-processing
-						for(int p: this->contours[node->getIndex()]){
-							contour.insert(p);
-						}
-						for(int p: this->contoursToRemove[node->getIndex()]){
-							contour.erase(p);
-						}
-					}
-				);
-				return contour;
-			}
-
-			void visitContours(MorphologicalTreePtr tree, std::function<void(NodeMTPtr, const std::unordered_set<int>&)> visitor) {
-				const int numNodes = tree->getNumNodes();
-			
-				std::vector<std::unique_ptr<std::unordered_set<int>>> contoursByNodes(numNodes);
-			
-				AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
-					[](NodeMTPtr) -> void {},
-			
-					// merge: funde filhos no pai, usando o maior conjunto como base
-					[&contoursByNodes](NodeMTPtr parent, NodeMTPtr child) -> void {
-						auto& parentContour = contoursByNodes[parent->getIndex()];
-						auto& childContour = contoursByNodes[child->getIndex()];
-			
-						if (!parentContour) {
-							parentContour = std::move(childContour);
-						} else {
-							if (childContour->size() > parentContour->size()) {
-								std::swap(parentContour, childContour);
-							}
-							parentContour->insert(childContour->begin(), childContour->end());
-							childContour.reset(); 
-						}
-					},
-			
-					// pós-processamento: consolida e chama visitor
-					[this, &contoursByNodes, &visitor](NodeMTPtr node) -> void {
-						auto& contour = contoursByNodes[node->getIndex()];
-						if (!contour) {
-							contour = std::make_unique<std::unordered_set<int>>();
-						}
-			
-						for (int p : this->contours[node->getIndex()]) {
-							contour->insert(p);
-						}
-			
-						for (int p : this->contoursToRemove[node->getIndex()]) {
-							contour->erase(p);
-						}
-			
-						visitor(node, *contour);
-					}
-				);
-			}
-
-			void visitContoursAndCCs(MorphologicalTreePtr tree, std::function<void(NodeMTPtr, const std::list<int>&, const std::unordered_set<int>&)> visitor) {
-				const int numNodes = tree->getNumNodes();
-			
-				std::vector<std::unique_ptr<std::unordered_set<int>>> contoursByNodes(numNodes);
-				std::vector<std::unique_ptr<std::list<int>>> CCsByNodes(numNodes);
-			
-				AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
-					[](NodeMTPtr) -> void {},
-			
-					[&CCsByNodes, &contoursByNodes](NodeMTPtr parent, NodeMTPtr child) -> void {
-						// --- Contornos ---
-						auto& parentContour = contoursByNodes[parent->getIndex()];
-						auto& childContour = contoursByNodes[child->getIndex()];
-						if (!parentContour) {
-							parentContour = std::move(childContour);
-						} else {
-							if (childContour->size() > parentContour->size()) {
-								std::swap(parentContour, childContour);
-							}
-							parentContour->insert(childContour->begin(), childContour->end());
-							//childContour.reset();
-						}
-
-						// --- Componentes Conexos ---
-						auto& parentCC = CCsByNodes[parent->getIndex()];
-						auto& childCC = CCsByNodes[child->getIndex()];
-						if (!parentCC) {
-							parentCC = std::move(childCC);
-						} else {
-							if (childCC->size() > parentCC->size()) {
-								std::swap(parentCC, childCC);
-							}
-							parentCC->insert(parentCC->end(), childCC->begin(), childCC->end());
-							//childCC.reset();
-						}
-					},
-			
-					// post-processing
-					[this, &contoursByNodes, &CCsByNodes, &visitor](NodeMTPtr node) -> void {
-						// --- Contornos ---
-						auto& contour = contoursByNodes[node->getIndex()];
-						if (!contour) {
-							contour = std::make_unique<std::unordered_set<int>>();
-						}
-						for (int p : this->contours[node->getIndex()]) {
-							contour->insert(p);
-						}
-						for (int p : this->contoursToRemove[node->getIndex()]) {
-							contour->erase(p);
-						}
-						
-						// --- Componentes Conexos ---
-						auto& cc = CCsByNodes[node->getIndex()];
-						if (!cc) {
-							cc = std::make_unique<std::list<int>>();
-						}
-						cc->insert(cc->end(), node->getCNPs().begin(), node->getCNPs().end());
-			
-						
-						visitor(node, *cc, *contour);
-					}
-				);
-			}
-	};
-
-
-	static ContoursMT extractCompactCountors(MorphologicalTreePtr tree){
-		ContoursMT contoursMT(tree->getNumNodes());
-
-		std::vector<std::vector<int>> contoursToRemoveLCA(tree->getNumNodes());
-		std::vector<std::int8_t> ncount(tree->getNumRowsOfImage() * tree->getNumColsOfImage(), 0);
-		AdjacencyRelationPtr adj4 = std::make_shared<AdjacencyRelation>(tree->getNumRowsOfImage(), tree->getNumColsOfImage(), 1);
-		LCAEulerRMQ lca(tree);	
-
-		AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
-			[](NodeMTPtr node) -> void { // pre-processing
-
-			},
-			[](NodeMTPtr parent, NodeMTPtr child) -> void { // merge-processing
-				
-			},
-			[&contoursMT, &contoursToRemoveLCA, &lca, &ncount, tree, adj4](NodeMTPtr nodeP) -> void { // post-processing
-				std::vector<int> &NcontourToRemoveLCA = contoursToRemoveLCA[nodeP->getIndex()];
-
-				NodeMTPtr nodeLCA = nodeP;
-				for(int p: NcontourToRemoveLCA){ //pixels que sao contornos de nodes descendentes ao NodeAtual
-					bool isPixelToBeRemoved = true;
-					for (int r : adj4->getNeighboringPixels(p)) { //Existe um nodeQ ascendente de NodeAtual contendo p como contorno? (p, q) in A
-						NodeMTPtr nodeR = tree->getSC(r); 
-						if (tree->isStrictAncestor(nodeR, nodeLCA)){
-							contoursToRemoveLCA[nodeR->getIndex()].push_back(p); 
-							isPixelToBeRemoved = false;	
-					  	}else if(!tree->isComparable(nodeLCA, nodeR)) {
-							NodeMTPtr otherNodeLCA = lca.findLowestCommonAncestor(nodeLCA, nodeR);
-							contoursToRemoveLCA[otherNodeLCA->getIndex()].push_back(p);
-							isPixelToBeRemoved = false;
-						}
-					}
-					if(!adj4->isBorderDomainImage(p) && isPixelToBeRemoved){
-						contoursMT.remove(nodeLCA, p);
-					}
-				}
-			
-				for (int p : nodeP->getCNPs()) {
-					if (adj4->isBorderDomainImage(p)){
-						ncount[p]++;
-					}
-
-					for (int q : adj4->getNeighboringPixels(p)) {
-						NodeMTPtr nodeQ = tree->getSC(q); 
-						if(!tree->isComparable(nodeP, nodeQ)){ //se os nodeP e nodeQ não sao comparaveis, então p pode ser removido pelo LCA de nodeP e nodeQ 
-							NodeMTPtr nodeLCA = lca.findLowestCommonAncestor(nodeP, nodeQ);
-							contoursToRemoveLCA[nodeLCA->getIndex()].push_back(p);
-							ncount[p]++;
-						}
-						else if(tree->isStrictDescendant(nodeP, nodeQ)){  //maxtree:  SC(p) \subset SC(q) <=> f(p) > f(q)
-					  		ncount[p]++;
-						}else if (tree->isStrictAncestor(nodeP, nodeQ)) { ////maxtree:  SC(q) \subset SC(p) <=> f(p) < f(q)
-					  		ncount[q]--;
-							if (ncount[q] == 0) {
-								contoursMT.remove(nodeP, q);
-							}
-						}
-				  	}
-				  	if (ncount[p] > 0){
-						contoursMT.add(nodeP, p);
-					}
-				}
-
-			}
-		);
-				  
-		return contoursMT;
-	}
-
-	static std::vector<std::unordered_set<int>> extractCountors(MorphologicalTreePtr tree){
-		std::vector<std::unordered_set<int>> contours(tree->getNumNodes());
-		std::vector<std::vector<int>> contoursToRemoveLCA(tree->getNumNodes());
-		std::vector<std::int8_t> ncount(tree->getNumRowsOfImage() * tree->getNumColsOfImage(), 0);
-		AdjacencyRelationPtr adj4 = std::make_shared<AdjacencyRelation>(tree->getNumRowsOfImage(), tree->getNumColsOfImage(), 1);
-		LCAEulerRMQ lca(tree);	
-
-		AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
-			[](NodeMTPtr node) -> void { // pre-processing
-
-			},
-			[&contours, &ncount, tree, adj4](NodeMTPtr parent, NodeMTPtr child) -> void { // merge-processing
-				std::unordered_set<int> &Ncontour = contours[parent->getIndex()];
-				for (int p : contours[child->getIndex()]){
-					Ncontour.insert(p);
-				}
-			},
-			[&contours, &contoursToRemoveLCA, &lca, &ncount, tree, adj4](NodeMTPtr nodeP) -> void { // post-processing
-				// Initialise contours of node "N"
-				std::unordered_set<int> &Ncontour = contours[nodeP->getIndex()];
-				std::vector<int> &NcontourToRemoveLCA = contoursToRemoveLCA[nodeP->getIndex()];
-				NodeMTPtr nodeLCA = nodeP;
-				for(int p: NcontourToRemoveLCA){ //pixels que sao contornos de nodes descendentes ao NodeAtual
-					bool isPixelToBeRemoved = true;
-					
-					for (int r : adj4->getNeighboringPixels(p)) { //Existe um nodeQ ascendente de NodeAtual contendo p como contorno? (p, q) in A
-						NodeMTPtr nodeR = tree->getSC(r); 
-						if (tree->isStrictAncestor(nodeR, nodeLCA)){
-							contoursToRemoveLCA[nodeR->getIndex()].push_back(p); 
-							isPixelToBeRemoved = false;	
-					  	}else if(!tree->isComparable(nodeLCA, nodeR)) {
-							NodeMTPtr otherNodeLCA = lca.findLowestCommonAncestor(nodeLCA, nodeR);
-							contoursToRemoveLCA[otherNodeLCA->getIndex()].push_back(p);
-							isPixelToBeRemoved = false;
-						}
-					}
-					if(!adj4->isBorderDomainImage(p) && isPixelToBeRemoved){
-						Ncontour.erase(p);
-					}
-				}
-			
-				for (int p : nodeP->getCNPs()) {
-					if (adj4->isBorderDomainImage(p)){
-						ncount[p]++;
-					}
-					for (int q : adj4->getNeighboringPixels(p)) {
-						NodeMTPtr nodeQ = tree->getSC(q); 
-						if(!tree->isComparable(nodeP, nodeQ)){ //se os nodeP e nodeQ não sao comparaveis, então p pode ser removido pelo LCA de nodeP e nodeQ 
-							NodeMTPtr nodeLCA = lca.findLowestCommonAncestor(nodeP, nodeQ);
-							contoursToRemoveLCA[nodeLCA->getIndex()].push_back(p);
-							ncount[p]++;
-						}
-						else if(tree->isStrictDescendant(nodeP, nodeQ)){  //maxtree:  SC(p) \subset SC(q) <=> f(p) > f(q)
-					  		ncount[p]++;
-						}else if (tree->isStrictAncestor(nodeP, nodeQ)) { ////maxtree:  SC(q) \subset SC(p) <=> f(p) < f(q)
-					  		ncount[q]--;
-							if (ncount[q] == 0) {
-								Ncontour.erase(q);
-							}
-						}
-				  	}
-
-				  	if (ncount[p] > 0){
-						Ncontour.insert(p);
-					}
-				}
-
-			}
-		);
-				  
-		return contours;
-	}
-
-
-
-	static float* computerTreeTopologyAttributes(MorphologicalTreePtr tree){
-		const int n = tree->getNumNodes();
-		AttributeNames attrNames = AttributeNames::fromGroup(AttributeGroup::TREE_TOPOLOGY, n);
-		float* buffer = new float[n * attrNames.NUM_ATTRIBUTES];
-
-		using enum Attribute;
-		AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
-			[&](NodeMTPtr node) {
-				int idx = node->getIndex();
-				int parentDepth = node->getParent() ? buffer[attrNames.linearIndex(node->getParent()->getIndex(), DEPTH_NODE)] : 0;
-	
-				buffer[attrNames.linearIndex(idx, HEIGHT_NODE)] = 0.0f; // altura
-				buffer[attrNames.linearIndex(idx, DEPTH_NODE)] = node->getParent() ? parentDepth + 1 : 0; // profundidade
-				buffer[attrNames.linearIndex(idx, IS_LEAF_NODE)] = node->getChildren().empty() ? 1.0f : 0.0f; // é folha
-				buffer[attrNames.linearIndex(idx, IS_ROOT_NODE)] = node->getParent() == nullptr ? 1.0f : 0.0f; // é raiz
-				buffer[attrNames.linearIndex(idx, NUM_CHILDREN_NODE)] = node->getChildren().size();
-				buffer[attrNames.linearIndex(idx, NUM_SIBLINGS_NODE)] = node->getParent() ? node->getParent()->getChildren().size() - 1 : 0;
-				buffer[attrNames.linearIndex(idx, NUM_DESCENDANTS_NODE)] = 0.0f;
-				buffer[attrNames.linearIndex(idx, NUM_LEAF_DESCENDANTS_NODE)] = buffer[attrNames.linearIndex(idx, IS_LEAF_NODE)];
-				buffer[attrNames.linearIndex(idx, LEAF_RATIO_NODE)] = 0.0f;
-				buffer[attrNames.linearIndex(idx, BALANCE_NODE)] = 0.0f;
-				buffer[attrNames.linearIndex(idx, AVG_CHILD_HEIGHT_NODE)] = 0.0f;
-			},
-			[&](NodeMTPtr parent, NodeMTPtr child) {
-				int pIdx = parent->getIndex();
-				int cIdx = child->getIndex();
-
-				// Acumulando descendentes
-				buffer[attrNames.linearIndex(pIdx, NUM_DESCENDANTS_NODE)] += buffer[attrNames.linearIndex(cIdx, NUM_DESCENDANTS_NODE)] + 1;
-				buffer[attrNames.linearIndex(pIdx, NUM_LEAF_DESCENDANTS_NODE)] += buffer[attrNames.linearIndex(cIdx, NUM_LEAF_DESCENDANTS_NODE)];
-
-				// Altura
-				float childHeight = buffer[attrNames.linearIndex(cIdx, HEIGHT_NODE)];
-				float& parentHeight = buffer[attrNames.linearIndex(pIdx, HEIGHT_NODE)];
-				parentHeight = std::max(parentHeight, childHeight + 1);
-
-				// Balanceamento
-				float& minH = buffer[attrNames.linearIndex(pIdx, BALANCE_NODE)]; // usado como mínimo temporário
-				float& sumH = buffer[attrNames.linearIndex(pIdx, AVG_CHILD_HEIGHT_NODE)];
-				int numChildren = parent->getChildren().size();
-
-				if (numChildren == 1) {
-					minH = childHeight;
-					sumH = childHeight;
-				} else {
-					minH = std::min(minH, childHeight);
-					sumH += childHeight;
-				}
-
-			},
-			[&](NodeMTPtr node) {
-				int idx = node->getIndex();
-				float desc = buffer[attrNames.linearIndex(idx, NUM_DESCENDANTS_NODE)];
-				float folhas = buffer[attrNames.linearIndex(idx, NUM_LEAF_DESCENDANTS_NODE)];
-	
-				// Razão folhas/descendentes
-				buffer[attrNames.linearIndex(idx, LEAF_RATIO_NODE)] = desc > 0.0f ? folhas / (desc + 1.0f) : 1.0f;
-	
-				// Balanceamento e média
-				if (!node->getChildren().empty()) {
-					float alturaMax = buffer[attrNames.linearIndex(idx, HEIGHT_NODE)];
-					float alturaMin = buffer[attrNames.linearIndex(idx, BALANCE_NODE)];
-					buffer[attrNames.linearIndex(idx, BALANCE_NODE)] = alturaMax - alturaMin;
-	
-					buffer[attrNames.linearIndex(idx, AVG_CHILD_HEIGHT_NODE)] /= node->getChildren().size();
-				}
-
-			}
-		);
-	
-		return buffer;
-	}
-
-
-	static float* computerAttributeByIndex(MorphologicalTreePtr tree, Attribute attribute){
-		const int n = tree->getNumNodes();
-		float* attr = new float[n];
-		auto [attrNames, buffer] = AttributeComputedIncrementally::computerBasicAttributes(tree);
-		for(int idx = 0; idx < n; idx++){
-			attr[idx] = buffer[ attrNames.linearIndex(idx, attribute) ];
-		}
-		delete[] buffer;
-
-		return attr;
-	}
-
-	static std::pair<AttributeNames, float*> computerBasicAttributes(MorphologicalTreePtr tree){
-	    
-		int n = tree->getNumNodes();
-		AttributeNames attrNames = AttributeNames::fromGroup(AttributeGroup::ALL, n);
-		float* buffer = new float[n * attrNames.NUM_ATTRIBUTES];
-
-		std::unique_ptr<int[]> xmax(new int[n]);
-		std::unique_ptr<int[]> ymax(new int[n]);
-		std::unique_ptr<int[]> xmin(new int[n]);
-		std::unique_ptr<int[]> ymin(new int[n]);
-		
-		//momentos geometricos para calcular o centroide
-		std::unique_ptr<long int[]> sumX(new long int[n]);//sum x
-		std::unique_ptr<long int[]> sumY(new long int[n]);//sum y
-		
-
-		std::unique_ptr<long[]> sumGrayLevelSquare(new long[n]);
-		int numCols = tree->getNumColsOfImage();
-		int numRows = tree->getNumRowsOfImage();
-		
-		auto indexOf = [&](int idxNode, Attribute attribute) {
-			return attrNames.linearIndex(idxNode, attribute);
-		};
-
-		//computação dos atributos: area, volume, gray level, mean of gray level, variance of gray level, standard deviation gray level, Box width, Box height, rectangularity, ratio (Box width, Box height) e momentos geometricos 
-	    AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
-						[&indexOf, &buffer, n,  &xmax, &ymax, &xmin, &ymin, &sumX, &sumY, &sumGrayLevelSquare, numCols, numRows](NodeMTPtr node) -> void {
-							
-							buffer[ indexOf(node->getIndex(), AREA) ] = node->getCNPs().size(); //area
-							buffer[ indexOf(node->getIndex(), VOLUME) ] = node->getCNPs().size() * node->getLevel(); //volume =>  \sum{ f }
-							buffer[ indexOf(node->getIndex(), LEVEL) ] = node->getLevel(); //level
-							if (node->isMaxtreeNode()) {
-								buffer[ indexOf(node->getIndex(), GRAY_HEIGHT)] = std::numeric_limits<int>::lowest(); // Procuramos máximo para max-tree
-							} else {
-								buffer[ indexOf(node->getIndex(), GRAY_HEIGHT)] = std::numeric_limits<int>::max(); // Procuramos mínimo para min-tree
-							}
-
-							xmax[node->getIndex()] = 0;
-							ymax[node->getIndex()] = 0;
-							xmin[node->getIndex()] = numCols;
-							ymin[node->getIndex()] = numRows;
-							sumX[node->getIndex()] = 0;
-							sumY[node->getIndex()] = 0;
-							sumGrayLevelSquare[node->getIndex()] = std::pow(node->getLevel(), 2) * node->getCNPs().size(); //computando: \sum{ f^2 }
-							for(int p: node->getCNPs()) {
-								int x = p % numCols;
-								int y = p / numCols;
-								xmin[node->getIndex()] = std::min(xmin[node->getIndex()], x);
-								ymin[node->getIndex()] = std::min(ymin[node->getIndex()], y);
-								xmax[node->getIndex()] = std::max(xmax[node->getIndex()], x);
-								ymax[node->getIndex()] = std::max(ymax[node->getIndex()], y);
-
-								sumX[node->getIndex()] += x;
-								sumY[node->getIndex()] += y;
-							}
-						},
-						[&indexOf, &attrNames, &buffer, n, &xmax, &ymax, &xmin, &ymin, &sumX, &sumY, &sumGrayLevelSquare](NodeMTPtr parent, NodeMTPtr child) -> void {
-							buffer[ indexOf(parent->getIndex(), AREA) ] += buffer[ indexOf(child->getIndex(), AREA) ]; //area
-							buffer[ indexOf(parent->getIndex(), VOLUME) ] += buffer[ indexOf(child->getIndex(), VOLUME) ]; //volume
-							if (parent->isMaxtreeNode()) {
-								buffer[ indexOf(parent->getIndex(), GRAY_HEIGHT) ] = std::max(buffer[ indexOf(parent->getIndex(), GRAY_HEIGHT)], buffer[ indexOf(child->getIndex(), GRAY_HEIGHT)] );
-							} else {
-								buffer[ indexOf(parent->getIndex(), GRAY_HEIGHT) ] = std::min(buffer[ indexOf(parent->getIndex(), GRAY_HEIGHT)], buffer[ indexOf(child->getIndex(), GRAY_HEIGHT)] );
-							}
-
-							sumGrayLevelSquare[parent->getIndex()] += sumGrayLevelSquare[child->getIndex()]; //computando: \sum{ f^2 }
-
-							ymax[parent->getIndex()] = std::max(ymax[parent->getIndex()], ymax[child->getIndex()]);
-							xmax[parent->getIndex()] = std::max(xmax[parent->getIndex()], xmax[child->getIndex()]);
-							ymin[parent->getIndex()] = std::min(ymin[parent->getIndex()], ymin[child->getIndex()]);
-							xmin[parent->getIndex()] = std::min(xmin[parent->getIndex()], xmin[child->getIndex()]);
-		
-							sumX[parent->getIndex()] += sumX[child->getIndex()];
-							sumY[parent->getIndex()] += sumY[child->getIndex()];
-							
-						},
-						[&indexOf, &attrNames, &buffer, n, &xmax, &ymax, &xmin, &ymin, &sumGrayLevelSquare](NodeMTPtr node) -> void {
-							
-							float area = buffer[ indexOf(node->getIndex(), AREA) ];
-							float volume = buffer[ indexOf(node->getIndex(), VOLUME) ];
-							float width = xmax[node->getIndex()] - xmin[node->getIndex()] + 1;	
-							float height = ymax[node->getIndex()] - ymin[node->getIndex()] + 1;	
-							
-							float meanGrayLevel = volume / area; //mean graylevel - // E(f)
-							double meanGrayLevelSquare = sumGrayLevelSquare[node->getIndex()] / area; // E(f^2)
-							float var = meanGrayLevelSquare - (meanGrayLevel * meanGrayLevel); //variance: E(f^2) - E(f)^2
-							buffer[ indexOf(node->getIndex(), VARIANCE_LEVEL) ] = var > 0? var : 0; //variance
-							
-							/*
-							if (buffer[indexOf(node->getIndex(), VARIANCE_LEVEL)] >= 0.0f) {
-								buffer[indexOf(node->getIndex(), STANDARD_DEVIATION)] = std::sqrt(buffer[indexOf(node->getIndex(), VARIANCE_LEVEL)]);
-							} else {
-								buffer[indexOf(node->getIndex(), STANDARD_DEVIATION)] = 0.0f; // Se a variância for negativa, definir desvio padrão como 0
-							}*/
-							
-							buffer[indexOf(node->getIndex(), MEAN_LEVEL)] = meanGrayLevel;
-							buffer[indexOf(node->getIndex(), BOX_WIDTH)] = width;
-							buffer[indexOf(node->getIndex(), BOX_HEIGHT)] = height;
-							buffer[indexOf(node->getIndex(), RECTANGULARITY)] = area / (width * height);
-							buffer[indexOf(node->getIndex(), RATIO_WH)] = std::max(width, height) / std::min(width, height);
-							
-							if (node->getChildren().empty()) {
-								buffer[ indexOf(node->getIndex(), GRAY_HEIGHT)] = 0; // Folhas têm dinâmica 0
-							} else {
-								buffer[ indexOf(node->getIndex(), GRAY_HEIGHT)] = std::abs( node->getLevel() - buffer[ indexOf(node->getIndex(), GRAY_HEIGHT)] ) + 1;
-							}
-
-
-		});
-
-		
-
-		//Computação dos momentos centrais e momentos de Hu
-		AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
-			[&indexOf, &buffer, n,  &sumX, &sumY, numCols](NodeMTPtr node) -> void {				
-				// Inicialização dos momentos centrais
-				buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_20)] = 0.0f;
-				buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_02)] = 0.0f;
-				buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_11)] = 0.0f;
-				buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_30)] = 0.0f;
-				buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_03)] = 0.0f;
-				buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_21)] = 0.0f;
-				buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_12)] = 0.0f;
-
-				// Cálculo do centroide
-				float xCentroid = sumX[node->getIndex()] / buffer[indexOf(node->getIndex(), AREA)];
-				float yCentroid = sumY[node->getIndex()] / buffer[indexOf(node->getIndex(), AREA)];
-
-				for (int p : node->getCNPs()) {
-					int x = p % numCols;
-					int y = p / numCols;
-					float dx = x - xCentroid;
-					float dy = y - yCentroid;
-
-					// Momentos centrais de segunda ordem
-					buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_20)] += std::pow(dx, 2);
-					buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_02)] += std::pow(dy, 2);
-					buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_11)] += dx * dy;
-
-					// Momentos centrais de terceira ordem
-					buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_30)] += std::pow(dx, 3);
-					buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_03)] += std::pow(dy, 3);
-					buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_21)] += std::pow(dx, 2) * dy;
-					buffer[indexOf(node->getIndex(), CENTRAL_MOMENT_12)] += dx * std::pow(dy, 2);
-				}
-
-			},
-			[&indexOf, &buffer, n](NodeMTPtr parent, NodeMTPtr child) -> void {
-				buffer[indexOf(parent->getIndex(), CENTRAL_MOMENT_20)] += buffer[indexOf(child->getIndex(), CENTRAL_MOMENT_20)];
-				buffer[indexOf(parent->getIndex(), CENTRAL_MOMENT_02)] += buffer[indexOf(child->getIndex(), CENTRAL_MOMENT_02)];
-				buffer[indexOf(parent->getIndex(), CENTRAL_MOMENT_11)] += buffer[indexOf(child->getIndex(), CENTRAL_MOMENT_11)];
-				buffer[indexOf(parent->getIndex(), CENTRAL_MOMENT_30)] += buffer[indexOf(child->getIndex(), CENTRAL_MOMENT_30)];
-				buffer[indexOf(parent->getIndex(), CENTRAL_MOMENT_03)] += buffer[indexOf(child->getIndex(), CENTRAL_MOMENT_03)];
-				buffer[indexOf(parent->getIndex(), CENTRAL_MOMENT_21)] += buffer[indexOf(child->getIndex(), CENTRAL_MOMENT_21)];
-				buffer[indexOf(parent->getIndex(), CENTRAL_MOMENT_12)] += buffer[indexOf(child->getIndex(), CENTRAL_MOMENT_12)];			
-			},
-			[&indexOf, &buffer, n](NodeMTPtr node) -> void {
-				int idx = node->getIndex();
-				float area = buffer[indexOf(idx, AREA)];
-				auto normMoment = [area](float moment, int p, int q){ 
-					return moment / std::pow( area, (p + q + 2.0) / 2.0); 
-				}; //função para normalizacao dos momentos				
-				
-
-				//Momentos centrais
-				float mu20 = buffer[indexOf(idx, CENTRAL_MOMENT_20)];
-				float mu02 = buffer[indexOf(idx, CENTRAL_MOMENT_02)];
-				float mu11 = buffer[indexOf(idx, CENTRAL_MOMENT_11)];
-				float mu30 = buffer[indexOf(idx, CENTRAL_MOMENT_30)];
-				float mu03 = buffer[indexOf(idx, CENTRAL_MOMENT_03)];
-				float mu21 = buffer[indexOf(idx, CENTRAL_MOMENT_21)];
-				float mu12 = buffer[indexOf(idx, CENTRAL_MOMENT_12)];
-					
-				float discriminant = std::pow(mu20 - mu02, 2.0f) + 4.0f * std::pow(mu11, 2.0f);
-
-					
-				// Verificar se o denominador é zero antes de calcular atan2 para evitar divisão por zero
-				if (mu20 != mu02 || mu11 != 0) {
-					float radians = 0.5 * std::atan2(2 * mu11, mu20 - mu02);// orientação em radianos
-					float degrees = radians * (180.0 / M_PI); // Converter para graus
-					if (degrees < 0) { // Ajustar para o intervalo [0, 360] graus
-						degrees += 360.0;
-					}
-					buffer[indexOf(idx, AXIS_ORIENTATION)] = degrees; // Armazenar a orientação em graus no intervalo [0, 360]
-				} else {
-					buffer[indexOf(idx, AXIS_ORIENTATION)] = 0.0; // Se não for possível calcular a orientação, definir um valor padrão
-				}
-
-				// Verificar se o discriminante é positivo para evitar raiz quadrada de números negativos
-				if (discriminant < 0) {
-					std::cerr << "Erro: Discriminante negativo, ajustando para zero." << std::endl;
-					discriminant = 0;
-				}	
-				float a1 = mu20 + mu02 + std::sqrt(discriminant); // autovalores (correspondente ao eixo maior)
-				float a2 = mu20 + mu02 - std::sqrt(discriminant); // autovalores (correspondente ao eixo menor)
-
-				// Verificar se a1 e a2 são positivos antes de calcular sqrt para evitar NaN
-				if (a1 > 0) {
-					buffer[indexOf(idx, LENGTH_MAJOR_AXIS)] = std::sqrt((2 * a1) / area); // length major axis
-				} else {
-					buffer[indexOf(idx, LENGTH_MAJOR_AXIS)] = 0.0; // Definir valor padrão
-				}
-
-				if (a2 > 0) {
-					buffer[indexOf(idx, LENGTH_MINOR_AXIS)] = std::sqrt((2 * a2) / area); // length minor axis
-				} else {
-					buffer[indexOf(idx, LENGTH_MINOR_AXIS)] = 0.0; // Definir valor padrão
-				}
-
-				// Verificar se a2 é diferente de zero antes de calcular a excentricidade
-				buffer[indexOf(idx, ECCENTRICITY)] = (std::abs(a2) > std::numeric_limits<float>::epsilon()) ? a1 / a2 : a1 / 0.1; // eccentricity
-
-				// Verificar se mu20 + mu02 é diferente de zero antes de calcular a compacidade
-				if ((mu20 + mu02) > std::numeric_limits<float>::epsilon()) {
-					buffer[indexOf(idx, COMPACTNESS)]  = (1.0 / (2 * PI)) * (area / (mu20 + mu02)); // compactness
-				} else {
-					buffer[indexOf(idx, COMPACTNESS)]  = 0.0; // Definir valor padrão
-				}
-
-
-				// Calcular os momentos normalizados
-				float eta20 = normMoment(mu20, 2, 0);
-				float eta02 = normMoment(mu02, 0, 2);
-				float eta11 = normMoment(mu11, 1, 1);
-				float eta30 = normMoment(mu30, 3, 0);
-				float eta03 = normMoment(mu03, 0, 3);
-				float eta21 = normMoment(mu21, 2, 1);
-				float eta12 = normMoment(mu12, 1, 2);
-
-				// Cálculo dos momentos de Hu
-				buffer[indexOf(idx, HU_MOMENT_1)] = eta20 + eta02; // primeiro momento de Hu => inertia
-				buffer[indexOf(idx, HU_MOMENT_2)]  = std::pow(eta20 - eta02, 2) + 4 * std::pow(eta11, 2);
-				buffer[indexOf(idx, HU_MOMENT_3)]  = std::pow(eta30 - 3 * eta12, 2) + std::pow(3 * eta21 - eta03, 2);
-				buffer[indexOf(idx, HU_MOMENT_4)]  = std::pow(eta30 + eta12, 2) + std::pow(eta21 + eta03, 2);
-				
-				buffer[indexOf(idx, HU_MOMENT_5)] = 
-					(eta30 - 3 * eta12) * (eta30 + eta12) * (std::pow(eta30 + eta12, 2) - 3 * std::pow(eta21 + eta03, 2)) +
-					(3 * eta21 - eta03) * (eta21 + eta03) * (3 * std::pow(eta30 + eta12, 2) - std::pow(eta21 + eta03, 2));
-				
-					buffer[indexOf(idx, HU_MOMENT_6)] = 
-					(eta20 - eta02) * (std::pow(eta30 + eta12, 2) - std::pow(eta21 + eta03, 2)) + 
-					4 * eta11 * (eta30 + eta12) * (eta21 + eta03);
-				
-					buffer[indexOf(idx, HU_MOMENT_7)] = 
-					(3 * eta21 - eta03) * (eta30 + eta12) * (std::pow(eta30 + eta12, 2) - 3 * std::pow(eta21 + eta03, 2)) -
-					(eta30 - 3 * eta12) * (eta21 + eta03) * (3 * std::pow(eta30 + eta12, 2) - std::pow(eta21 + eta03, 2));
-
-				
-		});
-		return std::make_pair(attrNames, buffer);
-    }
-
-
-	
 
 	struct ExtinctionValues{
 		NodeMTPtr leaf;
@@ -1281,6 +659,10 @@ public:
 		}
 		return leavesByExtinction;
 	}
+
+	static ContoursMTPtr extractCompactCountors(MorphologicalTreePtr tree);
+
+	static std::vector<std::unordered_set<int>> extractNonCompactCountors(MorphologicalTreePtr tree);
 
 	static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeAttributesByComputer(MorphologicalTreePtr tree, std::shared_ptr<AttributeComputer> comp, const DependencyMap& available = {});
 	
@@ -2136,6 +1518,260 @@ class AttributeFactory {
 		}
 
 
+
+};
+
+
+
+
+
+
+/*
+Computacao incremental de countours
+*/
+class ContoursMT{
+	private:
+	std::vector<std::list<int>> contours;
+	std::vector<std::list<int>> contoursToRemove;
+
+	public:
+	ContoursMT(int numNodes): contours(numNodes), contoursToRemove(numNodes){}
+
+	void add(NodeMTPtr node, int pixel){
+		contours[node->getIndex()].push_back(pixel);
+	}
+	void remove(NodeMTPtr node, int pixel){
+		contoursToRemove[node->getIndex()].push_back(pixel);
+	}
+
+	std::unordered_set<int> getContour(NodeMTPtr node) {
+		std::unordered_set<int> contour;
+		AttributeComputedIncrementally::computerAttribute(node,
+			[](NodeMTPtr node) -> void {},  // pre-processing
+			[](NodeMTPtr parent, NodeMTPtr child) -> void { }, // merge-processing
+			[&contour, this](NodeMTPtr node) -> void { //post-processing
+				for(int p: this->contours[node->getIndex()]){
+					contour.insert(p);
+				}
+				for(int p: this->contoursToRemove[node->getIndex()]){
+					contour.erase(p);
+				}
+			}
+		);
+		return contour;
+	}
+
+	void visitContours(MorphologicalTreePtr tree, std::function<void(NodeMTPtr, const std::unordered_set<int>&)> visitor) {
+		const int numNodes = tree->getNumNodes();
+	
+		std::vector<std::unique_ptr<std::unordered_set<int>>> contoursByNodes(numNodes);
+	
+		AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+			[](NodeMTPtr) -> void {},
+	
+			// merge: funde filhos no pai, usando o maior conjunto como base
+			[&contoursByNodes](NodeMTPtr parent, NodeMTPtr child) -> void {
+				auto& parentContour = contoursByNodes[parent->getIndex()];
+				auto& childContour = contoursByNodes[child->getIndex()];
+	
+				if (!parentContour) {
+					parentContour = std::move(childContour);
+				} else {
+					if (childContour->size() > parentContour->size()) {
+						std::swap(parentContour, childContour);
+					}
+					parentContour->insert(childContour->begin(), childContour->end());
+					childContour.reset(); 
+				}
+			},
+	
+			// pós-processamento: consolida e chama visitor
+			[this, &contoursByNodes, &visitor](NodeMTPtr node) -> void {
+				auto& contour = contoursByNodes[node->getIndex()];
+				if (!contour) {
+					contour = std::make_unique<std::unordered_set<int>>();
+				}
+	
+				for (int p : this->contours[node->getIndex()]) {
+					contour->insert(p);
+				}
+	
+				for (int p : this->contoursToRemove[node->getIndex()]) {
+					contour->erase(p);
+				}
+	
+				visitor(node, *contour);
+			}
+		);
+	}
+
+	void visitContoursAndCCs(MorphologicalTreePtr tree, std::function<void(NodeMTPtr, const std::list<int>&, const std::unordered_set<int>&)> visitor) {
+		const int numNodes = tree->getNumNodes();
+	
+		std::vector<std::unique_ptr<std::unordered_set<int>>> contoursByNodes(numNodes);
+		std::vector<std::unique_ptr<std::list<int>>> CCsByNodes(numNodes);
+	
+		AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+			[](NodeMTPtr) -> void {},
+	
+			[&CCsByNodes, &contoursByNodes](NodeMTPtr parent, NodeMTPtr child) -> void {
+				// --- Contornos ---
+				auto& parentContour = contoursByNodes[parent->getIndex()];
+				auto& childContour = contoursByNodes[child->getIndex()];
+				if (!parentContour) {
+					parentContour = std::move(childContour);
+				} else {
+					if (childContour->size() > parentContour->size()) {
+						std::swap(parentContour, childContour);
+					}
+					parentContour->insert(childContour->begin(), childContour->end());
+					//childContour.reset();
+				}
+
+				// --- Componentes Conexos ---
+				auto& parentCC = CCsByNodes[parent->getIndex()];
+				auto& childCC = CCsByNodes[child->getIndex()];
+				if (!parentCC) {
+					parentCC = std::move(childCC);
+				} else {
+					if (childCC->size() > parentCC->size()) {
+						std::swap(parentCC, childCC);
+					}
+					parentCC->insert(parentCC->end(), childCC->begin(), childCC->end());
+					//childCC.reset();
+				}
+			},
+	
+			// post-processing
+			[this, &contoursByNodes, &CCsByNodes, &visitor](NodeMTPtr node) -> void {
+				// --- Contornos ---
+				auto& contour = contoursByNodes[node->getIndex()];
+				if (!contour) {
+					contour = std::make_unique<std::unordered_set<int>>();
+				}
+				for (int p : this->contours[node->getIndex()]) {
+					contour->insert(p);
+				}
+				for (int p : this->contoursToRemove[node->getIndex()]) {
+					contour->erase(p);
+				}
+				
+				// --- Componentes Conexos ---
+				auto& cc = CCsByNodes[node->getIndex()];
+				if (!cc) {
+					cc = std::make_unique<std::list<int>>();
+				}
+				cc->insert(cc->end(), node->getCNPs().begin(), node->getCNPs().end());
+	
+				
+				visitor(node, *cc, *contour);
+			}
+		);
+	}
+
+
+	class ContourPostOrderIterator {
+		private:
+		using value_type = std::pair<NodeMTPtr, std::unordered_set<int>>;
+		using reference = value_type&;
+		using pointer = value_type*;
+		using iterator_category = std::input_iterator_tag;
+
+		ContoursMT* contoursMT;
+		std::stack<NodeMTPtr> outputStack;
+		std::vector<std::unique_ptr<std::unordered_set<int>>> contoursByNodes;
+		value_type currentValue;
+
+		void advance() {
+			if (!outputStack.empty()) {
+				NodeMTPtr node = outputStack.top(); outputStack.pop();
+
+				// Merge dos filhos (igual antes)
+				for (NodeMTPtr child : node->getChildren()) {
+					auto& parentContour = contoursByNodes[node->getIndex()];
+					auto& childContour = contoursByNodes[child->getIndex()];
+					if (!parentContour) {
+						parentContour = std::move(childContour);
+					} else if (childContour) {
+						if (childContour->size() > parentContour->size()) {
+							std::swap(parentContour, childContour);
+						}
+						parentContour->insert(childContour->begin(), childContour->end());
+					}
+					if (childContour) childContour.reset();
+				}
+
+				// Pós-processamento: aplica inserção/remoção
+				auto& contour = contoursByNodes[node->getIndex()];
+				if (!contour) contour = std::make_unique<std::unordered_set<int>>();
+				for (int p : contoursMT->contours[node->getIndex()])
+					contour->insert(p);
+				for (int p : contoursMT->contoursToRemove[node->getIndex()])
+					contour->erase(p);
+
+				currentValue = std::make_pair(node, *contour);
+			}
+		}
+
+		public:
+		ContourPostOrderIterator(NodeMTPtr root, ContoursMT* contoursMT) : contoursMT(contoursMT){
+			// Travessia prévia para montar outputStack em pós-ordem
+			if(root){
+				std::stack<NodeMTPtr> tempStack;
+				tempStack.push(root);
+				while (!tempStack.empty()) {
+					NodeMTPtr current = tempStack.top(); tempStack.pop();
+					outputStack.push(current);
+					for (NodeMTPtr child : current->getChildren()) {
+						tempStack.push(child);
+					}
+				}
+				int numNodes = root->getNumDescendants() + 1;
+				contoursByNodes.resize(numNodes);
+				advance();
+			}
+			
+		}
+
+		// Pré-incremento
+		ContourPostOrderIterator& operator++() {
+			advance();
+			return *this;
+		}
+
+		reference operator*() {
+			return currentValue;
+		}
+
+		bool operator==(const ContourPostOrderIterator& other) const {
+			return outputStack.empty() && other.outputStack.empty();
+		}
+		bool operator!=(const ContourPostOrderIterator& other) const {
+			return !(*this == other);
+		}
+		ContourPostOrderIterator(const ContourPostOrderIterator&) = delete;
+		ContourPostOrderIterator& operator=(const ContourPostOrderIterator&) = delete;
+		ContourPostOrderIterator(ContourPostOrderIterator&&) = default;
+		ContourPostOrderIterator& operator=(ContourPostOrderIterator&&) = default;
+
+
+	};
+
+	class ContourPostOrderRange {
+		private:
+		NodeMTPtr root;
+		ContoursMT* contoursMT;
+
+		public:
+		ContourPostOrderRange(NodeMTPtr root, ContoursMT* contoursMT) : root(root), contoursMT(contoursMT) {}
+
+		ContourPostOrderIterator begin() { return ContourPostOrderIterator(root, contoursMT); }
+		ContourPostOrderIterator end() { return ContourPostOrderIterator(nullptr, contoursMT); }
+	};
+
+	ContourPostOrderRange contoursLazy(NodeMTPtr root) {
+		return ContourPostOrderRange(root, this);
+	}
 
 };
 

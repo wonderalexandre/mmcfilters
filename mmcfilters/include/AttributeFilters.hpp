@@ -86,7 +86,7 @@ class AttributeFilters{
         }
     
         auto contoursMT = AttributeComputedIncrementally::extractCompactCountors(tree);
-        contoursMT.visitContours(tree, [&](NodeMTPtr node, const std::unordered_set<int>& contourNode) {
+        contoursMT->visitContours(tree, [&](NodeMTPtr node, const std::unordered_set<int>& contourNode) {
             if (keep[node->getIndex()]){
                 for (int p : contourNode) {
                     saliencyOutput[p] = extinctionByNode[node->getIndex()];;

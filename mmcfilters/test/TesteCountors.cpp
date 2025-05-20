@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
     //std::cout << std::endl;
     //printMappingSC(tree, 3);
     
-    AttributeComputedIncrementally::ContoursMT contoursMT = AttributeComputedIncrementally::extractCompactCountors(tree);
+    ContoursMTPtr contoursMT = AttributeComputedIncrementally::extractCompactCountors(tree);
     //std::vector<std::unordered_set<int>> countors =  AttributeComputedIncrementally::extractCountors(tree);
     std::vector<std::vector<NodeMTPtr>> nodesByDepth = tree->getNodesByDepth();
     ImageUInt8Ptr imgBin = ImageUInt8::create(numRows, numCols, 0);
@@ -72,7 +72,7 @@ int main(int argc, char* argv[]) {
     ImageUInt8Ptr contoursNonInc = ImageUInt8::create(numRows, numCols, 0);
 
     bool isEquals = true;
-    contoursMT.visitContoursAndCCs(tree, [&](NodeMTPtr node, const std::list<int>& cc, const std::unordered_set<int>& contourNode) {
+    contoursMT->visitContoursAndCCs(tree, [&](NodeMTPtr node, const std::list<int>& cc, const std::unordered_set<int>& contourNode) {
        
 
         //contorno incremental
@@ -139,7 +139,7 @@ int main(int argc, char* argv[]) {
             }
             
             
-            std::unordered_set<int> contourNode = contoursMT.getContour(node);//countors[node->getIndex()];
+            std::unordered_set<int> contourNode = contoursMT->getContour(node);//countors[node->getIndex()];
             for(int p: contourNode){
                 contoursInc[p] = 1;
             }

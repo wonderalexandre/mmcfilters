@@ -64,10 +64,23 @@ int main(int argc, char* argv[]) {
     std::cout << std::endl;
     printMappingSC(tree, 3);
     
-    AttributeComputedIncrementally::ContoursMT contoursMT = AttributeComputedIncrementally::extractCompactCountors(tree);
+    ContoursMTPtr contoursMT = AttributeComputedIncrementally::extractCompactCountors(tree);
     //ImagePtr imgContours = Image::create(numRows, numCols, 0);
 
     bool isEquals = true;
+    for (auto&& [node, contourNode] : contoursMT->contoursLazy(tree->getRoot())) {
+        ImageUInt8Ptr imgContours = ImageUInt8::create(numRows, numCols, 0);
+        
+        //contorno incremental
+        for(int p: contourNode){
+            (*imgContours)[p] = 1;
+        }
+        
+        std::cout << "\nNode:"<< node->getIndex() << std::endl;
+        printImage(imgContours, 3);
+    }
+
+    /*
     contoursMT.visitContours(tree, [&](NodeMTPtr node, const std::unordered_set<int>& contourNode) {
        
         ImageUInt8Ptr imgContours = ImageUInt8::create(numRows, numCols, 0);
@@ -89,6 +102,6 @@ int main(int argc, char* argv[]) {
     
    std::cout << "\nNode 3" << std::endl;
     printImage(imgContours2, 3);
-
+*/
     return 0;
 }

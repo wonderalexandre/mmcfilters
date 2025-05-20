@@ -486,3 +486,153 @@ std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeCo
 
     return {attrNames, buffer};
 }
+
+
+
+
+ContoursMTPtr AttributeComputedIncrementally::extractCompactCountors(MorphologicalTreePtr tree){
+    ContoursMTPtr contoursMT = std::make_shared<ContoursMT>(tree->getNumNodes());
+    
+    std::vector<std::vector<int>> contoursToRemoveLCA(tree->getNumNodes());
+    std::vector<std::int8_t> ncount(tree->getNumRowsOfImage() * tree->getNumColsOfImage(), 0);
+    AdjacencyRelationPtr adj4 = std::make_shared<AdjacencyRelation>(tree->getNumRowsOfImage(), tree->getNumColsOfImage(), 1);
+    LCAEulerRMQ lca(tree);	
+
+    AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+        [](NodeMTPtr node) -> void { // pre-processing
+
+        },
+        [](NodeMTPtr parent, NodeMTPtr child) -> void { // merge-processing
+            
+        },
+        [&contoursMT, &contoursToRemoveLCA, &lca, &ncount, tree, adj4](NodeMTPtr nodeP) -> void { // post-processing
+            std::vector<int> &NcontourToRemoveLCA = contoursToRemoveLCA[nodeP->getIndex()];
+
+            NodeMTPtr nodeLCA = nodeP;
+            for(int p: NcontourToRemoveLCA){ //pixels que sao contornos de nodes descendentes ao NodeAtual
+                bool isPixelToBeRemoved = true;
+                for (int r : adj4->getNeighboringPixels(p)) { //Existe um nodeQ ascendente de NodeAtual contendo p como contorno? (p, q) in A
+                    NodeMTPtr nodeR = tree->getSC(r); 
+                    if (tree->isStrictAncestor(nodeR, nodeLCA)){
+                        contoursToRemoveLCA[nodeR->getIndex()].push_back(p); 
+                        isPixelToBeRemoved = false;	
+                    }else if(!tree->isComparable(nodeLCA, nodeR)) {
+                        NodeMTPtr otherNodeLCA = lca.findLowestCommonAncestor(nodeLCA, nodeR);
+                        contoursToRemoveLCA[otherNodeLCA->getIndex()].push_back(p);
+                        isPixelToBeRemoved = false;
+                    }
+                }
+                if(!adj4->isBorderDomainImage(p) && isPixelToBeRemoved){
+                    contoursMT->remove(nodeLCA, p);
+                }
+            }
+        
+            for (int p : nodeP->getCNPs()) {
+                if (adj4->isBorderDomainImage(p)){
+                    ncount[p]++;
+                }
+
+                for (int q : adj4->getNeighboringPixels(p)) {
+                    NodeMTPtr nodeQ = tree->getSC(q); 
+                    if(!tree->isComparable(nodeP, nodeQ)){ //se os nodeP e nodeQ não sao comparaveis, então p pode ser removido pelo LCA de nodeP e nodeQ 
+                        NodeMTPtr nodeLCA = lca.findLowestCommonAncestor(nodeP, nodeQ);
+                        contoursToRemoveLCA[nodeLCA->getIndex()].push_back(p);
+                        ncount[p]++;
+                    }
+                    else if(tree->isStrictDescendant(nodeP, nodeQ)){  //maxtree:  SC(p) \subset SC(q) <=> f(p) > f(q)
+                        ncount[p]++;
+                    }else if (tree->isStrictAncestor(nodeP, nodeQ)) { ////maxtree:  SC(q) \subset SC(p) <=> f(p) < f(q)
+                        ncount[q]--;
+                        if (ncount[q] == 0) {
+                            contoursMT->remove(nodeP, q);
+                        }
+                    }
+                }
+                if (ncount[p] > 0){
+                    contoursMT->add(nodeP, p);
+                }
+            }
+
+        }
+    );
+                
+    return contoursMT;
+}
+
+std::vector<std::unordered_set<int>> AttributeComputedIncrementally::extractNonCompactCountors(MorphologicalTreePtr tree){
+    std::vector<std::unordered_set<int>> contours(tree->getNumNodes());
+    std::vector<std::vector<int>> contoursToRemoveLCA(tree->getNumNodes());
+    std::vector<std::int8_t> ncount(tree->getNumRowsOfImage() * tree->getNumColsOfImage(), 0);
+    AdjacencyRelationPtr adj4 = std::make_shared<AdjacencyRelation>(tree->getNumRowsOfImage(), tree->getNumColsOfImage(), 1);
+    LCAEulerRMQ lca(tree);	
+
+    AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
+        [](NodeMTPtr node) -> void { // pre-processing
+
+        },
+        [&contours, &ncount, tree, adj4](NodeMTPtr parent, NodeMTPtr child) -> void { // merge-processing
+            std::unordered_set<int> &Ncontour = contours[parent->getIndex()];
+            for (int p : contours[child->getIndex()]){
+                Ncontour.insert(p);
+            }
+        },
+        [&contours, &contoursToRemoveLCA, &lca, &ncount, tree, adj4](NodeMTPtr nodeP) -> void { // post-processing
+            // Initialise contours of node "N"
+            std::unordered_set<int> &Ncontour = contours[nodeP->getIndex()];
+            std::vector<int> &NcontourToRemoveLCA = contoursToRemoveLCA[nodeP->getIndex()];
+            NodeMTPtr nodeLCA = nodeP;
+            for(int p: NcontourToRemoveLCA){ //pixels que sao contornos de nodes descendentes ao NodeAtual
+                bool isPixelToBeRemoved = true;
+                
+                for (int r : adj4->getNeighboringPixels(p)) { //Existe um nodeQ ascendente de NodeAtual contendo p como contorno? (p, q) in A
+                    NodeMTPtr nodeR = tree->getSC(r); 
+                    if (tree->isStrictAncestor(nodeR, nodeLCA)){
+                        contoursToRemoveLCA[nodeR->getIndex()].push_back(p); 
+                        isPixelToBeRemoved = false;	
+                    }else if(!tree->isComparable(nodeLCA, nodeR)) {
+                        NodeMTPtr otherNodeLCA = lca.findLowestCommonAncestor(nodeLCA, nodeR);
+                        contoursToRemoveLCA[otherNodeLCA->getIndex()].push_back(p);
+                        isPixelToBeRemoved = false;
+                    }
+                }
+                if(!adj4->isBorderDomainImage(p) && isPixelToBeRemoved){
+                    Ncontour.erase(p);
+                }
+            }
+        
+            for (int p : nodeP->getCNPs()) {
+                if (adj4->isBorderDomainImage(p)){
+                    ncount[p]++;
+                }
+                for (int q : adj4->getNeighboringPixels(p)) {
+                    NodeMTPtr nodeQ = tree->getSC(q); 
+                    if(!tree->isComparable(nodeP, nodeQ)){ //se os nodeP e nodeQ não sao comparaveis, então p pode ser removido pelo LCA de nodeP e nodeQ 
+                        NodeMTPtr nodeLCA = lca.findLowestCommonAncestor(nodeP, nodeQ);
+                        contoursToRemoveLCA[nodeLCA->getIndex()].push_back(p);
+                        ncount[p]++;
+                    }
+                    else if(tree->isStrictDescendant(nodeP, nodeQ)){  //maxtree:  SC(p) \subset SC(q) <=> f(p) > f(q)
+                        ncount[p]++;
+                    }else if (tree->isStrictAncestor(nodeP, nodeQ)) { ////maxtree:  SC(q) \subset SC(p) <=> f(p) < f(q)
+                        ncount[q]--;
+                        if (ncount[q] == 0) {
+                            Ncontour.erase(q);
+                        }
+                    }
+                }
+
+                if (ncount[p] > 0){
+                    Ncontour.insert(p);
+                }
+            }
+
+        }
+    );
+                
+    return contours;
+}
+
+
+
+
+

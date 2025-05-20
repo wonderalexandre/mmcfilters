@@ -113,6 +113,8 @@ void init_MorphologicalTree(py::module &m){
         .def_property_readonly("numCols", &MorphologicalTreePybind::getNumColsOfImage )
         .def_property_readonly("depth", &MorphologicalTreePybind::getDepth )
         .def("getSC", &MorphologicalTreePybind::getSC );
+
+        
         
 }
 
@@ -123,12 +125,27 @@ void init_AttributeComputedIncrementally(py::module &m){
                                                              std::function<void(NodeMTPtr)>, 
                                                              std::function<void(NodeMTPtr, NodeMTPtr)>, 
                                                              std::function<void(NodeMTPtr)>)>(&AttributeComputedIncrementally::computerAttribute))
-        .def_static("computerBasicAttributes", &AttributeComputedIncrementallyPybind::computerBasicAttributes)
         .def_static("computeAttributes", &AttributeComputedIncrementallyPybind::computeAttributesFromList)
         .def_static("computeSingleAttribute", &AttributeComputedIncrementallyPybind::computeSingleAttribute)
         .def_static("computeSingleAttributeWithDelta", &AttributeComputedIncrementallyPybind::computeSingleAttributeWithDelta)
-        .def_static("extractCountors", &AttributeComputedIncrementallyPybind::extractCountors);
-        
+        //.def_static("extractCountors", &AttributeComputedIncrementallyPybind::extractCountors)
+        .def_static("extractCountors", &AttributeComputedIncrementally::extractCompactCountors);
+
+        py::class_<ContoursMT, std::shared_ptr<ContoursMT>>(m, "ContoursMT")
+            .def("contours", &ContoursMT::contoursLazy);
+
+        py::class_<ContoursMT::ContourPostOrderRange>(m, "ContourPostOrderRange")
+            .def("__iter__", [](ContoursMT::ContourPostOrderRange &self) { return self.begin(); });
+
+        py::class_<ContoursMT::ContourPostOrderIterator>(m, "ContourPostOrderIterator")
+            .def("__iter__", [](ContoursMT::ContourPostOrderIterator &self) -> ContoursMT::ContourPostOrderIterator& { return self; })
+            .def("__next__", [](ContoursMT::ContourPostOrderIterator &self) {
+                if (self == ContoursMT::ContourPostOrderIterator(nullptr, nullptr))
+                    throw py::stop_iteration();
+                auto val = *self;
+                ++self;
+                return val;
+            });
 
         py::enum_<AttributeGroup>(cls, "Group")
             .value("ALL", AttributeGroup::ALL)

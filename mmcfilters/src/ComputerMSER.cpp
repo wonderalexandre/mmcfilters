@@ -33,43 +33,28 @@
 		if(this->descendants[nodeAsc->getIndex()] == nullptr)
 			this->descendants[nodeAsc->getIndex()] = nodeDes;
 		
-		if( this->attr_area[ this->descendants[nodeAsc->getIndex()]->getIndex() ] < this->attr_area[ nodeDes->getIndex() ])
+		if( this->descendants[nodeAsc->getIndex()]->getAreaCC() < nodeDes->getAreaCC() )
 			this->descendants[nodeAsc->getIndex()] = nodeDes;
 		
 	}
 	
 	double ComputerMSER::getStability(NodeMTPtr node){
-		return (this->attr_mser[this->getAscendant(node)->getIndex()] - this->attr_mser[this->getDescendant(node)->getIndex()]) / this->attr_mser[node->getIndex()]  ;
+		return (this->getAttrMSER(this->getAscendant(node)) - this->getAttrMSER(this->getDescendant(node))) / this->getAttrMSER(node)  ;
 	}
 
-	ComputerMSER::~ComputerMSER(){
-		delete [] this->attr_area;
-	}
+	ComputerMSER::~ComputerMSER(){ }
 
-	ComputerMSER::ComputerMSER(MorphologicalTreePtr tree, double* attr_increasing) : ComputerMSER(tree) {
+	ComputerMSER::ComputerMSER(MorphologicalTreePtr tree, std::shared_ptr<float[]> attr_increasing) : ComputerMSER(tree) {
 		this->attr_mser = attr_increasing;
 	}
 	
-	ComputerMSER::ComputerMSER(MorphologicalTreePtr tree){
-		this->tree = tree;
-		this->maxVariation = 10.0;
-		this->minArea = 0;
-		this->maxArea = tree->getNumColsOfImage() * tree->getNumRowsOfImage();
+	ComputerMSER::ComputerMSER(MorphologicalTreePtr tree): tree(tree), attr_mser(nullptr), maxVariation(10.0), minArea(0), maxArea(tree->getNumColsOfImage() * tree->getNumRowsOfImage()) { }
 
-		double *_attribute = new double[this->tree->getNumNodes()]; 
-		AttributeComputedIncrementally::computerAttribute(this->tree->getRoot(),
-						[&_attribute](NodeMTPtr node) -> void {
-							_attribute[node->getIndex()] = node->getCNPs().size();
-						},
-						[&_attribute](NodeMTPtr root, NodeMTPtr child) -> void {
-							_attribute[root->getIndex()] += _attribute[child->getIndex()];
-						},
-						[](NodeMTPtr node) -> void { 							
-						});
-
-		this->attr_area = _attribute;
-		this->attr_mser = _attribute;
-		
+	float ComputerMSER::getAttrMSER(NodeMTPtr node){
+		if(node == nullptr)
+			return node->getAreaCC();
+		else
+			return this->attr_mser[node->getIndex()];
 	}
 
 	std::vector<bool> ComputerMSER::computerMSER(int delta){
@@ -103,7 +88,7 @@
 				maxStabilityDesc = this->stability[this->getDescendant(node)->getIndex()];
 				maxStabilityAsc = this->stability[this->getAscendant(node)->getIndex()];
 				if(this->stability[node->getIndex()] < maxStabilityDesc && this->stability[node->getIndex()] < maxStabilityAsc){
-					if(stability[node->getIndex()] < this->maxVariation && this->attr_mser[node->getIndex()] >= this->minArea && this->attr_mser[node->getIndex()] <= this->maxArea){
+					if(stability[node->getIndex()] < this->maxVariation && this->getAttrMSER(node) >= this->minArea && this->getAttrMSER(node) <= this->maxArea){
 						mser[node->getIndex()] = true;
 						this->num++;
 					}
@@ -123,13 +108,13 @@
         double maxDesc = stability[nodeDes->getIndex()];
         double maxAnc = stability[nodeAsc->getIndex()];
                     
-                    if(max <= maxDesc && max <= maxAnc) {
-                        return node;
-                    }else if (maxDesc <= maxAnc) {
-                        return nodeDes;
-                    }else {
-                       return nodeAsc;
-                    }
+        if(max <= maxDesc && max <= maxAnc) {
+            return node;
+        }else if (maxDesc <= maxAnc) {
+            return nodeDes;
+        }else {
+            return nodeAsc;
+        }
 		
 	}
 

@@ -10,10 +10,13 @@
 #ifndef ATTRIBUTE_OPENING_PRIMITIVES_FAMILY_H
 #define ATTRIBUTE_OPENING_PRIMITIVES_FAMILY_H
 
+class AttributeOpeningPrimitivesFamily;
+using AttributeOpeningPrimitivesFamilyPtr = std::shared_ptr<AttributeOpeningPrimitivesFamily>;
+
 class AttributeOpeningPrimitivesFamily{
   
   protected:
-    float* attrs_increasing;
+    std::shared_ptr<float[]> attrs_increasing;
     float maxCriterion;
     std::list<float> thresholds;
     std::list<NodeMTPtr> nodesWithMaximumCriterium;
@@ -21,7 +24,7 @@ class AttributeOpeningPrimitivesFamily{
     //PrimitivesFamily
     MorphologicalTreePtr tree;
     std::vector<bool> selectedForFiltering; //mappping between index nodes and selected nodes
-    ImagePtr restOfImage;
+    ImageUInt8Ptr restOfImage;
     int numPrimitives;
     
 
@@ -29,9 +32,9 @@ class AttributeOpeningPrimitivesFamily{
     void initializeNodesWithMaximumCriterium();
     
   public:
-    AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree,  float* attr, float maxCriterion);
+    AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree,   std::shared_ptr<float[]> attr, float maxCriterion);
 
-    AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree,  float* attrs_increasing, float maxCriterion, int deltaMSER);
+    AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree,   std::shared_ptr<float[]> attrs_increasing, float maxCriterion, int deltaMSER);
     
     ~AttributeOpeningPrimitivesFamily();
 
@@ -46,7 +49,7 @@ class AttributeOpeningPrimitivesFamily{
 
     MorphologicalTreePtr getTree() ;
 
-    ImagePtr getRestOfImage() ;
+    ImageUInt8Ptr getRestOfImage() ;
 
     int getNumPrimitives() ;
     

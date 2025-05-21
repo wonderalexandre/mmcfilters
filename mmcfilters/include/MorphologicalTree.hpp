@@ -11,6 +11,8 @@
 #ifndef COMPONENT_TREE_H
 #define COMPONENT_TREE_H
 
+class MorphologicalTree;
+using MorphologicalTreePtr = std::shared_ptr<MorphologicalTree>; 
 
 class MorphologicalTree {
 
@@ -25,18 +27,18 @@ protected:
 	AdjacencyRelationPtr adj;
 	int depth;
 	
-	void reconstruction(NodeMTPtr node, PixelType* imgOut);
+	void reconstruction(NodeMTPtr node, uint8_t* data);
 	void computerTreeAttribute();
-
+    
 public:
    	static const int MAX_TREE = 0;
 	static const int MIN_TREE = 1;
 	static const int TREE_OF_SHAPES = 2;
 
 	
-	MorphologicalTree(ImagePtr img, std::string ToSInperpolation="self-dual");
-	explicit MorphologicalTree(ImagePtr img, bool isMaxtree, double radius = 1.5);
-    MorphologicalTree(ImagePtr img, const char* ToSInterpolation) : MorphologicalTree(img, std::string(ToSInterpolation)) {}
+	MorphologicalTree(ImageUInt8Ptr img, std::string ToSInperpolation="self-dual");
+	explicit MorphologicalTree(ImageUInt8Ptr img, bool isMaxtree, double radius = 1.5);
+    MorphologicalTree(ImageUInt8Ptr img, const char* ToSInterpolation) : MorphologicalTree(img, std::string(ToSInterpolation)) {}
 
     ~MorphologicalTree();
 	
@@ -58,9 +60,9 @@ public:
 
 	int getNumColsOfImage();
 
-	ImagePtr reconstructionImage();
+	ImageUInt8Ptr reconstructionImage();
 
-	ImagePtr getImageAferPruning(NodeMTPtr node);
+	ImageUInt8Ptr getImageAferPruning(NodeMTPtr node);
 
 	void pruning(NodeMTPtr node);
 

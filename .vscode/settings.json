@@ -78,7 +78,8 @@
         "shared_mutex": "cpp",
         "execution": "cpp",
         "memory": "cpp",
-        "print": "cpp"
+        "print": "cpp",
+        "iterator": "cpp"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

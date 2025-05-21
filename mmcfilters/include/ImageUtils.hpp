@@ -21,7 +21,8 @@ class ImageUtils{
             return std::make_pair(row, col);
         }
 
-        static PixelType* createRandomColor(int* img, int numColsOfImage, int numRowsOfImage){
+        // Cria uma imagem colorida aleatória a partir de uma imagem em escala de cinza: [(R,G,B), (R,G,B), ...]
+        static ImageUInt8Ptr createRandomColor(int* img, int numRowsOfImage, int numColsOfImage){
             int max = 0;
             int sizeImage = numColsOfImage * numRowsOfImage;
             for (int i = 0; i < sizeImage; i++){
@@ -40,11 +41,13 @@ class ImageUtils{
                 g[i] = rand() % 256;
                 b[i] = rand() % 256;
             }
-
-            PixelType* output = new PixelType[sizeImage * 3];
-            for (int pidx = 0; pidx < (sizeImage * 3); pidx++){
-                output[pidx] = 0;
-            }
+            
+            int sizeOutput = sizeImage * 3; // [(R,G,B), (R,G,B), ...]
+            ImageUInt8Ptr outImage = ImageUInt8::create(numRowsOfImage, numColsOfImage * 3);
+            
+            auto output = outImage->rawData();
+             // Inicializa com zero
+            std::fill_n(output, sizeOutput, 0);
 
             for (int pidx = 0; pidx < sizeImage; pidx++){
                 int cpidx = pidx * 3; // (coloured) for 3 channels
@@ -52,8 +55,9 @@ class ImageUtils{
                 output[cpidx + 1] = g[img[pidx]];
                 output[cpidx + 2] = b[img[pidx]];
             }
-            return output;
+            return outImage;
         }
+
 
         
 };

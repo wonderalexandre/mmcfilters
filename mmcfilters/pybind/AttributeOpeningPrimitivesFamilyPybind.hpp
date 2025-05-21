@@ -18,21 +18,23 @@ class AttributeOpeningPrimitivesFamilyPybind: public AttributeOpeningPrimitivesF
     public:
     using AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily;
 
-    AttributeOpeningPrimitivesFamilyPybind(MorphologicalTreePybindPtr tree, py::array_t<float> attr, float maxCriterion)
-        : AttributeOpeningPrimitivesFamily(tree, static_cast<float*>(attr.request().ptr), maxCriterion) {}
+    AttributeOpeningPrimitivesFamilyPybind(MorphologicalTreePybindPtr tree, py::array_t<float>& attr, float maxCriterion)
+        : AttributeOpeningPrimitivesFamily(tree, PybindUtils::toShared_ptr(attr), maxCriterion){ }
+          
+      
 
-    AttributeOpeningPrimitivesFamilyPybind(MorphologicalTreePybindPtr tree, py::array_t<float> attr, float maxCriterion, int deltaMSER)
-        : AttributeOpeningPrimitivesFamily(tree, static_cast<float*>(attr.request().ptr), maxCriterion, deltaMSER) {}
+    AttributeOpeningPrimitivesFamilyPybind(MorphologicalTreePybindPtr tree, py::array_t<float>& attr, float maxCriterion, int deltaMSER)
+        : AttributeOpeningPrimitivesFamily(tree, PybindUtils::toShared_ptr(attr), maxCriterion, deltaMSER){ }
 
-    py::array_t<PixelType> getPrimitive(float threshold){
-        PixelType* imgOut = new PixelType[this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage()];
+    py::array_t<uint8_t> getPrimitive(float threshold){
+        ImageUInt8Ptr imgOut = ImageUInt8::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
         AttributeFilters::filteringByPruningMin(this->tree, this->attrs_increasing, threshold, imgOut);
-        return PybindUtils::toNumpy(imgOut, this->tree->getNumRowsOfImage()*this->tree->getNumColsOfImage());
+        return PybindUtils::toNumpy(imgOut);
 
     }
 
-    py::array_t<PixelType> getRestOfNumpyImage(){
-        return PybindUtils::toNumpy(this->restOfImage->rawData(), this->tree->getNumRowsOfImage()*this->tree->getNumColsOfImage());
+    py::array_t<uint8_t> getRestOfNumpyImage(){
+        return PybindUtils::toNumpy(this->restOfImage);
     }
 
 };

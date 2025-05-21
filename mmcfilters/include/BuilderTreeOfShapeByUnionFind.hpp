@@ -16,11 +16,11 @@ class BuilderTreeOfShapeByUnionFind {
 private:
     int interpNumRows;
     int interpNumCols;
-    PixelType* interpolationMin;
-    PixelType* interpolationMax;
+    uint8_t* interpolationMin;
+    uint8_t* interpolationMax;
     int* parent;
     int* imgR; 
-    PixelType* imgU;
+    uint8_t* imgU;
     AdjacencyUC* adj;
     bool is4c8cConnectivity;
 
@@ -98,16 +98,16 @@ public:
 
     int getInterpNumRows();
     int getInterpNumCols();
-    PixelType* getInterpolationMin();
-    PixelType* getInterpolationMax();
+    uint8_t* getInterpolationMin();
+    uint8_t* getInterpolationMax();
     int* getImgR();
-    PixelType* getImgU();
+    uint8_t* getImgU();
     int* getParent();
     AdjacencyUC* getAdjacency();
     BuilderTreeOfShapeByUnionFind();
     ~BuilderTreeOfShapeByUnionFind();
-    void interpolateImage(ImagePtr img);
-    void interpolateImage4c8c(ImagePtr img);
+    void interpolateImage(ImageUInt8Ptr img);
+    void interpolateImage4c8c(ImageUInt8Ptr img);
     void sort();
     int findRoot(int zPar[], int x);
     void createTreeByUnionFind();

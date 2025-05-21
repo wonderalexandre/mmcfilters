@@ -30,7 +30,7 @@ else()
 endif()
 
 # Padrões de C++
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -85,6 +85,13 @@ if(BUILD_TESTS)
     target_link_libraries(TesteCountors PRIVATE mmcfilters_lib)
     target_compile_options(TesteCountors PRIVATE -Wno-deprecated-declarations)
 
+        # Adicionar o executável de testes: 
+    add_executable(TesteCountors2 
+        mmcfilters/test/TesteCountors2.cpp
+        external/stb/stb_image.cpp
+    )
+    target_link_libraries(TesteCountors2 PRIVATE mmcfilters_lib)
+    target_compile_options(TesteCountors2 PRIVATE -Wno-deprecated-declarations)
         
     add_executable(TesteAdjacencyUC 
         mmcfilters/test/TesteAdjacencyUC.cpp
@@ -92,7 +99,14 @@ if(BUILD_TESTS)
     )
     target_link_libraries(TesteAdjacencyUC PRIVATE mmcfilters_lib)
     target_compile_options(TesteAdjacencyUC PRIVATE -Wno-deprecated-declarations)
-    
+
+    add_executable(testeComputerAttribute 
+        mmcfilters/test/testeComputerAttribute.cpp
+        external/stb/stb_image.cpp
+    )
+    target_link_libraries(testeComputerAttribute PRIVATE mmcfilters_lib)
+    target_compile_options(testeComputerAttribute PRIVATE -Wno-deprecated-declarations)
+
 
 
 endif()

@@ -27,57 +27,47 @@ class AttributeFiltersPybind : public AttributeFilters{
 
     AttributeFiltersPybind(MorphologicalTreePybindPtr tree): AttributeFilters(tree){}
 
-    py::array_t<PixelType> filteringByPruningMin(py::array_t<float> &attr, float threshold){
+    py::array_t<uint8_t> filteringByPruningMin(py::array_t<float> &attr, float threshold){
 
-        auto bufAttribute = attr.request();
-        float *attribute = (float *) bufAttribute.ptr;
-        int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-        PixelType* imgOutput = new PixelType[n];
+        std::shared_ptr<float[]> attribute = PybindUtils::toShared_ptr(attr);
+
+        ImageUInt8Ptr imgOutput = ImageUInt8::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
 
         AttributeFilters::filteringByPruningMin(this->tree, attribute, threshold, imgOutput);
 
-        return PybindUtils::toNumpy(imgOutput, n);
+        return PybindUtils::toNumpy(imgOutput);
     }
 
-    py::array_t<PixelType> filteringByPruningMax(py::array_t<float> &attr, float threshold){
+    py::array_t<uint8_t> filteringByPruningMax(py::array_t<float> &attr, float threshold){
 
-        auto bufAttribute = attr.request();
-        
-        float *attribute = (float *) bufAttribute.ptr;
-        int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-        PixelType* imgOutput = new PixelType[n];
+        std::shared_ptr<float[]> attribute = PybindUtils::toShared_ptr(attr);
 
+        ImageUInt8Ptr imgOutput = ImageUInt8::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
         AttributeFilters::filteringByPruningMax(this->tree, attribute, threshold, imgOutput);
 
-        return PybindUtils::toNumpy(imgOutput, n);
+        return PybindUtils::toNumpy(imgOutput);
 
     }
 
-    py::array_t<PixelType> filteringByPruningMin(std::vector<bool>& criterion){
-        int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-        PixelType* imgOutput = new PixelType[n];
-
+    py::array_t<uint8_t> filteringByPruningMin(std::vector<bool>& criterion){
+        ImageUInt8Ptr imgOutput = ImageUInt8::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
         AttributeFilters::filteringByPruningMin(this->tree, criterion, imgOutput);
 
-        return PybindUtils::toNumpy(imgOutput, n);
+        return PybindUtils::toNumpy(imgOutput);
     }
 
-    py::array_t<PixelType> filteringByDirectRule(std::vector<bool>& criterion){
-        int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-        PixelType* imgOutput = new PixelType[n];
-
+    py::array_t<uint8_t> filteringByDirectRule(std::vector<bool>& criterion){
+        ImageUInt8Ptr imgOutput = ImageUInt8::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
         AttributeFilters::filteringByDirectRule(this->tree, criterion, imgOutput);
 
-        return PybindUtils::toNumpy(imgOutput, n);
+        return PybindUtils::toNumpy(imgOutput);
     }
 
-    py::array_t<PixelType> filteringByPruningMax(std::vector<bool>& criterion){
-        int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-        PixelType* imgOutput = new PixelType[n];
-
+    py::array_t<uint8_t> filteringByPruningMax(std::vector<bool>& criterion){
+        ImageUInt8Ptr imgOutput = ImageUInt8::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
         AttributeFilters::filteringByPruningMax(this->tree, criterion, imgOutput);
 
-        return PybindUtils::toNumpy(imgOutput, n);
+        return PybindUtils::toNumpy(imgOutput);
 
     }
 
@@ -87,26 +77,43 @@ class AttributeFiltersPybind : public AttributeFilters{
 
 
 
-    py::array_t<PixelType> filteringBySubtractiveRule(std::vector<bool>& criterion){
-        int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-        PixelType* imgOutput = new PixelType[n];
-
+    py::array_t<uint8_t> filteringBySubtractiveRule(std::vector<bool>& criterion){
+        ImageUInt8Ptr imgOutput = ImageUInt8::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
         AttributeFilters::filteringBySubtractiveRule(this->tree, criterion, imgOutput);
 
-        return PybindUtils::toNumpy(imgOutput, n);
+        return PybindUtils::toNumpy(imgOutput);
 
     }
 
     py::array_t<float> filteringBySubtractiveScoreRule(std::vector<float>& prob){
-        int n = this->tree->getNumRowsOfImage() * this->tree->getNumColsOfImage();
-        float* imgOutput = new float[n];
-
+        ImageFloatPtr imgOutput = ImageFloat::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
         AttributeFilters::filteringBySubtractiveScoreRule(this->tree, prob, imgOutput);
 
-        return PybindUtils::toNumpyFloat(imgOutput, n);
+        return PybindUtils::toNumpy(imgOutput);
 
     }
 
+    py::array_t<uint8_t> filteringByExtinctionValue(py::array_t<float>& attr, int k){
+
+        std::shared_ptr<float[]> attribute = PybindUtils::toShared_ptr(attr);
+
+        ImageUInt8Ptr imgOutput = ImageUInt8::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
+        AttributeFilters::filteringByExtinctionValue(this->tree, attribute, k, imgOutput);
+
+        return PybindUtils::toNumpy(imgOutput);
+    }
+
+
+    py::array_t<float> saliencyMapByExtinction(py::array_t<float>& attr, int k){
+
+        std::shared_ptr<float[]> attribute = PybindUtils::toShared_ptr(attr);
+
+        ImageFloatPtr imgOutput = ImageFloat::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
+
+        AttributeFilters::saliencyMapByExtinction(this->tree, attribute, k, imgOutput);
+
+        return PybindUtils::toNumpy(imgOutput);
+    }
 
 
 

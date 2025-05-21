@@ -18,6 +18,9 @@
 
 #define UNDEF -999999999999
 
+class AttrbuteFilters;
+using AttributeFiltersPtr = std::shared_ptr<AttrbuteFilters>;
+
 class AttributeFilters{
     protected:
         MorphologicalTreePtr tree;
@@ -30,21 +33,138 @@ class AttributeFilters{
 
     std::vector<bool> getAdaptativeCriterion(std::vector<bool>& criterion, int delta);
 
-    ImagePtr filteringByPruningMin(float* attr, float threshold);
+    ImageUInt8Ptr filteringByPruningMin(std::shared_ptr<float[]> attr, float threshold);
 
-    ImagePtr filteringByPruningMax(float* attr, float threshold);
+    ImageUInt8Ptr filteringByPruningMax(std::shared_ptr<float[]> attr, float threshold);
 
-    ImagePtr filteringByPruningMin(std::vector<bool>& criterion);
+    ImageUInt8Ptr filteringByPruningMin(std::vector<bool>& criterion);
 
-    ImagePtr filteringByPruningMax(std::vector<bool>& criterion);
+    ImageUInt8Ptr filteringByPruningMax(std::vector<bool>& criterion);
 
-    ImagePtr filteringByDirectRule(std::vector<bool>& criterion);
+    ImageUInt8Ptr filteringByDirectRule(std::vector<bool>& criterion);
 
-    ImagePtr filteringBySubtractiveRule(std::vector<bool>& criterion);
+    ImageUInt8Ptr filteringBySubtractiveRule(std::vector<bool>& criterion);
 
-    float* filteringBySubtractiveScoreRule(std::vector<float>& prob);
+    ImageFloatPtr filteringBySubtractiveScoreRule(std::vector<float>& prob);
 
-    static void filteringBySubtractiveScoreRule(MorphologicalTreePtr tree, std::vector<float>& prob, float *imgOutput){
+    ImageUInt8Ptr filteringByExtinctionValue(MorphologicalTreePtr tree, std::shared_ptr<float[]> attribute, int numLeaf);
+
+    static void saliencyMapByExtinction(MorphologicalTreePtr tree, std::shared_ptr<float[]> attribute, int leafToKeep, ImageFloatPtr imgOutput){ 
+        // Passo 1: calcula os valores de extinção nas folhas
+        auto extValues = AttributeComputedIncrementally::getExtinctionValue(tree, attribute);
+    
+        // Ordena pelas folhas mais persistentes
+        std::sort(extValues.begin(), extValues.end(), [](const auto& a, const auto& b) {
+            return a->extinction > b->extinction;
+        });
+    
+        std::unique_ptr<bool[]> keep(new bool[tree->getNumNodes()]());
+        std::vector<float> extinctionByNode(tree->getNumNodes(), 0.0f);
+    
+        // Passo 2: marca folhas selecionadas e propaga para os ancestrais
+        for (int i = 0; i < leafToKeep; ++i) {
+            auto leaf = extValues[i]->leaf;
+            keep[leaf->getIndex()] = true;
+            extinctionByNode[leaf->getIndex()] = extValues[i]->extinction;
+        }
+
+        
+
+        for (auto node : tree->getRoot()->getIteratorPostOrderTraversal()) {
+            auto parent = node->getParent();
+            if (parent && keep[node->getIndex()]) {
+                keep[parent->getIndex()] = true;
+                extinctionByNode[parent->getIndex()] = extinctionByNode[node->getIndex()];
+            }
+        }
+    
+        auto saliencyOutput = imgOutput->rawData();
+
+        // Passo 3: gera o mapa apenas nos contornos dos nós marcados
+        for(int p=0; p < tree->getNumColsOfImage() * tree->getNumRowsOfImage(); p++){
+            saliencyOutput[p] = 0;
+        }
+    
+        auto contoursMT = AttributeComputedIncrementally::extractCompactCountors(tree);
+        contoursMT->visitContours(tree, [&](NodeMTPtr node, const std::unordered_set<int>& contourNode) {
+            if (keep[node->getIndex()]){
+                for (int p : contourNode) {
+                    saliencyOutput[p] = extinctionByNode[node->getIndex()];;
+                }
+            }
+        });
+    }
+    /*
+    static void saliencyMapByExtinction(MorphologicalTreePtr tree, float* attribute, float* saliencyOutput) {
+        // Passo 1: calcula os valores de extinção por nó
+        std::vector<AttributeComputedIncrementally::ExtinctionValues> extValues = AttributeComputedIncrementally::getExtinctionValue(tree, attribute);
+    
+        // Cria vetor com extinção por índice de nó
+        std::vector<float> extinctionByNode(tree->getNumNodes(), 0.0f);
+        for (const auto& ev : extValues) {
+            extinctionByNode[ev.leaf->getIndex()] = ev.extinction;
+        }
+    
+        // Passo 2: propaga extinções dos nós folhas para os ancestrais (máximo dos filhos)
+        for (NodeMTPtr node : tree->getRoot()->getIteratorPostOrderTraversal()) {
+            NodeMTPtr parent = node->getParent();
+            if (parent != nullptr) {
+                extinctionByNode[parent->getIndex()] = std::max(extinctionByNode[parent->getIndex()], extinctionByNode[node->getIndex()]);
+            }
+        }
+    
+        // Passo 3: gera mapa de saliência para cada pixel do contorno
+        AttributeComputedIncrementally::ContoursMT contoursMT = AttributeComputedIncrementally::extractCompactCountors(tree);
+        contoursMT.visitContours(tree, [&](NodeMTPtr node, const std::unordered_set<int>& contourNode) {
+            for(int p: contourNode){
+                saliencyOutput[p] = extinctionByNode[tree->getSC(p)->getIndex()];
+            }
+        });
+
+
+    }
+*/
+    
+    static void filteringByExtinctionValue(MorphologicalTreePtr tree, std::shared_ptr<float[]> attribute, int leafToKeep, ImageUInt8Ptr imgOutputPtr){
+        std::vector<ExtinctionValuesPtr> extinctionValuesLeaf = AttributeComputedIncrementally::getExtinctionValue(tree, attribute);
+        std::sort(extinctionValuesLeaf.begin(), extinctionValuesLeaf.end(), 
+            [](const ExtinctionValuesPtr& a, const ExtinctionValuesPtr& b) {
+                return a->extinction > b->extinction;
+            }
+        );
+
+        std::unique_ptr<bool[]> criterion(new bool[tree->getNumNodes()]());
+        for(int i=0; i < leafToKeep; i++){
+            criterion[extinctionValuesLeaf[i]->leaf->getIndex()] = true;
+        }
+        for(NodeMTPtr node: tree->getRoot()->getIteratorPostOrderTraversal()){
+            NodeMTPtr parent = node->getParent();
+            if (parent && criterion[node->getIndex()]) {
+                criterion[parent->getIndex()] = true;
+            }
+        }
+        auto imgOutput = imgOutputPtr->rawData();
+        std::stack<NodeMTPtr> s;
+        s.push(tree->getRoot());
+        while(!s.empty()){
+            NodeMTPtr node = s.top(); s.pop();
+            int level = node->getLevel();
+            for (int pixel : node->getCNPs()){
+                imgOutput[pixel] = level;
+            }
+            for (NodeMTPtr child: node->getChildren()){
+                if(criterion[child->getIndex()]){
+                    s.push(child);
+                }else{
+                    for(int pixel: child->getPixelsOfCC()){
+                        imgOutput[pixel] = level;
+                    }
+                }
+            }
+        }
+    }
+
+    static void filteringBySubtractiveScoreRule(MorphologicalTreePtr tree, std::vector<float>& prob, ImageFloatPtr imgOutputPtr){
         std::unique_ptr<float[]> mapLevel(new float[tree->getNumNodes()]);
         
         //the root is always kept
@@ -59,6 +179,7 @@ class AttributeFilters{
                     mapLevel[node->getIndex()] = (float) mapLevel[node->getParent()->getIndex()] - (residue * prob[node->getIndex()]);
             }
         }
+        auto imgOutput = imgOutputPtr->rawData();
         for(NodeMTPtr node: tree->getIndexNode()){
             for (int pixel : node->getCNPs()){
                 imgOutput[pixel] = mapLevel[node->getIndex()];
@@ -67,8 +188,7 @@ class AttributeFilters{
     }
 
 
-
-    static void filteringByResidualRule(ResidualTree* rtree, float* attribute, float threshold, PixelType* imgOutput){
+    static void filteringByResidualRule(ResidualTree* rtree, std::shared_ptr<float[]> attribute, float threshold, ImageUInt8Ptr imgOutputPtr){
         std::stack<NodeResPtr> s;
         for (NodeResPtr node : rtree->getRoot()->getChildren()){
             s.push(node);
@@ -94,7 +214,8 @@ class AttributeFilters{
             }
         }
 
-        PixelType* restOfImage = rtree->getRestOfImage()->rawData();
+        auto imgOutput = imgOutputPtr->rawData();
+        auto restOfImage = rtree->getRestOfImage()->rawData();
         for(NodeMTPtr node:  ctree->getIndexNode()){
             for (int pixel : node->getCNPs()){
                 if(ctree->isMaxtree())
@@ -106,7 +227,7 @@ class AttributeFilters{
 
     }
 
-    static void filteringBySubtractiveRule(MorphologicalTreePtr tree, std::vector<bool>& criterion, PixelType *imgOutput){
+    static void filteringBySubtractiveRule(MorphologicalTreePtr tree, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr){
         std::unique_ptr<int[]> mapLevel(new int[tree->getNumNodes()]);
         //the root is always kept
         mapLevel[0] = tree->getRoot()->getLevel();
@@ -124,6 +245,8 @@ class AttributeFilters{
             }
 
         }
+
+        auto imgOutput = imgOutputPtr->rawData();
         for(NodeMTPtr node: tree->getIndexNode()){
             for (int pixel : node->getCNPs()){
                 imgOutput[pixel] = mapLevel[node->getIndex()];
@@ -131,7 +254,7 @@ class AttributeFilters{
         }
     }
 
-    static void filteringByDirectRule(MorphologicalTreePtr tree, std::vector<bool>& criterion, PixelType *imgOutput){
+    static void filteringByDirectRule(MorphologicalTreePtr tree, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr){
         std::unique_ptr<int[]> mapLevel(new int[tree->getNumNodes()]);
 
         //the root is always kept
@@ -146,6 +269,7 @@ class AttributeFilters{
             }
 
         }
+        auto imgOutput = imgOutputPtr->rawData();
         for(NodeMTPtr node: tree->getIndexNode()){
             for (int pixel : node->getCNPs()){
                 imgOutput[pixel] = mapLevel[node->getIndex()];
@@ -153,9 +277,10 @@ class AttributeFilters{
         }
     }
 
-    static void filteringByPruningMin(MorphologicalTreePtr tree, std::vector<bool>& criterion, PixelType* imgOutput){
+    static void filteringByPruningMin(MorphologicalTreePtr tree, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr){
         std::stack<NodeMTPtr> s;
         s.push(tree->getRoot());
+        auto imgOutput = imgOutputPtr->rawData();
         while(!s.empty()){
             NodeMTPtr node = s.top(); s.pop();
             for (int pixel : node->getCNPs()){
@@ -173,7 +298,7 @@ class AttributeFilters{
         }
     }
 
-    static void filteringByPruningMax(MorphologicalTreePtr tree, std::vector<bool>& _criterion, PixelType* imgOutput){
+    static void filteringByPruningMax(MorphologicalTreePtr tree, std::vector<bool>& _criterion, ImageUInt8Ptr imgOutputPtr){
         std::unique_ptr<bool[]> criterion(new bool[tree->getNumNodes()]);
         AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
             [&criterion, _criterion](NodeMTPtr node) -> void { //pre-processing
@@ -189,7 +314,7 @@ class AttributeFilters{
                                         
             }
         );
-
+        auto imgOutput = imgOutputPtr->rawData();
         std::stack<NodeMTPtr> s;
         s.push(tree->getRoot());
         while(!s.empty()){
@@ -209,8 +334,9 @@ class AttributeFilters{
         }
     }
 
-
-    static void filteringByPruningMin(MorphologicalTreePtr tree, float *attribute, float threshold, PixelType* imgOutput){
+    
+    static void filteringByPruningMin(MorphologicalTreePtr tree, std::shared_ptr<float[]> attribute, float threshold, ImageUInt8Ptr imgOutputPtr){
+        auto imgOutput = imgOutputPtr->rawData();
         std::stack<NodeMTPtr> s;
         s.push(tree->getRoot());
         while(!s.empty()){
@@ -231,7 +357,8 @@ class AttributeFilters{
         }
     }
 
-    static void filteringByPruningMax(MorphologicalTreePtr tree, float *attribute, float threshold, PixelType* imgOutput){
+    
+    static void filteringByPruningMax(MorphologicalTreePtr tree, std::shared_ptr<float[]> attribute, float threshold, ImageUInt8Ptr imgOutputPtr){
         
         std::unique_ptr<bool[]> criterion(new bool[tree->getNumNodes()]);
         AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
@@ -248,7 +375,7 @@ class AttributeFilters{
                                         
             }
         );
-
+        auto imgOutput = imgOutputPtr->rawData();
         std::stack<NodeMTPtr> s;
         s.push(tree->getRoot());
         while(!s.empty()){
@@ -269,7 +396,7 @@ class AttributeFilters{
     }
 
 
-    static std::vector<bool> getAdaptativeCriterion(MorphologicalTreePtr tree, double *attribute, float threshold, int delta){
+    static std::vector<bool> getAdaptativeCriterion(MorphologicalTreePtr tree, std::shared_ptr<float[]> attribute, float threshold, int delta){
 		
         ComputerMSER mser(tree);
 		std::vector<bool> isMSER = mser.computerMSER(delta);
@@ -344,10 +471,7 @@ class AttributeFilters{
 		}
         return isPruned;
     }
-		
-
-
-
+	
 };
 
 

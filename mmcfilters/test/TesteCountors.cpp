@@ -14,16 +14,16 @@
 int main(int argc, char* argv[]) {
     // Definição da imagem e parâmetros
     
-    //ImagePtr img = getLenaCropImage();
+    ImageUInt8Ptr image = getSimpleImage();
     
     if(argc != 3){
         std::cout << "Execute assim: " << argv[0] << " <ToS_type> <filename>" << std::endl;
         return 1;
     }
-    ImagePtr image = openImage(argv[2]);
+   // ImagePtr image = openImage(argv[2]);
     
-    int numRows = image->numRows;
-    int numCols = image->numCols;
+    int numRows = image->getNumRows();
+    int numCols = image->getNumCols();
     int n = numRows * numCols;
 
     AdjacencyRelationPtr adj = std::make_shared<AdjacencyRelation>(numRows, numCols, 1);
@@ -64,15 +64,15 @@ int main(int argc, char* argv[]) {
     //std::cout << std::endl;
     //printMappingSC(tree, 3);
     
-    AttributeComputedIncrementally::ContoursMT contoursMT = AttributeComputedIncrementally::extractCompactCountors(tree);
+    ContoursMTPtr contoursMT = AttributeComputedIncrementally::extractCompactCountors(tree);
     //std::vector<std::unordered_set<int>> countors =  AttributeComputedIncrementally::extractCountors(tree);
     std::vector<std::vector<NodeMTPtr>> nodesByDepth = tree->getNodesByDepth();
-    ImagePtr imgBin = Image::create(numRows, numCols, 0);
-    ImagePtr contoursInc = Image::create(numRows, numCols, 0);
-    ImagePtr contoursNonInc = Image::create(numRows, numCols, 0);
+    ImageUInt8Ptr imgBin = ImageUInt8::create(numRows, numCols, 0);
+    ImageUInt8Ptr contoursInc = ImageUInt8::create(numRows, numCols, 0);
+    ImageUInt8Ptr contoursNonInc = ImageUInt8::create(numRows, numCols, 0);
 
     bool isEquals = true;
-    contoursMT.visitContoursAndCCs(tree, [&](NodeMTPtr node, const std::list<int>& cc, const std::unordered_set<int>& contourNode) {
+    contoursMT->visitContoursAndCCs(tree, [&](NodeMTPtr node, const std::list<int>& cc, const std::unordered_set<int>& contourNode) {
        
 
         //contorno incremental
@@ -139,7 +139,7 @@ int main(int argc, char* argv[]) {
             }
             
             
-            std::unordered_set<int> contourNode = contoursMT.getContour(node);//countors[node->getIndex()];
+            std::unordered_set<int> contourNode = contoursMT->getContour(node);//countors[node->getIndex()];
             for(int p: contourNode){
                 contoursInc[p] = 1;
             }

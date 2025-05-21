@@ -20,17 +20,19 @@ class UltimateAttributeOpeningPybind: public UltimateAttributeOpening{
 public:
     using UltimateAttributeOpening::UltimateAttributeOpening;
 
-    UltimateAttributeOpeningPybind(MorphologicalTreePybindPtr tree,  std::vector<float> attrs_increasing) : UltimateAttributeOpening(tree, attrs_increasing){}
+    UltimateAttributeOpeningPybind(MorphologicalTreePybindPtr tree,  py::array_t<float> &attr) : 
+        UltimateAttributeOpening(tree, PybindUtils::toShared_ptr(attr) ){}
 
-    py::array_t<PixelType> getMaxConstrastImage(){
-        return PybindUtils::toNumpy(UltimateAttributeOpening::getMaxConstrastImage(), this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage());
+    py::array_t<uint8_t> getMaxConstrastImage(){
+        return PybindUtils::toNumpy(UltimateAttributeOpening::getMaxConstrastImage());
     }       
 
-    py::array_t<int> getAssociatedImage(){
-        return PybindUtils::toNumpyInt(UltimateAttributeOpening::getAssociatedImage(), this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage());
+    py::array_t<int32_t> getAssociatedImage(){
+        auto imgOut = UltimateAttributeOpening::getAssociatedImage();
+        return PybindUtils::toNumpyInt(imgOut->rawData(), imgOut->getSize());
     }
-    py::array_t<PixelType> getAssociatedColorImage(){
-        return PybindUtils::toNumpy(UltimateAttributeOpening::getAssociatedColorImage(), this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage() * 3);
+    py::array_t<uint8_t> getAssociatedColorImage(){
+        return PybindUtils::toNumpy(UltimateAttributeOpening::getAssociatedColorImage());
     }
 
 

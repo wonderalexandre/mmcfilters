@@ -4,7 +4,7 @@
 
 int main() {
     // Definição da imagem e parâmetros
-    ImagePtr img = getPassatImage();
+    ImageUInt8Ptr img = getPassatImage();
     
     double radioAdj = 1.5;
 

@@ -12,14 +12,14 @@
 
 int main() {
    
-    ImagePtr image = getSimpleImage();
+    ImageUInt8Ptr image = getSimpleImage();
 
     BuilderTreeOfShapeByUnionFind builder;
 
     // Receber os ponteiros de interpolação (mínimo e máximo)
     builder.interpolateImage4c8c(image);
-    PixelType* interpolationMin = builder.getInterpolationMin();
-    PixelType* interpolationMax = builder.getInterpolationMax();
+    uint8_t* interpolationMin = builder.getInterpolationMin();
+    uint8_t* interpolationMax = builder.getInterpolationMax();
 
     // Imprimir os resultados da interpolação
     std::cout << "\nInterpolação: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
@@ -54,7 +54,7 @@ int main() {
     // Ordenar a interpolação mínima
     builder.sort();
     int* imgR = builder.getImgR();
-    PixelType* imgU = builder.getImgU();
+    uint8_t* imgU = builder.getImgU();
 
     std::cout << "\nimgU: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
     // Imprimir os resultados da interpolação ordenada

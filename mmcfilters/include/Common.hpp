@@ -13,75 +13,84 @@
 #include <limits>
 #include <algorithm>
 
-#define PRINT_LOG 1 
+#define PRINT_LOG 0 
 #define PRINT_DEBUG 0 
 
-// Forward declaration 
-class MorphologicalTree;
-class NodeMT;
 
 
-using NodeMTPtr = std::shared_ptr<NodeMT>;
-using MorphologicalTreePtr = std::shared_ptr<MorphologicalTree>; 
 
-using PixelType = uint8_t;
+template <typename PixelType>
+class Image {
+    private:
+        int numRows;
+        int numCols;
+        std::shared_ptr<PixelType[]> data;
+        using Ptr = std::shared_ptr<Image<PixelType>>;
 
-struct Image {
-    int numRows;
-    int numCols;
-    std::shared_ptr<PixelType[]> data;
+    public:
+    
+    Image(int rows, int cols): numRows(rows), numCols(cols), data(new PixelType[rows * cols], std::default_delete<PixelType[]>()) {}
 
-
-    Image(int rows, int cols) : numRows(rows), numCols(cols), data(new PixelType[rows * cols], std::default_delete<PixelType[]>()) {}
-
-    static std::shared_ptr<Image> create(int rows, int cols) {
+    static Ptr create(int rows, int cols) {
         return std::make_shared<Image>(rows, cols);
     }
 
-    static std::shared_ptr<Image> create(int rows, int cols, PixelType initValue) {
-        auto img = std::make_shared<Image>(rows, cols);
+    static Ptr create(int rows, int cols, PixelType initValue) {
+        auto img = create(rows, cols);
         img->fill(initValue);
         return img;
     }
 
-    static std::shared_ptr<Image> fromExternal(PixelType* rawPtr, int rows, int cols) {
-        auto img = std::make_shared<Image>(rows, cols);
+    static Ptr fromExternal(PixelType* rawPtr, int rows, int cols) {
+        auto img = create(rows, cols);
         img->data = std::shared_ptr<PixelType[]>(rawPtr, [](PixelType*) {
             // deleter vazio: não libera o ponteiro
         });
         return img;
     }
 
-    static std::shared_ptr<Image> fromRaw(PixelType* rawPtr, int rows, int cols) {
-        auto img = std::make_shared<Image>(rows, cols);
+    static Ptr fromRaw(PixelType* rawPtr, int rows, int cols) {
+        auto img = create(rows, cols);
         img->data = std::shared_ptr<PixelType[]>(rawPtr, std::default_delete<PixelType[]>());
         return img;
     }
 
-    PixelType* rawData() { return data.get(); }
-
-    PixelType& operator[](int index) { return data[index]; }
-
-    const PixelType& operator[](int index) const { return data[index]; }
-
+    
     void fill(PixelType value) {
-        std::fill(data.get(), data.get() + numRows * numCols, value);
+        std::fill_n(data.get(), numRows * numCols, value);
     }
 
-    bool isEqual(std::shared_ptr<Image> other) const {
+    bool isEqual(const Ptr& other) const {
         if (numRows != other->numRows || numCols != other->numCols)
             return false;
-    
         int n = numRows * numCols;
         for (int i = 0; i < n; ++i) {
             if (data[i] != (*other)[i])
                 return false;
         }
-    
         return true;
     }
+    std::shared_ptr<PixelType[]> rawDataPtr(){ return data; }
+    PixelType* rawData() { return data.get(); }
+    int getNumRows() const { return numRows; }
+    int getNumCols() const { return numCols; }
+    int getSize() const { return numRows * numCols; }
+    PixelType& operator[](int index) { return data[index]; }
+    const PixelType& operator[](int index) const { return data[index]; }
+
+
 };
 
-using ImagePtr = std::shared_ptr<Image>;
+// Aliases
+using ImageUInt8 = Image<uint8_t>;
+using ImageInt32 = Image<int32_t>;
+using ImageFloat = Image<float>;
+
+using ImageUInt8Ptr = std::shared_ptr<ImageUInt8>;
+using ImageInt32Ptr = std::shared_ptr<ImageInt32>;
+using ImageFloatPtr = std::shared_ptr<ImageFloat>;
+
+template <typename T>
+using ImagePtr = std::shared_ptr<Image<T>>;
 
 #endif 

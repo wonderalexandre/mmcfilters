@@ -10,44 +10,28 @@ namespace py = pybind11;
 class PybindUtils{
     public:
         
-        static py::array_t<uint8_t> toNumpy(ImageUInt8Ptr image) {
+        template <typename PixelType>
+        static py::array_t<PixelType> toNumpy(ImagePtr<PixelType> image) {
             
-            std::shared_ptr<uint8_t[]> buffer = image->rawDataPtr();
+            std::shared_ptr<PixelType[]> buffer = image->rawDataPtr();
             int n = image->getSize();
-            std::shared_ptr<uint8_t[]> bufferCopy = buffer;
+            std::shared_ptr<PixelType[]> bufferCopy = buffer;
 
-            py::capsule free_when_done(new std::shared_ptr<uint8_t[]>(bufferCopy), [](void* ptr) {
+            py::capsule free_when_done(new std::shared_ptr<PixelType[]>(bufferCopy), [](void* ptr) {
                 // Converte de volta e destrói corretamente
-                delete reinterpret_cast<std::shared_ptr<uint8_t[]>*>(ptr);
+                delete reinterpret_cast<std::shared_ptr<PixelType[]>*>(ptr);
             });
             
-            py::array_t<uint8_t> numpy = py::array(py::buffer_info(
+            py::array_t<PixelType> numpy = py::array(py::buffer_info(
                 buffer.get(),
-                sizeof(uint8_t),
-                py::format_descriptor<uint8_t>::value,
+                sizeof(PixelType),
+                py::format_descriptor<PixelType>::value,
                 1,
                 { n },
-                { sizeof(uint8_t) }
+                { sizeof(PixelType) }
             ), free_when_done);
             
             return numpy;
-
-/*
-            uint8_t* data = image->rawData();
-            int size = image->getNumRows() * image->getNumCols();
-            // Cria um capsule que sabe como liberar o ponteiro
-            py::capsule free_when_done(data, [](void* f) {
-                delete[] static_cast<uint8_t*>(f);
-            });
-        
-            // Cria o py::array com o capsule responsável por liberar a memória
-            return py::array_t<uint8_t>(
-                { size },               // shape (tamanho do vetor)
-                { sizeof(uint8_t) },        // strides (distância entre elementos)
-                data,                   // ponteiro para os dados
-                free_when_done          // capsule que cuida da liberação
-            );
-            */
         }
     
 
@@ -101,12 +85,22 @@ class PybindUtils{
             return numpy;
         }
         
-
+        /*
         static std::shared_ptr<float[]> toShared_ptr(py::array_t<float>& arr) {
             // Cria um capsule que sabe como liberar o ponteiro
             return std::shared_ptr<float[]>(
                 static_cast<float*>(arr.request().ptr),
                 [obj = py::object(arr)](float*) mutable { obj.dec_ref(); }
+            );
+        }*/
+
+        static std::shared_ptr<float[]> toShared_ptr(py::array_t<float>& arr) {
+            // Captura o objeto Python no deleter — isso garante que o buffer não será liberado prematuramente
+            return std::shared_ptr<float[]>(
+                static_cast<float*>(arr.request().ptr),
+                [obj = py::object(arr)](float*) mutable {
+                    //  manter o py::object vivo
+                }
             );
         }
 

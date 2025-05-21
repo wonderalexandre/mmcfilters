@@ -31,6 +31,7 @@ enum class Attribute {
 
     // Textura / intensidade agregada
     VOLUME,
+	RELATIVE_VOLUME,
     LEVEL,
     GRAY_HEIGHT,
     MEAN_LEVEL,
@@ -152,6 +153,7 @@ static const std::unordered_map<AttributeGroup, std::vector<Attribute>> ATTRIBUT
     {AttributeGroup::GEOMETRIC, {
         AREA,
 		VOLUME,
+		RELATIVE_VOLUME,
         RECTANGULARITY,
 		RATIO_WH,
         COMPACTNESS,
@@ -203,6 +205,7 @@ static const std::unordered_map<AttributeGroup, std::vector<Attribute>> ATTRIBUT
     }},
     {AttributeGroup::TEXTURE, {
         VOLUME,
+		RELATIVE_VOLUME,
         LEVEL,
         GRAY_HEIGHT,
         MEAN_LEVEL,
@@ -276,6 +279,7 @@ public:
 		switch (attr) {
 			case AREA: name = "AREA"; break;
 			case VOLUME: name = "VOLUME"; break;
+			case RELATIVE_VOLUME: name = "RELATIVE_VOLUME"; break;
 			case LEVEL: name = "LEVEL"; break;
 			case GRAY_HEIGHT: name = "GRAY_HEIGHT"; break;
 			case MEAN_LEVEL: name = "MEAN_LEVEL"; break;
@@ -370,6 +374,7 @@ public:
         switch (attr) {
             case AREA: return "AREA";
             case VOLUME: return "VOLUME";
+			case RELATIVE_VOLUME: return "RELATIVE_VOLUME";
             case LEVEL: return "LEVEL";
             case GRAY_HEIGHT: return "GRAY_HEIGHT";
             case MEAN_LEVEL: return "MEAN_LEVEL";
@@ -422,61 +427,62 @@ public:
         switch (attr) {
             // Basic geometric attributes
             case Attribute::AREA: return "Area: Number of pixels in the connected component.";
-            case Attribute::VOLUME: return "Volume: Sum of gray-level values of all pixels in the connected component.";
-            case Attribute::LEVEL: return "Level: Threshold used to obtaned the smallest level-set containing the connected component.";
-            case Attribute::GRAY_HEIGHT: return "GRAY_HEIGHT: Difference between the node level and the level of its darkest ancestor.";
+            case Attribute::VOLUME: return "Volume: Sum of the gray-level intensities of all pixels in the connected component. Interpreted as the total mass under the component, or the integral of the image function over its support.";
+			case Attribute::RELATIVE_VOLUME: return "Relative volume: Sum of differences between the node level and the gray-levels of pixels in the component. Measures the amount of intensity required to fill the component to its node level.";
+            case Attribute::LEVEL: return "Level: Gray-level at which the connected component appears in the threshold decomposition hierarchy; corresponds to the altitude of the node in the component tree.";
+            case Attribute::GRAY_HEIGHT: return "GRAY_HEIGHT: For a node in the max-tree, the difference between its level and the maximum level among its descendants; analogously, in the min-tree, the difference to the minimum level among its descendants.";
             case Attribute::MEAN_LEVEL: return "Mean level: Average gray-level intensity of the pixels in the connected component.";
-            case Attribute::VARIANCE_LEVEL: return "Variance of level: Variance of the gray-level intensities in the connected component.";
+            case Attribute::VARIANCE_LEVEL: return "Variance of level: Variance of the gray-level values of the pixels in the connected component.";
 
             // Bounding box attributes
             case Attribute::BOX_WIDTH: return "Bounding box width: Width of the minimum rectangle enclosing the connected component.";
             case Attribute::BOX_HEIGHT: return "Bounding box height: Height of the minimum rectangle enclosing the connected component.";
-            case Attribute::RECTANGULARITY: return "Rectangularity: Ratio between the connected component area and the area of its bounding box.";
-            case Attribute::RATIO_WH: return "Aspect ratio: Ratio between width and height of the bounding box.";
+            case Attribute::RECTANGULARITY: return "Rectangularity: Ratio between the connected component area and the area of its bounding box. Values closer to 1 indicate shapes that efficiently fill their bounding box.";
+            case Attribute::RATIO_WH: return "Aspect ratio: Ratio of the bounding box width to its height. Describes the elongation of the component.";
             case Attribute::BOX_COL_MIN: return "Bounding box column min: Minimum column index covered by the connected component.";
             case Attribute::BOX_COL_MAX: return "Bounding box column max: Maximum column index covered by the connected component.";
             case Attribute::BOX_ROW_MIN: return "Bounding box row min: Minimum row index covered by the connected component.";
             case Attribute::BOX_ROW_MAX: return "Bounding box row max: Maximum row index covered by the connected component.";
-			case Attribute::DIAGONAL_LENGTH: return "Diagonal length: Length of the diagonal of the bounding box.";
+			case Attribute::DIAGONAL_LENGTH: return "Diagonal length: Euclidean length of the diagonal of the bounding box, computed as sqrt(width^2 + height^2).";
 
             // Central moments
-            case Attribute::CENTRAL_MOMENT_20: return "Central moment (2,0): Spread of pixels along the x-axis.";
-            case Attribute::CENTRAL_MOMENT_02: return "Central moment (0,2): Spread of pixels along the y-axis.";
-            case Attribute::CENTRAL_MOMENT_11: return "Central moment (1,1): Correlation between x and y coordinates of pixels.";
-            case Attribute::CENTRAL_MOMENT_30: return "Central moment (3,0): Skewness of pixel distribution along x-axis.";
-            case Attribute::CENTRAL_MOMENT_03: return "Central moment (0,3): Skewness of pixel distribution along y-axis.";
-            case Attribute::CENTRAL_MOMENT_21: return "Central moment (2,1): Mixed third-order moment.";
-            case Attribute::CENTRAL_MOMENT_12: return "Central moment (1,2): Mixed third-order moment.";
+			case Attribute::CENTRAL_MOMENT_20: return "Central moment (2,0): Second-order moment about the centroid along the x-axis. Measures the horizontal spread of the component.";
+			case Attribute::CENTRAL_MOMENT_02: return "Central moment (0,2): Second-order moment about the centroid along the y-axis. Measures the vertical spread of the component.";
+			case Attribute::CENTRAL_MOMENT_11: return "Central moment (1,1): Mixed second-order moment about the centroid. Represents the covariance between x and y coordinates.";
+			case Attribute::CENTRAL_MOMENT_30: return "Central moment (3,0): Third-order moment about the centroid along the x-axis. Describes horizontal asymmetry of the component.";
+			case Attribute::CENTRAL_MOMENT_03: return "Central moment (0,3): Third-order moment about the centroid along the y-axis. Describes vertical asymmetry of the component.";
+			case Attribute::CENTRAL_MOMENT_21: return "Central moment (2,1): Mixed third-order moment about the centroid. Captures joint spread and asymmetry in x and y.";
+			case Attribute::CENTRAL_MOMENT_12: return "Central moment (1,2): Mixed third-order moment about the centroid. Captures joint spread and asymmetry in y and x.";
 
             // Hu moments (invariant shape descriptors)
-            case Attribute::HU_MOMENT_1: return "Hu moment 1: First invariant moment, related to object size.";
-            case Attribute::HU_MOMENT_2: return "Hu moment 2: Second invariant moment, related to variance.";
-            case Attribute::HU_MOMENT_3: return "Hu moment 3: Third invariant moment, capturing skewness.";
-            case Attribute::HU_MOMENT_4: return "Hu moment 4: Invariant moment capturing symmetry.";
-            case Attribute::HU_MOMENT_5: return "Hu moment 5: Shape descriptor sensitive to orientation.";
-            case Attribute::HU_MOMENT_6: return "Hu moment 6: Invariant to scale, translation and rotation.";
-            case Attribute::HU_MOMENT_7: return "Hu moment 7: Captures asymmetry and fine shape variation.";
+            case Attribute::HU_MOMENT_1: return "Hu moment 1: Invariant to translation, scale, and rotation. Represents overall spatial variance (shape dispersion).";
+			case Attribute::HU_MOMENT_2: return "Hu moment 2: Invariant capturing the difference between horizontal and vertical spread.";
+			case Attribute::HU_MOMENT_3: return "Hu moment 3: Sensitive to skewness and asymmetry in the pixel distribution.";
+			case Attribute::HU_MOMENT_4: return "Hu moment 4: Measures symmetry with respect to diagonal axes.";
+			case Attribute::HU_MOMENT_5: return "Hu moment 5: Descriptor sensitive to orientation and reflection; captures complex asymmetries.";
+			case Attribute::HU_MOMENT_6: return "Hu moment 6: Invariant capturing elliptic asymmetries, sensitive to specific shape curvature.";
+			case Attribute::HU_MOMENT_7: return "Hu moment 7: Highly sensitive to irregularities and fine variations; helps discriminate mirror-symmetric shapes.";
 
             // Derived from moments
-            case Attribute::INERTIA: return "Inertia: Resistance to rotation; second-order moment around centroid.";
-            case Attribute::COMPACTNESS: return "Compactness: Shape compactness; often area divided by perimeter squared.";
-            case Attribute::ECCENTRICITY: return "Eccentricity: Elongation of the object; ratio of major to minor axis.";
+            case Attribute::INERTIA: return "Inertia: Sum of normalized second-order central moments (mu20 + mu02). Measures the dispersion of mass around the centroid. Higher values indicate objects with thin and elongated structures.";
+            case Attribute::COMPACTNESS: return "Compactness: Area normalized by the shape's dispersion (mu20 + mu02). Higher values indicate more compact and isotropic shapes.";
+            case Attribute::ECCENTRICITY: return "Eccentricity: Ratio of principal inertia axes (λ_1/λ_2). Quantifies the elongation of the shape; values near 1 indicate circularity.";
             case Attribute::LENGTH_MAJOR_AXIS: return "Major axis length: Length of the longest diameter of the shape.";
             case Attribute::LENGTH_MINOR_AXIS: return "Minor axis length: Length of the shortest diameter of the shape.";
-            case Attribute::AXIS_ORIENTATION: return "Axis orientation: Angle of the major axis with respect to the horizontal.";
+            case Attribute::AXIS_ORIENTATION: return "Axis orientation: Angle of the principal inertia axis, computed from central moments. Indicates the dominant orientation of the shape.";
 
             // tree topology 
-            case Attribute::HEIGHT_NODE: return "Height: Longest distance to any descendant (leaf) node in the tree.";
-            case Attribute::DEPTH_NODE: return "Depth: Distance from the node to the root of the tree.";
-            case Attribute::IS_LEAF_NODE: return "Is leaf: Whether the node has no children.";
-            case Attribute::IS_ROOT_NODE: return "Is root: Whether the node is the root of the component tree.";
-            case Attribute::NUM_CHILDREN_NODE: return "Number of children: Direct child nodes of the current node.";
-            case Attribute::NUM_SIBLINGS_NODE: return "Number of siblings: Other children of the node’s parent.";
-            case Attribute::NUM_DESCENDANTS_NODE: return "Number of descendants: All nodes in the subtree rooted at this node.";
-            case Attribute::NUM_LEAF_DESCENDANTS_NODE: return "Number of leaf descendants: Leaf nodes in the subtree rooted at this node.";
-            case Attribute::LEAF_RATIO_NODE: return "Leaf ratio: Ratio of leaf descendants to all descendants.";
-            case Attribute::BALANCE_NODE: return "Balance: Difference between maximum and minimum subtree height among children.";
-            case Attribute::AVG_CHILD_HEIGHT_NODE: return "Average child height: Mean height of all direct children of the node.";
+			case Attribute::HEIGHT_NODE: return "Height: Longest path from this node to any leaf in its subtree. Measures the depth of the subtree rooted at the node.";
+			case Attribute::DEPTH_NODE: return "Depth: Number of steps from this node to the root of the tree. Indicates the level of embedding within the tree hierarchy.";
+			case Attribute::IS_LEAF_NODE: return "Is leaf: True if the node has no children, i.e., it represents a minimal component in the hierarchy.";
+			case Attribute::IS_ROOT_NODE:return "Is root: True if the node is the root of the tree, representing the entire image support.";
+			case Attribute::NUM_CHILDREN_NODE:return "Number of children: Count of direct child nodes. Reflects the immediate branching factor of the node.";
+			case Attribute::NUM_SIBLINGS_NODE:return "Number of siblings: Number of other nodes that share the same parent.";
+			case Attribute::NUM_DESCENDANTS_NODE:return "Number of descendants: Total number of nodes in the subtree rooted at this node (excluding the node itself).";
+			case Attribute::NUM_LEAF_DESCENDANTS_NODE:return "Number of leaf descendants: Number of leaf nodes in the subtree. Reflects the number of minimal patterns under this structure.";
+			case Attribute::LEAF_RATIO_NODE:return "Leaf ratio: Ratio of leaf descendants to total descendants. Measures structural 'flatness' or terminal density of the subtree.";
+			case Attribute::BALANCE_NODE:return "Balance: Difference between the maximum and minimum heights among the subtrees of the children. Indicates branching symmetry.";
+			case Attribute::AVG_CHILD_HEIGHT_NODE:return "Average child height: Mean height of all direct child subtrees. Useful for measuring uniformity of the subtree structure.";
 
             default:
                 return "Unknown attribute.";
@@ -581,6 +587,16 @@ class PathAscendantsAndDescendants{
 };
 
 
+struct ExtinctionValues{
+	NodeMTPtr leaf;
+	NodeMTPtr cutoffNode;
+	float extinction;
+	ExtinctionValues(NodeMTPtr leaf, NodeMTPtr cutoffNode, float extinction)
+		: leaf(leaf), cutoffNode(cutoffNode), extinction(extinction) {}
+	
+};
+using ExtinctionValuesPtr = std::shared_ptr<ExtinctionValues>;
+
 class AttributeComputedIncrementally;  // forward declaration
 using AttributeComputedIncrementallyPtr = std::shared_ptr<AttributeComputedIncrementally>;
 class AttributeComputedIncrementally{
@@ -613,19 +629,9 @@ public:
 
 
 
-
-	struct ExtinctionValues{
-		NodeMTPtr leaf;
-		NodeMTPtr cutoffNode;
-		float extinction;
-		ExtinctionValues(NodeMTPtr leaf, NodeMTPtr cutoffNode, float extinction)
-			: leaf(leaf), cutoffNode(cutoffNode), extinction(extinction) {}
-		
-	};
-
-	static std::vector<AttributeComputedIncrementally::ExtinctionValues> getExtinctionValue(MorphologicalTreePtr tree, std::shared_ptr<float[]> attr){
+	static std::vector<ExtinctionValuesPtr> getExtinctionValue(MorphologicalTreePtr tree, std::shared_ptr<float[]> attr){
 		std::list<NodeMTPtr> leaves = tree->getLeaves();
-		std::vector<AttributeComputedIncrementally::ExtinctionValues> leavesByExtinction;
+		std::vector<ExtinctionValuesPtr> leavesByExtinction;
 		leavesByExtinction.reserve(leaves.size());
 		std::unique_ptr<bool[]> visited(new bool[tree->getNumNodes()]()); //inicializa com false
 		for(NodeMTPtr leaf: leaves){
@@ -654,7 +660,7 @@ public:
 			}
 			if(parent != nullptr)
 				extinction = attr[cutoffNode->getIndex()];
-			leavesByExtinction.push_back( AttributeComputedIncrementally::ExtinctionValues(leaf, cutoffNode, extinction) );
+			leavesByExtinction.push_back( std::make_shared<ExtinctionValues>(leaf, cutoffNode, extinction) );
 			
 		}
 		return leavesByExtinction;
@@ -707,22 +713,37 @@ using AreaComputerPtr = std::shared_ptr<AreaComputer>;
 class VolumeComputer : public AttributeComputer {
 	public:
 		std::vector<Attribute> attributes() const override {
-			return {VOLUME};
+			return {VOLUME, RELATIVE_VOLUME};
 		}
 		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources= {}) const override {
 			if(PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing VOLUME" << std::endl;
-			auto indexOf = [&](int idx) {
+			auto indexOfVol = [&](int idx) {
 				return attrNames->linearIndex(idx, VOLUME);
 			};
+			auto indexOfVolRel = [&](int idx) {
+				return attrNames->linearIndex(idx, RELATIVE_VOLUME);
+			};
 	
+			bool computeVolume = std::find(requestedAttributes.begin(), requestedAttributes.end(), VOLUME) != requestedAttributes.end();
+			bool computeRelativeVolume = std::find(requestedAttributes.begin(), requestedAttributes.end(), RELATIVE_VOLUME) != requestedAttributes.end();
+
 			AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
 				[&](NodeMTPtr node) {
-					buffer[indexOf(node->getIndex())] = node->getCNPs().size() * node->getLevel();
+					if(computeVolume)
+						buffer[indexOfVol(node->getIndex())] = node->getCNPs().size() * node->getLevel();
+					if(computeRelativeVolume)	
+						buffer[indexOfVolRel(node->getIndex())] = 0;
 				},
 				[&](NodeMTPtr parent, NodeMTPtr child) {
-					buffer[indexOf(parent->getIndex())] += buffer[indexOf(child->getIndex())];
+					if(computeVolume)
+						buffer[indexOfVol(parent->getIndex())] += buffer[indexOfVol(child->getIndex())];
+					if(computeRelativeVolume)		
+						buffer[indexOfVolRel(parent->getIndex())] += buffer[indexOfVolRel(child->getIndex())] + child->getAreaCC() * std::abs(child->getLevel() - parent->getLevel());
 				},
-				[](NodeMTPtr node) {}
+				[&](NodeMTPtr node) {
+					if(computeRelativeVolume)	
+						buffer[indexOfVolRel(node->getIndex())] += node->getAreaCC();
+				}
 			);
 		}
 };
@@ -1426,6 +1447,8 @@ class AttributeFactory {
 		static std::shared_ptr<AttributeComputer> createImpl(Attribute attr) {
 			switch (attr) {
 				case AREA: return std::make_shared<AreaComputer>();
+				
+				case RELATIVE_VOLUME:
 				case VOLUME: return std::make_shared<VolumeComputer>();
 				
 				case GRAY_HEIGHT: 

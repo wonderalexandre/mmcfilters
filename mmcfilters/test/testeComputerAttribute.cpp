@@ -64,24 +64,9 @@ int main(int argc, char const *argv[])
     }
 
 
-    auto [attrNames, attrsPtr] = AttributeComputedIncrementally::computeAttributes(tree, {  AttributeGroup::GEOMETRIC,
+    auto [attrNames, attrsPtr] = AttributeComputedIncrementally::computeAttributes(tree, {  
                                                                                             Attribute::AREA, 
-                                                                                            Attribute::GRAY_HEIGHT, 
-                                                                                            Attribute::AXIS_ORIENTATION,
-                                                                                            Attribute::VOLUME,
-                                                                                            Attribute::LEVEL,
-                                                                                            Attribute::MEAN_LEVEL,
-                                                                                            Attribute::VARIANCE_LEVEL,
-                                                                                            Attribute::RECTANGULARITY,
-                                                                                            Attribute::RATIO_WH,
-                                                                                            Attribute::LENGTH_MAJOR_AXIS,
-                                                                                            Attribute::LENGTH_MINOR_AXIS,
-                                                                                            Attribute::ECCENTRICITY,
-                                                                                            Attribute::COMPACTNESS,
-                                                                                            Attribute::BOX_WIDTH,
-                                                                                            Attribute::BOX_HEIGHT,
-                                                                                            Attribute::INERTIA,
-                                                                                            AttributeGroup::TREE_TOPOLOGY
+                                                                                            Attribute::LEVEL
                                                                                             } );
 
 

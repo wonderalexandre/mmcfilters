@@ -55,7 +55,7 @@ class AttributeFilters{
     
         // Ordena pelas folhas mais persistentes
         std::sort(extValues.begin(), extValues.end(), [](const auto& a, const auto& b) {
-            return a.extinction > b.extinction;
+            return a->extinction > b->extinction;
         });
     
         std::unique_ptr<bool[]> keep(new bool[tree->getNumNodes()]());
@@ -63,9 +63,9 @@ class AttributeFilters{
     
         // Passo 2: marca folhas selecionadas e propaga para os ancestrais
         for (int i = 0; i < leafToKeep; ++i) {
-            auto leaf = extValues[i].leaf;
+            auto leaf = extValues[i]->leaf;
             keep[leaf->getIndex()] = true;
-            extinctionByNode[leaf->getIndex()] = extValues[i].extinction;
+            extinctionByNode[leaf->getIndex()] = extValues[i]->extinction;
         }
 
         
@@ -126,16 +126,16 @@ class AttributeFilters{
 */
     
     static void filteringByExtinctionValue(MorphologicalTreePtr tree, std::shared_ptr<float[]> attribute, int leafToKeep, ImageUInt8Ptr imgOutputPtr){
-        std::vector<AttributeComputedIncrementally::ExtinctionValues> extinctionValuesLeaf = AttributeComputedIncrementally::getExtinctionValue(tree, attribute);
+        std::vector<ExtinctionValuesPtr> extinctionValuesLeaf = AttributeComputedIncrementally::getExtinctionValue(tree, attribute);
         std::sort(extinctionValuesLeaf.begin(), extinctionValuesLeaf.end(), 
-            [](const AttributeComputedIncrementally::ExtinctionValues& a, const AttributeComputedIncrementally::ExtinctionValues& b) {
-                return a.extinction > b.extinction;
+            [](const ExtinctionValuesPtr& a, const ExtinctionValuesPtr& b) {
+                return a->extinction > b->extinction;
             }
         );
 
         std::unique_ptr<bool[]> criterion(new bool[tree->getNumNodes()]());
         for(int i=0; i < leafToKeep; i++){
-            criterion[extinctionValuesLeaf[i].leaf->getIndex()] = true;
+            criterion[extinctionValuesLeaf[i]->leaf->getIndex()] = true;
         }
         for(NodeMTPtr node: tree->getRoot()->getIteratorPostOrderTraversal()){
             NodeMTPtr parent = node->getParent();

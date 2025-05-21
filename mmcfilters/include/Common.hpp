@@ -13,7 +13,7 @@
 #include <limits>
 #include <algorithm>
 
-#define PRINT_LOG 1 
+#define PRINT_LOG 0 
 #define PRINT_DEBUG 0 
 
 

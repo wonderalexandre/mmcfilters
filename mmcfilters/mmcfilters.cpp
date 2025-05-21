@@ -112,6 +112,7 @@ void init_MorphologicalTree(py::module &m){
         .def_property_readonly("numRows", &MorphologicalTreePybind::getNumRowsOfImage )
         .def_property_readonly("numCols", &MorphologicalTreePybind::getNumColsOfImage )
         .def_property_readonly("depth", &MorphologicalTreePybind::getDepth )
+        .def_property_readonly("leaves", &MorphologicalTreePybind::getLeaves )
         .def("getSC", &MorphologicalTreePybind::getSC );
 
         
@@ -128,8 +129,11 @@ void init_AttributeComputedIncrementally(py::module &m){
         .def_static("computeAttributes", &AttributeComputedIncrementallyPybind::computeAttributesFromList)
         .def_static("computeSingleAttribute", &AttributeComputedIncrementallyPybind::computeSingleAttribute)
         .def_static("computeSingleAttributeWithDelta", &AttributeComputedIncrementallyPybind::computeSingleAttributeWithDelta)
-        //.def_static("extractCountors", &AttributeComputedIncrementallyPybind::extractCountors)
-        .def_static("extractCountors", &AttributeComputedIncrementallyPybind::extractCompactCountors);
+        .def_static("describe", &AttributeComputedIncrementallyPybind::describeAttribute)
+        .def_static("extractCountors", &AttributeComputedIncrementallyPybind::extractCompactCountors)
+        .def_static("extractCountorsNonCompact", &AttributeComputedIncrementallyPybind::extractCountors)
+        .def_static("extractionExtinctionValues", &AttributeComputedIncrementallyPybind::extractionExtinctionValues);
+        
 
         py::class_<ContoursMT, std::shared_ptr<ContoursMT>>(m, "ContoursMT")
             .def("contours", &ContoursMT::contoursLazy);
@@ -160,6 +164,7 @@ void init_AttributeComputedIncrementally(py::module &m){
          py::enum_<Attribute>(cls, "Type")
             .value("AREA", Attribute::AREA)
             .value("VOLUME", Attribute::VOLUME)
+            .value("RELATIVE_VOLUME", Attribute::RELATIVE_VOLUME)
             .value("LEVEL", Attribute::LEVEL)
             .value("GRAY_HEIGHT", Attribute::GRAY_HEIGHT)
             .value("MEAN_LEVEL", Attribute::MEAN_LEVEL)
@@ -220,6 +225,8 @@ void init_AttributeFilters(py::module &m){
     .def("filteringByExtinctionValue", py::overload_cast<py::array_t<float> &, int>(&AttributeFiltersPybind::filteringByExtinctionValue))
     .def("saliencyMapByExtinction", py::overload_cast<py::array_t<float> &, int>(&AttributeFiltersPybind::saliencyMapByExtinction))
     .def("getAdaptativeCriterion", &AttributeFiltersPybind::getAdaptativeCriterion);   
+
+    
 }
 
 

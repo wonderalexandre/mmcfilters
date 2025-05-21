@@ -38,9 +38,25 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
 		return pyContours;
 	}
 
+	static std::string describeAttribute(Attribute attribute) {
+		return AttributeNames::describe(attribute);
+	}
 	
 	static ContoursMTPtr extractCompactCountors(MorphologicalTreePybindPtr tree){
 		return AttributeComputedIncrementally::extractCompactCountors(tree);
+	}
+
+	static std::vector<std::tuple<NodeMTPtr, NodeMTPtr, float>> extractionExtinctionValues(MorphologicalTreePybindPtr tree, py::array_t<float>& attr){
+
+		std::vector<std::tuple<NodeMTPtr, NodeMTPtr, float>> extinctionValues;
+		std::shared_ptr<float[]> attribute = PybindUtils::toShared_ptr(attr);
+		auto extValuesPtr = AttributeComputedIncrementally::getExtinctionValue(tree, attribute);
+		extinctionValues.reserve(extValuesPtr.size());
+		for (const auto& extValue : extValuesPtr) {
+			extinctionValues.push_back(std::make_tuple(extValue->leaf, extValue->cutoffNode, extValue->extinction));
+		}
+		return extinctionValues;
+        
 	}
 
 	static py::array_t<float> computeSingleAttribute(MorphologicalTreePybindPtr tree, Attribute attribute){
@@ -137,8 +153,9 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
 			py::format_descriptor<float>::value,
 			2,
 			{  n,  numAttribute }, 
-			{ sizeof(float), sizeof(float) * n }
+			{ sizeof(float)*numAttribute, sizeof(float) }
 		), free_when_done);
+		
 		
 		return std::make_pair(dict, numpy);
 		

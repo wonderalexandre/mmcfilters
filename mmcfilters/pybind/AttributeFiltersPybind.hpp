@@ -89,7 +89,7 @@ class AttributeFiltersPybind : public AttributeFilters{
         ImageFloatPtr imgOutput = ImageFloat::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
         AttributeFilters::filteringBySubtractiveScoreRule(this->tree, prob, imgOutput);
 
-        return PybindUtils::toNumpy(imgOutput);
+        return PybindUtils::toNumpyFloat(imgOutput->rawData(), imgOutput->getSize());
 
     }
 
@@ -112,7 +112,7 @@ class AttributeFiltersPybind : public AttributeFilters{
 
         AttributeFilters::saliencyMapByExtinction(this->tree, attribute, k, imgOutput);
 
-        return PybindUtils::toNumpy(imgOutput);
+        return PybindUtils::toNumpyFloat(imgOutput->rawData(), imgOutput->getSize());
     }
 
 

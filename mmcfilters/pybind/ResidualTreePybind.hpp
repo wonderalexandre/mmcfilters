@@ -32,7 +32,8 @@ class ResidualTreePybind: public ResidualTree{
         }       
 
         py::array_t<int32_t> getAssociatedImage(){
-            return PybindUtils::toNumpy(ResidualTree::getAssociatedImage());
+            auto imgOut = ResidualTree::getAssociatedImage();
+            return PybindUtils::toNumpyInt(imgOut->rawData(), imgOut->getSize());
         }
 
         py::array_t<uint8_t> getAssociatedColoredImage(){

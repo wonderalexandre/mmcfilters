@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) {
 
     //std::cout << "\nImage:"<< argv[2] << " \tResolution (cols x rows): " << numCols << " x " << numRows << std::endl;
     
-    //printImage(img, numRows, numCols);
+    printImage(image);
 
     // Criação das Component Trees
     
@@ -48,7 +48,7 @@ int main(int argc, char* argv[]) {
         //std::cout << "tree of shapes - "<< treeType << std::endl;
     }
     
-    
+    printImage(tree->reconstructionImage());
     
     //std::cout << "Depth:" << tree->getDepth() << ", |nodes|:" << tree->getNumNodes() << std::endl;
     

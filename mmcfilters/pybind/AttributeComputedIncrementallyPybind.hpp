@@ -22,7 +22,7 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
     public:
     using AttributeComputedIncrementally::AttributeComputedIncrementally;
 
-
+	
 	static py::dict extractCountors(MorphologicalTreePybindPtr tree) {
 		auto contours = AttributeComputedIncrementally::extractNonCompactCountors(tree);  // chama o método original
 	
@@ -37,7 +37,11 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
 	
 		return pyContours;
 	}
+
 	
+	static ContoursMTPtr extractCompactCountors(MorphologicalTreePybindPtr tree){
+		return AttributeComputedIncrementally::extractCompactCountors(tree);
+	}
 
 	static py::array_t<float> computeSingleAttribute(MorphologicalTreePybindPtr tree, Attribute attribute){
 		auto [attributeNames, buffer] = AttributeComputedIncrementally::computeSingleAttribute(tree, attribute);

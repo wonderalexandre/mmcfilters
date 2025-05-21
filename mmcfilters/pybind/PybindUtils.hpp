@@ -9,22 +9,45 @@ namespace py = pybind11;
 
 class PybindUtils{
     public:
-        template <typename PixelType>
-        static py::array_t<PixelType> toNumpy(ImagePtr<PixelType> image) {
-            PixelType* data = image->rawData();
+        
+        static py::array_t<uint8_t> toNumpy(ImageUInt8Ptr image) {
+            
+            std::shared_ptr<uint8_t[]> buffer = image->rawDataPtr();
+            int n = image->getSize();
+            std::shared_ptr<uint8_t[]> bufferCopy = buffer;
+
+            py::capsule free_when_done(new std::shared_ptr<uint8_t[]>(bufferCopy), [](void* ptr) {
+                // Converte de volta e destrói corretamente
+                delete reinterpret_cast<std::shared_ptr<uint8_t[]>*>(ptr);
+            });
+            
+            py::array_t<uint8_t> numpy = py::array(py::buffer_info(
+                buffer.get(),
+                sizeof(uint8_t),
+                py::format_descriptor<uint8_t>::value,
+                1,
+                { n },
+                { sizeof(uint8_t) }
+            ), free_when_done);
+            
+            return numpy;
+
+/*
+            uint8_t* data = image->rawData();
             int size = image->getNumRows() * image->getNumCols();
             // Cria um capsule que sabe como liberar o ponteiro
             py::capsule free_when_done(data, [](void* f) {
-                delete[] static_cast<PixelType*>(f);
+                delete[] static_cast<uint8_t*>(f);
             });
         
             // Cria o py::array com o capsule responsável por liberar a memória
-            return py::array_t<PixelType>(
+            return py::array_t<uint8_t>(
                 { size },               // shape (tamanho do vetor)
-                { sizeof(PixelType) },        // strides (distância entre elementos)
+                { sizeof(uint8_t) },        // strides (distância entre elementos)
                 data,                   // ponteiro para os dados
                 free_when_done          // capsule que cuida da liberação
             );
+            */
         }
     
 

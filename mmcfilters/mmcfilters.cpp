@@ -129,7 +129,7 @@ void init_AttributeComputedIncrementally(py::module &m){
         .def_static("computeSingleAttribute", &AttributeComputedIncrementallyPybind::computeSingleAttribute)
         .def_static("computeSingleAttributeWithDelta", &AttributeComputedIncrementallyPybind::computeSingleAttributeWithDelta)
         //.def_static("extractCountors", &AttributeComputedIncrementallyPybind::extractCountors)
-        .def_static("extractCountors", &AttributeComputedIncrementally::extractCompactCountors);
+        .def_static("extractCountors", &AttributeComputedIncrementallyPybind::extractCompactCountors);
 
         py::class_<ContoursMT, std::shared_ptr<ContoursMT>>(m, "ContoursMT")
             .def("contours", &ContoursMT::contoursLazy);

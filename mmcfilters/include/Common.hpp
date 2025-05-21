@@ -70,7 +70,7 @@ class Image {
         }
         return true;
     }
-
+    std::shared_ptr<PixelType[]> rawDataPtr(){ return data; }
     PixelType* rawData() { return data.get(); }
     int getNumRows() const { return numRows; }
     int getNumCols() const { return numCols; }

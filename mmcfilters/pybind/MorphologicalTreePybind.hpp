@@ -49,7 +49,7 @@ class MorphologicalTreePybind : public MorphologicalTree {
     py::array_t<uint8_t> reconstructionImage(){
         int n = this->numRows * this->numCols;
         ImageUInt8Ptr imgOut = ImageUInt8::create(this->numRows, this->numCols);
-        MorphologicalTree::reconstruction(this->root, imgOut);
+        MorphologicalTree::reconstruction(this->root, imgOut->rawData());
         return PybindUtils::toNumpy(imgOut);
     }
 

@@ -28,7 +28,8 @@ public:
     }       
 
     py::array_t<int32_t> getAssociatedImage(){
-        return PybindUtils::toNumpy(UltimateAttributeOpening::getAssociatedImage());
+        auto imgOut = UltimateAttributeOpening::getAssociatedImage();
+        return PybindUtils::toNumpyInt(imgOut->rawData(), imgOut->getSize());
     }
     py::array_t<uint8_t> getAssociatedColorImage(){
         return PybindUtils::toNumpy(UltimateAttributeOpening::getAssociatedColorImage());

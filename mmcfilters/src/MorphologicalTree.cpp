@@ -286,14 +286,14 @@ void MorphologicalTree::pruning(NodeMTPtr nodePruning){
 
 ImageUInt8Ptr MorphologicalTree::reconstructionImage(){
 	ImageUInt8Ptr imgOut = ImageUInt8::create(getNumRowsOfImage(), getNumColsOfImage());
-	this->reconstruction(this->root, imgOut);
+	this->reconstruction(this->root, imgOut->rawData());
 	return imgOut;
 }
 
 
-void MorphologicalTree::reconstruction(NodeMTPtr node, ImageUInt8Ptr dataOut){
+void MorphologicalTree::reconstruction(NodeMTPtr node, uint8_t* dataOut){
 	for (int p : node->getCNPs()){
-		(*dataOut)[p] = node->getLevel();
+		dataOut[p] = node->getLevel();
 	}
 	for(NodeMTPtr child: node->getChildren()){
 		reconstruction(child, dataOut);

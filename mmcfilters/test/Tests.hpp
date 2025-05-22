@@ -411,6 +411,7 @@ inline ImageUInt8Ptr get2CsImage(){
     };
     return ImageUInt8::fromRaw(img, 10, 11);
 }
+
 inline ImageUInt8Ptr getCriticalImage(){
     auto img = new uint8_t[30]{
         2, 2, 2, 2, 2, 2,

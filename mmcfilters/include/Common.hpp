@@ -70,6 +70,13 @@ class Image {
         }
         return true;
     }
+
+    Ptr clone() const {
+        auto newImg = create(numRows, numCols);
+        std::copy(data.get(), data.get() + (numRows * numCols), newImg->data.get());
+        return newImg;
+    }
+
     std::shared_ptr<PixelType[]> rawDataPtr(){ return data; }
     PixelType* rawData() { return data.get(); }
     int getNumRows() const { return numRows; }

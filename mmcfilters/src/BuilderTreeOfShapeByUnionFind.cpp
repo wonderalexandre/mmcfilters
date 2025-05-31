@@ -5,24 +5,16 @@
     
     int BuilderTreeOfShapeByUnionFind::getInterpNumRows() {return this->interpNumRows;}
     int BuilderTreeOfShapeByUnionFind::getInterpNumCols() {return this->interpNumCols;}
-    uint8_t* BuilderTreeOfShapeByUnionFind::getInterpolationMin() {return this->interpolationMin;}
-    uint8_t* BuilderTreeOfShapeByUnionFind::getInterpolationMax() {return this->interpolationMax;}
-    int* BuilderTreeOfShapeByUnionFind::getImgR() {return this->imgR;}
-    uint8_t* BuilderTreeOfShapeByUnionFind::getImgU() {return this->imgU;}
-    int* BuilderTreeOfShapeByUnionFind::getParent() {return this->parent;}
-    AdjacencyUC* BuilderTreeOfShapeByUnionFind::getAdjacency(){ return this->adj;}
+    uint8_t* BuilderTreeOfShapeByUnionFind::getImgU() {return this->imgU.get();}
+    int* BuilderTreeOfShapeByUnionFind::getParent() {return this->parent.get();}
+    int* BuilderTreeOfShapeByUnionFind::getImgR() {return this->imgR.get();}
 
     BuilderTreeOfShapeByUnionFind::BuilderTreeOfShapeByUnionFind(){
         
     }
 
     BuilderTreeOfShapeByUnionFind::~BuilderTreeOfShapeByUnionFind() {
-        delete[] interpolationMin;
-        delete[] interpolationMax;
-        delete[] parent;
-        delete[] imgR;
-        delete[] imgU;
-        delete adj;
+
     }
 
      /**
@@ -49,13 +41,16 @@
 
         this->interpNumCols = numCols * 2 + 1;
         this->interpNumRows = numRows * 2 + 1;
+        int size = interpNumCols * interpNumRows;
 
         // Aloca memória para os resultados de interpolação (mínimo e máximo)
-        this->interpolationMin = new uint8_t[interpNumCols * interpNumRows];
-        this->interpolationMax = new uint8_t[interpNumCols * interpNumRows];
+        this->interpolationMin = std::make_unique<uint8_t[]>(size);
+        this->interpolationMax = std::make_unique<uint8_t[]>(size);
 
         int numBoundary = 2 * (numRows + numCols) - 4;
-        int* pixels = new int[numBoundary];  // Para calcular a mediana
+        
+        std::unique_ptr<uint8_t[]> pixelsPtr(new uint8_t[numBoundary]);// Para calcular a mediana
+        uint8_t* pixels = pixelsPtr.get();
 
         int pT, i = 0; // i é um contador para o array pixels
         
@@ -82,14 +77,13 @@
             median = pixels[numBoundary / 2];
         }
         //std::cout << "Interpolation (Median): " << median << std::endl;
-        delete[] pixels;
 
         
         int qT, qCol, qRow, min, max;
         const int* adjCol = nullptr;
         const int* adjRow = nullptr;
         int adjSize;
-        this->adj = new AdjacencyUC(interpNumRows, interpNumCols, false);
+        this->adj = std::make_unique<AdjacencyUC>(interpNumRows, interpNumCols, false);
 
         for (int row=0; row < this->interpNumRows; row++){
             for (int col=0; col < this->interpNumCols; col++){
@@ -153,12 +147,13 @@
         this->is4c8cConnectivity = true;
         this->interpNumCols = numCols * 2 + 1;
         this->interpNumRows = numRows * 2 + 1;
-        this->adj = new AdjacencyUC(interpNumRows, interpNumCols, true);
+        int size = interpNumCols * interpNumRows;
+        this->adj = std::make_unique<AdjacencyUC>(interpNumRows, interpNumCols, true);
 
 
         // Aloca memória para os resultados de interpolação (mínimo e máximo)
-        this->interpolationMin = new uint8_t[interpNumCols * interpNumRows];
-        this->interpolationMax = new uint8_t[interpNumCols * interpNumRows];
+        this->interpolationMin = std::make_unique<uint8_t[]>(size);
+        this->interpolationMax = std::make_unique<uint8_t[]>(size);
         int pT, i = 0; // i é um contador para o array pixels
         
          // Compute interval from 2-faces.
@@ -342,9 +337,9 @@
 
     void BuilderTreeOfShapeByUnionFind::sort() {
         int size = this->interpNumCols * this->interpNumRows;
-        bool* dejavu = new bool[size]();  // Vetor de booleanos, inicializado com false
-        this->imgR = new int[size];        // Pixels ordenados
-        this->imgU = new uint8_t[size];        // Níveis de cinza da imagem
+        std::unique_ptr<bool[]> dejavu(new bool[size]());  // Vetor de booleanos, inicializado com false
+        this->imgR = std::make_unique<int[]>(size);  // Pixels ordenados
+        this->imgU = std::make_unique<uint8_t[]>(size);        // Níveis de cinza da imagem
         
         PriorityQueueToS queue;  // Fila de prioridade
         int pInfinito = ImageUtils::to1D(0, 0, interpNumCols);
@@ -376,10 +371,10 @@
             }
             priorityQueueOld = priorityQueue;
         }
-        delete[] dejavu;
+        //delete[] dejavu;
     }
 
-    int BuilderTreeOfShapeByUnionFind::findRoot(int zPar[], int p) {
+    int BuilderTreeOfShapeByUnionFind::findRoot(int* zPar, int p) {
         if (zPar[p] == p) {
             return p;
         } else {
@@ -389,13 +384,17 @@
     }
 
     void BuilderTreeOfShapeByUnionFind::createTreeByUnionFind() {
-        this->parent = new int[interpNumCols * interpNumRows];
-        int* zPar = new int[interpNumCols * interpNumRows];
+        int size = this->interpNumCols * this->interpNumRows;
+        this->parent =  std::make_unique<int[]>(size);
+
+        //this->parent = new int[interpNumCols * interpNumRows];
+        std::unique_ptr<int[]> zParPtr(new int[size]);
+        int* zPar = zParPtr.get(); // Pega o ponteiro do std::unique_ptr
         const int NIL = -1;
-        for (int p = 0; p < interpNumCols * interpNumRows; p++) {
+        for (int p = 0; p < size; p++) {
             zPar[p] = NIL; // Assumindo que NIL é uma constante definida em outro lugar
         }
-        for (int i = this->interpNumCols * this->interpNumRows - 1; i >= 0; i--) {
+        for (int i = size - 1; i >= 0; i--) {
             int p = this->imgR[i];
             this->parent[p] = p;
             zPar[p] = p;
@@ -412,7 +411,7 @@
         }
 
         // Canonização da árvore
-        for (int i = 0; i < this->interpNumCols * this->interpNumRows; i++) {
+        for (int i = 0; i < size; i++) {
             int p = this->imgR[i];
             int q = this->parent[p];
             if (this->imgU[parent[q]] == this->imgU[q]) { 
@@ -420,7 +419,7 @@
             }
         }
 
-        delete[] zPar; // Liberar memória de zPar
+        //delete[] zPar; // Liberar memória de zPar
 
         
     }

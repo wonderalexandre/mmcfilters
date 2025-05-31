@@ -23,8 +23,8 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
     using AttributeComputedIncrementally::AttributeComputedIncrementally;
 
 	
-	static py::dict extractCountors(MorphologicalTreePybindPtr tree) {
-		auto contours = AttributeComputedIncrementally::extractNonCompactCountors(tree);  // chama o método original
+	static py::dict extractContours(MorphologicalTreePybindPtr tree) {
+		auto contours = AttributeComputedIncrementally::extractNonCompactContours(tree);  // chama o método original
 	
 		py::dict pyContours;
 		for (size_t nodeIdx = 0; nodeIdx < contours.size(); ++nodeIdx) {
@@ -42,10 +42,11 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
 		return AttributeNames::describe(attribute);
 	}
 	
-	static ContoursMTPtr extractCompactCountors(MorphologicalTreePybindPtr tree){
-		return AttributeComputedIncrementally::extractCompactCountors(tree);
+	static ContoursMTPtr extractCompactContours(MorphologicalTreePybindPtr tree){
+		return AttributeComputedIncrementally::extractCompactContours(tree);
 	}
 
+	/*
 	static std::vector<std::tuple<NodeMTPtr, NodeMTPtr, float>> extractionExtinctionValues(MorphologicalTreePybindPtr tree, py::array_t<float>& attr){
 
 		std::vector<std::tuple<NodeMTPtr, NodeMTPtr, float>> extinctionValues;
@@ -55,9 +56,8 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
 		for (const auto& extValue : extValuesPtr) {
 			extinctionValues.push_back(std::make_tuple(extValue->leaf, extValue->cutoffNode, extValue->extinction));
 		}
-		return extinctionValues;
-        
-	}
+		return extinctionValues; 
+	}*/
 
 	static py::array_t<float> computeSingleAttribute(MorphologicalTreePybindPtr tree, Attribute attribute){
 		auto [attributeNames, buffer] = AttributeComputedIncrementally::computeSingleAttribute(tree, attribute);
@@ -109,7 +109,10 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
 		return std::make_pair(dict, numpy);
 	}
 
-
+	static py::array_t<float> computerAttributeMapping(MorphologicalTreePybindPtr tree, Attribute attribute) {
+		auto imgFloatPtr = AttributeComputedIncrementally::computerAttributeMapping(tree, attribute);
+		return PybindUtils::toNumpy(imgFloatPtr);
+	} 
 
 	static std::pair<py::dict, py::array_t<float>> computeAttributesFromList(MorphologicalTreePybindPtr tree, const std::vector<AttributeOrGroup>& attributes) {
 		auto [attributeNames, buffer] = AttributeComputedIncrementally::computeAttributes(tree, attributes);

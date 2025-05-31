@@ -70,6 +70,11 @@ if(BUILD_TESTS)
     )
     target_link_libraries(testeResidualTree PRIVATE mmcfilters_lib)
 
+    add_executable(TestComponentTree 
+        mmcfilters/test/TestComponentTree.cpp
+    )
+    target_link_libraries(TestComponentTree PRIVATE mmcfilters_lib)
+
 
     # Adicionar o executável de testes: 
     add_executable(testeTreeOfShapes 

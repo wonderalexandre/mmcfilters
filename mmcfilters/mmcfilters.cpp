@@ -5,6 +5,7 @@
 
 #include "pybind/AttributeComputedIncrementallyPybind.hpp"
 #include "pybind/MorphologicalTreePybind.hpp"
+#include "pybind/ExtinctionValuesPybind.hpp"
 #include "pybind/AttributeFiltersPybind.hpp"
 #include "pybind/UltimateAttributeOpeningPybind.hpp"
 #include "pybind/AttributeOpeningPrimitivesFamilyPybind.hpp"
@@ -113,9 +114,8 @@ void init_MorphologicalTree(py::module &m){
         .def_property_readonly("numCols", &MorphologicalTreePybind::getNumColsOfImage )
         .def_property_readonly("depth", &MorphologicalTreePybind::getDepth )
         .def_property_readonly("leaves", &MorphologicalTreePybind::getLeaves )
-        .def("getSC", &MorphologicalTreePybind::getSC );
-
-        
+        .def("getSC", &MorphologicalTreePybind::getSC )
+        .def_static("createFromAttributeMapping", &MorphologicalTreePybind::createTreeFromAttributeMapping );
         
 }
 
@@ -130,13 +130,14 @@ void init_AttributeComputedIncrementally(py::module &m){
         .def_static("computeSingleAttribute", &AttributeComputedIncrementallyPybind::computeSingleAttribute)
         .def_static("computeSingleAttributeWithDelta", &AttributeComputedIncrementallyPybind::computeSingleAttributeWithDelta)
         .def_static("describe", &AttributeComputedIncrementallyPybind::describeAttribute)
-        .def_static("extractCountors", &AttributeComputedIncrementallyPybind::extractCompactCountors)
-        .def_static("extractCountorsNonCompact", &AttributeComputedIncrementallyPybind::extractCountors)
-        .def_static("extractionExtinctionValues", &AttributeComputedIncrementallyPybind::extractionExtinctionValues);
+        .def_static("extractContours", &AttributeComputedIncrementallyPybind::extractCompactContours)
+        .def_static("extractContoursNonCompact", &AttributeComputedIncrementallyPybind::extractContours)
+        .def_static("computerAttributeMapping", &AttributeComputedIncrementallyPybind::computerAttributeMapping);
         
 
         py::class_<ContoursMT, std::shared_ptr<ContoursMT>>(m, "ContoursMT")
-            .def("contours", &ContoursMT::contoursLazy);
+            .def("contours", &ContoursMT::contoursLazy)
+            .def("getContour", &ContoursMT::getContour);
 
         py::class_<ContoursMT::ContourPostOrderRange>(m, "ContourPostOrderRange")
             .def("__iter__", [](ContoursMT::ContourPostOrderRange &self) { return self.begin(); });
@@ -222,10 +223,22 @@ void init_AttributeFilters(py::module &m){
     .def("filteringSubtractiveRule", py::overload_cast<std::vector<bool>&>(&AttributeFiltersPybind::filteringBySubtractiveRule))
     .def("filteringSubtractiveScoreRule", py::overload_cast<std::vector<float>&>(&AttributeFiltersPybind::filteringBySubtractiveScoreRule))
     .def("filteringMax", py::overload_cast<py::array_t<float> &, float>(&AttributeFiltersPybind::filteringByPruningMax))
-    .def("filteringByExtinctionValue", py::overload_cast<py::array_t<float> &, int>(&AttributeFiltersPybind::filteringByExtinctionValue))
-    .def("saliencyMapByExtinction", py::overload_cast<py::array_t<float> &, int>(&AttributeFiltersPybind::saliencyMapByExtinction))
-    .def("getAdaptativeCriterion", &AttributeFiltersPybind::getAdaptativeCriterion);   
+    //.def("filteringByExtinctionValue", py::overload_cast<py::array_t<float> &, int>(&AttributeFiltersPybind::filteringByExtinctionValue))
+    //.def("saliencyMapByExtinction", py::overload_cast<py::array_t<float> &, int>(&AttributeFiltersPybind::saliencyMapByExtinction))
+    .def("getAdaptativeCriterion", &AttributeFiltersPybind::getAdaptativeCriterion);       
+}
 
+void init_ExtinctionValues(py::module &m){
+    py::class_<ExtinctionValuesPybind>(m, "ExtinctionValues")
+    .def(py::init<MorphologicalTreePybindPtr, py::array_t<float>&>())
+    .def("filtering", &ExtinctionValuesPybind::filtering)
+    .def("saliencyMap", &ExtinctionValuesPybind::saliencyMap, "leafToKeep"_a, "unweighted"_a = true)
+    .def("getExtinctionValues", &ExtinctionValues::getExtinctionValues, py::return_value_policy::reference_internal);
+    
+    py::class_<RegionalExtremaNode, RegionalExtremaNodePtr>(m, "RegionalExtremaNode")
+        .def_readonly("leaf", &RegionalExtremaNode::leaf)
+        .def_readonly("cutoffNode", &RegionalExtremaNode::cutoffNode)
+        .def_readonly("extinction", &RegionalExtremaNode::extinction);
     
 }
 
@@ -287,6 +300,7 @@ PYBIND11_MODULE(mmcfilters, m) {
     init_MorphologicalTree(m);
     init_AttributeComputedIncrementally(m);
     init_AttributeFilters(m);
+    init_ExtinctionValues(m);
     init_AdjacencyRelation(m);
 
     init_UltimateAttributeOpening(m);

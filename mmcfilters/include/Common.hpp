@@ -12,6 +12,8 @@
 #include <memory>
 #include <limits>
 #include <algorithm>
+#include <cmath>
+#include <type_traits>
 
 #define PRINT_LOG 0 
 #define PRINT_DEBUG 0 
@@ -28,7 +30,8 @@ class Image {
         using Ptr = std::shared_ptr<Image<PixelType>>;
 
     public:
-    
+    using Type = PixelType;
+
     Image(int rows, int cols): numRows(rows), numCols(cols), data(new PixelType[rows * cols], std::default_delete<PixelType[]>()) {}
 
     static Ptr create(int rows, int cols) {
@@ -97,7 +100,7 @@ using ImageUInt8Ptr = std::shared_ptr<ImageUInt8>;
 using ImageInt32Ptr = std::shared_ptr<ImageInt32>;
 using ImageFloatPtr = std::shared_ptr<ImageFloat>;
 
-template <typename T>
-using ImagePtr = std::shared_ptr<Image<T>>;
+template <typename PixelType>
+using ImagePtr = std::shared_ptr<Image<PixelType>>;
 
 #endif 

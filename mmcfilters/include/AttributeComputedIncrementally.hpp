@@ -588,15 +588,6 @@ class PathAscendantsAndDescendants{
 };
 
 
-struct ExtinctionValues{
-	NodeMTPtr leaf;
-	NodeMTPtr cutoffNode;
-	float extinction;
-	ExtinctionValues(NodeMTPtr leaf, NodeMTPtr cutoffNode, float extinction)
-		: leaf(leaf), cutoffNode(cutoffNode), extinction(extinction) {}
-	
-};
-using ExtinctionValuesPtr = std::shared_ptr<ExtinctionValues>;
 
 class AttributeComputedIncrementally;  // forward declaration
 using AttributeComputedIncrementallyPtr = std::shared_ptr<AttributeComputedIncrementally>;
@@ -629,47 +620,9 @@ public:
 	}
 
 
+	static ContoursMTPtr extractCompactContours(MorphologicalTreePtr tree);
 
-	static std::vector<ExtinctionValuesPtr> getExtinctionValue(MorphologicalTreePtr tree, std::shared_ptr<float[]> attr){
-		std::list<NodeMTPtr> leaves = tree->getLeaves();
-		std::vector<ExtinctionValuesPtr> leavesByExtinction;
-		leavesByExtinction.reserve(leaves.size());
-		std::unique_ptr<bool[]> visited(new bool[tree->getNumNodes()]()); //inicializa com false
-		for(NodeMTPtr leaf: leaves){
-			float extinction = 0;
-			NodeMTPtr cutoffNode = leaf;
-			NodeMTPtr parent = cutoffNode->getParent();
-			bool flag = true;
-			while (flag  &&  parent != nullptr) {
-				if (parent->getChildren().size() > 1) {
-					for(NodeMTPtr son: parent->getChildren()){  // verifica se possui irmao com atributo maior
-						if(flag){
-							if (visited[son->getIndex()]  &&  son != cutoffNode  &&  attr[son->getIndex()] == attr[cutoffNode->getIndex()]) { //EMPATE Grimaud,92
-								flag = false;
-							}
-							else if (son != cutoffNode  &&  attr[son->getIndex()] > attr[cutoffNode->getIndex()]) {
-								flag = false;
-							}
-							visited[son->getIndex()] = true;
-						}
-					}
-				}
-				if (flag) {
-					cutoffNode = parent;
-					parent = cutoffNode->getParent();
-				}
-			}
-			if(parent != nullptr)
-				extinction = attr[cutoffNode->getIndex()];
-			leavesByExtinction.push_back( std::make_shared<ExtinctionValues>(leaf, cutoffNode, extinction) );
-			
-		}
-		return leavesByExtinction;
-	}
-
-	static ContoursMTPtr extractCompactCountors(MorphologicalTreePtr tree);
-
-	static std::vector<std::unordered_set<int>> extractNonCompactCountors(MorphologicalTreePtr tree);
+	static std::vector<std::unordered_set<int>> extractNonCompactContours(MorphologicalTreePtr tree);
 
 	static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeAttributesByComputer(MorphologicalTreePtr tree, std::shared_ptr<AttributeComputer> comp, const DependencyMap& available = {});
 	
@@ -678,6 +631,8 @@ public:
 	static std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> computeSingleAttributeWithDelta(MorphologicalTreePtr tree, Attribute attribute, int delta, std::string padding="last-padding", const DependencyMap& availableDeps={});
 
 	static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeAttributes(MorphologicalTreePtr tree, const std::vector<AttributeOrGroup>& attributes,const DependencyMap& providedDependencies={});
+
+	static ImageFloatPtr computerAttributeMapping(MorphologicalTreePtr tree, Attribute attribute);
 };
 
 
@@ -1557,9 +1512,10 @@ class ContoursMT{
 	private:
 	std::vector<std::list<int>> contours;
 	std::vector<std::list<int>> contoursToRemove;
-
+	MorphologicalTreePtr tree;
+	
 	public:
-	ContoursMT(int numNodes): contours(numNodes), contoursToRemove(numNodes){}
+	ContoursMT(MorphologicalTreePtr tree): tree(tree), contours(tree->getNumNodes()), contoursToRemove(tree->getNumNodes()){}
 
 	void add(NodeMTPtr node, int pixel){
 		contours[node->getIndex()].push_back(pixel);
@@ -1568,9 +1524,9 @@ class ContoursMT{
 		contoursToRemove[node->getIndex()].push_back(pixel);
 	}
 
-	std::unordered_set<int> getContour(NodeMTPtr node) {
+	std::unordered_set<int> getContour(NodeMTPtr nodeSubtree) {
 		std::unordered_set<int> contour;
-		AttributeComputedIncrementally::computerAttribute(node,
+		AttributeComputedIncrementally::computerAttribute(nodeSubtree,
 			[](NodeMTPtr node) -> void {},  // pre-processing
 			[](NodeMTPtr parent, NodeMTPtr child) -> void { }, // merge-processing
 			[&contour, this](NodeMTPtr node) -> void { //post-processing
@@ -1793,8 +1749,9 @@ class ContoursMT{
 		ContourPostOrderIterator end() { return ContourPostOrderIterator(nullptr, contoursMT); }
 	};
 
-	ContourPostOrderRange contoursLazy(NodeMTPtr root) {
-		return ContourPostOrderRange(root, this);
+	
+	ContourPostOrderRange contoursLazy() {
+		return ContourPostOrderRange(tree->getRoot(), this);
 	}
 
 };

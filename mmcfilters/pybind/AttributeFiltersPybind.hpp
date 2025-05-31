@@ -92,7 +92,7 @@ class AttributeFiltersPybind : public AttributeFilters{
         return PybindUtils::toNumpy(imgOutput);
 
     }
-
+/*
     py::array_t<uint8_t> filteringByExtinctionValue(py::array_t<float>& attr, int k){
 
         std::shared_ptr<float[]> attribute = PybindUtils::toShared_ptr(attr);
@@ -102,7 +102,6 @@ class AttributeFiltersPybind : public AttributeFilters{
 
         return PybindUtils::toNumpy(imgOutput);
     }
-
 
     py::array_t<float> saliencyMapByExtinction(py::array_t<float>& attr, int k){
 
@@ -114,7 +113,7 @@ class AttributeFiltersPybind : public AttributeFilters{
 
         return PybindUtils::toNumpy(imgOutput);
     }
-
+*/
 
 
 

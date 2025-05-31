@@ -18,7 +18,7 @@ int main(int argc, char const *argv[])
     printImage(image);
     
     // Criar um ComponentTree
-    MorphologicalTreePtr tree = std::make_shared<MorphologicalTree>(image, true);
+    MorphologicalTreePtr tree = std::make_shared<MorphologicalTree>(image, false);
     printTree(tree->getRoot());
 
     // Criar um AttributeComputedIncrementally::computerArea

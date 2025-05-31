@@ -79,7 +79,8 @@
         "execution": "cpp",
         "memory": "cpp",
         "print": "cpp",
-        "iterator": "cpp"
+        "iterator": "cpp",
+        "*.tpp": "cpp"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

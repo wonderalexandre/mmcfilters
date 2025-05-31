@@ -112,6 +112,9 @@ public:
     int findRoot(int zPar[], int x);
     void createTreeByUnionFind();
 
+    AdjacencyUC* getAdjacency();
+    uint8_t* getInterpolationMin();
+    uint8_t* getInterpolationMax();
 
 };
 

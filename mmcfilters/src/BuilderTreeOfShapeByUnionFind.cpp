@@ -8,14 +8,12 @@
     uint8_t* BuilderTreeOfShapeByUnionFind::getImgU() {return this->imgU.get();}
     int* BuilderTreeOfShapeByUnionFind::getParent() {return this->parent.get();}
     int* BuilderTreeOfShapeByUnionFind::getImgR() {return this->imgR.get();}
+    AdjacencyUC* BuilderTreeOfShapeByUnionFind::getAdjacency() { return adj.get(); }
+    uint8_t* BuilderTreeOfShapeByUnionFind::getInterpolationMin() { return interpolationMin.get(); }
+    uint8_t* BuilderTreeOfShapeByUnionFind::getInterpolationMax() { return interpolationMax.get(); }
 
-    BuilderTreeOfShapeByUnionFind::BuilderTreeOfShapeByUnionFind(){
-        
-    }
-
-    BuilderTreeOfShapeByUnionFind::~BuilderTreeOfShapeByUnionFind() {
-
-    }
+    BuilderTreeOfShapeByUnionFind::BuilderTreeOfShapeByUnionFind(){ }
+    BuilderTreeOfShapeByUnionFind::~BuilderTreeOfShapeByUnionFind() { }
 
      /**
       * Implementation based on the paper: 

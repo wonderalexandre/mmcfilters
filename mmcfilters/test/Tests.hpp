@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <iomanip>
 #include <fstream>
+#include <cstdint>
 
 #include "../include/ImageUtils.hpp"
 #include "../include/NodeMT.hpp"

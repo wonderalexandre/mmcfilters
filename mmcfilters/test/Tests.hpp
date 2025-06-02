@@ -229,7 +229,7 @@ inline void printImage(ImageUInt8Ptr imgPtr, int setw=4, std::string nomeArquivo
     for (int row = 0; row < imgPtr->getNumRows(); row++) {
         *streamSaida << std::setw(setw) << row; // índice da linha
         for (int col = 0; col < imgPtr->getNumCols(); col++) {
-            *streamSaida << std::setw(setw) << ((int)img[ImageUtils::to1D(row, col, imgPtr->getNumCols())]); // ou ImageUtils::to1D(row, col, numCols)
+            *streamSaida << std::setw(setw) << static_cast<int>(img[ImageUtils::to1D(row, col, imgPtr->getNumCols())]); // ou ImageUtils::to1D(row, col, numCols)
         }
         *streamSaida << "\n";
     }

@@ -38,6 +38,8 @@ public:
     bool isValid(int row, int col);
     bool isBorderDomainImage(int index);
     bool isBorderDomainImage(int row, int col);
+    bool is4connectivity();
+    bool is8connectivity();
     class IteratorAdjacency{ 
         private:
     	    int index;

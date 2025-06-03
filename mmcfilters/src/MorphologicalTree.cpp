@@ -182,6 +182,11 @@ NodeMTPtr MorphologicalTree::getRoot() {
 	return this->root;
 }
 
+AdjacencyRelationPtr MorphologicalTree::getAdjacencyRelation(){
+	return this->adj;
+}
+
+
 bool MorphologicalTree::isMaxtree(){
 	return this->treeType == MAX_TREE;
 }

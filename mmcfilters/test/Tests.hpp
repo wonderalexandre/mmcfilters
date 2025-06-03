@@ -206,7 +206,7 @@ inline void printImage(ImageUInt8Ptr imgPtr, int setw=4, std::string nomeArquivo
     auto img = imgPtr->rawData();
     std::ostream* streamSaida;
     std::ofstream arquivoSaida;
-
+    
     if (nomeArquivo.empty()) {
         streamSaida = &std::cout;
     } else {
@@ -217,7 +217,7 @@ inline void printImage(ImageUInt8Ptr imgPtr, int setw=4, std::string nomeArquivo
         }
         streamSaida = &arquivoSaida;
     }
-
+    *streamSaida << "Image size: " << imgPtr->getNumCols() << "x" << imgPtr->getNumRows() << "\n";
     // Imprime o cabeçalho de colunas
     *streamSaida << std::setw(setw) << " "; // espaço para a primeira coluna (índice da linha)
     for (int col = 0; col < imgPtr->getNumCols(); col++) {
@@ -883,6 +883,19 @@ inline ImageUInt8Ptr getLenaCropImage(){
     153,	155,	158,	160,	160,	159,	161,	163,	163,	166,	167,	166,	166,	170,	170,	169,	178,	174,	171,	178,	182,	182,	183,	183,	190,	188,	187,	191,	191,	194,	195,	197,	202,	199,	204,	203,	204,	203,	207,	209,	210,	210,	210,	210,	213,	210,	209,	211,	211,	216,	211,	213,	212,	206,	202,	164,	98,	84,	88,	92,	103,	101,	103,	106,	106,	104,	106,	107,	103,	108,	108,	115,	114,	102,	110,	101,	100,	102,	104,	100,	105};
 
     return ImageUInt8::fromRaw(img, 68, 81);
+}
+
+inline ImageUInt8Ptr getICIP14Image(){
+    auto img=new uint8_t[49]{
+        0, 0, 0, 0, 0, 0, 0,
+        0, 4, 4, 4, 7, 7, 7,
+        0, 7, 7, 4, 7, 4, 7,
+        0, 7, 4, 4, 7, 4, 7,
+        0, 4, 4, 4, 7, 4, 7,
+        0, 7, 7, 4, 7, 7, 7,
+        0, 0, 0, 0, 0, 0, 0
+    };
+    return ImageUInt8::fromRaw(img, 7, 7);
 }
 
 

@@ -145,6 +145,8 @@ public:
 
 	void pruning(NodeMTPtr node);
 
+    AdjacencyRelationPtr getAdjacencyRelation();
+
 	bool isAncestor(NodeMTPtr u, NodeMTPtr v);
 	
 	bool isDescendant(NodeMTPtr u, NodeMTPtr v);

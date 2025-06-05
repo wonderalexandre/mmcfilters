@@ -18,8 +18,8 @@
 
 #define UNDEF -999999999999
 
-class AttrbuteFilters;
-using AttributeFiltersPtr = std::shared_ptr<AttrbuteFilters>;
+class AttributeFilters;
+using AttributeFiltersPtr = std::shared_ptr<AttributeFilters>;
 
 class AttributeFilters{
     protected:

@@ -160,6 +160,7 @@ void init_AttributeComputedIncrementally(py::module &m){
             .value("HU_MOMENTS", AttributeGroup::HU_MOMENTS)
             .value("MOMENT_BASED", AttributeGroup::MOMENT_BASED)
             .value("TREE_TOPOLOGY", AttributeGroup::TREE_TOPOLOGY)
+            .value("BITQUADS", AttributeGroup::BITQUADS)
             .export_values();
 
          py::enum_<Attribute>(cls, "Type")
@@ -210,6 +211,15 @@ void init_AttributeComputedIncrementally(py::module &m){
             .value("LEAF_RATIO_NODE", Attribute::LEAF_RATIO_NODE)
             .value("BALANCE_NODE", Attribute::BALANCE_NODE)
             .value("AVG_CHILD_HEIGHT_NODE", Attribute::AVG_CHILD_HEIGHT_NODE)
+            .value("BITQUADS_NUMBER_EULER", Attribute::BITQUADS_NUMBER_EULER)
+            .value("BITQUADS_NUMBER_HOLES", Attribute::BITQUADS_NUMBER_HOLES)
+            .value("BITQUADS_PERIMETER", Attribute::BITQUADS_PERIMETER)
+            .value("BITQUADS_PERIMETER_CONTINUOUS", Attribute::BITQUADS_PERIMETER_CONTINUOUS)
+            .value("BITQUADS_CIRCULARITY", Attribute::BITQUADS_CIRCULARITY)
+            .value("BITQUADS_PERIMETER_AVERAGE", Attribute::BITQUADS_PERIMETER_AVERAGE)
+            .value("BITQUADS_LENGTH_AVERAGE", Attribute::BITQUADS_LENGTH_AVERAGE)
+            .value("BITQUADS_WIDTH_AVERAGE", Attribute::BITQUADS_WIDTH_AVERAGE)
+            
             .export_values();
 }
 

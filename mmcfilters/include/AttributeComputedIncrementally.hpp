@@ -7,6 +7,7 @@
 #include "../include/ImageUtils.hpp"
 #include "../include/MorphologicalTree.hpp"
 #include "../include/Common.hpp"
+#include "../include/ComputerAttributeBasedBitQuads.hpp"
 #include <iterator>  
 #include <algorithm>
 #include <cmath>
@@ -86,9 +87,19 @@ enum class Attribute {
     NUM_LEAF_DESCENDANTS_NODE,
     LEAF_RATIO_NODE,
     BALANCE_NODE,
-    AVG_CHILD_HEIGHT_NODE
-};
+    AVG_CHILD_HEIGHT_NODE,
 
+	//BitQuads
+	BITQUADS_NUMBER_EULER,
+	BITQUADS_NUMBER_HOLES,
+	BITQUADS_PERIMETER,
+	BITQUADS_PERIMETER_CONTINUOUS,
+	BITQUADS_CIRCULARITY,
+	BITQUADS_PERIMETER_AVERAGE,
+	BITQUADS_LENGTH_AVERAGE,
+	BITQUADS_WIDTH_AVERAGE
+
+};
 
 
 enum class AttributeGroup {
@@ -99,7 +110,9 @@ enum class AttributeGroup {
     CENTRAL_MOMENTS,    // Momentos centrais
     HU_MOMENTS,         // Momentos de Hu
     TEXTURE,           // Atributos baseados em níveis de cinza
-    TREE_TOPOLOGY         // Topologia da árvore
+    TREE_TOPOLOGY,         // Topologia da árvore
+	BITQUADS          // BitQuads
+	
 };
 
 using AttributeOrGroup = std::variant<Attribute, AttributeGroup>;
@@ -225,6 +238,16 @@ static const std::unordered_map<AttributeGroup, std::vector<Attribute>> ATTRIBUT
         BALANCE_NODE,
         AVG_CHILD_HEIGHT_NODE
     }},
+	 {AttributeGroup::BITQUADS, {
+        BITQUADS_NUMBER_EULER,
+		BITQUADS_NUMBER_HOLES,
+		BITQUADS_PERIMETER,
+		BITQUADS_PERIMETER_CONTINUOUS,
+		BITQUADS_CIRCULARITY,
+		BITQUADS_PERIMETER_AVERAGE,
+		BITQUADS_LENGTH_AVERAGE,
+		BITQUADS_WIDTH_AVERAGE
+    }},
     {AttributeGroup::ALL, [] {
         std::vector<Attribute> all;
         for (int i = 0; i <= static_cast<int>(AVG_CHILD_HEIGHT_NODE); ++i)
@@ -325,6 +348,15 @@ public:
 			case LEAF_RATIO_NODE: name = "LEAF_RATIO_NODE"; break;
 			case BALANCE_NODE: name = "BALANCE_NODE"; break;
 			case AVG_CHILD_HEIGHT_NODE: name = "AVG_CHILD_HEIGHT_NODE"; break;
+			case BITQUADS_NUMBER_EULER: name = "BITQUADS_NUMBER_EULER"; break;
+			case BITQUADS_NUMBER_HOLES: name = "BITQUADS_NUMBER_HOLES"; break;
+			case BITQUADS_PERIMETER: name = "BITQUADS_PERIMETER"; break;
+			case BITQUADS_PERIMETER_CONTINUOUS: name = "BITQUADS_PERIMETER_CONTINUOUS"; break;
+			case BITQUADS_CIRCULARITY: name = "BITQUADS_CIRCULARITY"; break;
+			case BITQUADS_PERIMETER_AVERAGE: name = "BITQUADS_PERIMETER_AVERAGE"; break;
+			case BITQUADS_LENGTH_AVERAGE: name = "BITQUADS_LENGTH_AVERAGE"; break;
+			case BITQUADS_WIDTH_AVERAGE: name = "BITQUADS_WIDTH_AVERAGE"; break;
+
 			default: name = "UNKNOWN"; break;
 		}
 
@@ -420,6 +452,15 @@ public:
             case LEAF_RATIO_NODE: return "LEAF_RATIO_NODE";
             case BALANCE_NODE: return "BALANCE_NODE";
             case AVG_CHILD_HEIGHT_NODE: return "AVG_CHILD_HEIGHT_NODE";
+			case BITQUADS_NUMBER_EULER: return "BITQUADS_NUMBER_EULER";
+			case BITQUADS_NUMBER_HOLES: return "BITQUADS_NUMBER_HOLES";
+			case BITQUADS_PERIMETER: return "BITQUADS_PERIMETER";
+			case BITQUADS_PERIMETER_CONTINUOUS: return "BITQUADS_PERIMETER_CONTINUOUS";
+			case BITQUADS_CIRCULARITY: return "BITQUADS_CIRCULARITY";
+			case BITQUADS_PERIMETER_AVERAGE: return "BITQUADS_PERIMETER_AVERAGE";
+			case BITQUADS_LENGTH_AVERAGE: return "BITQUADS_LENGTH_AVERAGE";
+			case BITQUADS_WIDTH_AVERAGE: return "BITQUADS_WIDTH_AVERAGE";
+
             default: return "UNKNOWN";
         }
     }
@@ -484,6 +525,16 @@ public:
 			case Attribute::LEAF_RATIO_NODE:return "Leaf ratio: Ratio of leaf descendants to total descendants. Measures structural 'flatness' or terminal density of the subtree.";
 			case Attribute::BALANCE_NODE:return "Balance: Difference between the maximum and minimum heights among the subtrees of the children. Indicates branching symmetry.";
 			case Attribute::AVG_CHILD_HEIGHT_NODE:return "Average child height: Mean height of all direct child subtrees. Useful for measuring uniformity of the subtree structure.";
+			
+			//bitquads
+			case Attribute::BITQUADS_NUMBER_EULER: return "BitQuads Euler number: Number of connected components minus the number of holes in the component.";
+			case Attribute::BITQUADS_NUMBER_HOLES: return "BitQuads number of holes: Number of holes in the component, computed from the BitQuads representation.";
+			case Attribute::BITQUADS_PERIMETER: return "BitQuads perimeter: Length of the boundary of the component, computed from the BitQuads representation.";
+			case Attribute::BITQUADS_PERIMETER_CONTINUOUS: return "BitQuads continuous perimeter: Length of the boundary of the component, computed from the BitQuads representation, considering continuous edges.";
+			case Attribute::BITQUADS_CIRCULARITY: return "BitQuads circularity: Ratio of the perimeter squared to the area of the component, computed from the BitQuads representation. Values closer to 1 indicate more circular shapes.";
+			case Attribute::BITQUADS_PERIMETER_AVERAGE: return "BitQuads average perimeter: Average length of the perimeter of the component, computed from the BitQuads representation.";
+			case Attribute::BITQUADS_LENGTH_AVERAGE: return "BitQuads average length: Average length of the BitQuads representation of the component.";
+			case Attribute::BITQUADS_WIDTH_AVERAGE: return "BitQuads average width: Average width of the BitQuads representation of the component.";
 
             default:
                 return "Unknown attribute.";
@@ -1396,6 +1447,45 @@ using TreeTopologyComputerPtr = std::shared_ptr<TreeTopologyComputer>;
 
 
 
+class BitquadsComputer : public AttributeComputer {
+	public:
+		
+		std::vector<Attribute> attributes() const override {
+			return {BITQUADS_NUMBER_EULER,
+					BITQUADS_NUMBER_HOLES,
+					BITQUADS_PERIMETER,
+					BITQUADS_PERIMETER_CONTINUOUS,
+					BITQUADS_CIRCULARITY,
+					BITQUADS_PERIMETER_AVERAGE,
+					BITQUADS_LENGTH_AVERAGE,
+					BITQUADS_WIDTH_AVERAGE};
+		}
+
+
+
+		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources= {}) const override {
+			if(PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing HU_MOMENT group" << std::endl;
+			int numCols = tree->getNumColsOfImage();
+			auto indexOf = [&](int idx, Attribute attr) {
+				return attrNames->linearIndex(idx, attr);
+			};
+			ComputerAttributeBasedBitQuads computerBitQuads(tree);
+			std::vector<AttributeBasedBitQuads> attr = computerBitQuads.getAttributes();
+			for(NodeMTPtr node: tree->getIndexNode()){
+				buffer[indexOf(node->getIndex(), BITQUADS_NUMBER_EULER)] = attr[node->getIndex()].getNumberEuler();
+				buffer[indexOf(node->getIndex(), BITQUADS_NUMBER_HOLES)] = attr[node->getIndex()].getNumberHoles();
+				buffer[indexOf(node->getIndex(), BITQUADS_PERIMETER)] = attr[node->getIndex()].getPerimeter();
+				buffer[indexOf(node->getIndex(), BITQUADS_PERIMETER_CONTINUOUS)] = attr[node->getIndex()].getPerimeterContinuous();
+				buffer[indexOf(node->getIndex(), BITQUADS_CIRCULARITY)] = attr[node->getIndex()].getCircularity(node->getAreaCC());
+				buffer[indexOf(node->getIndex(), BITQUADS_PERIMETER_AVERAGE)] = attr[node->getIndex()].getPerimeter();
+				buffer[indexOf(node->getIndex(), BITQUADS_LENGTH_AVERAGE)] = attr[node->getIndex()].getLengthAverage();
+				buffer[indexOf(node->getIndex(), BITQUADS_WIDTH_AVERAGE)] = attr[node->getIndex()].getWidthAverage(node->getAreaCC());
+			}
+			
+		}
+};
+using AreaComputerPtr = std::shared_ptr<AreaComputer>;
+
 
 
 class AttributeFactory {
@@ -1466,6 +1556,15 @@ class AttributeFactory {
 				case AVG_CHILD_HEIGHT_NODE:
 					return std::make_shared<TreeTopologyComputer>();
 
+				case BITQUADS_NUMBER_EULER:
+				case BITQUADS_NUMBER_HOLES:
+				case BITQUADS_PERIMETER:
+				case BITQUADS_PERIMETER_CONTINUOUS:
+				case BITQUADS_CIRCULARITY:
+				case BITQUADS_PERIMETER_AVERAGE:
+				case BITQUADS_LENGTH_AVERAGE:
+				case BITQUADS_WIDTH_AVERAGE:
+					return std::make_shared<BitquadsComputer>();
 
 				default:
 					throw std::runtime_error("Attribute not supported.");

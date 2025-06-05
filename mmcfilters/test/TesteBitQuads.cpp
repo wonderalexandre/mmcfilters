@@ -22,7 +22,7 @@ int main(int argc, char* argv[]) {
 
     // Criação das Component Trees
     MorphologicalTreePtr tree = nullptr;
-    std::string treeType = "maxtree"; 
+    std::string treeType = "self-dual"; 
     if(treeType=="mintree"){
         tree = std::make_shared<MorphologicalTree>(image, false);
         //std::cout << "mintree" << std::endl;

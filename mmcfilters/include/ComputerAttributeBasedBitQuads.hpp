@@ -110,8 +110,9 @@ public:
     bool compare(int row, int col, MorphologicalTreePtr tree, std::vector<std::vector<int>>& pixelsOfLCA) const {
         if (!isValid(row, col, tree)){
             if(type == BitQuadType::Subset || type == BitQuadType::SubsetEq) {
-                // Se for Subset ou SubsetEq, não é válido
                 return false;
+            }else{
+                return true;
             }
         }
             
@@ -231,24 +232,74 @@ struct AttributeBasedBitQuads {
     int countPatternCT2 = 0;
     int countPatternCTD = 0;
     int countPatternCT3 = 0;
+    AdjacencyRelationPtr adj;
+
+    std::string printPattern() const {
+        std::ostringstream oss;
+        oss << std::left
+            << "Q1:" << std::setw(3) << countPatternC1
+            << "  Q1C4:" << std::setw(3) << countPatternC1C4
+            << "  Q2:" << std::setw(3) << countPatternC2
+            << "  Q3:" << std::setw(3) << countPatternC3
+            << "  QD:" << std::setw(3) << countPatternCD
+            << "  Q4:" << std::setw(3) << countPatternC4
+            << "  QT1C4:" << std::setw(3) << countPatternCT1C4
+            << "  QT1:" << std::setw(3) << countPatternCT1
+            << "  QT2:" << std::setw(3) << countPatternCT2
+            << "  QT3:" << std::setw(3) << countPatternCT3
+            << "  QTD:" << std::setw(3) << countPatternCTD;
+        return oss.str();
+    }
 
 
-std::string printPattern() const {
-    std::ostringstream oss;
-    oss << std::left
-        << "Q1:" << std::setw(3) << countPatternC1
-        << "  Q1C4:" << std::setw(3) << countPatternC1C4
-        << "  Q2:" << std::setw(3) << countPatternC2
-        << "  Q3:" << std::setw(3) << countPatternC3
-        << "  QD:" << std::setw(3) << countPatternCD
-        << "  Q4:" << std::setw(3) << countPatternC4
-        << "  QT1C4:" << std::setw(3) << countPatternCT1C4
-        << "  QT1:" << std::setw(3) << countPatternCT1
-        << "  QT2:" << std::setw(3) << countPatternCT2
-        << "  QT3:" << std::setw(3) << countPatternCT3
-        << "  QTD:" << std::setw(3) << countPatternCTD;
-    return oss.str();
-}
+    int getNumberEuler() const {
+        if (adj || adj->is4connectivity()) // ou use uma constante do seu projeto
+            return (countPatternC1C4 - countPatternC3) / 4;
+        else
+            return (countPatternC1 - countPatternC3 - (2 * countPatternCD)) / 4;
+    }
+
+    int getNumberHoles() const {
+        return 1 - getNumberEuler();
+    }
+
+    int getPerimeter() const {
+        return countPatternC1 + countPatternC2 + countPatternC3 + (2 * countPatternCD);
+    }
+
+    int getArea() const {
+        return (countPatternC1 + 2 * countPatternC2 + 3 * countPatternC3 + 4 * countPatternC4 + 2 * countPatternCD) / 4;
+    }
+
+    double getAreaDuda() const {
+        return (1.0/4.0*countPatternC1 + 1.0/2.0*countPatternC2 + 7.0/8.0*countPatternC3 + countPatternC4 + 3.0/4.0*countPatternCD);
+    }
+
+    double getPerimeterContinuous() const {
+        return countPatternC2 + ((countPatternC1 + countPatternC3) / 1.5);
+    }
+
+    double getCircularity(int area) const {
+        double per = getPerimeterContinuous();
+        return (4.0 * M_PI * area) / (per * per);
+    }
+
+    double getAreaAverage(int area) const {
+        return area / static_cast<double>(getNumberEuler());
+    }
+
+    double getPerimeterAverage() const {
+        return getPerimeterContinuous() / static_cast<double>(getNumberEuler());
+    }
+
+    double getLengthAverage() const {
+        return getPerimeterAverage() / 2.0;
+    }
+
+    double getWidthAverage(int area) const {
+        return (2.0 * getAreaAverage(area)) / getPerimeterAverage();
+    }
+
 };
 
 
@@ -337,6 +388,8 @@ public:
     std::vector<AttributeBasedBitQuads> getAttributes() const {
         return attr;
     }
+
+    
 
 
 };

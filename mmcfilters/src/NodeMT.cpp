@@ -59,10 +59,13 @@ std::list<NodeMTPtr>& NodeMT::getChildren(){  return this->children; }
 
 
 int NodeMT::getNumSiblings() {
-    if(this->parent != nullptr)
-		return this->parent->getChildren().size();
-	else
-		return 0;
+    if (this->parent != nullptr) {
+        int numChildren = this->parent->getChildren().size();
+        // Exclude this node from the count of siblings
+        return numChildren > 0 ? numChildren - 1 : 0;
+    } else {
+        return 0;
+    }
 }
 
 int NodeMT::getTimePostOrder() { return this->timePostOrder; }

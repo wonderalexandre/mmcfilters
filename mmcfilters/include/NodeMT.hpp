@@ -44,7 +44,9 @@ public:
 	void setParent(NodeMTPtr parent);
 	std::list<int>& getCNPs();
 	std::list<NodeMTPtr>& getChildren();
-	int getNumSiblings();
+        // Returns the number of siblings (nodes that share the same parent)
+        // excluding this node itself
+        int getNumSiblings();
     int getTimePostOrder();
     int getTimePreOrder();
     void setTimePostOrder(int time);

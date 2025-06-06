@@ -70,6 +70,11 @@ if(BUILD_TESTS)
     )
     target_link_libraries(testeResidualTree PRIVATE mmcfilters_lib)
 
+    add_executable(TestComponentTree 
+        mmcfilters/test/TestComponentTree.cpp
+    )
+    target_link_libraries(TestComponentTree PRIVATE mmcfilters_lib)
+
 
     # Adicionar o executável de testes: 
     add_executable(testeTreeOfShapes 
@@ -107,6 +112,12 @@ if(BUILD_TESTS)
     target_link_libraries(testeComputerAttribute PRIVATE mmcfilters_lib)
     target_compile_options(testeComputerAttribute PRIVATE -Wno-deprecated-declarations)
 
+    add_executable(TesteBitQuads 
+        mmcfilters/test/TesteBitQuads.cpp
+        external/stb/stb_image.cpp
+    )
+    target_link_libraries(TesteBitQuads PRIVATE mmcfilters_lib)
+    target_compile_options(TesteBitQuads PRIVATE -Wno-deprecated-declarations)
 
 
 endif()

@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <iomanip>
 #include <fstream>
+#include <cstdint>
 
 #include "../include/ImageUtils.hpp"
 #include "../include/NodeMT.hpp"
@@ -205,7 +206,7 @@ inline void printImage(ImageUInt8Ptr imgPtr, int setw=4, std::string nomeArquivo
     auto img = imgPtr->rawData();
     std::ostream* streamSaida;
     std::ofstream arquivoSaida;
-
+    
     if (nomeArquivo.empty()) {
         streamSaida = &std::cout;
     } else {
@@ -216,7 +217,7 @@ inline void printImage(ImageUInt8Ptr imgPtr, int setw=4, std::string nomeArquivo
         }
         streamSaida = &arquivoSaida;
     }
-
+    *streamSaida << "Image size: " << imgPtr->getNumCols() << "x" << imgPtr->getNumRows() << "\n";
     // Imprime o cabeçalho de colunas
     *streamSaida << std::setw(setw) << " "; // espaço para a primeira coluna (índice da linha)
     for (int col = 0; col < imgPtr->getNumCols(); col++) {
@@ -228,7 +229,7 @@ inline void printImage(ImageUInt8Ptr imgPtr, int setw=4, std::string nomeArquivo
     for (int row = 0; row < imgPtr->getNumRows(); row++) {
         *streamSaida << std::setw(setw) << row; // índice da linha
         for (int col = 0; col < imgPtr->getNumCols(); col++) {
-            *streamSaida << std::setw(setw) << ((int)img[ImageUtils::to1D(row, col, imgPtr->getNumCols())]); // ou ImageUtils::to1D(row, col, numCols)
+            *streamSaida << std::setw(setw) << static_cast<int>(img[ImageUtils::to1D(row, col, imgPtr->getNumCols())]); // ou ImageUtils::to1D(row, col, numCols)
         }
         *streamSaida << "\n";
     }
@@ -397,19 +398,18 @@ inline NodeMTPtr getNodeByIndex(MorphologicalTreePtr tree, int index){
 
 inline ImageUInt8Ptr get2CsImage(){
     
-    auto img = new uint8_t[110]{
-        4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-        4, 4, 4, 1, 1, 1, 7, 7, 7, 4, 4,
-        4, 4, 1, 1, 1, 1, 7, 7, 7, 4, 4,
-        4, 4, 1, 1, 1, 1, 7, 7, 7, 4, 4,
-        4, 4, 1, 1, 4, 4, 4, 7, 7, 4, 4,
-        4, 4, 1, 1, 1, 1, 7, 7, 7, 4, 4,
-        4, 4, 1, 1, 1, 1, 7, 7, 7, 4, 4,
-        4, 4, 4, 1, 1, 1, 7, 7, 7, 4, 4,
-        4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-        4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4
+    auto img = new uint8_t[80]{
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+        4, 0, 0, 0, 0, 7, 7, 7, 7, 4,
+        4, 0, 0, 0, 0, 7, 7, 7, 7, 4,
+        4, 0, 0, 4, 4, 4, 4, 7, 7, 4,
+        4, 0, 0, 4, 4, 4, 4, 7, 7, 4,
+        4, 0, 0, 0, 0, 7, 7, 7, 7, 4,
+        4, 0, 0, 0, 0, 7, 7, 7, 7, 4,
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+        
     };
-    return ImageUInt8::fromRaw(img, 10, 11);
+    return ImageUInt8::fromRaw(img, 8, 10);
 }
 
 inline ImageUInt8Ptr getCriticalImage(){
@@ -882,6 +882,19 @@ inline ImageUInt8Ptr getLenaCropImage(){
     153,	155,	158,	160,	160,	159,	161,	163,	163,	166,	167,	166,	166,	170,	170,	169,	178,	174,	171,	178,	182,	182,	183,	183,	190,	188,	187,	191,	191,	194,	195,	197,	202,	199,	204,	203,	204,	203,	207,	209,	210,	210,	210,	210,	213,	210,	209,	211,	211,	216,	211,	213,	212,	206,	202,	164,	98,	84,	88,	92,	103,	101,	103,	106,	106,	104,	106,	107,	103,	108,	108,	115,	114,	102,	110,	101,	100,	102,	104,	100,	105};
 
     return ImageUInt8::fromRaw(img, 68, 81);
+}
+
+inline ImageUInt8Ptr getICIP14Image(){
+    auto img=new uint8_t[49]{
+        0, 0, 0, 0, 0, 0, 0,
+        0, 4, 4, 4, 7, 7, 7,
+        0, 7, 7, 4, 7, 4, 7,
+        0, 7, 4, 4, 7, 4, 7,
+        0, 4, 4, 4, 7, 4, 7,
+        0, 7, 7, 4, 7, 7, 7,
+        0, 0, 0, 0, 0, 0, 0
+    };
+    return ImageUInt8::fromRaw(img, 7, 7);
 }
 
 

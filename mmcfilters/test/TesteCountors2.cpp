@@ -16,8 +16,8 @@ int main(int argc, char* argv[]) {
     
     ImageUInt8Ptr image = getSimpleImage();
     
-    if(argc != 3){
-        std::cout << "Execute assim: " << argv[0] << " <ToS_type> <filename>" << std::endl;
+    if(argc != 2){
+        std::cout << "Execute assim: " << argv[0] << " <ToS_type>" << std::endl;
         return 1;
     }
    // ImagePtr image = openImage(argv[2]);
@@ -64,11 +64,11 @@ int main(int argc, char* argv[]) {
     std::cout << std::endl;
     printMappingSC(tree, 3);
     
-    ContoursMTPtr contoursMT = AttributeComputedIncrementally::extractCompactCountors(tree);
+    ContoursMTPtr contoursMT = AttributeComputedIncrementally::extractCompactContours(tree);
     //ImagePtr imgContours = Image::create(numRows, numCols, 0);
 
     bool isEquals = true;
-    for (auto&& [node, contourNode] : contoursMT->contoursLazy(tree->getRoot())) {
+    for (auto&& [node, contourNode] : contoursMT->contoursLazy()) {
         ImageUInt8Ptr imgContours = ImageUInt8::create(numRows, numCols, 0);
         
         //contorno incremental

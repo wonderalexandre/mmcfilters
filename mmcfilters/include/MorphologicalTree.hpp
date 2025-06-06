@@ -3,10 +3,11 @@
 
 #include "../include/NodeMT.hpp"
 #include "../include/AdjacencyRelation.hpp"
+#include "../include/BuilderComponentTreeByUnionFind.hpp"
 #include "../include/Common.hpp"
 #include <iostream>
 #include <cmath>
-
+#include <type_traits>
 
 #ifndef COMPONENT_TREE_H
 #define COMPONENT_TREE_H
@@ -29,19 +30,97 @@ protected:
 	
 	void reconstruction(NodeMTPtr node, uint8_t* data);
 	void computerTreeAttribute();
+	MorphologicalTree(){ }
+    
     
 public:
    	static const int MAX_TREE = 0;
 	static const int MIN_TREE = 1;
 	static const int TREE_OF_SHAPES = 2;
 
-	
 	MorphologicalTree(ImageUInt8Ptr img, std::string ToSInperpolation="self-dual");
 	explicit MorphologicalTree(ImageUInt8Ptr img, bool isMaxtree, double radius = 1.5);
     MorphologicalTree(ImageUInt8Ptr img, const char* ToSInterpolation) : MorphologicalTree(img, std::string(ToSInterpolation)) {}
 
     ~MorphologicalTree();
-	
+
+    static MorphologicalTreePtr create(int rows, int cols, bool isMaxtree, AdjacencyRelationPtr adj) {
+        struct Enabler : public MorphologicalTree {
+            Enabler(int r, int c, bool m, AdjacencyRelationPtr a) {
+                this->numRows = r;
+                this->numCols = c;
+                this->treeType = m ? MAX_TREE : MIN_TREE;
+                this->adj = a;
+            }
+        };
+        return std::make_shared<Enabler>(rows, cols, isMaxtree, adj);
+    }
+    
+
+    template <typename PixelType>
+    static MorphologicalTreePtr createFromAttributeMapping(ImagePtr<PixelType> attrMappingPtr, ImageUInt8Ptr imgPtr, bool isMaxtree, double radius) {
+        AdjacencyRelationPtr adj = std::make_shared<AdjacencyRelation>(imgPtr->getNumRows(), imgPtr->getNumCols(), radius);	
+        MorphologicalTreePtr tree = MorphologicalTree::create(imgPtr->getNumRows(), imgPtr->getNumCols(), isMaxtree, adj);
+        BuilderComponentTreeByUnionFind<PixelType> builder(attrMappingPtr, isMaxtree, adj);
+        int n = imgPtr->getNumRows() * imgPtr->getNumCols();
+        auto img = imgPtr->rawData();
+        auto attrMapping = attrMappingPtr->rawData();
+
+        auto orderedPixels = builder.getOrderedPixels();
+        auto parent = builder.getParent();
+        float epsilon = 1e-5f; // Tolerância para comparação de pixels flutuantes
+
+        tree->nodes.resize(n, nullptr);
+
+        tree->numNodes = 0;
+        for (int i = 0; i < n; i++) {
+            int p = orderedPixels[i];
+            if (p == parent[p]) { //representante do node raiz
+                tree->root = tree->nodes[p] = std::make_shared<NodeMT>(tree->numNodes++, nullptr, img[p]);
+                tree->nodes[p]->addCNPs(p);
+            }
+            if constexpr (std::is_floating_point<PixelType>::value) {            
+                if (std::fabs(attrMapping[p] - attrMapping[parent[p]]) > epsilon) { //representante de um node
+                    tree->nodes[p] = std::make_shared<NodeMT>(tree->numNodes++, tree->nodes[parent[p]], img[p]);
+                    tree->nodes[p]->addCNPs(p);
+                    tree->nodes[parent[p]]->addChild(tree->nodes[p]);
+                }
+                else {
+                    tree->nodes[parent[p]]->addCNPs(p);
+                    tree->nodes[p] = tree->nodes[parent[p]];
+                }
+            }
+            else{
+                if (attrMapping[p] != attrMapping[parent[p]]) { //representante de um node
+                    tree->nodes[p] = std::make_shared<NodeMT>(tree->numNodes++, tree->nodes[parent[p]], img[p]);
+                    tree->nodes[p]->addCNPs(p);
+                    tree->nodes[parent[p]]->addChild(tree->nodes[p]);
+                }
+                else {
+                    tree->nodes[parent[p]]->addCNPs(p);
+                    tree->nodes[p] = tree->nodes[parent[p]];
+                }
+            }
+        }
+        
+        tree->computerTreeAttribute();
+
+        //ajustar o level de cada nó
+        for(NodeMTPtr node: tree->getIndexNode()){
+            int media = 0;
+            for(int p: node->getCNPs()){
+                media += img[p];
+            }
+            media /= node->getCNPs().size();
+            node->setLevel(media);
+        }
+
+
+        return tree;
+
+    }
+
+
 	NodeMTPtr getRoot();
 
 	bool isMaxtree();
@@ -65,6 +144,8 @@ public:
 	ImageUInt8Ptr getImageAferPruning(NodeMTPtr node);
 
 	void pruning(NodeMTPtr node);
+
+    AdjacencyRelationPtr getAdjacencyRelation();
 
 	bool isAncestor(NodeMTPtr u, NodeMTPtr v);
 	

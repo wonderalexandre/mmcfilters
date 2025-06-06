@@ -76,9 +76,9 @@ MorphologicalTree::MorphologicalTree(ImageUInt8Ptr imgPtr, std::string ToSInperp
 
 	computerTreeAttribute();
 	delete builder;
-	imgR = nullptr;
-	imgU = nullptr;
-	parent = nullptr;
+	//imgR = nullptr;
+	//imgU = nullptr;
+	//parent = nullptr;
 	
 } 
 
@@ -127,11 +127,13 @@ MorphologicalTree::MorphologicalTree(ImageUInt8Ptr imgPtr, bool isMaxtree, doubl
 	this->treeType = isMaxtree? MAX_TREE : MIN_TREE;
 
 	this->adj = std::make_shared<AdjacencyRelation>(numRows, numCols, radiusOfAdjacencyRelation);	
-	BuilderComponentTreeByUnionFind* builder = new BuilderComponentTreeByUnionFind(imgPtr, isMaxtree, adj);
+
+	using PixelType = typename decltype(imgPtr)::element_type::Type;
+	BuilderComponentTreeByUnionFind<PixelType> builder(imgPtr, isMaxtree, adj);
 	
 	int n = numRows * numCols;
-	int* orderedPixels = builder->getOrderedPixels();
-	int* parent = builder->getParent();
+	auto orderedPixels = builder.getOrderedPixels();
+	auto parent = builder.getParent();
 		
 	this->nodes.resize(n, nullptr);
 
@@ -155,11 +157,13 @@ MorphologicalTree::MorphologicalTree(ImageUInt8Ptr imgPtr, bool isMaxtree, doubl
 	
 	
 	computerTreeAttribute();
-	delete builder;
-	builder = nullptr;
-	orderedPixels = nullptr;
-	parent = nullptr;
+	//delete builder;
+	//builder = nullptr;
+	//orderedPixels = nullptr;
+	//parent = nullptr;
 }
+
+
 
 int MorphologicalTree::getDepth(){
 	return this->depth;
@@ -177,6 +181,11 @@ NodeMTPtr MorphologicalTree::getNodeByIndex(int index){
 NodeMTPtr MorphologicalTree::getRoot() {
 	return this->root;
 }
+
+AdjacencyRelationPtr MorphologicalTree::getAdjacencyRelation(){
+	return this->adj;
+}
+
 
 bool MorphologicalTree::isMaxtree(){
 	return this->treeType == MAX_TREE;

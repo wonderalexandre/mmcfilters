@@ -28,17 +28,7 @@ class MorphologicalTreePybind : public MorphologicalTree {
 	MorphologicalTreePybind(py::array_t<uint8_t> input, int numRows, int numCols, bool isMaxtree, double radiusOfAdjacencyRelation=1.5)
         : MorphologicalTree(ImageUInt8::fromExternal(static_cast<uint8_t*>(input.request().ptr), numRows, numCols), isMaxtree, radiusOfAdjacencyRelation) { }
    
-
-    /*
-    py::array_t<int> getOrderedPixels(){
-        int n = this->numRows * this->numCols;
-        return PybindUtils::toNumpy(this->orderedPixels, n);
-    }
-
-    py::array_t<int> getParent(){
-        int n = this->numRows * this->numCols;
-        return PybindUtils::toNumpy(this->parent, n);
-    }*/
+    MorphologicalTreePybind() = delete;
 
     py::array_t<uint8_t> getImageAferPruning(NodeMTPtr node){
         int n = this->numRows * this->numCols;
@@ -53,13 +43,19 @@ class MorphologicalTreePybind : public MorphologicalTree {
         return PybindUtils::toNumpy(imgOut);
     }
 
-    /*static py::array_t<int> computerParent(py::array_t<int> input, int numRows, int numCols, bool isMaxtree){
-		auto buf_input = input.request();
-		int* img = (int *) buf_input.ptr;
-		ComponentTree tree(img, numRows, numCols, isMaxtree);
-		return PybindUtils::toNumpy(tree.getParent(), numRows * numCols);;
-	}*/
+    
+    static MorphologicalTreePybindPtr createTreeFromAttributeMapping(py::array_t<float> attrMapping, py::array_t<uint8_t> input, int numRows, int numCols, bool isMaxtree, double radius=1.5) {
+        auto buf_attr = attrMapping.request();
+        ImageFloatPtr attributeMapping = ImageFloat::fromExternal(static_cast<float*>(buf_attr.ptr), numRows, numCols);
 
+        auto buf_input = input.request();
+        ImageUInt8Ptr img = ImageUInt8::fromExternal(static_cast<uint8_t*>(buf_input.ptr), numRows, numCols);
+        
+        MorphologicalTreePtr tree = MorphologicalTree::createFromAttributeMapping(attributeMapping, img, isMaxtree, radius);
+
+        return std::static_pointer_cast<MorphologicalTreePybind>(tree);
+
+    }
 
     static py::array_t<uint8_t> recNode(NodeMTPtr _node) {
         int n = _node->getAreaCC();

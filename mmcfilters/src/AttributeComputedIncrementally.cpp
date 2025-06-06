@@ -22,6 +22,18 @@ void AttributeComputedIncrementally::computerAttribute(NodeMTPtr root) {
 }
 
 
+ImageFloatPtr AttributeComputedIncrementally::computerAttributeMapping(MorphologicalTreePtr tree, Attribute attribute) {
+    auto [attrNames, buffer] = AttributeComputedIncrementally::computeSingleAttribute(tree, attribute);
+    ImageFloatPtr imgPtr = std::make_shared<ImageFloat>(tree->getNumRowsOfImage(), tree->getNumColsOfImage());
+    float* img = imgPtr->rawData();
+    for(int p=0; p < imgPtr->getSize(); ++p){
+        int index = tree->getSC(p)->getIndex();
+        img[p] = buffer[attrNames->linearIndex(index, attribute)];
+    }
+    return imgPtr;
+}
+
+
 std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeComputedIncrementally::computeAttributesByComputer(MorphologicalTreePtr tree, std::shared_ptr<AttributeComputer> comp, const DependencyMap& availableDeps) {
     // Lambda para obter os atributos de um grupo
     auto attributesOf = [](AttributeGroup group) -> std::vector<Attribute> {
@@ -490,8 +502,8 @@ std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeCo
 
 
 
-ContoursMTPtr AttributeComputedIncrementally::extractCompactCountors(MorphologicalTreePtr tree){
-    ContoursMTPtr contoursMT = std::make_shared<ContoursMT>(tree->getNumNodes());
+ContoursMTPtr AttributeComputedIncrementally::extractCompactContours(MorphologicalTreePtr tree){
+    ContoursMTPtr contoursMT = std::make_shared<ContoursMT>(tree);
     
     std::vector<std::vector<int>> contoursToRemoveLCA(tree->getNumNodes());
     std::vector<std::int8_t> ncount(tree->getNumRowsOfImage() * tree->getNumColsOfImage(), 0);
@@ -559,7 +571,7 @@ ContoursMTPtr AttributeComputedIncrementally::extractCompactCountors(Morphologic
     return contoursMT;
 }
 
-std::vector<std::unordered_set<int>> AttributeComputedIncrementally::extractNonCompactCountors(MorphologicalTreePtr tree){
+std::vector<std::unordered_set<int>> AttributeComputedIncrementally::extractNonCompactContours(MorphologicalTreePtr tree){
     std::vector<std::unordered_set<int>> contours(tree->getNumNodes());
     std::vector<std::vector<int>> contoursToRemoveLCA(tree->getNumNodes());
     std::vector<std::int8_t> ncount(tree->getNumRowsOfImage() * tree->getNumColsOfImage(), 0);

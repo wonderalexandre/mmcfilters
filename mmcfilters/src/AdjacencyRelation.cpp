@@ -125,6 +125,13 @@ int AdjacencyRelation::getSize(){
 	return this->n;
 }
 
+bool AdjacencyRelation::is4connectivity(){
+	return this->n == 5;
+}
+bool AdjacencyRelation::is8connectivity(){
+	return this->n == 9;
+}
+
 int AdjacencyRelation::nextValid(){
     this->id += 1;
 	while (this->id < this->n){

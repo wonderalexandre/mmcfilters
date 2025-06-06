@@ -12,20 +12,28 @@
 #ifndef BUILDER_COMPONENT_TREE_BY_UNION_FIND_H
 #define BUILDER_COMPONENT_TREE_BY_UNION_FIND_H
 
+template <typename PixelType>
 class BuilderComponentTreeByUnionFind {
 private:
-	int* parent;
-	int *orderedPixels;
+	
+    std::unique_ptr<int[]> parent; 
+	std::unique_ptr<int[]> orderedPixels; 
     
 public:
-    
-    void sort(ImageUInt8Ptr img, bool isMaxtree);
-	void createTreeByUnionFind(ImageUInt8Ptr img, bool isMaxtree, AdjacencyRelationPtr adj);
-	int findRoot(int *zPar, int x);
+
+    void sort(ImagePtr<PixelType> img, bool isMaxtree);
+
+	void createTreeByUnionFind(ImagePtr<PixelType> img, bool isMaxtree, AdjacencyRelationPtr adj);
+
+	int findRoot(int* zPar, int x);
     int* getParent();
     int* getOrderedPixels();
-    BuilderComponentTreeByUnionFind(ImageUInt8Ptr img, bool isMaxtree, AdjacencyRelationPtr adj);
+
+    BuilderComponentTreeByUnionFind(ImagePtr<PixelType> img, bool isMaxtree, AdjacencyRelationPtr adj);
+
     ~BuilderComponentTreeByUnionFind();
 };
+
+#include "BuilderComponentTreeByUnionFind.tpp"
 
 #endif

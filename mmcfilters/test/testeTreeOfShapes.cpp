@@ -18,8 +18,8 @@ int main() {
 
     // Receber os ponteiros de interpolação (mínimo e máximo)
     builder.interpolateImage4c8c(image);
-    uint8_t* interpolationMin = builder.getInterpolationMin();
-    uint8_t* interpolationMax = builder.getInterpolationMax();
+    auto interpolationMin = builder.getInterpolationMin();
+    auto interpolationMax = builder.getInterpolationMax();
 
     // Imprimir os resultados da interpolação
     std::cout << "\nInterpolação: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
@@ -29,46 +29,55 @@ int main() {
     
             std::ostringstream cell;
             if (r % 2 == 1 && c % 2 == 1) {
-                cell << "  " << interpolationMax[index] << "  ";
+                cell << "  " << static_cast<int>(interpolationMax[index]) << "  ";
             } else {
-                cell << "[" << interpolationMin[index] << "," << interpolationMax[index] << "]";
+                cell << "[" << static_cast<int>(interpolationMin[index]) << "," << static_cast<int>(interpolationMax[index]) << "]";
             }
     
             std::string cellStr = cell.str();
     
             // Garante que a célula tenha exatamente 8 caracteres (alinha à direita)
-            std::cout << std::setw(8) << cellStr;
+            std::cout << std::setw(10) << cellStr;
         }
         std::cout << std::endl;
     }
     std::cout << std::endl;
     
-    AdjacencyUC* adj = builder.getAdjacency();
+    std::cout << "Adjacency Relation" << std::endl;
+    auto adj = builder.getAdjacency();
     for(int index : adj->getNeighboringPixels(3, 3)){
         auto [r, c] = ImageUtils::to2D(index, builder.getInterpNumCols());
-        std::cout << "(" << r << ", " << c << ") = " <<  "[" << interpolationMin[index] << "," << interpolationMax[index] << "]" << std::endl;
+        std::cout << "(" << r << ", " << c << ") = " <<  "[" << static_cast<int>(interpolationMin[index]) << "," << static_cast<int>(interpolationMax[index]) << "]" << std::endl;
     }
 
 
     
     // Ordenar a interpolação mínima
     builder.sort();
-    int* imgR = builder.getImgR();
-    uint8_t* imgU = builder.getImgU();
+    auto imgR = builder.getImgR();
+    auto imgU = builder.getImgU();
 
     std::cout << "\nimgU: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
     // Imprimir os resultados da interpolação ordenada
     for (int row = 0; row < builder.getInterpNumRows(); ++row) {    
         for (int col = 0; col < builder.getInterpNumCols(); ++col) {
             int index = ImageUtils::to1D(row, col, builder.getInterpNumCols());
-            std::cout << std::setw(2) << imgU[index] << ", ";
+            std::cout << std::setw(3) << static_cast<int>(imgU[index]) << ", ";
         }
         std::cout << std::endl;
     }
     std::cout << "\nimgR: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
-    
+    // Imprimir os resultados da interpolação ordenada
+    for (int row = 0; row < builder.getInterpNumRows(); ++row) {    
+        for (int col = 0; col < builder.getInterpNumCols(); ++col) {
+            int index = ImageUtils::to1D(row, col, builder.getInterpNumCols());
+            std::cout << std::setw(4) << imgR[index] << ", ";
+        }
+        std::cout << std::endl;
+    }
+
     builder.createTreeByUnionFind();
-    int* parent = builder.getParent();
+    auto parent = builder.getParent();
     std::cout << "\nparent: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
     for (int row = 0; row < builder.getInterpNumRows(); ++row) {
         for (int col = 0; col < builder.getInterpNumCols(); ++col) {

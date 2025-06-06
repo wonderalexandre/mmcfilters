@@ -1,0 +1,46 @@
+#ifndef EXTINCTION_VALUES_PYBIND_H
+#define EXTINCTION_VALUES_PYBIND_H
+
+
+#include "../include/ExtinctionValues.hpp"
+#include "../include/NodeMT.hpp"
+
+
+#include "../pybind/MorphologicalTreePybind.hpp"
+
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+#include <pybind11/numpy.h>
+#include <algorithm> 
+#include <cmath>
+#include <iostream>
+
+namespace py = pybind11;
+
+
+class ExtinctionValuesPybind;
+using ExtinctionValuesPybindPtr = std::shared_ptr<ExtinctionValuesPybind>;
+
+class ExtinctionValuesPybind : public ExtinctionValues{
+
+    public:
+    using ExtinctionValues::ExtinctionValues;
+    
+    ExtinctionValuesPybind(MorphologicalTreePybindPtr tree, py::array_t<float>& attribute)
+        : ExtinctionValues(tree, PybindUtils::toShared_ptr(attribute)) { }
+
+    py::array_t<float> saliencyMap(int leafToKeep, bool unweighted=true) {
+
+        auto saliencyMapPtr = ExtinctionValues::saliencyMap(leafToKeep, unweighted);
+        return PybindUtils::toNumpy(saliencyMapPtr);
+    }
+
+    py::array_t<uint8_t> filtering(int leafToKeep) {
+
+        ImageUInt8Ptr filteredImagePtr =  ExtinctionValues::filtering(leafToKeep);
+        return PybindUtils::toNumpy(filteredImagePtr);
+    }
+
+};
+
+#endif // EXTINCTION_VALUES_PYBIND_H

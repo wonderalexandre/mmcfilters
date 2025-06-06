@@ -16,12 +16,13 @@ class BuilderTreeOfShapeByUnionFind {
 private:
     int interpNumRows;
     int interpNumCols;
-    uint8_t* interpolationMin;
-    uint8_t* interpolationMax;
-    int* parent;
-    int* imgR; 
-    uint8_t* imgU;
-    AdjacencyUC* adj;
+    std::unique_ptr<uint8_t[]> interpolationMin;
+    std::unique_ptr<uint8_t[]> interpolationMax;
+    std::unique_ptr<uint8_t[]> imgU;
+    std::unique_ptr<int[]> parent;
+    std::unique_ptr<int[]> imgR; 
+    
+    std::unique_ptr<AdjacencyUC> adj;
     bool is4c8cConnectivity;
 
     class PriorityQueueToS {
@@ -98,12 +99,11 @@ public:
 
     int getInterpNumRows();
     int getInterpNumCols();
-    uint8_t* getInterpolationMin();
-    uint8_t* getInterpolationMax();
-    int* getImgR();
+    
     uint8_t* getImgU();
+    int* getImgR();
     int* getParent();
-    AdjacencyUC* getAdjacency();
+    
     BuilderTreeOfShapeByUnionFind();
     ~BuilderTreeOfShapeByUnionFind();
     void interpolateImage(ImageUInt8Ptr img);
@@ -112,6 +112,9 @@ public:
     int findRoot(int zPar[], int x);
     void createTreeByUnionFind();
 
+    AdjacencyUC* getAdjacency();
+    uint8_t* getInterpolationMin();
+    uint8_t* getInterpolationMax();
 
 };
 

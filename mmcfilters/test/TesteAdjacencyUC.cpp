@@ -10,6 +10,11 @@ int main() {
 
     int numRows = 100;
     int numCols = 100;
+    AdjacencyRelation adj4(numRows, numCols, 1);
+    AdjacencyRelation adj8(numRows, numCols, 1.5);
+    std::cout << "Adjacency 4-connectivity:" << adj4.getSize() << std::endl;
+    std::cout << "Adjacency 8-connectivity:" << adj8.getSize() << std::endl;
+
     AdjacencyUC adj(numRows, numCols, true);
 
     int pRow = 2;

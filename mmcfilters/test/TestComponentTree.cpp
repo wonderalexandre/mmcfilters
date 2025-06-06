@@ -4,7 +4,7 @@
 
 int main() {
     // Definição da imagem e parâmetros
-    ImageUInt8Ptr img = getPassatImage();
+    ImageUInt8Ptr img = getSimpleImage();
     
     double radioAdj = 1.5;
 
@@ -12,8 +12,11 @@ int main() {
     MorphologicalTreePtr maxtree = std::make_shared<MorphologicalTree>(img, true, radioAdj);
     MorphologicalTreePtr mintree = std::make_shared<MorphologicalTree>(img, false, radioAdj);
 
-    // Executar testes
+    
+    printTree(mintree->getRoot());
     testComponentTree(mintree, "Min-Tree", mintree->reconstructionImage());
+
+    printTree(maxtree->getRoot());
     testComponentTree(maxtree, "Max-Tree", maxtree->reconstructionImage());
 
 

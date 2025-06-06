@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
     //std::cout << std::endl;
     //printMappingSC(tree, 3);
     
-    ContoursMTPtr contoursMT = AttributeComputedIncrementally::extractCompactCountors(tree);
+    ContoursMTPtr contoursMT = AttributeComputedIncrementally::extractCompactContours(tree);
     //std::vector<std::unordered_set<int>> countors =  AttributeComputedIncrementally::extractCountors(tree);
     std::vector<std::vector<NodeMTPtr>> nodesByDepth = tree->getNodesByDepth();
     ImageUInt8Ptr imgBin = ImageUInt8::create(numRows, numCols, 0);

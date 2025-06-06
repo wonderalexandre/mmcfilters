@@ -75,6 +75,7 @@ enum class Attribute {
     LENGTH_MAJOR_AXIS,
     LENGTH_MINOR_AXIS,
     AXIS_ORIENTATION,
+	CIRCULARITY,
 
     // Estruturais (topologia da árvore)
     HEIGHT_NODE,
@@ -90,6 +91,7 @@ enum class Attribute {
     AVG_CHILD_HEIGHT_NODE,
 
 	//BitQuads
+	BITQUADS_AREA,
 	BITQUADS_NUMBER_EULER,
 	BITQUADS_NUMBER_HOLES,
 	BITQUADS_PERIMETER,
@@ -186,7 +188,8 @@ static const std::unordered_map<AttributeGroup, std::vector<Attribute>> ATTRIBUT
         LENGTH_MAJOR_AXIS,
         LENGTH_MINOR_AXIS,
         AXIS_ORIENTATION,
-		INERTIA
+		INERTIA,
+		CIRCULARITY
     }},
     {AttributeGroup::BOUNDING_BOX, {
         BOX_WIDTH,
@@ -239,7 +242,8 @@ static const std::unordered_map<AttributeGroup, std::vector<Attribute>> ATTRIBUT
         AVG_CHILD_HEIGHT_NODE
     }},
 	 {AttributeGroup::BITQUADS, {
-        BITQUADS_NUMBER_EULER,
+        BITQUADS_AREA,
+		BITQUADS_NUMBER_EULER,
 		BITQUADS_NUMBER_HOLES,
 		BITQUADS_PERIMETER,
 		BITQUADS_PERIMETER_CONTINUOUS,
@@ -332,6 +336,7 @@ public:
 			case HU_MOMENT_6: name = "HU_MOMENT_6"; break;
 			case HU_MOMENT_7: name = "HU_MOMENT_7"; break;
 			case INERTIA: name = "INERTIA"; break;
+			case CIRCULARITY: name = "CIRCULARITY"; break;
 			case COMPACTNESS: name = "COMPACTNESS"; break;
 			case ECCENTRICITY: name = "ECCENTRICITY"; break;
 			case LENGTH_MAJOR_AXIS: name = "LENGTH_MAJOR_AXIS"; break;
@@ -348,6 +353,7 @@ public:
 			case LEAF_RATIO_NODE: name = "LEAF_RATIO_NODE"; break;
 			case BALANCE_NODE: name = "BALANCE_NODE"; break;
 			case AVG_CHILD_HEIGHT_NODE: name = "AVG_CHILD_HEIGHT_NODE"; break;
+			case BITQUADS_AREA: name = "BITQUADS_AREA"; break;
 			case BITQUADS_NUMBER_EULER: name = "BITQUADS_NUMBER_EULER"; break;
 			case BITQUADS_NUMBER_HOLES: name = "BITQUADS_NUMBER_HOLES"; break;
 			case BITQUADS_PERIMETER: name = "BITQUADS_PERIMETER"; break;
@@ -356,7 +362,6 @@ public:
 			case BITQUADS_PERIMETER_AVERAGE: name = "BITQUADS_PERIMETER_AVERAGE"; break;
 			case BITQUADS_LENGTH_AVERAGE: name = "BITQUADS_LENGTH_AVERAGE"; break;
 			case BITQUADS_WIDTH_AVERAGE: name = "BITQUADS_WIDTH_AVERAGE"; break;
-
 			default: name = "UNKNOWN"; break;
 		}
 
@@ -436,6 +441,7 @@ public:
             case HU_MOMENT_6: return "HU_MOMENT_6";
             case HU_MOMENT_7: return "HU_MOMENT_7";
             case INERTIA: return "INERTIA";
+			case CIRCULARITY: return "CIRCULARITY";
             case COMPACTNESS: return "COMPACTNESS";
             case ECCENTRICITY: return "ECCENTRICITY";
             case LENGTH_MAJOR_AXIS: return "LENGTH_MAJOR_AXIS";
@@ -452,6 +458,7 @@ public:
             case LEAF_RATIO_NODE: return "LEAF_RATIO_NODE";
             case BALANCE_NODE: return "BALANCE_NODE";
             case AVG_CHILD_HEIGHT_NODE: return "AVG_CHILD_HEIGHT_NODE";
+			case BITQUADS_AREA: return "BITQUADS_AREA";
 			case BITQUADS_NUMBER_EULER: return "BITQUADS_NUMBER_EULER";
 			case BITQUADS_NUMBER_HOLES: return "BITQUADS_NUMBER_HOLES";
 			case BITQUADS_PERIMETER: return "BITQUADS_PERIMETER";
@@ -460,7 +467,6 @@ public:
 			case BITQUADS_PERIMETER_AVERAGE: return "BITQUADS_PERIMETER_AVERAGE";
 			case BITQUADS_LENGTH_AVERAGE: return "BITQUADS_LENGTH_AVERAGE";
 			case BITQUADS_WIDTH_AVERAGE: return "BITQUADS_WIDTH_AVERAGE";
-
             default: return "UNKNOWN";
         }
     }
@@ -508,7 +514,8 @@ public:
             // Derived from moments
             case Attribute::INERTIA: return "Inertia: Sum of normalized second-order central moments (mu20 + mu02). Measures the dispersion of mass around the centroid. Higher values indicate objects with thin and elongated structures.";
             case Attribute::COMPACTNESS: return "Compactness: Area normalized by the shape's dispersion (mu20 + mu02). Higher values indicate more compact and isotropic shapes.";
-            case Attribute::ECCENTRICITY: return "Eccentricity: Ratio of principal inertia axes (λ_1/λ_2). Quantifies the elongation of the shape; values near 1 indicate circularity.";
+			case Attribute::ECCENTRICITY: return "Eccentricity: Ratio of principal inertia eigenvalues (λ_1/λ_2). Measures elongation; values near 1 indicate circularity, higher values indicate elongation.";
+			case Attribute::CIRCULARITY: return "Circularity: Ratio of the minor to major eigenvalues of the inertia matrix (λ_2/λ_1), i.e., Inverse of eccentricity. Indicates how circular a shape is; values near 1 suggest circularity, values near 0 indicate elongation.";
             case Attribute::LENGTH_MAJOR_AXIS: return "Major axis length: Length of the longest diameter of the shape.";
             case Attribute::LENGTH_MINOR_AXIS: return "Minor axis length: Length of the shortest diameter of the shape.";
             case Attribute::AXIS_ORIENTATION: return "Axis orientation: Angle of the principal inertia axis, computed from central moments. Indicates the dominant orientation of the shape.";
@@ -526,15 +533,16 @@ public:
 			case Attribute::BALANCE_NODE:return "Balance: Difference between the maximum and minimum heights among the subtrees of the children. Indicates branching symmetry.";
 			case Attribute::AVG_CHILD_HEIGHT_NODE:return "Average child height: Mean height of all direct child subtrees. Useful for measuring uniformity of the subtree structure.";
 			
-			//bitquads
-			case Attribute::BITQUADS_NUMBER_EULER: return "BitQuads Euler number: Number of connected components minus the number of holes in the component.";
-			case Attribute::BITQUADS_NUMBER_HOLES: return "BitQuads number of holes: Number of holes in the component, computed from the BitQuads representation.";
-			case Attribute::BITQUADS_PERIMETER: return "BitQuads perimeter: Length of the boundary of the component, computed from the BitQuads representation.";
-			case Attribute::BITQUADS_PERIMETER_CONTINUOUS: return "BitQuads continuous perimeter: Length of the boundary of the component, computed from the BitQuads representation, considering continuous edges.";
-			case Attribute::BITQUADS_CIRCULARITY: return "BitQuads circularity: Ratio of the perimeter squared to the area of the component, computed from the BitQuads representation. Values closer to 1 indicate more circular shapes.";
-			case Attribute::BITQUADS_PERIMETER_AVERAGE: return "BitQuads average perimeter: Average length of the perimeter of the component, computed from the BitQuads representation.";
-			case Attribute::BITQUADS_LENGTH_AVERAGE: return "BitQuads average length: Average length of the BitQuads representation of the component.";
-			case Attribute::BITQUADS_WIDTH_AVERAGE: return "BitQuads average width: Average width of the BitQuads representation of the component.";
+			// Bitquads-based shape attributes
+			case Attribute::BITQUADS_AREA: return "BitQuads area (Duda): Refined sub-pixel area estimation using fractional weights based on the geometric contribution of local 2x2 pixel patterns.";
+			case Attribute::BITQUADS_NUMBER_EULER: return "BitQuads Euler number: Topological invariant computed as the number of connected components minus the number of holes, using 2x2 pattern statistics under 4- or 8-connectivity.";
+			case Attribute::BITQUADS_NUMBER_HOLES: return "BitQuads number of holes: Number of interior holes in the component, derived from the Euler characteristic assuming a single connected object.";
+			case Attribute::BITQUADS_PERIMETER: return "BitQuads perimeter: Discrete approximation of the shape's boundary length, calculated by summing edge-contributing patterns in the 2x2 pixel grid.";
+			case Attribute::BITQUADS_PERIMETER_CONTINUOUS: return "BitQuads continuous perimeter: Smoothed estimation of the boundary length, incorporating weighted transitions across pixel edges and diagonals.";
+			case Attribute::BITQUADS_CIRCULARITY: return "BitQuads circularity: Compactness measure defined as (4π x areaDuda) / perimeter². Values close to 1 indicate circular shapes; lower values suggest elongation or irregularity.";
+			case Attribute::BITQUADS_PERIMETER_AVERAGE: return "BitQuads average perimeter: Mean perimeter per connected component, accounting for complex structures and holes.";
+			case Attribute::BITQUADS_LENGTH_AVERAGE: return "BitQuads average length: Estimated average longitudinal extent per component, derived from the average perimeter.";
+			case Attribute::BITQUADS_WIDTH_AVERAGE: return "BitQuads average width: Estimated transverse extent per component, computed as (2 x average area) / average perimeter.";
 
             default:
                 return "Unknown attribute.";
@@ -1110,6 +1118,7 @@ class MomentBasedAttributeComputer : public AttributeComputer {
 			auto indexOfCompactness = [&](int idx) { return attrNames->linearIndex(idx, COMPACTNESS); };
 			auto indexOfAxisOrientation = [&](int idx) { return attrNames->linearIndex(idx, AXIS_ORIENTATION); };
 			auto indexOfInertia = [&](int idx) { return attrNames->linearIndex(idx, INERTIA); };
+			auto indexOfCircularity = [&](int idx) { return attrNames->linearIndex(idx, CIRCULARITY); };
 
 			bool computeMajorAxis  = std::find(requestedAttributes.begin(), requestedAttributes.end(), LENGTH_MAJOR_AXIS)  != requestedAttributes.end();
 			bool computeMinorAxis = std::find(requestedAttributes.begin(), requestedAttributes.end(), LENGTH_MINOR_AXIS) != requestedAttributes.end();
@@ -1117,7 +1126,8 @@ class MomentBasedAttributeComputer : public AttributeComputer {
 			bool computeCompactness = std::find(requestedAttributes.begin(), requestedAttributes.end(), COMPACTNESS) != requestedAttributes.end();
 			bool computeAxisOrientation = std::find(requestedAttributes.begin(), requestedAttributes.end(), AXIS_ORIENTATION) != requestedAttributes.end();
 			bool computeInertia = std::find(requestedAttributes.begin(), requestedAttributes.end(), INERTIA) != requestedAttributes.end();
-	
+			bool computeCircularity = std::find(requestedAttributes.begin(), requestedAttributes.end(), CIRCULARITY) != requestedAttributes.end();
+
 			auto [namesMom, bufMom] = dependencySources[0];
 			auto indexMu20 = [&](int idx) { return namesMom->linearIndex(idx, CENTRAL_MOMENT_20); };
 			auto indexMu02 = [&](int idx) { return namesMom->linearIndex(idx, CENTRAL_MOMENT_02); };
@@ -1183,7 +1193,16 @@ class MomentBasedAttributeComputer : public AttributeComputer {
 						float normMu02 = mu02 / std::pow(area, 2.0f);
 						buffer[indexOfInertia(idx)] = normMu20 + normMu02;
 					}
+					if(computeCircularity){	
+						float circularity;
+						if (std::abs(lambda1) > std::numeric_limits<float>::epsilon()) {
+							buffer[indexOfCircularity(idx)] = lambda2 / lambda1;
+						} else {
+						    buffer[indexOfCircularity(idx)] = 0.0f; // forma degenerada → circularidade indefinida
+						}
+					}
 
+					
 				}
 			);
 		}
@@ -1451,7 +1470,8 @@ class BitquadsComputer : public AttributeComputer {
 	public:
 		
 		std::vector<Attribute> attributes() const override {
-			return {BITQUADS_NUMBER_EULER,
+			return {BITQUADS_AREA,
+					BITQUADS_NUMBER_EULER,
 					BITQUADS_NUMBER_HOLES,
 					BITQUADS_PERIMETER,
 					BITQUADS_PERIMETER_CONTINUOUS,
@@ -1461,30 +1481,49 @@ class BitquadsComputer : public AttributeComputer {
 					BITQUADS_WIDTH_AVERAGE};
 		}
 
-
-
 		void compute(MorphologicalTreePtr tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources= {}) const override {
-			if(PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing HU_MOMENT group" << std::endl;
+			if(PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing BITQUADS group" << std::endl;
 			int numCols = tree->getNumColsOfImage();
 			auto indexOf = [&](int idx, Attribute attr) {
 				return attrNames->linearIndex(idx, attr);
 			};
+			bool computeArea = std::find(requestedAttributes.begin(), requestedAttributes.end(), BITQUADS_AREA) != requestedAttributes.end();
+			bool computeNumberEuler = std::find(requestedAttributes.begin(), requestedAttributes.end(), BITQUADS_NUMBER_EULER) != requestedAttributes.end();
+			bool computeNumberHoles = std::find(requestedAttributes.begin(), requestedAttributes.end(), BITQUADS_NUMBER_HOLES) != requestedAttributes.end();
+			bool computePerimeter = std::find(requestedAttributes.begin(), requestedAttributes.end(), BITQUADS_PERIMETER) != requestedAttributes.end();
+			bool computePerimeterCont = std::find(requestedAttributes.begin(), requestedAttributes.end(), BITQUADS_PERIMETER_CONTINUOUS) != requestedAttributes.end();
+			bool computeCircularity = std::find(requestedAttributes.begin(), requestedAttributes.end(), BITQUADS_CIRCULARITY) != requestedAttributes.end();
+			bool computePerimeterAverage = std::find(requestedAttributes.begin(), requestedAttributes.end(), BITQUADS_PERIMETER_AVERAGE) != requestedAttributes.end();
+			bool computeLengthAverage = std::find(requestedAttributes.begin(), requestedAttributes.end(), BITQUADS_LENGTH_AVERAGE) != requestedAttributes.end();
+			bool computeWithAverage = std::find(requestedAttributes.begin(), requestedAttributes.end(), BITQUADS_WIDTH_AVERAGE) != requestedAttributes.end();
+
+
 			ComputerAttributeBasedBitQuads computerBitQuads(tree);
 			std::vector<AttributeBasedBitQuads> attr = computerBitQuads.getAttributes();
 			for(NodeMTPtr node: tree->getIndexNode()){
-				buffer[indexOf(node->getIndex(), BITQUADS_NUMBER_EULER)] = attr[node->getIndex()].getNumberEuler();
-				buffer[indexOf(node->getIndex(), BITQUADS_NUMBER_HOLES)] = attr[node->getIndex()].getNumberHoles();
-				buffer[indexOf(node->getIndex(), BITQUADS_PERIMETER)] = attr[node->getIndex()].getPerimeter();
-				buffer[indexOf(node->getIndex(), BITQUADS_PERIMETER_CONTINUOUS)] = attr[node->getIndex()].getPerimeterContinuous();
-				buffer[indexOf(node->getIndex(), BITQUADS_CIRCULARITY)] = attr[node->getIndex()].getCircularity(node->getAreaCC());
-				buffer[indexOf(node->getIndex(), BITQUADS_PERIMETER_AVERAGE)] = attr[node->getIndex()].getPerimeter();
-				buffer[indexOf(node->getIndex(), BITQUADS_LENGTH_AVERAGE)] = attr[node->getIndex()].getLengthAverage();
-				buffer[indexOf(node->getIndex(), BITQUADS_WIDTH_AVERAGE)] = attr[node->getIndex()].getWidthAverage(node->getAreaCC());
+				if(computeArea)
+					buffer[indexOf(node->getIndex(), BITQUADS_AREA)] = attr[node->getIndex()].getAreaDuda();
+				if(computeNumberEuler)
+					buffer[indexOf(node->getIndex(), BITQUADS_NUMBER_EULER)] = attr[node->getIndex()].getNumberEuler();
+				if(computeNumberHoles)
+					buffer[indexOf(node->getIndex(), BITQUADS_NUMBER_HOLES)] = attr[node->getIndex()].getNumberHoles();
+				if(computePerimeter)
+					buffer[indexOf(node->getIndex(), BITQUADS_PERIMETER)] = attr[node->getIndex()].getPerimeter();
+				if(computePerimeterCont)
+					buffer[indexOf(node->getIndex(), BITQUADS_PERIMETER_CONTINUOUS)] = attr[node->getIndex()].getPerimeterContinuous();
+				if(computeCircularity)
+					buffer[indexOf(node->getIndex(), BITQUADS_CIRCULARITY)] = attr[node->getIndex()].getCircularity();
+				if(computePerimeterAverage)
+					buffer[indexOf(node->getIndex(), BITQUADS_PERIMETER_AVERAGE)] = attr[node->getIndex()].getPerimeterAverage();
+				if(computeLengthAverage)
+					buffer[indexOf(node->getIndex(), BITQUADS_LENGTH_AVERAGE)] = attr[node->getIndex()].getLengthAverage();
+				if(computeWithAverage)
+					buffer[indexOf(node->getIndex(), BITQUADS_WIDTH_AVERAGE)] = attr[node->getIndex()].getWidthAverage();
 			}
 			
 		}
 };
-using AreaComputerPtr = std::shared_ptr<AreaComputer>;
+using BitquadsComputerPtr = std::shared_ptr<BitquadsComputer>;
 
 
 
@@ -1520,6 +1559,7 @@ class AttributeFactory {
 				case ECCENTRICITY: 
 				case INERTIA:
 				case COMPACTNESS: 
+				case CIRCULARITY:
 					return std::make_shared<MomentBasedAttributeComputer>();
 
 
@@ -1556,6 +1596,7 @@ class AttributeFactory {
 				case AVG_CHILD_HEIGHT_NODE:
 					return std::make_shared<TreeTopologyComputer>();
 
+				case BITQUADS_AREA:
 				case BITQUADS_NUMBER_EULER:
 				case BITQUADS_NUMBER_HOLES:
 				case BITQUADS_PERIMETER:
@@ -1583,6 +1624,8 @@ class AttributeFactory {
 					return std::make_shared<MomentBasedAttributeComputer>();
 				case AttributeGroup::TREE_TOPOLOGY:
 					return std::make_shared<TreeTopologyComputer>();
+				case AttributeGroup::BITQUADS:
+					return std::make_shared<BitquadsComputer>();
 				default:
 					throw std::runtime_error("Attribute group not supported.");
 			}

@@ -42,14 +42,13 @@ img_vector = img.ravel()
 
 3. Filtering
 ```
-isMaxtree = True
-radioAdj = 1.5 # 8-connectivity
+isMaxtree = TrueradioAdj = 1.5 # 8-connectivity
 tree = mmcfilters.MorphologicalTree(img_vector, num_rows, num_cols, isMaxtree, radioAdj)
 #tree = mmcfilters.MorphologicalTree(img_vector, num_rows, num_cols) #tree of shapes
 
 filter = mmcfilters.AttributeFilters(tree)
-dic, attrs = mmcfilters.Attribute.computerBasicAttributes(tree)
-attr_area = attrs[:,dic['AREA']]
+Type = mmcfilters.Attribute.Type
+attr_area = mmcfilters.Attribute.computeSingleAttribute(tree, Type.AREA)
 
 img_vector_filtered = filter.filteringDirectRule(attr_area > 10) #keep only areas > 10
 img_filtered = img_vector_filtered.reshape(num_rows, num_cols)

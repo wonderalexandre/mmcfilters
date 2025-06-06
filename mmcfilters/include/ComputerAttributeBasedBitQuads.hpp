@@ -1,5 +1,6 @@
 
 #include <vector>
+#include <set>
 #include <memory>
 #include <functional>
 #include <cmath>
@@ -21,6 +22,8 @@
 //---------------------------------------------
 // CLASSES QuadBit e padrões
 //---------------------------------------------
+using NonComparablePixels = std::vector<std::set<int>>;
+
 enum class BitQuadType {
     StrictAncestor,
     Ancestor,
@@ -32,7 +35,7 @@ class BitQuadComparator {
 public:
     int rowOffset;
     int colOffset;
-    std::function<bool(int, int, MorphologicalTreePtr, std::vector<std::vector<int>>&)> comparator;
+    std::function<bool(int, int, MorphologicalTreePtr, NonComparablePixels&)> comparator;
     BitQuadType type;
 
     bool isValid(int row, int col, MorphologicalTreePtr tree) const {
@@ -42,71 +45,71 @@ public:
     BitQuadComparator(int rowOffset, int colOffset, BitQuadType type) : rowOffset(rowOffset), colOffset(colOffset), type(type) {
         switch (type) {
             case BitQuadType::StrictAncestor:
-                comparator = [=](int row, int col, MorphologicalTreePtr tree, std::vector<std::vector<int>>& pixelsOfLCA) {
+                comparator = [=](int row, int col, MorphologicalTreePtr tree, NonComparablePixels& pixelsOfLCA) {
                     
                     auto idP = ImageUtils::to1D(row, col, tree->getNumColsOfImage());
                     auto idQ = ImageUtils::to1D(row + rowOffset, col + colOffset, tree->getNumColsOfImage());
                     
                     NodeMTPtr nodeP = tree->getSC(idP);
                     NodeMTPtr nodeQ = tree->getSC(idQ);
-                    if(tree->isComparable(nodeP, nodeQ) == false) {
+                    /*if(tree->isComparable(nodeP, nodeQ) == false) {
                         NodeMTPtr lca = tree->findLowestCommonAncestor(nodeP, nodeQ);
                         pixelsOfLCA[lca->getIndex()].push_back( ImageUtils::to1D(row, col, tree->getNumColsOfImage()) );
                         return false;
-                    }
+                    }*/
 
                     return tree->isStrictAncestor(nodeP, nodeQ);
                 };
                 break;
             case BitQuadType::Ancestor:
-                comparator = [=](int row, int col, MorphologicalTreePtr tree, std::vector<std::vector<int>>& pixelsOfLCA) {
+                comparator = [=](int row, int col, MorphologicalTreePtr tree, NonComparablePixels& pixelsOfLCA) {
                     
                     auto idP = ImageUtils::to1D(row, col, tree->getNumColsOfImage());
                     auto idQ = ImageUtils::to1D(row + rowOffset, col + colOffset, tree->getNumColsOfImage());
                     NodeMTPtr nodeP = tree->getSC(idP);
                     NodeMTPtr nodeQ = tree->getSC(idQ);
-                    if(tree->isComparable(nodeP, nodeQ) == false) {
+                    /*if(tree->isComparable(nodeP, nodeQ) == false) {
                         NodeMTPtr lca = tree->findLowestCommonAncestor(nodeP, nodeQ);
                         pixelsOfLCA[lca->getIndex()].push_back( ImageUtils::to1D(row, col, tree->getNumColsOfImage()) );
                         return false;
-                    }
+                    }*/
                     return tree->isAncestor(nodeP, nodeQ);
                 };
                 break;
             case BitQuadType::StrictDescendant:
-                comparator = [=](int row, int col, MorphologicalTreePtr tree, std::vector<std::vector<int>>& pixelsOfLCA) {
+                comparator = [=](int row, int col, MorphologicalTreePtr tree, NonComparablePixels& pixelsOfLCA) {
                     
                     auto idP = ImageUtils::to1D(row, col, tree->getNumColsOfImage());
                     auto idQ = ImageUtils::to1D(row + rowOffset, col + colOffset, tree->getNumColsOfImage());
                     NodeMTPtr nodeP = tree->getSC(idP);
                     NodeMTPtr nodeQ = tree->getSC(idQ);
-                    if(tree->isComparable(nodeP, nodeQ) == false) {
+                    /*if(tree->isComparable(nodeP, nodeQ) == false) {
                         NodeMTPtr lca = tree->findLowestCommonAncestor(nodeP, nodeQ);
                         pixelsOfLCA[lca->getIndex()].push_back( ImageUtils::to1D(row, col, tree->getNumColsOfImage()) );
                         return false;
-                    }
+                    }*/
                     return tree->isStrictDescendant(nodeP, nodeQ);
                 };
                 break;
             case BitQuadType::Descendant:
-                comparator = [=](int row, int col, MorphologicalTreePtr tree, std::vector<std::vector<int>>& pixelsOfLCA) {
+                comparator = [=](int row, int col, MorphologicalTreePtr tree, NonComparablePixels& pixelsOfLCA) {
                     
                     auto idP = ImageUtils::to1D(row, col, tree->getNumColsOfImage());
                     auto idQ = ImageUtils::to1D(row + rowOffset, col + colOffset, tree->getNumColsOfImage());
                     NodeMTPtr nodeP = tree->getSC(idP);
                     NodeMTPtr nodeQ = tree->getSC(idQ);
-                    if(tree->isComparable(nodeP, nodeQ) == false) {
+                    /*if(tree->isComparable(nodeP, nodeQ) == false) {
                         NodeMTPtr lca = tree->findLowestCommonAncestor(nodeP, nodeQ);
                         pixelsOfLCA[lca->getIndex()].push_back( ImageUtils::to1D(row, col, tree->getNumColsOfImage()) );
                         return false;
-                    }
+                    }*/
                     return tree->isDescendant(nodeP, nodeQ);
                 };
                 break;
         }
     }
 
-    bool compare(int row, int col, MorphologicalTreePtr tree, std::vector<std::vector<int>>& pixelsOfLCA) const {
+    bool compare(int row, int col, MorphologicalTreePtr tree, NonComparablePixels& pixelsOfLCA) const {
         if (!isValid(row, col, tree)){
             if(type == BitQuadType::StrictDescendant || type == BitQuadType::Descendant) {
                 return true;
@@ -122,9 +125,6 @@ public:
 //---------------------------------------------
 // Padrão e grupo de padrões
 //---------------------------------------------
-
-
-
 class BitQuad {
     std::vector<BitQuadComparator> quads;
 public:
@@ -177,7 +177,7 @@ public:
         std::cout << "+---+---+---+\n\n";
     }
 
-    bool match(int row, int col, MorphologicalTreePtr tree, std::vector<std::vector<int>>& pixelsOfLCA) const {
+    bool match(int row, int col, MorphologicalTreePtr tree, NonComparablePixels& pixelsOfLCA) const {
         for (const auto& quad : quads) {
             if (!quad.compare(row, col, tree, pixelsOfLCA))
                 return false;
@@ -203,7 +203,7 @@ public:
         }
     }
 
-    int count(int row, int col, MorphologicalTreePtr tree, std::vector<std::vector<int>>& pixelsOfLCA)  {
+    int count(int row, int col, MorphologicalTreePtr tree, NonComparablePixels& pixelsOfLCA)  {
         int c = 0;
         for (auto& pattern : patterns)
             if (pattern.match(row, col, tree, pixelsOfLCA)){
@@ -279,12 +279,14 @@ struct AttributeBasedBitQuads {
         return countPatternC2 + ((countPatternC1 + countPatternC3) / 1.5);
     }
 
-    double getCircularity(int area) const {
+    double getCircularity() const {
+        double area = getAreaDuda();
         double per = getPerimeterContinuous();
         return (4.0 * M_PI * area) / (per * per);
     }
 
-    double getAreaAverage(int area) const {
+    double getAreaAverage() const {
+        double area = getAreaDuda();
         return area / static_cast<double>(getNumberEuler());
     }
 
@@ -296,8 +298,8 @@ struct AttributeBasedBitQuads {
         return getPerimeterAverage() / 2.0;
     }
 
-    double getWidthAverage(int area) const {
-        return (2.0 * getAreaAverage(area)) / getPerimeterAverage();
+    double getWidthAverage() const {
+        return (2.0 * getAreaAverage()) / getPerimeterAverage();
     }
 
 };
@@ -322,7 +324,7 @@ private:
     MorphologicalTreePtr tree;
     AdjacencyRelationPtr adj;
     std::vector<AttributeBasedBitQuads> attr;
-    std::vector<std::vector<int>> pixelsOfLCA;
+    NonComparablePixels pixelsOfLCA;
 
     void initializePatterns();
 

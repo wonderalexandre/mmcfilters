@@ -15,7 +15,7 @@
 #include <cmath>
 #include <type_traits>
 
-#define PRINT_LOG 1 
+#define PRINT_LOG 0 
 #define PRINT_DEBUG 0 
 
 

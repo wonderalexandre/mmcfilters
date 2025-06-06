@@ -1,7 +1,10 @@
 #include "../include/ComputerAttributeBasedBitQuads.hpp"
 
 // Construtor principal
-ComputerAttributeBasedBitQuads::ComputerAttributeBasedBitQuads(MorphologicalTreePtr tree) : tree(tree), adj(tree->getAdjacencyRelation()), attr(tree->getNumNodes(), AttributeBasedBitQuads(adj)), pixelsOfLCA(tree->getNumNodes()) {
+ComputerAttributeBasedBitQuads::ComputerAttributeBasedBitQuads(MorphologicalTreePtr tree) : tree(tree), adj(tree->getAdjacencyRelation()), attr(tree->getNumNodes(), AttributeBasedBitQuads(adj)) {
+    
+    assert(tree->getTreeType() != MorphologicalTree::TREE_OF_SHAPES & "Não está implementado para tree of shapes!");
+    
     initializePatterns();
     AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
         [&](NodeMTPtr node) {
@@ -22,11 +25,11 @@ ComputerAttributeBasedBitQuads::ComputerAttributeBasedBitQuads(MorphologicalTree
         },
         [&](NodeMTPtr node) {
 
-            std::vector<int>& pixelsNonComparable = pixelsOfLCA[node->getIndex()];
+            /*std::vector<int>& pixelsNonComparable = pixelsOfLCA[node->getIndex()];
             std::cout << "Node: " << node->getIndex() << " - Non-comparable pixels: " << pixelsNonComparable.size() << std::endl;
             for (int p : pixelsNonComparable) {
                 computerLocalPattern(node, p, attr);
-            }
+            }*/
 
             if (!adj || adj->is4connectivity()) 
                 attr[node->getIndex()].countPatternC1C4 = attr[node->getIndex()].countPatternC1C4 - attr[node->getIndex()].countPatternCT1C4;

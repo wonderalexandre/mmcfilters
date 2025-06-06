@@ -45,10 +45,10 @@ void BuilderComponentTreeByUnionFind<PixelType>::sort(ImagePtr<PixelType> imgPtr
         std::iota(orderedPixelsPtr, orderedPixelsPtr + n, 0);
         if (isMaxtree) {
 			std::sort(orderedPixelsPtr, orderedPixelsPtr + n,
-				[&](int a, int b) { return img[a] > img[b]; });
+				[&](int a, int b) { return img[a] < img[b]; });
 		} else {
 			std::sort(orderedPixelsPtr, orderedPixelsPtr + n,
-				[&](int a, int b) { return img[a] < img[b]; });
+				[&](int a, int b) { return img[a] > img[b]; });
 		}	
 	}else{
 		if(PRINT_LOG) std::cout << "Sorting integer image with size: " << n << std::endl;

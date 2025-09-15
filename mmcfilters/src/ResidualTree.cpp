@@ -6,7 +6,6 @@
 
 #include "../include/NodeMT.hpp"
 #include "../include/NodeRes.hpp"
-#include "../include/ImageUtils.hpp"
 #include "../include/ResidualTree.hpp"
 #include "../include/AttributeOpeningPrimitivesFamily.hpp"
 

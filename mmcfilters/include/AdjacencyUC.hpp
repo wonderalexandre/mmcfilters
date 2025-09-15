@@ -3,7 +3,6 @@
 
 #include <cstdint>
 #include <vector>
-#include "../include/ImageUtils.hpp"
 #include "../include/Common.hpp"
 
 enum class DiagonalConnection : uint8_t {
@@ -127,12 +126,12 @@ public:
     NeighborIterator end() { return NeighborIterator(instance, row, col, 8); }
   };
 
-  NeighborRange getNeighboringPixels(int p) {
+  NeighborRange getNeighborPixels(int p) {
     auto [row, col] = ImageUtils::to2D(p, numCols);
     return NeighborRange(*this, row, col);
   }
 
-  NeighborRange getNeighboringPixels(int row, int col) {
+  NeighborRange getNeighborPixels(int row, int col) {
     return NeighborRange(*this, row, col);
   }
 

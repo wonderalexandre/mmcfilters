@@ -14,7 +14,6 @@
 #include "../include/MorphologicalTree.hpp"
 #include "../include/NodeMT.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
-#include "../include/ImageUtils.hpp"
 
 #ifndef COMPUTER_ATTRIBUTE_BASED_BIT_QUADS_HPP
 #define COMPUTER_ATTRIBUTE_BASED_BIT_QUADS_HPP

@@ -3,7 +3,6 @@
 #ifndef EXTINCTION_VALUES_H
 #define EXTINCTION_VALUES_H
 
-#include "../include/ImageUtils.hpp"
 #include "../include/MorphologicalTree.hpp"
 #include "../include/NodeMT.hpp"
 #include "../include/AdjacencyRelation.hpp"

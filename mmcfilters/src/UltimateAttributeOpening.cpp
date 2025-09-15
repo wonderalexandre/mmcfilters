@@ -6,7 +6,6 @@
 #include "../include/UltimateAttributeOpening.hpp"
 #include "../include/ComputerMSER.hpp"
 
-#include "../include/ImageUtils.hpp"
 #include <cstdlib>
 #include <vector>
 

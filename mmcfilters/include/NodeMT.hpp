@@ -1,5 +1,6 @@
 #include <list>
 #include <stack>
+#include <queue>
 #include <iterator>
 #include <utility>
 #include <memory>

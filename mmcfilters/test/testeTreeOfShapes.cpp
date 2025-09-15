@@ -5,7 +5,7 @@
 
 #include "../include/BuilderTreeOfShapeByUnionFind.hpp"
 #include "../include/NodeMT.hpp"
-#include "../include/ImageUtils.hpp"
+#include "../include/Common.hpp"
 #include "../include/MorphologicalTree.hpp"
 #include "Tests.hpp"
 
@@ -45,7 +45,7 @@ int main() {
     
     std::cout << "Adjacency Relation" << std::endl;
     auto adj = builder.getAdjacency();
-    for(int index : adj->getNeighboringPixels(3, 3)){
+    for(int index : adj->getNeighborPixels(3, 3)){
         auto [r, c] = ImageUtils::to2D(index, builder.getInterpNumCols());
         std::cout << "(" << r << ", " << c << ") = " <<  "[" << static_cast<int>(interpolationMin[index]) << "," << static_cast<int>(interpolationMax[index]) << "]" << std::endl;
     }

@@ -29,10 +29,16 @@ else()
     set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 endif()
 
-# Padrões de C++
+# C++20 sem extensões específicas de compilador
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Mensagens úteis
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "Compiler: ${CMAKE_CXX_COMPILER}")
+message(STATUS "C++ Standard: C++${CMAKE_CXX_STANDARD}")
 
 # Incluir pybind11 se BUILD_PYBIND estiver ativado
 if(BUILD_PYBIND)
@@ -74,6 +80,11 @@ if(BUILD_TESTS)
         mmcfilters/test/TestComponentTree.cpp
     )
     target_link_libraries(TestComponentTree PRIVATE mmcfilters_lib)
+
+    add_executable(TestComponentTree2
+        mmcfilters/test/TestComponentTree2.cpp
+    )
+    target_link_libraries(TestComponentTree2 PRIVATE mmcfilters_lib)
 
 
     # Adicionar o executável de testes: 

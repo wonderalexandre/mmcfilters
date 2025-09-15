@@ -4,7 +4,6 @@
 #define ATTRIBUTE_COMPUTED_INCREMENTALLY_H
 
 #include "../include/NodeMT.hpp"
-#include "../include/ImageUtils.hpp"
 #include "../include/MorphologicalTree.hpp"
 #include "../include/Common.hpp"
 #include "../include/ComputerAttributeBasedBitQuads.hpp"
@@ -656,12 +655,16 @@ public:
 
  
     virtual void preProcessing(NodeMTPtr v);
+	//virtual void preProcessing2(NodeId v);
 
     virtual void mergeChildren(NodeMTPtr parent, NodeMTPtr child);
+	//virtual void mergeChildren2(NodeId parent, NodeId child);
 
     virtual void postProcessing(NodeMTPtr parent);
+	//virtual void postProcessing2(NodeId parent);
 
     void computerAttribute(NodeMTPtr root);
+	//void computerAttribute2(NodeId root);
 
 	static void computerAttribute(NodeMTPtr root, 
 										std::function<void(NodeMTPtr)> preProcessing,

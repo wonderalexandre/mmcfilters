@@ -1,30 +1,29 @@
 #include "../include/AdjacencyRelation.hpp"
-#include "../include/ImageUtils.hpp"
-
 #include <math.h>
+#include <cmath> 
+#include <stdexcept>
 #define PI 3.14159265358979323846
 
-AdjacencyRelation::~AdjacencyRelation(){
-
-}
 
 AdjacencyRelation::AdjacencyRelation(int numRows, int numCols, double radius){
     this->numRows = numRows;
     this->numCols = numCols;
+	this->radius = radius;
+	this->radius2 = radius * radius;
 
     int i, j, k, dx, dy, r0, r2, i0 = 0;
     this->n = 0;
     r0 = (int) radius;
-    r2 = (int) (radius * radius);
+    r2 = (int) radius2;
 	for (dy = -r0; dy <= r0; dy++)
 		for (dx = -r0; dx <= r0; dx++)
 			if (((dx * dx) + (dy * dy)) <= r2)
 				this->n++;
 	
 	i = 0;
-    this->offsetCol = std::unique_ptr<int[]>(new int[n]);
-    this->offsetRow = std::unique_ptr<int[]>(new int[n]);
-
+    this->offsetCol.resize(this->n);
+    this->offsetRow.resize(this->n);
+	
 	for (dy = -r0; dy <= r0; dy++) {
 		for (dx = -r0; dx <= r0; dx++) {
 			if (((dx * dx) + (dy * dy)) <= r2) {
@@ -37,10 +36,10 @@ AdjacencyRelation::AdjacencyRelation(int numRows, int numCols, double radius){
 		}
 	}
 		
-	double aux;
-	std::unique_ptr<double[]> da(new double[this->n]);
-	std::unique_ptr<double[]> dr(new double[this->n]);
-
+	float aux;
+	std::vector<float> da(n);
+	std::vector<float> dr(n);
+	
 	/* Set clockwise */
 	for (i = 0; i < n; i++) {
 		dx = this->offsetCol[i];
@@ -118,6 +117,14 @@ AdjacencyRelation::AdjacencyRelation(int numRows, int numCols, double radius){
 			
 	}
 
+    // máscara forward: 1, se (dy>0) || (dy==0 && dx>0); caso contrario é 0
+    forwardMask.resize(n, 0);
+    for (int k = 1; k < n; ++k) {
+        int dx = offsetCol[k], dy = offsetRow[k];
+        forwardMask[k] = (dy > 0 || (dy == 0 && dx > 0)) ? 1 : 0;
+    }
+    forwardMask[0] = 0;
+
     
 }
 
@@ -125,57 +132,103 @@ int AdjacencyRelation::getSize(){
 	return this->n;
 }
 
-bool AdjacencyRelation::is4connectivity(){
-	return this->n == 5;
-}
-bool AdjacencyRelation::is8connectivity(){
-	return this->n == 9;
+double AdjacencyRelation::getRadius(){
+	return this->radius;
 }
 
-int AdjacencyRelation::nextValid(){
-    this->id += 1;
-	while (this->id < this->n){
-		if (0 <= this->row + this->offsetRow[this->id] && this->row + this->offsetRow[this->id] < this->numRows && 
-			0 <= this->col + this->offsetCol[this->id] && this->col + this->offsetCol[this->id] < this->numCols){
-			break;
-		}
-		this->id += 1;
-	}
-    return this->id;
-} 
+/*
+bool AdjacencyRelation::isAdjacent(int px, int py, int qx, int qy) {
+	double distance = std::sqrt(std::pow(px - qx, 2) + std::pow(py - qy, 2));
+    return (distance <= radius);
+}
+*/
+inline bool AdjacencyRelation::isAdjacent(int px, int py, int qx, int qy) const noexcept {
+    int dx = px - qx;
+    int dy = py - qy;
+    return double(dx)*dx + double(dy)*dy <= radius2;
+}
+
+inline bool AdjacencyRelation::isAdjacent(int p, int q) const noexcept {
+    int py = p / numCols, px = p % numCols;
+    int qy = q / numCols, qx = q % numCols;
+
+    return isAdjacent(px, py, qx, qy);
+}
+
+
+int AdjacencyRelation::nextValid() {
+    id += 1;
+    while (id < n) {
+
+        // checa "forward" se necessário
+        if (forwardOnly && !forwardMask[id]) { id += 1; continue; }
+
+        // coordenadas do vizinho
+        const int newRow = row + offsetRow[id];
+        const int newCol = col + offsetCol[id];
+
+        if (newRow >= 0 && newRow < numRows && newCol >= 0 && newCol < numCols) {
+            return id;
+        }
+        id += 1;
+    }
+    return n;
+}
 
 AdjacencyRelation::IteratorAdjacency AdjacencyRelation::begin() { 
-    return IteratorAdjacency(*this, nextValid()); 
+    return IteratorAdjacency(this, nextValid()); 
 }
 
 AdjacencyRelation::IteratorAdjacency AdjacencyRelation::end() { 
-    return IteratorAdjacency(*this, this->n); 
+    return IteratorAdjacency(this, this->n); 
 }
 
 AdjacencyRelation& AdjacencyRelation::getAdjPixels(int row, int col){
+	if (row < 0 || row >= this->numRows || col < 0 || col >= this->numCols) {
+        throw std::out_of_range("Índice fora dos limites.");
+    }
     this->row = row;
     this->col = col;
     this->id = -1;
+	this->forwardOnly = false;
+
     return *this;
 }
 
-AdjacencyRelation& AdjacencyRelation::getAdjPixels(int index){
-	auto [row, col] = ImageUtils::to2D(index, this->numCols);
-    return getAdjPixels(row, col);
+AdjacencyRelation& AdjacencyRelation::getAdjPixels(int indexVector){
+    return getAdjPixels(indexVector / this->numCols, indexVector % this->numCols);
 }
 
-AdjacencyRelation& AdjacencyRelation::getNeighboringPixels(int row, int col){
+AdjacencyRelation& AdjacencyRelation::getNeighborPixels(int row, int col){
+	if (row < 0 || row >= this->numRows || col < 0 || col >= this->numCols) {
+        throw std::out_of_range("Índice fora dos limites.");
+    }
     this->row = row;
     this->col = col;
     this->id = 0;
+	this->forwardOnly = false;
     return *this;
 }
 
-AdjacencyRelation& AdjacencyRelation::getNeighboringPixels(int index){
-	auto [row, col] = ImageUtils::to2D(index, this->numCols);
-    return getNeighboringPixels(row, col);
+AdjacencyRelation& AdjacencyRelation::getNeighborPixels(int indexVector){
+    return getNeighborPixels(indexVector / this->numCols, indexVector % this->numCols);
 }
 
+AdjacencyRelation& AdjacencyRelation::getNeighborPixelsForward(int row, int col){
+	if (row < 0 || row >= this->numRows || col < 0 || col >= this->numCols) {
+        throw std::out_of_range("Índice fora dos limites.");
+    }
+    this->row = row;
+    this->col = col;
+    this->id = 0;
+	this->forwardOnly = true;
+    return *this;
+
+}
+
+bool AdjacencyRelation::is4connectivity(){ return this->radius == 1;}
+bool AdjacencyRelation::is8connectivity(){return this->radius == 1.5;}
+    
 bool AdjacencyRelation::isBorderDomainImage(int index){
 	auto[row, col] = ImageUtils::to2D(index, this->numCols);
 	return isBorderDomainImage(row, col);
@@ -184,12 +237,13 @@ bool AdjacencyRelation::isBorderDomainImage(int row, int col){
 	return row == 0 || col == 0 || row == this->numRows - 1 || col == this->numCols - 1;
 }
 
-bool AdjacencyRelation::isValid(int index){
-	auto [row, col] = ImageUtils::to2D(index, this->numCols);
-	return isValid(row, col);
+AdjacencyRelation& AdjacencyRelation::getNeighborPixelsForward(int indexVector){
+	return getNeighborPixelsForward(indexVector / this->numCols, indexVector % this->numCols);
 }
 
-bool AdjacencyRelation::isValid(int row, int col){
-	return row >= 0 && col >= 0 && row < this->numRows && col < this->numCols;
-		
+int AdjacencyRelation::getOffsetRow(int index){
+	return offsetRow[index];
+}
+int AdjacencyRelation::getOffsetCol(int index){
+	return offsetCol[index];
 }

@@ -8,7 +8,6 @@
 #include "../include/AdjacencyRelation.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
 #include "../include/BuilderTreeOfShapeByUnionFind.hpp"
-#include "../include/ImageUtils.hpp"
 #include "../include/BuilderComponentTreeByUnionFind.hpp"
 
 

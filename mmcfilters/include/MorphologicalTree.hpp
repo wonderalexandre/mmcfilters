@@ -1,10 +1,11 @@
 #include <list>
 #include <vector>
 
+#include "../include/Common.hpp"
 #include "../include/NodeMT.hpp"
 #include "../include/AdjacencyRelation.hpp"
 #include "../include/BuilderComponentTreeByUnionFind.hpp"
-#include "../include/Common.hpp"
+
 #include <iostream>
 #include <cmath>
 #include <type_traits>

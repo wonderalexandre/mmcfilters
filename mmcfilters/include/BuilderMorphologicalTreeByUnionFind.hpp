@@ -1,18 +1,221 @@
-#include "../include/BuilderTreeOfShapeByUnionFind.hpp"
-#include "../include/AdjacencyRelation.hpp"
-#include <iostream>
-    
-    int BuilderTreeOfShapeByUnionFind::getInterpNumRows() {return this->interpNumRows;}
-    int BuilderTreeOfShapeByUnionFind::getInterpNumCols() {return this->interpNumCols;}
-    uint8_t* BuilderTreeOfShapeByUnionFind::getImgU() {return this->imgU.get();}
-    int* BuilderTreeOfShapeByUnionFind::getParent() {return this->parent.get();}
-    int* BuilderTreeOfShapeByUnionFind::getImgR() {return this->imgR.get();}
-    AdjacencyUC* BuilderTreeOfShapeByUnionFind::getAdjacency() { return adj.get(); }
-    uint8_t* BuilderTreeOfShapeByUnionFind::getInterpolationMin() { return interpolationMin.get(); }
-    uint8_t* BuilderTreeOfShapeByUnionFind::getInterpolationMax() { return interpolationMax.get(); }
+#ifndef BUILDER_MORPHOLOGICAL_TREE_BY_UNION_FIND_HPP
+#define BUILDER_MORPHOLOGICAL_TREE_BY_UNION_FIND_HPP
 
-    BuilderTreeOfShapeByUnionFind::BuilderTreeOfShapeByUnionFind(){ }
-    BuilderTreeOfShapeByUnionFind::~BuilderTreeOfShapeByUnionFind() { }
+#include "../include/ComponentTree.hpp"
+#include "../include/AdjacencyRelation.hpp"
+#include "../include/Common.hpp"
+#include "../include/AdjacencyUC.hpp"
+
+// Builder externo para construir ComponentTree via Union-Find (Pixels-only).
+class BuilderComponentTreeByUnionFind {
+private:
+    ComponentTree* tree;
+
+public:
+    explicit BuilderComponentTreeByUnionFind(ComponentTree* t) : tree(t) {}
+
+    // Ordenação estável dos pixels por nível de cinza
+    std::vector<int> countingSort(ImageUInt8Ptr imgPtr) {
+        int n = tree->getNumRowsOfImage() * tree->getNumColsOfImage();
+        auto img = imgPtr->rawData();
+        int maxvalue = img[0];
+        for (int i = 1; i < n; i++) if (maxvalue < img[i]) maxvalue = img[i];
+
+        std::vector<uint32_t> counter(maxvalue + 1, 0);
+        std::vector<int> orderedPixels(n);
+
+        if (tree->isMaxtree()) {
+            for (int i = 0; i < n; i++) counter[img[i]]++;
+            for (int i = 1; i < maxvalue; i++) counter[i] += counter[i - 1];
+            counter[maxvalue] += counter[maxvalue - 1];
+            for (int i = n - 1; i >= 0; --i) orderedPixels[--counter[img[i]]] = i;
+        } else {
+            for (int i = 0; i < n; i++) counter[maxvalue - img[i]]++;
+            for (int i = 1; i < maxvalue; i++) counter[i] += counter[i - 1];
+            counter[maxvalue] += counter[maxvalue - 1];
+            for (int i = n - 1; i >= 0; --i) orderedPixels[--counter[maxvalue - img[i]]] = i;
+        }
+        return orderedPixels;
+    }
+
+    // Pixels: fluxo padrão por UF
+    void createTreeByUnionFind(ImageUInt8Ptr imgPtr) {
+        std::vector<int> orderedPixels = countingSort(imgPtr);
+        auto& pixelToNodeId = tree->pixelToNodeId;
+        auto* adj = tree->adj.get();
+
+        int numPixels = tree->getNumRowsOfImage() * tree->getNumColsOfImage();
+        std::vector<int> zPar(numPixels, -1);
+        std::vector<int> parent(numPixels, -1);
+        auto findRoot = [&](int p) {
+            while (zPar[p] != p) { zPar[p] = zPar[zPar[p]]; p = zPar[p]; }
+            return p;
+        };
+        auto img = imgPtr->rawData();
+
+        for (int i = numPixels - 1; i >= 0; i--) {
+            int p = orderedPixels[i];
+            parent[p] = p;
+            zPar[p] = p;
+            for (int q : adj->getNeighborPixels(p)) {
+                if (zPar[q] != -1) {
+                    int r = findRoot(q);
+                    if (p != r) { parent[r] = p; zPar[r] = p; }
+                }
+            }
+        }
+
+        int numNodes = 0;
+        for (int i = 0; i < numPixels; i++) {
+            int p = orderedPixels[i];
+            int q = parent[p];
+            if (img[parent[q]] == img[q]) parent[p] = parent[q];
+            if (parent[p] == p || img[parent[p]] != img[p]) ++numNodes;
+        }
+
+        tree->reserveNodes(numNodes);
+        tree->pixelBuffer = std::make_shared<PixelSetManager>(numPixels, numNodes);
+        tree->pixelView = tree->pixelBuffer->view();
+        auto& pixelView = tree->pixelView;
+        int indice = 0;
+        for (int i = 0; i < numPixels; i++) {
+            int p = orderedPixels[i];
+
+            //Construção da árvore e arena
+            if (p == parent[p]) {
+                int threshold1 = tree->maxtreeTreeType ? 0 : 255;
+                int threshold2 = img[p];
+                pixelToNodeId[p] = tree->root = tree->makeNode(p, -1, threshold1, threshold2);
+            } else if (img[p] != img[parent[p]]) {
+                int threshold1 = tree->maxtreeTreeType ? img[parent[p]] + 1 : img[parent[p]] - 1;
+                int threshold2 = img[p];
+                pixelToNodeId[p] = tree->makeNode(p, pixelToNodeId[parent[p]], threshold1, threshold2);
+            } else {
+                pixelToNodeId[p] = pixelToNodeId[parent[p]];
+            }
+
+            //Construção de PixelSetManager
+            if (p == parent[p] || img[p] != img[parent[p]]) {
+                pixelView.indexToPixel[indice] = p;
+                pixelView.pixelToIndex[p] = indice;
+                pixelView.sizeSets[indice] = 1;
+                pixelView.pixelsNext[p] = p;
+                indice++;
+            } else {
+                pixelView.pixelsNext[p] = pixelView.pixelsNext[parent[p]];
+                pixelView.pixelsNext[parent[p]] = p;
+                int idx = pixelView.pixelToIndex[parent[p]];
+                pixelView.sizeSets[idx]++;
+            }
+        }
+
+        assert((indice == numNodes) && "Erro na contagem de sets");
+    }
+};
+
+
+
+
+
+
+class BuilderTreeOfShapeByUnionFind {
+private:
+    int interpNumRows;
+    int interpNumCols;
+    std::unique_ptr<uint8_t[]> interpolationMin;
+    std::unique_ptr<uint8_t[]> interpolationMax;
+    std::unique_ptr<uint8_t[]> imgU;
+    std::unique_ptr<int[]> parent;
+    std::unique_ptr<int[]> imgR; 
+    
+    std::unique_ptr<AdjacencyUC> adj;
+    bool is4c8cConnectivity;
+
+    class PriorityQueueToS {
+    private:
+        std::vector<std::deque<int>> buckets;
+        int currentPriority;
+        int numElements;
+        int maxPriorityLevels;
+        
+
+    public:
+        PriorityQueueToS(int depthOfImage=8) : currentPriority(0), numElements(0), maxPriorityLevels(1 << depthOfImage){
+            buckets.resize(maxPriorityLevels);
+        }
+
+        void initial(int element, int priority) {
+            currentPriority = priority;
+            buckets[priority].push_back(element);
+            numElements++;
+        }
+        int getCurrentPriority()  {return currentPriority;}
+        bool isEmpty()  {return numElements == 0;}
+
+        void priorityPush(int element, int lower, int upper) {
+            int priority;
+            if (lower > currentPriority) {
+                priority = lower;
+            } else if (upper < currentPriority) {
+                priority = upper;
+            } else {
+                priority = currentPriority;
+            }
+            numElements++;
+            buckets[priority].push_back(element);
+        }
+
+        int priorityPop() {
+            // Se o bucket atual estiver vazio, precisamos ajustar a prioridade
+            if (buckets[currentPriority].empty()) {
+                int i = currentPriority;
+                int j = currentPriority;
+                while (true) {
+
+                    // Tentar diminuir a prioridade
+                    if (j > 0 && buckets[j].empty()) {
+                        j--;
+                    }
+                    if (!buckets[j].empty()) { // Encontrou o próximo bucket não vazio diminuindo a prioridade
+                        currentPriority = j;
+                        break;
+                    }
+
+                    // Tentar aumentar a prioridade
+                    if (i < maxPriorityLevels && buckets[i].empty()) {
+                        i++;
+                    }
+                    if (i < maxPriorityLevels && !buckets[i].empty()) { // Encontrou o próximo bucket não vazio aumentando a prioridade
+                        currentPriority = i;
+                        break;
+                    }
+                }
+            }
+
+            int element = buckets[currentPriority].front(); 
+            buckets[currentPriority].pop_front();           
+
+            numElements--;  
+            return element;
+        }
+    };
+    
+
+public:
+
+
+    
+    int getInterpNumRows() {return this->interpNumRows;}
+    int getInterpNumCols() {return this->interpNumCols;}
+    uint8_t* getImgU() {return this->imgU.get();}
+    int* getParent() {return this->parent.get();}
+    int* getImgR() {return this->imgR.get();}
+    AdjacencyUC* getAdjacency() { return adj.get(); }
+    uint8_t* getInterpolationMin() { return interpolationMin.get(); }
+    uint8_t* getInterpolationMax() { return interpolationMax.get(); }
+
+    BuilderTreeOfShapeByUnionFind(){ }
+    ~BuilderTreeOfShapeByUnionFind() { }
 
      /**
       * Implementation based on the paper: 
@@ -21,7 +224,7 @@
       * - N.Boutry, T.Géraud, L.Najman, "How to Make nD Functions Digitally Well-Composed in a Self-dual Way", ISMM 2015.
       * - N.Boutry, T.Géraud, L.Najman, "On Making {$n$D} Images Well-Composed by a Self-Dual Local Interpolation", DGCI 2014
       */
-     void BuilderTreeOfShapeByUnionFind::interpolateImage(ImageUInt8Ptr imgPtr) {
+     void interpolateImage(ImageUInt8Ptr imgPtr) {
         auto img = imgPtr->rawData();
         int numRows = imgPtr->getNumRows();
         int numCols = imgPtr->getNumCols();
@@ -136,7 +339,7 @@
        
     }
 
-    void BuilderTreeOfShapeByUnionFind::interpolateImage4c8c(ImageUInt8Ptr imgPtr) {
+    void interpolateImage4c8c(ImageUInt8Ptr imgPtr) {
         auto img = imgPtr->rawData();
         int numRows = imgPtr->getNumRows();
         int numCols = imgPtr->getNumCols();
@@ -332,7 +535,7 @@
        
     }
 
-    void BuilderTreeOfShapeByUnionFind::sort() {
+    void sort() {
         int size = this->interpNumCols * this->interpNumRows;
         std::unique_ptr<bool[]> dejavu(new bool[size]());  // Vetor de booleanos, inicializado com false
         this->imgR = std::make_unique<int[]>(size);  // Pixels ordenados
@@ -371,7 +574,7 @@
         //delete[] dejavu;
     }
 
-    int BuilderTreeOfShapeByUnionFind::findRoot(int* zPar, int p) {
+    int findRoot(int* zPar, int p) {
         if (zPar[p] == p) {
             return p;
         } else {
@@ -380,7 +583,7 @@
         }
     }
 
-    void BuilderTreeOfShapeByUnionFind::createTreeByUnionFind() {
+    void createTreeByUnionFind() {
         int size = this->interpNumCols * this->interpNumRows;
         this->parent =  std::make_unique<int[]>(size);
 
@@ -420,3 +623,8 @@
 
         
     }
+
+
+};
+
+#endif // BUILDER_MORPHOLOGICAL_TREE_BY_UNION_FIND_HPP

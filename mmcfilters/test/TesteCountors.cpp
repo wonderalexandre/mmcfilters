@@ -3,7 +3,6 @@
 #include "../include/AdjacencyRelation.hpp"
 
 #include "../include/NodeMT.hpp"
-#include "../include/ImageUtils.hpp"
 #include "../include/Common.hpp"
 
 #include "../include/MorphologicalTree.hpp"

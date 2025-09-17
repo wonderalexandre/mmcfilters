@@ -150,9 +150,59 @@ ComponentTree::ComponentTree(ImageUInt8Ptr img, bool isMaxtree, AdjacencyRelatio
     
 
 void ComponentTree::build(ImageUInt8Ptr imgPtr){ 
-	//std::vector<int> orderedPixels = countingSort(imgPtr);
-    BuilderComponentTreeByUnionFind buildUF(this);
-    buildUF.createTreeByUnionFind(imgPtr);
+	
+    //BuilderComponentTreeByUnionFind buildUF;
+    //auto [parent, orderedPixels, numNodes] = buildUF.createTreeByUnionFind(imgPtr, this->isMaxtree(), adj.get());
+
+    BuilderTreeOfShapeByUnionFind buildUF;
+    std::tuple<std::vector<int>, std::vector<int>, int> tuple = buildUF.createTreeByUnionFind(imgPtr, false);
+    //auto [parent, orderedPixels, numNodes] = buildUF.createTreeByUnionFind(imgPtr, true);
+    std::vector<int> parent = std::get<0>(tuple);
+    std::vector<int> orderedPixels = std::get<1>(tuple);
+    int numNodes = std::get<2>(tuple);
+
+
+    int numPixels = imgPtr->getSize();
+    auto img = imgPtr->rawData();
+
+    this->reserveNodes(numNodes);
+    this->pixelBuffer = std::make_shared<PixelSetManager>(numPixels, numNodes);
+    this->pixelView = this->pixelBuffer->view();
+    int indice = 0;
+    for (int i = 0; i < numPixels; i++) {
+        int p = orderedPixels[i];
+
+        //Construção da árvore e arena
+        if (p == parent[p]) {
+            int threshold1 = this->maxtreeTreeType ? 0 : 255;
+            int threshold2 = img[p];
+            pixelToNodeId[p] = this->root = this->makeNode(p, -1, threshold1, threshold2);
+        } else if (img[p] != img[parent[p]]) {
+            int threshold1 = this->maxtreeTreeType ? img[parent[p]] + 1 : img[parent[p]] - 1;
+            int threshold2 = img[p];
+            pixelToNodeId[p] = this->makeNode(p, pixelToNodeId[parent[p]], threshold1, threshold2);
+        } else {
+            pixelToNodeId[p] = pixelToNodeId[parent[p]];
+            if(pixelToNodeId[p] == -1){
+                std::cout << "Ops...." <<std::endl;
+            }
+        }
+
+        //Construção de PixelSetManager
+        if (p == parent[p] || img[p] != img[parent[p]]) {
+            pixelView.indexToPixel[indice] = p;
+            pixelView.pixelToIndex[p] = indice;
+            pixelView.sizeSets[indice] = 1;
+            pixelView.pixelsNext[p] = p;
+            indice++;
+        } else {
+            pixelView.pixelsNext[p] = pixelView.pixelsNext[parent[p]];
+            pixelView.pixelsNext[parent[p]] = p;
+            int idx = pixelView.pixelToIndex[parent[p]];
+            pixelView.sizeSets[idx]++;
+        }
+    }
+
 
 	computerTreeAttributes();
 }
@@ -193,7 +243,7 @@ void ComponentTree<CNPsType>::computerArea(NodeId id){
 
 void ComponentTree::prunning(NodeId nodeId){
     assert(nodeId && "node is invalid");
-    assert(getParentById(nodeId) && "node is root");
+    assert(getParentById(nodeId) != -1 && "node is root");
 
     const int parentId = arena.parentId[nodeId]; 
     if(parentId >= 0){ 

@@ -11,7 +11,7 @@
 
 
 int main(){
-    auto img = getWonderImage();
+    auto img = getLenaCropImage();
     double radioAdj = 1.5;
     printImage(img);
 
@@ -21,9 +21,10 @@ int main(){
 
     auto imgMaxtree = maxtree->reconstructionImage();
     printTree(maxtree->getRoot());
+    testComponentTree(maxtree, "maxtreeFZ sem grafo", imgMaxtree);
 
     NodeId nodeId = maxtree->getLeaves().front();// maxtree->getSC(28);
-    NodeCT node = maxtree->proxy(nodeId);
+    NodeCT node = maxtree->proxy(7);
     std::cout << "\nNode - ID: " << node.getIndex() << ", Level: " << node.getLevel() << ", Area: " << node.getArea() << "\n" << std::endl;
     maxtree->prunning(node);
 

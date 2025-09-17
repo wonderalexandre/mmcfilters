@@ -355,7 +355,6 @@ protected:
     void reserveNodes(int expected) { arena.reserve(expected);}
     void reconstruction(NodeId node, uint8_t* data);
     void build(ImageUInt8Ptr img);
-    void build();
 
 	void computerIncrementalAttributes(NodeId root, 
 										std::function<void(NodeId)> preProcessing,

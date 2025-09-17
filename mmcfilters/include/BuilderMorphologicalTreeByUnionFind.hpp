@@ -9,14 +9,14 @@
 // Builder externo para construir ComponentTree via Union-Find (Pixels-only).
 class BuilderComponentTreeByUnionFind {
 private:
-    ComponentTree* tree;
+    
 
 public:
-    explicit BuilderComponentTreeByUnionFind(ComponentTree* t) : tree(t) {}
+    explicit BuilderComponentTreeByUnionFind() {}
 
     // Ordenação estável dos pixels por nível de cinza
-    std::vector<int> countingSort(ImageUInt8Ptr imgPtr) {
-        int n = tree->getNumRowsOfImage() * tree->getNumColsOfImage();
+    std::vector<int> countingSort(const ImageUInt8Ptr& imgPtr, bool isMaxtree) {
+        int n = imgPtr->getSize();
         auto img = imgPtr->rawData();
         int maxvalue = img[0];
         for (int i = 1; i < n; i++) if (maxvalue < img[i]) maxvalue = img[i];
@@ -24,7 +24,7 @@ public:
         std::vector<uint32_t> counter(maxvalue + 1, 0);
         std::vector<int> orderedPixels(n);
 
-        if (tree->isMaxtree()) {
+        if (isMaxtree) {
             for (int i = 0; i < n; i++) counter[img[i]]++;
             for (int i = 1; i < maxvalue; i++) counter[i] += counter[i - 1];
             counter[maxvalue] += counter[maxvalue - 1];
@@ -39,19 +39,18 @@ public:
     }
 
     // Pixels: fluxo padrão por UF
-    void createTreeByUnionFind(ImageUInt8Ptr imgPtr) {
-        std::vector<int> orderedPixels = countingSort(imgPtr);
-        auto& pixelToNodeId = tree->pixelToNodeId;
-        auto* adj = tree->adj.get();
+    std::tuple<std::vector<int>, std::vector<int>, int> createTreeByUnionFind(const ImageUInt8Ptr& imgPtr, bool isMaxtree, AdjacencyRelation* adj) {
+        std::vector<int> orderedPixels = countingSort(imgPtr, isMaxtree);
+        auto img = imgPtr->rawData();
 
-        int numPixels = tree->getNumRowsOfImage() * tree->getNumColsOfImage();
+        int numPixels = imgPtr->getSize();
         std::vector<int> zPar(numPixels, -1);
         std::vector<int> parent(numPixels, -1);
         auto findRoot = [&](int p) {
             while (zPar[p] != p) { zPar[p] = zPar[zPar[p]]; p = zPar[p]; }
             return p;
         };
-        auto img = imgPtr->rawData();
+        
 
         for (int i = numPixels - 1; i >= 0; i--) {
             int p = orderedPixels[i];
@@ -72,44 +71,7 @@ public:
             if (img[parent[q]] == img[q]) parent[p] = parent[q];
             if (parent[p] == p || img[parent[p]] != img[p]) ++numNodes;
         }
-
-        tree->reserveNodes(numNodes);
-        tree->pixelBuffer = std::make_shared<PixelSetManager>(numPixels, numNodes);
-        tree->pixelView = tree->pixelBuffer->view();
-        auto& pixelView = tree->pixelView;
-        int indice = 0;
-        for (int i = 0; i < numPixels; i++) {
-            int p = orderedPixels[i];
-
-            //Construção da árvore e arena
-            if (p == parent[p]) {
-                int threshold1 = tree->maxtreeTreeType ? 0 : 255;
-                int threshold2 = img[p];
-                pixelToNodeId[p] = tree->root = tree->makeNode(p, -1, threshold1, threshold2);
-            } else if (img[p] != img[parent[p]]) {
-                int threshold1 = tree->maxtreeTreeType ? img[parent[p]] + 1 : img[parent[p]] - 1;
-                int threshold2 = img[p];
-                pixelToNodeId[p] = tree->makeNode(p, pixelToNodeId[parent[p]], threshold1, threshold2);
-            } else {
-                pixelToNodeId[p] = pixelToNodeId[parent[p]];
-            }
-
-            //Construção de PixelSetManager
-            if (p == parent[p] || img[p] != img[parent[p]]) {
-                pixelView.indexToPixel[indice] = p;
-                pixelView.pixelToIndex[p] = indice;
-                pixelView.sizeSets[indice] = 1;
-                pixelView.pixelsNext[p] = p;
-                indice++;
-            } else {
-                pixelView.pixelsNext[p] = pixelView.pixelsNext[parent[p]];
-                pixelView.pixelsNext[parent[p]] = p;
-                int idx = pixelView.pixelToIndex[parent[p]];
-                pixelView.sizeSets[idx]++;
-            }
-        }
-
-        assert((indice == numNodes) && "Erro na contagem de sets");
+        return std::make_tuple(parent, orderedPixels, numNodes);
     }
 };
 
@@ -120,16 +82,6 @@ public:
 
 class BuilderTreeOfShapeByUnionFind {
 private:
-    int interpNumRows;
-    int interpNumCols;
-    std::unique_ptr<uint8_t[]> interpolationMin;
-    std::unique_ptr<uint8_t[]> interpolationMax;
-    std::unique_ptr<uint8_t[]> imgU;
-    std::unique_ptr<int[]> parent;
-    std::unique_ptr<int[]> imgR; 
-    
-    std::unique_ptr<AdjacencyUC> adj;
-    bool is4c8cConnectivity;
 
     class PriorityQueueToS {
     private:
@@ -204,17 +156,7 @@ private:
 public:
 
 
-    
-    int getInterpNumRows() {return this->interpNumRows;}
-    int getInterpNumCols() {return this->interpNumCols;}
-    uint8_t* getImgU() {return this->imgU.get();}
-    int* getParent() {return this->parent.get();}
-    int* getImgR() {return this->imgR.get();}
-    AdjacencyUC* getAdjacency() { return adj.get(); }
-    uint8_t* getInterpolationMin() { return interpolationMin.get(); }
-    uint8_t* getInterpolationMax() { return interpolationMax.get(); }
-
-    BuilderTreeOfShapeByUnionFind(){ }
+    BuilderTreeOfShapeByUnionFind(){}
     ~BuilderTreeOfShapeByUnionFind() { }
 
      /**
@@ -224,12 +166,11 @@ public:
       * - N.Boutry, T.Géraud, L.Najman, "How to Make nD Functions Digitally Well-Composed in a Self-dual Way", ISMM 2015.
       * - N.Boutry, T.Géraud, L.Najman, "On Making {$n$D} Images Well-Composed by a Self-Dual Local Interpolation", DGCI 2014
       */
-     void interpolateImage(ImageUInt8Ptr imgPtr) {
+     std::tuple<std::vector<uint8_t>, std::vector<uint8_t>, AdjacencyUC> interpolateImage(const ImageUInt8Ptr& imgPtr) {
         auto img = imgPtr->rawData();
         int numRows = imgPtr->getNumRows();
         int numCols = imgPtr->getNumCols();
 
-        this->is4c8cConnectivity = false;
         constexpr int adjCircleCol[] = {-1, +1, -1, +1};
         constexpr int adjCircleRow[] = {-1, -1, +1, +1};
 
@@ -239,18 +180,21 @@ public:
         constexpr int adjRetVerCol[] = {+1, -1};
         constexpr int adjRetVerRow[] = {0, 0};
 
-        this->interpNumCols = numCols * 2 + 1;
-        this->interpNumRows = numRows * 2 + 1;
+        int interpNumCols = numCols * 2 + 1;
+        int interpNumRows = numRows * 2 + 1;
         int size = interpNumCols * interpNumRows;
 
         // Aloca memória para os resultados de interpolação (mínimo e máximo)
-        this->interpolationMin = std::make_unique<uint8_t[]>(size);
-        this->interpolationMax = std::make_unique<uint8_t[]>(size);
+        std::vector<uint8_t> interpolationMin(size);
+        std::vector<uint8_t> interpolationMax(size);
+        //this->imgU = std::make_unique<uint8_t[]>(size);
+        //this->interpolationMax = std::make_unique<uint8_t[]>(size);
 
         int numBoundary = 2 * (numRows + numCols) - 4;
         
-        std::unique_ptr<uint8_t[]> pixelsPtr(new uint8_t[numBoundary]);// Para calcular a mediana
-        uint8_t* pixels = pixelsPtr.get();
+        //std::unique_ptr<uint8_t[]> pixelsPtr(new uint8_t[numBoundary]);// Para calcular a mediana
+        std::vector<uint8_t> pixels(numBoundary);
+        //uint8_t* pixels = pixelsPtr.get();
 
         int pT, i = 0; // i é um contador para o array pixels
         
@@ -263,13 +207,14 @@ public:
             }
 
             // Calcula o índice para imagem interpolada
-            pT = ImageUtils::to1D(2 * row + 1, 2 * col + 1, this->interpNumCols);
+            pT = ImageUtils::to1D(2 * row + 1, 2 * col + 1, interpNumCols);
 
             // Define os valores de interpolação
-            this->interpolationMin[pT] = this->interpolationMax[pT] = img[p];
+            interpolationMin[pT] = interpolationMax[pT] = img[p];
         }
 
-        std::sort(pixels, pixels + numBoundary);
+        //std::sort(pixels, pixels + numBoundary);
+        std::sort(pixels.begin(), pixels.end());
         int median;
         if (numBoundary % 2 == 0) {
             median = (pixels[numBoundary / 2 - 1] + pixels[numBoundary / 2]) / 2;
@@ -283,13 +228,13 @@ public:
         const int* adjCol = nullptr;
         const int* adjRow = nullptr;
         int adjSize;
-        this->adj = std::make_unique<AdjacencyUC>(interpNumRows, interpNumCols, false);
+        AdjacencyUC adj(interpNumRows, interpNumCols, false);
 
-        for (int row=0; row < this->interpNumRows; row++){
-            for (int col=0; col < this->interpNumCols; col++){
+        for (int row=0; row < interpNumRows; row++){
+            for (int col=0; col < interpNumCols; col++){
                 if (col % 2 == 1 && row % 2 == 1) continue;
-                pT = ImageUtils::to1D(row, col, this->interpNumCols);
-                if(col == 0 || col == this->interpNumCols - 1 || row == 0 || row == this->interpNumRows - 1){
+                pT = ImageUtils::to1D(row, col, interpNumCols);
+                if(col == 0 || col == interpNumCols - 1 || row == 0 || row == interpNumRows - 1){
                     max = median;
                     min = median;
                 }else{
@@ -313,14 +258,14 @@ public:
                         qRow = row + adjRow[i];
                         qCol = col + adjCol[i];
 
-                        if (qRow >= 0 && qCol >= 0 && qRow < this->interpNumRows && qCol < this->interpNumCols) {
-                            qT = ImageUtils::to1D(qRow, qCol, this->interpNumCols);
+                        if (qRow >= 0 && qCol >= 0 && qRow < interpNumRows && qCol < interpNumCols) {
+                            qT = ImageUtils::to1D(qRow, qCol, interpNumCols);
 
                             if (interpolationMax[qT] > max) {
-                                max = this->interpolationMax[qT];
+                                max = interpolationMax[qT];
                             }
                             if (interpolationMin[qT] < min) {
-                                min = this->interpolationMin[qT];
+                                min = interpolationMin[qT];
                             }
                         } else {
                             if (median > max) {
@@ -332,28 +277,33 @@ public:
                         }
                     }
                 }
-                this->interpolationMin[pT] = min;
-                this->interpolationMax[pT] = max;
+                interpolationMin[pT] = min;
+                interpolationMax[pT] = max;
             }
         }
+        return std::make_tuple(interpolationMin, interpolationMax, adj);
        
     }
 
-    void interpolateImage4c8c(ImageUInt8Ptr imgPtr) {
+    std::tuple<std::vector<uint8_t>, std::vector<uint8_t>, AdjacencyUC> interpolateImage4c8c(const ImageUInt8Ptr&  imgPtr) {
         auto img = imgPtr->rawData();
         int numRows = imgPtr->getNumRows();
         int numCols = imgPtr->getNumCols();
 
-        this->is4c8cConnectivity = true;
-        this->interpNumCols = numCols * 2 + 1;
-        this->interpNumRows = numRows * 2 + 1;
+        bool is4c8cConnectivity = true;
+        int interpNumCols = numCols * 2 + 1;
+        int interpNumRows = numRows * 2 + 1;
         int size = interpNumCols * interpNumRows;
-        this->adj = std::make_unique<AdjacencyUC>(interpNumRows, interpNumCols, true);
+        AdjacencyUC adj(interpNumRows, interpNumCols, true);
 
 
         // Aloca memória para os resultados de interpolação (mínimo e máximo)
-        this->interpolationMin = std::make_unique<uint8_t[]>(size);
-        this->interpolationMax = std::make_unique<uint8_t[]>(size);
+        //this->interpolationMin = std::make_unique<uint8_t[]>(size);
+        //this->interpolationMax = std::make_unique<uint8_t[]>(size);
+        std::vector<uint8_t> interpolationMin(size);
+        std::vector<uint8_t> interpolationMax(size);
+
+
         int pT, i = 0; // i é um contador para o array pixels
         
          // Compute interval from 2-faces.
@@ -361,10 +311,10 @@ public:
             auto [row, col] = ImageUtils::to2D(p, numCols);
 
             // Calcula o índice para imagem interpolada
-            pT = ImageUtils::to1D(2 * row + 1, 2 * col + 1, this->interpNumCols);
+            pT = ImageUtils::to1D(2 * row + 1, 2 * col + 1, interpNumCols);
 
             // Define os valores de interpolação
-            this->interpolationMin[pT] = this->interpolationMax[pT] = img[p];
+            interpolationMin[pT] = interpolationMax[pT] = img[p];
         }
 
         int qT, qCol, qRow, min, max;
@@ -379,107 +329,107 @@ public:
         };
 
         // Bordas
-        for (int row=0; row < this->interpNumRows; row++){
+        for (int row=0; row < interpNumRows; row++){
             int col;
             if(row % 2 == 1){ //horizontal e vertical
                 col = 0;
                 int v1 = getValue(row, col+1);
-                this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
-                this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+                interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = v1;
+                interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = v1;
 
-                col = this->interpNumCols - 1;
+                col = interpNumCols - 1;
                 v1 = getValue(row, col -1);
-                this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
-                this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+                interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = v1;
+                interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = v1;
             }else{ //circulos
                 if(row == 0){
                     col = 0;
                     int v1 = getValue(row+1, col+1);
-                    this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
-                    this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+                    interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = v1;
+                    interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = v1;
 
-                    col = this->interpNumCols - 1;
+                    col = interpNumCols - 1;
                     v1 = getValue(row+1, col -1);
-                    this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
-                    this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+                    interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = v1;
+                    interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = v1;
 
-                }else if(row == this->interpNumRows-1){
+                }else if(row == interpNumRows-1){
                     col = 0;
                     int v1 = getValue(row-1, 1);
-                    this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
-                    this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+                    interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = v1;
+                    interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = v1;
 
-                    col = this->interpNumCols - 1;
+                    col = interpNumCols - 1;
                     v1 = getValue(row-1, col - 1);
-                    this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
-                    this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+                    interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = v1;
+                    interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = v1;
                 }else{
                     col = 0;
                     int v1 = getValue(row-1, col+1);
                     int v2 = getValue(row+1, col+1);
-                    this->interpolationMin[ImageUtils::to1D(row, 0, this->interpNumCols)] = std::min(v1, v2);
-                    this->interpolationMax[ImageUtils::to1D(row, 0, this->interpNumCols)] = std::max(v1, v2);
+                    interpolationMin[ImageUtils::to1D(row, 0, interpNumCols)] = std::min(v1, v2);
+                    interpolationMax[ImageUtils::to1D(row, 0, interpNumCols)] = std::max(v1, v2);
 
-                    col = this->interpNumCols - 1;
+                    col = interpNumCols - 1;
                     v1 = getValue(row-1, col-1);
                     v2 = getValue(row+1, col-1);
-                    this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = std::min(v1, v2);
-                    this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = std::max(v1, v2);
+                    interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = std::min(v1, v2);
+                    interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = std::max(v1, v2);
                 }
             }
         }
         
-        for (int col=1; col < this->interpNumCols-1; col++){
+        for (int col=1; col < interpNumCols-1; col++){
             int row;
             if(col % 2 == 1){ //horizontal e vertical
                 row = 0;
                 int v1 = getValue(row+1, col);
-                this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
-                this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+                interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = v1;
+                interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = v1;
 
-                row = this->interpNumRows - 1;
+                row = interpNumRows - 1;
                 v1 = getValue(row-1, col);
-                this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
-                this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = v1;
+                interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = v1;
+                interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = v1;
             }else{ //circulos
                 row = 0;
                 int v1 = getValue(row+1, col-1);
                 int v2 = getValue(row+1, col+1);
-                this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = std::min(v1, v2);
-                this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = std::max(v1, v2);
+                interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = std::min(v1, v2);
+                interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = std::max(v1, v2);
 
-                row = this->interpNumRows - 1;
+                row = interpNumRows - 1;
                 v1 = getValue(row-1, col-1);
                 v2 = getValue(row-1, col+1);
-                this->interpolationMin[ImageUtils::to1D(row, col, this->interpNumCols)] = std::min(v1, v2);
-                this->interpolationMax[ImageUtils::to1D(row, col, this->interpNumCols)] = std::max(v1, v2);
+                interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = std::min(v1, v2);
+                interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = std::max(v1, v2);
             }
         }
 
         // Compute interval from 1-faces 
-        for (int row=1; row < this->interpNumRows-1; row++){
-            for (int col=1; col < this->interpNumCols-1; col++){
+        for (int row=1; row < interpNumRows-1; row++){
+            for (int col=1; col < interpNumCols-1; col++){
                 if (row % 2 == 1 && col % 2 == 1) continue;  // já definido
 
-                pT = ImageUtils::to1D(row, col, this->interpNumCols);
+                pT = ImageUtils::to1D(row, col, interpNumCols);
                 if (col % 2 == 0 && row % 2 == 1) {
                     int v1 = getValue(row, col+1);
                     int v2 = getValue(row, col-1);
-                    this->interpolationMin[pT] = std::min(v1, v2);
-                    this->interpolationMax[pT] = std::max(v1, v2);
+                    interpolationMin[pT] = std::min(v1, v2);
+                    interpolationMax[pT] = std::max(v1, v2);
                 } else if (col % 2 == 1 && row % 2 == 0) {
                     int v1 = getValue(row+1, col);
                     int v2 = getValue(row-1, col);
-                    this->interpolationMin[pT] = std::min(v1, v2);
-                    this->interpolationMax[pT] = std::max(v1, v2);
+                    interpolationMin[pT] = std::min(v1, v2);
+                    interpolationMax[pT] = std::max(v1, v2);
                 } 
             }
         }
          // Compute interval from 0-faces 
-         for (int row=1; row < this->interpNumRows-1; row++){
-            for (int col=1; col < this->interpNumCols-1; col++){
+         for (int row=1; row < interpNumRows-1; row++){
+            for (int col=1; col < interpNumCols-1; col++){
                 if (row % 2 == 1 && col % 2 == 1) continue;  // já definido
-                pT = ImageUtils::to1D(row, col, this->interpNumCols);
+                pT = ImageUtils::to1D(row, col, interpNumCols);
                 if (row % 2 == 0 && col % 2 == 0) {
                     // | v0 | v1 |
                     // | v2 | v3 |
@@ -496,54 +446,69 @@ public:
                     if (max_v1v2 > min_v0v3) {
                         
                         // Saddle point configuration 1
-                        this->adj->setDiagonalConnection(row, col-1, DiagonalConnection::SE);
-                        this->adj->setDiagonalConnection(row+1, col, DiagonalConnection::NW);
+                        adj.setDiagonalConnection(row, col-1, DiagonalConnection::SE);
+                        adj.setDiagonalConnection(row+1, col, DiagonalConnection::NW);
                         
-                        this->adj->setDiagonalConnection(row - 1, col - 1, DiagonalConnection::SE);
-                        this->adj->setDiagonalConnection(row, col, DiagonalConnection::SE | DiagonalConnection::NW);
-                        this->adj->setDiagonalConnection(row + 1, col + 1, DiagonalConnection::NW);
+                        adj.setDiagonalConnection(row - 1, col - 1, DiagonalConnection::SE);
+                        adj.setDiagonalConnection(row, col, DiagonalConnection::SE | DiagonalConnection::NW);
+                        adj.setDiagonalConnection(row + 1, col + 1, DiagonalConnection::NW);
 
-                        this->adj->setDiagonalConnection(row-1, col, DiagonalConnection::SE);
-                        this->adj->setDiagonalConnection(row, col+1, DiagonalConnection::NW);
+                        adj.setDiagonalConnection(row-1, col, DiagonalConnection::SE);
+                        adj.setDiagonalConnection(row, col+1, DiagonalConnection::NW);
 
-                        this->interpolationMin[pT] = min_v0v3;
-                        this->interpolationMax[pT] = max_v0v3;
+                        interpolationMin[pT] = min_v0v3;
+                        interpolationMax[pT] = max_v0v3;
                     }
                     else if (max_v0v3 > min_v1v2) {
                         // Saddle point configuration 2
-                        this->adj->setDiagonalConnection(row, col-1, DiagonalConnection::NE);
-                        this->adj->setDiagonalConnection(row-1, col, DiagonalConnection::SW);
+                        adj.setDiagonalConnection(row, col-1, DiagonalConnection::NE);
+                        adj.setDiagonalConnection(row-1, col, DiagonalConnection::SW);
 
-                        this->adj->setDiagonalConnection(row-1, col+1, DiagonalConnection::SW);
-                        this->adj->setDiagonalConnection(row, col, DiagonalConnection::SW | DiagonalConnection::NE);
-                        this->adj->setDiagonalConnection(row + 1, col - 1, DiagonalConnection::NE);
+                        adj.setDiagonalConnection(row-1, col+1, DiagonalConnection::SW);
+                        adj.setDiagonalConnection(row, col, DiagonalConnection::SW | DiagonalConnection::NE);
+                        adj.setDiagonalConnection(row + 1, col - 1, DiagonalConnection::NE);
 
-                        this->adj->setDiagonalConnection(row+1, col, DiagonalConnection::NE);
-                        this->adj->setDiagonalConnection(row, col+1, DiagonalConnection::SW);
+                        adj.setDiagonalConnection(row+1, col, DiagonalConnection::NE);
+                        adj.setDiagonalConnection(row, col+1, DiagonalConnection::SW);
 
-                        this->interpolationMin[pT] = min_v1v2;
-                        this->interpolationMax[pT] = max_v1v2;
+                        interpolationMin[pT] = min_v1v2;
+                        interpolationMax[pT] = max_v1v2;
                     }else{
                         // Non-critical configuration.
-                        this->interpolationMin[pT] = std::min(min_v0v3, min_v1v2);
-                        this->interpolationMax[pT] = std::min(max_v0v3, max_v1v2);
+                        interpolationMin[pT] = std::min(min_v0v3, min_v1v2);
+                        interpolationMax[pT] = std::min(max_v0v3, max_v1v2);
                     }
                 }
 
             }
         }
+        return std::make_tuple(interpolationMin, interpolationMax, adj);
+
        
     }
 
-    void sort() {
-        int size = this->interpNumCols * this->interpNumRows;
-        std::unique_ptr<bool[]> dejavu(new bool[size]());  // Vetor de booleanos, inicializado com false
-        this->imgR = std::make_unique<int[]>(size);  // Pixels ordenados
-        this->imgU = std::make_unique<uint8_t[]>(size);        // Níveis de cinza da imagem
+    std::tuple<std::vector<uint8_t>, std::vector<int>, AdjacencyUC> sort(const ImageUInt8Ptr& imgPtr, bool is4c8cConnectivity) {
+
+        auto img = imgPtr->rawData();
+        int numRows = imgPtr->getNumRows();
+        int numCols = imgPtr->getNumCols();
+
+        int interpNumCols = numCols * 2 + 1;
+        int interpNumRows = numRows * 2 + 1;
+        int size = interpNumCols * interpNumRows;
+        auto [interpolationMin, interpolationMax, adj] = is4c8cConnectivity? interpolateImage4c8c(imgPtr): interpolateImage(imgPtr);
+
+        
+        //std::unique_ptr<bool[]> dejavu(new bool[size]());  // Vetor de booleanos, inicializado com false
+        //this->imgR = std::make_unique<int[]>(size);  // Pixels ordenados
+        //this->imgU = std::make_unique<uint8_t[]>(size);        // Níveis de cinza da imagem
+        std::vector<uint8_t> dejavu(size, 0);  
+        std::vector<int> imgR(size);  // Pixels ordenados
+        std::vector<uint8_t> imgU(size);        // Níveis de cinza da imagem
         
         PriorityQueueToS queue;  // Fila de prioridade
-        int pInfinito = ImageUtils::to1D(0, 0, interpNumCols);
-        int priorityQueueOld = this->interpolationMin[pInfinito];
+        int pInfinito = ImageUtils::to1D(1, 1, interpNumCols);
+        int priorityQueueOld = interpolationMin[pInfinito];
         queue.initial(pInfinito, priorityQueueOld);  
         dejavu[pInfinito] = true;
 
@@ -552,7 +517,7 @@ public:
         while (!queue.isEmpty()) {
             int h = queue.priorityPop();  // Retirar o elemento com maior prioridade
             int priorityQueue = queue.getCurrentPriority(); // Prioridade corrente
-            if(this->is4c8cConnectivity){
+            if(is4c8cConnectivity){
                 if(priorityQueue != priorityQueueOld) depth++;
                 imgU[h] = depth;
             }else{
@@ -560,70 +525,181 @@ public:
             }
             
             // Armazenar o índice h em imgR na ordem correta
-            this->imgR[order++] = h;
+            imgR[order++] = h;
             
             // Adjacências
-            for(int n: adj->getNeighborPixels(h)){
+            for(int n: adj.getNeighborPixels(h)){
                 if (!dejavu[n]) {
-                    queue.priorityPush(n, this->interpolationMin[n], this->interpolationMax[n]);
+                    queue.priorityPush(n, interpolationMin[n], interpolationMax[n]);
                     dejavu[n] = true;  // Marcar como processado
                 }
             }
             priorityQueueOld = priorityQueue;
         }
-        //delete[] dejavu;
+        return std::make_tuple(std::move(imgU), std::move(imgR), std::move(adj));
     }
 
-    int findRoot(int* zPar, int p) {
-        if (zPar[p] == p) {
+    //Testa se é um pixel que está na imagem original
+    inline bool isOriginal1D(int p, int interpNumCols) {
+        /*
+        p = row x  numCols + col
+        Sabemos que numCols é ímpar. 
+        - Testaremos se row e col são ímpares assim:
+        Se row é ímpar, então row x numCols é ímpar. 
+        Logo, row e col são ímpares sse p é par E col é ímpar
+        */
+        int row = p / interpNumCols;
+        
+        // original <=> (p é par) ∧ (row é ímpar)
+        return ((p & 1) == 0) && ((row & 1) == 1);
+    }
+    // mapeia índice original em I* (2r+1,2c+1) para índice em I (r,c)
+    inline int toOriginal1D(int pStar, int interNumCols, int numCols) {
+        int r = pStar / interNumCols;
+        int c = pStar - r * interNumCols;         // evita operador %
+        return ((r - 1) >> 1) * numCols + ((c - 1) >> 1);
+    }
+
+
+    std::tuple<std::vector<int>, std::vector<int>, int> createTreeByUnionFind(const ImageUInt8Ptr& imgPtr, bool is4c8cConnectivity) {
+
+        auto img = imgPtr->rawData();
+        int numRows = imgPtr->getNumRows();
+        int numCols = imgPtr->getNumCols();
+        int numPixels = numRows * numCols;
+
+        int interpNumCols = numCols * 2 + 1;
+        int interpNumRows = numRows * 2 + 1;
+        int numPixelsInterp = interpNumCols * interpNumRows;
+        auto [imgU, imgR, adj] = sort(imgPtr, is4c8cConnectivity);
+
+        std::vector<int> zPar(numPixelsInterp, -1);
+        std::vector<int> parentInterpolate(numPixelsInterp, -1);
+        std::vector<int> inverseImgR(numPixelsInterp, -1);
+        auto findRoot = [&](int p) {
+            while (zPar[p] != p) { zPar[p] = zPar[zPar[p]]; p = zPar[p]; }
             return p;
-        } else {
-            zPar[p] = findRoot(zPar, zPar[p]);
-            return zPar[p];
-        }
-    }
-
-    void createTreeByUnionFind() {
-        int size = this->interpNumCols * this->interpNumRows;
-        this->parent =  std::make_unique<int[]>(size);
-
-        //this->parent = new int[interpNumCols * interpNumRows];
-        std::unique_ptr<int[]> zParPtr(new int[size]);
-        int* zPar = zParPtr.get(); // Pega o ponteiro do std::unique_ptr
-        const int NIL = -1;
-        for (int p = 0; p < size; p++) {
-            zPar[p] = NIL; // Assumindo que NIL é uma constante definida em outro lugar
-        }
-        for (int i = size - 1; i >= 0; i--) {
-            int p = this->imgR[i];
-            this->parent[p] = p;
-            zPar[p] = p;
-
-            for(int n: adj->getNeighborPixels(p)){
-                if (zPar[n] != NIL) {
-                    int r = findRoot(zPar, n);
-                    if (p != r) {
-                        this->parent[r] = p;
-                        zPar[r] = p;
+        };
+        //Construção do parentInterpolate por union-find
+        for (int i = numPixelsInterp - 1; i >= 0; --i) {
+            int pStar = imgR[i];
+            inverseImgR[pStar] = i;
+            parentInterpolate[pStar] = pStar;
+            zPar[pStar]   = pStar;
+            for (int qStar : adj.getNeighborPixels(pStar)) {
+                if (zPar[qStar] != -1) {
+                    int rStar = findRoot(qStar);
+                    if (pStar != rStar) { 
+                        parentInterpolate[rStar] = pStar; 
+                        zPar[rStar] = pStar; 
                     }
                 }
             }
         }
 
-        // Canonização da árvore
-        for (int i = 0; i < size; i++) {
-            int p = this->imgR[i];
-            int q = this->parent[p];
-            if (this->imgU[parent[q]] == this->imgU[q]) { 
-                this->parent[p] = this->parent[q];
+
+
+
+
+        //canonização do parentInterpolate e construcao de parent e orderedPixel para o dominio original
+        std::vector<int> orderedPixels;
+        orderedPixels.reserve(numPixels);
+        std::vector<int> parent(numPixels, -1);
+        int numNodesInterpolateTree = 0;
+        int contRepInterpolate = 0;
+        int contRep = 0;
+        for (int i = 0; i < numPixelsInterp; i++) { //processamento da raiz para folhas
+            int pStar = imgR[i];
+            int qStar = parentInterpolate[pStar];
+            if (imgU[parentInterpolate[qStar]] == imgU[qStar]) //canoniza pStar
+                parentInterpolate[pStar] = parentInterpolate[qStar];
+            
+            if (parentInterpolate[pStar] == pStar || imgU[parentInterpolate[pStar]] != imgU[pStar]){  //Se pStar é representante
+                ++numNodesInterpolateTree;
+                /*
+                if(!isOriginal1D(pStar, interpNumCols)){ //se pStar é não é um pixel original
+                    auto [rStar, cStar] = ImageUtils::to2D(pStar, interpNumCols);
+                    std::cout << "pStar:"<< pStar << ", rStar: " << rStar << ", cStar: " << cStar << ", imgU[pStar]:" << static_cast<int>(imgU[pStar]) << std::endl;                
+                }
+                */
+            }
+
+            if (isOriginal1D(pStar, interpNumCols)) { //transfere os pixels originais
+                int pStarRep = parentInterpolate[pStar]; 
+                if (!isOriginal1D(pStarRep, interpNumCols)){
+                    /*
+                    Se o representante de pStar (que já foi canonizado) é não original, substituimos esse representante por um original.
+                    Note que esse pixel pStar é o primeiro pixel original a acessar o representante, os demais pixels vão ter acesso a um representante original.
+                    Mas é claro, pode ainda existir outro pixel não originais que ainda tem pStarRep como representante mas eles são não originais
+                    */
+                    auto [rStar, cStar] = ImageUtils::to2D(pStarRep, interpNumCols);
+                    int repParent = parentInterpolate[pStarRep];
+                    
+                    // pStar vira o novo representante do platô
+                    parentInterpolate[pStarRep] = pStar;
+                    parentInterpolate[pStar] = (repParent == pStarRep ? pStar : repParent);
+
+                    //correcao da ordem
+                    int order = inverseImgR[pStarRep];
+                    std::swap(imgR[i], imgR[order]);
+                    inverseImgR[ imgR[i] ] = i;
+                    inverseImgR[ imgR[order] ] = order;
+                    
+                }
+                
+                int p = toOriginal1D(pStar, interpNumCols, numCols);
+                parent[p] = toOriginal1D(parentInterpolate[pStar], interpNumCols, numCols);
+                orderedPixels.push_back(p);
+                
             }
         }
-
-        //delete[] zPar; // Liberar memória de zPar
-
+        /*
+        for (int i = 0; i < numPixelsInterp; i++) { //processamento da raiz para folhas
+            int pStar = imgR[i];
+            int qStar = parentInterpolate[pStar];
+            if (imgU[parentInterpolate[qStar]] == imgU[qStar]) //canoniza pStar
+                parentInterpolate[pStar] = parentInterpolate[qStar];
+            
+            if (isOriginal1D(pStar, interpNumCols)) { //transfere os pixels originais    
+                int p = toOriginal1D(pStar, interpNumCols, numCols);
+                parent[p] = toOriginal1D(parentInterpolate[pStar], interpNumCols, numCols);
+                orderedPixels.push_back(p);
+            }
+        }*/
         
-    }
+        
 
+        assert(orderedPixels.size() == numPixels && "orderedPixels deve conter todos os originais exatamente uma vez");        
+        
+
+        std::cout << "\n\n =============================" << std::endl;
+        std::cout << "numNodesInterpolateTree: " << numNodesInterpolateTree << std::endl;
+        std::cout << "contRepInterpolate: " << contRepInterpolate << std::endl;
+        std::cout << "contRep: " << contRep << std::endl;
+        std::cout << "=============================" << std::endl;
+        for (int i = 0; i < numPixels; i++) {
+            int p = orderedPixels[i];
+            int q = parent[p];
+            if (img[parent[q]] == img[q]) {
+                parent[p] = parent[q];
+            }
+        } 
+
+        #ifndef NDEBUG 
+        for (int i = 0; i < numPixels; i++) {
+            int p = orderedPixels[i];
+            int q = parent[p];
+            if (q != p) { // ignora raiz
+                if (img[parent[q]] == img[q]) {
+                    assert(parent[p] == parent[q] && "parent => Violação: canonização local não aplicada corretamente");
+                }
+            }
+        }
+        #endif
+        
+        return std::make_tuple(parent, orderedPixels, numNodesInterpolateTree);
+
+    }
 
 };
 

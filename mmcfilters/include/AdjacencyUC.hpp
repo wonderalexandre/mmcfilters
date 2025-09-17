@@ -33,7 +33,7 @@ using AdjacencyUCPtr = std::shared_ptr<AdjacencyUC>;
 class AdjacencyUC {
 private:
   int numRows, numCols;
-  uint8_t* dconnFlags = nullptr;     // 4-connect.  +  diag. connect.
+  std::vector<uint8_t> dconnFlags;     // 4-connect.  +  diag. connect.
                                     //  N, W, S, E,   SW, NE, SE, NW
   const std::vector<int> offsetRows = {-1, 0, 1, 0,    1, -1,  1, -1}; 
   const std::vector<int> offsetCols = {0, -1, 0, 1,    -1,  1,  1, -1};
@@ -46,11 +46,11 @@ private:
 public:
   AdjacencyUC(int rows, int cols, bool enableDiagonalConnection) : numRows(rows), numCols(cols), enableDiagonalConnection(enableDiagonalConnection){
     if(enableDiagonalConnection)
-      dconnFlags = new uint8_t[rows * cols]();
+      dconnFlags.resize(rows * cols, 0);
   }
 
   ~AdjacencyUC() {
-    delete[] dconnFlags;
+    
   }
 
   void setDiagonalConnection(int row, int col, DiagonalConnection conn) {

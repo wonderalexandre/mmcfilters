@@ -3,7 +3,7 @@
 // Construtor principal
 ComputerAttributeBasedBitQuads::ComputerAttributeBasedBitQuads(MorphologicalTreePtr tree) : tree(tree), adj(tree->getAdjacencyRelation()), attr(tree->getNumNodes(), AttributeBasedBitQuads(adj)) {
     
-    assert(tree->getTreeType() != MorphologicalTree::TREE_OF_SHAPES & "Não está implementado para tree of shapes!");
+    assert(tree->getTreeType() != MorphologicalTree::TREE_OF_SHAPES && "Não está implementado para tree of shapes!");
     
     initializePatterns();
     AttributeComputedIncrementally::computerAttribute(tree->getRoot(),

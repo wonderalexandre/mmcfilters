@@ -2,7 +2,7 @@
 #define COMMONS_HPP  
 
 
-#define NDEBUG  // Remove os asserts do código
+//#define NDEBUG  // Remove os asserts do código
 #include <cassert>
 #include <cstdint>
 #include <list>
@@ -151,15 +151,15 @@ using ImagePtr = std::shared_ptr<Image<PixelType>>;
 class ImageUtils{
 public:
     // Converte (row, col) para índice 1D (row-major)
-    static int to1D(int row, int col, int numCols) {
+    inline static int to1D(int row, int col, int numCols) noexcept{
         return row * numCols + col;
     }
 
     // Converte índice 1D para (row, col) (row-major)
-    static std::pair<int, int> to2D(int index, int numCols) {
+    inline static std::pair<int, int> to2D(int index, int numCols) noexcept {
         int row = index / numCols;
-        int col = index % numCols;
-        return std::make_pair(row, col);
+        int col = index - row * numCols;  // evita operador % => int col = index % numCols;
+        return {row, col};
     }
 
     // Cria uma imagem colorida aleatória a partir de uma imagem em escala de cinza: [(R,G,B), (R,G,B), ...]

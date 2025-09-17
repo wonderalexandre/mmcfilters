@@ -539,7 +539,7 @@ public:
         return std::make_tuple(std::move(imgU), std::move(imgR), std::move(adj));
     }
 
-    //Testa se é um pixel que está na imagem original
+    //Testa se é um pixel é original 
     inline bool isOriginal1D(int p, int interpNumCols) {
         /*
         p = row x  numCols + col
@@ -553,7 +553,8 @@ public:
         // original <=> (p é par) ∧ (row é ímpar)
         return ((p & 1) == 0) && ((row & 1) == 1);
     }
-    // mapeia índice original em I* (2r+1,2c+1) para índice em I (r,c)
+
+    // mapeia pixel interpolado para pixel original
     inline int toOriginal1D(int pStar, int interNumCols, int numCols) {
         int r = pStar / interNumCols;
         int c = pStar - r * interNumCols;         // evita operador %
@@ -571,19 +572,18 @@ public:
         int interpNumCols = numCols * 2 + 1;
         int interpNumRows = numRows * 2 + 1;
         int numPixelsInterp = interpNumCols * interpNumRows;
-        auto [imgU, imgR, adj] = sort(imgPtr, is4c8cConnectivity);
+        auto [imgInterpolate, imgOrderedInterpolete, adj] = sort(imgPtr, is4c8cConnectivity);
 
         std::vector<int> zPar(numPixelsInterp, -1);
         std::vector<int> parentInterpolate(numPixelsInterp, -1);
-        std::vector<int> inverseImgR(numPixelsInterp, -1);
         auto findRoot = [&](int p) {
             while (zPar[p] != p) { zPar[p] = zPar[zPar[p]]; p = zPar[p]; }
             return p;
         };
+
         //Construção do parentInterpolate por union-find
-        for (int i = numPixelsInterp - 1; i >= 0; --i) {
-            int pStar = imgR[i];
-            inverseImgR[pStar] = i;
+        for (int i = numPixelsInterp - 1; i >= 0; --i) { //processamento da construção: folhas para raiz
+            int pStar = imgOrderedInterpolete[i];
             parentInterpolate[pStar] = pStar;
             zPar[pStar]   = pStar;
             for (int qStar : adj.getNeighborPixels(pStar)) {
@@ -596,108 +596,92 @@ public:
                 }
             }
         }
+        
+        // Passo 1 — canonização + marcar apenas representantes
+        std::vector<int> plateauRep(numPixelsInterp, -1);
+        int numNodesInterpolateTree=0;
+        for (int i = 0; i < numPixelsInterp; ++i) { // raiz -> folhas
+            int p = imgOrderedInterpolete[i];
+            int q = parentInterpolate[p];
+            if (imgInterpolate[parentInterpolate[q]] == imgInterpolate[q])
+                parentInterpolate[p] = parentInterpolate[q];   // canoniza 1 passo    
+            // representante do platô de p (com 1 passo já vale em raiz->folhas):
+            plateauRep[p] = (parentInterpolate[p] == p || imgInterpolate[parentInterpolate[p]] != imgInterpolate[p]) ? p : parentInterpolate[p];
+            if (parentInterpolate[p] == p || imgInterpolate[parentInterpolate[p]] != imgInterpolate[p]) ++numNodesInterpolateTree;
+        }
+
+        std::vector<int> repOrig(numPixelsInterp, -1); // só posições == reps serão usadas
+        for (int i = 0; i < numPixelsInterp; ++i) { // raiz -> folhas
+            int p = imgOrderedInterpolete[i];
+            if (!isOriginal1D(p, interpNumCols)) continue;
+
+            int rep = plateauRep[p];
+            if (repOrig[rep] == -1) repOrig[rep] = p;         // “primeiro original vence”
+            // (se preferir “último vence”, basta sempre sobrescrever)
+        }
 
 
-
-
-
-        //canonização do parentInterpolate e construcao de parent e orderedPixel para o dominio original
-        std::vector<int> orderedPixels;
-        orderedPixels.reserve(numPixels);
         std::vector<int> parent(numPixels, -1);
-        int numNodesInterpolateTree = 0;
-        int contRepInterpolate = 0;
-        int contRep = 0;
-        for (int i = 0; i < numPixelsInterp; i++) { //processamento da raiz para folhas
-            int pStar = imgR[i];
-            int qStar = parentInterpolate[pStar];
-            if (imgU[parentInterpolate[qStar]] == imgU[qStar]) //canoniza pStar
-                parentInterpolate[pStar] = parentInterpolate[qStar];
-            
-            if (parentInterpolate[pStar] == pStar || imgU[parentInterpolate[pStar]] != imgU[pStar]){  //Se pStar é representante
-                ++numNodesInterpolateTree;
-                /*
-                if(!isOriginal1D(pStar, interpNumCols)){ //se pStar é não é um pixel original
-                    auto [rStar, cStar] = ImageUtils::to2D(pStar, interpNumCols);
-                    std::cout << "pStar:"<< pStar << ", rStar: " << rStar << ", cStar: " << cStar << ", imgU[pStar]:" << static_cast<int>(imgU[pStar]) << std::endl;                
+        std::vector<int> imgOrdered;
+        imgOrdered.reserve(numPixels);
+
+        for (int i = 0; i < numPixelsInterp; ++i) { // raiz -> folhas
+            int pStar = imgOrderedInterpolete[i];
+            if (!isOriginal1D(pStar, interpNumCols)) continue;
+
+            int repP   = plateauRep[pStar];        // rep do platô de p*
+            int par    = parentInterpolate[pStar]; // pai em ToS interpolada
+            int repPar = plateauRep[par];          // rep do platô do pai
+
+            int qStar;                             // pai ORIGINAL de p*
+            bool sameLevel = (imgInterpolate[par] == imgInterpolate[pStar]);
+            bool isRoot    = (par == pStar);
+
+            if (isRoot) {
+                // raiz global
+                qStar = pStar;
+            } else if (sameLevel) {
+                if (repOrig[repP] == pStar) {
+                    // p* é o representante-ORIGINAL do seu platô -> o pai deve ser o rep-ORIGINAL do platô ACIMA,
+                    // não o mesmo. Subimos do representante do platô até o representante do platô do pai.
+                    int tRep = repP;
+                    // sobe até o platô acima (nível diferente)
+                    if (tRep != parentInterpolate[tRep]) {
+                        tRep = parentInterpolate[tRep];
+                    }
+                    int repAbove = plateauRep[tRep];
+
+                    // Se necessário, resolvemos para cima até achar um repOrig definido
+                    while (repAbove != -1 && repOrig[repAbove] == -1 && tRep != parentInterpolate[tRep]) {
+                        tRep = parentInterpolate[tRep];
+                        repAbove = plateauRep[tRep];
+                    }
+
+                    qStar = (repAbove != -1 && repOrig[repAbove] != -1) ? repOrig[repAbove] : pStar; // fallback raro
+                } else {
+                    // nó não-representante no mesmo platô -> pai é o rep-ORIGINAL do mesmo platô
+                    qStar = repOrig[repP];
                 }
-                */
+            } else {
+                // nível diferente -> pai é o rep-ORIGINAL do platô de cima
+                qStar = repOrig[repPar];
             }
 
-            if (isOriginal1D(pStar, interpNumCols)) { //transfere os pixels originais
-                int pStarRep = parentInterpolate[pStar]; 
-                if (!isOriginal1D(pStarRep, interpNumCols)){
-                    /*
-                    Se o representante de pStar (que já foi canonizado) é não original, substituimos esse representante por um original.
-                    Note que esse pixel pStar é o primeiro pixel original a acessar o representante, os demais pixels vão ter acesso a um representante original.
-                    Mas é claro, pode ainda existir outro pixel não originais que ainda tem pStarRep como representante mas eles são não originais
-                    */
-                    auto [rStar, cStar] = ImageUtils::to2D(pStarRep, interpNumCols);
-                    int repParent = parentInterpolate[pStarRep];
-                    
-                    // pStar vira o novo representante do platô
-                    parentInterpolate[pStarRep] = pStar;
-                    parentInterpolate[pStar] = (repParent == pStarRep ? pStar : repParent);
+            // (asserts opcionais para garantir existência)
+            // assert(qStar != -1 && isOriginal1D(qStar, interpNumCols));
 
-                    //correcao da ordem
-                    int order = inverseImgR[pStarRep];
-                    std::swap(imgR[i], imgR[order]);
-                    inverseImgR[ imgR[i] ] = i;
-                    inverseImgR[ imgR[order] ] = order;
-                    
-                }
-                
-                int p = toOriginal1D(pStar, interpNumCols, numCols);
-                parent[p] = toOriginal1D(parentInterpolate[pStar], interpNumCols, numCols);
-                orderedPixels.push_back(p);
-                
-            }
+            int p = toOriginal1D(pStar, interpNumCols, numCols);
+            int q = toOriginal1D(qStar,  interpNumCols, numCols);
+
+            parent[p] = q;
+            imgOrdered.push_back(p);
         }
-        /*
-        for (int i = 0; i < numPixelsInterp; i++) { //processamento da raiz para folhas
-            int pStar = imgR[i];
-            int qStar = parentInterpolate[pStar];
-            if (imgU[parentInterpolate[qStar]] == imgU[qStar]) //canoniza pStar
-                parentInterpolate[pStar] = parentInterpolate[qStar];
-            
-            if (isOriginal1D(pStar, interpNumCols)) { //transfere os pixels originais    
-                int p = toOriginal1D(pStar, interpNumCols, numCols);
-                parent[p] = toOriginal1D(parentInterpolate[pStar], interpNumCols, numCols);
-                orderedPixels.push_back(p);
-            }
-        }*/
-        
-        
+        int roots = 0;
+        for (int p : imgOrdered) if (parent[p] == p) ++roots;
+        std::cout << "roots:"<<roots<<std::endl;
+        assert(roots == 1);
 
-        assert(orderedPixels.size() == numPixels && "orderedPixels deve conter todos os originais exatamente uma vez");        
-        
-
-        std::cout << "\n\n =============================" << std::endl;
-        std::cout << "numNodesInterpolateTree: " << numNodesInterpolateTree << std::endl;
-        std::cout << "contRepInterpolate: " << contRepInterpolate << std::endl;
-        std::cout << "contRep: " << contRep << std::endl;
-        std::cout << "=============================" << std::endl;
-        for (int i = 0; i < numPixels; i++) {
-            int p = orderedPixels[i];
-            int q = parent[p];
-            if (img[parent[q]] == img[q]) {
-                parent[p] = parent[q];
-            }
-        } 
-
-        #ifndef NDEBUG 
-        for (int i = 0; i < numPixels; i++) {
-            int p = orderedPixels[i];
-            int q = parent[p];
-            if (q != p) { // ignora raiz
-                if (img[parent[q]] == img[q]) {
-                    assert(parent[p] == parent[q] && "parent => Violação: canonização local não aplicada corretamente");
-                }
-            }
-        }
-        #endif
-        
-        return std::make_tuple(parent, orderedPixels, numNodesInterpolateTree);
+        return std::make_tuple(parent, imgOrdered, numNodesInterpolateTree);
 
     }
 

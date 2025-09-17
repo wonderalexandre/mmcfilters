@@ -34,7 +34,9 @@ NodeId ComponentTree::makeNode(int repNode, NodeId parentId, int threshold1, int
     if (parentId >= 0) {
         addChildById(parentId, id);
     }
-    
+    else{
+        std::cout<<"Root:" << repNode << std::endl;
+    }
     //contador de nós
     this->numNodes++;    
     return id;
@@ -180,11 +182,16 @@ void ComponentTree::build(ImageUInt8Ptr imgPtr){
         } else if (img[p] != img[parent[p]]) {
             int threshold1 = this->maxtreeTreeType ? img[parent[p]] + 1 : img[parent[p]] - 1;
             int threshold2 = img[p];
+            
+            int paiP = parent[p];
+            int idPaiP = pixelToNodeId[parent[p]];
+
             pixelToNodeId[p] = this->makeNode(p, pixelToNodeId[parent[p]], threshold1, threshold2);
         } else {
             pixelToNodeId[p] = pixelToNodeId[parent[p]];
             if(pixelToNodeId[p] == -1){
                 std::cout << "Ops...." <<std::endl;
+                return;
             }
         }
 

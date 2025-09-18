@@ -157,11 +157,12 @@ void ComponentTree::build(ImageUInt8Ptr imgPtr){
     //auto [parent, orderedPixels, numNodes] = buildUF.createTreeByUnionFind(imgPtr, this->isMaxtree(), adj.get());
 
     BuilderTreeOfShapeByUnionFind buildUF;
-    std::tuple<std::vector<int>, std::vector<int>, int> tuple = buildUF.createTreeByUnionFind(imgPtr, false);
-    //auto [parent, orderedPixels, numNodes] = buildUF.createTreeByUnionFind(imgPtr, true);
-    std::vector<int> parent = std::get<0>(tuple);
-    std::vector<int> orderedPixels = std::get<1>(tuple);
-    int numNodes = std::get<2>(tuple);
+    
+    auto [parent, orderedPixels, numNodes] = buildUF.createTreeByUnionFind(imgPtr, true);
+    //std::tuple<std::vector<int>, std::vector<int>, int> tuple = buildUF.createTreeByUnionFind(imgPtr, false);
+    //std::vector<int> parent = std::get<0>(tuple);
+    //std::vector<int> orderedPixels = std::get<1>(tuple);
+    //int numNodes = std::get<2>(tuple);
 
 
     int numPixels = imgPtr->getSize();
@@ -183,8 +184,8 @@ void ComponentTree::build(ImageUInt8Ptr imgPtr){
             int threshold1 = this->maxtreeTreeType ? img[parent[p]] + 1 : img[parent[p]] - 1;
             int threshold2 = img[p];
             
-            int paiP = parent[p];
-            int idPaiP = pixelToNodeId[parent[p]];
+            //int paiP = parent[p];
+            //int idPaiP = pixelToNodeId[parent[p]];
 
             pixelToNodeId[p] = this->makeNode(p, pixelToNodeId[parent[p]], threshold1, threshold2);
         } else {

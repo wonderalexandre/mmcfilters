@@ -8,11 +8,12 @@
 #include <optional>
 #include <stdexcept>
 #include <type_traits>
-#include "../include/Common.hpp"
-#include "../include/ComponentTree.hpp"
 
 #ifndef NODECT_H
 #define NODECT_H
+
+#include "../include/Common.hpp"
+#include "../include/ComponentTree.hpp"
 
 
 /**
@@ -87,7 +88,7 @@ public:
     //id é o operador == e !=
     bool operator==(const NodeCT& other) const noexcept { return tree == other.tree && id == other.id; }
     bool operator!=(const NodeCT& other) const noexcept { return !(*this == other); }
-    
+
     //id é o operador int
     operator int() const noexcept { return id; }
 
@@ -118,14 +119,14 @@ public:
     inline void addChild(NodeCT child) { if (!tree || !child) return; tree->addChildById(id, child.getIndex()); }
     inline void removeChild(NodeCT child, bool releaseNode) { if (!tree || !child) return; tree->removeChildById(id, child.getIndex(), releaseNode); }
     inline void spliceChildren(NodeCT from) { if (!tree || !from || from.getIndex() == id) return; tree->spliceChildrenById(id, from.getIndex()); }
-    inline bool isLeaf() const { return tree->isLeaf(id); }
+    inline bool isLeaf() const { return tree->isLeafById(id); }
     inline int getResidue() const noexcept{ return tree->getResidueById(id); }
     inline bool isMaxtreeNode() const noexcept{ return tree->isMaxtreeNodeById(id); }
 
           
     // Conta descendentes (exclui o próprio nó)
-    int computerNumDescendants() {
-        return (tree->getTimePostOrderById(id) - tree->getTimePreOrderById(id) - 1) / 2;
+    int getNumDescendants() {
+        return tree->getNumDescendantsById(id);
     }
 
 

@@ -139,7 +139,7 @@ inline  void printConnectedComponent(NodeCT node, ComponentTreePtr tree, std::st
                  << ", |children|:" << node.getNumChildren() 
                  << ", |cnps|:" << node.getNumCNPs()
                  << ", Area:" << node.getArea()  
-                 << ", numDescendentes:" << node.computerNumDescendants()
+                 << ", numDescendentes:" << node.getNumDescendants()
                  << " ---\n";
     
     // Imprime o cabeçalho de colunas

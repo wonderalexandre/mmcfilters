@@ -123,6 +123,14 @@ if(BUILD_TESTS)
     target_link_libraries(testeComputerAttribute PRIVATE mmcfilters_lib)
     target_compile_options(testeComputerAttribute PRIVATE -Wno-deprecated-declarations)
 
+    add_executable(testeComputerAttributeCT 
+        mmcfilters/test/testeComputerAttributeCT.cpp
+        external/stb/stb_image.cpp
+    )
+    target_link_libraries(testeComputerAttributeCT PRIVATE mmcfilters_lib)
+    target_compile_options(testeComputerAttributeCT PRIVATE -Wno-deprecated-declarations)
+
+
     add_executable(TesteBitQuads 
         mmcfilters/test/TesteBitQuads.cpp
         external/stb/stb_image.cpp

@@ -8,8 +8,9 @@
 #include <utility>
 #include <algorithm> 
 
-#include "../include/NodeCT.hpp"
+
 #include "../include/ComponentTree.hpp"
+#include "../include/NodeCT.hpp"
 #include "../include/AdjacencyRelation.hpp"
 #include "../include/BuilderMorphologicalTreeByUnionFind.hpp"
 
@@ -23,7 +24,7 @@ ComponentTree::ComponentTree(ImageUInt8Ptr img, bool isMaxtree, double radius) :
     adj(std::make_shared<AdjacencyRelation>(numRows, numCols, radius)), numNodes(0){   
 
         this->pixelToNodeId.resize(numRows * numCols, -1);
-        BuilderComponentTreeByUnionFind builderUF(adj.get(), isMaxtree);
+        BuilderComponentTree builderUF(adj.get(), isMaxtree);
         build(img, builderUF);
 }
 
@@ -32,7 +33,7 @@ ComponentTree::ComponentTree(ImageUInt8Ptr img, std::string ToSInperpolation):
     adj(nullptr), numNodes(0){   
         
         this->pixelToNodeId.resize(numRows * numCols, -1);
-        BuilderTreeOfShapeByUnionFind builderUF( ToSInperpolation == "4c8c" );
+        BuilderTreeOfShape builderUF( ToSInperpolation == "4c8c" );
         build(img, builderUF);
 }
 
@@ -84,7 +85,7 @@ template <typename PixelType>
 ComponentTreePtr ComponentTree::createFromAttributeMapping(ImagePtr<PixelType> attrMappingPtr, ImageUInt8Ptr imgPtr, bool isMaxtree, double radius) {
     AdjacencyRelationPtr adj = std::make_shared<AdjacencyRelation>(imgPtr->getNumRows(), imgPtr->getNumCols(), radius);	
     ComponentTreePtr tree = ComponentTree::create(imgPtr->getNumRows(), imgPtr->getNumCols(), isMaxtree, adj);
-    BuilderComponentTreeByUnionFind builderUF(adj.get(), isMaxtree);
+    BuilderComponentTree builderUF(adj.get(), isMaxtree);
     auto [parent, orderedPixels, numNodes] = builderUF.createTreeByUnionFind(attrMappingPtr);
 
     int numPixels = imgPtr->getSize();
@@ -151,7 +152,7 @@ ComponentTreePtr ComponentTree::createFromAttributeMapping(ImagePtr<PixelType> a
     return NodeCT(const_cast<ComponentTree*>(this), id);
 }*/
 
-inline NodeCT ComponentTree::proxy(NodeId id) const {
+NodeCT ComponentTree::proxy(NodeId id) const {
     if (id < 0 || id >= static_cast<NodeId>(arena.size())) {
         throw std::out_of_range("Node ID is out of range in arena!");
     }
@@ -161,10 +162,10 @@ inline NodeCT ComponentTree::proxy(NodeId id) const {
     return NodeCT(const_cast<ComponentTree*>(this), id);
 }
 
-inline NodeCT ComponentTree::getSC(int p) const noexcept { return proxy(this->pixelToNodeId[p]); }
-inline void ComponentTree::setSC(int p, NodeCT node){ setSCById(p, node); }
-inline NodeCT ComponentTree::getRoot() { return proxy(this->root); }
-inline void ComponentTree::setRoot(NodeCT n){ setRootById(n); }
+NodeCT ComponentTree::getSC(int p) const { return proxy(this->pixelToNodeId[p]); }
+NodeCT ComponentTree::getRoot() const { return proxy(this->root); }
+void ComponentTree::setSC(int p, NodeCT node){ setSCById(p, node); }
+void ComponentTree::setRoot(NodeCT n){ setRootById(n); }
 
 
 NodeId ComponentTree::makeNode(int repNode, NodeId parentId, int threshold2){
@@ -182,106 +183,6 @@ NodeId ComponentTree::makeNode(int repNode, NodeId parentId, int threshold2){
     this->numNodes++;    
     return id;
 }
-
-inline void ComponentTree::setParentById(NodeId nodeId, NodeId parentId) {
-    if (parentId == arena.parentId[nodeId]) return;
-    if (parentId == -1) {
-        if (arena.parentId[nodeId] != -1) 
-            removeChildById(arena.parentId[nodeId], parentId, false);
-    } else {
-        addChildById(parentId, nodeId);
-    }        
-}
-
-void ComponentTree::addChildById(int parentId, int childId) {
-    if (parentId < 0 || childId < 0) return;
-
-    // Se o filho já tem pai, desconecta antes de ler P/C
-    if (arena.parentId[childId] != -1) {
-        removeChildById(arena.parentId[childId], childId, false);
-    }
-
-    arena.parentId[childId]      = parentId;
-    arena.prevSiblingId[childId] = arena.lastChildId[parentId];
-    arena.nextSiblingId[childId] = -1;
-
-    if (arena.firstChildId[parentId] == -1) {
-        arena.firstChildId[parentId] = arena.lastChildId[parentId] = childId;
-    } else {
-        arena.nextSiblingId[arena.lastChildId[parentId]] = childId;
-        arena.lastChildId[parentId] = childId;
-    }
-    ++arena.childCount[parentId];
-
-    
-    //assert(ComponentTree::validateStructure(this) && "ComponentTree topology invariant failed after addChildById");
-    
-}
-
-// Remove um filho 'childId' da lista encadeada de filhos do pai 'parentId'.
-inline void ComponentTree::removeChildById(int parentId, int childId, bool release) {
-    if (parentId < 0 || childId < 0) return;
-    if (arena.parentId[childId] != parentId) return;
-
-    const int prev = arena.prevSiblingId[childId];
-    const int next = arena.nextSiblingId[childId];
-
-    if (prev == -1) arena.firstChildId[parentId] = next;
-    else            arena.nextSiblingId[prev] = next;
-
-    if (next == -1) arena.lastChildId[parentId] = prev;
-    else            arena.prevSiblingId[next] = prev;
-
-    if (arena.childCount[parentId] > 0) 
-        --arena.childCount[parentId];
-
-    arena.parentId[childId] = -1;
-    arena.prevSiblingId[childId] = -1;
-    arena.nextSiblingId[childId] = -1;
-    if(release){
-        releaseNode(childId);
-        //assert(ComponentTree::validateStructure(this) && "ComponentTree topology invariant failed after removeChildById");
-    }
-}
-
-
-// Move todos os filhos de 'fromId' para o fim da lista de filhos de 'toId'.
-inline void ComponentTree::spliceChildrenById(int toId, int fromId) {
-    if (toId < 0 || fromId < 0 || toId == fromId) return;
-
-    NodeId firstFrom = arena.firstChildId[fromId];
-    if (firstFrom == -1) return; // nada para mover
-
-    // 1) todos os filhos de 'fromId' passam a ter pai 'toId'
-    for (int c = arena.firstChildId[fromId]; c != -1; c = arena.nextSiblingId[c]) {
-        arena.parentId[c] = toId;
-    }
-
-    // 2) concatena a lista de filhos de 'fromId' no fim da lista de 'toId'
-    if (arena.firstChildId[toId] == -1) {
-        // 'toId' não tinha filhos — vira exatamente a lista de 'fromId'
-        arena.firstChildId[toId] = arena.firstChildId[fromId];
-        arena.lastChildId[toId]  = arena.lastChildId[fromId];
-        // o primeiro filho já tem prevSiblingId == -1 porque era o primeiro de 'fromId'
-    } else {
-        // 'toId' já tinha filhos — encadeia no final
-        arena.nextSiblingId[ arena.lastChildId[toId] ] = arena.firstChildId[fromId];
-        arena.prevSiblingId[ arena.firstChildId[fromId] ] = arena.lastChildId[toId];
-        arena.lastChildId[toId] = arena.lastChildId[fromId];
-    }
-
-    // 3) atualiza contadores
-    arena.childCount[toId] += arena.childCount[fromId];
-
-    // 4) zera a lista de 'fromId'
-    arena.firstChildId[fromId] = -1;
-    arena.lastChildId[fromId]  = -1;
-    arena.childCount[fromId]   = 0;
-
-   // assert(ComponentTree::validateStructure(this) && "ComponentTree topology invariant failed after spliceChildrenById");
-}
-
-
 
 
 void ComponentTree::computerTreeAttributes(){
@@ -353,11 +254,10 @@ void ComponentTree::prunning(NodeId nodeId){
 
 
 
-void ComponentTree::mergeWithParent(NodeCT node)
+void ComponentTree::mergeWithParent(NodeId nodeId)
 {
-    if (!node || !node.getParent()) return;
+    if (getParentById(nodeId) != -1) return;
 
-    const int nodeId   = node.getIndex();
     const int parentId = arena.parentId[nodeId];
 
     // 1) tira 'node' da lista de filhos do pai

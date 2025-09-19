@@ -65,8 +65,8 @@ int main(int argc, char const *argv[])
 
 
     auto [attrNames, attrsPtr] = AttributeComputedIncrementally::computeAttributes(tree, {  
-                                                                                            Attribute::AREA, 
-                                                                                            Attribute::LEVEL
+                                                                                            AttributeGroup::ALL
+                                                                                            
                                                                                             } );
 
 

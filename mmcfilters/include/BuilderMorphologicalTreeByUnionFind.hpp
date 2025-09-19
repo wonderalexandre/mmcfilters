@@ -24,14 +24,14 @@ public:
 };
 
 
-class BuilderComponentTreeByUnionFind : public IMorphologicalTreeBuilder{
+class BuilderComponentTree : public IMorphologicalTreeBuilder{
 private:
     AdjacencyRelation* adj;
     bool isMaxtree;
 
 public:
-    explicit BuilderComponentTreeByUnionFind(AdjacencyRelation* adj, bool isMaxtree) : adj(adj), isMaxtree(isMaxtree) { }
-    ~BuilderComponentTreeByUnionFind() { }
+    explicit BuilderComponentTree(AdjacencyRelation* adj, bool isMaxtree) : adj(adj), isMaxtree(isMaxtree) { }
+    ~BuilderComponentTree() { }
 
     template <typename PixelType>
     std::vector<int> sort(ImagePtr<PixelType> imgPtr) const {
@@ -51,19 +51,28 @@ public:
             }
         } else {
             if (PRINT_LOG) std::cout << "Sorting integer image with size: " << n << std::endl;
-            
-            // counting sort com faixa [0..mx]; 
-            int mx = static_cast<int>(img[0]);
-            for (int i = 1; i < n; i++) if (mx < img[i]) mx = static_cast<int>(img[i]);
-            std::vector<uint32_t> counter(static_cast<size_t>(mx) + 1, 0);
-            if (isMaxtree) {
-                for (int i = 0; i < n; i++) counter[static_cast<size_t>(img[i])]++;
-                for (size_t i = 1; i < counter.size(); i++) counter[i] += counter[i - 1];
-                for (int i = n - 1; i >= 0; --i) orderedPixels[--counter[static_cast<size_t>(img[i])]] = i;
-            } else {
-                for (int i = 0; i < n; i++) counter[static_cast<size_t>(mx - static_cast<int>(img[i]))]++;
-                for (size_t i = 1; i < counter.size(); i++) counter[i] += counter[i - 1];
-                for (int i = n - 1; i >= 0; --i) orderedPixels[--counter[static_cast<size_t>(mx - static_cast<int>(img[i]))]] = i;
+        
+            // counting sort com faixa [0..maxvalue]; 
+            int maxvalue =  static_cast<int>(img[0]);
+            for (int i = 1; i < n; i++) if(maxvalue < img[i]) maxvalue = img[i];
+            std::vector<uint32_t> counter(static_cast<size_t>(maxvalue) + 1, 0);
+            if(isMaxtree){
+                for (int i = 0; i < n; i++)
+                    counter[img[i]]++;
+                for (int i = 1; i < maxvalue; i++) 
+                    counter[i] += counter[i - 1];
+                counter[maxvalue] += counter[maxvalue-1];
+                for (int i = n - 1; i >= 0; --i)
+                    orderedPixels[--counter[img[i]]] = i;	
+
+            }else{
+                for (int i = 0; i < n; i++)
+                    counter[maxvalue - img[i]]++;
+                for (int i = 1; i < maxvalue; i++) 
+                    counter[i] += counter[i - 1];
+                counter[maxvalue] += counter[maxvalue-1];
+                for (int i = n - 1; i >= 0; --i)
+                    orderedPixels[--counter[maxvalue - img[i]]] = i;
             }
         }
         return orderedPixels;
@@ -115,7 +124,7 @@ public:
 
 
 
-class BuilderTreeOfShapeByUnionFind: public IMorphologicalTreeBuilder {
+class BuilderTreeOfShape: public IMorphologicalTreeBuilder {
 private:
     bool is4c8cConnectivity;
 
@@ -193,8 +202,8 @@ private:
 public:
 
 
-    explicit BuilderTreeOfShapeByUnionFind(bool is4c8cConnectivity): is4c8cConnectivity(is4c8cConnectivity) {}
-    ~BuilderTreeOfShapeByUnionFind() { }
+    explicit BuilderTreeOfShape(bool is4c8cConnectivity): is4c8cConnectivity(is4c8cConnectivity) {}
+    ~BuilderTreeOfShape() { }
 
      /**
       * Implementation based on the paper: 

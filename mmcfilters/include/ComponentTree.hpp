@@ -8,16 +8,19 @@
 #include <variant>
 #include <span>
 
+
+#ifndef COMPONENT_TREE_HEADER
+#define COMPONENT_TREE_HEADER
+
+
 #include "../include/AdjacencyRelation.hpp"
 #include "../include/Common.hpp"
-
-
-#ifndef COMPONENT_TREE_H
-#define COMPONENT_TREE_H
 
 // Forward declaration do builder externo
 class IMorphologicalTreeBuilder; 
 class NodeCT;
+class ComponentTree;
+using ComponentTreePtr = std::shared_ptr<ComponentTree>;
 
 /**
  * @brief Arena de nós para Component Trees com armazenamento contíguo e acesso rápido.
@@ -330,8 +333,6 @@ class NodeArena {
  * @tparam CNPsType Define o tipo de construção da árvore: `Pixels` ou `FlatZones`.
  */
 class ComponentTree : public std::enable_shared_from_this<ComponentTree> {
-    friend class BuilderComponentTreeByUnionFind; 
-    friend class BuilderTreeOfShapeByUnionFind; 
     friend class NodeCT; 
 
 protected:
@@ -398,13 +399,22 @@ public:
 
     
 
-    NodeCT proxy(NodeId id) const;
-    NodeCT getSC(int p) const noexcept;
+    NodeCT proxy(NodeId id) const ;
+    NodeCT getSC(int p) const;
+    NodeCT getRoot() const;
     void setSC(int p, NodeCT node);
-    NodeCT getRoot();
     void setRoot(NodeCT n);
 
-    int getTreeType() const noexcept{return treeType;}
+    void computerArea(NodeId node);
+    ImageUInt8Ptr reconstructionImage();
+    std::vector<NodeId> getLeaves();
+
+    void prunning(NodeId nodeId);
+    void mergeWithParent(NodeId nodeId);
+    void mergeWithParent(std::vector<int>& flatzone);
+    
+
+    inline int getTreeType() const noexcept{return treeType;}
     inline bool isMaxtree()const noexcept{ return treeType == MAX_TREE;}
     inline int getNumNodes()const noexcept{ return numNodes; }
     inline int getNumRowsOfImage()const noexcept{ return numRows;}
@@ -426,7 +436,7 @@ public:
     inline void setLevelById(NodeId id, int level){ arena.threshold2[id] = level;}
     inline int getResidueById(NodeId id) const noexcept{  if(arena.threshold2[id] == -1) return arena.threshold2[id]; else return arena.threshold2[id] - arena.threshold2[arena.parentId[id]]; }
     
-    void releaseNode(NodeId id) noexcept { arena.releaseNode(id); numNodes--; }
+    inline void releaseNode(NodeId id) noexcept { arena.releaseNode(id); numNodes--; }
     inline int32_t getAreaById(NodeId id) const noexcept{ return arena.areaCC[id];}
     inline void setAreaById(NodeId id, int32_t area) noexcept { arena.areaCC[id] = area;}
     inline int getTimePostOrderById(NodeId id) const noexcept{ return arena.timePostOrder[id]; }
@@ -438,7 +448,7 @@ public:
     inline int getNumChildrenById(NodeId id) const noexcept{ return arena.childCount[id]; }
     inline int getNumSiblingsById(NodeId id) const noexcept{ return arena.parentId[id] == -1 ? 0 : arena.childCount[ arena.parentId[id] ] - 1; }
     inline bool hasChildById(NodeId nodeId, NodeId childId) const { return arena.parentId[childId] == nodeId;}
-    inline bool isLeaf(NodeId id) const noexcept{ return arena.childCount[id] == 0; }
+    inline bool isLeafById(NodeId id) const noexcept{ return arena.childCount[id] == 0; }
     inline bool isMaxtreeNodeById(NodeId id) const noexcept{ return arena.parentId[id] != -1 && arena.threshold2[id] > arena.threshold2[arena.parentId[id]];}
     inline NodeArena::ChildRange getChildrenById(NodeId id) const {return arena.children(id);}    
     inline NodeId getRootById()const noexcept { return this->root;}
@@ -447,21 +457,105 @@ public:
     inline void setSCById(int p, NodeId id) noexcept { this->pixelToNodeId[p] = id;}    
     inline auto getCNPsById(NodeId id) const { return pixelBuffer->getPixelsBySet(arena.repNode[id]);}
     inline int getNumCNPsById(NodeId id) const { return this->pixelBuffer->numPixelsInSet(arena.repNode[id]);}
-
-
-    inline void removeChildById(int parentId, int childId, bool release);
-    inline void addChildById(int parentId, int childId);
-    inline void spliceChildrenById(int toId, int fromId);
-    inline void setParentById(NodeId nodeId, NodeId parentId);
-
-    void computerArea(NodeId node);
-    ImageUInt8Ptr reconstructionImage();
-    std::vector<NodeId> getLeaves();
-
-    void prunning(NodeId nodeId);
-    void mergeWithParent(NodeCT node);
-    void mergeWithParent(std::vector<int>& flatzone);
     
+    inline int getNumDescendantsById(NodeId id) {
+        return (getTimePostOrderById(id) - getTimePreOrderById(id) - 1) / 2;
+    }
+
+    inline void setParentById(NodeId nodeId, NodeId parentId) {
+        if (parentId == arena.parentId[nodeId]) return;
+        if (parentId == -1) {
+            if (arena.parentId[nodeId] != -1) 
+                removeChildById(arena.parentId[nodeId], parentId, false);
+        } else {
+            addChildById(parentId, nodeId);
+        }        
+    }
+
+    void addChildById(int parentId, int childId) {
+        if (parentId < 0 || childId < 0) return;
+
+        // Se o filho já tem pai, desconecta antes de ler P/C
+        if (arena.parentId[childId] != -1) {
+            removeChildById(arena.parentId[childId], childId, false);
+        }
+
+        arena.parentId[childId]      = parentId;
+        arena.prevSiblingId[childId] = arena.lastChildId[parentId];
+        arena.nextSiblingId[childId] = -1;
+
+        if (arena.firstChildId[parentId] == -1) {
+            arena.firstChildId[parentId] = arena.lastChildId[parentId] = childId;
+        } else {
+            arena.nextSiblingId[arena.lastChildId[parentId]] = childId;
+            arena.lastChildId[parentId] = childId;
+        }
+        ++arena.childCount[parentId];
+
+    }
+
+    // Remove um filho 'childId' da lista encadeada de filhos do pai 'parentId'.
+    inline void removeChildById(int parentId, int childId, bool release) {
+        if (parentId < 0 || childId < 0) return;
+        if (arena.parentId[childId] != parentId) return;
+
+        const int prev = arena.prevSiblingId[childId];
+        const int next = arena.nextSiblingId[childId];
+
+        if (prev == -1) arena.firstChildId[parentId] = next;
+        else            arena.nextSiblingId[prev] = next;
+
+        if (next == -1) arena.lastChildId[parentId] = prev;
+        else            arena.prevSiblingId[next] = prev;
+
+        if (arena.childCount[parentId] > 0) 
+            --arena.childCount[parentId];
+
+        arena.parentId[childId] = -1;
+        arena.prevSiblingId[childId] = -1;
+        arena.nextSiblingId[childId] = -1;
+        if(release){
+            releaseNode(childId);
+        }
+    }
+
+
+    // Move todos os filhos de 'fromId' para o fim da lista de filhos de 'toId'.
+    inline void spliceChildrenById(int toId, int fromId) {
+        if (toId < 0 || fromId < 0 || toId == fromId) return;
+
+        NodeId firstFrom = arena.firstChildId[fromId];
+        if (firstFrom == -1) return; // nada para mover
+
+        // 1) todos os filhos de 'fromId' passam a ter pai 'toId'
+        for (int c = arena.firstChildId[fromId]; c != -1; c = arena.nextSiblingId[c]) {
+            arena.parentId[c] = toId;
+        }
+
+        // 2) concatena a lista de filhos de 'fromId' no fim da lista de 'toId'
+        if (arena.firstChildId[toId] == -1) {
+            // 'toId' não tinha filhos — vira exatamente a lista de 'fromId'
+            arena.firstChildId[toId] = arena.firstChildId[fromId];
+            arena.lastChildId[toId]  = arena.lastChildId[fromId];
+            // o primeiro filho já tem prevSiblingId == -1 porque era o primeiro de 'fromId'
+        } else {
+            // 'toId' já tinha filhos — encadeia no final
+            arena.nextSiblingId[ arena.lastChildId[toId] ] = arena.firstChildId[fromId];
+            arena.prevSiblingId[ arena.firstChildId[fromId] ] = arena.lastChildId[toId];
+            arena.lastChildId[toId] = arena.lastChildId[fromId];
+        }
+
+        // 3) atualiza contadores
+        arena.childCount[toId] += arena.childCount[fromId];
+
+        // 4) zera a lista de 'fromId'
+        arena.firstChildId[fromId] = -1;
+        arena.lastChildId[fromId]  = -1;
+        arena.childCount[fromId]   = 0;
+
+    }
+
+
 
     static bool validateStructure(ComponentTreePtr tree)  {
         return validateStructure(tree.get());
@@ -601,8 +695,11 @@ public:
         inline explicit IteratorValidNodeIds(ComponentTree* T) noexcept : T_(T) {}
 
         inline InternalIteratorValidNodeIds begin() const noexcept { return InternalIteratorValidNodeIds(T_, 0); }
-        // sentinela: construtor com T=nullptr dá end_=0, cur_=0 → iguala quando begin() também chega ao fim
-        inline InternalIteratorValidNodeIds end()   const noexcept { return InternalIteratorValidNodeIds(nullptr, 0); }
+        inline InternalIteratorValidNodeIds end() const noexcept {
+            // end iterator shares the same end_ (size) as begin();
+            // if T_ is null, both begin/end will be empty
+            return InternalIteratorValidNodeIds(T_, T_ ? static_cast<NodeId>(T_->arena.repNode.size()) : 0);
+        }
     };
 
     /** Range para iterar NodeId válidos (exclui slots livres) */
@@ -917,7 +1014,7 @@ public:
       3. O correspondente em no vetor euler: euler[4] = 0 que é o indice do LCA
 	
  */
-class LCAEulerRMQ {
+class LCAEulerRMQ_CT {
 private:
     std::vector<int> euler;            // timePreOrder dos nós na ordem de visita
     std::vector<int> depth;            // profundidade associada a cada posição em euler
@@ -925,7 +1022,7 @@ private:
     std::vector<std::vector<int>> st;  // Sparse Table para RMQ
     ComponentTree* tree;
 public:
-    LCAEulerRMQ(ComponentTree* tree): tree(tree) {
+    LCAEulerRMQ_CT(ComponentTree* tree): tree(tree) {
         
         int n = tree->getNumNodes();
         euler.reserve(n);
@@ -987,6 +1084,6 @@ private:
 };
 
 
-#include "../include/ComponentTree.tpp"
+//#include "../include/ComponentTree.tpp"
 
 #endif

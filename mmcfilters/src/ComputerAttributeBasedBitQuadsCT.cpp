@@ -1,55 +1,56 @@
-#include "../include/ComputerAttributeBasedBitQuads.hpp"
+#include "../include/ComputerAttributeBasedBitQuadsCT.hpp"
 
 // Construtor principal
-ComputerAttributeBasedBitQuads::ComputerAttributeBasedBitQuads(MorphologicalTreePtr tree) : tree(tree), adj(tree->getAdjacencyRelation()), attr(tree->getNumNodes(), AttributeBasedBitQuads(adj)) {
+ComputerAttributeBasedBitQuadsCT::ComputerAttributeBasedBitQuadsCT(ComponentTree* tree) : tree(tree), adj(tree->getAdjacencyRelation()), attr(tree->getNumNodes(), AttributeBasedBitQuadsCT(adj)) {
     
-    assert(tree->getTreeType() != MorphologicalTree::TREE_OF_SHAPES && "Não está implementado para tree of shapes!");
+    assert(tree->getTreeType() != ComponentTree::TREE_OF_SHAPES && "Não está implementado para tree of shapes!");
     
     initializePatterns();
-    AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
-        [&](NodeMTPtr node) {
-            for(int p: node->getCNPs()){
+    AttributeComputedIncrementallyCT::computerAttribute(tree,
+        tree->getRootById(),
+        [&](NodeId node) {
+            for(int p: tree->getCNPsById(node)){
                 computerLocalPattern(node, p, attr) ;
             }	
         },
-        [&](NodeMTPtr parent, NodeMTPtr child) {
+        [&](NodeId parent, NodeId child) {
             if (!adj || adj->is4connectivity()) // 4-connectivity
-                attr[parent->getIndex()].countPatternC1C4 += attr[child->getIndex()].countPatternC1C4;
+                attr[parent].countPatternC1C4 += attr[child].countPatternC1C4;
             else {
-                attr[parent->getIndex()].countPatternC1 += attr[child->getIndex()].countPatternC1;
-                attr[parent->getIndex()].countPatternCD += attr[child->getIndex()].countPatternCD;
+                attr[parent].countPatternC1 += attr[child].countPatternC1;
+                attr[parent].countPatternCD += attr[child].countPatternCD;
             }
-            attr[parent->getIndex()].countPatternC2 += attr[child->getIndex()].countPatternC2;
-            attr[parent->getIndex()].countPatternC3 += attr[child->getIndex()].countPatternC3;
-            attr[parent->getIndex()].countPatternC4 += attr[child->getIndex()].countPatternC4;
+            attr[parent].countPatternC2 += attr[child].countPatternC2;
+            attr[parent].countPatternC3 += attr[child].countPatternC3;
+            attr[parent].countPatternC4 += attr[child].countPatternC4;
         },
-        [&](NodeMTPtr node) {
+        [&](NodeId node) {
 
-            /*std::vector<int>& pixelsNonComparable = pixelsOfLCA[node->getIndex()];
-            std::cout << "Node: " << node->getIndex() << " - Non-comparable pixels: " << pixelsNonComparable.size() << std::endl;
+            /*std::vector<int>& pixelsNonComparable = pixelsOfLCA[node];
+            std::cout << "Node: " << node << " - Non-comparable pixels: " << pixelsNonComparable.size() << std::endl;
             for (int p : pixelsNonComparable) {
                 computerLocalPattern(node, p, attr);
             }*/
 
             if (!adj || adj->is4connectivity()) 
-                attr[node->getIndex()].countPatternC1C4 = attr[node->getIndex()].countPatternC1C4 - attr[node->getIndex()].countPatternCT1C4;
+                attr[node].countPatternC1C4 = attr[node].countPatternC1C4 - attr[node].countPatternCT1C4;
             else {
-                attr[node->getIndex()].countPatternC1 = attr[node->getIndex()].countPatternC1 - attr[node->getIndex()].countPatternCT1;
-                attr[node->getIndex()].countPatternCD = attr[node->getIndex()].countPatternCD - attr[node->getIndex()].countPatternCTD;
+                attr[node].countPatternC1 = attr[node].countPatternC1 - attr[node].countPatternCT1;
+                attr[node].countPatternCD = attr[node].countPatternCD - attr[node].countPatternCTD;
             }
-            attr[node->getIndex()].countPatternC2 = attr[node->getIndex()].countPatternC2 - attr[node->getIndex()].countPatternCT2;
-            attr[node->getIndex()].countPatternC3 = attr[node->getIndex()].countPatternC3 - attr[node->getIndex()].countPatternCT3;
+            attr[node].countPatternC2 = attr[node].countPatternC2 - attr[node].countPatternCT2;
+            attr[node].countPatternC3 = attr[node].countPatternC3 - attr[node].countPatternCT3;
         }
     );
 
 }
 
-std::vector<AttributeBasedBitQuads> ComputerAttributeBasedBitQuads::getAttributes() const {
+std::vector<AttributeBasedBitQuadsCT> ComputerAttributeBasedBitQuadsCT::getAttributes() const {
     return attr;
 }
 
 
-void ComputerAttributeBasedBitQuads::initializePatterns() {
+void ComputerAttributeBasedBitQuadsCT::initializePatterns() {
     if(!adj || adj->is4connectivity()) {
         createQ1C4Patterns();
         createQ1C4TPatterns();
@@ -66,9 +67,9 @@ void ComputerAttributeBasedBitQuads::initializePatterns() {
     createQ3TPattern();
 }
 
-void ComputerAttributeBasedBitQuads::computerLocalPattern(NodeMTPtr node, int p, std::vector<AttributeBasedBitQuads>& attr) {
+void ComputerAttributeBasedBitQuadsCT::computerLocalPattern(NodeId nodeId, int p, std::vector<AttributeBasedBitQuadsCT>& attr) {
     auto [row,col] = ImageUtils::to2D(p, tree->getNumColsOfImage());
-    int nodeId = node->getIndex();
+    
 
     if (!adj || adj->is4connectivity()) {
         attr[nodeId].countPatternC1C4  += Q1C4.count(row, col, tree, pixelsOfLCA);
@@ -87,8 +88,8 @@ void ComputerAttributeBasedBitQuads::computerLocalPattern(NodeMTPtr node, int p,
     attr[nodeId].countPatternCT3 += Q3T.count(row, col, tree, pixelsOfLCA);
 }
 
-void ComputerAttributeBasedBitQuads::createQ1Patterns() {
-    BitQuad Q1P1(3), Q1P2(3), Q1P3(3), Q1P4(3);
+void ComputerAttributeBasedBitQuadsCT::createQ1Patterns() {
+    BitQuadCT Q1P1(3), Q1P2(3), Q1P3(3), Q1P4(3);
 
     Q1P1.add(BitQuadComparatorCT(0, -1, BitQuadType::StrictDescendant))
         .add(BitQuadComparatorCT(1, -1, BitQuadType::StrictDescendant))
@@ -114,8 +115,8 @@ void ComputerAttributeBasedBitQuads::createQ1Patterns() {
     }
 }
 
-void ComputerAttributeBasedBitQuads::createQ1C4Patterns() {
-    BitQuad Q1C4P1(2), Q1C4P2(2), Q1C4P3(2), Q1C4P4(2);
+void ComputerAttributeBasedBitQuadsCT::createQ1C4Patterns() {
+    BitQuadCT Q1C4P1(2), Q1C4P2(2), Q1C4P3(2), Q1C4P4(2);
 
     Q1C4P1.add(BitQuadComparatorCT(0, -1, BitQuadType::StrictDescendant))
         .add(BitQuadComparatorCT(1, 0, BitQuadType::StrictDescendant));
@@ -139,9 +140,9 @@ void ComputerAttributeBasedBitQuads::createQ1C4Patterns() {
 }
 
 
-void ComputerAttributeBasedBitQuads::createQ2Patterns() {
-    BitQuad Q2P1(3), Q2P2(3), Q2P3(3), Q2P4(3);
-    BitQuad Q2P5(3), Q2P6(3), Q2P7(3), Q2P8(3);
+void ComputerAttributeBasedBitQuadsCT::createQ2Patterns() {
+    BitQuadCT Q2P1(3), Q2P2(3), Q2P3(3), Q2P4(3);
+    BitQuadCT Q2P5(3), Q2P6(3), Q2P7(3), Q2P8(3);
 
     Q2P1.add(BitQuadComparatorCT(1, 0, BitQuadType::Ancestor))
         .add(BitQuadComparatorCT(1, 1, BitQuadType::StrictDescendant))
@@ -183,8 +184,8 @@ void ComputerAttributeBasedBitQuads::createQ2Patterns() {
     }
 }
 
-void ComputerAttributeBasedBitQuads::createQDPatterns() {
-    BitQuad QDP1(3), QDP2(3), QDP3(3), QDP4(3);
+void ComputerAttributeBasedBitQuadsCT::createQDPatterns() {
+    BitQuadCT QDP1(3), QDP2(3), QDP3(3), QDP4(3);
 
     QDP1.add(BitQuadComparatorCT(1, 0, BitQuadType::StrictDescendant))
         .add(BitQuadComparatorCT(1, 1, BitQuadType::Ancestor))
@@ -210,10 +211,10 @@ void ComputerAttributeBasedBitQuads::createQDPatterns() {
     }
 }
 
-void ComputerAttributeBasedBitQuads::createQ3Patterns() {
-    BitQuad Q3P1(3), Q3P2(3), Q3P3(3), Q3P4(3);
-    BitQuad Q3P5(3), Q3P6(3), Q3P7(3), Q3P8(3);
-    BitQuad Q3P9(3), Q3P10(3), Q3P11(3), Q3P12(3);
+void ComputerAttributeBasedBitQuadsCT::createQ3Patterns() {
+    BitQuadCT Q3P1(3), Q3P2(3), Q3P3(3), Q3P4(3);
+    BitQuadCT Q3P5(3), Q3P6(3), Q3P7(3), Q3P8(3);
+    BitQuadCT Q3P9(3), Q3P10(3), Q3P11(3), Q3P12(3);
 
     Q3P1.add(BitQuadComparatorCT(0, 1, BitQuadType::StrictAncestor))
         .add(BitQuadComparatorCT(-1, 1, BitQuadType::StrictDescendant))
@@ -271,8 +272,8 @@ void ComputerAttributeBasedBitQuads::createQ3Patterns() {
     }
 }
 
-void ComputerAttributeBasedBitQuads::createQ4Patterns() {
-    BitQuad Q4P1(3), Q4P2(3), Q4P3(3), Q4P4(3);
+void ComputerAttributeBasedBitQuadsCT::createQ4Patterns() {
+    BitQuadCT Q4P1(3), Q4P2(3), Q4P3(3), Q4P4(3);
 
     Q4P1.add(BitQuadComparatorCT(1, 0, BitQuadType::Ancestor))
         .add(BitQuadComparatorCT(1, 1, BitQuadType::Ancestor))
@@ -299,9 +300,9 @@ void ComputerAttributeBasedBitQuads::createQ4Patterns() {
     }
 }
 
-void ComputerAttributeBasedBitQuads::createQ1C4TPatterns() {
-    BitQuad Q1C4TP1(2), Q1C4TP2(2), Q1C4TP3(2), Q1C4TP4(2);
-    BitQuad Q1C4TP5(2), Q1C4TP6(2), Q1C4TP7(2), Q1C4TP8(2);
+void ComputerAttributeBasedBitQuadsCT::createQ1C4TPatterns() {
+    BitQuadCT Q1C4TP1(2), Q1C4TP2(2), Q1C4TP3(2), Q1C4TP4(2);
+    BitQuadCT Q1C4TP5(2), Q1C4TP6(2), Q1C4TP7(2), Q1C4TP8(2);
 
     Q1C4TP1.add(BitQuadComparatorCT(1, 1, BitQuadType::StrictDescendant))
             .add(BitQuadComparatorCT(0, 1, BitQuadType::StrictAncestor));
@@ -335,10 +336,10 @@ void ComputerAttributeBasedBitQuads::createQ1C4TPatterns() {
     }
 }
 
-void ComputerAttributeBasedBitQuads::createQ1TPatterns() {
-    BitQuad Q1TP1(3), Q1TP2(3), Q1TP3(3), Q1TP4(3);
-    BitQuad Q1TP5(3), Q1TP6(3), Q1TP7(3), Q1TP8(3);
-    BitQuad Q1TP9(3), Q1TP10(3), Q1TP11(3), Q1TP12(3);
+void ComputerAttributeBasedBitQuadsCT::createQ1TPatterns() {
+    BitQuadCT Q1TP1(3), Q1TP2(3), Q1TP3(3), Q1TP4(3);
+    BitQuadCT Q1TP5(3), Q1TP6(3), Q1TP7(3), Q1TP8(3);
+    BitQuadCT Q1TP9(3), Q1TP10(3), Q1TP11(3), Q1TP12(3);
 
     Q1TP1.add(BitQuadComparatorCT(0, 1, BitQuadType::StrictDescendant))
         .add(BitQuadComparatorCT(-1, 1, BitQuadType::StrictAncestor))
@@ -396,9 +397,9 @@ void ComputerAttributeBasedBitQuads::createQ1TPatterns() {
     }
 }
 
-void ComputerAttributeBasedBitQuads::createQ2TPattern() {
-    BitQuad Q2TP1(3), Q2TP2(3), Q2TP3(3), Q2TP4(3);
-    BitQuad Q2TP5(3), Q2TP6(3), Q2TP7(3), Q2TP8(3);
+void ComputerAttributeBasedBitQuadsCT::createQ2TPattern() {
+    BitQuadCT Q2TP1(3), Q2TP2(3), Q2TP3(3), Q2TP4(3);
+    BitQuadCT Q2TP5(3), Q2TP6(3), Q2TP7(3), Q2TP8(3);
 
     Q2TP1.add(BitQuadComparatorCT(0, -1, BitQuadType::StrictAncestor))
         .add(BitQuadComparatorCT(1, -1, BitQuadType::StrictAncestor))
@@ -440,8 +441,8 @@ void ComputerAttributeBasedBitQuads::createQ2TPattern() {
     }
 }
 
-void ComputerAttributeBasedBitQuads::createQDTPattern() {
-    BitQuad QDTP1(3), QDTP2(3), QDTP3(3), QDTP4(3);
+void ComputerAttributeBasedBitQuadsCT::createQDTPattern() {
+    BitQuadCT QDTP1(3), QDTP2(3), QDTP3(3), QDTP4(3);
 
     QDTP1.add(BitQuadComparatorCT(0, -1, BitQuadType::StrictAncestor))
         .add(BitQuadComparatorCT(1, -1, BitQuadType::StrictDescendant))
@@ -467,8 +468,8 @@ void ComputerAttributeBasedBitQuads::createQDTPattern() {
     }
 }
 
-void ComputerAttributeBasedBitQuads::createQ3TPattern() {
-    BitQuad Q3TP1(3), Q3TP2(3), Q3TP3(3), Q3TP4(3);
+void ComputerAttributeBasedBitQuadsCT::createQ3TPattern() {
+    BitQuadCT Q3TP1(3), Q3TP2(3), Q3TP3(3), Q3TP4(3);
 
     Q3TP1.add(BitQuadComparatorCT(0, -1, BitQuadType::StrictAncestor))
         .add(BitQuadComparatorCT(1, -1, BitQuadType::StrictAncestor))

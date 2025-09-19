@@ -21,14 +21,11 @@
 #define PRINT_LOG 0
 #define PRINT_DEBUG 0
 
-// Forward declarations (non-templated)
-class ComponentTree;
-
-
-
-using NodeId = int; 
-
-using ComponentTreePtr = std::shared_ptr<ComponentTree>;
+using NodeId = int;
+constexpr NodeId InvalidNode = -1;  // ou std::numeric_limits<NodeId>::max()
+inline bool isValidNode(NodeId id) noexcept {
+    return id != InvalidNode;
+}
 
 
 /**

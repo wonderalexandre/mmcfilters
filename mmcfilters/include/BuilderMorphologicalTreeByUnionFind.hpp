@@ -1,46 +1,82 @@
 #ifndef BUILDER_MORPHOLOGICAL_TREE_BY_UNION_FIND_HPP
 #define BUILDER_MORPHOLOGICAL_TREE_BY_UNION_FIND_HPP
 
-#include "../include/ComponentTree.hpp"
 #include "../include/AdjacencyRelation.hpp"
 #include "../include/Common.hpp"
 #include "../include/AdjacencyUC.hpp"
 
-// Builder externo para construir ComponentTree via Union-Find (Pixels-only).
-class BuilderComponentTreeByUnionFind {
-private:
+#include <tuple>
+#include <vector>
+#include <deque>
+#include <algorithm>
+#include <numeric>
+#include <type_traits>
+#include <limits>
+#include <cstdint>
+#include <climits>
+
+// 1) Base como uma interface (sem dados)
+class IMorphologicalTreeBuilder {
+public:
+    virtual ~IMorphologicalTreeBuilder() = default;
     
+    virtual std::tuple<std::vector<int>, std::vector<int>, int> createTreeByUnionFind(const ImageUInt8Ptr& imgPtr) const = 0;
+};
+
+
+class BuilderComponentTreeByUnionFind : public IMorphologicalTreeBuilder{
+private:
+    AdjacencyRelation* adj;
+    bool isMaxtree;
 
 public:
-    explicit BuilderComponentTreeByUnionFind() {}
+    explicit BuilderComponentTreeByUnionFind(AdjacencyRelation* adj, bool isMaxtree) : adj(adj), isMaxtree(isMaxtree) { }
+    ~BuilderComponentTreeByUnionFind() { }
 
-    // Ordenação estável dos pixels por nível de cinza
-    std::vector<int> countingSort(const ImageUInt8Ptr& imgPtr, bool isMaxtree) {
-        int n = imgPtr->getSize();
-        auto img = imgPtr->rawData();
-        int maxvalue = img[0];
-        for (int i = 1; i < n; i++) if (maxvalue < img[i]) maxvalue = img[i];
-
-        std::vector<uint32_t> counter(maxvalue + 1, 0);
+    template <typename PixelType>
+    std::vector<int> sort(ImagePtr<PixelType> imgPtr) const {
+        const int n = imgPtr->getSize();
         std::vector<int> orderedPixels(n);
+        PixelType* img = imgPtr->rawData();
 
-        if (isMaxtree) {
-            for (int i = 0; i < n; i++) counter[img[i]]++;
-            for (int i = 1; i < maxvalue; i++) counter[i] += counter[i - 1];
-            counter[maxvalue] += counter[maxvalue - 1];
-            for (int i = n - 1; i >= 0; --i) orderedPixels[--counter[img[i]]] = i;
+        if constexpr (std::is_floating_point_v<PixelType>) {
+            if (PRINT_LOG) std::cout << "Sorting floating point image with size: " << n << std::endl;
+            std::iota(orderedPixels.begin(), orderedPixels.end(), 0);
+            if (isMaxtree) {
+                std::stable_sort(orderedPixels.begin(), orderedPixels.end(),
+                                 [&](int a, int b) { return img[a] < img[b]; });
+            } else {
+                std::stable_sort(orderedPixels.begin(), orderedPixels.end(),
+                                 [&](int a, int b) { return img[a] > img[b]; });
+            }
         } else {
-            for (int i = 0; i < n; i++) counter[maxvalue - img[i]]++;
-            for (int i = 1; i < maxvalue; i++) counter[i] += counter[i - 1];
-            counter[maxvalue] += counter[maxvalue - 1];
-            for (int i = n - 1; i >= 0; --i) orderedPixels[--counter[maxvalue - img[i]]] = i;
+            if (PRINT_LOG) std::cout << "Sorting integer image with size: " << n << std::endl;
+            
+            // counting sort com faixa [0..mx]; 
+            int mx = static_cast<int>(img[0]);
+            for (int i = 1; i < n; i++) if (mx < img[i]) mx = static_cast<int>(img[i]);
+            std::vector<uint32_t> counter(static_cast<size_t>(mx) + 1, 0);
+            if (isMaxtree) {
+                for (int i = 0; i < n; i++) counter[static_cast<size_t>(img[i])]++;
+                for (size_t i = 1; i < counter.size(); i++) counter[i] += counter[i - 1];
+                for (int i = n - 1; i >= 0; --i) orderedPixels[--counter[static_cast<size_t>(img[i])]] = i;
+            } else {
+                for (int i = 0; i < n; i++) counter[static_cast<size_t>(mx - static_cast<int>(img[i]))]++;
+                for (size_t i = 1; i < counter.size(); i++) counter[i] += counter[i - 1];
+                for (int i = n - 1; i >= 0; --i) orderedPixels[--counter[static_cast<size_t>(mx - static_cast<int>(img[i]))]] = i;
+            }
         }
         return orderedPixels;
     }
 
-    // Pixels: fluxo padrão por UF
-    std::tuple<std::vector<int>, std::vector<int>, int> createTreeByUnionFind(const ImageUInt8Ptr& imgPtr, bool isMaxtree, AdjacencyRelation* adj) {
-        std::vector<int> orderedPixels = countingSort(imgPtr, isMaxtree);
+    std::tuple<std::vector<int>, std::vector<int>, int> createTreeByUnionFind(const ImageUInt8Ptr& imgPtr) const override {
+        return createTreeByUnionFind<uint8_t>(imgPtr);
+    }
+
+    
+    template <typename PixelType>
+    std::tuple<std::vector<int>, std::vector<int>, int> createTreeByUnionFind(const ImagePtr<PixelType>& imgPtr) const {
+        std::vector<int> orderedPixels = sort(imgPtr);
         auto img = imgPtr->rawData();
 
         int numPixels = imgPtr->getSize();
@@ -50,7 +86,6 @@ public:
             while (zPar[p] != p) { zPar[p] = zPar[zPar[p]]; p = zPar[p]; }
             return p;
         };
-        
 
         for (int i = numPixels - 1; i >= 0; i--) {
             int p = orderedPixels[i];
@@ -80,8 +115,10 @@ public:
 
 
 
-class BuilderTreeOfShapeByUnionFind {
+class BuilderTreeOfShapeByUnionFind: public IMorphologicalTreeBuilder {
 private:
+    bool is4c8cConnectivity;
+
 
     class PriorityQueueToS {
     private:
@@ -156,7 +193,7 @@ private:
 public:
 
 
-    BuilderTreeOfShapeByUnionFind(){}
+    explicit BuilderTreeOfShapeByUnionFind(bool is4c8cConnectivity): is4c8cConnectivity(is4c8cConnectivity) {}
     ~BuilderTreeOfShapeByUnionFind() { }
 
      /**
@@ -166,7 +203,7 @@ public:
       * - N.Boutry, T.Géraud, L.Najman, "How to Make nD Functions Digitally Well-Composed in a Self-dual Way", ISMM 2015.
       * - N.Boutry, T.Géraud, L.Najman, "On Making {$n$D} Images Well-Composed by a Self-Dual Local Interpolation", DGCI 2014
       */
-     std::tuple<std::vector<uint8_t>, std::vector<uint8_t>, AdjacencyUC> interpolateImage(const ImageUInt8Ptr& imgPtr) {
+     std::tuple<std::vector<uint8_t>, std::vector<uint8_t>, AdjacencyUC> interpolateImage(const ImageUInt8Ptr& imgPtr) const{
         auto img = imgPtr->rawData();
         int numRows = imgPtr->getNumRows();
         int numCols = imgPtr->getNumCols();
@@ -285,7 +322,7 @@ public:
        
     }
 
-    std::tuple<std::vector<uint8_t>, std::vector<uint8_t>, AdjacencyUC> interpolateImage4c8c(const ImageUInt8Ptr&  imgPtr) {
+    std::tuple<std::vector<uint8_t>, std::vector<uint8_t>, AdjacencyUC> interpolateImage4c8c(const ImageUInt8Ptr& imgPtr) const{
         auto img = imgPtr->rawData();
         int numRows = imgPtr->getNumRows();
         int numCols = imgPtr->getNumCols();
@@ -487,7 +524,7 @@ public:
        
     }
 
-    std::tuple<std::vector<uint8_t>, std::vector<int>, AdjacencyUC> sort(const ImageUInt8Ptr& imgPtr, bool is4c8cConnectivity) {
+    std::tuple<std::vector<uint8_t>, std::vector<int>, AdjacencyUC> sort(const ImageUInt8Ptr& imgPtr) const{
 
         auto img = imgPtr->rawData();
         int numRows = imgPtr->getNumRows();
@@ -540,7 +577,7 @@ public:
     }
 
     //Testa se é um pixel é original 
-    inline bool isOriginal1D(int p, int interpNumCols) {
+    inline bool isOriginal1D(int p, int interpNumCols) const{
         /*
         p = row x  numCols + col
         Sabemos que numCols é ímpar. 
@@ -555,14 +592,13 @@ public:
     }
 
     // mapeia pixel interpolado para pixel original
-    inline int toOriginal1D(int pStar, int interNumCols, int numCols) {
+    inline int toOriginal1D(int pStar, int interNumCols, int numCols) const{
         int r = pStar / interNumCols;
         int c = pStar - r * interNumCols;         // evita operador %
         return ((r - 1) >> 1) * numCols + ((c - 1) >> 1);
     }
 
-
-    std::tuple<std::vector<int>, std::vector<int>, int> createTreeByUnionFind(const ImageUInt8Ptr& imgPtr, bool is4c8cConnectivity) {
+    std::tuple<std::vector<int>, std::vector<int>, int> createTreeByUnionFind(const ImageUInt8Ptr& imgPtr) const override {
 
         auto img = imgPtr->rawData();
         int numRows = imgPtr->getNumRows();
@@ -572,7 +608,7 @@ public:
         int interpNumCols = numCols * 2 + 1;
         int interpNumRows = numRows * 2 + 1;
         int numPixelsInterp = interpNumCols * interpNumRows;
-        auto [imgInterpolate, orderedPixelsInterpolete, adj] = sort(imgPtr, is4c8cConnectivity);
+        auto [imgInterpolate, orderedPixelsInterpolete, adj] = sort(imgPtr);
 
         // ---------- UF em imagem interpolada ----------
         std::vector<int> zPar(numPixelsInterp, -1);
@@ -603,8 +639,8 @@ public:
         };
         
         // Passo 1 — canonização + marcar apenas representantes
-        int numNodesInterpolateTree=0;
-        std::vector<int> repOrig(numPixelsInterp, -1); // válido só quando o índice é representante de platô
+        int numNodes=0;
+        std::vector<int> repPixelsOriginais(numPixelsInterp, -1); // válido só quando o índice é representante de platô
         for (int i = 0; i < numPixelsInterp; ++i) {  // raiz -> folhas
             int pStar = orderedPixelsInterpolete[i];
             int qStar = parentInterpolate[pStar];
@@ -614,18 +650,18 @@ public:
                 parentInterpolate[pStar] = parentInterpolate[qStar];
             
             if (parentInterpolate[pStar] == pStar || imgInterpolate[parentInterpolate[pStar]] != imgInterpolate[pStar])
-                ++numNodesInterpolateTree;
+                ++numNodes;
 
             if (isOriginal1D(pStar, interpNumCols)) {
                 int rep = repOf(pStar);              // calculado na hora
-                if (repOrig[rep] == -1) repOrig[rep] = pStar;  // elege o o primeiro original do platô
+                if (repPixelsOriginais[rep] == -1) repPixelsOriginais[rep] = pStar;  // elege o o primeiro original do platô
             }
         }
 
 
         std::vector<int> parent(numPixels, -1);
         std::vector<int> orderedPixels; orderedPixels.reserve(numPixels);
-        for (int i = 0; i < numPixelsInterp; ++i) {
+        for (int i = 0; i < numPixelsInterp; ++i) { // raiz -> folhas
             int pStar = orderedPixelsInterpolete[i];
             if (!isOriginal1D(pStar, interpNumCols)) continue;
 
@@ -636,19 +672,19 @@ public:
             }
             else if (sameLevel(parStar, pStar)) {
                 int repP = repOf(pStar);
-                if (repOrig[repP] == pStar) {
+                if (repPixelsOriginais[repP] == pStar) {
                     // pStar é o representante ORIGINAL do seu platô. Seu pai vem do platô ACIMA
                     int repAbove = repOf(parentInterpolate[repP]);
-                    qStar = repOrig[repAbove];
+                    qStar = repPixelsOriginais[repAbove];
                 } else {
                     // mesmo platô. Seu pai é o representante ORIGINAL do mesmo platô
-                    qStar = repOrig[repP];
+                    qStar = repPixelsOriginais[repP];
                 }
             }
             else {
                 // nível diferente. Seu pai é o representante ORIGINAL do platô do pai
                 int repPar = repOf(parStar);
-                qStar = repOrig[repPar];
+                qStar = repPixelsOriginais[repPar];
             }
 
             //projeção para o parent e orderedPixels originais
@@ -659,7 +695,7 @@ public:
         }
         
 
-        return std::make_tuple(parent, orderedPixels, numNodesInterpolateTree);
+        return std::make_tuple(parent, orderedPixels, numNodes);
     }
 
 };

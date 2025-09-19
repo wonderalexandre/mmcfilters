@@ -13,11 +13,152 @@
 #include "../include/AdjacencyRelation.hpp"
 #include "../include/BuilderMorphologicalTreeByUnionFind.hpp"
 
+
+//ComponentTree(ImageUInt8Ptr img, bool isMaxtree, double radius = 1.5);
+//ComponentTree(ImageUInt8Ptr img, std::string ToSInperpolation="self-dual");
+    
+
+ComponentTree::ComponentTree(ImageUInt8Ptr img, bool isMaxtree, double radius) : 
+    numRows(img->getNumRows()), numCols(img->getNumCols()), treeType( (isMaxtree? ComponentTree::MAX_TREE : ComponentTree::MIN_TREE) ), 
+    adj(std::make_shared<AdjacencyRelation>(numRows, numCols, radius)), numNodes(0){   
+
+        this->pixelToNodeId.resize(numRows * numCols, -1);
+        BuilderComponentTreeByUnionFind builderUF(adj.get(), isMaxtree);
+        build(img, builderUF);
+}
+
+ComponentTree::ComponentTree(ImageUInt8Ptr img, std::string ToSInperpolation):
+    numRows(img->getNumRows()), numCols(img->getNumCols()), treeType(ComponentTree::TREE_OF_SHAPES), 
+    adj(nullptr), numNodes(0){   
+        
+        this->pixelToNodeId.resize(numRows * numCols, -1);
+        BuilderTreeOfShapeByUnionFind builderUF( ToSInperpolation == "4c8c" );
+        build(img, builderUF);
+}
+
+
+void ComponentTree::build(const ImageUInt8Ptr& imgPtr, IMorphologicalTreeBuilder& builderUF){ 
+    
+    auto [parent, orderedPixels, numNodes] = builderUF.createTreeByUnionFind(imgPtr);
+
+    int numPixels = imgPtr->getSize();
+    auto img = imgPtr->rawData();
+
+    this->reserveNodes(numNodes);
+    this->pixelBuffer = std::make_shared<PixelSetManager>(numPixels, numNodes);
+    this->pixelView = this->pixelBuffer->view();
+    int indice = 0;
+    for (int i = 0; i < numPixels; i++) {
+        int p = orderedPixels[i];
+
+        //Construção da árvore e arena
+        if (p == parent[p]) {
+            pixelToNodeId[p] = this->root = this->makeNode(p, -1, img[p]);
+        } else if (img[p] != img[parent[p]]) {
+            pixelToNodeId[p] = this->makeNode(p, pixelToNodeId[parent[p]], img[p]);
+        } else {
+            pixelToNodeId[p] = pixelToNodeId[parent[p]];
+        }
+
+        //Construção de PixelSetManager
+        if (p == parent[p] || img[p] != img[parent[p]]) {
+            pixelView.indexToPixel[indice] = p;
+            pixelView.pixelToIndex[p] = indice;
+            pixelView.sizeSets[indice] = 1;
+            pixelView.pixelsNext[p] = p;
+            indice++;
+        } else {
+            pixelView.pixelsNext[p] = pixelView.pixelsNext[parent[p]];
+            pixelView.pixelsNext[parent[p]] = p;
+            int idx = pixelView.pixelToIndex[parent[p]];
+            pixelView.sizeSets[idx]++;
+        }
+    }
+
+
+	computerTreeAttributes();
+}
+
+
+template <typename PixelType>
+ComponentTreePtr ComponentTree::createFromAttributeMapping(ImagePtr<PixelType> attrMappingPtr, ImageUInt8Ptr imgPtr, bool isMaxtree, double radius) {
+    AdjacencyRelationPtr adj = std::make_shared<AdjacencyRelation>(imgPtr->getNumRows(), imgPtr->getNumCols(), radius);	
+    ComponentTreePtr tree = ComponentTree::create(imgPtr->getNumRows(), imgPtr->getNumCols(), isMaxtree, adj);
+    BuilderComponentTreeByUnionFind builderUF(adj.get(), isMaxtree);
+    auto [parent, orderedPixels, numNodes] = builderUF.createTreeByUnionFind(attrMappingPtr);
+
+    int numPixels = imgPtr->getSize();
+    auto img = imgPtr->rawData();
+    auto attrMapping = attrMappingPtr->rawData();
+
+    tree->reserveNodes(numNodes);
+    tree->pixelBuffer = std::make_shared<PixelSetManager>(numPixels, numNodes);
+    tree->pixelView = tree->pixelBuffer->view();
+    int indice = 0;
+    float epsilon = 1e-5f; // Tolerância para comparação de pixels flutuantes
+    
+    auto sameLevel = [&](PixelType a, PixelType b){ 
+        if constexpr (std::is_floating_point_v<PixelType>)
+            return std::fabs(attrMapping[a] - attrMapping[parent[b]]) < epsilon; 
+        else
+            return attrMapping[a] == attrMapping[b]; 
+    };
+
+    for (int i = 0; i < numPixels; i++) {
+        int p = orderedPixels[i];
+        //Construção da árvore e arena
+        if (p == parent[p]) {
+            tree->pixelToNodeId[p] = tree->root = tree->makeNode(p, -1, img[p]);
+        } 
+        else if (!sameLevel(p, parent[p])) {
+            tree->pixelToNodeId[p] = tree->makeNode(p, tree->pixelToNodeId[parent[p]], img[p]);
+        } 
+        else {
+            tree->pixelToNodeId[p] = tree->pixelToNodeId[parent[p]];
+        }
+        
+        //Construção de PixelSetManager
+        if (p == parent[p] || !sameLevel(p, parent[p])) {
+            tree->pixelView.indexToPixel[indice] = p;
+            tree->pixelView.pixelToIndex[p] = indice;
+            tree->pixelView.sizeSets[indice] = 1;
+            tree->pixelView.pixelsNext[p] = p;
+            indice++;
+        } else {
+            tree->pixelView.pixelsNext[p] = tree->pixelView.pixelsNext[parent[p]];
+            tree->pixelView.pixelsNext[parent[p]] = p;
+            int idx = tree->pixelView.pixelToIndex[parent[p]];
+            tree->pixelView.sizeSets[idx]++;
+        }
+    }
+    tree->computerTreeAttributes();
+
+    //ajustar o level de cada nó
+    for(NodeId id: tree->getNodeIds()){
+        int media = 0;
+        for(int p: tree->getCNPsById(id)){
+            media += img[p];
+        }
+        media /=  tree->getNumCNPsById(id); 
+        tree->setLevelById(id, media);
+    }
+    return tree;
+}
+
+
+
+/*inline NodeCT ComponentTree::proxy(NodeId id) const {
+    return NodeCT(const_cast<ComponentTree*>(this), id);
+}*/
+
 inline NodeCT ComponentTree::proxy(NodeId id) const {
-    if (id < 0) 
-        return NodeCT(); // handle vazio
-    else
-        return NodeCT(const_cast<ComponentTree*>(this), id);
+    if (id < 0 || id >= static_cast<NodeId>(arena.size())) {
+        throw std::out_of_range("Node ID is out of range in arena!");
+    }
+    if (arena.isFree(id)) { 
+        throw std::runtime_error("Node ID refers to a freed node in arena!");
+    }
+    return NodeCT(const_cast<ComponentTree*>(this), id);
 }
 
 inline NodeCT ComponentTree::getSC(int p) const noexcept { return proxy(this->pixelToNodeId[p]); }
@@ -26,9 +167,9 @@ inline NodeCT ComponentTree::getRoot() { return proxy(this->root); }
 inline void ComponentTree::setRoot(NodeCT n){ setRootById(n); }
 
 
-NodeId ComponentTree::makeNode(int repNode, NodeId parentId, int threshold1, int threshold2){
+NodeId ComponentTree::makeNode(int repNode, NodeId parentId, int threshold2){
     // Aloca ID contíguo
-    NodeId id = this->arena.allocate(repNode, threshold1, threshold2);
+    NodeId id = this->arena.allocate(repNode, threshold2);
 
     // Encadeia no pai (por ID) se houver
     if (parentId >= 0) {
@@ -142,78 +283,6 @@ inline void ComponentTree::spliceChildrenById(int toId, int fromId) {
 
 
 
-ComponentTree::ComponentTree(ImageUInt8Ptr img, bool isMaxtree, AdjacencyRelationPtr adj) : numRows(img->getNumRows()), numCols(img->getNumCols()), maxtreeTreeType(isMaxtree), adj(adj), numNodes(0){   
-    this->pixelToNodeId.resize(numRows * numCols, -1);
-    build(img);
-    
-}
-
-
-    
-
-void ComponentTree::build(ImageUInt8Ptr imgPtr){ 
-	
-    //BuilderComponentTreeByUnionFind buildUF;
-    //auto [parent, orderedPixels, numNodes] = buildUF.createTreeByUnionFind(imgPtr, this->isMaxtree(), adj.get());
-
-    BuilderTreeOfShapeByUnionFind buildUF;
-    
-    auto [parent, orderedPixels, numNodes] = buildUF.createTreeByUnionFind(imgPtr, true);
-    //std::tuple<std::vector<int>, std::vector<int>, int> tuple = buildUF.createTreeByUnionFind(imgPtr, false);
-    //std::vector<int> parent = std::get<0>(tuple);
-    //std::vector<int> orderedPixels = std::get<1>(tuple);
-    //int numNodes = std::get<2>(tuple);
-
-
-    int numPixels = imgPtr->getSize();
-    auto img = imgPtr->rawData();
-
-    this->reserveNodes(numNodes);
-    this->pixelBuffer = std::make_shared<PixelSetManager>(numPixels, numNodes);
-    this->pixelView = this->pixelBuffer->view();
-    int indice = 0;
-    for (int i = 0; i < numPixels; i++) {
-        int p = orderedPixels[i];
-
-        //Construção da árvore e arena
-        if (p == parent[p]) {
-            int threshold1 = this->maxtreeTreeType ? 0 : 255;
-            int threshold2 = img[p];
-            pixelToNodeId[p] = this->root = this->makeNode(p, -1, threshold1, threshold2);
-        } else if (img[p] != img[parent[p]]) {
-            int threshold1 = this->maxtreeTreeType ? img[parent[p]] + 1 : img[parent[p]] - 1;
-            int threshold2 = img[p];
-            
-            //int paiP = parent[p];
-            //int idPaiP = pixelToNodeId[parent[p]];
-
-            pixelToNodeId[p] = this->makeNode(p, pixelToNodeId[parent[p]], threshold1, threshold2);
-        } else {
-            pixelToNodeId[p] = pixelToNodeId[parent[p]];
-            if(pixelToNodeId[p] == -1){
-                std::cout << "Ops...." <<std::endl;
-                return;
-            }
-        }
-
-        //Construção de PixelSetManager
-        if (p == parent[p] || img[p] != img[parent[p]]) {
-            pixelView.indexToPixel[indice] = p;
-            pixelView.pixelToIndex[p] = indice;
-            pixelView.sizeSets[indice] = 1;
-            pixelView.pixelsNext[p] = p;
-            indice++;
-        } else {
-            pixelView.pixelsNext[p] = pixelView.pixelsNext[parent[p]];
-            pixelView.pixelsNext[parent[p]] = p;
-            int idx = pixelView.pixelToIndex[parent[p]];
-            pixelView.sizeSets[idx]++;
-        }
-    }
-
-
-	computerTreeAttributes();
-}
 
 void ComponentTree::computerTreeAttributes(){
 

@@ -16,8 +16,7 @@
 #define COMPONENT_TREE_H
 
 // Forward declaration do builder externo
-class BuilderComponentTreeByUnionFind;
-class BuilderTreeOfShapeByUnionFind; 
+class IMorphologicalTreeBuilder; 
 class NodeCT;
 
 /**
@@ -67,8 +66,6 @@ class NodeArena {
     private:
     friend class ComponentTree; 
     friend class NodeCT; 
-    friend class BuilderComponentTreeByUnionFind; 
-    friend class BuilderTreeOfShapeByUnionFind; 
 
     std::vector<int>      repNode;       // representante do UF
     std::vector<int>      threshold2;    // level (max threshold)
@@ -92,7 +89,7 @@ class NodeArena {
     public:
    
     // --- gerenciamento ---
-    inline NodeId allocate(int rep, int thr1, int thr2) {
+    inline NodeId allocate(int rep, int thr2) {
         // 1) Reutiliza ID livre, se houver
         if (!freeIds.empty()) {
             NodeId id = freeIds.back();
@@ -101,7 +98,6 @@ class NodeArena {
             // Reinicializa o slot existente
             repNode[id]      = rep;              // representante UF
             threshold2[id]   = thr2;             // level
-            (void)thr1; //threshold1[id] = thr1;
             areaCC[id]       = 0;
             
             parentId[id]     = -1;
@@ -119,7 +115,6 @@ class NodeArena {
         NodeId id = static_cast<NodeId>(repNode.size());
         repNode.push_back(rep);
         threshold2.push_back(thr2);
-        (void)thr1; //threshold1.push_back(thr1);
         areaCC.push_back(0);
         parentId.push_back(-1);
         firstChildId.push_back(-1);
@@ -133,7 +128,7 @@ class NodeArena {
     }
 
     inline void reserve(size_t n) {
-        repNode.reserve(n); threshold2.reserve(n); /*threshold1.reserve(n);*/ areaCC.reserve(n);
+        repNode.reserve(n); threshold2.reserve(n); areaCC.reserve(n);
         parentId.reserve(n); firstChildId.reserve(n); nextSiblingId.reserve(n); 
         prevSiblingId.reserve(n); lastChildId.reserve(n); childCount.reserve(n);
         timePreOrder.reserve(n); timePostOrder.reserve(n);
@@ -343,18 +338,19 @@ protected:
     NodeId root;
     int numRows;
     int numCols;
-    bool maxtreeTreeType; //maxtree is true; mintree is false
     AdjacencyRelationPtr adj; //disk of a given ratio: ratio(1) for 4-connect and ratio(1.5) for 8-connect 
     int numNodes;
-    
+    int treeType; //0-mintree, 1-maxtree, 2-tree of shapes
+
+
     std::vector<NodeId> pixelToNodeId; //Mapeamento dos pixels representantes para NodeID. Para adquirir todos os representantes valido utilize o método getRepCNPs
     std::shared_ptr<PixelSetManager> pixelBuffer; PixelSetManager::View pixelView; //gerenciamento de pixels da arvore
     NodeArena arena; // armazenamento indexado dos dados de todos os nós 
     
-    NodeId makeNode(int repNode, NodeId parentId, int threshold1, int threshold2);
+    NodeId makeNode(int repNode, NodeId parentId, int threshold2);
     void reserveNodes(int expected) { arena.reserve(expected);}
     void reconstruction(NodeId node, uint8_t* data);
-    void build(ImageUInt8Ptr img);
+    void build(const ImageUInt8Ptr& imgPtr, IMorphologicalTreeBuilder& builderUF);
 
 	void computerIncrementalAttributes(NodeId root, 
 										std::function<void(NodeId)> preProcessing,
@@ -370,12 +366,37 @@ protected:
 	}
 
     void computerTreeAttributes();
-
+    ComponentTree() = default;
 public:
 
+   	static const int MAX_TREE = 0;
+	static const int MIN_TREE = 1;
+	static const int TREE_OF_SHAPES = 2;
 
-    ComponentTree(ImageUInt8Ptr img, bool isMaxtree, AdjacencyRelationPtr adj);    
+	ComponentTree(ImageUInt8Ptr img, std::string ToSInperpolation="self-dual");
+	explicit ComponentTree(ImageUInt8Ptr img, bool isMaxtree, double radius = 1.5);
+    ComponentTree(ImageUInt8Ptr img, const char* ToSInterpolation) : ComponentTree(img, std::string(ToSInterpolation)) {}
+
     virtual ~ComponentTree() = default;
+
+    static ComponentTreePtr create(int rows, int cols, bool isMaxtree, AdjacencyRelationPtr adj) {
+        struct Enabler : public ComponentTree {
+            Enabler(int r, int c, bool m, AdjacencyRelationPtr a) {
+                this->numRows = r;
+                this->numCols = c;
+                this->treeType = m ? MAX_TREE : MIN_TREE;
+                this->adj = a;
+            }
+        };
+        return std::make_shared<Enabler>(rows, cols, isMaxtree, adj);
+    }
+    
+
+    template <typename PixelType>
+    static ComponentTreePtr createFromAttributeMapping(ImagePtr<PixelType> attrMappingPtr, ImageUInt8Ptr imgPtr, bool isMaxtree, double radius);
+
+
+    
 
     NodeCT proxy(NodeId id) const;
     NodeCT getSC(int p) const noexcept;
@@ -383,7 +404,8 @@ public:
     NodeCT getRoot();
     void setRoot(NodeCT n);
 
-    inline bool isMaxtree()const noexcept{ return maxtreeTreeType;}
+    int getTreeType() const noexcept{return treeType;}
+    inline bool isMaxtree()const noexcept{ return treeType == MAX_TREE;}
     inline int getNumNodes()const noexcept{ return numNodes; }
     inline int getNumRowsOfImage()const noexcept{ return numRows;}
     inline int getNumColsOfImage()const noexcept{ return numCols;}
@@ -532,6 +554,62 @@ public:
     }
     
     // ====================== Iteradores por ID (sem proxy) ====================== //
+
+    // ================== Iterador de NodeIds VÁLIDOS — versão otimizada ================== //
+    class InternalIteratorValidNodeIds {
+    private:
+        const int* rep_;        // ponteiro p/ arena.repNode[0]
+        NodeId cur_;            // posição atual
+        NodeId end_;            // N = arena.repNode.size()
+
+        // avança cur_ até um id válido ou coloca cur_ = end_
+        inline void settle_() noexcept {
+            while (cur_ < end_ && rep_[cur_] == -1) ++cur_;
+        }
+
+    public:
+        using iterator_category = std::input_iterator_tag;
+        using value_type        = NodeId;
+        using difference_type   = std::ptrdiff_t;
+        using pointer           = const NodeId*;
+        using reference         = const NodeId&;
+
+        inline InternalIteratorValidNodeIds(ComponentTree* T, NodeId start) noexcept
+        : rep_(T ? T->arena.repNode.data() : nullptr),
+        cur_(T ? start : 0),
+        end_(T ? static_cast<NodeId>(T->arena.repNode.size()) : 0) {
+            settle_();
+        }
+
+        inline InternalIteratorValidNodeIds& operator++() noexcept {
+            ++cur_;
+            settle_();
+            return *this;
+        }
+
+        inline NodeId operator*() const noexcept { return cur_; }
+
+        // iterador input: comparar só posição é suficiente
+        inline bool operator==(const InternalIteratorValidNodeIds& other) const noexcept { return cur_ == other.cur_; }
+        inline bool operator!=(const InternalIteratorValidNodeIds& other) const noexcept { return cur_ != other.cur_; }
+    };
+
+    class IteratorValidNodeIds {
+    private:
+        ComponentTree* T_ = nullptr;
+    public:
+        inline explicit IteratorValidNodeIds(ComponentTree* T) noexcept : T_(T) {}
+
+        inline InternalIteratorValidNodeIds begin() const noexcept { return InternalIteratorValidNodeIds(T_, 0); }
+        // sentinela: construtor com T=nullptr dá end_=0, cur_=0 → iguala quando begin() também chega ao fim
+        inline InternalIteratorValidNodeIds end()   const noexcept { return InternalIteratorValidNodeIds(nullptr, 0); }
+    };
+
+    /** Range para iterar NodeId válidos (exclui slots livres) */
+    inline IteratorValidNodeIds getNodeIds() noexcept { return IteratorValidNodeIds(this); }
+    inline IteratorValidNodeIds getNodeIds() const noexcept { return IteratorValidNodeIds(const_cast<ComponentTree*>(this)); }
+
+
     // Pós-ordem (retorna NodeId)
     class InternalIteratorPostOrderTraversalId {
     private:

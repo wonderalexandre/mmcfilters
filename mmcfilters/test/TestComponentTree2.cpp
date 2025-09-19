@@ -2,6 +2,7 @@
 #include "../include/AdjacencyRelation.hpp"
 #include "../include/ComponentTree.hpp"
 #include "../include/Common.hpp"
+#include "../include/NodeCT.hpp"
 
 #include "Tests2.hpp"
 
@@ -11,20 +12,19 @@
 
 
 int main(){
-    auto img = getLenaCropImage();
+    auto img = getSimpleImage();
     double radioAdj = 1.5;
     printImage(img);
 
     // Criação das Component Trees
-    AdjacencyRelationPtr adj =std::make_shared<AdjacencyRelation>(img->getNumRows(), img->getNumCols(), radioAdj);
-    ComponentTreePtr maxtree = std::make_shared<ComponentTree>(img, false, adj);
+    ComponentTreePtr maxtree = std::make_shared<ComponentTree>(img, true);
 
     auto imgMaxtree = maxtree->reconstructionImage();
     printTree(maxtree->getRoot());
     testComponentTree(maxtree, "maxtreeFZ sem grafo", imgMaxtree);
 
     NodeId nodeId = maxtree->getLeaves().front();// maxtree->getSC(28);
-    NodeCT node = maxtree->proxy(7);
+    NodeCT node = maxtree->proxy(5);
     std::cout << "\nNode - ID: " << node.getIndex() << ", Level: " << node.getLevel() << ", Area: " << node.getArea() << "\n" << std::endl;
     maxtree->prunning(node);
 

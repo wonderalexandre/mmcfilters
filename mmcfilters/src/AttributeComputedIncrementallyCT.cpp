@@ -2,15 +2,16 @@
 #include <map>
 #include <typeindex>
 #include <limits>
-
 #include "../include/AttributeComputedIncrementallyCT.hpp"
+#include "../include/AttributeComputerCT.hpp"
 
-
+/*
 void AttributeComputedIncrementallyCT::preProcessing(NodeId v){}
 
 void AttributeComputedIncrementallyCT::mergeChildren(NodeId parent, NodeId child){}
 
 void AttributeComputedIncrementallyCT::postProcessing(NodeId parent){}
+
 
 void AttributeComputedIncrementallyCT::computerAttribute(ComponentTree* tree, NodeId root) {
         preProcessing(root);
@@ -19,7 +20,7 @@ void AttributeComputedIncrementallyCT::computerAttribute(ComponentTree* tree, No
             mergeChildren(root, child);
         }
         postProcessing(root);
-}
+}*/
 
 
 ImageFloatPtr AttributeComputedIncrementallyCT::computerAttributeMapping(ComponentTree* tree, Attribute attribute) {
@@ -205,8 +206,6 @@ std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> At
     // Aloca buffer do novo atributo delta (inicializado com zero)
     std::shared_ptr<float[]> attrsDelta(new float[n * attributeNamesDelta->NUM_ATTRIBUTES]());
 
-    PathAscendantsAndDescendantsCT pathAscDesc(tree);
-
     // Para d = 0, copia valor do próprio nó SEMPRE
     for (NodeId nodeIndex : tree->getNodeIds()) {
         int outIdx = attributeNamesDelta->linearIndex(nodeIndex, attribute, 0);
@@ -216,10 +215,8 @@ std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> At
 
     // Para d > 0, só copia se realmente existe ascendente/descendente (zero-padding padrão)
     for (int d = 1; d <= delta; ++d) {
-        pathAscDesc.computerAscendantsAndDescendants(d);
-        const auto& ascendants = pathAscDesc.getAscendants();
-        const auto& descendants = pathAscDesc.getDescendants();
-
+        auto [ascendants, descendants] = tree->computerAscendantsAndDescendants(d);
+        
         for (NodeId nodeIndex : tree->getNodeIds()) {
             
             // Ascendente (-d)
@@ -241,10 +238,8 @@ std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> At
 
     // 4. Preenche delta > 0 (só copia se realmente existe ascendente/descendente)
     for (int d = 1; d <= delta; ++d) {
-        pathAscDesc.computerAscendantsAndDescendants(d);
-        const auto& ascendants = pathAscDesc.getAscendants();
-        const auto& descendants = pathAscDesc.getDescendants();
-
+        auto [ascendants, descendants] = tree->computerAscendantsAndDescendants(d);
+        
         for (NodeId nodeIndex : tree->getNodeIds()) {
 
             // Ascendente (-d)
@@ -494,8 +489,6 @@ std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeCo
 
     return {attrNames, buffer};
 }
-
-
 
 
 std::shared_ptr<ContoursCT> AttributeComputedIncrementallyCT::extractCompactContours(ComponentTree* tree){

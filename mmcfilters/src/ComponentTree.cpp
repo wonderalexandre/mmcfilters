@@ -190,7 +190,7 @@ void ComponentTree::computerTreeAttributes(){
 	int timer = 0;
 	//int maxDepth = 0;
 	//std::vector<int> depth(this->numNodes);
-	computerIncrementalAttributes(this->root,
+	computerIncrementalAttributes(this, this->root,
 		[&](NodeId nodeId) -> void { //pre-processing
             arena.areaCC[nodeId] = getNumCNPsById(nodeId);;
             arena.timePreOrder[nodeId] = timer++;

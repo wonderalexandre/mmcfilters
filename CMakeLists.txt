@@ -101,14 +101,28 @@ if(BUILD_TESTS)
     target_link_libraries(TesteCountors PRIVATE mmcfilters_lib)
     target_compile_options(TesteCountors PRIVATE -Wno-deprecated-declarations)
 
-        # Adicionar o executável de testes: 
+    add_executable(TesteCountorsCT
+        mmcfilters/test/TesteCountorsCT.cpp
+        external/stb/stb_image.cpp
+    )
+    target_link_libraries(TesteCountorsCT PRIVATE mmcfilters_lib)
+    target_compile_options(TesteCountorsCT PRIVATE -Wno-deprecated-declarations)
+
     add_executable(TesteCountors2 
         mmcfilters/test/TesteCountors2.cpp
         external/stb/stb_image.cpp
     )
     target_link_libraries(TesteCountors2 PRIVATE mmcfilters_lib)
     target_compile_options(TesteCountors2 PRIVATE -Wno-deprecated-declarations)
-        
+     
+    add_executable(TesteCountors2CT 
+        mmcfilters/test/TesteCountors2CT.cpp
+        external/stb/stb_image.cpp
+    )
+    target_link_libraries(TesteCountors2CT PRIVATE mmcfilters_lib)
+    target_compile_options(TesteCountors2CT PRIVATE -Wno-deprecated-declarations)
+  
+
     add_executable(TesteAdjacencyUC 
         mmcfilters/test/TesteAdjacencyUC.cpp
         external/stb/stb_image.cpp

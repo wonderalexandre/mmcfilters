@@ -99,6 +99,7 @@ inline void printMappingSC(MorphologicalTreePtr tree, int setw=4, std::string no
     }
 
 }
+
 inline void printConnectedComponents(MorphologicalTreePtr tree, int setw=3, std::string nomeArquivo = ""){
     int numRows = tree->getNumRowsOfImage();
     int numCols = tree->getNumColsOfImage();

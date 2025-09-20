@@ -186,6 +186,90 @@ inline  void printConnectedComponent(NodeCT node, ComponentTreePtr tree, std::st
 }
 
 
+inline void printConnectedComponents(ComponentTreePtr tree, int setw=3, std::string nomeArquivo = ""){
+    int numRows = tree->getNumRowsOfImage();
+    int numCols = tree->getNumColsOfImage();
+    int n = numRows*numCols;
+    std::ostream* streamSaida;
+    std::ofstream arquivoSaida;
+
+    if (nomeArquivo.empty()) {
+        streamSaida = &std::cout;
+    } else {
+        arquivoSaida.open(nomeArquivo); 
+        if (!arquivoSaida.is_open()) {
+            std::cerr << "Erro ao abrir o arquivo para escrita." << std::endl;
+            return;
+        }
+        streamSaida = &arquivoSaida;
+    }
+    auto printTreeType = [](int tipo) {
+        if (tipo == 0)
+            return "max-tree";
+        else if (tipo == 1)
+            return "min-tree";
+        else
+            return "tree of shapes";
+    };
+    *streamSaida << "----------- Connected components of "<< printTreeType(tree->getTreeType()) <<"  -----------\n" << std::endl;
+    for(NodeId nodeId: tree->getIteratorBreadthFirstTraversalById()){
+        NodeCT node = tree->proxy(nodeId);
+        *streamSaida << "printCC: ---- "
+                    << "ID: " << node
+                    << ", parentID: " << node.getParent() 
+                    << ", repNode: " << node.getRepNode()
+                    << ", level:" << node.getLevel() 
+                    << ", |children|:" << node.getNumChildren() 
+                    << ", |cnps|:" << node.getNumCNPs()
+                    << ", Area:" << node.getArea()  
+                    << ", numDescendentes:" << node.getNumDescendants()
+                    << " ---\n";
+        
+        // Imprime o cabeçalho de colunas
+        *streamSaida << std::setw(setw) << " "; // espaço para a primeira coluna (índice da linha)
+        for (int col = 0; col < numCols; col++) {
+            *streamSaida << std::setw(setw) << col;
+        }
+        *streamSaida << "\n";                 
+        // Impressão bidimensional
+        std::vector<bool> imageReps(n, false);
+        imageReps[node.getRepNode()] = true;
+        std::vector<bool> imageCNPs(n, false);
+        for (int p : tree->getCNPsById(node)) {
+            imageCNPs[p] = true;
+        }
+        std::vector<bool> imageCC(n, false);
+        for (int p : tree->getPixelsOfCCById(node)) {
+            imageCC[p] = true;
+        }
+
+        for (int row = 0; row < numRows; ++row) {
+            *streamSaida << std::setw(setw) << row; // índice da linha
+            for (int col = 0; col < numCols; ++col) {
+                int index = ImageUtils::to1D(row, col, numCols);
+                if (imageReps[index]) {
+                    *streamSaida << std::setw(setw) << "  🅡";
+                }
+                else if (imageCNPs[index]) {
+                    *streamSaida << std::setw(setw) << "  🅲";
+                }
+                else if (imageCC[index]){
+                    *streamSaida << std::setw(setw) << "  🅇";
+                }
+                else{
+                    *streamSaida << std::setw(setw) << "  ·";
+                }
+            }
+            *streamSaida << "\n";
+        }
+        
+    }
+    if (streamSaida != &std::cout){
+        dynamic_cast<std::ofstream*>(streamSaida)->close(); // std::cout não precisa ser fechado explicitamente
+    }
+}
+
+
 
 /**
  * @brief Imprime os valores de uma imagem `uint8` com índices de linha/coluna.

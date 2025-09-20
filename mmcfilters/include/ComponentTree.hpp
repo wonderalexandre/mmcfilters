@@ -353,18 +353,53 @@ protected:
     void reconstruction(NodeId node, uint8_t* data);
     void build(const ImageUInt8Ptr& imgPtr, IMorphologicalTreeBuilder& builderUF);
 
-	void computerIncrementalAttributes(NodeId root, 
-										std::function<void(NodeId)> preProcessing,
-										std::function<void(NodeId, NodeId)> mergeChildren,
-										std::function<void(NodeId)> postProcessing ){
-		
-		preProcessing(root);
-		for(NodeId child: getChildrenById(root)){
-			computerIncrementalAttributes(child, preProcessing, mergeChildren, postProcessing);
-			mergeChildren(root, child);
-		}
-		postProcessing(root);
-	}
+    NodeId getNodeAscendant(NodeId node, int h, bool useLevel) {
+        NodeId current = node;
+        if(useLevel){
+            for(int i=0; i <= h; i++){
+                if(isMaxtreeNodeById(node)){
+                    if(getLevelById(node) >= getLevelById(current) + h)
+                        return current;
+                }else{
+                    if(getLevelById(node) <= getLevelById(current) - h)
+                        return current;
+                }
+                if(getParentById(current) != InvalidNode)
+                    current = getParentById(current);
+                else 
+                    return current;
+            }
+        }
+        else{
+            int step = 0;
+            while (step++ < h) {
+                current = getParentById(current);
+                if (current == -1) return current;
+            }
+        }
+        return current;
+    }
+
+    void maxAreaDescendants(std::vector<NodeId>& descendants, NodeId nodeAsc, NodeId nodeDes) {
+        if (descendants[nodeAsc] == InvalidNode)
+            descendants[nodeAsc] = nodeDes;
+
+        if (getAreaById(descendants[nodeAsc]) < getAreaById(nodeDes))
+            descendants[nodeAsc] = nodeDes;
+    }
+
+    template<class PreProcessing, class MergeProcessing, class PostProcessing>
+    static void computerIncrementalAttributes(ComponentTree* tree, NodeId root, 
+                                    PreProcessing&& preProcessing, 
+                                    MergeProcessing&& mergeProcessing, 
+                                    PostProcessing&& postProcessing) {
+        preProcessing(root);
+        for (NodeId child : tree->getChildrenById(root)) {
+            computerIncrementalAttributes(tree, child, preProcessing, mergeProcessing, postProcessing); 
+            mergeProcessing(root, child);
+        }
+        postProcessing(root);
+    }
 
     void computerTreeAttributes();
     ComponentTree() = default;
@@ -626,6 +661,23 @@ public:
         }
         infoMsg("A estrutura de filhos/irmãos está consistente");
         return true;
+    }
+
+    // Retorna o ascendente de 'node' que está 'delta' níveis acima na hierarquia.
+    // Se não houver ascendente nesse nível, retorna InvalidNode.
+    std::pair<std::vector<NodeId>, std::vector<NodeId>> computerAscendantsAndDescendants(int delta, bool useLevel = false) {
+        std::vector<NodeId> ascendants(getNumNodes(), InvalidNode);
+        std::vector<NodeId> descendants(getNumNodes(), InvalidNode);
+        
+        for (NodeId node: getNodeIds()) {
+            NodeId nodeAsc = getNodeAscendant(node, delta, useLevel);
+            if (nodeAsc == InvalidNode) continue;
+            maxAreaDescendants(descendants, nodeAsc, node);
+            if (descendants[nodeAsc] != InvalidNode) {
+                ascendants[node] = nodeAsc;
+            }
+        }
+        return {ascendants, descendants};
     }
     
     static std::vector<NodeId> getNodesThreshold(ComponentTreePtr tree, int areaThreshold){

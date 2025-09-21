@@ -1,0 +1,365 @@
+#pragma once
+
+#include "../include/Common.hpp"
+#include "../include/NodeCT.hpp"
+#include "../include/ComponentTree.hpp"
+#include "../include/AttributeComputedIncrementallyCT.hpp"
+//#include "../include/NodeRes.hpp"
+#include "../include/AttributeOpeningPrimitivesFamilyCT.hpp"
+//#include "../include/ResidualTree.hpp"
+#include "../include/ComputerMSERCT.hpp"
+
+#include <stack>
+#include <vector>
+#include <limits.h>
+
+
+
+#define UNDEF -999999999999
+
+class AttributeFiltersCT;
+using AttributeFiltersCTPtr = std::shared_ptr<AttributeFiltersCT>;
+
+class AttributeFiltersCT{
+    protected:
+        ComponentTree* tree;
+
+    public:
+
+    AttributeFiltersCT(ComponentTree* tree);
+    AttributeFiltersCT(ComponentTreePtr tree);
+
+    ~AttributeFiltersCT();
+
+    std::vector<bool> getAdaptativeCriterion(std::vector<bool>& criterion, int delta);
+
+    ImageUInt8Ptr filteringByPruningMin(std::shared_ptr<float[]> attr, float threshold);
+
+    ImageUInt8Ptr filteringByPruningMax(std::shared_ptr<float[]> attr, float threshold);
+
+    ImageUInt8Ptr filteringByPruningMin(std::vector<bool>& criterion);
+
+    ImageUInt8Ptr filteringByPruningMax(std::vector<bool>& criterion);
+
+    ImageUInt8Ptr filteringByDirectRule(std::vector<bool>& criterion);
+
+    ImageUInt8Ptr filteringBySubtractiveRule(std::vector<bool>& criterion);
+
+    ImageFloatPtr filteringBySubtractiveScoreRule(std::vector<float>& prob);
+
+    ImageUInt8Ptr filteringByExtinctionValue(ComponentTree* tree, std::shared_ptr<float[]> attribute, int numLeaf);
+
+    static void filteringBySubtractiveScoreRule(ComponentTreePtr tree, std::vector<float>& prob, ImageFloatPtr imgOutputPtr){ return filteringBySubtractiveScoreRule(tree.get(), prob, imgOutputPtr);}
+    static void filteringBySubtractiveScoreRule(ComponentTree* tree, std::vector<float>& prob, ImageFloatPtr imgOutputPtr){
+        std::unique_ptr<float[]> mapLevel(new float[tree->getNumNodes()]);
+        
+        //the root is always kept
+        mapLevel[0] = tree->getLevelById( tree->getRootById() );
+
+        for(NodeId node: tree->getNodeIds()){
+            if(tree->getParentById(node) != InvalidNode){ 
+                int residue = tree->getResidueById(node);
+                if(tree->isMaxtreeNodeById(node))
+                    mapLevel[node] =  (float)mapLevel[tree->getParentById(node)] + (residue * prob[node]);
+                else
+                    mapLevel[node] = (float) mapLevel[tree->getParentById(node)] - (residue * prob[node]);
+            }
+        }
+        auto imgOutput = imgOutputPtr->rawData();
+        for(NodeId node: tree->getNodeIds()){
+            for (int pixel : tree->getCNPsById(node)){
+                imgOutput[pixel] = mapLevel[node];
+            }
+        }
+    }
+
+    /*
+    static void filteringByResidualRule(ResidualTree* rtree, std::shared_ptr<float[]> attribute, float threshold, ImageUInt8Ptr imgOutputPtr){
+        std::stack<NodeResPtr> s;
+        for (NodeResPtr node : rtree->getRoot()->getChildren()){
+            s.push(node);
+        }
+        ComponentTree* ctree = rtree->getCTree();
+        std::unique_ptr<int[]> mapLevel(new int[ctree->getNumNodes()]);
+        for(NodeId nodeCT: ctree->getNodeIds()){
+            mapLevel[nodeCT] = 0;
+        } 
+
+        while (!s.empty()){
+            NodeResPtr node = s.top(); s.pop();
+            for (NodeId nodeCT : node->getNodeInNr()){
+                if(tree->getParentById(nodeCT) != InvalidNode){
+                    if(attribute[node->getRootNr()] > threshold)
+                        mapLevel[nodeCT] =  mapLevel[tree->getParentById(nodeCT)] + tree->getResidueById(nodeCT);
+                    else
+                        mapLevel[nodeCT] =  mapLevel[tree->getParentById(nodeCT)];
+                }
+            }            
+            for (NodeResPtr child : node->getChildren()){
+                s.push(child);
+            }
+        }
+
+        auto imgOutput = imgOutputPtr->rawData();
+        auto restOfImage = rtree->getRestOfImage()->rawData();
+        for(NodeId node:  ctree->getNodeIds()){
+            for (int pixel : tree->getCNPsById(node)){
+                if(ctree->isMaxtree())
+                    imgOutput[pixel] = restOfImage[pixel] + mapLevel[node];
+                else
+                    imgOutput[pixel] = restOfImage[pixel] - mapLevel[node];
+            }
+        }
+
+    }
+*/
+
+    static void filteringBySubtractiveRule(ComponentTreePtr tree, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr){ return filteringBySubtractiveRule(tree.get(), criterion, imgOutputPtr); }
+    static void filteringBySubtractiveRule(ComponentTree* tree, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr){
+        std::unique_ptr<int[]> mapLevel(new int[tree->getNumNodes()]);
+        //the root is always kept
+        mapLevel[0] = tree->getLevelById( tree->getRootById() );
+
+        for(NodeId node: tree->getNodeIds()){
+            if(tree->getParentById(node) != InvalidNode){ 
+                if(criterion[node]){
+                    if(tree->isMaxtreeNodeById(node))
+                        mapLevel[node] = mapLevel[tree->getParentById(node)] + tree->getResidueById(node);
+                    else
+                        mapLevel[node] = mapLevel[tree->getParentById(node)] - tree->getResidueById(node);
+                }
+                else
+                    mapLevel[node] = mapLevel[tree->getParentById(node)];
+            }
+
+        }
+
+        auto imgOutput = imgOutputPtr->rawData();
+        for(NodeId node: tree->getNodeIds()){
+            for (int pixel : tree->getCNPsById(node)){
+                imgOutput[pixel] = mapLevel[node];
+            }
+        }
+    }
+
+    static void filteringByDirectRule(ComponentTreePtr tree, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr){ return filteringByDirectRule(tree.get(), criterion, imgOutputPtr); }
+    static void filteringByDirectRule(ComponentTree* tree, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr){
+        std::unique_ptr<int[]> mapLevel(new int[tree->getNumNodes()]);
+
+        //the root is always kept
+        mapLevel[0] = tree->getLevelById( tree->getRootById() );
+
+        for(NodeId node: tree->getNodeIds()){
+            if(tree->getParentById(node) != InvalidNode){ 
+                if(criterion[node])
+                    mapLevel[node] = tree->getLevelById(node);
+                else
+                    mapLevel[node] = mapLevel[tree->getParentById(node)];
+            }
+
+        }
+        auto imgOutput = imgOutputPtr->rawData();
+        for(NodeId node: tree->getNodeIds()){
+            for (int pixel : tree->getCNPsById(node)){
+                imgOutput[pixel] = mapLevel[node];
+            }
+        }
+    }
+
+    static void filteringByPruningMin(ComponentTreePtr tree, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr){ return filteringByPruningMin(tree.get(), criterion, imgOutputPtr); }
+    static void filteringByPruningMin(ComponentTree* tree, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr){
+        std::stack<NodeId> s;
+        s.push(tree->getRootById());
+        auto imgOutput = imgOutputPtr->rawData();
+        while(!s.empty()){
+            NodeId node = s.top(); s.pop();
+            for (int pixel : tree->getCNPsById(node)){
+                imgOutput[pixel] = tree->getLevelById(node);;
+            }
+            for (NodeId child: tree->getChildrenById(node)){
+                if(criterion[child]){
+                    s.push(child);
+                }else{
+                    for(int pixel:  tree->getPixelsOfCCById(child)){
+                        imgOutput[pixel] = tree->getLevelById(child);
+                    }
+                }
+            }
+        }
+    }
+
+    static void filteringByPruningMax(ComponentTreePtr tree, std::vector<bool>& _criterion, ImageUInt8Ptr imgOutputPtr){ return filteringByPruningMax(tree.get(), _criterion, imgOutputPtr); }
+    static void filteringByPruningMax(ComponentTree* tree, std::vector<bool>& _criterion, ImageUInt8Ptr imgOutputPtr){
+        std::vector<uint8_t> criterion(tree->getNumNodes(), false);
+        AttributeComputedIncrementallyCT::computerAttribute(tree, tree->getRootById(),
+            [&criterion, _criterion](NodeId node) -> void { //pre-processing
+                if(!_criterion[node])
+                    criterion[node] = true;
+                else
+                    criterion[node] = false;
+            },
+            [&criterion](NodeId parent, NodeId child) -> void { 
+                criterion[parent] = (criterion[parent] & criterion[child]);
+            },
+            [](NodeId node) -> void { //post-processing
+                                        
+            }
+        );
+        auto imgOutput = imgOutputPtr->rawData();
+        std::stack<NodeId> s;
+        s.push(tree->getRootById());
+        while(!s.empty()){
+            NodeId node = s.top(); s.pop();
+            for (int pixel : tree->getCNPsById(node)){
+                imgOutput[pixel] = tree->getLevelById(node);
+            }
+            for (NodeId child: tree->getChildrenById(node)){
+                if(!criterion[child]){
+                    s.push(child);
+                }else{
+                    for(int pixel: tree->getPixelsOfCCById(child)){
+                        imgOutput[pixel] = tree->getLevelById(child);
+                    }
+                }
+            }
+        }
+    }
+
+    static void filteringByPruningMin(ComponentTreePtr tree, std::shared_ptr<float[]> attribute, float threshold, ImageUInt8Ptr imgOutputPtr){ return filteringByPruningMin(tree.get(), attribute, threshold, imgOutputPtr); }
+    static void filteringByPruningMin(ComponentTree* tree, std::shared_ptr<float[]> attribute, float threshold, ImageUInt8Ptr imgOutputPtr){
+        auto imgOutput = imgOutputPtr->rawData();
+        std::stack<NodeId> s;
+        s.push(tree->getRootById());
+        while(!s.empty()){
+            NodeId node = s.top(); s.pop();
+            for (int pixel : tree->getCNPsById(node)){
+                imgOutput[pixel] = tree->getLevelById(node);
+            }
+            for (NodeId child: tree->getChildrenById(node)){
+                if(attribute[child] > threshold){
+                    s.push(child);
+                }else{
+                    for(int pixel: tree->getPixelsOfCCById(child)){
+                        imgOutput[pixel] =  tree->getLevelById(node);
+                    }
+                }
+                
+            }
+        }
+    }
+
+    static void filteringByPruningMax(ComponentTreePtr tree, std::shared_ptr<float[]> attribute, float threshold, ImageUInt8Ptr imgOutputPtr){ return filteringByPruningMax(tree.get(), attribute, threshold, imgOutputPtr); }
+    static void filteringByPruningMax(ComponentTree* tree, std::shared_ptr<float[]> attribute, float threshold, ImageUInt8Ptr imgOutputPtr){
+        std::vector<uint8_t> criterion(tree->getNumNodes(), false);
+        AttributeComputedIncrementallyCT::computerAttribute(tree, tree->getRootById(),
+            [&criterion, attribute, threshold](NodeId node) -> void { //pre-processing
+                if(attribute[node] <= threshold)
+                    criterion[node] = true;
+            },
+            [&criterion, attribute, threshold](NodeId parent, NodeId child) -> void { 
+                criterion[parent] = (criterion[parent] & criterion[child]);
+            },
+            [&criterion, attribute, threshold](NodeId node) -> void { //post-processing
+                                        
+            }
+        );
+        auto imgOutput = imgOutputPtr->rawData();
+        std::stack<NodeId> s;
+        s.push(tree->getRootById());
+        while(!s.empty()){
+            NodeId node = s.top(); s.pop();
+            for (int pixel : tree->getCNPsById(node)){
+                imgOutput[pixel] = tree->getLevelById(node);
+            }
+            for (NodeId child: tree->getChildrenById(node)){
+                if(!criterion[child]){
+                    s.push(child);
+                }else{
+                    for(int pixel: tree->getPixelsOfCCById(child)){
+                        imgOutput[pixel] =  tree->getLevelById(node);
+                    }
+                }
+            }
+        }
+    }
+
+    static std::vector<bool> getAdaptativeCriterion(ComponentTreePtr tree, std::shared_ptr<float[]> attribute, float threshold, int delta){ return getAdaptativeCriterion(tree.get(), attribute, threshold, delta); }
+    static std::vector<bool> getAdaptativeCriterion(ComponentTree* tree, std::shared_ptr<float[]> attribute, float threshold, int delta){
+		
+        ComputerMSERCT mser(tree);
+		std::vector<uint8_t> isMSER = mser.computerMSER(delta);
+
+		std::vector<float> stability = mser.getStabilities();
+		std::vector<bool> isPruned(tree->getNumNodes(), false);
+		for(NodeId node: tree->getNodeIds()){
+            if(attribute[node] < threshold){ //node pruned
+
+                if(stability[node] == UNDEF){
+                    isPruned[node] = true;
+                }else{
+                    
+                    //NodeId nodeMax = mser.getNodeInPathWithMaxStability(node, isMSER);
+                    //isPruned[nodeMax] = true;
+                    
+                    float max = stability[node];
+                    NodeId indexDescMaxStability = mser.descendantWithMaxStability(node);
+                    NodeId indexAscMaxStability = mser.ascendantWithMaxStability(node);
+                    float maxDesc = stability[indexDescMaxStability];
+                    float maxAnc = stability[indexAscMaxStability];
+                    
+                    if(max >= maxDesc && max >= maxAnc) {
+                        isPruned[node] = true;
+                    }else if (maxDesc >= max && maxDesc >= maxAnc) {
+                        isPruned[indexDescMaxStability] = true;
+                    }else {
+                        isPruned[indexAscMaxStability] = true;
+                    }
+                    
+                }
+			}
+			
+		}
+        return isPruned;
+    }
+
+    static std::vector<bool> getAdaptativeCriterion(ComponentTreePtr tree, std::vector<bool>& criterion, int delta){ return getAdaptativeCriterion(tree.get(), criterion, delta); }
+    static std::vector<bool> getAdaptativeCriterion(ComponentTree* tree, std::vector<bool>& criterion, int delta){
+		
+        ComputerMSERCT mser(tree);
+		std::vector<uint8_t> isMSER = mser.computerMSER(delta);
+
+		std::vector<float> stability = mser.getStabilities();
+		std::vector<bool> isPruned(tree->getNumNodes(), false);
+		for(NodeId node: tree->getNodeIds()){
+            if(!criterion[node]){ //node pruned
+
+                if(stability[node] == UNDEF){
+                    isPruned[node] = true;
+                }else{
+                    
+                    //NodeId nodeMax = mser.getNodeInPathWithMaxStability(node, isMSER);
+                    //isPruned[nodeMax] = true;
+                    
+                    float max = stability[node];
+                    int indexDescMaxStability = mser.descendantWithMaxStability(node);
+                    int indexAscMaxStability = mser.ascendantWithMaxStability(node);
+                    float maxDesc = stability[indexDescMaxStability];
+                    float maxAnc = stability[indexAscMaxStability];
+                    
+                    if(max >= maxDesc && max >= maxAnc) {
+                        isPruned[node] = true;
+                    }else if (maxDesc >= max && maxDesc >= maxAnc) {
+                        isPruned[indexDescMaxStability] = true;
+                    }else {
+                        isPruned[indexAscMaxStability] = true;
+                    }
+                    
+                }
+			}
+			
+		}
+        return isPruned;
+    }
+	
+};
+

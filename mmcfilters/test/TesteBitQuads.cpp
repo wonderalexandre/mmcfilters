@@ -21,7 +21,7 @@ int main(int argc, char* argv[]) {
 
     // Criação das Component Trees
     MorphologicalTreePtr tree = nullptr;
-    std::string treeType = "self-dual"; 
+    std::string treeType = "mintree"; 
     if(treeType=="mintree"){
         tree = std::make_shared<MorphologicalTree>(image, false);
         //std::cout << "mintree" << std::endl;
@@ -34,7 +34,7 @@ int main(int argc, char* argv[]) {
         //std::cout << "tree of shapes - "<< treeType << std::endl;
     }
     
-    std::cout << "--- Tree --- "<< std::endl;
+    std::cout << "--- Tree: " << treeType << " --- ["<<tree->getTreeType() << "]" << std::endl;
     printTree(tree->getRoot());
     std::cout << std::endl;
     
@@ -42,7 +42,7 @@ int main(int argc, char* argv[]) {
     ComputerAttributeBasedBitQuads computer(tree);
     std::vector<AttributeBasedBitQuads> attr = computer.getAttributes();
     std::cout << "Patterns: " << std::endl;
-    for (NodeMTPtr node : tree->getRoot()->getNodesDescendants()) {
+    for (NodeMTPtr node : tree->getIndexNode()) {
         std::cout << "Node ID: " << node->getIndex() << ",\tLevel: " << node->getLevel() << ",\tPatterns: " << attr[node->getIndex()].printPattern() << std::endl;
     }
 

@@ -101,17 +101,3 @@ public:
 	void setMaxAttribute(int maxAttr) { this->maxAttr = maxAttr; }
 };
 
-
-
-#include <list>
-#include <vector>
-#include <stack>
-#include <limits.h>
-
-#include "../include/NodeMT.hpp"
-#include "../include/MorphologicalTree.hpp"
-#include "../include/ComputerMSER.hpp"
-#include "../include/AttributeComputedIncrementally.hpp"
-
-
-

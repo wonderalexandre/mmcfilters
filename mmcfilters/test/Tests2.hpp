@@ -437,7 +437,7 @@ inline void printImage(ImageUInt8Ptr imgPtr, int setw=4, std::string nomeArquivo
 
     // Teste: Verificando se todos os pixels da imagem estão mapeados corretamente na ComponentTree
     bool allMappedCorrectly = true;
-    for (int p: tree->getRepCNPs()) {
+    for (int p: tree->getAllRepCNPs()) {
         NodeCT mappedNode = tree->getSC(p);
         int level = (*imgPtr)[p];
         if (!mappedNode) {
@@ -1163,6 +1163,19 @@ inline ImageUInt8Ptr getSimpleImage(){
             10, 10, 10, 10,150,150, 10,  10, 10, 10, 10, 10, 10, 10,10,
             10, 10, 10, 10, 10, 10, 10,  10, 10, 10, 10, 10, 10, 10,10};
     return ImageUInt8::fromRaw(img, 17, 15);
+}
+
+inline ImageUInt8Ptr getICIP14Image(){
+    auto img=new uint8_t[49]{
+        0, 0, 0, 0, 0, 0, 0,
+        0, 4, 4, 4, 7, 7, 7,
+        0, 7, 7, 4, 7, 4, 7,
+        0, 7, 4, 4, 7, 4, 7,
+        0, 4, 4, 4, 7, 4, 7,
+        0, 7, 7, 4, 7, 7, 7,
+        0, 0, 0, 0, 0, 0, 0
+    };
+    return ImageUInt8::fromRaw(img, 7, 7);
 }
 
 

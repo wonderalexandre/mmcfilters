@@ -18,16 +18,18 @@ int main(){
 
     // Criação das Component Trees
     ComponentTreePtr maxtree = std::make_shared<ComponentTree>(img, true);
-
+    
+    
     auto imgMaxtree = maxtree->reconstructionImage();
     printTree(maxtree->getRoot());
     testComponentTree(maxtree, "maxtreeFZ sem grafo", imgMaxtree);
 
     NodeId nodeId = maxtree->getLeaves().front();// maxtree->getSC(28);
     NodeCT node = maxtree->proxy(5);
+    
     std::cout << "\nNode - ID: " << node.getIndex() << ", Level: " << node.getLevel() << ", Area: " << node.getArea() << "\n" << std::endl;
     maxtree->prunning(node);
-
+    
 
     auto imgPrunned = maxtree->reconstructionImage();
     printTree(maxtree->getRoot());

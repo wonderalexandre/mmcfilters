@@ -76,6 +76,11 @@ if(BUILD_TESTS)
     )
     target_link_libraries(testeResidualTree PRIVATE mmcfilters_lib)
 
+    add_executable(testeResidualTreeCT 
+        mmcfilters/test/testeResidualTreeCT.cpp
+    )
+    target_link_libraries(testeResidualTreeCT PRIVATE mmcfilters_lib)
+
     add_executable(TestComponentTree 
         mmcfilters/test/TestComponentTree.cpp
     )
@@ -152,5 +157,11 @@ if(BUILD_TESTS)
     target_link_libraries(TesteBitQuads PRIVATE mmcfilters_lib)
     target_compile_options(TesteBitQuads PRIVATE -Wno-deprecated-declarations)
 
+    add_executable(TesteBitQuadsCT 
+        mmcfilters/test/TesteBitQuadsCT.cpp
+        external/stb/stb_image.cpp
+    )
+    target_link_libraries(TesteBitQuadsCT PRIVATE mmcfilters_lib)
+    target_compile_options(TesteBitQuadsCT PRIVATE -Wno-deprecated-declarations)
 
 endif()

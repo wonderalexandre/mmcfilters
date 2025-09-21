@@ -344,7 +344,7 @@ protected:
     int treeType; //0-mintree, 1-maxtree, 2-tree of shapes
 
 
-    std::vector<NodeId> pixelToNodeId; //Mapeamento dos pixels representantes para NodeID. Para adquirir todos os representantes valido utilize o método getRepCNPs
+    std::vector<NodeId> pixelToNodeId; //Mapeamento dos pixels representantes para NodeID. Para adquirir todos os representantes valido utilize o método getAllRepCNPs
     std::shared_ptr<PixelSetManager> pixelBuffer; PixelSetManager::View pixelView; //gerenciamento de pixels da arvore
     NodeArena arena; // armazenamento indexado dos dados de todos os nós 
     
@@ -463,10 +463,11 @@ public:
     inline bool isStrictComparable(NodeId u, NodeId v) const noexcept { return isStrictAncestor(u, v) || isStrictAncestor(v, u);}
 	//inline int getDepth() const noexcept {return depth;}
 
-    inline NodeArena::RepsOfCCRangeById getRepCNPs() const { return arena.getRepsOfCC(root); } //iterador
+    inline NodeArena::RepsOfCCRangeById getAllRepCNPs() const { return arena.getRepsOfCC(root); } //iterador
     inline NodeArena::RepsOfCCRangeById getRepCNPsOfCCById(NodeId id) const { return arena.getRepsOfCC(id); } //iterador
     inline auto getPixelsOfCCById(NodeId id) const{ return pixelBuffer->getPixelsBySet(arena.getRepsOfCC(id));  } //iterador
     inline auto getPixelsOfFlatzone(int repFZ) const{ return pixelBuffer->getPixelsBySet(repFZ); } //iterador
+    inline auto getPixelsOfFlatzones(std::vector<int> repFZs) const{ return pixelBuffer->getPixelsBySet(repFZs); } //iterador
     inline int getLevelById(NodeId id) const noexcept{return arena.threshold2[id];}
     inline void setLevelById(NodeId id, int level){ arena.threshold2[id] = level;}
     inline int getResidueById(NodeId id) const noexcept{  if(arena.threshold2[id] == -1) return arena.threshold2[id]; else return arena.threshold2[id] - arena.threshold2[arena.parentId[id]]; }
@@ -492,7 +493,8 @@ public:
     inline void setSCById(int p, NodeId id) noexcept { this->pixelToNodeId[p] = id;}    
     inline auto getCNPsById(NodeId id) const { return pixelBuffer->getPixelsBySet(arena.repNode[id]);}
     inline int getNumCNPsById(NodeId id) const { return this->pixelBuffer->numPixelsInSet(arena.repNode[id]);}
-    
+    inline int getRepNodeById(NodeId id) const noexcept { return arena.repNode[id]; }
+
     inline int getNumDescendantsById(NodeId id) {
         return (getTimePostOrderById(id) - getTimePreOrderById(id) - 1) / 2;
     }
@@ -957,16 +959,12 @@ public:
     }
 
 
-    // ================== Iterador de descendentes por ID (sem proxy) ================== //
+    // ================== Iterador BFS de subárvore (com ou sem raiz) ================== //
     /**
-     * @brief Iterador em largura (BFS) sobre os descendentes de um nó.
-     *
-     * Percorre todos os nós descendentes do nó informado, excluindo o
-     * próprio nó raiz do percurso. A ordem é em largura (BFS).
-     * Uso típico:
-     *   for (NodeId u : tree->getNodesDescendantsById(id)) { ... }
+     * @brief Iterador em largura (BFS) sobre os nós de uma subárvore.
+     * Configurável para incluir ou excluir o nó raiz do percurso.
      */
-    class InternalIteratorNodesDescendantsId {
+    class InternalIteratorSubtreeBFS {
     private:
         ComponentTree* T_ = nullptr;
         FastQueue<int> q_;
@@ -978,16 +976,22 @@ public:
         using pointer           = const NodeId*;
         using reference         = const NodeId&;
 
-        explicit InternalIteratorNodesDescendantsId(ComponentTree* T, NodeId rootId) noexcept : T_(T) {
+        explicit InternalIteratorSubtreeBFS(ComponentTree* T, NodeId rootId, bool includeRoot) noexcept : T_(T) {
             if (T_ && rootId >= 0) {
-                // Descendentes EXCLUEM o próprio nó: inicia com os filhos diretos
-                for (int c : T_->arena.children(rootId)) q_.push(c);
+                if (includeRoot) {
+                    // Inclui a própria raiz no percurso
+                    q_.push(rootId);
+                } else {
+                    // Exclui a raiz: começa nos filhos diretos
+                    for (int c : T_->arena.children(rootId)) q_.push(c);
+                }
             }
         }
 
-        InternalIteratorNodesDescendantsId& operator++() noexcept {
+        InternalIteratorSubtreeBFS& operator++() noexcept {
             if (!q_.empty()) {
                 int u = q_.pop();
+                // Empilha os filhos de u para manter ordem BFS
                 for (int v : T_->arena.children(u)) q_.push(v);
             }
             return *this;
@@ -995,38 +999,51 @@ public:
 
         NodeId operator*() const noexcept { return q_.front(); }
 
-        bool operator==(const InternalIteratorNodesDescendantsId& other) const noexcept {
+        bool operator==(const InternalIteratorSubtreeBFS& other) const noexcept {
+            // Sentinela de fim: ambas filas vazias
             return q_.empty() == other.q_.empty();
         }
-        bool operator!=(const InternalIteratorNodesDescendantsId& other) const noexcept {
-            return !(*this == other);
-        }
+        bool operator!=(const InternalIteratorSubtreeBFS& other) const noexcept { return !(*this == other); }
     };
 
     /**
-     * @brief Range leve para iterar os descendentes de `id` via range-for.
+     * @brief Range leve para iterar a subárvore via range-for.
      */
-    class IteratorNodesDescendantsId {
+    class IteratorSubtreeBFS {
     private:
         ComponentTree* T_ = nullptr;
         NodeId rootId_ = -1;
+        bool includeRoot_ = false;
 
     public:
-        explicit IteratorNodesDescendantsId(ComponentTree* T, NodeId rootId) noexcept : T_(T), rootId_(rootId) {}
+        explicit IteratorSubtreeBFS(ComponentTree* T, NodeId rootId, bool includeRoot) noexcept
+            : T_(T), rootId_(rootId), includeRoot_(includeRoot) {}
 
-        InternalIteratorNodesDescendantsId begin() const noexcept { return InternalIteratorNodesDescendantsId(T_, rootId_); }
-        InternalIteratorNodesDescendantsId end()   const noexcept { return InternalIteratorNodesDescendantsId(nullptr, -1); }
+        InternalIteratorSubtreeBFS begin() const noexcept { return InternalIteratorSubtreeBFS(T_, rootId_, includeRoot_); }
+        InternalIteratorSubtreeBFS end()   const noexcept { return InternalIteratorSubtreeBFS(nullptr, -1, false); }
     };
 
+    // ================== Facades (duas chamadas pedidas) ================== //
+
     /**
-     * @brief Retorna um range para iterar os descendentes (exclui o próprio nó).
-     * @param id Nó base do qual se deseja percorrer os descendentes.
-     * @return Range compatível com range-for de `NodeId`.
+     * @brief Descendentes de `id` em BFS, **exclui** o próprio `id`.
      */
-    IteratorNodesDescendantsId getNodesDescendantsById(NodeId id) noexcept {
-        return IteratorNodesDescendantsId(this, id);
+    IteratorSubtreeBFS getNodesDescendantsById(NodeId id) noexcept {
+        return IteratorSubtreeBFS(this, id, /*includeRoot=*/false);
+    }
+    IteratorSubtreeBFS getNodesDescendantsById() noexcept {
+        return IteratorSubtreeBFS(this, root, /*includeRoot=*/false);
     }
 
+    /**
+     * @brief Subárvore de `id` em BFS, **inclui** o próprio `id`.
+     */
+    IteratorSubtreeBFS getNodesOfSubtree(NodeId id) noexcept {
+        return IteratorSubtreeBFS(this, id, /*includeRoot=*/true);
+    }
+    IteratorSubtreeBFS getNodesOfSubtree() noexcept {
+        return IteratorSubtreeBFS(this, root, /*includeRoot=*/true);
+    }
 };
 
 

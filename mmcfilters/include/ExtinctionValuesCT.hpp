@@ -1,9 +1,9 @@
-#
+#pragma once
 
 #include "../include/ComponentTree.hpp"
 #include "../include/AdjacencyRelation.hpp"
 #include "../include/Common.hpp"
-#include "../include/AttributeComputedIncrementally.hpp"
+#include "../include/AttributeComputedIncrementallyCT.hpp"
 #include <algorithm>
 
 #define PI 3.14159265358979323846
@@ -55,14 +55,14 @@ class ExtinctionValuesCT{
                     }
                 }
                 if(parent != InvalidNode)
-                    extinction = attr[cutoffNode->getIndex()];
-                regionalExtremaNodes.push_back( leaf, cutoffNode, extinction );
+                    extinction = attr[cutoffNode];
+                regionalExtremaNodes.emplace_back( leaf, cutoffNode, extinction );
                 
             }
 
             // Ordena pelas extremas mais persistentes
             std::sort(regionalExtremaNodes.begin(), regionalExtremaNodes.end(), [](const auto& a, const auto& b) {
-                return a->extinction > b->extinction;
+                return a.extinction > b.extinction;
             });
         }
 
@@ -133,7 +133,5 @@ class ExtinctionValuesCT{
         std::vector<RegionalExtremaNodeCT>& getExtinctionValues() { return regionalExtremaNodes; }
 
 };
-
-#endif // EXTINCTION_VALUES_H
 
 

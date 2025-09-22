@@ -1,22 +1,24 @@
 # MorphologicalAttributeFilters
 
-MorphologicalAttributeFilters é uma biblioteca C++/Python para filtragem de imagens conectadas baseada em árvores morfológicas (component trees e trees of shapes). O código fornece implementações de alto desempenho e bindings Python para exploração interativa.
+MorphologicalAttributeFilters is a C++/Python library for connected image filtering based on morphological trees (component
+trees and trees of shapes). The code provides high-performance implementations together with Python bindings for interactive
+experimentation.
 
-## Principais funcionalidades
+## Key features
 
-* Construção de árvores morfológicas (component tree, tree of shapes) com diferentes conectividades.
-* Cálculo incremental de atributos geométricos, topológicos e radiométricos.
-* Filtros baseados em atributos (regras direta, subtrativa, poda, aberturas, ultimate attribute opening, etc.).
-* Utilidades para valores de extinção, famílias de primitivas, MSER e Bit-Quads.
-* Bindings Pybind11 cobrindo operações de alto nível no Python.
+* Construction of morphological trees (component tree, tree of shapes) with different connectivities.
+* Incremental computation of geometric, topological and radiometric attributes.
+* Attribute-based filters (direct and subtractive rules, pruning, openings, ultimate attribute opening, etc.).
+* Utilities for extinction values, primitive families, MSER and Bit-Quads.
+* Pybind11 bindings that expose the high-level operations to Python.
 
-## Instalação
+## Installation
 
 ```bash
 pip install mmcfilters
 ```
 
-## Exemplo rápido
+## Quick example
 
 ```python
 import numpy as np
@@ -32,6 +34,7 @@ flt = mmcfilters.AttributeFilters(tree)
 filtered = flt.filteringDirectRule(area > 50).reshape(img.shape)
 ```
 
-## Documentação e comentários
+## Documentation and comments
 
-Todos os `class` e `struct` do projeto possuem agora docstrings e comentários atualizados para facilitar a navegação do código C++. Consulte os headers em `mmcfilters/include` e `mmcfilters/pybind` para detalhes sobre cada componente.
+All `class` and `struct` definitions in the project now include updated docstrings and comments to make the C++ codebase easier to
+navigate. Refer to the headers in `mmcfilters/include` and `mmcfilters/pybind` for details about each component.

@@ -23,8 +23,8 @@ private:
 	
 	
 public:
-	ComputerMSER(ComponentTreePtr tree): ComputerMSER(tree.get()) {}
-	ComputerMSER(ComponentTreePtr tree, std::shared_ptr<float[]> attr_increasing){ ComputerMSER(tree.get(), attr_increasing); }
+	ComputerMSER(MorphologicalTreePtr tree): ComputerMSER(tree.get()) {}
+	ComputerMSER(MorphologicalTreePtr tree, std::shared_ptr<float[]> attr_increasing){ ComputerMSER(tree.get(), attr_increasing); }
 	
 	ComputerMSER(MorphologicalTree* tree, std::shared_ptr<float[]> attr_increasing) : ComputerMSER(tree) {
 		this->attr_mser = attr_increasing;

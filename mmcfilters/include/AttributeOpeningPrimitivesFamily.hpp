@@ -31,10 +31,10 @@ class AttributeOpeningPrimitivesFamily{
     void initializeNodesWithMaximumCriterium();
     
   public:
-    AttributeOpeningPrimitivesFamily(ComponentTreePtr tree,   std::shared_ptr<float[]> attr, float maxCriterion): AttributeOpeningPrimitivesFamily(tree.get(), attr, maxCriterion) {}
+    AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree,   std::shared_ptr<float[]> attr, float maxCriterion): AttributeOpeningPrimitivesFamily(tree.get(), attr, maxCriterion) {}
     AttributeOpeningPrimitivesFamily(MorphologicalTree* tree,   std::shared_ptr<float[]> attr, float maxCriterion);
 
-    AttributeOpeningPrimitivesFamily(ComponentTreePtr tree,   std::shared_ptr<float[]> attrs_increasing, float maxCriterion, int deltaMSER): AttributeOpeningPrimitivesFamily(tree.get(), attrs_increasing, maxCriterion, deltaMSER) {}
+    AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree,   std::shared_ptr<float[]> attrs_increasing, float maxCriterion, int deltaMSER): AttributeOpeningPrimitivesFamily(tree.get(), attrs_increasing, maxCriterion, deltaMSER) {}
     AttributeOpeningPrimitivesFamily(MorphologicalTree* tree,   std::shared_ptr<float[]> attrs_increasing, float maxCriterion, int deltaMSER);
 
     ~AttributeOpeningPrimitivesFamily();

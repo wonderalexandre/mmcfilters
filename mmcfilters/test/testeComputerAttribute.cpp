@@ -19,7 +19,7 @@ int main(int argc, char const* argv[]) {
     ImageUInt8Ptr image = getWonderImage();
     printImage(image);
 
-    ComponentTreePtr treePtr = std::make_shared<MorphologicalTree>(image, false);
+    MorphologicalTreePtr treePtr = std::make_shared<MorphologicalTree>(image, false);
     MorphologicalTree* tree = treePtr.get();
     printTree(treePtr->getRoot());
 

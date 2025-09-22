@@ -25,7 +25,7 @@ class ExtinctionValues{
         std::shared_ptr<float[]> attribute;
 
     public:
-	    ExtinctionValues(ComponentTreePtr tree, std::shared_ptr<float[]> attr): ExtinctionValues(tree.get(), attr) {}    
+	    ExtinctionValues(MorphologicalTreePtr tree, std::shared_ptr<float[]> attr): ExtinctionValues(tree.get(), attr) {}    
         ExtinctionValues(MorphologicalTree* tree, std::shared_ptr<float[]> attr): tree(tree), attribute(attr) { 
             std::vector<NodeId> leaves = tree->getLeaves();
             regionalExtremaNodes.reserve(leaves.size());

@@ -63,25 +63,25 @@ public:
 
     
 	static std::shared_ptr<Contours> extractCompactContours(MorphologicalTree* tree);
-    static std::shared_ptr<Contours> extractCompactContours(ComponentTreePtr tree){ return extractCompactContours(tree.get()); }
+    static std::shared_ptr<Contours> extractCompactContours(MorphologicalTreePtr tree){ return extractCompactContours(tree.get()); }
 
 	static std::vector<std::unordered_set<int>> extractNonCompactContours(MorphologicalTree* tree);
-    static std::vector<std::unordered_set<int>> extractNonCompactContours(ComponentTreePtr tree){ return extractNonCompactContours(tree.get()); }
+    static std::vector<std::unordered_set<int>> extractNonCompactContours(MorphologicalTreePtr tree){ return extractNonCompactContours(tree.get()); }
 
     static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeAttributesByComputer(MorphologicalTree* tree, std::shared_ptr<AttributeComputer> comp, const DependencyMap& available = {});
-    static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeAttributesByComputer(ComponentTreePtr tree, std::shared_ptr<AttributeComputer> comp, const DependencyMap& available = {}){ return computeAttributesByComputer(tree.get(), comp, available); }
+    static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeAttributesByComputer(MorphologicalTreePtr tree, std::shared_ptr<AttributeComputer> comp, const DependencyMap& available = {}){ return computeAttributesByComputer(tree.get(), comp, available); }
 	
 	static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeSingleAttribute(MorphologicalTree* tree, AttributeOrGroup attr, const DependencyMap& availableDeps = {});
-    static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeSingleAttribute(ComponentTreePtr tree, AttributeOrGroup attr, const DependencyMap& availableDeps = {}){ return computeSingleAttribute(tree.get(), attr, availableDeps); }
+    static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeSingleAttribute(MorphologicalTreePtr tree, AttributeOrGroup attr, const DependencyMap& availableDeps = {}){ return computeSingleAttribute(tree.get(), attr, availableDeps); }
 	
 	static std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> computeSingleAttributeWithDelta(MorphologicalTree* tree, Attribute attribute, int delta, std::string padding="last-padding", const DependencyMap& availableDeps={});
-    static std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> computeSingleAttributeWithDelta(ComponentTreePtr tree, Attribute attribute, int delta, std::string padding="last-padding", const DependencyMap& availableDeps={}){ return computeSingleAttributeWithDelta(tree.get(), attribute, delta, padding, availableDeps); }
+    static std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> computeSingleAttributeWithDelta(MorphologicalTreePtr tree, Attribute attribute, int delta, std::string padding="last-padding", const DependencyMap& availableDeps={}){ return computeSingleAttributeWithDelta(tree.get(), attribute, delta, padding, availableDeps); }
 
 	static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeAttributes(MorphologicalTree* tree, const std::vector<AttributeOrGroup>& attributes,const DependencyMap& providedDependencies={});
-	static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeAttributes(ComponentTreePtr tree, const std::vector<AttributeOrGroup>& attributes,const DependencyMap& providedDependencies={}){ return computeAttributes(tree.get(), attributes, providedDependencies); }
+	static std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> computeAttributes(MorphologicalTreePtr tree, const std::vector<AttributeOrGroup>& attributes,const DependencyMap& providedDependencies={}){ return computeAttributes(tree.get(), attributes, providedDependencies); }
 
 	static ImageFloatPtr computerAttributeMapping(MorphologicalTree* tree, Attribute attribute);
-    static ImageFloatPtr computerAttributeMapping(ComponentTreePtr tree, Attribute attribute){ return computerAttributeMapping(tree.get(), attribute); }
+    static ImageFloatPtr computerAttributeMapping(MorphologicalTreePtr tree, Attribute attribute){ return computerAttributeMapping(tree.get(), attribute); }
     
 };
 
@@ -104,7 +104,7 @@ class Contours{
 	
 	public:
 	Contours(MorphologicalTree* tree): tree(tree), contours(tree->getNumNodes()), contoursToRemove(tree->getNumNodes()){}
-    Contours(ComponentTreePtr tree): Contours(tree.get()) {}
+    Contours(MorphologicalTreePtr tree): Contours(tree.get()) {}
 
 	void add(NodeId node, int pixel){
 		contours[node].push_back(pixel);

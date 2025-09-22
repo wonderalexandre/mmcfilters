@@ -103,7 +103,7 @@ class UltimateAttributeOpening{
 
   public:
 
-    UltimateAttributeOpening(ComponentTreePtr tree,  std::shared_ptr<float[]> attrs_increasing): UltimateAttributeOpening(tree.get(), std::move(attrs_increasing)) {}
+    UltimateAttributeOpening(MorphologicalTreePtr tree,  std::shared_ptr<float[]> attrs_increasing): UltimateAttributeOpening(tree.get(), std::move(attrs_increasing)) {}
     UltimateAttributeOpening(MorphologicalTree* tree, std::shared_ptr<float[]> attrs_increasing){
       this->tree = tree;
       this->maxContrastLUT = std::shared_ptr<uint8_t[]>(new uint8_t[this->tree->getNumNodes()]);

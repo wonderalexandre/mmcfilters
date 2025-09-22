@@ -24,7 +24,7 @@ int main(int argc, char const *argv[])
     std::cout << "img_pointer ok" << std::endl;
     
     // Criar um ComponentTree
-    ComponentTreePtr tree = std::make_shared<MorphologicalTree>(img, true);
+    MorphologicalTreePtr tree = std::make_shared<MorphologicalTree>(img, true);
     std::cout << "tree ok" << std::endl;
     
 

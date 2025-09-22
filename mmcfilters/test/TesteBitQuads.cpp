@@ -17,7 +17,7 @@ int main(int argc, char* argv[]) {
     printImage(image);
     
 
-    ComponentTreePtr tree = nullptr;
+    MorphologicalTreePtr tree = nullptr;
     std::string treeType = "mintree";
     if(treeType=="mintree"){
         tree = std::make_shared<MorphologicalTree>(image, false);

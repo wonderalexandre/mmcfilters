@@ -17,7 +17,7 @@ int main(){
     printImage(img);
 
     // Criação das Component Trees
-    ComponentTreePtr maxtree = std::make_shared<MorphologicalTree>(img, true);
+    MorphologicalTreePtr maxtree = std::make_shared<MorphologicalTree>(img, true);
     
     
     auto imgMaxtree = maxtree->reconstructionImage();

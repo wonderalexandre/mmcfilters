@@ -70,7 +70,7 @@ inline void printTree(NodeMT root, std::string prefix = "", bool isLast = true) 
  * @param setw Largura de coluna para formatação da tabela.
  * @param nomeArquivo Caminho de saída; vazio para imprimir em stdout.
  */
-inline void printMappingSC(ComponentTreePtr tree, int setw=4, std::string nomeArquivo = "") {
+inline void printMappingSC(MorphologicalTreePtr tree, int setw=4, std::string nomeArquivo = "") {
 
     int numRows = tree->getNumRowsOfImage();
     int numCols = tree->getNumColsOfImage();
@@ -132,7 +132,7 @@ inline void printMappingSC(ComponentTreePtr tree, int setw=4, std::string nomeAr
  * @param tree Árvore à qual o nó pertence (para recuperar dimensões e pixels).
  * @param nomeArquivo Caminho de saída; vazio para imprimir em stdout.
  */
-inline  void printConnectedComponent(NodeMT node, ComponentTreePtr tree, std::string nomeArquivo = "") {
+inline  void printConnectedComponent(NodeMT node, MorphologicalTreePtr tree, std::string nomeArquivo = "") {
     int numRows = tree->getNumRowsOfImage();
     int numCols = tree->getNumColsOfImage();
     int n = numRows*numCols;
@@ -205,7 +205,7 @@ inline  void printConnectedComponent(NodeMT node, ComponentTreePtr tree, std::st
 }
 
 
-inline void printConnectedComponents(ComponentTreePtr tree, int setw=3, std::string nomeArquivo = ""){
+inline void printConnectedComponents(MorphologicalTreePtr tree, int setw=3, std::string nomeArquivo = ""){
     int numRows = tree->getNumRowsOfImage();
     int numCols = tree->getNumColsOfImage();
     int n = numRows*numCols;
@@ -350,7 +350,7 @@ inline void printImage(ImageUInt8Ptr imgPtr, int setw=4, std::string nomeArquivo
  * @param treeType Rótulo amigável (ex.: "max-tree" ou "min-tree").
  * @param imgPtr Imagem base usada na construção/validação da árvore.
  */
- inline  void testComponentTree(ComponentTreePtr tree, const std::string& treeType, ImageUInt8Ptr imgPtr) {
+ inline  void testComponentTree(MorphologicalTreePtr tree, const std::string& treeType, ImageUInt8Ptr imgPtr) {
     std::cout << "🔍 Testando " << treeType << "..." << std::endl;
 
     //int numRows = imgPtr->getNumRows();
@@ -483,7 +483,7 @@ inline void printImage(ImageUInt8Ptr imgPtr, int setw=4, std::string nomeArquivo
  * @param index Índice do nó desejado.
  * @return O nó correspondente, ou nullptr se não encontrado.
  */
-inline NodeMT getNodeByIndex(ComponentTreePtr tree, int index){
+inline NodeMT getNodeByIndex(MorphologicalTreePtr tree, int index){
 	for (NodeMT node : tree->getRoot().getIteratorBreadthFirstTraversal()) {
 		if(node.getIndex() == index){
 			return node;

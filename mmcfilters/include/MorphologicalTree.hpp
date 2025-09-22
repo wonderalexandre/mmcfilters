@@ -19,7 +19,7 @@
 class IMorphologicalTreeBuilder; 
 class NodeMT;
 class MorphologicalTree;
-using ComponentTreePtr = std::shared_ptr<MorphologicalTree>;
+using MorphologicalTreePtr = std::shared_ptr<MorphologicalTree>;
 
 /**
  * @brief Arena de nós para Component Trees com armazenamento contíguo e acesso rápido.
@@ -414,7 +414,7 @@ public:
 
     virtual ~MorphologicalTree() = default;
 
-    static ComponentTreePtr create(int rows, int cols, bool isMaxtree, AdjacencyRelationPtr adj) {
+    static MorphologicalTreePtr create(int rows, int cols, bool isMaxtree, AdjacencyRelationPtr adj) {
         struct Enabler : public MorphologicalTree {
             Enabler(int r, int c, bool m, AdjacencyRelationPtr a) {
                 this->numRows = r;
@@ -428,7 +428,7 @@ public:
     
 
     template <typename PixelType>
-    static ComponentTreePtr createFromAttributeMapping(ImagePtr<PixelType> attrMappingPtr, ImageUInt8Ptr imgPtr, bool isMaxtree, double radius);
+    static MorphologicalTreePtr createFromAttributeMapping(ImagePtr<PixelType> attrMappingPtr, ImageUInt8Ptr imgPtr, bool isMaxtree, double radius);
 
 
     
@@ -593,7 +593,7 @@ public:
 
 
 
-    static bool validateStructure(ComponentTreePtr tree)  {
+    static bool validateStructure(MorphologicalTreePtr tree)  {
         return validateStructure(tree.get());
     }
     static bool validateStructure(const MorphologicalTree* tree){
@@ -681,7 +681,7 @@ public:
         return {ascendants, descendants};
     }
     
-    static std::vector<NodeId> getNodesThreshold(ComponentTreePtr tree, int areaThreshold){
+    static std::vector<NodeId> getNodesThreshold(MorphologicalTreePtr tree, int areaThreshold){
         std::vector<NodeId> lista;
         FastQueue<NodeId> queue;
         queue.push(tree->root);

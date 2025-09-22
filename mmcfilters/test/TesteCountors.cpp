@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
 
     // Criação das Component Trees
     
-    ComponentTreePtr tree = nullptr;
+    MorphologicalTreePtr tree = nullptr;
     std::string treeType = std::string(argv[1]);
     if(treeType=="mintree"){
         tree = std::make_shared<MorphologicalTree>(image, false);

@@ -6,7 +6,7 @@ AttributeFilters::AttributeFilters(MorphologicalTree* tree){
     this->tree = tree;
 }
 
-AttributeFilters::AttributeFilters(ComponentTreePtr tree){
+AttributeFilters::AttributeFilters(MorphologicalTreePtr tree){
     this->tree = tree.get();
 }
 

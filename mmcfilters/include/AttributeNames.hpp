@@ -96,6 +96,9 @@ enum class AttributeGroup {
 using AttributeOrGroup = std::variant<Attribute, AttributeGroup>;
 using enum Attribute;
 
+/**
+ * @brief Chave composta usada para indexar atributos associados a deslocamentos.
+ */
 struct AttributeKey {
     Attribute attr;
     int delta = 0;
@@ -237,6 +240,9 @@ static const std::unordered_map<AttributeGroup, std::vector<Attribute>> ATTRIBUT
 };
 
 
+/**
+ * @brief Mapeia atributos e variações de delta para índices lineares em buffers.
+ */
 class AttributeNamesWithDelta {
 public:
     std::unordered_map<AttributeKey, int> indexMap;
@@ -353,6 +359,9 @@ public:
 using AttributeNamesWithDeltaPtr = std::shared_ptr<AttributeNamesWithDelta>;
 
 
+/**
+ * @brief Resolve nomes de atributos em índices lineares usados pelos buffers.
+ */
 class AttributeNames {
 public:
     std::unordered_map<Attribute, int> indexMap;

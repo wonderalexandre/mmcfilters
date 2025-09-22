@@ -12,6 +12,12 @@
 class AttributeOpeningPrimitivesFamily;
 using AttributeOpeningPrimitivesFamilyPtr = std::shared_ptr<AttributeOpeningPrimitivesFamily>;
 
+/**
+ * @brief Gerencia famílias de primitivas para abertura por atributos.
+ *
+ * Mantém thresholds, nós selecionados e imagem residual necessários para
+ * aplicar estratégias de abertura incremental sobre árvores morfológicas.
+ */
 class AttributeOpeningPrimitivesFamily{
   
   protected:

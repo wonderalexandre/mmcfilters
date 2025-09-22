@@ -165,9 +165,15 @@ class NodeArena {
     // ============================================
     // ADIÇÃO: Range leve para filhos (range-for)
     // ============================================
+    /**
+     * @brief Range leve para iterar sobre os filhos diretos de um nó.
+     */
     class ChildRange {
     public:
         // iterador 'input' mínimo para range-for
+        /**
+         * @brief Iterador que percorre sequencialmente os filhos de um nó.
+         */
         class iterator {
         public:
             iterator(NodeId cur, const NodeArena* arena) noexcept
@@ -212,6 +218,9 @@ class NodeArena {
 
 
     // Itera os representantes (ints) em BFS sobre a CC (subárvore) do nó.
+    /**
+     * @brief Iterador BFS que percorre representantes de componentes conectados.
+     */
     class RepsOfCCIteratorById {
     private:
         const NodeArena* arena_ = nullptr;
@@ -283,6 +292,9 @@ class NodeArena {
         bool operator!=(const RepsOfCCIteratorById& other) const { return !(*this == other); }
     };
 
+    /**
+     * @brief Range para percorrer representantes de uma subárvore por BFS.
+     */
     class RepsOfCCRangeById {
     private:
         const NodeArena* arena_;
@@ -703,6 +715,9 @@ public:
     // ====================== Iteradores por ID (sem proxy) ====================== //
 
     // ================== Iterador de NodeIds VÁLIDOS — versão otimizada ================== //
+    /**
+     * @brief Iterador interno que salta slots vazios e retorna IDs válidos.
+     */
     class InternalIteratorValidNodeIds {
     private:
         const int* rep_;        // ponteiro p/ arena.repNode[0]
@@ -741,6 +756,9 @@ public:
         inline bool operator!=(const InternalIteratorValidNodeIds& other) const noexcept { return cur_ != other.cur_; }
     };
 
+    /**
+     * @brief Range wrapper para percorrer todos os NodeId ativos da arena.
+     */
     class IteratorValidNodeIds {
     private:
         MorphologicalTree* T_ = nullptr;
@@ -761,8 +779,14 @@ public:
 
 
     // Pós-ordem (retorna NodeId)
+    /**
+     * @brief Iterador que visita IDs em pós-ordem usando pilha explícita.
+     */
     class InternalIteratorPostOrderTraversalId {
     private:
+        /**
+         * @brief Estado de pilha usado durante a travessia.
+         */
         struct Item { int id; bool expanded; };
 
         MorphologicalTree* T_ = nullptr;
@@ -823,6 +847,9 @@ public:
         }
     };
 
+    /**
+     * @brief Range gerador para percorrer IDs em pós-ordem.
+     */
     class IteratorPostOrderTraversalId {
     private:
         MorphologicalTree* T_ = nullptr;
@@ -846,6 +873,9 @@ public:
     }
 
     // Largura (BFS) — retorna NodeId
+    /**
+     * @brief Iterador em largura que devolve IDs dos nós visitados.
+     */
     class InternalIteratorBreadthFirstTraversalId {
     private:
         MorphologicalTree* T_ = nullptr;
@@ -882,6 +912,9 @@ public:
         }
     };
 
+    /**
+     * @brief Range que encapsula a travessia em largura a partir de um nó.
+     */
     class IteratorBreadthFirstTraversalId {
     private:
         MorphologicalTree* T_ = nullptr;
@@ -906,6 +939,9 @@ public:
     // ================== Fim dos iteradores por ID (sem proxy) ================== //
 
     // ================== Iterador para caminho até a raiz por NodeId (sem proxy) ================== //
+    /**
+     * @brief Iterador que sobe a cadeia de ancestrais até a raiz.
+     */
     class InternalIteratorNodesOfPathToRootId {
     private:
         MorphologicalTree* T_ = nullptr;
@@ -937,6 +973,9 @@ public:
         }
     };
 
+    /**
+     * @brief Range que percorre os ancestrais de um nó até a raiz.
+     */
     class IteratorNodesOfPathToRootId {
     private:
         MorphologicalTree* T_ = nullptr;
@@ -1081,6 +1120,9 @@ public:
       2. Encontrar a posição do menor valor: O mínimo é 0, que ocorre em depth[4]
       3. O correspondente em no vetor euler: euler[4] = 0 que é o indice do LCA
 	
+ */
+/**
+ * @brief Estrutura LCA baseada em percurso Euler e RMQ para component trees.
  */
 class LCAEulerRMQ_CT {
 private:

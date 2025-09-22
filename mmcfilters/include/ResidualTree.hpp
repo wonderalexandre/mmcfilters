@@ -11,6 +11,9 @@
 
 class ResidualTree;
 using ResidualTreePtr = std::shared_ptr<ResidualTree>;
+/**
+ * @brief Estrutura derivada que organiza resíduos a partir de uma família de primitivas.
+ */
 class ResidualTree{
 
     protected:

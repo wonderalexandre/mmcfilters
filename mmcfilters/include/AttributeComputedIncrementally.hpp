@@ -21,6 +21,14 @@
 class Contours; 
 class AttributeComputer; 
 
+/**
+ * @brief Funções utilitárias para computar atributos em árvores de forma incremental.
+ *
+ * A classe expõe algoritmos genéricos de travessia pós-ordem permitindo
+ * compor etapas de pré-processamento, mesclagem e pós-processamento sem criar
+ * estruturas auxiliares temporárias. Também oferece helpers para extração de
+ * contornos e avaliação de atributos disponíveis.
+ */
 class AttributeComputedIncrementally {
 public:
     
@@ -96,6 +104,13 @@ public:
 /*
 Computacao incremental de countours
 */
+/**
+ * @brief Estrutura auxiliar para construir contornos compactos a partir da árvore.
+ *
+ * Mantém listas de pixels que devem ser adicionados ou removidos por nó e
+ * provê percursos convenientes para inspecionar contornos, componentes conexos
+ * e pares ordenados durante a execução incremental.
+ */
 class Contours{
 	private:
 	std::vector<std::list<int>> contours;
@@ -243,7 +258,10 @@ class Contours{
 	}
 
 
-	class ContourPostOrderIterator {
+        /**
+         * @brief Iterador pós-ordem que fornece pares (nó, contorno) consolidados.
+         */
+        class ContourPostOrderIterator {
 		private:
 		using value_type = std::pair<NodeId, std::unordered_set<int>>;
 		using reference = value_type&;
@@ -331,7 +349,10 @@ class Contours{
 
 	};
 
-	class ContourPostOrderRange {
+        /**
+         * @brief Range que produz iteradores pós-ordem sobre contornos compactados.
+         */
+        class ContourPostOrderRange {
 		private:
 		NodeId root;
         MorphologicalTree* tree;

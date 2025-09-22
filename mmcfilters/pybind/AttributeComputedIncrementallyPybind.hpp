@@ -17,6 +17,9 @@
 class AttributeComputedIncrementallyPybind;
 using AttributeComputedIncrementallyPybindPtr = std::shared_ptr<AttributeComputedIncrementallyPybind>;
 
+/**
+ * @brief Camada Pybind que expõe utilitários incrementais de atributos.
+ */
 class AttributeComputedIncrementallyPybind : public AttributeComputedIncrementally{
 
     public:

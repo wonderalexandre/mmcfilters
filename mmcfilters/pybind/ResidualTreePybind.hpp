@@ -12,6 +12,9 @@
 #define RESIDUAL_TREE_PYBIND_H
 
 
+/**
+ * @brief Interface Pybind para reconstruções baseadas em árvores residuais.
+ */
 class ResidualTreePybind: public ResidualTree{
 
     public:

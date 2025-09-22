@@ -1,12 +1,11 @@
+#pragma once
+
 #include <list>
 #include <algorithm>
 
-#include "../include/NodeMT.hpp"
 #include "../include/MorphologicalTree.hpp"
 #include "../include/Common.hpp"
 
-#ifndef NODE_RES_H
-#define NODE_RES_H
 
 class NodeRes;
 using NodeResPtr = std::shared_ptr<NodeRes>;
@@ -19,90 +18,71 @@ class NodeRes : public std::enable_shared_from_this<NodeRes> {
         int associeatedIndex;
         bool desirableResidue;
         int levelNodeNotInNR;
-
+        MorphologicalTree* tree; //ponteiro para a árvore original
         //Nr(i) is subtree of the component tree where the variable root is the root of the subtree
-        NodeMTPtr rootNr; //first node in Nr(i)
-        std::list<NodeMTPtr> nodes; //nodes belongs to Nr(i)
+        NodeId rootNr; //first node in Nr(i)
+        std::list<NodeId> nodes; //nodes belongs to Nr(i)
     public:
         
-        NodeRes(NodeMTPtr rootNr, int associeatedIndex, bool desirableResidue);
+        NodeRes(MorphologicalTree* tree, NodeId rootNr, int associeatedIndex, bool desirableResidue): 
+        tree(tree), rootNr(rootNr), associeatedIndex(associeatedIndex), desirableResidue(desirableResidue) {}
 
-        void addNodeInNr(NodeMTPtr node);
-        void addChild(NodeResPtr child);
-        void setParent(NodeResPtr parent);
-        NodeResPtr getParent();
-        int getAssocieatedIndex();
-        bool isDesirableResidue();
-        std::list<NodeResPtr> getChildren();
-        std::list<NodeMTPtr> getNodeInNr();
-        NodeMTPtr getRootNr();
-        int getLevelNodeNotInNR();
-        void setLevelNodeNotInNR(int level);
-        bool belongsToNr(NodeMTPtr node){
+        void addNodeInNr(NodeId node){
+            this->nodes.push_back(node);
+        }
+
+        void addChild(NodeResPtr child){
+            this->children.push_back(child);
+        }
+
+        void setParent(NodeResPtr parent){
+            this->parent = parent;
+        }
+
+        int getAssocieatedIndex(){
+            return this->associeatedIndex;
+        }
+
+        bool isDesirableResidue(){
+            return this->desirableResidue;
+        }
+
+        std::list<NodeId> getNodeInNr(){
+            return this->nodes;
+        }
+
+        std::list<NodeResPtr> getChildren(){
+            return this->children;
+        }
+
+        NodeId getRootNr(){
+            return this->rootNr;
+        }
+
+        NodeResPtr getParent(){
+            return this->parent;
+        }
+
+        int getLevelNodeNotInNR(){
+            return this->levelNodeNotInNR;
+        }
+
+        void setLevelNodeNotInNR(int level){
+            this->levelNodeNotInNR = level;
+        }
+        
+        bool belongsToNr(NodeId node){
             return std::find(this->nodes.begin(), this->nodes.end(), node) != this->nodes.end();
         }
 
-        
-        
-   class InternalIteratorPixelsOfCNPs{
-		private:
-			NodeMTPtr currentNode;
-			std::stack<NodeMTPtr> s;
-			std::list<int>::iterator iter;
-			int countCNPs;
-			using iterator_category = std::input_iterator_tag;
-            using value_type = int; 
-		public:
-			InternalIteratorPixelsOfCNPs(NodeResPtr instance, int numCNPs)  {
-				this->countCNPs = numCNPs;
-				for (NodeMTPtr child: instance->nodes){
-					s.push(child);
-				}
-                this->currentNode = s.top(); s.pop();
-                this->iter = this->currentNode->getCNPs().begin();
-			}
-			InternalIteratorPixelsOfCNPs& operator++() { 
-			    this->iter++; 
-				if(this->iter == this->currentNode->getCNPs().end()){
-					if(!s.empty()){
-            			this->currentNode = s.top(); s.pop();
-						this->iter = this->currentNode->getCNPs().begin();
-					}
-				}
-				this->countCNPs++;
-				return *this; 
-            }
-            bool operator==(InternalIteratorPixelsOfCNPs other) const { 
-                return this->countCNPs == other.countCNPs; 
-            }
-            bool operator!=(InternalIteratorPixelsOfCNPs other) const { 
-                return !(*this == other);
-            }
-            int operator*() const { 
-                return (*this->iter); 
-            }  
-    };
-	class IteratorPixelsOfCNPs{
-		private:
-            NodeResPtr instance;
-			int sumCPNs;
-		public:
-			IteratorPixelsOfCNPs(NodeResPtr obj, int _sumCNPs): instance(obj), sumCPNs(_sumCNPs) {}
-			InternalIteratorPixelsOfCNPs begin(){ return InternalIteratorPixelsOfCNPs(instance, 0); }
-            InternalIteratorPixelsOfCNPs end(){ return InternalIteratorPixelsOfCNPs(instance, sumCPNs); }
-	};	
-	IteratorPixelsOfCNPs& getPixelsOfCNPs(){
-        int sumCPNs = 0;
-        for(NodeMTPtr node: this->nodes){
-            sumCPNs += node->getCNPs().size();
-        }
-	    IteratorPixelsOfCNPs *iter = new IteratorPixelsOfCNPs(this->shared_from_this(), sumCPNs);
-    	return *iter;
-	}
+        auto getPixelsOfCNPs() const{ //iterador
+            std::vector<int> reps(this->nodes.size());
+            for(NodeId node: this->nodes)
+                reps.push_back( tree->getRepNodeById(node) ); 
+            return tree->getPixelsOfFlatzones(reps);  
+        } 
+
 
 
         
 };
-
-
-#endif

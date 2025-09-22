@@ -1,5 +1,4 @@
-#ifndef ADJACENCY_UC_HPP
-#define ADJACENCY_UC_HPP
+#pragma once
 
 #include <cstdint>
 #include <vector>
@@ -137,5 +136,3 @@ public:
 
 
 };
-
-#endif // ADJACENCY_UC_HPP

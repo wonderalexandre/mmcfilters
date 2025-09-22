@@ -70,21 +70,12 @@ if(BUILD_TESTS)
     #crei uma lib mmcfilters_lib
     add_subdirectory(mmcfilters)
 
-    # Adicionar o executável de testes: testeResidualTree.cpp
+
     add_executable(testeResidualTree 
         mmcfilters/test/testeResidualTree.cpp
     )
     target_link_libraries(testeResidualTree PRIVATE mmcfilters_lib)
 
-    add_executable(testeResidualTreeCT 
-        mmcfilters/test/testeResidualTreeCT.cpp
-    )
-    target_link_libraries(testeResidualTreeCT PRIVATE mmcfilters_lib)
-
-    add_executable(TestComponentTree 
-        mmcfilters/test/TestComponentTree.cpp
-    )
-    target_link_libraries(TestComponentTree PRIVATE mmcfilters_lib)
 
     add_executable(TestComponentTree2
         mmcfilters/test/TestComponentTree2.cpp
@@ -98,34 +89,21 @@ if(BUILD_TESTS)
     )
     target_link_libraries(testeTreeOfShapes PRIVATE mmcfilters_lib)
 
-    # Adicionar o executável de testes: 
-    add_executable(TesteCountors 
+
+    add_executable(TesteCountors
         mmcfilters/test/TesteCountors.cpp
         external/stb/stb_image.cpp
     )
     target_link_libraries(TesteCountors PRIVATE mmcfilters_lib)
     target_compile_options(TesteCountors PRIVATE -Wno-deprecated-declarations)
 
-    add_executable(TesteCountorsCT
-        mmcfilters/test/TesteCountorsCT.cpp
-        external/stb/stb_image.cpp
-    )
-    target_link_libraries(TesteCountorsCT PRIVATE mmcfilters_lib)
-    target_compile_options(TesteCountorsCT PRIVATE -Wno-deprecated-declarations)
-
+     
     add_executable(TesteCountors2 
         mmcfilters/test/TesteCountors2.cpp
         external/stb/stb_image.cpp
     )
     target_link_libraries(TesteCountors2 PRIVATE mmcfilters_lib)
     target_compile_options(TesteCountors2 PRIVATE -Wno-deprecated-declarations)
-     
-    add_executable(TesteCountors2CT 
-        mmcfilters/test/TesteCountors2CT.cpp
-        external/stb/stb_image.cpp
-    )
-    target_link_libraries(TesteCountors2CT PRIVATE mmcfilters_lib)
-    target_compile_options(TesteCountors2CT PRIVATE -Wno-deprecated-declarations)
   
 
     add_executable(TesteAdjacencyUC 
@@ -135,19 +113,13 @@ if(BUILD_TESTS)
     target_link_libraries(TesteAdjacencyUC PRIVATE mmcfilters_lib)
     target_compile_options(TesteAdjacencyUC PRIVATE -Wno-deprecated-declarations)
 
+
     add_executable(testeComputerAttribute 
         mmcfilters/test/testeComputerAttribute.cpp
         external/stb/stb_image.cpp
     )
     target_link_libraries(testeComputerAttribute PRIVATE mmcfilters_lib)
     target_compile_options(testeComputerAttribute PRIVATE -Wno-deprecated-declarations)
-
-    add_executable(testeComputerAttributeCT 
-        mmcfilters/test/testeComputerAttributeCT.cpp
-        external/stb/stb_image.cpp
-    )
-    target_link_libraries(testeComputerAttributeCT PRIVATE mmcfilters_lib)
-    target_compile_options(testeComputerAttributeCT PRIVATE -Wno-deprecated-declarations)
 
 
     add_executable(TesteBitQuads 
@@ -156,12 +128,5 @@ if(BUILD_TESTS)
     )
     target_link_libraries(TesteBitQuads PRIVATE mmcfilters_lib)
     target_compile_options(TesteBitQuads PRIVATE -Wno-deprecated-declarations)
-
-    add_executable(TesteBitQuadsCT 
-        mmcfilters/test/TesteBitQuadsCT.cpp
-        external/stb/stb_image.cpp
-    )
-    target_link_libraries(TesteBitQuadsCT PRIVATE mmcfilters_lib)
-    target_compile_options(TesteBitQuadsCT PRIVATE -Wno-deprecated-declarations)
 
 endif()

@@ -1,6 +1,5 @@
 #include "../include/AttributeOpeningPrimitivesFamily.hpp"
 #include "../include/AttributeFilters.hpp"
-#include "../include/NodeMT.hpp"
 #include "../include/ComputerMSER.hpp"
 
 #include <vector>
@@ -12,7 +11,7 @@ AttributeOpeningPrimitivesFamily::~AttributeOpeningPrimitivesFamily(){
     //delete[] this->restOfImage;
 }
 
-AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree, std::shared_ptr<float[]> attrs_increasing, float maxCriterion, int deltaMSER){
+AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily(MorphologicalTree* tree, std::shared_ptr<float[]> attrs_increasing, float maxCriterion, int deltaMSER){
   this->tree = tree;
   this->attrs_increasing = attrs_increasing;
   this->maxCriterion = maxCriterion;
@@ -27,18 +26,18 @@ AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily(Morphological
   
   this->numPrimitives = 0;
   float maxThreshold = 0;
-  for(NodeMTPtr node: this->tree->getIndexNode()){
-    if(this->attrs_increasing[node->getIndex()] <= this->maxCriterion && this->isSelectedForPruning(node)){
+  for(NodeId node: this->tree->getNodeIds()){
+    if(this->attrs_increasing[node] <= this->maxCriterion && this->isSelectedForPruning(node)){
       this->numPrimitives++;
-      if(this->attrs_increasing[node->getIndex()] > maxThreshold)
-        maxThreshold = this->attrs_increasing[node->getIndex()];
+      if(this->attrs_increasing[node] > maxThreshold)
+        maxThreshold = this->attrs_increasing[node];
     }
   }
   this->initializeRestOfImage(maxThreshold);
   this->initializeNodesWithMaximumCriterium();
 }
 
-AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree, std::shared_ptr<float[]> attrs_increasing, float maxCriterion): AttributeOpeningPrimitivesFamily(tree, attrs_increasing, maxCriterion, 0){ }
+AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily(MorphologicalTree* tree, std::shared_ptr<float[]> attrs_increasing, float maxCriterion): AttributeOpeningPrimitivesFamily(tree, attrs_increasing, maxCriterion, 0){ }
 
 int AttributeOpeningPrimitivesFamily::getNumPrimitives(){
   return this->numPrimitives;
@@ -46,9 +45,9 @@ int AttributeOpeningPrimitivesFamily::getNumPrimitives(){
 
 std::list<float> AttributeOpeningPrimitivesFamily::getThresholdsPrimitive(){
   if(this->thresholds.size() == 0){
-    for(NodeMTPtr node: this->tree->getIndexNode()){
-      if(this->attrs_increasing[node->getIndex()] <= this->maxCriterion && this->isSelectedForPruning(node)){
-        this->thresholds.push_back(this->attrs_increasing[node->getIndex()]);
+    for(NodeId node: this->tree->getNodeIds()){
+      if(this->attrs_increasing[node] <= this->maxCriterion && this->isSelectedForPruning(node)){
+        this->thresholds.push_back(this->attrs_increasing[node]);
       }
     }
     this->thresholds.sort();
@@ -57,19 +56,19 @@ std::list<float> AttributeOpeningPrimitivesFamily::getThresholdsPrimitive(){
   return thresholds;
 }
 
-bool AttributeOpeningPrimitivesFamily::hasNodeSelectedInPrimitive(NodeMTPtr currentNode){
-  if(!this->selectedForFiltering[currentNode->getIndex()]){
-    std::stack<NodeMTPtr> s;
+bool AttributeOpeningPrimitivesFamily::hasNodeSelectedInPrimitive(NodeId currentNode){
+  if(!this->selectedForFiltering[currentNode]){
+    std::stack<NodeId> s;
     s.push(currentNode);
     while (!s.empty()){
-      NodeMTPtr node = s.top();
+      NodeId node = s.top();
       s.pop();
-      if (selectedForFiltering[node->getIndex()]){
+      if (selectedForFiltering[node]){
         return true;
       }
 
-      for (NodeMTPtr son : node->getChildren()){
-        if (this->attrs_increasing[son->getIndex()] == this->attrs_increasing[son->getParent()->getIndex()]){ //same primitive?
+      for (NodeId son : tree->getChildrenById(node)){
+        if (this->attrs_increasing[son] == this->attrs_increasing[tree->getParentById(son)]){ //same primitive?
           s.push(son);
         }
       }
@@ -79,8 +78,8 @@ bool AttributeOpeningPrimitivesFamily::hasNodeSelectedInPrimitive(NodeMTPtr curr
   return true;
 }
 
-bool AttributeOpeningPrimitivesFamily::isSelectedForPruning(NodeMTPtr node){
-  return node->getParent() != nullptr && this->attrs_increasing[node->getIndex()] != this->attrs_increasing[node->getParent()->getIndex()];
+bool AttributeOpeningPrimitivesFamily::isSelectedForPruning(NodeId node){
+  return tree->getParentById(node) != InvalidNode && this->attrs_increasing[node] != this->attrs_increasing[tree->getParentById(node)];
 }
 
 ImageUInt8Ptr AttributeOpeningPrimitivesFamily::getRestOfImage(){
@@ -95,18 +94,18 @@ void AttributeOpeningPrimitivesFamily::initializeRestOfImage(float thrRestImage)
 }
 
 void AttributeOpeningPrimitivesFamily::initializeNodesWithMaximumCriterium(){
-  std::stack<NodeMTPtr> s;
-  for(NodeMTPtr child: this->tree->getRoot()->getChildren()){
+  std::stack<NodeId> s;
+  for(NodeId child: tree->getChildrenById(tree->getRootById())){
     s.push(child);
   }
 
   while(!s.empty()){
-    NodeMTPtr node = s.top();s.pop();
-    if(this->attrs_increasing[this->tree->getRoot()->getIndex()] != this->attrs_increasing[node->getIndex()] && this->attrs_increasing[node->getIndex()] <= this->maxCriterion){
+    NodeId node = s.top();s.pop();
+    if(this->attrs_increasing[tree->getRootById()] != this->attrs_increasing[node] && this->attrs_increasing[node] <= this->maxCriterion){
       this->nodesWithMaximumCriterium.push_back(node);
     }
     else{
-      for(NodeMTPtr child: node->getChildren()){
+      for(NodeId child: tree->getChildrenById(node)){
         s.push(child);
       }
     }
@@ -114,12 +113,12 @@ void AttributeOpeningPrimitivesFamily::initializeNodesWithMaximumCriterium(){
 
 }
 
-std::list<NodeMTPtr> AttributeOpeningPrimitivesFamily::getNodesWithMaximumCriterium(){
+std::list<NodeId> AttributeOpeningPrimitivesFamily::getNodesWithMaximumCriterium(){
   return this->nodesWithMaximumCriterium;
 }
 
 
 
-MorphologicalTreePtr AttributeOpeningPrimitivesFamily::getTree(){
+MorphologicalTree* AttributeOpeningPrimitivesFamily::getTree(){
   return this->tree;
 }

@@ -1,5 +1,4 @@
-#ifndef BUILDER_MORPHOLOGICAL_TREE_BY_UNION_FIND_HPP
-#define BUILDER_MORPHOLOGICAL_TREE_BY_UNION_FIND_HPP
+#pragma once
 
 #include "../include/AdjacencyRelation.hpp"
 #include "../include/Common.hpp"
@@ -201,7 +200,7 @@ private:
 
 public:
 
-
+    explicit BuilderTreeOfShape(): BuilderTreeOfShape(true) {}
     explicit BuilderTreeOfShape(bool is4c8cConnectivity): is4c8cConnectivity(is4c8cConnectivity) {}
     ~BuilderTreeOfShape() { }
 
@@ -327,7 +326,7 @@ public:
                 interpolationMax[pT] = max;
             }
         }
-        return std::make_tuple(interpolationMin, interpolationMax, adj);
+        return std::make_tuple(std::move(interpolationMin), std::move(interpolationMax), std::move(adj));
        
     }
 
@@ -528,7 +527,7 @@ public:
 
             }
         }
-        return std::make_tuple(interpolationMin, interpolationMax, adj);
+        return std::make_tuple(std::move(interpolationMin), std::move(interpolationMax), std::move(adj));
 
        
     }
@@ -584,6 +583,7 @@ public:
         }
         return std::make_tuple(std::move(imgU), std::move(imgR), std::move(adj));
     }
+
 
     //Testa se é um pixel é original 
     inline bool isOriginal1D(int p, int interpNumCols) const{
@@ -704,9 +704,7 @@ public:
         }
         
 
-        return std::make_tuple(parent, orderedPixels, numNodes);
+        return std::make_tuple(std::move(parent), std::move(orderedPixels), numNodes);
     }
 
 };
-
-#endif // BUILDER_MORPHOLOGICAL_TREE_BY_UNION_FIND_HPP

@@ -30,7 +30,7 @@ void init_NodeCT(py::module &m){
 		.def_property_readonly("id", &NodeMT::getIndex )
         .def("__str__", [](NodeMT &node) {
             std::ostringstream oss;
-            oss << "NodeCT(id=" << node.getIndex() 
+            oss << "NodeMT(id=" << node.getIndex() 
                 << ", level=" << node.getLevel() 
                 << ", numCNPs=" << node.getCNPs().size() 
                 << ", area=" << node.getAreaCC(); 
@@ -38,7 +38,7 @@ void init_NodeCT(py::module &m){
         })
         .def("__repr__", [](NodeMT &node) { 
             std::ostringstream oss;
-            oss << "NodeCT(id=" << node.getIndex() << ", level=" << node.getLevel() << ")";
+            oss << "NodeMT(id=" << node.getIndex() << ", level=" << node.getLevel() << ")";
             return oss.str();
         })
  		.def_property_readonly("cnps", &NodeMT::getCNPs )

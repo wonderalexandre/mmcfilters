@@ -2,23 +2,23 @@
 
 #include "../include/Common.hpp"
 #include "../include/AttributeNames.hpp"
-#include "../include/ComponentTree.hpp"
-#include "../include/ComputerAttributeBasedBitQuadsCT.hpp"
-#include "../include/AttributeComputedIncrementallyCT.hpp"
+#include "../include/MorphologicalTree.hpp"
+#include "../include/ComputerAttributeBasedBitQuads.hpp"
+#include "../include/AttributeComputedIncrementally.hpp"
 
 #define PI 3.14159265358979323846
 
-class AttributeComputerCT {
+class AttributeComputer {
 	public:
-		virtual ~AttributeComputerCT() = default;
+		virtual ~AttributeComputer() = default;
 	
 		/// Executa a computação dos atributos produzidos por essa classe
-		virtual void compute(ComponentTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {}) const {
+		virtual void compute(MorphologicalTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {}) const {
 			compute(tree, buffer, attrNames, this->attributes(), dependencySources);
 		}
 
 		/// Executa a computação somente dos atributos solicitados
-		virtual void compute(ComponentTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {}) const = 0;
+		virtual void compute(MorphologicalTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources = {}) const = 0;
 	
 		/// Atributos produzidos
 		virtual std::vector<Attribute> attributes() const = 0;
@@ -27,16 +27,16 @@ class AttributeComputerCT {
 		virtual std::vector<AttributeOrGroup> requiredAttributes() const { return {}; }
 	
 };
-using AttributeComputerCTPtr = std::shared_ptr<AttributeComputerCT>;
+using AttributeComputerPtr = std::shared_ptr<AttributeComputer>;
 
 
 
-class AreaComputerCT : public AttributeComputerCT {
+class AreaComputer : public AttributeComputer {
 public:
     std::vector<Attribute> attributes() const override { return {AREA}; }
 
-    void compute(ComponentTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>&, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>&) const override {
-        if (PRINT_LOG) std::cout << "\n==== AttributeComputerCT: Computing AREA" << std::endl;
+    void compute(MorphologicalTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>&, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>&) const override {
+        if (PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing AREA" << std::endl;
         auto indexOf = [&](NodeId idx) { return attrNames->linearIndex(idx, AREA); };
         for(NodeId id: tree->getNodeIds()){
             buffer[indexOf(id)] = static_cast<float>(tree->getAreaById(id));
@@ -44,19 +44,19 @@ public:
     }
 };
 
-class VolumeComputerCT : public AttributeComputerCT {
+class VolumeComputer : public AttributeComputer {
 public:
     std::vector<Attribute> attributes() const override { return {VOLUME, RELATIVE_VOLUME}; }
 
-    void compute(ComponentTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>&) const override {
-        if (PRINT_LOG) std::cout << "\n==== AttributeComputerCT: Computing VOLUME" << std::endl;
+    void compute(MorphologicalTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>&) const override {
+        if (PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing VOLUME" << std::endl;
         auto indexOfVol = [&](NodeId idx) { return attrNames->linearIndex(idx, VOLUME); };
         auto indexOfRel = [&](NodeId idx) { return attrNames->linearIndex(idx, RELATIVE_VOLUME); };
 
         bool computeVolume = std::find(requestedAttributes.begin(), requestedAttributes.end(), VOLUME) != requestedAttributes.end();
         bool computeRelative = std::find(requestedAttributes.begin(), requestedAttributes.end(), RELATIVE_VOLUME) != requestedAttributes.end();
 
-        AttributeComputedIncrementallyCT::computerAttribute(tree,
+        AttributeComputedIncrementally::computerAttribute(tree,
             tree->getRootById(),
             [&](NodeId node) {
                 if (computeVolume)
@@ -77,7 +77,7 @@ public:
     }
 };
 
-class GrayLevelStatsComputerCT : public AttributeComputerCT {
+class GrayLevelStatsComputer : public AttributeComputer {
 public:
     std::vector<Attribute> attributes() const override {
         return {LEVEL, MEAN_LEVEL, VARIANCE_LEVEL, GRAY_HEIGHT};
@@ -87,8 +87,8 @@ public:
         return {VOLUME};
     }
 
-    void compute(ComponentTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources) const override {
-        if (PRINT_LOG) std::cout << "\n==== AttributeComputerCT: Computing GrayLevelStatsComputer " << std::endl;
+    void compute(MorphologicalTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources) const override {
+        if (PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing GrayLevelStatsComputer " << std::endl;
 
         auto indexOfMean = [&](NodeId idx) { return attrNames->linearIndex(idx, MEAN_LEVEL); };
         auto indexOfLevel = [&](NodeId idx) { return attrNames->linearIndex(idx, LEVEL); };
@@ -108,7 +108,7 @@ public:
             sumGrayLevelSquare = std::shared_ptr<long[]>(new long[tree->getNumNodes()]);
         }
 
-        AttributeComputedIncrementallyCT::computerAttribute(tree,
+        AttributeComputedIncrementally::computerAttribute(tree,
             tree->getRootById(),
             [&](NodeId node) {
                 if (computeVarianceLevel)
@@ -158,14 +158,14 @@ public:
 /**
  * @brief Computador CT do grupo BOUNDING_BOX (mesmos comentários da versão MT).
  */
-class BoundingBoxComputerCT : public AttributeComputerCT {
+class BoundingBoxComputer : public AttributeComputer {
 public:
     std::vector<Attribute> attributes() const override {
         return {BOX_WIDTH, BOX_HEIGHT, RECTANGULARITY, RATIO_WH,BOX_COL_MIN, BOX_COL_MAX, BOX_ROW_MIN, BOX_ROW_MAX,DIAGONAL_LENGTH};
     }
 
-    void compute(ComponentTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>&) const override {
-        if (PRINT_LOG) std::cout << "\n==== AttributeComputerCT: Computing BOUNDING_BOX group" << std::endl;
+    void compute(MorphologicalTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>&) const override {
+        if (PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing BOUNDING_BOX group" << std::endl;
 
         auto indexOfWidth  = [&](NodeId idx) { return attrNames->linearIndex(idx, BOX_WIDTH); };
         auto indexOfHeight = [&](NodeId idx) { return attrNames->linearIndex(idx, BOX_HEIGHT); };
@@ -196,7 +196,7 @@ public:
         std::vector<int> ymin(n, numRows);
         std::vector<int> ymax(n, 0);
 
-        AttributeComputedIncrementallyCT::computerAttribute(tree,
+        AttributeComputedIncrementally::computerAttribute(tree,
             tree->getRootById(),
             [&](NodeId idx) {
                 xmin[idx] = numCols;
@@ -258,14 +258,14 @@ public:
     }
 };
 
-class CentralMomentsComputerCT : public AttributeComputerCT {
+class CentralMomentsComputer : public AttributeComputer {
 public:
     std::vector<Attribute> attributes() const override {
         return {CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11, CENTRAL_MOMENT_30, CENTRAL_MOMENT_03, CENTRAL_MOMENT_21, CENTRAL_MOMENT_12};
     }
 
-    void compute(ComponentTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requested, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>&) const override {
-        if (PRINT_LOG) std::cout << "\n==== AttributeComputerCT: Computing CENTRAL_MOMENT group" << std::endl;
+    void compute(MorphologicalTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requested, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>&) const override {
+        if (PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing CENTRAL_MOMENT group" << std::endl;
 
         int numCols = tree->getNumColsOfImage();
         int n = tree->getNumNodes();
@@ -283,7 +283,7 @@ public:
         bool computeMu12 = std::find(requested.begin(), requested.end(), CENTRAL_MOMENT_12) != requested.end();
 
         // Computa sumX e sumY para calcular os centroides
-        AttributeComputedIncrementallyCT::computerAttribute(tree,
+        AttributeComputedIncrementally::computerAttribute(tree,
             tree->getRootById(),
             [&](NodeId node) {
                 sumX[node] = 0;
@@ -302,7 +302,7 @@ public:
         );
 
         // Computação dos momentos centrais
-        AttributeComputedIncrementallyCT::computerAttribute(tree,
+        AttributeComputedIncrementally::computerAttribute(tree,
             tree->getRootById(),
             [&](NodeId node) {
                 if (computeMu20) buffer[indexOf(node, CENTRAL_MOMENT_20)] = 0.0f;
@@ -346,7 +346,7 @@ public:
     }
 };
 
-class MomentBasedAttributeComputerCT : public AttributeComputerCT {
+class MomentBasedAttributeComputer : public AttributeComputer {
 public:
     std::vector<Attribute> attributes() const override {
         return {COMPACTNESS, ECCENTRICITY, LENGTH_MAJOR_AXIS, LENGTH_MINOR_AXIS,AXIS_ORIENTATION, INERTIA, CIRCULARITY};
@@ -356,8 +356,8 @@ public:
         return {AttributeGroup::CENTRAL_MOMENTS};
     }
 
-    void compute(ComponentTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources) const override {
-        if (PRINT_LOG) std::cout << "\n==== AttributeComputerCT: Computing MOMENT_BASED group" << std::endl;
+    void compute(MorphologicalTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources) const override {
+        if (PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing MOMENT_BASED group" << std::endl;
 
 
         auto indexOfMajorAxis = [&](int idx) { return attrNames->linearIndex(idx, LENGTH_MAJOR_AXIS); };
@@ -382,7 +382,7 @@ public:
         auto indexMu11 = [&](int idx) { return namesMom->linearIndex(idx, CENTRAL_MOMENT_11); };
         
         
-        AttributeComputedIncrementallyCT::computerAttribute(tree,
+        AttributeComputedIncrementally::computerAttribute(tree,
             tree->getRootById(),
             [&](NodeId) {},
             [&](NodeId, NodeId) {},
@@ -457,7 +457,7 @@ public:
 };
 
 
-class HuMomentsComputerCT : public AttributeComputerCT {
+class HuMomentsComputer : public AttributeComputer {
 public:
     std::vector<Attribute> attributes() const override {
         return {HU_MOMENT_1, HU_MOMENT_2, HU_MOMENT_3, HU_MOMENT_4, HU_MOMENT_5, HU_MOMENT_6, HU_MOMENT_7};
@@ -467,8 +467,8 @@ public:
         return {AttributeGroup::CENTRAL_MOMENTS};
     }
 
-    void compute(ComponentTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requested, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources) const override {
-        if (PRINT_LOG) std::cout << "\n==== AttributeComputerCT: Computing HU_MOMENT group" << std::endl;
+    void compute(MorphologicalTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requested, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources) const override {
+        if (PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing HU_MOMENT group" << std::endl;
 
         auto indexOf = [&](NodeId idx, Attribute attr) { return attrNames->linearIndex(idx, attr); };
         auto [dependencyAttrNamesMu, bufferMu] = dependencySources[0];
@@ -486,7 +486,7 @@ public:
         bool computeHu6 = std::find(requested.begin(), requested.end(), HU_MOMENT_6) != requested.end();
         bool computeHu7 = std::find(requested.begin(), requested.end(), HU_MOMENT_7) != requested.end();
 
-        AttributeComputedIncrementallyCT::computerAttribute(tree,
+        AttributeComputedIncrementally::computerAttribute(tree,
             tree->getRootById(),
             [](NodeId) {},
             [](NodeId, NodeId) {},
@@ -532,14 +532,14 @@ public:
     }
 };
 
-class TreeTopologyComputerCT : public AttributeComputerCT {
+class TreeTopologyComputer : public AttributeComputer {
 public:
     std::vector<Attribute> attributes() const override {
         return {HEIGHT_NODE, DEPTH_NODE, IS_LEAF_NODE, IS_ROOT_NODE, NUM_CHILDREN_NODE, NUM_SIBLINGS_NODE, NUM_DESCENDANTS_NODE, NUM_LEAF_DESCENDANTS_NODE, LEAF_RATIO_NODE, BALANCE_NODE, AVG_CHILD_HEIGHT_NODE};
     }
 
-    void compute(ComponentTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>&) const override {
-        if (PRINT_LOG) std::cout << "\n==== AttributeComputerCT: Computing STRUCTURE_TREE group" << std::endl;
+    void compute(MorphologicalTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>&) const override {
+        if (PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing STRUCTURE_TREE group" << std::endl;
 
         bool computeHeight = std::find(requestedAttributes.begin(), requestedAttributes.end(), HEIGHT_NODE) != requestedAttributes.end();
         bool computeDepth = std::find(requestedAttributes.begin(), requestedAttributes.end(), DEPTH_NODE) != requestedAttributes.end();
@@ -568,7 +568,7 @@ public:
             return computeNumLeafDescendants ? attrNames->linearIndex(idx, NUM_LEAF_DESCENDANTS_NODE) : idx;
         };
 
-        AttributeComputedIncrementallyCT::computerAttribute(tree,
+        AttributeComputedIncrementally::computerAttribute(tree,
             tree->getRootById(),
             [&](NodeId node) {
                 NodeId parent = tree->getParentById(node);
@@ -649,7 +649,7 @@ public:
 
 
 
-class BitquadsComputerCT : public AttributeComputerCT {
+class BitquadsComputer : public AttributeComputer {
 	public:
 		
 		std::vector<Attribute> attributes() const override {
@@ -664,7 +664,7 @@ class BitquadsComputerCT : public AttributeComputerCT {
 					BITQUADS_WIDTH_AVERAGE};
 		}
 
-		void compute(ComponentTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources= {}) const override {
+		void compute(MorphologicalTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources= {}) const override {
 			if(PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing BITQUADS group" << std::endl;
 			int numCols = tree->getNumColsOfImage();
 			auto indexOf = [&](int idx, Attribute attr) {
@@ -681,8 +681,8 @@ class BitquadsComputerCT : public AttributeComputerCT {
 			bool computeWithAverage = std::find(requestedAttributes.begin(), requestedAttributes.end(), BITQUADS_WIDTH_AVERAGE) != requestedAttributes.end();
 
 
-			ComputerAttributeBasedBitQuadsCT computerBitQuads(tree);
-			std::vector<AttributeBasedBitQuadsCT> attr = computerBitQuads.getAttributes();
+			ComputerAttributeBasedBitQuads computerBitQuads(tree);
+			std::vector<AttributeBasedBitQuads> attr = computerBitQuads.getAttributes();
 			for(NodeId node: tree->getNodeIds()){
 				if(computeArea)
 					buffer[indexOf(node, BITQUADS_AREA)] = attr[node].getAreaDuda();
@@ -708,19 +708,19 @@ class BitquadsComputerCT : public AttributeComputerCT {
 };
 
 
-class AttributeFactoryCT {
+class AttributeFactory {
 	private:
-		static std::shared_ptr<AttributeComputerCT> createImpl(Attribute attr) {
+		static std::shared_ptr<AttributeComputer> createImpl(Attribute attr) {
 			switch (attr) {
-				case AREA: return std::make_shared<AreaComputerCT>();
+				case AREA: return std::make_shared<AreaComputer>();
 				
 				case RELATIVE_VOLUME:
-				case VOLUME: return std::make_shared<VolumeComputerCT>();
+				case VOLUME: return std::make_shared<VolumeComputer>();
 				
 				case GRAY_HEIGHT: 
 				case LEVEL: 
 				case MEAN_LEVEL:
-				case VARIANCE_LEVEL: return std::make_shared<GrayLevelStatsComputerCT>();
+				case VARIANCE_LEVEL: return std::make_shared<GrayLevelStatsComputer>();
 
 				case BOX_COL_MIN:
 				case BOX_COL_MAX:
@@ -731,7 +731,7 @@ class AttributeFactoryCT {
 				case DIAGONAL_LENGTH:
 				case BOX_HEIGHT:
 				case BOX_WIDTH: 
-					return std::make_shared<BoundingBoxComputerCT>();
+					return std::make_shared<BoundingBoxComputer>();
 				
 
 				case AXIS_ORIENTATION: 
@@ -741,7 +741,7 @@ class AttributeFactoryCT {
 				case INERTIA:
 				case COMPACTNESS: 
 				case CIRCULARITY:
-					return std::make_shared<MomentBasedAttributeComputerCT>();
+					return std::make_shared<MomentBasedAttributeComputer>();
 
 
 				case CENTRAL_MOMENT_20:
@@ -751,7 +751,7 @@ class AttributeFactoryCT {
 				case CENTRAL_MOMENT_03:
 				case CENTRAL_MOMENT_21:
 				case CENTRAL_MOMENT_12:
-					return std::make_shared<CentralMomentsComputerCT>();
+					return std::make_shared<CentralMomentsComputer>();
 
 				
 				case HU_MOMENT_1: 
@@ -761,7 +761,7 @@ class AttributeFactoryCT {
 				case HU_MOMENT_5:
 				case HU_MOMENT_6:
 				case HU_MOMENT_7:
-					return std::make_shared<HuMomentsComputerCT>();
+					return std::make_shared<HuMomentsComputer>();
 
 
 				case HEIGHT_NODE:
@@ -775,7 +775,7 @@ class AttributeFactoryCT {
 				case LEAF_RATIO_NODE:
 				case BALANCE_NODE:
 				case AVG_CHILD_HEIGHT_NODE:
-					return std::make_shared<TreeTopologyComputerCT>();
+					return std::make_shared<TreeTopologyComputer>();
 				
 				case BITQUADS_AREA:
 				case BITQUADS_NUMBER_EULER:
@@ -786,36 +786,36 @@ class AttributeFactoryCT {
 				case BITQUADS_PERIMETER_AVERAGE:
 				case BITQUADS_LENGTH_AVERAGE:
 				case BITQUADS_WIDTH_AVERAGE:
-					return std::make_shared<BitquadsComputerCT>();
+					return std::make_shared<BitquadsComputer>();
 
 				default:
 					throw std::runtime_error("Attribute not supported.");
 			}
 		}
 
-		static std::shared_ptr<AttributeComputerCT> createImpl(AttributeGroup group) {
+		static std::shared_ptr<AttributeComputer> createImpl(AttributeGroup group) {
 			switch (group) {
 				case AttributeGroup::BOUNDING_BOX:
-					return std::make_shared<BoundingBoxComputerCT>();
+					return std::make_shared<BoundingBoxComputer>();
 				case AttributeGroup::CENTRAL_MOMENTS:
-					return std::make_shared<CentralMomentsComputerCT>();
+					return std::make_shared<CentralMomentsComputer>();
 				case AttributeGroup::HU_MOMENTS:
-					return std::make_shared<HuMomentsComputerCT>();
+					return std::make_shared<HuMomentsComputer>();
 				case AttributeGroup::MOMENT_BASED:
-					return std::make_shared<MomentBasedAttributeComputerCT>();
+					return std::make_shared<MomentBasedAttributeComputer>();
 				case AttributeGroup::TREE_TOPOLOGY:
-					return std::make_shared<TreeTopologyComputerCT>();
+					return std::make_shared<TreeTopologyComputer>();
 				case AttributeGroup::BITQUADS:
-					return std::make_shared<BitquadsComputerCT>();
+					return std::make_shared<BitquadsComputer>();
 				default:
 					throw std::runtime_error("Attribute group not supported.");
 			}
 		}
 
 	public:
-		static std::shared_ptr<AttributeComputerCT> create(const AttributeOrGroup& attr) {
-			return std::visit([](auto&& actualAttr) -> std::shared_ptr<AttributeComputerCT> {
-				return AttributeFactoryCT::createImpl(actualAttr); // Correção aqui!
+		static std::shared_ptr<AttributeComputer> create(const AttributeOrGroup& attr) {
+			return std::visit([](auto&& actualAttr) -> std::shared_ptr<AttributeComputer> {
+				return AttributeFactory::createImpl(actualAttr); // Correção aqui!
 			}, attr);
 		}
 

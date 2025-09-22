@@ -1,10 +1,8 @@
+#pragma once
 
 #include <list>
 #include <vector>
 #include "../include/Common.hpp"
-
-#ifndef ADJACENCY_H
-#define ADJACENCY_H
 
 class AdjacencyRelation;  // forward declaration
 using AdjacencyRelationPtr = std::shared_ptr<AdjacencyRelation>;
@@ -146,5 +144,3 @@ public:
    IteratorAdjacency end();	 
 };
 
-
-#endif

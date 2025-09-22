@@ -3,38 +3,21 @@
 #include <typeindex>
 #include <limits>
 #include "../include/AttributeComputedIncrementally.hpp"
+#include "../include/AttributeComputer.hpp"
 
-
-void AttributeComputedIncrementally::preProcessing(NodeMTPtr v){}
-
-void AttributeComputedIncrementally::mergeChildren(NodeMTPtr parent, NodeMTPtr child){}
-
-void AttributeComputedIncrementally::postProcessing(NodeMTPtr parent){}
-
-void AttributeComputedIncrementally::computerAttribute(NodeMTPtr root) {
-        preProcessing(root);
-        for (NodeMTPtr child : root->getChildren())
-        {
-            computerAttribute(child);
-            mergeChildren(root, child);
-        }
-        postProcessing(root);
-}
-
-
-ImageFloatPtr AttributeComputedIncrementally::computerAttributeMapping(MorphologicalTreePtr tree, Attribute attribute) {
+ImageFloatPtr AttributeComputedIncrementally::computerAttributeMapping(MorphologicalTree* tree, Attribute attribute) {
     auto [attrNames, buffer] = AttributeComputedIncrementally::computeSingleAttribute(tree, attribute);
     ImageFloatPtr imgPtr = std::make_shared<ImageFloat>(tree->getNumRowsOfImage(), tree->getNumColsOfImage());
     float* img = imgPtr->rawData();
     for(int p=0; p < imgPtr->getSize(); ++p){
-        int index = tree->getSC(p)->getIndex();
+        int index = tree->getSCById(p);
         img[p] = buffer[attrNames->linearIndex(index, attribute)];
     }
     return imgPtr;
 }
 
 
-std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeComputedIncrementally::computeAttributesByComputer(MorphologicalTreePtr tree, std::shared_ptr<AttributeComputer> comp, const DependencyMap& availableDeps) {
+std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeComputedIncrementally::computeAttributesByComputer(MorphologicalTree* tree, std::shared_ptr<AttributeComputer> comp, const DependencyMap& availableDeps) {
     // Lambda para obter os atributos de um grupo
     auto attributesOf = [](AttributeGroup group) -> std::vector<Attribute> {
         const auto it = ATTRIBUTE_GROUPS.find(group);
@@ -104,7 +87,7 @@ std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeCo
     return {attrNames, buffer};
 }
 
-std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeComputedIncrementally::computeSingleAttribute(MorphologicalTreePtr tree, AttributeOrGroup attrOrGroup, const DependencyMap& availableDeps) {
+std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeComputedIncrementally::computeSingleAttribute(MorphologicalTree* tree, AttributeOrGroup attrOrGroup, const DependencyMap& availableDeps) {
 
     // Lambda para obter os atributos de um grupo
     auto attributesOf = [](AttributeGroup group) -> std::vector<Attribute> {
@@ -184,7 +167,7 @@ std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeCo
 
 
 
-std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> AttributeComputedIncrementally::computeSingleAttributeWithDelta(MorphologicalTreePtr tree, Attribute attribute, int delta, std::string padding, const DependencyMap& availableDeps) {
+std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> AttributeComputedIncrementally::computeSingleAttributeWithDelta(MorphologicalTree* tree, Attribute attribute, int delta, std::string padding, const DependencyMap& availableDeps) {
 	/*
 		Valores de padding:
 		 - zero-padding: preenchimento com zero
@@ -205,11 +188,8 @@ std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> At
     // Aloca buffer do novo atributo delta (inicializado com zero)
     std::shared_ptr<float[]> attrsDelta(new float[n * attributeNamesDelta->NUM_ATTRIBUTES]());
 
-    PathAscendantsAndDescendants pathAscDesc(tree);
-
     // Para d = 0, copia valor do próprio nó SEMPRE
-    for (NodeMTPtr node : tree->getIndexNode()) {
-        int nodeIndex = node->getIndex();
+    for (NodeId nodeIndex : tree->getNodeIds()) {
         int outIdx = attributeNamesDelta->linearIndex(nodeIndex, attribute, 0);
         int baseIdx = attributeNamesBase->linearIndex(nodeIndex, attribute);
         attrsDelta[outIdx] = attrsBase[baseIdx];
@@ -217,22 +197,19 @@ std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> At
 
     // Para d > 0, só copia se realmente existe ascendente/descendente (zero-padding padrão)
     for (int d = 1; d <= delta; ++d) {
-        pathAscDesc.computerAscendantsAndDescendants(d);
-        const auto& ascendants = pathAscDesc.getAscendants();
-        const auto& descendants = pathAscDesc.getDescendants();
-
-        for (NodeMTPtr node : tree->getIndexNode()) {
-            int nodeIndex = node->getIndex();
-
+        auto [ascendants, descendants] = tree->computerAscendantsAndDescendants(d);
+        
+        for (NodeId nodeIndex : tree->getNodeIds()) {
+            
             // Ascendente (-d)
-            int ascIndex = (ascendants[nodeIndex] ? ascendants[nodeIndex]->getIndex() : nodeIndex);
+            int ascIndex = (ascendants[nodeIndex] != InvalidNode ? ascendants[nodeIndex] : nodeIndex);
             if (ascIndex != nodeIndex) {
                 int outIdxAsc = attributeNamesDelta->linearIndex(nodeIndex, attribute, -d);
                 int baseIdxAsc = attributeNamesBase->linearIndex(ascIndex, attribute);
                 attrsDelta[outIdxAsc] = attrsBase[baseIdxAsc];
             }
             // Descendente (+d)
-            int descIndex = (descendants[nodeIndex] ? descendants[nodeIndex]->getIndex() : nodeIndex);
+            int descIndex = (descendants[nodeIndex] != InvalidNode ? descendants[nodeIndex] : nodeIndex);
             if (descIndex != nodeIndex) {
                 int outIdxDesc = attributeNamesDelta->linearIndex(nodeIndex, attribute, +d);
                 int baseIdxDesc = attributeNamesBase->linearIndex(descIndex, attribute);
@@ -243,15 +220,12 @@ std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> At
 
     // 4. Preenche delta > 0 (só copia se realmente existe ascendente/descendente)
     for (int d = 1; d <= delta; ++d) {
-        pathAscDesc.computerAscendantsAndDescendants(d);
-        const auto& ascendants = pathAscDesc.getAscendants();
-        const auto& descendants = pathAscDesc.getDescendants();
-
-        for (NodeMTPtr node : tree->getIndexNode()) {
-            int nodeIndex = node->getIndex();
+        auto [ascendants, descendants] = tree->computerAscendantsAndDescendants(d);
+        
+        for (NodeId nodeIndex : tree->getNodeIds()) {
 
             // Ascendente (-d)
-            int ascIndex = (ascendants[nodeIndex] ? ascendants[nodeIndex]->getIndex() : nodeIndex);
+            int ascIndex = (ascendants[nodeIndex]!=InvalidNode ? ascendants[nodeIndex] : nodeIndex);
             if (ascIndex != nodeIndex) {
                 int outIdxAsc = attributeNamesDelta->linearIndex(nodeIndex, attribute, -d);
                 int baseIdxAsc = attributeNamesBase->linearIndex(ascIndex, attribute);
@@ -259,7 +233,7 @@ std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> At
             }
 
             // Descendente (+d)
-            int descIndex = (descendants[nodeIndex] ? descendants[nodeIndex]->getIndex() : nodeIndex);
+            int descIndex = (descendants[nodeIndex] !=InvalidNode ? descendants[nodeIndex] : nodeIndex);
             if (descIndex != nodeIndex) {
                 int outIdxDesc = attributeNamesDelta->linearIndex(nodeIndex, attribute, +d);
                 int baseIdxDesc = attributeNamesBase->linearIndex(descIndex, attribute);
@@ -270,8 +244,7 @@ std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> At
 
     // 5. Aplica padding para modos diferentes de zero-padding
     if (padding != "zero-padding") {
-        for (NodeMTPtr node : tree->getIndexNode()) {
-            int nodeIndex = node->getIndex();
+        for (NodeId nodeIndex : tree->getNodeIds()) {
 
             // Ascendente (-d)
             for (int d = 1; d <= delta; ++d) {
@@ -298,7 +271,7 @@ std::pair<std::shared_ptr<AttributeNamesWithDelta>, std::shared_ptr<float[]>> At
                 int outIdx = attributeNamesDelta->linearIndex(nodeIndex, attribute, +d);
                 int refIdx = attributeNamesDelta->linearIndex(nodeIndex, attribute, +(d - 1));
 
-                if (node->isLeaf() || attrsDelta[outIdx] == 0) {
+                if (tree->isLeafById(nodeIndex) || attrsDelta[outIdx] == 0) {
                     if (padding == "last-padding") {
                         attrsDelta[outIdx] = attrsDelta[refIdx];
                     } else if (padding == "nan-padding") {
@@ -400,7 +373,7 @@ static std::vector<std::shared_ptr<AttributeComputer>> getOrderedComputers(const
     return ordered;
 }
 
-std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeComputedIncrementally::computeAttributes(MorphologicalTreePtr tree, const std::vector<AttributeOrGroup>& attributes, const DependencyMap& providedDependencies) {
+std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeComputedIncrementally::computeAttributes(MorphologicalTree* tree, const std::vector<AttributeOrGroup>& attributes, const DependencyMap& providedDependencies) {
     DependencyMap available = providedDependencies;
 
     auto attributesOf = [](AttributeGroup group) -> std::vector<Attribute> {
@@ -500,37 +473,35 @@ std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeCo
 }
 
 
-
-
-ContoursMTPtr AttributeComputedIncrementally::extractCompactContours(MorphologicalTreePtr tree){
-    ContoursMTPtr contoursMT = std::make_shared<ContoursMT>(tree);
+std::shared_ptr<Contours> AttributeComputedIncrementally::extractCompactContours(MorphologicalTree* tree){
+    std::shared_ptr<Contours> contoursMT = std::make_shared<Contours>(tree);
     
     std::vector<std::vector<int>> contoursToRemoveLCA(tree->getNumNodes());
     std::vector<std::int8_t> ncount(tree->getNumRowsOfImage() * tree->getNumColsOfImage(), 0);
     AdjacencyRelationPtr adj4 = std::make_shared<AdjacencyRelation>(tree->getNumRowsOfImage(), tree->getNumColsOfImage(), 1);
-    LCAEulerRMQ lca(tree);	
+    LCAEulerRMQ_CT lca(tree);	
 
-    AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
-        [](NodeMTPtr node) -> void { // pre-processing
+    AttributeComputedIncrementally::computerAttribute(tree, tree->getRootById(),
+        [](NodeId node) -> void { // pre-processing
 
         },
-        [](NodeMTPtr parent, NodeMTPtr child) -> void { // merge-processing
+        [](NodeId parent, NodeId child) -> void { // merge-processing
             
         },
-        [&contoursMT, &contoursToRemoveLCA, &lca, &ncount, tree, adj4](NodeMTPtr nodeP) -> void { // post-processing
-            std::vector<int> &NcontourToRemoveLCA = contoursToRemoveLCA[nodeP->getIndex()];
+        [&contoursMT, &contoursToRemoveLCA, &lca, &ncount, tree, adj4](NodeId nodeP) -> void { // post-processing
+            std::vector<int> &NcontourToRemoveLCA = contoursToRemoveLCA[nodeP];
 
-            NodeMTPtr nodeLCA = nodeP;
+            NodeId nodeLCA = nodeP;
             for(int p: NcontourToRemoveLCA){ //pixels que sao contornos de nodes descendentes ao NodeAtual
                 bool isPixelToBeRemoved = true;
                 for (int r : adj4->getNeighborPixels(p)) { //Existe um nodeQ ascendente de NodeAtual contendo p como contorno? (p, q) in A
-                    NodeMTPtr nodeR = tree->getSC(r); 
+                    NodeId nodeR = tree->getSCById(r); 
                     if (tree->isStrictAncestor(nodeR, nodeLCA)){
-                        contoursToRemoveLCA[nodeR->getIndex()].push_back(p); 
+                        contoursToRemoveLCA[nodeR].push_back(p); 
                         isPixelToBeRemoved = false;	
                     }else if(!tree->isComparable(nodeLCA, nodeR)) {
-                        NodeMTPtr otherNodeLCA = lca.findLowestCommonAncestor(nodeLCA, nodeR);
-                        contoursToRemoveLCA[otherNodeLCA->getIndex()].push_back(p);
+                        NodeId otherNodeLCA = lca.findLowestCommonAncestor(nodeLCA, nodeR);
+                        contoursToRemoveLCA[otherNodeLCA].push_back(p);
                         isPixelToBeRemoved = false;
                     }
                 }
@@ -539,16 +510,16 @@ ContoursMTPtr AttributeComputedIncrementally::extractCompactContours(Morphologic
                 }
             }
         
-            for (int p : nodeP->getCNPs()) {
+            for (int p : tree->getCNPsById(nodeP)) {
                 if (adj4->isBorderDomainImage(p)){
                     ncount[p]++;
                 }
 
                 for (int q : adj4->getNeighborPixels(p)) {
-                    NodeMTPtr nodeQ = tree->getSC(q); 
+                    NodeId nodeQ = tree->getSCById(q); 
                     if(!tree->isComparable(nodeP, nodeQ)){ //se os nodeP e nodeQ não sao comparaveis, então p pode ser removido pelo LCA de nodeP e nodeQ 
-                        NodeMTPtr nodeLCA = lca.findLowestCommonAncestor(nodeP, nodeQ);
-                        contoursToRemoveLCA[nodeLCA->getIndex()].push_back(p);
+                        NodeId nodeLCA = lca.findLowestCommonAncestor(nodeP, nodeQ);
+                        contoursToRemoveLCA[nodeLCA].push_back(p);
                         ncount[p]++;
                     }
                     else if(tree->isStrictDescendant(nodeP, nodeQ)){  //maxtree:  SC(p) \subset SC(q) <=> f(p) > f(q)
@@ -571,39 +542,39 @@ ContoursMTPtr AttributeComputedIncrementally::extractCompactContours(Morphologic
     return contoursMT;
 }
 
-std::vector<std::unordered_set<int>> AttributeComputedIncrementally::extractNonCompactContours(MorphologicalTreePtr tree){
+std::vector<std::unordered_set<int>> AttributeComputedIncrementally::extractNonCompactContours(MorphologicalTree* tree){
     std::vector<std::unordered_set<int>> contours(tree->getNumNodes());
     std::vector<std::vector<int>> contoursToRemoveLCA(tree->getNumNodes());
     std::vector<std::int8_t> ncount(tree->getNumRowsOfImage() * tree->getNumColsOfImage(), 0);
     AdjacencyRelationPtr adj4 = std::make_shared<AdjacencyRelation>(tree->getNumRowsOfImage(), tree->getNumColsOfImage(), 1);
-    LCAEulerRMQ lca(tree);	
+    LCAEulerRMQ_CT lca(tree);	
 
-    AttributeComputedIncrementally::computerAttribute(tree->getRoot(),
-        [](NodeMTPtr node) -> void { // pre-processing
+    AttributeComputedIncrementally::computerAttribute(tree, tree->getRootById(),
+        [](NodeId node) -> void { // pre-processing
 
         },
-        [&contours, &ncount, tree, adj4](NodeMTPtr parent, NodeMTPtr child) -> void { // merge-processing
-            std::unordered_set<int> &Ncontour = contours[parent->getIndex()];
-            for (int p : contours[child->getIndex()]){
+        [&contours, &ncount, tree, adj4](NodeId parent, NodeId child) -> void { // merge-processing
+            std::unordered_set<int> &Ncontour = contours[parent];
+            for (int p : contours[child]){
                 Ncontour.insert(p);
             }
         },
-        [&contours, &contoursToRemoveLCA, &lca, &ncount, tree, adj4](NodeMTPtr nodeP) -> void { // post-processing
+        [&contours, &contoursToRemoveLCA, &lca, &ncount, tree, adj4](NodeId nodeP) -> void { // post-processing
             // Initialise contours of node "N"
-            std::unordered_set<int> &Ncontour = contours[nodeP->getIndex()];
-            std::vector<int> &NcontourToRemoveLCA = contoursToRemoveLCA[nodeP->getIndex()];
-            NodeMTPtr nodeLCA = nodeP;
+            std::unordered_set<int> &Ncontour = contours[nodeP];
+            std::vector<int> &NcontourToRemoveLCA = contoursToRemoveLCA[nodeP];
+            NodeId nodeLCA = nodeP;
             for(int p: NcontourToRemoveLCA){ //pixels que sao contornos de nodes descendentes ao NodeAtual
                 bool isPixelToBeRemoved = true;
                 
                 for (int r : adj4->getNeighborPixels(p)) { //Existe um nodeQ ascendente de NodeAtual contendo p como contorno? (p, q) in A
-                    NodeMTPtr nodeR = tree->getSC(r); 
+                    NodeId nodeR = tree->getSCById(r); 
                     if (tree->isStrictAncestor(nodeR, nodeLCA)){
-                        contoursToRemoveLCA[nodeR->getIndex()].push_back(p); 
+                        contoursToRemoveLCA[nodeR].push_back(p); 
                         isPixelToBeRemoved = false;	
                     }else if(!tree->isComparable(nodeLCA, nodeR)) {
-                        NodeMTPtr otherNodeLCA = lca.findLowestCommonAncestor(nodeLCA, nodeR);
-                        contoursToRemoveLCA[otherNodeLCA->getIndex()].push_back(p);
+                        NodeId otherNodeLCA = lca.findLowestCommonAncestor(nodeLCA, nodeR);
+                        contoursToRemoveLCA[otherNodeLCA].push_back(p);
                         isPixelToBeRemoved = false;
                     }
                 }
@@ -612,15 +583,15 @@ std::vector<std::unordered_set<int>> AttributeComputedIncrementally::extractNonC
                 }
             }
         
-            for (int p : nodeP->getCNPs()) {
+            for (int p : tree->getCNPsById(nodeP)) {
                 if (adj4->isBorderDomainImage(p)){
                     ncount[p]++;
                 }
                 for (int q : adj4->getNeighborPixels(p)) {
-                    NodeMTPtr nodeQ = tree->getSC(q); 
+                    NodeId nodeQ = tree->getSCById(q); 
                     if(!tree->isComparable(nodeP, nodeQ)){ //se os nodeP e nodeQ não sao comparaveis, então p pode ser removido pelo LCA de nodeP e nodeQ 
-                        NodeMTPtr nodeLCA = lca.findLowestCommonAncestor(nodeP, nodeQ);
-                        contoursToRemoveLCA[nodeLCA->getIndex()].push_back(p);
+                        NodeId nodeLCA = lca.findLowestCommonAncestor(nodeP, nodeQ);
+                        contoursToRemoveLCA[nodeLCA].push_back(p);
                         ncount[p]++;
                     }
                     else if(tree->isStrictDescendant(nodeP, nodeQ)){  //maxtree:  SC(p) \subset SC(q) <=> f(p) > f(q)

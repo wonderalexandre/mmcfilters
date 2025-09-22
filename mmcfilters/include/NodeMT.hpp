@@ -1,443 +1,337 @@
+#pragma once
+
 #include <list>
+#include <vector>
 #include <stack>
 #include <queue>
 #include <iterator>
 #include <utility>
-#include <memory>
+#include <functional> 
+#include <optional>
+#include <stdexcept>
+#include <type_traits>
+
+
 #include "../include/Common.hpp"
-
-#ifndef NODECT_H
-#define NODECT_H
-
-// Forward declaration 
-class NodeMT;
-using NodeMTPtr = std::shared_ptr<NodeMT>;
+#include "../include/MorphologicalTree.hpp"
 
 
-class NodeMT : public std::enable_shared_from_this<NodeMT> {
+/**
+ * @brief Handle (proxy leve) para nós da Component Tree com acesso O(1) via NodeArena.
+ *
+ * `NodeMT` é um *wrapper* leve que referencia um nó da árvore de componentes
+ * (identificado por `id`) e delega leituras/escritas para a `NodeArena` da
+ * árvore dona (`MorphologicalTree<CNPsType>* tree`). Não possui propriedade do nó nem
+ * alocação própria — serve como *view* handle seguro e barato de copiar.
+ *
+ * ## Principais capacidades
+ * - **Acesso O(1)** aos atributos do nó (nível, área, representante, CNPs).
+ * - **Relações estruturais**: `getParent()`, `addChild()`, `removeChild()`,
+ *   `spliceChildren()` e as variantes por `Id` otimizadas (operam só na arena).
+ * - **Ranges/Iteradores** para percursos:
+ *   - `getChildren()` → range de filhos (por *proxy* `NodeMT`).
+ *   - `getNodesOfPathToRoot()` → caminho até a raiz.
+ *   - `getIteratorPostOrderTraversal()` → pós-ordem.
+ *   - `getIteratorBreadthFirstTraversal()` → largura (BFS).
+ *   - `getRepsOfCC()` → itera representantes (CNPs) em BFS na subárvore.
+ * - **Métricas**: `computerNumDescendants()` e `computerNumFlatzoneDescendants()`.
+ *
+ * ## Semântica de tipo (CNPsType)
+ * - `Pixels` (alias para `int`): cada nó guarda um único representante; métodos
+ *   como `addRepCNPs(int)` substituem o valor.
+ * - `FlatZones` (ex.: `std::vector<int>`): cada nó pode armazenar vários reps;
+ *   há métodos especializados (habilitados por SFINAE) para adicionar/remover
+ *   e consultar contagens de flat-zones.
+ *
+ * ## Invariantes
+ * - Este handle é válido se e somente se `tree != nullptr` e `id >= 0`.
+ * - As operações que alteram a estrutura (ex.: `addChild`, `setParent`) são
+ *   encaminhadas à `MorphologicalTree`, que mantém a coerência dos vetores da arena.
+ *
+ * ## Complexidade (típica)
+ * - Acesso/atribuição de campo: O(1).
+ * - Inserção/remoção de relação pai↔filho (arena-based): O(1).
+ * - Iteração por ranges/iteradores: O(k) no número de nós/itens visitados.
+ *
+ * ## Exemplo mínimo
+ * @code
+ * MorphologicalTree<Pixels> T = ... ;
+ * NodeMT<Pixels> n = T.proxy(rootId);
+ * if (n) {
+ *     int lvl = n.getLevel();
+ *     for (auto c : n.getChildren()) {
+ *         // processa filhos por proxy
+ *     }
+ *     for (int rep : n.getRepsOfCC()) {
+ *         // reps em BFS da subárvore de n
+ *     }
+ * }
+ * @endcode
+ *
+ */
+class NodeMT{
 private:
-	int index; //tempo de entrada durante o percurso pos-ordem (1 incremento) 
-    int level;
-	int areaCC;
-    int timePostOrder;  //tempo de entrada durante o percurso pos-ordem (2 incremento) 
-    int timePreOrder;  //tempo de saia durante o percurso pos-ordem (2 incremento) 
-	
-    NodeMTPtr parent;
-    std::list<NodeMTPtr> children;
-	std::list<int> cnps;
+    friend class MorphologicalTree;
+
+    NodeId id = -1;
+    MorphologicalTree* tree = nullptr;  // árvore dona
     
 public:
-	
-    NodeMT();
-    NodeMT(int index, NodeMTPtr parent, int level);
-    void addCNPs(int p);
-    void setLevel(int level);
-    void addChild(NodeMTPtr child);
-	int getIndex();
-	void setIndex(int index);
-	int getResidue();
-	int getLevel();
-	int getAreaCC();
-	bool isMaxtreeNode();
-	void setAreaCC(int area);
-	int getNumDescendants();
-	NodeMTPtr getParent();
-	void setParent(NodeMTPtr parent);
-	std::list<int>& getCNPs();
-	std::list<NodeMTPtr>& getChildren();
-        // Returns the number of siblings (nodes that share the same parent)
-        // excluding this node itself
-        int getNumSiblings();
-    int getTimePostOrder();
-    int getTimePreOrder();
-    void setTimePostOrder(int time);
-    void setTimePreOrder(int time);
-    bool isLeaf();
-
-	
-//============= Iterator para iterar os nodes do caminho até o root==============//
-class InternalIteratorNodesOfPathToRoot {
-    private:
-        NodeMTPtr currentNode;
     
+    // Construtor padrão
+    NodeMT() = default;
+    NodeMT(MorphologicalTree* owner, NodeId i) : id(i), tree(owner) {}
+
+    //id >= 0 é o operador booleno
+    explicit operator bool() const noexcept { return tree != nullptr && id >= 0; }
+
+    //id é o operador == e !=
+    bool operator==(const NodeMT& other) const noexcept { return tree == other.tree && id == other.id; }
+    bool operator!=(const NodeMT& other) const noexcept { return !(*this == other); }
+
+    //id é o operador int
+    operator int() const noexcept { return id; }
+
+    //acesso e escrita de dados na arena
+    inline int getRepNode() const noexcept{ return tree->arena.repNode[id]; }
+    inline int getIndex() const noexcept{ return id; }
+    inline int getLevel() const noexcept{ return tree->arena.threshold2[id]; }
+    inline int32_t getArea() const noexcept{ return tree->arena.areaCC[id]; }
+    inline int getNumChildren() const noexcept{ return tree->arena.childCount[id]; }
+    inline int getNumSiblings() const noexcept{ return tree->getNumSiblingsById(id); }
+    inline void setArea(int32_t a) noexcept { tree->arena.areaCC[id] = a; }
+    inline void setLevel(int lv) noexcept { tree->arena.threshold2[id] = lv; }
+    
+    inline int getTimePostOrder() const noexcept{ return tree->arena.timePostOrder[id]; }
+    inline void setTimePostOrder(int time) noexcept{ tree->arena.timePostOrder[id] = time; } 
+    inline int getTimePreOrder() const noexcept{ return tree->arena.timePreOrder[id]; }
+    inline void setTimePreOrder(int time)noexcept { tree->arena.timePreOrder[id] = time; }
+
+    //propaga para versão por id 
+    inline auto getPixelsOfCC() const { return tree->getPixelsOfCCById(id); } //iterador
+    inline auto getCNPs() const { return tree->getCNPsById(id); } //iterador 
+    inline auto getNodesDescendants() const { return tree->getNodesDescendantsById(id); } //iterador
+    
+    inline int getNumCNPs() const { return tree->getNumCNPsById(id);} 
+    inline bool isChild(NodeMT node) const noexcept { return tree && node && tree->hasChildById(id, node.getIndex()); }
+    inline NodeMT getParent() { if (!tree || tree->arena.parentId[id] < 0) return {}; return NodeMT(tree, tree->arena.parentId[id]);}
+    inline void setParent(NodeMT node) { if (!tree) return;  tree->setParentById(id, node.getIndex()); }
+    inline void addChild(NodeMT child) { if (!tree || !child) return; tree->addChildById(id, child.getIndex()); }
+    inline void removeChild(NodeMT child, bool releaseNode) { if (!tree || !child) return; tree->removeChildById(id, child.getIndex(), releaseNode); }
+    inline void spliceChildren(NodeMT from) { if (!tree || !from || from.getIndex() == id) return; tree->spliceChildrenById(id, from.getIndex()); }
+    inline bool isLeaf() const { return tree->isLeafById(id); }
+    inline int getResidue() const noexcept{ return tree->getResidueById(id); }
+    inline bool isMaxtreeNode() const noexcept{ return tree->isMaxtreeNodeById(id); }
+
+          
+    // Conta descendentes (exclui o próprio nó)
+    int getNumDescendants() {
+        return tree->getNumDescendantsById(id);
+    }
+
+
+    // Ranges existentes que devolvem filhos (por ponteiro lógico) continuam,
+    // mas internamente usam `tree->proxy(id)` (que agora devolve handle)
+    class ChildIdRange {
+        int cur; MorphologicalTree* T;
+    public:
+        struct It {
+            int id; MorphologicalTree* T;
+            bool operator!=(const It& o) const { return id != o.id; }
+            void operator++() { id = (id == -1) ? -1 : T->arena.nextSiblingId[id]; }
+            NodeMT operator*() const { return T->proxy(id); }
+        };
+        It begin() const { return {cur, T}; }
+        It end()   const { return {-1,  T}; }
+        ChildIdRange(int first, MorphologicalTree* t) : cur(first), T(t) {}
+    };
+    auto getChildren() const {
+        return ChildIdRange(tree ? tree->arena.firstChildId[id] : -1, tree);
+    }
+
+    //============= Iterator para iterar os nodes do caminho até o root==============//
+    class InternalIteratorNodesOfPathToRoot {
+    private:
+        MorphologicalTree* T_ = nullptr;
+        NodeId curId_ = -1;
     public:
         using iterator_category = std::input_iterator_tag;
-        using value_type = NodeMTPtr;
+        using value_type = NodeMT;
         using difference_type = std::ptrdiff_t;
-        using pointer = NodeMTPtr*;
-        using reference = NodeMTPtr&;
-    
-        InternalIteratorNodesOfPathToRoot(NodeMTPtr obj) : currentNode(obj) {}
-    
+        using pointer = NodeMT*;
+        using reference = NodeMT; // retornamos por valor (handle leve)
+
+        InternalIteratorNodesOfPathToRoot(NodeMT obj) : T_(obj.tree), curId_(obj ? obj.getIndex() : -1) {}
+
         InternalIteratorNodesOfPathToRoot& operator++() {
-            if (currentNode) {
-                currentNode = currentNode->getParent();  // Retorna outro shared_ptr
+            if (T_ && curId_ != -1) {
+                curId_ = T_->getParentById(curId_);
             }
             return *this;
         }
-    
+
         bool operator==(const InternalIteratorNodesOfPathToRoot& other) const {
-            return currentNode == other.currentNode;
+            return curId_ == other.curId_;
         }
-    
-        bool operator!=(const InternalIteratorNodesOfPathToRoot& other) const {
-            return !(*this == other);
-        }
-    
-        reference operator*() {
-            return currentNode;
-        }
+        bool operator!=(const InternalIteratorNodesOfPathToRoot& other) const { return !(*this == other); }
+
+        value_type operator*() const { return (curId_ == -1) ? NodeMT() : NodeMT(T_, curId_); }
     };
     
     class IteratorNodesOfPathToRoot {
     private:
-        NodeMTPtr instance;
-    
+        MorphologicalTree* T_ = nullptr;
+        NodeId startId_ = -1;
     public:
-        explicit IteratorNodesOfPathToRoot(NodeMTPtr obj) : instance(obj) {}
-    
-        InternalIteratorNodesOfPathToRoot begin() const { return InternalIteratorNodesOfPathToRoot(instance); }
-        InternalIteratorNodesOfPathToRoot end() const { return InternalIteratorNodesOfPathToRoot(nullptr); }
+        explicit IteratorNodesOfPathToRoot(NodeMT obj) : T_(obj.tree), startId_(obj ? obj.getIndex() : -1) {}
+        InternalIteratorNodesOfPathToRoot begin() const { return InternalIteratorNodesOfPathToRoot(NodeMT(T_, startId_)); }
+        InternalIteratorNodesOfPathToRoot end() const { return InternalIteratorNodesOfPathToRoot(NodeMT()); }
     };
     
     // Chamador usa this como shared_ptr:
-    IteratorNodesOfPathToRoot getNodesOfPathToRoot() {
-        return IteratorNodesOfPathToRoot(this->shared_from_this());
-    }
+    IteratorNodesOfPathToRoot getNodesOfPathToRoot() { return IteratorNodesOfPathToRoot(NodeMT(tree, id)); }
     
 
-/////////
-// **Iterador para coletar ramos em pós-ordem**
-// Classe do Iterador Pós-Ordem por Ramos
-class InternalIteratorBranchPostOrderTraversal {
+
+
+    //============= Iterator para iterar os nodes de um percuso em pos-ordem ==============//
+    class InternalIteratorPostOrderTraversal {
     private:
-        std::stack<NodeMTPtr> processingStack;
-        std::stack<NodeMTPtr> postOrderStack;
-        std::list<std::list<NodeMTPtr>> branches;
-        typename std::list<std::list<NodeMTPtr>>::iterator branchIterator;
-    
-    public:
-        using iterator_category = std::input_iterator_tag;
-        using value_type = std::list<NodeMTPtr>;
-        using pointer = std::list<NodeMTPtr>*;
-        using reference = std::list<NodeMTPtr>&;
-    
-        InternalIteratorBranchPostOrderTraversal(NodeMTPtr root) {
-            if (!root) return;
-    
-            std::stack<NodeMTPtr> tempStack;
-            tempStack.push(root);
-    
-            while (!tempStack.empty()) {
-                auto current = tempStack.top();
-                tempStack.pop();
-                postOrderStack.push(current);
-    
-                for (auto& child : current->getChildren()) {
-                    tempStack.push(child);
-                }
-            }
-    
-            std::list<NodeMTPtr> currentBranch;
-            while (!postOrderStack.empty()) {
-                auto node = postOrderStack.top();
-                postOrderStack.pop();
-    
-                if (!currentBranch.empty()) {
-                    auto lastNode = currentBranch.back();
-                    if (lastNode->getParent() && lastNode->getParent()->getChildren().back() != lastNode) {
-                        branches.push_back(currentBranch);
-                        currentBranch.clear();
+        struct Item { int id; bool expanded; };
+
+        MorphologicalTree* T_ = nullptr;
+        FastStack<Item> st_;
+        NodeId current_ = -1;
+
+        inline void settle_() noexcept {
+            while (!st_.empty()) {
+                Item &top = st_.top();
+                if (!top.expanded) {
+                    top.expanded = true;
+                    // empilha filhos (direita→esquerda na prática; inverta se quiser L→R)
+                    for (int c = T_->arena.firstChildId[top.id]; c != -1; c = T_->arena.nextSiblingId[c]) {
+                        st_.push(Item{c, false});
                     }
+                } else {
+                    current_ = st_.top().id;  // todos os filhos já emitidos
+                    return;
                 }
-    
-                currentBranch.push_back(node);
             }
-    
-            if (!currentBranch.empty()) {
-                branches.push_back(currentBranch);
-            }
-    
-            branchIterator = branches.begin();
+            current_ = -1; // fim
         }
-    
-        InternalIteratorBranchPostOrderTraversal& operator++() {
-            if (branchIterator != branches.end()) {
-                ++branchIterator;
-            }
-            return *this;
-        }
-    
-        reference operator*() {
-            return *branchIterator;
-        }
-    
-        bool operator==(const InternalIteratorBranchPostOrderTraversal& other) const {
-            return branchIterator == other.branchIterator;
-        }
-    
-        bool operator!=(const InternalIteratorBranchPostOrderTraversal& other) const {
-            return !(*this == other);
-        }
-    };
-    
-    // Classe externa
-    class IteratorBranchPostOrderTraversal {
-    private:
-        NodeMTPtr root;
-    public:
-        explicit IteratorBranchPostOrderTraversal(NodeMTPtr root) : root(root) {}
-    
-        InternalIteratorBranchPostOrderTraversal begin() { return InternalIteratorBranchPostOrderTraversal(root); }
-        InternalIteratorBranchPostOrderTraversal end() { return InternalIteratorBranchPostOrderTraversal(nullptr); }
-    };
-    
-    // Método da classe
-    IteratorBranchPostOrderTraversal getIteratorBranchPostOrderTraversal() {
-        return IteratorBranchPostOrderTraversal(this->shared_from_this());
-    }
-    
 
-
-//============= Iterator para iterar os nodes de um percuso em pos-ordem ==============//
-	class InternalIteratorPostOrderTraversal {
-    private:
-        std::stack<NodeMTPtr> nodeStack;
-        std::stack<NodeMTPtr> outputStack;
     public:
         using iterator_category = std::input_iterator_tag;
-        using value_type = NodeMTPtr;
-        using difference_type = std::ptrdiff_t;
-        using pointer = NodeMTPtr*;
-        using reference = NodeMTPtr&; 
+        using value_type        = NodeMT;
+        using difference_type   = std::ptrdiff_t;
+        using pointer           = NodeMT*;     // apenas para conformidade
+        using reference         = NodeMT;      // retornaremos por valor (handle leve)
 
-        InternalIteratorPostOrderTraversal(NodeMTPtr root) {
+        InternalIteratorPostOrderTraversal(NodeMT root) noexcept {
             if (root) {
-                nodeStack.push(root);
-                while (!nodeStack.empty()) {
-                    NodeMTPtr current = nodeStack.top();nodeStack.pop();
-                    outputStack.push(current);
-                    for (NodeMTPtr child : current->getChildren()) {
-                        nodeStack.push(child);
-                    }
-                }
+                T_ = root.tree;
+                st_.push({root.getIndex(), false});
+                settle_();
+            } else {
+                current_ = -1;
             }
         }
 
-        InternalIteratorPostOrderTraversal& operator++() {
-            if (!outputStack.empty()) {
-                outputStack.pop();
-            }
+        inline InternalIteratorPostOrderTraversal& operator++() noexcept {
+            if (!st_.empty()) st_.pop();  // consome o atual
+            settle_();                    // posiciona no próximo
             return *this;
         }
 
-        reference operator*() {  
-            return outputStack.top();  // Retorna ponteiro!
+        // devolve o PROXY (handle leve) para o nó atual
+        inline value_type operator*() const noexcept {
+            return (current_ >= 0) ? NodeMT(T_, current_) : NodeMT();
         }
 
-        bool operator==(const InternalIteratorPostOrderTraversal& other) const {
-            return (outputStack.empty() == other.outputStack.empty());
+        inline bool operator==(const InternalIteratorPostOrderTraversal& other) const noexcept {
+            const bool aEnd = (current_ == -1);
+            const bool bEnd = (other.current_ == -1);
+            if (aEnd || bEnd) return aEnd == bEnd;
+            // fora do fim, basta comparar o id atual
+            return current_ == other.current_;
         }
-
-        bool operator!=(const InternalIteratorPostOrderTraversal& other) const {
+        inline bool operator!=(const InternalIteratorPostOrderTraversal& other) const noexcept {
             return !(*this == other);
         }
     };
 
-	class IteratorPostOrderTraversal {
-    private:
-        NodeMTPtr root;
+    class IteratorPostOrderTraversal {
+        MorphologicalTree* T_ = nullptr; NodeId rootId_ = -1;
     public:
-        explicit IteratorPostOrderTraversal(NodeMTPtr root) : root(root) {}
-
-        InternalIteratorPostOrderTraversal begin() { return InternalIteratorPostOrderTraversal(root); }
-        InternalIteratorPostOrderTraversal end() { return InternalIteratorPostOrderTraversal(nullptr); }
+        explicit IteratorPostOrderTraversal(NodeMT root) : T_(root.tree), rootId_(root ? root.getIndex() : -1) {}
+        InternalIteratorPostOrderTraversal begin() const { return InternalIteratorPostOrderTraversal(NodeMT(T_, rootId_)); }
+        InternalIteratorPostOrderTraversal end()   const { return InternalIteratorPostOrderTraversal(NodeMT()); }
     };
 
-    IteratorPostOrderTraversal getIteratorPostOrderTraversal() { return IteratorPostOrderTraversal(this->shared_from_this()); }
+    IteratorPostOrderTraversal getIteratorPostOrderTraversal() {
+        return IteratorPostOrderTraversal(NodeMT(tree, id));
+    }
 
 
 
-//============= Iterator para iterar os nodes de um percuso em largura ==============//
+    //============= Iterator para iterar os nodes de um percuso em largura ==============//
     class InternalIteratorBreadthFirstTraversal {
     private:
-        std::queue<NodeMTPtr> nodeQueue;
+        MorphologicalTree* T_ = nullptr; // apenas leitura/encaminhamento
+        FastQueue<int> q_;                     // guarda somente NodeIds
 
     public:
         using iterator_category = std::input_iterator_tag;
-        using value_type = NodeMTPtr;
-        using difference_type = std::ptrdiff_t;
-        using pointer = NodeMTPtr*;
-        using reference = NodeMTPtr&; // Retorna ponteiro!
+        using value_type        = NodeMT;    // devolvemos PROXY
+        using difference_type   = std::ptrdiff_t;
+        using pointer           = void;               // não expomos ponteiro real
+        using reference         = NodeMT;   // retornamos por valor (handle leve)
 
-        InternalIteratorBreadthFirstTraversal(NodeMTPtr root) {
+        // Constrói a partir de um proxy raiz. Enfileira apenas o id da raiz.
+        explicit InternalIteratorBreadthFirstTraversal(NodeMT root) noexcept {
             if (root) {
-                nodeQueue.push(root);
+                T_ = root.tree;
+                q_.push(root.getIndex());
             }
         }
 
-        InternalIteratorBreadthFirstTraversal& operator++() {
-            if (!nodeQueue.empty()) {
-                NodeMTPtr current = nodeQueue.front();
-                nodeQueue.pop();
-                for (NodeMTPtr child : current->getChildren()) {
-                    nodeQueue.push(child);
-                }
+        // Pré-incremento: consome o nó da frente e enfileira seus filhos por ID
+        InternalIteratorBreadthFirstTraversal& operator++() noexcept {
+            if (!q_.empty()) {
+                int u = q_.front();
+                q_.pop();
+                for(int c: T_->arena.children(u))
+                    q_.push(c);
             }
             return *this;
         }
 
-        reference operator*() {
-            return nodeQueue.front();
+        // Desreferencia: devolve um PROXY (NodeMT) para o nó atual (frente da fila)
+        value_type operator*() const noexcept {
+            return q_.empty() ? NodeMT() : NodeMT(T_, q_.front());
         }
 
-        bool operator==(const InternalIteratorBreadthFirstTraversal& other) const {
-            return nodeQueue.empty() == other.nodeQueue.empty();
+        bool operator==(const InternalIteratorBreadthFirstTraversal& other) const noexcept {
+            return q_.empty() == other.q_.empty();
         }
-
-        bool operator!=(const InternalIteratorBreadthFirstTraversal& other) const {
+        bool operator!=(const InternalIteratorBreadthFirstTraversal& other) const noexcept {
             return !(*this == other);
         }
     };
 
     class IteratorBreadthFirstTraversal {
     private:
-    NodeMTPtr root;
-
+        MorphologicalTree* T_ = nullptr; NodeId rootId_ = -1;
     public:
-        explicit IteratorBreadthFirstTraversal(NodeMTPtr root) : root(root) {}
-
-        InternalIteratorBreadthFirstTraversal begin() { return InternalIteratorBreadthFirstTraversal(root); }
-        InternalIteratorBreadthFirstTraversal end() { return InternalIteratorBreadthFirstTraversal(nullptr); }
+        explicit IteratorBreadthFirstTraversal(NodeMT root) : T_(root.tree), rootId_(root ? root.getIndex() : -1) {}
+        InternalIteratorBreadthFirstTraversal begin() const { return InternalIteratorBreadthFirstTraversal(NodeMT(T_, rootId_)); }
+        InternalIteratorBreadthFirstTraversal end()   const { return InternalIteratorBreadthFirstTraversal(NodeMT()); }
     };
 
-    // Método para expor o iterador na classe NodeCT
-    IteratorBreadthFirstTraversal getIteratorBreadthFirstTraversal() { 
-        return IteratorBreadthFirstTraversal(this->shared_from_this()); 
+    // Método para expor o iterador na classe NodeMT
+    IteratorBreadthFirstTraversal getIteratorBreadthFirstTraversal() {
+        return IteratorBreadthFirstTraversal(NodeMT(tree, id));
     }
-
-
-
-
-//============= Iterator para iterar os pixels de um CC==============//
-class InternalIteratorPixelsOfCC{
-    private:
-        NodeMTPtr currentNode;
-        std::stack<NodeMTPtr> s;
-
-        std::list<int>::iterator iter;
-        int countArea;
-        using iterator_category = std::input_iterator_tag;
-        using value_type = int; 
-    public:
-        InternalIteratorPixelsOfCC(NodeMTPtr obj, int area)  {
-            this->currentNode = obj;
-            this->countArea =area;
-            this->iter = this->currentNode->cnps.begin();
-            for (NodeMTPtr child: this->currentNode->getChildren()){
-                s.push(child);
-            }	
-        }
-        InternalIteratorPixelsOfCC& operator++() { 
-            this->iter++; 
-            if(this->iter == this->currentNode->cnps.end()){
-                if(!s.empty()){
-                    this->currentNode = s.top(); s.pop();
-                    this->iter = this->currentNode->cnps.begin();
-                    for (NodeMTPtr child: currentNode->getChildren()){
-                        s.push(child);
-                    }
-                }
-            }
-            this->countArea++;
-            return *this; 
-        }
-        bool operator==(InternalIteratorPixelsOfCC other) const { 
-            return this->countArea == other.countArea; 
-        }
-        bool operator!=(InternalIteratorPixelsOfCC other) const { 
-            return !(*this == other);
-        }
-        int operator*() const { 
-            return (*this->iter); 
-        }  
-	};
-
-    class IteratorPixelsOfCC {
-    private:
-        NodeMTPtr instance;
-        int area;
-    public:
-        explicit IteratorPixelsOfCC(NodeMTPtr obj, int _area) : instance(obj), area(_area) {}
-
-        auto begin() {
-            return InternalIteratorPixelsOfCC(instance, 0);
-        }
-
-        auto end() {
-            return InternalIteratorPixelsOfCC(instance, area);
-            
-        }
-
-    };
-    IteratorPixelsOfCC getPixelsOfCC() {
-        return IteratorPixelsOfCC(this->shared_from_this(), this->areaCC);
-    }
-
-
-
-
-////////////////////////////////////////////////
-    class InternalIteratorNodesDescendants{
-		private:
-			NodeMTPtr currentNode;
-			std::stack<NodeMTPtr> s;
-			int numDescendants;
-			using iterator_category = std::input_iterator_tag;
-            using value_type = NodeMT; 
-		public:
-			InternalIteratorNodesDescendants(NodeMTPtr obj, int numDescendants)  {
-				this->numDescendants = numDescendants;
-				this->currentNode = obj;
-				for (NodeMTPtr child: obj->getChildren()){
-					s.push(child);
-				}
-					
-			}
-			InternalIteratorNodesDescendants& operator++() { 
-			    if(!s.empty()){
-            		this->currentNode = s.top(); s.pop();
-					for (NodeMTPtr child: currentNode->getChildren()){
-            		    s.push(child);
-					}
-				}
-				this->numDescendants += 1;
-				return *this; 
-            }
-            bool operator==(InternalIteratorNodesDescendants other) const { 
-                return this->numDescendants == other.numDescendants; 
-            }
-            bool operator!=(InternalIteratorNodesDescendants other) const { 
-                return !(*this == other);
-            }
-            NodeMTPtr operator*() { 
-                return (this->currentNode); 
-            }  
-    };
-	class IteratorNodesDescendants{
-		private:
-			NodeMTPtr instance;
-			int numDescendants;
-		public:
-			IteratorNodesDescendants(NodeMTPtr obj, int _numDescendants): instance(obj), numDescendants(_numDescendants) {}
-			InternalIteratorNodesDescendants begin(){ return InternalIteratorNodesDescendants(instance, 0); }
-            InternalIteratorNodesDescendants end(){ return InternalIteratorNodesDescendants(instance, numDescendants+1); }
-	};	
-	IteratorNodesDescendants& getNodesDescendants(){
-	    IteratorNodesDescendants *iter = new IteratorNodesDescendants(this->shared_from_this(), this->getNumDescendants());
-    	return *iter;
-	}
-	
+    
 };
 
-#endif

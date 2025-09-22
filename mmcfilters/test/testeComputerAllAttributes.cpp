@@ -19,7 +19,7 @@ int main(int argc, char const *argv[])
    // printImage(img_pointer, numRows, numCols);
     std::cout << "img_pointer ok" << std::endl;
     
-    // Criar um ComponentTree
+    // Criar um MorphologicalTree
     MorphologicalTreePtr tree = std::make_shared<MorphologicalTree>(image, true);
     std::cout << "tree ok" << std::endl;
 

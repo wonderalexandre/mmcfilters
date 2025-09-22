@@ -1,32 +1,30 @@
+
+#include "../include/AdjacencyRelation.hpp"
 #include "../include/MorphologicalTree.hpp"
+#include "../include/Common.hpp"
+#include "../include/NodeMT.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
-#include "../include/ComputerMSER.hpp"
-#include "../include/AttributeFilters.hpp"
-#include "./Tests.hpp"
 
-#include <iomanip> 
+#include "Tests.hpp"
 
+
+#include <iomanip>
 #include <iostream>
-#include <fstream>
-#include <stdexcept>
-
 #include <vector>
 
-int main(int argc, char const *argv[])
-{
-    ImagePtr image = getWonderImage();
-    printImage(image);
-    
-    // Criar um ComponentTree
-    MorphologicalTreePtr tree = std::make_shared<MorphologicalTree>(image, false);
-    printTree(tree->getRoot());
+int main(int argc, char const* argv[]) {
+    (void)argc;
+    (void)argv;
 
-    // Criar um AttributeComputedIncrementally::computerArea
-    int n = tree->getNumNodes();	
+    ImageUInt8Ptr image = getWonderImage();
+    printImage(image);
+
+    ComponentTreePtr treePtr = std::make_shared<MorphologicalTree>(image, false);
+    MorphologicalTree* tree = treePtr.get();
+    printTree(treePtr->getRoot());
+
 
     auto [attrNamesRectangularity, attrsRectangularity] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::RECTANGULARITY);
-
-    
     auto [attrsNamesArea, attrsArea] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::AREA);
     auto [attrNamesVolume, attrsVolume] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::VOLUME);
     auto [attrNamesLevel, attrsLevel] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::LEVEL);
@@ -41,9 +39,8 @@ int main(int argc, char const *argv[])
     auto [attrNamesLength, attrsLength] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::LENGTH_MINOR_AXIS);
     auto [attrNamesEccentricity, attrsEccentricity] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::ECCENTRICITY);
     auto [attrNamesCompactness, attrsCompactness] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::COMPACTNESS);
-    
-    for(NodeMTPtr node : tree->getIndexNode()){
-        int nodeIndex = node->getIndex();
+
+    for (NodeId nodeIndex: tree->getNodeIds()) {
         std::cout << "Atributo AREA do nó " << nodeIndex << ": " << attrsArea[nodeIndex] << std::endl;
         std::cout << "Atributo GRAY_HEIGHT do nó " << nodeIndex << ": " << attrsGrayHeight[nodeIndex] << std::endl;
         std::cout << "Atributo ORIENTATION do nó " << nodeIndex << ": " << attrsOrientation[nodeIndex] << std::endl;
@@ -60,18 +57,12 @@ int main(int argc, char const *argv[])
         std::cout << "Atributo LENGTH_MINOR_AXIS do nó " << nodeIndex << ": " << attrsLength[nodeIndex] << std::endl;
         std::cout << "Atributo ECCENTRICITY do nó " << nodeIndex << ": " << attrsEccentricity[nodeIndex] << std::endl;
         std::cout << "Atributo COMPACTNESS do nó " << nodeIndex << ": " << attrsCompactness[nodeIndex] << std::endl;
-       // printConnectedComponent(node, tree);
     }
 
-
-    auto [attrNames, attrsPtr] = AttributeComputedIncrementally::computeAttributes(tree, {  
+    auto [attrNames, attrsPtr] = AttributeComputedIncrementally::computeAttributes(tree, {
                                                                                             AttributeGroup::ALL
-                                                                                            
-                                                                                            } );
+    });
 
-
-
-    
     // Depuração do mapeamento em `attributeNamesDelta`
     std::cout << "\n\nMapeamento de índices para atributos em attributeNames:" << std::endl;
     std::cout << "Número de atributos: " << attrNames->NUM_ATTRIBUTES << std::endl;
@@ -82,8 +73,7 @@ int main(int argc, char const *argv[])
         std::cout << "\nAtributo: " << attrNames->toString(attribute) << ", Offset: " << offset << std::endl;
 
         // Exibir os valores dos atributos para cada nó
-        for (NodeMTPtr node : tree->getIndexNode()) {
-            int nodeIndex = node->getIndex();
+        for (NodeId nodeIndex: tree->getNodeIds()) {
             if (attrNames->indexMap.count(attribute)) {
                 std::cout << "Node " << nodeIndex << " - " << attrNames->toString(attribute) << ": " 
                         //<< attrsPtr[nodeIndex * attrNames->NUM_ATTRIBUTES + offset]
@@ -91,10 +81,9 @@ int main(int argc, char const *argv[])
                         << std::endl;
             }
         }
-
     }
-    
-    
+
+
     auto [attrsNamesDelta, attrsAreaDelta] = AttributeComputedIncrementally::computeSingleAttributeWithDelta(tree, Attribute::GRAY_HEIGHT, 0, "zero-padding");
 
     for (const auto& pair : attrsNamesDelta->indexMap) {
@@ -103,23 +92,10 @@ int main(int argc, char const *argv[])
         int offset = pair.second;
         std::cout << "\nAtributo: " << attrsNamesDelta->toString(attributeKey) << ", Offset: " << offset << std::endl;
         // Exibir os valores dos atributos para cada nó
-        for (NodeMTPtr node : tree->getIndexNode()) {
-            int nodeIndex = node->getIndex();
-            std::cout << "Node " << nodeIndex << " - " << attrsNamesDelta->toString(attributeKey) << ": " << attrsAreaDelta[attrsNamesDelta->linearIndex(nodeIndex, attributeKey)] << std::endl;
-            
+        for (NodeId nodeIndex: tree->getNodeIds()) {
+            std::cout << "Node " << nodeIndex << " - " << attrsNamesDelta->toString(attributeKey) << ": " << attrsAreaDelta[attrsNamesDelta->linearIndex(nodeIndex, attributeKey)] << std::endl;    
         }
     }
 
-
-
-    /*
-    AttributeFilters filter(tree);
-    float* attrDinamics = AttributeComputedIncrementally::computerAttributeByIndex(tree, Attribute::DYNAMICS);    
-    ImagePtr imgOut = filter.filteringByExtinctionValue(tree, attrDinamics, 1);
-    printImage(imgOut);
-    */
-
-
     return 0;
 }
- 

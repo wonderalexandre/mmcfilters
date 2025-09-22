@@ -1,6 +1,4 @@
-#ifndef COMMONS_HPP  
-#define COMMONS_HPP  
-
+#pragma once
 
 //#define NDEBUG  // Remove os asserts do código
 #include <cassert>
@@ -433,7 +431,7 @@ struct PixelSetManager{
      *     // processa pixels, sem overhead de cópia
      * }
      *
-     * // 4) Usando um range custom (ex.: RepsOfCCRange de um NodeCT)
+     * // 4) Usando um range custom (ex.: RepsOfCCRange de um NodeMT)
      * for (int px : g.getPixelsBySet(node->getRepsOfCC())) {
      *     // processa pixels de todos os sets alcançadas na BFS
      * }
@@ -764,6 +762,3 @@ public:
     const T& top() const { return data_.back(); }
 };
 
-
-
-#endif 

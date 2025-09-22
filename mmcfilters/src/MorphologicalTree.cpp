@@ -1,324 +1,366 @@
 #include <list>
+#include <array>
 #include <vector>
-#include <stack>
+#include <unordered_map>
+#include <unordered_set>
+#include <iostream>
+#include <iomanip>
+#include <utility>
+#include <algorithm> 
 
 
-#include "../include/NodeMT.hpp"
 #include "../include/MorphologicalTree.hpp"
+#include "../include/NodeMT.hpp"
 #include "../include/AdjacencyRelation.hpp"
-#include "../include/AttributeComputedIncrementally.hpp"
-#include "../include/BuilderTreeOfShapeByUnionFind.hpp"
-#include "../include/BuilderComponentTreeByUnionFind.hpp"
+#include "../include/BuilderMorphologicalTreeByUnionFind.hpp"
 
 
-
-
- MorphologicalTree::~MorphologicalTree(){
-	
- }
-
-MorphologicalTree::MorphologicalTree(ImageUInt8Ptr imgPtr, std::string ToSInperpolation){
-	this->treeType = TREE_OF_SHAPES;
-	this->numRows = imgPtr->getNumRows();
-	this->numCols = imgPtr->getNumCols();
-	this->nodes.resize(numRows * numCols, nullptr);
-
-	BuilderTreeOfShapeByUnionFind* builder = new BuilderTreeOfShapeByUnionFind();
-	if(ToSInperpolation == "4c8c")
-		builder->interpolateImage4c8c(imgPtr);
-	else
-		builder->interpolateImage(imgPtr);
-	
-	builder->sort();
-	int* imgR = builder->getImgR();
-	uint8_t* imgU = builder->getImgU();
-	
-	builder->createTreeByUnionFind();
-	int* parent = builder->getParent();
-	
-	int size = builder->getInterpNumCols() * builder->getInterpNumRows();
-    std::vector<NodeMTPtr> nodesTmp(size);
+//ComponentTree(ImageUInt8Ptr img, bool isMaxtree, double radius = 1.5);
+//ComponentTree(ImageUInt8Ptr img, std::string ToSInperpolation="self-dual");
     
-	
-    this->numNodes = 0;
-    for (int i = 0; i < size; i++) {
-		int p = imgR[i];
-        auto [row, col] = ImageUtils::to2D(p, builder->getInterpNumCols());
-		    
-		if (p == parent[p]) { //representante do node raiz
-            this->root = nodesTmp[p] = std::make_shared<NodeMT>(this->numNodes++, nullptr, imgU[p]);
-		}
-		else if (imgU[p] != imgU[parent[p]]) { //representante de um node
-			nodesTmp[p] = std::make_shared<NodeMT>(this->numNodes++, nodesTmp[parent[p]], imgU[p]);
-			nodesTmp[parent[p]]->addChild(nodesTmp[p]);
-		}
-		else if (imgU[p] == imgU[parent[p]]) {
-			nodesTmp[p] = nodesTmp[parent[p]];
-		}
 
-		if(row % 2 == 1 && col % 2 == 1){
-			int pixelUnterpolate =  ImageUtils::to1D(row/2, col/2, numCols);
-			this->nodes[pixelUnterpolate] = nodesTmp[p];					
-			this->nodes[pixelUnterpolate]->addCNPs(pixelUnterpolate);
-		}
-	}
-	
-	if(ToSInperpolation == "4c8c"){
-		AttributeComputedIncrementally::computerAttribute(this->root,
-			[&](NodeMTPtr node) -> void { //pre-processing
-				node->setLevel( (*imgPtr)[node->getCNPs().front()] );
-			},
-			[](NodeMTPtr parent, NodeMTPtr child) -> void { },
-			[](NodeMTPtr node) -> void {}
-		);
-	}
+MorphologicalTree::MorphologicalTree(ImageUInt8Ptr img, bool isMaxtree, double radius) : 
+    numRows(img->getNumRows()), numCols(img->getNumCols()), treeType( (isMaxtree? MorphologicalTree::MAX_TREE : MorphologicalTree::MIN_TREE) ), 
+    adj(std::make_shared<AdjacencyRelation>(numRows, numCols, radius)), numNodes(0){   
 
-	computerTreeAttribute();
-	delete builder;
-	//imgR = nullptr;
-	//imgU = nullptr;
-	//parent = nullptr;
-	
-} 
+        this->pixelToNodeId.resize(numRows * numCols, -1);
+        BuilderComponentTree builderUF(adj.get(), isMaxtree);
+        build(img, builderUF);
+}
 
-void MorphologicalTree::computerTreeAttribute(){
-	this->indexToNode.resize(this->numNodes);
-	this->numNodes = 0;
-	AttributeComputedIncrementally::computerAttribute(this->root,
-		[this](NodeMTPtr node) -> void { //pre-processing
-			this->indexToNode[this->numNodes] = node;
-			node->setIndex(this->numNodes++);
-		},
-		[](NodeMTPtr parent, NodeMTPtr child) -> void { //merge-processing
-			
-		},
-		[](NodeMTPtr node) -> void { // post-processing
-		}
-	);
+MorphologicalTree::MorphologicalTree(ImageUInt8Ptr img, std::string ToSInperpolation):
+    numRows(img->getNumRows()), numCols(img->getNumCols()), treeType(MorphologicalTree::TREE_OF_SHAPES), 
+    adj(nullptr), numNodes(0){   
+        
+        this->pixelToNodeId.resize(numRows * numCols, -1);
+        BuilderTreeOfShape builderUF( ToSInperpolation == "4c8c" );
+        build(img, builderUF);
+}
+
+
+void MorphologicalTree::build(const ImageUInt8Ptr& imgPtr, IMorphologicalTreeBuilder& builderUF){ 
+    
+    auto [parent, orderedPixels, numNodes] = builderUF.createTreeByUnionFind(imgPtr);
+
+    int numPixels = imgPtr->getSize();
+    auto img = imgPtr->rawData();
+
+    this->reserveNodes(numNodes);
+    this->pixelBuffer = std::make_shared<PixelSetManager>(numPixels, numNodes);
+    this->pixelView = this->pixelBuffer->view();
+    int indice = 0;
+    for (int i = 0; i < numPixels; i++) {
+        int p = orderedPixels[i];
+
+        //Construção da árvore e arena
+        if (p == parent[p]) {
+            pixelToNodeId[p] = this->root = this->makeNode(p, -1, img[p]);
+        } else if (img[p] != img[parent[p]]) {
+            pixelToNodeId[p] = this->makeNode(p, pixelToNodeId[parent[p]], img[p]);
+        } else {
+            pixelToNodeId[p] = pixelToNodeId[parent[p]];
+        }
+
+        //Construção de PixelSetManager
+        if (p == parent[p] || img[p] != img[parent[p]]) {
+            pixelView.indexToPixel[indice] = p;
+            pixelView.pixelToIndex[p] = indice;
+            pixelView.sizeSets[indice] = 1;
+            pixelView.pixelsNext[p] = p;
+            indice++;
+        } else {
+            pixelView.pixelsNext[p] = pixelView.pixelsNext[parent[p]];
+            pixelView.pixelsNext[parent[p]] = p;
+            int idx = pixelView.pixelToIndex[parent[p]];
+            pixelView.sizeSets[idx]++;
+        }
+    }
+
+
+	computerTreeAttributes();
+}
+
+
+template <typename PixelType>
+ComponentTreePtr MorphologicalTree::createFromAttributeMapping(ImagePtr<PixelType> attrMappingPtr, ImageUInt8Ptr imgPtr, bool isMaxtree, double radius) {
+    AdjacencyRelationPtr adj = std::make_shared<AdjacencyRelation>(imgPtr->getNumRows(), imgPtr->getNumCols(), radius);	
+    ComponentTreePtr tree = MorphologicalTree::create(imgPtr->getNumRows(), imgPtr->getNumCols(), isMaxtree, adj);
+    BuilderComponentTree builderUF(adj.get(), isMaxtree);
+    auto [parent, orderedPixels, numNodes] = builderUF.createTreeByUnionFind(attrMappingPtr);
+
+    int numPixels = imgPtr->getSize();
+    auto img = imgPtr->rawData();
+    auto attrMapping = attrMappingPtr->rawData();
+
+    tree->reserveNodes(numNodes);
+    tree->pixelBuffer = std::make_shared<PixelSetManager>(numPixels, numNodes);
+    tree->pixelView = tree->pixelBuffer->view();
+    int indice = 0;
+    float epsilon = 1e-5f; // Tolerância para comparação de pixels flutuantes
+    
+    auto sameLevel = [&](PixelType a, PixelType b){ 
+        if constexpr (std::is_floating_point_v<PixelType>)
+            return std::fabs(attrMapping[a] - attrMapping[parent[b]]) < epsilon; 
+        else
+            return attrMapping[a] == attrMapping[b]; 
+    };
+
+    for (int i = 0; i < numPixels; i++) {
+        int p = orderedPixels[i];
+        //Construção da árvore e arena
+        if (p == parent[p]) {
+            tree->pixelToNodeId[p] = tree->root = tree->makeNode(p, -1, img[p]);
+        } 
+        else if (!sameLevel(p, parent[p])) {
+            tree->pixelToNodeId[p] = tree->makeNode(p, tree->pixelToNodeId[parent[p]], img[p]);
+        } 
+        else {
+            tree->pixelToNodeId[p] = tree->pixelToNodeId[parent[p]];
+        }
+        
+        //Construção de PixelSetManager
+        if (p == parent[p] || !sameLevel(p, parent[p])) {
+            tree->pixelView.indexToPixel[indice] = p;
+            tree->pixelView.pixelToIndex[p] = indice;
+            tree->pixelView.sizeSets[indice] = 1;
+            tree->pixelView.pixelsNext[p] = p;
+            indice++;
+        } else {
+            tree->pixelView.pixelsNext[p] = tree->pixelView.pixelsNext[parent[p]];
+            tree->pixelView.pixelsNext[parent[p]] = p;
+            int idx = tree->pixelView.pixelToIndex[parent[p]];
+            tree->pixelView.sizeSets[idx]++;
+        }
+    }
+    tree->computerTreeAttributes();
+
+    //ajustar o level de cada nó
+    for(NodeId id: tree->getNodeIds()){
+        int media = 0;
+        for(int p: tree->getCNPsById(id)){
+            media += img[p];
+        }
+        media /=  tree->getNumCNPsById(id); 
+        tree->setLevelById(id, media);
+    }
+    return tree;
+}
+
+
+
+/*inline NodeMT ComponentTree::proxy(NodeId id) const {
+    return NodeMT(const_cast<ComponentTree*>(this), id);
+}*/
+
+NodeMT MorphologicalTree::proxy(NodeId id) const {
+    if (id < 0 || id >= static_cast<NodeId>(arena.size())) {
+        throw std::out_of_range("Node ID is out of range in arena!");
+    }
+    if (arena.isFree(id)) { 
+        throw std::runtime_error("Node ID refers to a freed node in arena!");
+    }
+    return NodeMT(const_cast<MorphologicalTree*>(this), id);
+}
+
+NodeMT MorphologicalTree::getSC(int p) const { return proxy(this->pixelToNodeId[p]); }
+NodeMT MorphologicalTree::getRoot() const { return proxy(this->root); }
+void MorphologicalTree::setSC(int p, NodeMT node){ setSCById(p, node); }
+void MorphologicalTree::setRoot(NodeMT n){ setRootById(n); }
+
+
+NodeId MorphologicalTree::makeNode(int repNode, NodeId parentId, int threshold2){
+    // Aloca ID contíguo
+    NodeId id = this->arena.allocate(repNode, threshold2);
+
+    // Encadeia no pai (por ID) se houver
+    if (parentId >= 0) {
+        addChildById(parentId, id);
+    }
+    else{
+        std::cout<<"Root:" << repNode << std::endl;
+    }
+    //contador de nós
+    this->numNodes++;    
+    return id;
+}
+
+
+void MorphologicalTree::computerTreeAttributes(){
 
 	int timer = 0;
-	int maxDepth = 0;
-	int* depth = new int[this->numNodes];
-	AttributeComputedIncrementally::computerAttribute(this->root,
-		[this, &timer, depth](NodeMTPtr node) -> void { //pre-processing
-			node->setAreaCC( node->getCNPs().size() );
-			node->setTimePreOrder(timer++);
-			depth[node->getIndex()] =  node->getParent() == nullptr ? 0 : depth[node->getParent()->getIndex()] + 1;
+	//int maxDepth = 0;
+	//std::vector<int> depth(this->numNodes);
+	computerIncrementalAttributes(this, this->root,
+		[&](NodeId nodeId) -> void { //pre-processing
+            arena.areaCC[nodeId] = getNumCNPsById(nodeId);;
+            arena.timePreOrder[nodeId] = timer++;
+			//depth[nodeId] = arena.parentId[nodeId] == -1 ? 0 : depth[arena.parentId[nodeId]] + 1;
 		},
-		[](NodeMTPtr parent, NodeMTPtr child) -> void { //merge-processing
-			parent->setAreaCC( parent->getAreaCC() + child->getAreaCC() );
+		[&](NodeId parentId, NodeId childId) -> void { //merge-processing
+            arena.areaCC[parentId] += arena.areaCC[childId];
+
 		},
-		[&timer, depth, &maxDepth](NodeMTPtr node) -> void { // post-processing
-			node->setTimePostOrder(timer++);
-			maxDepth = std::max(maxDepth, depth[node->getIndex()]);
+		[&](NodeId nodeId) -> void { // post-processing
+			arena.timePostOrder[nodeId] = timer++;
+            //maxDepth = std::max(maxDepth, depth[nodeId]);
 		}
 	);
-	this->depth = maxDepth;
-	delete[] depth;
+	//this->depth = maxDepth;
 }
 
- 
-MorphologicalTree::MorphologicalTree(ImageUInt8Ptr imgPtr, bool isMaxtree, double radiusOfAdjacencyRelation){
-	this->numRows = imgPtr->getNumRows();
-	this->numCols = imgPtr->getNumCols();
-	auto img = imgPtr->rawData();
-	
-	this->treeType = isMaxtree? MAX_TREE : MIN_TREE;
-
-	this->adj = std::make_shared<AdjacencyRelation>(numRows, numCols, radiusOfAdjacencyRelation);	
-
-	using PixelType = typename decltype(imgPtr)::element_type::Type;
-	BuilderComponentTreeByUnionFind<PixelType> builder(imgPtr, isMaxtree, adj);
-	
-	int n = numRows * numCols;
-	auto orderedPixels = builder.getOrderedPixels();
-	auto parent = builder.getParent();
-		
-	this->nodes.resize(n, nullptr);
-
-	this->numNodes = 0;
-	for (int i = 0; i < n; i++) {
-		int p = orderedPixels[i];
-		if (p == parent[p]) { //representante do node raiz
-			this->root = this->nodes[p] = std::make_shared<NodeMT>(this->numNodes++, nullptr, img[p]);
-			this->nodes[p]->addCNPs(p);
-		}
-		else if (img[p] != img[parent[p]]) { //representante de um node
-			this->nodes[p] = std::make_shared<NodeMT>(this->numNodes++, this->nodes[parent[p]], img[p]);
-			this->nodes[p]->addCNPs(p);
-			this->nodes[parent[p]]->addChild(this->nodes[p]);
-		}
-		else if (img[p] == img[parent[p]]) {
-			this->nodes[parent[p]]->addCNPs(p);
-			this->nodes[p] = this->nodes[parent[p]];
-		}
-	}
-	
-	
-	computerTreeAttribute();
-	//delete builder;
-	//builder = nullptr;
-	//orderedPixels = nullptr;
-	//parent = nullptr;
-}
-
-
-
-int MorphologicalTree::getDepth(){
-	return this->depth;
-}
-
-
-NodeMTPtr MorphologicalTree::getSC(int pixel){
-	return this->nodes[pixel];
-}
-	
-NodeMTPtr MorphologicalTree::getNodeByIndex(int index){
-	return this->indexToNode[index];
-}
-
-NodeMTPtr MorphologicalTree::getRoot() {
-	return this->root;
-}
-
-AdjacencyRelationPtr MorphologicalTree::getAdjacencyRelation(){
-	return this->adj;
-}
-
-
-bool MorphologicalTree::isMaxtree(){
-	return this->treeType == MAX_TREE;
-}
-
-int MorphologicalTree::getTreeType(){
-	return this->treeType;
-}
-
-std::vector<NodeMTPtr>& MorphologicalTree::getIndexNode(){
-	return this->indexToNode;
-}
-
-int MorphologicalTree::getNumNodes(){
-	return this->numNodes;
-}
-
-int MorphologicalTree::getNumRowsOfImage(){
-	return this->numRows;
-}
-
-int MorphologicalTree::getNumColsOfImage(){
-	return this->numCols;
-}
-
-bool MorphologicalTree::isAncestor(NodeMTPtr u, NodeMTPtr v) {
-    return u->getTimePreOrder() <= v->getTimePreOrder() && u->getTimePostOrder() >= v->getTimePostOrder();
-}
-
-bool MorphologicalTree::isDescendant(NodeMTPtr u, NodeMTPtr v) {
-    return v->getTimePreOrder() <= u->getTimePreOrder() && v->getTimePostOrder() >= u->getTimePostOrder();
-}
-
-bool MorphologicalTree::isComparable(NodeMTPtr u, NodeMTPtr v) {
-    return isAncestor(u, v) || isAncestor(v, u);
-}
-
-bool MorphologicalTree::isStrictAncestor(NodeMTPtr u, NodeMTPtr v) {
-    return u != v &&
-           u->getTimePreOrder() <= v->getTimePreOrder() &&
-           u->getTimePostOrder() >= v->getTimePostOrder();
-}
-
-bool MorphologicalTree::isStrictDescendant(NodeMTPtr u, NodeMTPtr v) {
-    return u != v &&
-           v->getTimePreOrder() <= u->getTimePreOrder() &&
-           v->getTimePostOrder() >= u->getTimePostOrder();
-}
-
-bool MorphologicalTree::isStrictComparable(NodeMTPtr u, NodeMTPtr v) {
-    return isStrictAncestor(u, v) || isStrictAncestor(v, u);
-}
-
-NodeMTPtr MorphologicalTree::findLowestCommonAncestor(NodeMTPtr u, NodeMTPtr v){
-    // Troca para garantir que u não é mais profundo que v
-    if (u->getTimePreOrder() > v->getTimePreOrder())
-        std::swap(u, v);
-
-    while (!isAncestor(u, v)) {
-        u = u->getParent();
+/*
+template <typename CNPsType>
+void ComponentTree<CNPsType>::computerArea(NodeId id){
+    int32_t area = getNumCNPsById(id);
+    for (NodeId c : arena.children(id)) {
+        computerArea(c);
+        area += arena.areaCC[c]; // já calculado na recursão
     }
-    return u;
+    arena.areaCC[id] = area;
+}*/
+
+void MorphologicalTree::prunning(NodeId nodeId){
+    assert(nodeId && "node is invalid");
+    assert(getParentById(nodeId) != -1 && "node is root");
+
+    const int parentId = arena.parentId[nodeId]; 
+    if(parentId >= 0){ 
+        // 1) desconecta 'node' do pai
+        removeChildById(parentId, nodeId, false);
+
+        // 2) BFS ID-first na subárvore para redirecionar UF/SC e contabilizar remoções
+        FastQueue<NodeId> q;
+        q.push(nodeId);
+
+        const int parentRep = arena.repNode[parentId];
+        while (!q.empty()) {
+            NodeId curId = q.pop();
+
+            // enfileira filhos por IDs
+            for (NodeId c : arena.children(curId)) {
+                q.push(c);
+            }
+
+            // une representantes no UF e atualiza pixel->node para o representante
+            int repCur = arena.repNode[curId];
+            setSCById(repCur, parentId);
+            pixelBuffer->mergeSetsByRep(parentRep, repCur);
+
+            // release no node removido
+            releaseNode(curId);
+        }
+    }
+}
+
+
+
+void MorphologicalTree::mergeWithParent(NodeId nodeId)
+{
+    if (getParentById(nodeId) != -1) return;
+
+    const int parentId = arena.parentId[nodeId];
+
+    // 1) tira 'node' da lista de filhos do pai
+    removeChildById(parentId, nodeId, false);
+
+    // 2) move os filhos de 'node' para o pai (preserva ordem) — tudo por IDs
+    spliceChildrenById(parentId, nodeId);
+
+    // 3) une representantes e atualiza pixel->node para o representante do nó colapsado
+    const int parentRep = arena.repNode[parentId];
+    const int nodeRep   = arena.repNode[nodeId];
+    setSCById(nodeRep, parentId);
+    pixelBuffer->mergeSetsByRep(parentRep, nodeRep);
+
+    // 4) marca o nó como desconectado
+    releaseNode(nodeId);
+}
+
+
+void MorphologicalTree::mergeWithParent(std::vector<int>& flatzone){
+    int idFlatzone = flatzone.front();
+    NodeMT node = proxy(this->pixelToNodeId[idFlatzone]);
+    if(getNumCNPsById(node) == static_cast<int>(flatzone.size())) {
+        this->mergeWithParent(node);
+    }
+    else{
+        //TODO: pensar em como otimizar esse caso
+        //winner ganha os pixels de flatzone e o loser perde esses pixels
+/*
+        NodeP parent = node.getParent();
+        int repWinner = parent.getRepNode(); //representante do pai
+        int repLoser  = node.getRepNode();   //representante do filho
+
+        //1. Recupera índices dos representantes
+        int idxRootWinner = pixelView.pixelToIndex[repWinner];
+        int idxRootLoser  = pixelView.pixelToIndex[repLoser];
+
+        //2. Atualiza a quantidade de cnps
+        pixelView.sizeSets[idxRootWinner] += flatzone->size();
+        pixelView.sizeSets[idxRootLoser] -= flatzone->size();
+
+        for( int p: *flatzone) {				
+            parent.addRepCNPs(p);
+            this->pixelToNode[p] = parent;	
+
+
+            // 3. Splice O(1) das listas circulares (pixels)
+            int nextWinner = pixelView.pixelsNext[repWinner];
+            int nextLoser  = pixelView.pixelsNext[repLoser];
+            pixelView.pixelsNext[repWinner] = nextLoser;
+            pixelView.pixelsNext[repLoser]  = nextWinner;
+
+            // 4. Invalida slot perdedor
+            pixelView.sizeSets[idxRootLoser]  = 0;
+            pixelView.indexToPixel[idxRootLoser] = -1;
+
+            // 5. Redireciona lookups pelo antigo rep pixel
+            pixelView.pixelToIndex[repLoser] = idxRootWinner;
+        }
+        */
+    }
 }
 
 
 
 
-ImageUInt8Ptr MorphologicalTree::getImageAferPruning(NodeMTPtr nodePruning){
-	ImageUInt8Ptr imgOut = ImageUInt8::create(getNumRowsOfImage(), getNumColsOfImage());
-	auto data = imgOut->rawData();
-	std::stack<NodeMTPtr> s;
-	s.push(this->root);
-	while(!s.empty()){
-		NodeMTPtr node = s.top();s.pop();
-		if(node->getIndex() == nodePruning->getIndex()){
-			for(int p: node->getPixelsOfCC()){
-				if(node->getParent() != nullptr)
-					data[p] = node->getParent()->getLevel();
-				else
-					data[p] = node->getLevel();
-			}
-		}
-		else{
-			for(int p: node->getCNPs()){
-				data[p] = node->getLevel();
-			}
-			for(NodeMTPtr child: node->getChildren()){
-				s.push(child);
-			}
-		}
-	}
-	return imgOut;
+std::vector<NodeId> MorphologicalTree::getLeaves(){
+    std::vector<NodeId> leaves;
+    FastQueue<NodeId> s;
+    s.push(this->root);
+
+    while (!s.empty()) {
+        NodeId id = s.pop();
+        if (arena.childCount[id] == 0) {
+            leaves.push_back(id);
+        } else {
+            for(NodeId c: arena.children(id)){
+                s.push(c);
+            }
+        }
+    }
+    return leaves;
 }
 
-void MorphologicalTree::pruning(NodeMTPtr nodePruning){
-	if(nodePruning->getParent() != nullptr){
-		for(int p: nodePruning->getPixelsOfCC()){
-			nodePruning->getParent()->addCNPs(p);
-			this->nodes[p] = nodePruning->getParent()->getParent();
-		}
-		nodePruning->getParent()->getChildren().remove(nodePruning);
-		nodePruning->setParent(nullptr);
-		nodePruning = nullptr;
-		this->computerTreeAttribute();
-	}
-}
+
+
 
 ImageUInt8Ptr MorphologicalTree::reconstructionImage(){
-	ImageUInt8Ptr imgOut = ImageUInt8::create(getNumRowsOfImage(), getNumColsOfImage());
-	this->reconstruction(this->root, imgOut->rawData());
-	return imgOut;
+    ImageUInt8Ptr imgPtr = ImageUInt8::create(this->numRows, this->numCols);
+    this->reconstruction(this->root, imgPtr->rawData());
+    return imgPtr;
 }
 
 
-void MorphologicalTree::reconstruction(NodeMTPtr node, uint8_t* dataOut){
-	for (int p : node->getCNPs()){
-		dataOut[p] = node->getLevel();
-	}
-	for(NodeMTPtr child: node->getChildren()){
-		reconstruction(child, dataOut);
-	}
+// Pixels
+inline void MorphologicalTree::reconstruction(NodeId id, uint8_t* imgOut) {
+    assert(imgOut && "Erro: Ponteiro de saída da imagem é nulo!");
+    for (int p : pixelBuffer->getPixelsBySet(arena.repNode[id])) {
+        imgOut[p] = static_cast<uint8_t>(arena.threshold2[id]);
+    }
+    for (int c : arena.children(id)) {
+        reconstruction(c, imgOut);
+    }
 }
 
-std::vector<std::vector<NodeMTPtr>> MorphologicalTree::getNodesByDepth(){
-	std::vector<std::vector<NodeMTPtr>> nodesByDepth(this->depth + 1);
-	MorphologicalTree::extractDepthMap(this->root, 0, nodesByDepth);
-	return nodesByDepth;
-}
 
-std::list<NodeMTPtr> MorphologicalTree::getLeaves(){
-	std::list<NodeMTPtr> listLeaves;
-	for(NodeMTPtr node: this->indexToNode){
-		if(node->getChildren().empty())
-			listLeaves.push_back(node);	
-	}
-	return listLeaves;
-}

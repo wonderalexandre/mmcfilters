@@ -1,3 +1,4 @@
+#pragma once
 
 #include <vector>
 #include <set>
@@ -12,11 +13,7 @@
 #include "../include/Common.hpp"
 #include "../include/AdjacencyRelation.hpp"
 #include "../include/MorphologicalTree.hpp"
-#include "../include/NodeMT.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
-
-#ifndef COMPUTER_ATTRIBUTE_BASED_BIT_QUADS_HPP
-#define COMPUTER_ATTRIBUTE_BASED_BIT_QUADS_HPP
 
 //---------------------------------------------
 // CLASSES QuadBit e padrões
@@ -30,29 +27,29 @@ enum class BitQuadType {
     Descendant
 };
 
-class BitQuadComparatorCT {
+class BitQuadComparator {
 public:
     int rowOffset;
     int colOffset;
-    std::function<bool(int, int, MorphologicalTreePtr, NonComparablePixels&)> comparator;
+    std::function<bool(int, int, MorphologicalTree*, NonComparablePixels&)> comparator;
     BitQuadType type;
 
-    bool isValid(int row, int col, MorphologicalTreePtr tree) const {
+    bool isValid(int row, int col, MorphologicalTree* tree) const {
         return row + rowOffset >= 0 && row + rowOffset < tree->getNumRowsOfImage() && col + colOffset >= 0 && col + colOffset < tree->getNumColsOfImage();
     }
 
-    BitQuadComparatorCT(int rowOffset, int colOffset, BitQuadType type) : rowOffset(rowOffset), colOffset(colOffset), type(type) {
+    BitQuadComparator(int rowOffset, int colOffset, BitQuadType type) : rowOffset(rowOffset), colOffset(colOffset), type(type) {
         switch (type) {
             case BitQuadType::StrictAncestor:
-                comparator = [=](int row, int col, MorphologicalTreePtr tree, NonComparablePixels& pixelsOfLCA) {
+                comparator = [=](int row, int col, MorphologicalTree* tree, NonComparablePixels& pixelsOfLCA) {
                     
                     auto idP = ImageUtils::to1D(row, col, tree->getNumColsOfImage());
                     auto idQ = ImageUtils::to1D(row + rowOffset, col + colOffset, tree->getNumColsOfImage());
                     
-                    NodeMTPtr nodeP = tree->getSC(idP);
-                    NodeMTPtr nodeQ = tree->getSC(idQ);
+                    NodeId nodeP = tree->getSCById(idP);
+                    NodeId nodeQ = tree->getSCById(idQ);
                     /*if(tree->isComparable(nodeP, nodeQ) == false) {
-                        NodeMTPtr lca = tree->findLowestCommonAncestor(nodeP, nodeQ);
+                        NodeId lca = tree->findLowestCommonAncestor(nodeP, nodeQ);
                         pixelsOfLCA[lca->getIndex()].push_back( ImageUtils::to1D(row, col, tree->getNumColsOfImage()) );
                         return false;
                     }*/
@@ -61,14 +58,14 @@ public:
                 };
                 break;
             case BitQuadType::Ancestor:
-                comparator = [=](int row, int col, MorphologicalTreePtr tree, NonComparablePixels& pixelsOfLCA) {
+                comparator = [=](int row, int col, MorphologicalTree* tree, NonComparablePixels& pixelsOfLCA) {
                     
                     auto idP = ImageUtils::to1D(row, col, tree->getNumColsOfImage());
                     auto idQ = ImageUtils::to1D(row + rowOffset, col + colOffset, tree->getNumColsOfImage());
-                    NodeMTPtr nodeP = tree->getSC(idP);
-                    NodeMTPtr nodeQ = tree->getSC(idQ);
+                    NodeId nodeP = tree->getSCById(idP);
+                    NodeId nodeQ = tree->getSCById(idQ);
                     /*if(tree->isComparable(nodeP, nodeQ) == false) {
-                        NodeMTPtr lca = tree->findLowestCommonAncestor(nodeP, nodeQ);
+                        NodeId lca = tree->findLowestCommonAncestor(nodeP, nodeQ);
                         pixelsOfLCA[lca->getIndex()].push_back( ImageUtils::to1D(row, col, tree->getNumColsOfImage()) );
                         return false;
                     }*/
@@ -76,14 +73,14 @@ public:
                 };
                 break;
             case BitQuadType::StrictDescendant:
-                comparator = [=](int row, int col, MorphologicalTreePtr tree, NonComparablePixels& pixelsOfLCA) {
+                comparator = [=](int row, int col, MorphologicalTree* tree, NonComparablePixels& pixelsOfLCA) {
                     
                     auto idP = ImageUtils::to1D(row, col, tree->getNumColsOfImage());
                     auto idQ = ImageUtils::to1D(row + rowOffset, col + colOffset, tree->getNumColsOfImage());
-                    NodeMTPtr nodeP = tree->getSC(idP);
-                    NodeMTPtr nodeQ = tree->getSC(idQ);
+                    NodeId nodeP = tree->getSCById(idP);
+                    NodeId nodeQ = tree->getSCById(idQ);
                     /*if(tree->isComparable(nodeP, nodeQ) == false) {
-                        NodeMTPtr lca = tree->findLowestCommonAncestor(nodeP, nodeQ);
+                        NodeId lca = tree->findLowestCommonAncestor(nodeP, nodeQ);
                         pixelsOfLCA[lca->getIndex()].push_back( ImageUtils::to1D(row, col, tree->getNumColsOfImage()) );
                         return false;
                     }*/
@@ -91,14 +88,14 @@ public:
                 };
                 break;
             case BitQuadType::Descendant:
-                comparator = [=](int row, int col, MorphologicalTreePtr tree, NonComparablePixels& pixelsOfLCA) {
+                comparator = [=](int row, int col, MorphologicalTree* tree, NonComparablePixels& pixelsOfLCA) {
                     
                     auto idP = ImageUtils::to1D(row, col, tree->getNumColsOfImage());
                     auto idQ = ImageUtils::to1D(row + rowOffset, col + colOffset, tree->getNumColsOfImage());
-                    NodeMTPtr nodeP = tree->getSC(idP);
-                    NodeMTPtr nodeQ = tree->getSC(idQ);
+                    NodeId nodeP = tree->getSCById(idP);
+                    NodeId nodeQ = tree->getSCById(idQ);
                     /*if(tree->isComparable(nodeP, nodeQ) == false) {
-                        NodeMTPtr lca = tree->findLowestCommonAncestor(nodeP, nodeQ);
+                        NodeId lca = tree->findLowestCommonAncestor(nodeP, nodeQ);
                         pixelsOfLCA[lca->getIndex()].push_back( ImageUtils::to1D(row, col, tree->getNumColsOfImage()) );
                         return false;
                     }*/
@@ -108,7 +105,7 @@ public:
         }
     }
 
-    bool compare(int row, int col, MorphologicalTreePtr tree, NonComparablePixels& pixelsOfLCA) const {
+    bool compare(int row, int col, MorphologicalTree* tree, NonComparablePixels& pixelsOfLCA) const {
         if (!isValid(row, col, tree)){
             if(type == BitQuadType::StrictDescendant || type == BitQuadType::Descendant) {
                 return true;
@@ -125,12 +122,12 @@ public:
 // Padrão e grupo de padrões
 //---------------------------------------------
 class BitQuad {
-    std::vector<BitQuadComparatorCT> quads;
+    std::vector<BitQuadComparator> quads;
 public:
     BitQuad() = default;
     explicit BitQuad(size_t size) { quads.reserve(size); }
     
-    BitQuad& add(BitQuadComparatorCT quad) {
+    BitQuad& add(BitQuadComparator quad) {
         quads.push_back(quad);
         return *this;
     }
@@ -176,7 +173,7 @@ public:
         std::cout << "+---+---+---+\n\n";
     }
 
-    bool match(int row, int col, MorphologicalTreePtr tree, NonComparablePixels& pixelsOfLCA) const {
+    bool match(int row, int col, MorphologicalTree* tree, NonComparablePixels& pixelsOfLCA) const {
         for (const auto& quad : quads) {
             if (!quad.compare(row, col, tree, pixelsOfLCA))
                 return false;
@@ -185,13 +182,13 @@ public:
     }
 };
 
-class BitQuadPatternCT {
+class BitQuadPattern {
     std::vector<BitQuad> patterns;
 public:
-    BitQuadPatternCT() = default;
-    explicit BitQuadPatternCT(size_t size) { patterns.reserve(size); }
+    BitQuadPattern() = default;
+    explicit BitQuadPattern(size_t size) { patterns.reserve(size); }
     
-    BitQuadPatternCT& addBitQuad(const BitQuad& pattern) {
+    BitQuadPattern& addBitQuad(const BitQuad& pattern) {
         patterns.push_back(pattern);
         return *this;
     }
@@ -202,7 +199,7 @@ public:
         }
     }
 
-    int count(int row, int col, MorphologicalTreePtr tree, NonComparablePixels& pixelsOfLCA)  {
+    int count(int row, int col, MorphologicalTree* tree, NonComparablePixels& pixelsOfLCA)  {
         int c = 0;
         for (auto& pattern : patterns)
             if (pattern.match(row, col, tree, pixelsOfLCA)){
@@ -307,53 +304,523 @@ struct AttributeBasedBitQuads {
 
 class ComputerAttributeBasedBitQuads {
 private:
-    BitQuadPatternCT Q1;
-    BitQuadPatternCT Q1C4;
-    BitQuadPatternCT Q2;
-    BitQuadPatternCT QD;
-    BitQuadPatternCT Q3;
-    BitQuadPatternCT Q4;
+    BitQuadPattern Q1;
+    BitQuadPattern Q1C4;
+    BitQuadPattern Q2;
+    BitQuadPattern QD;
+    BitQuadPattern Q3;
+    BitQuadPattern Q4;
 
-    BitQuadPatternCT Q1T;
-    BitQuadPatternCT Q1C4T;
-    BitQuadPatternCT Q2T;
-    BitQuadPatternCT QDT;
-    BitQuadPatternCT Q3T;
+    BitQuadPattern Q1T;
+    BitQuadPattern Q1C4T;
+    BitQuadPattern Q2T;
+    BitQuadPattern QDT;
+    BitQuadPattern Q3T;
 
-    MorphologicalTreePtr tree;
+    MorphologicalTree* tree;
     AdjacencyRelationPtr adj;
     std::vector<AttributeBasedBitQuads> attr;
     NonComparablePixels pixelsOfLCA;
 
-    void initializePatterns();
 
-    void createQ1Patterns();
-    void createQ1C4Patterns();
-    void createQ2Patterns();
-    void createQDPatterns();
-    void createQ3Patterns();
-    void createQ4Patterns();
+    void initializePatterns() {
+        if(!adj || adj->is4connectivity()) {
+            createQ1C4Patterns();
+            createQ1C4TPatterns();
+        }else { // 8-connectivity
+            createQ1Patterns();
+            createQDPatterns();
+            createQ1TPatterns();
+            createQDTPattern();
+        }
+        createQ2Patterns();
+        createQ3Patterns();
+        createQ4Patterns();
+        createQ2TPattern();
+        createQ3TPattern();
+    }
 
-    void createQ1C4TPatterns();
-    void createQ1TPatterns();
-    void createQ2TPattern();
-    void createQDTPattern();
-    void createQ3TPattern();
+    void computerLocalPattern(NodeId nodeId, int p, std::vector<AttributeBasedBitQuads>& attr) {
+        auto [row,col] = ImageUtils::to2D(p, tree->getNumColsOfImage());
+        
 
-    void computerLocalPattern(NodeMTPtr node, int p, std::vector<AttributeBasedBitQuads>& attr);
+        if (!adj || adj->is4connectivity()) {
+            attr[nodeId].countPatternC1C4  += Q1C4.count(row, col, tree, pixelsOfLCA);
+            attr[nodeId].countPatternCT1C4 += Q1C4T.count(row, col, tree, pixelsOfLCA);
+        } else { // 8-connectivity
+            attr[nodeId].countPatternC1   += Q1.count(row, col, tree, pixelsOfLCA);
+            attr[nodeId].countPatternCD   += QD.count(row, col, tree, pixelsOfLCA);
+            attr[nodeId].countPatternCTD  += QDT.count(row, col, tree, pixelsOfLCA);
+            attr[nodeId].countPatternCT1  += Q1T.count(row, col, tree, pixelsOfLCA);
+        }
+
+        attr[nodeId].countPatternC2  += Q2.count(row, col, tree, pixelsOfLCA);
+        attr[nodeId].countPatternC3  += Q3.count(row, col, tree, pixelsOfLCA);
+        attr[nodeId].countPatternC4  += Q4.count(row, col, tree, pixelsOfLCA);
+        attr[nodeId].countPatternCT2 += Q2T.count(row, col, tree, pixelsOfLCA);
+        attr[nodeId].countPatternCT3 += Q3T.count(row, col, tree, pixelsOfLCA);
+    }
+
+    void createQ1Patterns() {
+        BitQuad Q1P1(3), Q1P2(3), Q1P3(3), Q1P4(3);
+
+        Q1P1.add(BitQuadComparator(0, -1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(1, -1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(1, 0, BitQuadType::StrictDescendant));
+
+        Q1P2.add(BitQuadComparator(-1, 0, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(-1, -1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(0, -1, BitQuadType::StrictDescendant));
+
+        Q1P3.add(BitQuadComparator(0, 1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(-1, 1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(-1, 0, BitQuadType::StrictDescendant));
+
+        Q1P4.add(BitQuadComparator(1, 0, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(1, 1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(0, 1, BitQuadType::StrictDescendant));
+
+        Q1 = BitQuadPattern(4);
+        Q1.addBitQuad(Q1P1).addBitQuad(Q1P2).addBitQuad(Q1P3).addBitQuad(Q1P4);
+        if(PRINT_LOG){
+            std::cout << "Q1 Patterns created:\n";
+            Q1.print();
+        }
+    }
+
+    void createQ1C4Patterns() {
+        BitQuad Q1C4P1(2), Q1C4P2(2), Q1C4P3(2), Q1C4P4(2);
+
+        Q1C4P1.add(BitQuadComparator(0, -1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(1, 0, BitQuadType::StrictDescendant));
+        
+
+        Q1C4P2.add(BitQuadComparator(-1, 0, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(0, -1, BitQuadType::StrictDescendant));
+
+        Q1C4P3.add(BitQuadComparator(0, 1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(-1, 0, BitQuadType::StrictDescendant));
+
+        Q1C4P4.add(BitQuadComparator(1, 0, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(0, 1, BitQuadType::StrictDescendant));
+
+        Q1C4 = BitQuadPattern(4);
+        Q1C4.addBitQuad(Q1C4P1).addBitQuad(Q1C4P2).addBitQuad(Q1C4P3).addBitQuad(Q1C4P4);
+        if(PRINT_LOG){
+            std::cout << "Q1C4 Patterns created:\n";
+            Q1C4.print();
+        }
+    }
+
+
+    void createQ2Patterns() {
+        BitQuad Q2P1(3), Q2P2(3), Q2P3(3), Q2P4(3);
+        BitQuad Q2P5(3), Q2P6(3), Q2P7(3), Q2P8(3);
+
+        Q2P1.add(BitQuadComparator(1, 0, BitQuadType::Ancestor))
+            .add(BitQuadComparator(1, 1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(0, 1, BitQuadType::StrictDescendant));
+
+        Q2P2.add(BitQuadComparator(0, 1, BitQuadType::Ancestor))
+            .add(BitQuadComparator(-1, 1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(-1, 0, BitQuadType::StrictDescendant));
+
+        Q2P3.add(BitQuadComparator(-1, 0, BitQuadType::Ancestor))
+            .add(BitQuadComparator(-1, -1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(0, -1, BitQuadType::StrictDescendant));
+
+        Q2P4.add(BitQuadComparator(0, -1, BitQuadType::Ancestor))
+            .add(BitQuadComparator(1, -1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(1, 0, BitQuadType::StrictDescendant));
+
+        Q2P5.add(BitQuadComparator(0, 1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(-1, 1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(-1, 0, BitQuadType::StrictAncestor));
+
+        Q2P6.add(BitQuadComparator(-1, 0, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(-1, -1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(0, -1, BitQuadType::StrictAncestor));
+
+        Q2P7.add(BitQuadComparator(0, -1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(1, -1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(1, 0, BitQuadType::StrictAncestor));
+
+        Q2P8.add(BitQuadComparator(1, 0, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(1, 1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(0, 1, BitQuadType::StrictAncestor));
+
+        Q2 = BitQuadPattern(8);
+        Q2.addBitQuad(Q2P1).addBitQuad(Q2P2).addBitQuad(Q2P3).addBitQuad(Q2P4).addBitQuad(Q2P5).addBitQuad(Q2P6).addBitQuad(Q2P7).addBitQuad(Q2P8);
+        if(PRINT_LOG){
+            std::cout << "Q2 Patterns created:\n";
+            Q2.print();
+        }
+    }
+
+    void createQDPatterns() {
+        BitQuad QDP1(3), QDP2(3), QDP3(3), QDP4(3);
+
+        QDP1.add(BitQuadComparator(1, 0, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(1, 1, BitQuadType::Ancestor))
+            .add(BitQuadComparator(0, 1, BitQuadType::StrictDescendant));
+
+        QDP2.add(BitQuadComparator(0, -1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(1, -1, BitQuadType::Ancestor))
+            .add(BitQuadComparator(1, 0, BitQuadType::StrictDescendant));
+
+        QDP3.add(BitQuadComparator(-1, 0, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(-1, -1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(0, -1, BitQuadType::StrictDescendant));
+
+        QDP4.add(BitQuadComparator(0, 1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(-1, 1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(-1, 0, BitQuadType::StrictDescendant));
+
+        QD = BitQuadPattern(4);
+        QD.addBitQuad(QDP1).addBitQuad(QDP2).addBitQuad(QDP3).addBitQuad(QDP4);
+        if(PRINT_LOG){
+            std::cout << "QD Patterns created:\n";
+            QD.print();
+        }
+    }
+
+    void createQ3Patterns() {
+        BitQuad Q3P1(3), Q3P2(3), Q3P3(3), Q3P4(3);
+        BitQuad Q3P5(3), Q3P6(3), Q3P7(3), Q3P8(3);
+        BitQuad Q3P9(3), Q3P10(3), Q3P11(3), Q3P12(3);
+
+        Q3P1.add(BitQuadComparator(0, 1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(-1, 1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(-1, 0, BitQuadType::StrictAncestor));
+
+        Q3P2.add(BitQuadComparator(1, 0, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(1, 1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(0, 1, BitQuadType::StrictAncestor));
+
+        Q3P3.add(BitQuadComparator(0, -1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(1, -1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(1, 0, BitQuadType::StrictAncestor));
+
+        Q3P4.add(BitQuadComparator(-1, 0, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(-1, -1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(0, -1, BitQuadType::StrictAncestor));
+
+        Q3P5.add(BitQuadComparator(1, 0, BitQuadType::Ancestor))
+            .add(BitQuadComparator(1, 1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(0, 1, BitQuadType::StrictDescendant));
+
+        Q3P6.add(BitQuadComparator(0, 1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(-1, 1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(-1, 0, BitQuadType::Ancestor));
+
+        Q3P7.add(BitQuadComparator(-1, 0, BitQuadType::Ancestor))
+            .add(BitQuadComparator(-1, -1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(0, -1, BitQuadType::StrictDescendant));
+
+        Q3P8.add(BitQuadComparator(0, -1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(1, -1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(1, 0, BitQuadType::Ancestor));
+
+        Q3P9.add(BitQuadComparator(-1, 0, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(-1, -1, BitQuadType::Ancestor))
+            .add(BitQuadComparator(0, -1, BitQuadType::Ancestor));
+
+        Q3P10.add(BitQuadComparator(0, -1, BitQuadType::Ancestor))
+            .add(BitQuadComparator(1, -1, BitQuadType::Ancestor))
+            .add(BitQuadComparator(1, 0, BitQuadType::StrictDescendant));
+
+        Q3P11.add(BitQuadComparator(1, 0, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(1, 1, BitQuadType::Ancestor))
+            .add(BitQuadComparator(0, 1, BitQuadType::Ancestor));
+
+        Q3P12.add(BitQuadComparator(0, 1, BitQuadType::Ancestor))
+            .add(BitQuadComparator(-1, 1, BitQuadType::Ancestor))
+            .add(BitQuadComparator(-1, 0, BitQuadType::StrictDescendant));
+
+        Q3 = BitQuadPattern(12);
+        Q3.addBitQuad(Q3P1).addBitQuad(Q3P2).addBitQuad(Q3P3).addBitQuad(Q3P4).addBitQuad(Q3P5).addBitQuad(Q3P6).addBitQuad(Q3P7).addBitQuad(Q3P8).addBitQuad(Q3P9).addBitQuad(Q3P10).addBitQuad(Q3P11).addBitQuad(Q3P12);
+        if(PRINT_LOG){
+            std::cout << "Q3 Patterns created:\n";
+            Q3.print();
+        }
+    }
+
+    void createQ4Patterns() {
+        BitQuad Q4P1(3), Q4P2(3), Q4P3(3), Q4P4(3);
+
+        Q4P1.add(BitQuadComparator(1, 0, BitQuadType::Ancestor))
+            .add(BitQuadComparator(1, 1, BitQuadType::Ancestor))
+            .add(BitQuadComparator(0, 1, BitQuadType::Ancestor));
+
+        Q4P2.add(BitQuadComparator(0, 1, BitQuadType::Ancestor))
+            .add(BitQuadComparator(-1, 1, BitQuadType::Ancestor))
+            .add(BitQuadComparator(-1, 0, BitQuadType::StrictAncestor));
+
+        Q4P3.add(BitQuadComparator(-1, 0, BitQuadType::Ancestor))
+            .add(BitQuadComparator(-1, -1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(0, -1, BitQuadType::StrictAncestor));
+
+        Q4P4.add(BitQuadComparator(0, -1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(1, -1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(1, 0, BitQuadType::StrictAncestor));
+
+        Q4 = BitQuadPattern(4);
+        Q4.addBitQuad(Q4P1).addBitQuad(Q4P2).addBitQuad(Q4P3).addBitQuad(Q4P4);
+        
+        if(PRINT_LOG){
+            std::cout << "Q4 Patterns created:\n";
+            Q4.print();
+        }
+    }
+
+    void createQ1C4TPatterns() {
+        BitQuad Q1C4TP1(2), Q1C4TP2(2), Q1C4TP3(2), Q1C4TP4(2);
+        BitQuad Q1C4TP5(2), Q1C4TP6(2), Q1C4TP7(2), Q1C4TP8(2);
+
+        Q1C4TP1.add(BitQuadComparator(1, 1, BitQuadType::StrictDescendant))
+                .add(BitQuadComparator(0, 1, BitQuadType::StrictAncestor));
+
+        Q1C4TP2.add(BitQuadComparator(0, 1, BitQuadType::StrictAncestor))
+                .add(BitQuadComparator(-1, 1, BitQuadType::StrictDescendant));
+
+        Q1C4TP3.add(BitQuadComparator(-1, -1, BitQuadType::StrictDescendant))
+                .add(BitQuadComparator(0, -1, BitQuadType::StrictAncestor));
+
+        Q1C4TP4.add(BitQuadComparator(0, -1, BitQuadType::StrictAncestor))
+                .add(BitQuadComparator(1, -1, BitQuadType::StrictDescendant));
+
+        Q1C4TP5.add(BitQuadComparator(-1, 0, BitQuadType::StrictAncestor))
+                .add(BitQuadComparator(-1, -1, BitQuadType::Descendant));
+
+        Q1C4TP6.add(BitQuadComparator(1, -1, BitQuadType::Descendant))
+                .add(BitQuadComparator(1, 0, BitQuadType::StrictAncestor));
+
+        Q1C4TP7.add(BitQuadComparator(1, 0, BitQuadType::StrictAncestor))
+                .add(BitQuadComparator(1, 1, BitQuadType::Descendant));
+
+        Q1C4TP8.add(BitQuadComparator(-1, 1, BitQuadType::Descendant))
+                .add(BitQuadComparator(-1, 0, BitQuadType::StrictAncestor));
+
+        Q1C4T = BitQuadPattern(8);
+        Q1C4T.addBitQuad(Q1C4TP1).addBitQuad(Q1C4TP2).addBitQuad(Q1C4TP3).addBitQuad(Q1C4TP4).addBitQuad(Q1C4TP5).addBitQuad(Q1C4TP6).addBitQuad(Q1C4TP7).addBitQuad(Q1C4TP8);
+        if(PRINT_LOG){
+            std::cout << "Q1C4T Patterns created:\n";
+            Q1C4T.print();
+        }
+    }
+
+    void createQ1TPatterns() {
+        BitQuad Q1TP1(3), Q1TP2(3), Q1TP3(3), Q1TP4(3);
+        BitQuad Q1TP5(3), Q1TP6(3), Q1TP7(3), Q1TP8(3);
+        BitQuad Q1TP9(3), Q1TP10(3), Q1TP11(3), Q1TP12(3);
+
+        Q1TP1.add(BitQuadComparator(0, 1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(-1, 1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(-1, 0, BitQuadType::StrictDescendant));
+
+        Q1TP2.add(BitQuadComparator(1, 0, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(1, 1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(0, 1, BitQuadType::StrictDescendant));
+
+        Q1TP3.add(BitQuadComparator(0, -1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(1, -1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(1, 0, BitQuadType::StrictDescendant));
+
+        Q1TP4.add(BitQuadComparator(-1, 0, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(-1, -1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(0, -1, BitQuadType::StrictDescendant));
+
+        Q1TP5.add(BitQuadComparator(1, 0, BitQuadType::Descendant))
+            .add(BitQuadComparator(1, 1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(0, 1, BitQuadType::StrictAncestor));
+
+        Q1TP6.add(BitQuadComparator(0, 1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(-1, 1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(-1, 0, BitQuadType::Descendant));
+
+        Q1TP7.add(BitQuadComparator(-1, 0, BitQuadType::Descendant))
+            .add(BitQuadComparator(-1, -1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(0, -1, BitQuadType::StrictAncestor));
+
+        Q1TP8.add(BitQuadComparator(0, -1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(1, -1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(1, 0, BitQuadType::Descendant));
+
+        Q1TP9.add(BitQuadComparator(-1, 0, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(-1, -1, BitQuadType::Descendant))
+            .add(BitQuadComparator(0, -1, BitQuadType::Descendant));
+
+        Q1TP10.add(BitQuadComparator(0, -1, BitQuadType::Descendant))
+            .add(BitQuadComparator(1, -1, BitQuadType::Descendant))
+            .add(BitQuadComparator(1, 0, BitQuadType::StrictAncestor));
+
+        Q1TP11.add(BitQuadComparator(1, 0, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(1, 1, BitQuadType::Descendant))
+            .add(BitQuadComparator(0, 1, BitQuadType::Descendant));
+
+        Q1TP12.add(BitQuadComparator(0, 1, BitQuadType::Descendant))
+            .add(BitQuadComparator(-1, 1, BitQuadType::Descendant))
+            .add(BitQuadComparator(-1, 0, BitQuadType::StrictAncestor));
+
+        Q1T = BitQuadPattern(12);
+        Q1T.addBitQuad(Q1TP1).addBitQuad(Q1TP2).addBitQuad(Q1TP3).addBitQuad(Q1TP4).addBitQuad(Q1TP5).addBitQuad(Q1TP6).addBitQuad(Q1TP7).addBitQuad(Q1TP8).addBitQuad(Q1TP9).addBitQuad(Q1TP10).addBitQuad(Q1TP11).addBitQuad(Q1TP12);
+        if(PRINT_LOG){
+            std::cout << "Q1T Patterns created:\n";
+            Q1T.print();
+        }
+    }
+
+    void createQ2TPattern() {
+        BitQuad Q2TP1(3), Q2TP2(3), Q2TP3(3), Q2TP4(3);
+        BitQuad Q2TP5(3), Q2TP6(3), Q2TP7(3), Q2TP8(3);
+
+        Q2TP1.add(BitQuadComparator(0, -1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(1, -1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(1, 0, BitQuadType::StrictDescendant));
+
+        Q2TP2.add(BitQuadComparator(1, 0, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(1, 1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(0, 1, BitQuadType::StrictDescendant));
+
+        Q2TP3.add(BitQuadComparator(0, 1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(-1, 1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(-1, 0, BitQuadType::StrictDescendant));
+
+        Q2TP4.add(BitQuadComparator(-1, 0, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(-1, -1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(0, -1, BitQuadType::StrictDescendant));
+
+        Q2TP5.add(BitQuadComparator(-1, 0, BitQuadType::Descendant))
+            .add(BitQuadComparator(-1, -1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(0, -1, BitQuadType::StrictAncestor));
+
+        Q2TP6.add(BitQuadComparator(0, -1, BitQuadType::Descendant))
+            .add(BitQuadComparator(1, -1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(1, 0, BitQuadType::StrictAncestor));
+
+        Q2TP7.add(BitQuadComparator(1, 0, BitQuadType::Descendant))
+            .add(BitQuadComparator(1, 1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(0, 1, BitQuadType::StrictAncestor));
+
+        Q2TP8.add(BitQuadComparator(0, 1, BitQuadType::Descendant))
+            .add(BitQuadComparator(-1, 1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(-1, 0, BitQuadType::StrictAncestor));
+
+        Q2T = BitQuadPattern(8);
+        Q2T.addBitQuad(Q2TP1).addBitQuad(Q2TP2).addBitQuad(Q2TP3).addBitQuad(Q2TP4).addBitQuad(Q2TP5).addBitQuad(Q2TP6).addBitQuad(Q2TP7).addBitQuad(Q2TP8);
+        if(PRINT_LOG){
+            std::cout << "Q2T Patterns created:\n";
+            Q2T.print();
+        }
+    }
+
+    void createQDTPattern() {
+        BitQuad QDTP1(3), QDTP2(3), QDTP3(3), QDTP4(3);
+
+        QDTP1.add(BitQuadComparator(0, -1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(1, -1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(1, 0, BitQuadType::StrictAncestor));
+
+        QDTP2.add(BitQuadComparator(1, 0, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(1, 1, BitQuadType::StrictDescendant))
+            .add(BitQuadComparator(0, 1, BitQuadType::StrictAncestor));
+
+        QDTP3.add(BitQuadComparator(0, 1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(-1, 1, BitQuadType::Descendant))
+            .add(BitQuadComparator(-1, 0, BitQuadType::StrictAncestor));
+
+        QDTP4.add(BitQuadComparator(-1, 0, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(-1, -1, BitQuadType::Descendant))
+            .add(BitQuadComparator(0, -1, BitQuadType::StrictAncestor));
+
+        QDT = BitQuadPattern(4);
+        QDT.addBitQuad(QDTP1).addBitQuad(QDTP2).addBitQuad(QDTP3).addBitQuad(QDTP4);
+        if(PRINT_LOG){
+            std::cout << "QDT Patterns created:\n";
+            QDT.print();
+        }
+    }
+
+    void createQ3TPattern() {
+        BitQuad Q3TP1(3), Q3TP2(3), Q3TP3(3), Q3TP4(3);
+
+        Q3TP1.add(BitQuadComparator(0, -1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(1, -1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(1, 0, BitQuadType::StrictAncestor));
+
+        Q3TP2.add(BitQuadComparator(-1, 0, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(-1, -1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(0, -1, BitQuadType::StrictAncestor));
+
+        Q3TP3.add(BitQuadComparator(0, 1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(-1, 1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(-1, 0, BitQuadType::StrictAncestor));
+
+        Q3TP4.add(BitQuadComparator(1, 0, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(1, 1, BitQuadType::StrictAncestor))
+            .add(BitQuadComparator(0, 1, BitQuadType::StrictAncestor));
+
+        Q3T = BitQuadPattern(4);
+        Q3T.addBitQuad(Q3TP1).addBitQuad(Q3TP2).addBitQuad(Q3TP3).addBitQuad(Q3TP4);
+        if(PRINT_LOG){
+            std::cout << "Q3T Patterns created:\n";
+            Q3T.print();
+        }
+    }
 
 public:
 
 
     // Construtor principal
-    ComputerAttributeBasedBitQuads(MorphologicalTreePtr tree);
+    ComputerAttributeBasedBitQuads(ComponentTreePtr tree): ComputerAttributeBasedBitQuads(tree.get()) {}
+    ComputerAttributeBasedBitQuads(MorphologicalTree* tree) : tree(tree), adj(tree->getAdjacencyRelation()), attr(tree->getNumNodes(), AttributeBasedBitQuads(adj)) {
+        
+        assert(tree->getTreeType() != MorphologicalTree::TREE_OF_SHAPES && "Não está implementado para tree of shapes!");
+        
+        initializePatterns();
+        AttributeComputedIncrementally::computerAttribute(tree,
+            tree->getRootById(),
+            [&](NodeId node) {
+                for(int p: tree->getCNPsById(node)){
+                    computerLocalPattern(node, p, attr) ;
+                }	
+            },
+            [&](NodeId parent, NodeId child) {
+                if (!adj || adj->is4connectivity()) // 4-connectivity
+                    attr[parent].countPatternC1C4 += attr[child].countPatternC1C4;
+                else {
+                    attr[parent].countPatternC1 += attr[child].countPatternC1;
+                    attr[parent].countPatternCD += attr[child].countPatternCD;
+                }
+                attr[parent].countPatternC2 += attr[child].countPatternC2;
+                attr[parent].countPatternC3 += attr[child].countPatternC3;
+                attr[parent].countPatternC4 += attr[child].countPatternC4;
+            },
+            [&](NodeId node) {
 
-    std::vector<AttributeBasedBitQuads> getAttributes() const;
+                /*std::vector<int>& pixelsNonComparable = pixelsOfLCA[node];
+                std::cout << "Node: " << node << " - Non-comparable pixels: " << pixelsNonComparable.size() << std::endl;
+                for (int p : pixelsNonComparable) {
+                    computerLocalPattern(node, p, attr);
+                }*/
 
-    
+                if (!adj || adj->is4connectivity()) 
+                    attr[node].countPatternC1C4 = attr[node].countPatternC1C4 - attr[node].countPatternCT1C4;
+                else {
+                    attr[node].countPatternC1 = attr[node].countPatternC1 - attr[node].countPatternCT1;
+                    attr[node].countPatternCD = attr[node].countPatternCD - attr[node].countPatternCTD;
+                }
+                attr[node].countPatternC2 = attr[node].countPatternC2 - attr[node].countPatternCT2;
+                attr[node].countPatternC3 = attr[node].countPatternC3 - attr[node].countPatternCT3;
+            }
+        );
 
+    }
+
+    std::vector<AttributeBasedBitQuads> getAttributes() const {
+        return attr;
+    }
 
 };
 
 
-#endif // COMPUTER_ATTRIBUTE_BASED_BIT_QUADS_HPP

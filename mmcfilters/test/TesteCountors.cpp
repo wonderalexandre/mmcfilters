@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
 
     // Criação das Component Trees
     
-    MorphologicalTreePtr tree = nullptr;
+    ComponentTreePtr tree = nullptr;
     std::string treeType = std::string(argv[1]);
     if(treeType=="mintree"){
         tree = std::make_shared<MorphologicalTree>(image, false);
@@ -63,15 +63,15 @@ int main(int argc, char* argv[]) {
     //std::cout << std::endl;
     //printMappingSC(tree, 3);
     
-    ContoursMTPtr contoursMT = AttributeComputedIncrementally::extractCompactContours(tree);
+    std::shared_ptr<Contours> contoursCT = AttributeComputedIncrementally::extractCompactContours(tree);
     //std::vector<std::unordered_set<int>> countors =  AttributeComputedIncrementally::extractCountors(tree);
-    std::vector<std::vector<NodeMTPtr>> nodesByDepth = tree->getNodesByDepth();
+    
     ImageUInt8Ptr imgBin = ImageUInt8::create(numRows, numCols, 0);
     ImageUInt8Ptr contoursInc = ImageUInt8::create(numRows, numCols, 0);
     ImageUInt8Ptr contoursNonInc = ImageUInt8::create(numRows, numCols, 0);
 
     bool isEquals = true;
-    contoursMT->visitContoursAndCCs(tree, [&](NodeMTPtr node, const std::list<int>& cc, const std::unordered_set<int>& contourNode) {
+    contoursCT->visitContoursAndCCs([&](NodeId node, const std::list<int>& cc, const std::unordered_set<int>& contourNode) {
        
 
         //contorno incremental
@@ -81,7 +81,7 @@ int main(int argc, char* argv[]) {
         
         //contorno nao-incremental
         for(int p: cc){
-            if(tree->isDescendant(tree->getSC(p), node)){
+            if(tree->isDescendant(tree->getSCById(p), node)){
                 (*imgBin)[p] = 1;
             }        
         }
@@ -108,7 +108,7 @@ int main(int argc, char* argv[]) {
                 std::cout << "(row, col) = (" << point.first << ", " << point.second << ")\n";
             }
         }
-       // std::cout << "CC(nodeID):"<< node->getIndex() << "\t is equals? " << isEqualsCC << std::endl;
+        std::cout << "CC(nodeID):"<< node << "\t is equals? " << isEqualsCC << std::endl;
         
         if(!isEqualsCC){
             std::cout << "\nContorno não incremental" << std::endl;

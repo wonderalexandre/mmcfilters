@@ -2,7 +2,6 @@
 #include "Tests.hpp"
 #include "../include/AdjacencyRelation.hpp"
 
-#include "../include/NodeMT.hpp"
 #include "../include/Common.hpp"
 
 #include "../include/MorphologicalTree.hpp"
@@ -18,10 +17,8 @@ int main(int argc, char* argv[]) {
     printImage(image);
     
 
-
-    // Criação das Component Trees
-    MorphologicalTreePtr tree = nullptr;
-    std::string treeType = "mintree"; 
+    ComponentTreePtr tree = nullptr;
+    std::string treeType = "mintree";
     if(treeType=="mintree"){
         tree = std::make_shared<MorphologicalTree>(image, false);
         //std::cout << "mintree" << std::endl;
@@ -42,8 +39,8 @@ int main(int argc, char* argv[]) {
     ComputerAttributeBasedBitQuads computer(tree);
     std::vector<AttributeBasedBitQuads> attr = computer.getAttributes();
     std::cout << "Patterns: " << std::endl;
-    for (NodeMTPtr node : tree->getIndexNode()) {
-        std::cout << "Node ID: " << node->getIndex() << ",\tLevel: " << node->getLevel() << ",\tPatterns: " << attr[node->getIndex()].printPattern() << std::endl;
+    for (NodeId node : tree->getNodeIds()) {
+        std::cout << "Node ID: " << node << ",\tLevel: " << tree->getLevelById(node) << ",\tPatterns: " << attr[node].printPattern() << std::endl;
     }
 
     return 0;

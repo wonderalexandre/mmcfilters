@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
 
     // Criação das Component Trees
     
-    MorphologicalTreePtr tree = nullptr;
+    ComponentTreePtr tree = nullptr;
     std::string treeType = std::string(argv[1]);
     if(treeType=="mintree"){
         tree = std::make_shared<MorphologicalTree>(image, false);
@@ -63,11 +63,11 @@ int main(int argc, char* argv[]) {
     std::cout << std::endl;
     printMappingSC(tree, 3);
     
-    ContoursMTPtr contoursMT = AttributeComputedIncrementally::extractCompactContours(tree);
+    std::shared_ptr<Contours> contoursCT = AttributeComputedIncrementally::extractCompactContours(tree);
     //ImagePtr imgContours = Image::create(numRows, numCols, 0);
 
     bool isEquals = true;
-    for (auto&& [node, contourNode] : contoursMT->contoursLazy()) {
+    for (auto&& [node, contourNode] : contoursCT->contoursLazy()) {
         ImageUInt8Ptr imgContours = ImageUInt8::create(numRows, numCols, 0);
         
         //contorno incremental
@@ -75,7 +75,7 @@ int main(int argc, char* argv[]) {
             (*imgContours)[p] = 1;
         }
         
-        std::cout << "\nNode:"<< node->getIndex() << std::endl;
+        std::cout << "\nNode:"<< node << std::endl;
         printImage(imgContours, 3);
     }
 

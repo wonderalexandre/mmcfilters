@@ -3,10 +3,8 @@
 #include <iostream>
 #include <sstream>
 
-#include "../include/BuilderTreeOfShapeByUnionFind.hpp"
-#include "../include/NodeMT.hpp"
+#include "../include/BuilderMorphologicalTreeByUnionFind.hpp"
 #include "../include/Common.hpp"
-#include "../include/MorphologicalTree.hpp"
 #include "Tests.hpp"
 
 
@@ -14,18 +12,19 @@ int main() {
    
     ImageUInt8Ptr image = getSimpleImage();
 
-    BuilderTreeOfShapeByUnionFind builder;
+    BuilderTreeOfShape builder;
 
     // Receber os ponteiros de interpolação (mínimo e máximo)
-    builder.interpolateImage4c8c(image);
-    auto interpolationMin = builder.getInterpolationMin();
-    auto interpolationMax = builder.getInterpolationMax();
-
+    auto [interpolationMin, interpolationMax, _] = builder.interpolateImage4c8c(image);
+    int interpNumRows = image->getNumRows() * 2 + 1;
+    int interpNumCols = image->getNumCols() * 2 + 1;
+    
+        
     // Imprimir os resultados da interpolação
-    std::cout << "\nInterpolação: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
-    for (int r = 0; r < builder.getInterpNumRows(); ++r) {
-        for (int c = 0; c < builder.getInterpNumCols(); ++c) {
-            int index = ImageUtils::to1D(r, c, builder.getInterpNumCols());
+    std::cout << "\nInterpolação: " << interpNumRows << " x " << interpNumCols << std::endl;
+    for (int r = 0; r < interpNumRows; ++r) {
+        for (int c = 0; c < interpNumCols; ++c) {
+            int index = ImageUtils::to1D(r, c, interpNumCols);
     
             std::ostringstream cell;
             if (r % 2 == 1 && c % 2 == 1) {
@@ -43,45 +42,40 @@ int main() {
     }
     std::cout << std::endl;
     
+
+    // Ordenar a interpolação mínima
+    auto [imgU, imgR, adjUC] = builder.sort(image);
+
     std::cout << "Adjacency Relation" << std::endl;
-    auto adj = builder.getAdjacency();
-    for(int index : adj->getNeighborPixels(3, 3)){
-        auto [r, c] = ImageUtils::to2D(index, builder.getInterpNumCols());
+    for(int index : adjUC.getNeighborPixels(3, 3)){
+        auto [r, c] = ImageUtils::to2D(index, interpNumCols);
         std::cout << "(" << r << ", " << c << ") = " <<  "[" << static_cast<int>(interpolationMin[index]) << "," << static_cast<int>(interpolationMax[index]) << "]" << std::endl;
     }
-
-
     
-    // Ordenar a interpolação mínima
-    builder.sort();
-    auto imgR = builder.getImgR();
-    auto imgU = builder.getImgU();
-
-    std::cout << "\nimgU: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
+    std::cout << "\nimgU: " << interpNumRows << " x " << interpNumCols << std::endl;
     // Imprimir os resultados da interpolação ordenada
-    for (int row = 0; row < builder.getInterpNumRows(); ++row) {    
-        for (int col = 0; col < builder.getInterpNumCols(); ++col) {
-            int index = ImageUtils::to1D(row, col, builder.getInterpNumCols());
+    for (int row = 0; row < interpNumRows; ++row) {    
+        for (int col = 0; col < interpNumCols; ++col) {
+            int index = ImageUtils::to1D(row, col, interpNumCols);
             std::cout << std::setw(3) << static_cast<int>(imgU[index]) << ", ";
         }
         std::cout << std::endl;
     }
-    std::cout << "\nimgR: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
+    std::cout << "\nimgR: " << interpNumRows << " x " << interpNumCols << std::endl;
     // Imprimir os resultados da interpolação ordenada
-    for (int row = 0; row < builder.getInterpNumRows(); ++row) {    
-        for (int col = 0; col < builder.getInterpNumCols(); ++col) {
-            int index = ImageUtils::to1D(row, col, builder.getInterpNumCols());
+    for (int row = 0; row < interpNumRows; ++row) {    
+        for (int col = 0; col < interpNumCols; ++col) {
+            int index = ImageUtils::to1D(row, col, interpNumCols);
             std::cout << std::setw(4) << imgR[index] << ", ";
         }
         std::cout << std::endl;
     }
 
-    builder.createTreeByUnionFind();
-    auto parent = builder.getParent();
-    std::cout << "\nparent: " << builder.getInterpNumRows() << " x " << builder.getInterpNumCols() << std::endl;
-    for (int row = 0; row < builder.getInterpNumRows(); ++row) {
-        for (int col = 0; col < builder.getInterpNumCols(); ++col) {
-            int index = ImageUtils::to1D(row, col, builder.getInterpNumCols());
+    auto [parent, orderedPixels, numNodes] = builder.createTreeByUnionFind(image);
+    std::cout << "\nparent: " << interpNumRows << " x " << interpNumCols << std::endl;
+    for (int row = 0; row < interpNumRows; ++row) {
+        for (int col = 0; col < interpNumCols; ++col) {
+            int index = ImageUtils::to1D(row, col, interpNumCols);
             std::cout << std::setw(3) << parent[index] << ", ";
         }
         std::cout << std::endl;
@@ -89,7 +83,7 @@ int main() {
 
     std::cout << std::endl;
     MorphologicalTree tree(image, "4c8c");
-    std::cout << "Depth:" << tree.getDepth() << ", |nodes|:" << tree.getNumNodes() << std::endl;
+    std::cout << "|nodes|:" << tree.getNumNodes() << std::endl;
     printTree( tree.getRoot() );
 
      

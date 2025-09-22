@@ -1,7 +1,5 @@
 #include <iostream>
-#include "../include/BuilderTreeOfShapeByUnionFind.hpp"
-#include "../include/NodeMT.hpp"
-#include "../include/MorphologicalTree.hpp"
+#include "../include/AdjacencyRelation.hpp"
 #include "../include/AdjacencyUC.hpp"
 #include "../include/Common.hpp"
 

@@ -1,4 +1,6 @@
-#include "../include/NodeMT.hpp"
+#pragma once
+
+
 #include "../include/MorphologicalTree.hpp"
 #include "../include/ComputerMSER.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
@@ -6,9 +8,6 @@
 
 #include <vector>
 #include <list>
-
-#ifndef ATTRIBUTE_OPENING_PRIMITIVES_FAMILY_H
-#define ATTRIBUTE_OPENING_PRIMITIVES_FAMILY_H
 
 class AttributeOpeningPrimitivesFamily;
 using AttributeOpeningPrimitivesFamilyPtr = std::shared_ptr<AttributeOpeningPrimitivesFamily>;
@@ -19,11 +18,11 @@ class AttributeOpeningPrimitivesFamily{
     std::shared_ptr<float[]> attrs_increasing;
     float maxCriterion;
     std::list<float> thresholds;
-    std::list<NodeMTPtr> nodesWithMaximumCriterium;
+    std::list<NodeId> nodesWithMaximumCriterium;
 
     //PrimitivesFamily
-    MorphologicalTreePtr tree;
-    std::vector<bool> selectedForFiltering; //mappping between index nodes and selected nodes
+    MorphologicalTree* tree;
+    std::vector<uint8_t> selectedForFiltering; //mappping between index nodes and selected nodes
     ImageUInt8Ptr restOfImage;
     int numPrimitives;
     
@@ -32,31 +31,29 @@ class AttributeOpeningPrimitivesFamily{
     void initializeNodesWithMaximumCriterium();
     
   public:
-    AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree,   std::shared_ptr<float[]> attr, float maxCriterion);
+    AttributeOpeningPrimitivesFamily(ComponentTreePtr tree,   std::shared_ptr<float[]> attr, float maxCriterion): AttributeOpeningPrimitivesFamily(tree.get(), attr, maxCriterion) {}
+    AttributeOpeningPrimitivesFamily(MorphologicalTree* tree,   std::shared_ptr<float[]> attr, float maxCriterion);
 
-    AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree,   std::shared_ptr<float[]> attrs_increasing, float maxCriterion, int deltaMSER);
-    
+    AttributeOpeningPrimitivesFamily(ComponentTreePtr tree,   std::shared_ptr<float[]> attrs_increasing, float maxCriterion, int deltaMSER): AttributeOpeningPrimitivesFamily(tree.get(), attrs_increasing, maxCriterion, deltaMSER) {}
+    AttributeOpeningPrimitivesFamily(MorphologicalTree* tree,   std::shared_ptr<float[]> attrs_increasing, float maxCriterion, int deltaMSER);
+
     ~AttributeOpeningPrimitivesFamily();
 
     std::list<float> getThresholdsPrimitive();
 
     //PrimitivesFamily
-    bool isSelectedForPruning(NodeMTPtr node) ; //first Node in Nr(i)
+    bool isSelectedForPruning(NodeId node) ; //first Node in Nr(i)
 
-    bool hasNodeSelectedInPrimitive(NodeMTPtr node) ; //has node selected inside Nr(i)
+    bool hasNodeSelectedInPrimitive(NodeId node) ; //has node selected inside Nr(i)
 
-    std::list<NodeMTPtr> getNodesWithMaximumCriterium() ; 
-
-    MorphologicalTreePtr getTree() ;
+    std::list<NodeId> getNodesWithMaximumCriterium() ; 
 
     ImageUInt8Ptr getRestOfImage() ;
 
     int getNumPrimitives() ;
     
-
+    MorphologicalTree* getTree() ;
 };
-
-#endif
 
 
 

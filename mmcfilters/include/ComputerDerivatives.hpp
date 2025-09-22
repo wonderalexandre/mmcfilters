@@ -1,3 +1,4 @@
+#pragma once
 
 #include "../include/MorphologicalTree.hpp"
 #include "../include/NodeMT.hpp"
@@ -5,10 +6,6 @@
 
 #include <vector>
 #include <tuple>
-
-
-#ifndef COMPUTER_DERIVATIVE_H
-#define COMPUTER_DERIVATIVE_H
 
 
 class ComputerDerivatives {
@@ -72,5 +69,3 @@ class ComputerDerivatives {
         }
 
 };
-
-#endif

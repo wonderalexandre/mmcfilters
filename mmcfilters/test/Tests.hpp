@@ -4,18 +4,20 @@
 
 #include <iostream>
 #include <unordered_set>
-#include <iomanip>
-#include <fstream>
 #include <cstdint>
 
 #include "../include/Common.hpp"
 #include "../include/NodeMT.hpp"
 #include "../include/MorphologicalTree.hpp"
 
+
+#include <iomanip>
+#include <fstream>
+#include <iostream>
+
+
 #include "../../external/stb/stb_image.h"
 #include "../../external/stb/stb_image_write.h"
-
-
 
 
 inline ImageUInt8Ptr openImage(std::string filename){
@@ -34,30 +36,51 @@ inline ImageUInt8Ptr openImage(std::string filename){
 }
 
 
-inline void printTree(NodeMTPtr root, std::string prefix = "", bool isLast = true) {
+/**
+ * @brief Imprime uma representação em árvore (ASCII) a partir do nó raiz.
+ *
+ * @param root Nó raiz (ou sub-raiz) a ser impresso.
+ * @param prefix Prefixo usado na recursão para formatar a árvore.
+ * @param isLast Indica se o nó atual é o último filho do seu pai (formatação).
+ */
+inline void printTree(NodeMT root, std::string prefix = "", bool isLast = true) {
     std::cout << prefix;
     std::cout << (isLast ? "└──" : "├──");
-    std::cout << "ID: " << root->getIndex() <<  ", Level: " <<  root->getLevel()<< ", |cnps|: " << root->getCNPs().size() << std::endl;
+    std::cout << "ID: " << root.getIndex() << ", repNode:" << root.getRepNode() <<  ", Level: " <<  root.getLevel()<< ", Area: " << root.getArea() << std::endl;
 
     prefix += (isLast ? "   " : "│  ");
 
-    int cont = 0;
-    for (NodeMTPtr child: root->getChildren()) {
-        printTree(child, prefix, cont == root->getChildren().size() - 1);
-        cont++;
+    const int n = root.getNumChildren();
+    int i = 0;
+    for (auto child : root.getChildren()) {
+        printTree(child, prefix, i == n - 1);
+        ++i;
     }
+
 }
 
-
-inline void printMappingSC(MorphologicalTreePtr tree, int setw=4, std::string nomeArquivo = "") {
+/**
+ * @brief Imprime o mapeamento de cada pixel para o seu Small Component (SC).
+ *
+ * Para árvores baseadas em Pixels, utiliza `getSC(p)` diretamente. Para árvores
+ * baseadas em FlatZones, atribui a cada pixel o índice do nó que contém sua flatzone.
+ * A saída pode ir para stdout ou para arquivo.
+ *
+ * @param tree Ponteiro para a árvore de componentes.
+ * @param setw Largura de coluna para formatação da tabela.
+ * @param nomeArquivo Caminho de saída; vazio para imprimir em stdout.
+ */
+inline void printMappingSC(ComponentTreePtr tree, int setw=4, std::string nomeArquivo = "") {
 
     int numRows = tree->getNumRowsOfImage();
     int numCols = tree->getNumColsOfImage();
     int n = numRows*numCols;
     std::unique_ptr<int[]> map = std::unique_ptr<int[]>(new int[n]);
+
     for (int p=0; p < n; p++){
-        map[p] = tree->getSC(p)->getIndex();
+        map[p] = tree->getSC(p).getIndex();
     }
+
 
     std::ostream* streamSaida;
     std::ofstream arquivoSaida;
@@ -71,12 +94,10 @@ inline void printMappingSC(MorphologicalTreePtr tree, int setw=4, std::string no
         }
         streamSaida = &arquivoSaida;
     }
-    if(tree->getTreeType() == 0){
+    if(tree->isMaxtree()){
         *streamSaida << "---- Mapping from pixel to small component of max-tree ----" << "\n";
-    }else if(tree->getTreeType() == 1){
-        *streamSaida << "---- Mapping from pixel to small component of min-tree ----" << "\n";
     }else{
-        *streamSaida << "---- Mapping from pixel to small component of ToS ----" << "\n";
+        *streamSaida << "---- Mapping from pixel to small component of min-tree ----" << "\n";
     }
 
     // Imprime o cabeçalho de colunas
@@ -100,7 +121,91 @@ inline void printMappingSC(MorphologicalTreePtr tree, int setw=4, std::string no
 
 }
 
-inline void printConnectedComponents(MorphologicalTreePtr tree, int setw=3, std::string nomeArquivo = ""){
+/**
+ * @brief Imprime uma visão 2D da componente conexa de um nó.
+ *
+ * Mostra metadados do nó (ID, nível, filhos, CNPs, flatzones, área) e um grid
+ * com marcadores distintos para representantes, CNPs e a CC completa.
+ * A saída pode ir para stdout ou para arquivo.
+ *
+ * @param node Nó alvo a ser inspecionado/impressos seus dados.
+ * @param tree Árvore à qual o nó pertence (para recuperar dimensões e pixels).
+ * @param nomeArquivo Caminho de saída; vazio para imprimir em stdout.
+ */
+inline  void printConnectedComponent(NodeMT node, ComponentTreePtr tree, std::string nomeArquivo = "") {
+    int numRows = tree->getNumRowsOfImage();
+    int numCols = tree->getNumColsOfImage();
+    int n = numRows*numCols;
+    std::ostream* streamSaida;
+    std::ofstream arquivoSaida;
+
+    if (nomeArquivo.empty()) {
+        streamSaida = &std::cout;
+    } else {
+        arquivoSaida.open(nomeArquivo); 
+        if (!arquivoSaida.is_open()) {
+            std::cerr << "Erro ao abrir o arquivo para escrita." << std::endl;
+            return;
+        }
+        streamSaida = &arquivoSaida;
+    }
+    int setw=3;
+    *streamSaida << "printCC: ---- "
+                 << "ID: " << node
+                 << ", parentID: " << node.getParent() 
+                 << ", repNode: " << node.getRepNode()
+                 << ", level:" << node.getLevel() 
+                 << ", |children|:" << node.getNumChildren() 
+                 << ", |cnps|:" << node.getNumCNPs()
+                 << ", Area:" << node.getArea()  
+                 << ", numDescendentes:" << node.getNumDescendants()
+                 << " ---\n";
+    
+    // Imprime o cabeçalho de colunas
+    *streamSaida << std::setw(setw) << " "; // espaço para a primeira coluna (índice da linha)
+    for (int col = 0; col < numCols; col++) {
+        *streamSaida << std::setw(setw) << col;
+    }
+    *streamSaida << "\n";                 
+    // Impressão bidimensional
+    std::vector<bool> imageReps(n, false);
+    imageReps[node.getRepNode()] = true;
+    std::vector<bool> imageCNPs(n, false);
+    for (int p : tree->getCNPsById(node)) {
+        imageCNPs[p] = true;
+    }
+    std::vector<bool> imageCC(n, false);
+    for (int p : tree->getPixelsOfCCById(node)) {
+        imageCC[p] = true;
+    }
+
+    for (int row = 0; row < numRows; ++row) {
+        *streamSaida << std::setw(setw) << row; // índice da linha
+        for (int col = 0; col < numCols; ++col) {
+            int index = ImageUtils::to1D(row, col, numCols);
+            if (imageReps[index]) {
+                *streamSaida << std::setw(setw) << "  🅡";
+            }
+            else if (imageCNPs[index]) {
+                *streamSaida << std::setw(setw) << "  🅲";
+            }
+            else if (imageCC[index]){
+                *streamSaida << std::setw(setw) << "  🅇";
+            }
+            else{
+                *streamSaida << std::setw(setw) << "  ·";
+            }
+        }
+        *streamSaida << "\n";
+    }
+    if (streamSaida != &std::cout){
+        dynamic_cast<std::ofstream*>(streamSaida)->close(); // std::cout não precisa ser fechado explicitamente
+    }
+
+}
+
+
+inline void printConnectedComponents(ComponentTreePtr tree, int setw=3, std::string nomeArquivo = ""){
     int numRows = tree->getNumRowsOfImage();
     int numCols = tree->getNumColsOfImage();
     int n = numRows*numCols;
@@ -126,84 +231,75 @@ inline void printConnectedComponents(MorphologicalTreePtr tree, int setw=3, std:
             return "tree of shapes";
     };
     *streamSaida << "----------- Connected components of "<< printTreeType(tree->getTreeType()) <<"  -----------\n" << std::endl;
-    for(NodeMTPtr node: tree->getRoot()->getIteratorBreadthFirstTraversal()){
-        *streamSaida << "---- ID: " << node->getIndex() 
-                    << ", level:" << node->getLevel() 
-                    << ", |cnps|:" << node->getCNPs().size()
-                    << ", Area:" << node->getAreaCC()  << " ---\n";
+    for(NodeId nodeId: tree->getIteratorBreadthFirstTraversalById()){
+        NodeMT node = tree->proxy(nodeId);
+        *streamSaida << "printCC: ---- "
+                    << "ID: " << node
+                    << ", parentID: " << node.getParent() 
+                    << ", repNode: " << node.getRepNode()
+                    << ", level:" << node.getLevel() 
+                    << ", |children|:" << node.getNumChildren() 
+                    << ", |cnps|:" << node.getNumCNPs()
+                    << ", Area:" << node.getArea()  
+                    << ", numDescendentes:" << node.getNumDescendants()
+                    << " ---\n";
         
         // Imprime o cabeçalho de colunas
         *streamSaida << std::setw(setw) << " "; // espaço para a primeira coluna (índice da linha)
         for (int col = 0; col < numCols; col++) {
             *streamSaida << std::setw(setw) << col;
         }
-        *streamSaida << "\n";
+        *streamSaida << "\n";                 
         // Impressão bidimensional
+        std::vector<bool> imageReps(n, false);
+        imageReps[node.getRepNode()] = true;
+        std::vector<bool> imageCNPs(n, false);
+        for (int p : tree->getCNPsById(node)) {
+            imageCNPs[p] = true;
+        }
+        std::vector<bool> imageCC(n, false);
+        for (int p : tree->getPixelsOfCCById(node)) {
+            imageCC[p] = true;
+        }
+
         for (int row = 0; row < numRows; ++row) {
             *streamSaida << std::setw(setw) << row; // índice da linha
             for (int col = 0; col < numCols; ++col) {
-                if(tree->isDescendant(tree->getSC(ImageUtils::to1D(row, col, numCols)), node)){
-                    *streamSaida << std::setw(setw) << 1;
-                }else{
-                    *streamSaida << std::setw(setw) << 0;
+                int index = ImageUtils::to1D(row, col, numCols);
+                if (imageReps[index]) {
+                    *streamSaida << std::setw(setw) << "  🅡";
+                }
+                else if (imageCNPs[index]) {
+                    *streamSaida << std::setw(setw) << "  🅲";
+                }
+                else if (imageCC[index]){
+                    *streamSaida << std::setw(setw) << "  🅇";
+                }
+                else{
+                    *streamSaida << std::setw(setw) << "  ·";
                 }
             }
             *streamSaida << "\n";
         }
+        
     }
     if (streamSaida != &std::cout){
         dynamic_cast<std::ofstream*>(streamSaida)->close(); // std::cout não precisa ser fechado explicitamente
     }
 }
 
-inline  void printConnectedComponent(NodeMTPtr node, MorphologicalTreePtr tree, int setw=3, std::string nomeArquivo = "") {
-    int numRows = tree->getNumRowsOfImage();
-    int numCols = tree->getNumColsOfImage();
-    int n = numRows*numCols;
-    std::ostream* streamSaida;
-    std::ofstream arquivoSaida;
 
-    if (nomeArquivo.empty()) {
-        streamSaida = &std::cout;
-    } else {
-        arquivoSaida.open(nomeArquivo); 
-        if (!arquivoSaida.is_open()) {
-            std::cerr << "Erro ao abrir o arquivo para escrita." << std::endl;
-            return;
-        }
-        streamSaida = &arquivoSaida;
-    }
-    *streamSaida << "---- ID: " << node->getIndex() 
-                 << ", level:" << node->getLevel() 
-                 << ", |cnps|:" << node->getCNPs().size()
-                 << ", Area:" << node->getAreaCC()  << " ---\n";
-    
-    // Imprime o cabeçalho de colunas
-    *streamSaida << std::setw(setw) << " "; // espaço para a primeira coluna (índice da linha)
-    for (int col = 0; col < numCols; col++) {
-        *streamSaida << std::setw(setw) << col;
-    }
-    *streamSaida << "\n";                 
-    // Impressão bidimensional
-    for (int row = 0; row < numRows; ++row) {
-        *streamSaida << std::setw(setw) << row; // índice da linha
-        for (int col = 0; col < numCols; ++col) {
-            if(tree->isDescendant(tree->getSC(ImageUtils::to1D(row, col, numCols)), node)){
-                *streamSaida << std::setw(setw) << 1;
-            }else{
-                *streamSaida << std::setw(setw) << 0;
-            }
-        }
-        *streamSaida << "\n";
-    }
-    if (streamSaida != &std::cout){
-        dynamic_cast<std::ofstream*>(streamSaida)->close(); // std::cout não precisa ser fechado explicitamente
-    }
 
-}
-
+/**
+ * @brief Imprime os valores de uma imagem `uint8` com índices de linha/coluna.
+ *
+ * A saída pode ir para stdout ou para arquivo.
+ *
+ * @param imgPtr Ponteiro para a imagem (uint8).
+ * @param setw Largura de coluna para formatação da tabela.
+ * @param nomeArquivo Caminho de saída; vazio para imprimir em stdout.
+ */
 inline void printImage(ImageUInt8Ptr imgPtr, int setw=4, std::string nomeArquivo = "") {
-    int n = imgPtr->getSize();
     auto img = imgPtr->rawData();
     std::ostream* streamSaida;
     std::ofstream arquivoSaida;
@@ -241,77 +337,67 @@ inline void printImage(ImageUInt8Ptr imgPtr, int setw=4, std::string nomeArquivo
 }
 
 
- inline  void testComponentTree(MorphologicalTreePtr tree, const std::string& treeType, ImageUInt8Ptr imgPtr) {
+/**
+ * @brief Executa testes básicos de sanidade em uma ComponentTree.
+ *
+ * Valida existência da raiz, contagem de nós, relações pai/filho e o mapeamento
+ * de cada pixel para seu Small Component compatível com os níveis da imagem.
+ * Alguns testes adicionais encontram-se comentados (TODOs).
+ *
+ * @tparam CNPsType Pixels ou FlatZones da árvore.
+ * @tparam ImageType Tipo de pixel da imagem de entrada (ex.: uint8_t).
+ * @param tree Ponteiro para a árvore de componentes sob teste.
+ * @param treeType Rótulo amigável (ex.: "max-tree" ou "min-tree").
+ * @param imgPtr Imagem base usada na construção/validação da árvore.
+ */
+ inline  void testComponentTree(ComponentTreePtr tree, const std::string& treeType, ImageUInt8Ptr imgPtr) {
     std::cout << "🔍 Testando " << treeType << "..." << std::endl;
-    int numRows = imgPtr->getNumRows();
-    int numCols = imgPtr->getNumCols();
-    auto img = imgPtr->rawData();
+
+    //int numRows = imgPtr->getNumRows();
+    //int numCols = imgPtr->getNumCols();
+    
     if (!tree) {
         std::cerr << "❌ Erro: " << treeType << " não foi criada corretamente!" << std::endl;
         return;
     }
 
+    if(MorphologicalTree::validateStructure(tree)){
+        std::cout << "✅ Estrutura da árvore está consistente no arena" << std::endl;
+    }else{
+        std::cerr << "❌ Erro: Estrutura da árvore está inconsistente no arena" << std::endl;
+    }
+
     //Teste: Verifica se o Iterator getPixelsOfCC está correto
-    int area = tree->getRoot()->getAreaCC();
+    int area = tree->getRoot().getArea();
     int count_area = 0;
-    for(int p : tree->getRoot()->getPixelsOfCC()){
+    for(int p : tree->getPixelsOfCCById(tree->getRoot())){
         count_area++;
+        (void)p;
     }
     if (area == count_area) {
-        std::cout << "✅ Iterator getPixelsOfCC da " << treeType << " contém a quantidade de pixels correto." << std::endl;
-    }else{
-        std::cout << "❌ Erro: Iterator getPixelsOfCC da " << treeType << ". Valor de count_area:" << count_area << std::endl;
-    }
-    
-    std::unordered_set<int> seen;
-    bool hasDuplicates = false;
-    for(int p : tree->getRoot()->getPixelsOfCC()) {
-        if (seen.count(p)) {
-            std::cout << "❌ Erro: Pixel repetido: " << p << std::endl;
-            hasDuplicates = true;
-        }
-        seen.insert(p);
-    }
-    if (!hasDuplicates) {
         std::cout << "✅ Iterator getPixelsOfCC da " << treeType << " está correto." << std::endl;
     }else{
-        std::cout << "❌ Erro: Iterator getPixelsOfCC da " << treeType << " contém pixels repetidos." << std::endl;
+        std::cerr << "❌ Erro: Iterator getPixelsOfCC da " << treeType << ". Valor de count_area:" << count_area << ", area:"<< area<< std::endl;
     }
-
-    hasDuplicates = false;
-    for(NodeMTPtr node: tree->getIndexNode()){
-        std::unordered_set<int> seen;
-        for(int p : node->getCNPs()) {
-            if (seen.count(p)) {
-                std::cout << "❌ Erro: Pixel repetido: " << p << " no nodeID:" << node->getIndex() << std::endl;
-                hasDuplicates = true;
-            }
-            seen.insert(p);
-        } 
-    }
-    if (!hasDuplicates) {
-        std::cout << "✅ Os nós da " << treeType << " não contém CNPs repetidos." << std::endl;
-    }else{
-        std::cout << "❌ Erro: Existem nós na " << treeType << " contendo cnps repetidos." << std::endl;
-    }
-
-
+        
+    
     //Teste: Verifica se o Iterator getCNPs está correto
-    int num_cnps = tree->getRoot()->getCNPs().size();
+    int num_cnps = tree->getRoot().getNumCNPs();
     int count_cnps= 0;
-    for(int p : tree->getRoot()->getCNPs()){
-        count_cnps++;
+    for(int p : tree->getRoot().getCNPs()){
+        if(p >= 0)
+            count_cnps++;
     }
     if (num_cnps == count_cnps) {
         std::cout << "✅ Iterator getCNPs da" << treeType << " está correto." << std::endl;
     }else{
-        std::cout << "❌ Erro: Iterator getCNPs da" << treeType << ". Valor de count_cnps:" << count_cnps << std::endl;
+        std::cerr << "❌ Erro: Iterator getCNPs da" << treeType << ". Valor de count_cnps:" << count_cnps << std::endl;
         return;
     } 
 
 
     // Teste: Raiz da árvore não nula
-    NodeMTPtr root = tree->getRoot();
+    NodeMT root = tree->getRoot();
     if (!root) {
         std::cerr << "❌ Erro: Raiz da " << treeType << " é nula!" << std::endl;
         return;
@@ -328,9 +414,9 @@ inline void printImage(ImageUInt8Ptr imgPtr, int setw=4, std::string nomeArquivo
 
     // Teste: Verificando se todos os nós possuem um pai correto (exceto a raiz)
     bool allParentsCorrect = true;
-    for (NodeMTPtr node : tree->getRoot()->getIteratorBreadthFirstTraversal()) {
-        if (node != root && node->getParent() == nullptr) {
-            std::cerr << "❌ Erro: Nó sem pai encontrado na " << treeType << "!" << std::endl;
+    for (NodeMT node : tree->getRoot().getIteratorBreadthFirstTraversal()) {
+        if (node != root && !node.getParent()) {
+            std::cerr << "❌ Erro: Nó (id:"<< node <<") sem pai encontrado na " << treeType << "!" << std::endl;
             allParentsCorrect = false;
         }
     }
@@ -340,9 +426,9 @@ inline void printImage(ImageUInt8Ptr imgPtr, int setw=4, std::string nomeArquivo
 
     // Teste: Verificando se cada nó tem filhos corretos
     bool allChildrenCorrect = true;
-    for (NodeMTPtr node : tree->getRoot()->getIteratorBreadthFirstTraversal()) {
-        for (NodeMTPtr child : node->getChildren()) {
-            if (child->getParent() != node) {
+    for (NodeMT node : tree->getRoot().getIteratorBreadthFirstTraversal()) {
+        for (NodeMT child : node.getChildren()) {
+            if (child.getParent() != node) {
                 std::cerr << "❌ Erro: Nó com filho sem referência ao pai na " << treeType << "!" << std::endl;
                 allChildrenCorrect = false;
             }
@@ -352,15 +438,16 @@ inline void printImage(ImageUInt8Ptr imgPtr, int setw=4, std::string nomeArquivo
         std::cout << "✅ Todos os nós possuem filhos corretamente associados na " << treeType << "." << std::endl;
     }
 
+    
     // Teste: Verificando se os pixels estão corretamente armazenados nos nós
     bool allPixelsCorrect = true;
-    for (NodeMTPtr node : tree->getRoot()->getIteratorBreadthFirstTraversal()) {
-        for (int p : node->getCNPs()) {
-            if (tree->getSC(p) != node) {
-                std::cerr << "❌ Erro: Pixel " << p << " não está corretamente associado ao nó na " << treeType << "!" << std::endl;
-                allPixelsCorrect = false;
-            }
+    for (NodeMT node : tree->getRoot().getIteratorBreadthFirstTraversal()) {
+        int p = node.getRepNode();
+        if (tree->getSC(p) != node) {
+            std::cerr << "❌ Erro: Pixel " << p << " não está corretamente associado ao nó (id:"<< node <<") na " << treeType << "!" << std::endl;
+            allPixelsCorrect = false;
         }
+    
     }
     if (allPixelsCorrect) {
         std::cout << "✅ Todos os pixels estão corretamente mapeados para os nós na " << treeType << "." << std::endl;
@@ -369,15 +456,15 @@ inline void printImage(ImageUInt8Ptr imgPtr, int setw=4, std::string nomeArquivo
 
     // Teste: Verificando se todos os pixels da imagem estão mapeados corretamente na ComponentTree
     bool allMappedCorrectly = true;
-    int numPixels = numRows * numCols;
-    for (int p = 0; p < numPixels; p++) {
-        NodeMTPtr mappedNode = tree->getSC(p);
+    for (int p: tree->getAllRepCNPs()) {
+        NodeMT mappedNode = tree->getSC(p);
+        int level = (*imgPtr)[p];
         if (!mappedNode) {
             std::cerr << "❌ Erro: Pixel " << p << " não foi mapeado para nenhum nó na " << treeType << "!" << std::endl;
             allMappedCorrectly = false;
-        } else if (mappedNode->getLevel() != img[p]) {
-            std::cerr << "❌ Erro: Pixel " << p << " está associado a um nó de nível " << mappedNode->getLevel()
-                      << " mas deveria estar em " << img[p] << " na " << treeType << "!" << std::endl;
+        } else if (mappedNode.getLevel() != level) {
+            std::cerr << "❌ Erro: Pixel " << p << " está associado a um nó (id:"<< mappedNode <<") de nível " << mappedNode.getLevel()
+                      << " mas deveria estar em " << level << " na " << treeType << "!" << std::endl;
             allMappedCorrectly = false;
         }
     }
@@ -388,43 +475,70 @@ inline void printImage(ImageUInt8Ptr imgPtr, int setw=4, std::string nomeArquivo
 
 }
 
-inline NodeMTPtr getNodeByIndex(MorphologicalTreePtr tree, int index){
-	for (NodeMTPtr node : tree->getRoot()->getIteratorBreadthFirstTraversal()) {
-		if(node->getIndex() == index){
+/**
+ * @brief Localiza um nó da árvore pelo índice (BFS).
+ *
+ * @tparam CNPsType Pixels ou FlatZones.
+ * @param tree Ponteiro para a árvore.
+ * @param index Índice do nó desejado.
+ * @return O nó correspondente, ou nullptr se não encontrado.
+ */
+inline NodeMT getNodeByIndex(ComponentTreePtr tree, int index){
+	for (NodeMT node : tree->getRoot().getIteratorBreadthFirstTraversal()) {
+		if(node.getIndex() == index){
 			return node;
 		}
 	}
-	return nullptr;
+	return NodeMT();
 }
 
-inline ImageUInt8Ptr get2CsImage(){
-    
-    auto img = new uint8_t[80]{
-        4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-        4, 0, 0, 0, 0, 7, 7, 7, 7, 4,
-        4, 0, 0, 0, 0, 7, 7, 7, 7, 4,
-        4, 0, 0, 4, 4, 4, 4, 7, 7, 4,
-        4, 0, 0, 4, 4, 4, 4, 7, 7, 4,
-        4, 0, 0, 0, 0, 7, 7, 7, 7, 4,
-        4, 0, 0, 0, 0, 7, 7, 7, 7, 4,
-        4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-        
+/**
+ * @brief Retorna uma imagem de teste 12x12 (valores uint8) pequena.
+ * @return Ponteiro para imagem 12x12.
+ */
+inline ImageUInt8Ptr getSmallImage(){
+    auto img = new uint8_t[144]{
+        2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0,
+        2, 5, 5, 5, 3, 3, 3, 1, 1, 1, 3, 0,
+        2, 5, 6, 5, 3, 3, 3, 1, 5, 1, 3, 0,
+        2, 5, 6, 5, 3, 3, 3, 1, 6, 1, 3, 0,
+        2, 5, 6, 5, 3, 3, 3, 1, 5, 1, 3, 0,
+        2, 5, 5, 5, 3, 3, 3, 1, 1, 1, 3, 0,
+        3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 0,
+        2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 0,
+        6, 6, 6, 6, 6, 2, 4, 4, 4, 4, 4, 0,
+        6, 4, 6, 4, 6, 2, 4, 7, 4, 7, 4, 0,
+        6, 6, 6, 6, 6, 2, 4, 4, 4, 4, 4, 0,
+        2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0
     };
-    return ImageUInt8::fromRaw(img, 8, 10);
+    return ImageUInt8::fromRaw(img, 12, 12);
 }
 
-inline ImageUInt8Ptr getCriticalImage(){
-    auto img = new uint8_t[30]{
-        2, 2, 2, 2, 2, 2,
-        2, 0, 0, 0, 0, 2,
-        2, 0, 2, 2, 0, 2,
-        2, 2, 0, 0, 0, 2,
-        2, 2, 2, 2, 2, 2};
-        
-    return ImageUInt8::fromRaw(img, 5, 6);
+/**
+ * @brief Retorna uma imagem de teste 12x12 variante (DGMM25).
+ * @return Ponteiro para imagem 12x12.
+ */
+inline ImageUInt8Ptr getDgmm25Image(){
+    auto img = new uint8_t[144]{
+        2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1,
+        2, 5, 5, 5, 3, 3, 3, 2, 2, 2, 3, 1,
+        2, 5, 6, 5, 3, 3, 3, 2, 5, 2, 3, 1,
+        2, 5, 6, 5, 3, 3, 3, 2, 6, 2, 3, 1,
+        2, 5, 6, 5, 3, 3, 3, 2, 5, 2, 3, 1,
+        2, 5, 5, 5, 3, 3, 3, 2, 2, 2, 3, 1,
+        3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1,
+        2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 1,
+        6, 6, 6, 6, 6, 2, 4, 4, 4, 4, 4, 1,
+        7, 3, 6, 4, 6, 2, 4, 8, 4, 8, 4, 1,
+        7, 8, 6, 6, 6, 2, 4, 4, 4, 4, 4, 1,
+        2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1};
+        return ImageUInt8::fromRaw(img, 12, 12);
 }
 
-
+/**
+ * @brief Retorna uma imagem de teste maior (68x81) "Wonder".
+ * @return Ponteiro para imagem 68x81.
+ */
 inline ImageUInt8Ptr getWonderImage(){
     auto img = new uint8_t[625]{
         203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,
@@ -452,13 +566,13 @@ inline ImageUInt8Ptr getWonderImage(){
         203, 78, 78, 78, 78, 78,161,161,161,161,161, 78, 78, 78,203,203,203,203,126,126,126,126,203,203,203,
         203,203, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78, 78,203,203,203,203,203,203,203,203,203,203,
         203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203,203};
-        return ImageUInt8::fromRaw(img, 25, 25);
+    return ImageUInt8::fromRaw(img, 25, 25);
+}
 
-    }
-    
+
 
 inline ImageUInt8Ptr getPassatImage(){
-    auto img=new uint8_t[6164]{
+    auto img= new uint8_t[6164]{
         6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1,1,6,6,6,6,6,6,6,6,6,6,5,5,5,5,2,2,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,7,7,7,7,7,7,7,7,7,
         6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1,1,6,6,6,6,6,6,6,6,6,6,5,5,5,5,2,2,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,7,7,7,7,7,7,7,7,7,
         6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1,1,6,6,6,6,6,6,6,6,6,6,5,5,5,5,2,2,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,7,7,7,7,7,7,7,7,7,
@@ -526,8 +640,141 @@ inline ImageUInt8Ptr getPassatImage(){
         1,1,1,1,1,1,1,1,3,3,3,3,3,3,3,3,3,3,3,3,3,3,1,1,1,1,1,0,0,0,0,0,0,2,2,2,2,2,3,3,3,3,3,3,3,3,3,3,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,4,4,4,4,4,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,4,4,4,4,4,4,4,
         1,1,1,1,1,1,1,1,3,3,3,3,3,3,3,3,3,3,3,3,3,3,1,1,1,1,1,0,0,0,0,0,0,2,2,2,2,2,3,3,3,3,3,3,3,3,3,3,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,4,4,4,4,4,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,4,4,4,4,4,4,4,
         1,1,1,1,1,1,1,1,3,3,3,3,3,3,3,3,3,3,3,3,3,3,1,1,1,1,1,0,0,0,0,0,0,2,2,2,2,2,3,3,3,3,3,3,3,3,3,3,0,0,0,0,0,0,2,2,2,2,2,2,2,2,2,2,2,4,4,4,4,4,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,4,4,4,4,4,4,4};
-        
         return ImageUInt8::fromRaw(img, 67, 92);
+}
+
+inline ImageUInt8Ptr getCameramanImage(){
+    auto img = new uint8_t[16384]{
+        157,157,157,158,158,158,159,159,161,161,162,163,162,163,164,164,164,164,166,166,165,168,168,169,169,169,169,170,170,170,170,172,172,174,176,178,178,180,180,179,180,180,181,182,182,182,181,183,182,181,182,184,186,185,184,184,183,183,185,186,185,185,185,185,183,183,184,182,182,183,184,183,182,182,180,179,179,179,180,179,179,177,177,176,176,175,174,174,174,172,170,170,169,168,169,168,168,167,167,166,168,168,167,168,167,166,165,162,163,161,161,161,161,160,158,156,156,157,156,155,155,155,154,155,155,155,153,153,
+        157,157,158,158,158,157,159,159,161,160,162,162,161,163,164,164,164,164,165,165,165,168,168,169,169,170,169,170,169,169,170,171,172,174,176,178,178,180,179,178,180,180,181,181,182,182,181,182,182,181,182,184,186,185,184,184,183,183,185,185,185,185,185,185,184,184,184,183,183,184,184,183,183,183,181,179,180,179,180,180,178,178,177,176,176,175,174,175,174,172,170,170,169,169,169,168,168,167,167,167,169,168,167,168,167,166,165,163,163,161,161,162,161,160,158,156,156,157,156,155,155,155,155,155,155,155,153,153,
+        155,156,157,156,156,155,157,159,159,159,160,160,159,161,162,163,163,165,165,165,167,167,168,168,168,169,169,169,169,169,169,171,173,174,175,177,178,178,179,178,178,179,181,180,182,183,183,182,181,183,183,185,186,187,185,185,185,186,186,186,188,188,188,187,187,186,185,186,186,185,185,185,183,184,183,182,182,182,182,181,179,179,178,177,178,177,175,176,174,173,172,171,169,168,169,168,169,168,168,168,168,168,167,167,167,166,164,163,162,162,161,161,160,159,159,158,157,156,155,153,153,153,153,153,153,150,150,152,
+        157,156,156,157,158,157,158,159,160,161,161,160,160,162,163,164,166,167,168,169,169,170,170,171,171,172,172,172,173,173,173,175,176,176,176,178,179,178,179,179,180,180,182,183,183,183,183,183,183,184,185,186,188,187,186,186,187,187,187,187,190,189,189,188,188,187,186,188,187,185,185,185,184,185,184,183,182,182,182,181,180,178,178,178,177,177,176,174,173,172,171,171,169,167,169,169,169,169,167,166,166,166,167,167,167,164,163,161,160,160,160,159,157,158,157,157,156,155,154,152,152,151,152,151,151,150,149,149,
+        156,157,158,159,159,159,159,160,161,161,159,160,161,162,165,166,168,168,169,169,169,169,168,170,171,171,171,171,172,172,173,175,175,175,175,176,177,177,176,176,178,178,179,180,181,180,179,180,179,181,182,183,183,185,183,182,183,184,184,185,186,187,186,186,185,185,185,185,185,184,183,182,181,181,181,180,180,180,181,180,179,178,177,177,176,175,174,174,173,172,171,169,169,168,168,168,169,169,167,165,165,164,166,166,166,165,164,162,161,159,159,159,158,159,157,156,156,156,154,152,154,152,152,151,151,150,150,150,
+        154,156,156,157,158,159,158,159,160,159,159,160,160,161,163,165,166,167,167,166,166,166,166,168,169,169,169,170,169,171,171,173,172,172,173,174,175,175,175,177,176,176,176,177,179,179,180,180,180,181,181,182,183,184,184,183,182,183,184,184,186,187,185,186,184,184,184,186,186,184,184,183,183,182,181,180,181,183,183,182,181,180,179,179,178,177,176,176,175,175,173,171,170,170,169,169,170,170,168,168,168,166,167,166,167,167,166,165,163,160,160,160,160,161,159,157,156,156,155,154,154,154,154,153,153,153,152,152,
+        154,156,157,158,158,159,159,160,161,161,161,162,162,163,166,166,167,169,169,168,167,168,168,170,172,171,172,172,172,172,173,174,175,175,174,173,175,176,177,177,178,178,178,179,181,181,182,181,181,183,183,184,185,185,185,185,184,184,184,186,187,186,186,185,186,186,186,186,186,186,185,185,184,184,183,184,184,184,184,182,181,180,180,179,177,178,177,177,176,175,173,171,170,170,169,168,170,169,168,168,167,166,165,166,166,166,166,165,164,162,161,160,160,161,159,158,156,156,156,155,153,154,154,153,153,152,152,151,
+        156,158,157,157,159,159,160,161,162,163,164,163,163,165,165,166,168,171,170,170,169,170,170,170,171,172,173,173,173,173,173,176,177,175,174,175,176,176,177,177,178,178,180,180,181,182,181,181,182,182,183,183,184,183,184,183,182,183,183,185,185,185,184,183,183,183,184,183,183,184,183,181,181,182,180,180,181,181,180,180,179,177,176,175,174,174,173,173,173,172,173,169,167,167,167,167,169,168,167,166,166,165,165,165,166,165,164,164,163,163,161,161,161,160,159,159,157,157,158,156,154,154,155,155,154,151,151,152,
+        154,156,156,157,157,157,158,159,161,162,163,162,162,161,163,166,168,168,167,168,168,168,168,170,171,172,172,172,172,172,172,175,176,174,174,176,176,177,177,178,178,179,180,181,180,181,181,181,181,182,182,182,184,184,184,183,183,184,184,185,186,186,186,184,183,183,183,182,183,183,181,181,181,180,180,180,180,181,179,180,179,177,176,176,175,175,174,173,173,172,173,171,169,168,168,169,168,170,170,168,168,166,166,166,167,167,166,164,164,164,163,162,162,161,161,161,159,158,160,157,155,154,156,156,156,153,152,153,
+        153,155,156,155,156,157,158,160,162,162,161,162,162,161,162,165,167,168,167,167,167,168,169,170,171,173,174,175,174,174,175,175,176,177,177,178,179,179,179,180,180,179,180,181,182,182,183,183,184,183,183,185,186,187,187,187,187,187,187,187,187,188,188,186,184,185,185,185,185,185,184,183,182,182,183,183,182,181,180,180,178,178,177,178,175,176,174,172,173,171,172,170,170,168,168,170,168,169,169,169,167,166,166,166,166,166,166,164,164,163,162,162,162,162,161,160,157,155,156,156,155,156,156,156,155,153,153,153,
+        154,155,157,158,158,159,160,161,162,163,162,162,162,164,164,165,167,167,168,168,168,168,169,171,173,173,174,174,175,174,175,175,176,176,177,178,177,179,178,178,178,178,179,181,180,182,182,183,184,184,184,183,185,186,187,186,185,185,185,185,184,185,185,184,184,183,183,183,184,183,184,183,180,180,180,180,180,179,178,178,177,176,175,175,174,173,173,172,171,170,170,168,168,167,166,167,168,168,167,168,166,165,165,165,165,165,165,163,161,161,161,161,161,160,159,159,156,156,156,155,155,155,156,157,157,155,154,153,
+        152,154,155,156,157,158,159,159,161,161,161,161,161,161,162,164,165,165,166,166,167,167,166,169,170,170,171,171,172,172,171,172,173,173,174,175,175,176,175,176,176,176,178,179,180,182,181,182,181,182,182,183,184,184,185,186,185,185,184,185,184,184,185,184,184,184,184,184,185,185,185,184,183,181,180,182,181,179,179,178,178,178,176,176,177,175,174,173,172,172,170,169,169,169,168,168,167,169,168,168,167,167,167,166,165,164,164,163,163,162,161,161,161,161,160,159,158,158,158,157,157,156,157,158,158,157,156,156,
+        154,154,155,156,157,158,159,159,160,159,160,161,160,162,163,163,165,165,166,168,167,166,167,169,169,170,170,172,172,171,171,172,173,173,174,175,174,174,175,177,177,177,179,180,181,181,181,182,182,183,184,184,185,185,187,187,187,187,187,187,188,187,188,188,187,187,188,188,188,188,187,188,187,186,185,184,183,183,181,180,179,178,177,177,177,176,175,174,174,173,171,170,170,168,168,168,167,169,167,168,168,167,166,165,165,162,162,163,162,161,161,160,159,159,158,158,158,156,156,155,155,156,157,155,154,154,154,154,
+        158,156,157,157,158,160,161,161,163,162,163,163,163,165,165,166,168,169,169,169,169,170,171,173,172,173,174,175,174,173,173,173,173,174,174,176,175,175,176,177,178,178,180,179,181,181,180,180,181,183,183,184,185,186,186,187,187,187,187,188,189,189,189,188,186,186,187,187,188,187,188,187,187,186,185,183,184,183,182,180,179,178,177,177,176,176,174,173,172,172,170,169,169,168,168,167,166,168,168,168,166,166,165,165,165,162,162,162,160,159,160,160,159,159,157,157,156,155,155,154,156,155,155,154,152,152,153,153,
+        158,158,157,158,159,161,161,163,163,163,164,164,163,164,164,165,166,167,169,169,169,171,171,171,171,172,174,174,172,173,173,173,172,173,174,174,174,175,175,177,177,177,178,179,179,179,178,179,180,181,181,183,183,183,184,185,185,186,185,186,187,188,187,186,184,183,185,186,186,186,186,186,186,185,184,184,183,182,182,180,179,178,178,178,178,177,177,176,176,175,173,171,171,171,170,168,169,169,170,169,168,167,167,166,165,164,163,163,161,160,161,161,160,160,160,158,157,156,156,156,156,155,154,155,154,154,153,153,
+        155,156,157,158,159,160,161,162,162,162,164,164,164,164,164,165,168,168,168,170,170,171,172,172,172,172,174,174,174,174,173,173,174,176,177,176,176,176,176,176,178,178,179,179,180,180,179,179,180,181,183,183,183,184,185,186,186,187,188,187,187,187,186,185,183,183,184,185,184,186,186,187,186,185,184,184,183,182,181,182,181,180,179,179,178,177,178,178,177,176,175,173,172,171,171,170,170,170,170,169,168,168,167,166,166,165,164,162,161,161,159,158,159,159,160,158,158,155,155,154,154,153,153,153,154,152,152,151,
+        156,157,157,157,160,161,163,162,162,163,164,166,167,168,168,168,170,171,169,172,173,174,174,173,174,175,175,177,177,177,176,176,176,177,179,179,178,178,177,177,180,181,181,181,180,181,182,182,183,184,185,184,185,186,187,188,188,188,188,187,186,186,185,184,184,182,183,181,181,183,183,184,184,183,182,182,182,182,181,181,180,179,178,177,176,176,176,177,175,174,173,172,172,172,171,171,170,168,168,167,167,167,165,165,164,163,164,161,161,159,159,157,157,158,158,157,156,154,153,152,152,153,153,153,153,151,151,151,
+        157,157,158,158,160,162,162,162,163,163,164,165,166,168,168,168,169,170,170,172,172,173,174,175,175,176,176,176,175,176,175,176,177,178,178,178,177,178,177,179,180,180,179,179,180,180,181,182,183,184,186,187,187,189,191,191,191,191,189,188,187,185,185,184,183,182,181,180,180,181,182,182,182,180,181,180,180,180,180,179,179,177,175,176,176,176,175,174,173,172,172,173,173,173,171,170,170,170,168,168,168,167,166,165,165,164,164,162,161,161,161,160,160,159,158,158,157,155,154,153,153,154,155,155,155,153,152,152,
+        155,155,156,158,159,160,159,161,163,163,162,163,164,166,166,166,168,170,170,171,173,172,173,174,174,174,175,176,175,175,176,176,178,178,178,176,177,178,178,179,180,180,180,182,182,183,183,183,183,184,187,190,180,160,128,103,108,132,154,169,182,190,190,189,186,184,183,182,182,183,184,183,182,182,182,180,180,180,180,179,179,178,177,177,176,176,175,174,173,172,172,173,172,172,170,169,168,170,169,169,168,167,167,166,166,166,164,163,162,161,161,160,160,160,159,159,158,156,154,154,154,154,154,153,154,153,152,151,
+        157,156,157,158,159,160,161,161,163,163,163,164,166,168,168,169,169,171,171,172,173,173,174,175,176,176,176,177,178,178,178,178,180,180,180,181,180,180,180,181,182,182,182,183,183,184,185,185,186,187,190,148,86,45,22,11,13,20,28,39,68,130,184,190,188,186,186,184,184,184,183,182,182,181,181,180,180,180,180,179,179,177,176,174,174,175,174,172,173,173,171,171,170,170,169,167,168,169,168,167,166,166,166,166,164,164,163,162,161,160,158,158,157,156,155,155,155,154,154,152,152,152,152,151,152,151,150,149,
+        157,159,159,160,162,163,162,163,163,164,164,164,168,170,170,170,170,171,171,172,173,175,175,175,176,176,177,177,177,177,176,177,179,179,180,180,180,179,180,182,181,181,181,182,183,182,183,184,187,181,124,39,17,16,13,11,11,11,11,11,11,25,83,154,181,181,183,184,182,182,182,182,181,181,179,179,180,180,179,179,178,176,174,174,173,174,173,173,173,172,171,170,170,169,168,168,170,169,168,167,166,166,166,165,163,162,163,161,160,160,158,158,157,156,157,156,155,153,153,153,152,152,152,152,152,151,150,150,
+        157,158,158,159,161,162,161,162,162,162,164,165,166,168,168,167,169,170,170,171,172,173,174,174,175,174,176,176,175,175,176,177,177,177,178,178,178,177,179,180,178,180,180,182,181,182,181,183,186,176,77,15,14,13,11,11,12,12,12,11,12,11,13,55,134,143,159,185,184,183,184,184,183,182,181,181,180,181,180,179,178,178,176,175,176,176,175,174,174,174,172,171,171,171,170,171,170,169,169,169,169,167,167,166,165,164,164,163,161,160,160,159,158,158,158,157,156,154,152,153,152,152,152,150,151,151,151,151,
+        158,160,159,160,162,162,162,163,164,164,167,167,167,168,170,170,171,170,172,172,173,173,174,173,176,176,177,177,178,177,177,177,178,180,179,180,179,179,178,179,181,181,182,183,183,183,183,185,189,171,61,12,10,9,9,10,13,12,12,12,13,12,11,12,47,80,101,173,185,184,186,185,184,183,182,181,181,182,181,180,180,178,177,177,177,177,176,175,174,174,172,171,172,171,172,171,171,170,169,167,167,166,165,165,164,163,163,162,161,160,159,158,157,157,158,156,153,152,151,151,151,151,151,150,150,150,149,150,
+        160,161,161,164,164,165,164,164,165,167,168,169,169,170,171,172,171,172,174,174,174,174,174,174,176,176,177,178,178,179,178,178,179,180,180,181,181,180,178,179,179,180,183,182,182,184,183,185,186,106,18,10,10,9,9,10,13,13,12,13,13,13,13,11,11,17,42,133,183,184,183,182,182,181,181,180,180,179,179,179,178,177,177,176,176,176,175,175,174,174,172,170,170,170,169,170,170,170,169,167,166,166,164,164,165,164,163,162,161,159,158,158,158,157,157,155,154,153,151,151,151,151,152,151,152,151,148,150,
+        160,160,161,162,162,164,164,166,166,166,166,166,167,168,169,168,169,171,172,172,173,174,174,175,175,176,177,178,178,178,177,176,177,178,180,181,180,179,178,179,179,178,180,181,181,181,182,184,174,55,11,10,9,9,9,10,11,11,12,11,11,11,10,9,10,10,18,79,171,183,183,183,181,180,181,180,179,179,178,178,178,177,177,177,177,176,175,175,175,174,173,171,171,171,170,171,170,171,170,169,168,168,167,166,165,164,163,162,161,160,159,158,157,157,156,155,153,152,151,152,151,151,151,151,152,151,150,150,
+        160,161,161,161,162,164,165,166,165,167,166,166,167,169,169,169,171,171,173,174,174,174,176,176,176,176,177,179,180,179,179,179,180,181,182,183,182,182,181,180,181,181,182,183,183,183,184,186,156,31,9,9,9,9,9,9,11,11,12,11,9,9,9,9,10,10,11,38,155,184,184,184,182,180,181,181,180,179,179,179,178,178,177,177,175,175,175,175,174,173,173,172,171,172,171,171,172,170,169,168,168,167,167,166,164,163,163,162,161,160,159,158,157,155,155,154,152,151,151,151,149,149,149,149,148,150,149,147,
+        162,163,162,163,165,166,167,168,168,169,169,169,169,170,172,172,173,173,174,175,175,174,176,174,176,176,178,178,178,180,183,180,180,181,182,183,183,181,181,181,181,182,182,184,185,185,186,189,140,23,10,10,9,9,9,9,10,11,11,10,9,10,12,17,11,9,10,56,152,173,179,182,181,180,179,178,178,177,177,176,176,176,175,174,173,173,174,173,172,171,171,171,170,170,169,168,167,166,166,166,165,166,165,164,162,162,163,162,160,159,159,158,157,155,155,155,152,150,151,150,149,150,150,150,148,148,147,147,
+        162,161,162,164,165,167,167,168,169,168,169,169,169,169,171,172,173,173,174,174,173,173,174,174,177,176,175,178,178,178,180,179,180,179,180,180,181,180,179,178,179,180,182,182,183,184,184,176,87,16,10,10,9,10,18,17,10,10,10,10,15,35,61,88,32,16,17,59,98,101,144,165,179,181,180,179,179,177,177,178,177,176,175,174,174,174,174,174,172,171,170,169,169,169,169,169,168,167,166,166,166,166,166,164,163,162,163,162,160,161,159,158,157,156,157,156,154,153,153,152,151,151,151,151,150,150,148,148,
+        161,161,162,162,164,167,168,168,168,169,168,168,169,170,170,171,172,173,174,173,173,175,174,175,177,177,177,179,179,180,180,180,181,181,182,181,182,181,181,181,181,180,183,184,184,184,187,138,25,9,9,9,9,34,69,41,13,10,10,31,89,143,161,157,94,53,26,31,43,52,67,99,151,181,182,181,181,180,179,179,177,177,176,175,175,175,174,174,173,172,171,170,170,169,168,168,168,169,167,166,166,165,165,163,162,161,162,161,160,159,158,157,156,156,156,155,154,153,151,150,150,150,150,151,150,149,148,147,
+        160,162,163,163,164,166,168,168,172,179,171,170,170,172,172,172,173,174,175,175,176,177,176,177,176,177,178,179,180,181,181,180,181,182,182,182,183,183,182,181,182,181,183,184,185,186,189,128,22,10,9,10,13,88,127,57,31,12,28,122,170,155,122,91,106,66,56,67,72,74,75,82,113,169,177,176,178,180,178,177,177,177,177,176,174,174,173,173,173,172,170,169,168,167,167,168,168,167,166,165,165,164,163,162,161,160,159,160,159,156,156,154,154,154,154,153,152,151,149,149,148,149,149,149,148,147,147,146,
+        161,162,162,162,164,166,168,168,169,172,171,170,169,170,172,172,173,173,173,174,175,175,175,175,175,177,178,178,178,179,179,179,179,180,181,181,182,181,180,180,181,181,182,182,184,186,183,86,15,10,9,10,14,89,117,110,112,25,59,167,169,117,57,61,101,86,76,95,82,66,65,65,69,82,113,87,103,172,176,176,176,176,176,175,175,175,174,173,172,172,169,169,170,169,168,168,168,168,166,165,165,164,164,163,161,162,160,160,159,157,157,156,155,154,154,153,152,151,151,149,149,149,150,149,148,147,147,146,
+        160,161,160,160,162,165,166,168,168,168,167,169,168,169,170,171,171,170,172,173,174,173,174,174,175,177,178,178,178,178,179,179,179,180,182,183,184,183,183,182,183,183,184,185,187,188,153,40,13,10,9,10,15,71,118,105,112,34,77,164,184,170,129,171,180,101,79,82,75,89,110,112,104,124,127,73,71,147,166,173,164,176,177,175,175,174,174,174,174,173,172,172,171,170,170,170,169,169,168,166,165,165,165,163,163,162,161,161,159,157,157,156,155,154,153,152,151,150,150,149,148,147,148,148,148,145,146,145,
+        160,161,162,162,163,164,165,167,168,169,170,169,168,169,170,172,172,171,173,174,174,175,175,176,177,177,179,179,178,179,180,181,182,185,183,176,171,165,165,167,169,165,165,161,147,122,52,12,12,11,11,15,19,39,126,128,112,97,125,158,172,175,174,185,200,158,59,56,79,138,171,181,173,189,119,57,114,165,191,199,188,177,175,175,174,173,172,173,172,172,172,170,169,168,168,168,167,167,167,164,164,163,163,162,162,162,160,158,157,156,157,155,153,152,151,151,149,148,147,147,147,146,146,147,148,145,145,145,
+        163,163,164,165,164,164,165,167,169,169,169,167,167,169,171,172,171,173,174,174,174,175,175,176,177,176,177,177,177,178,179,181,184,164,99,65,53,43,42,46,49,42,40,38,31,23,14,10,13,20,37,52,34,24,49,88,111,138,150,159,169,174,159,147,170,160,56,51,67,118,87,142,103,122,83,46,117,104,116,126,122,168,175,174,173,173,173,172,172,172,171,169,169,169,169,169,168,167,165,164,165,164,164,163,163,162,160,159,158,157,158,156,155,154,153,152,150,150,149,150,149,149,149,149,148,147,146,147,
+        162,163,163,163,163,163,164,166,167,167,166,166,167,168,170,171,171,172,172,173,173,173,174,175,176,176,176,177,177,179,180,182,170,74,18,14,17,19,19,19,18,18,18,17,16,15,13,9,16,62,66,80,73,34,31,45,88,123,142,155,170,158,143,120,88,77,47,56,82,80,67,154,75,79,103,71,122,83,79,107,144,173,174,174,173,172,173,172,172,172,171,170,170,169,169,171,172,168,166,165,164,163,163,163,162,162,161,160,158,156,157,157,155,155,153,152,152,151,149,149,148,148,148,147,147,147,147,146,
+        162,162,163,164,165,165,165,166,168,168,168,168,168,169,171,172,172,173,174,174,174,175,175,176,177,177,178,180,179,180,182,182,112,22,14,14,15,18,18,18,17,17,16,16,15,14,13,9,14,101,114,94,114,80,52,25,47,86,117,134,148,126,110,122,140,77,50,88,89,82,56,110,54,67,118,111,138,124,102,147,175,174,167,174,173,172,172,171,171,170,170,169,168,169,169,168,168,167,165,163,162,163,162,162,161,160,160,160,158,156,156,156,154,155,155,153,152,151,150,149,147,147,147,146,147,146,146,145,
+        164,164,165,165,166,166,167,168,168,169,170,170,168,170,171,172,173,173,174,174,175,175,175,176,177,178,178,179,180,182,185,149,44,16,14,13,15,17,18,18,17,16,16,16,15,15,13,9,11,93,177,123,113,92,55,21,19,41,80,105,112,111,94,111,160,83,51,58,47,41,39,55,44,62,127,100,139,125,121,168,171,161,118,102,145,173,171,171,172,170,170,169,169,169,169,167,167,167,165,163,162,163,163,163,161,161,161,160,158,157,157,156,155,155,154,154,153,151,150,150,147,147,147,147,147,147,146,145,
+        164,165,165,167,167,167,169,170,170,171,170,171,169,170,173,173,174,174,175,175,175,175,176,178,178,179,179,181,183,185,159,65,18,16,16,14,15,16,17,17,16,16,17,16,16,16,16,10,9,64,192,170,120,91,60,24,16,17,40,74,103,116,102,158,169,84,51,39,40,40,42,43,56,95,130,100,158,166,189,202,198,189,103,62,133,174,173,172,173,171,171,170,170,170,169,168,168,167,166,165,164,165,165,164,163,162,162,161,159,157,157,156,155,155,154,154,152,151,150,150,148,148,147,147,146,147,147,146,
+        163,165,166,165,166,167,168,169,170,172,171,171,170,171,173,173,174,174,175,176,176,177,178,179,180,180,181,182,184,157,65,19,16,16,16,14,14,15,15,16,15,16,16,15,15,15,16,9,8,28,139,156,159,133,96,39,17,14,15,34,82,112,145,182,170,87,50,38,39,40,54,45,57,72,80,71,124,96,80,106,94,87,42,21,101,173,173,172,172,171,171,169,169,168,167,167,166,166,165,164,164,165,165,164,163,162,160,160,159,158,156,155,154,155,154,152,151,151,150,149,148,147,146,146,146,146,145,145,
+        163,165,165,166,168,168,168,168,171,172,171,170,170,172,172,172,174,174,175,175,175,175,178,180,180,180,183,184,153,63,18,15,16,16,15,14,14,14,15,15,14,15,16,15,16,15,11,9,8,13,79,122,150,131,113,53,14,11,11,12,47,106,162,180,168,83,52,42,40,37,50,69,86,74,49,49,105,106,115,119,115,110,100,96,136,172,171,169,169,169,170,168,168,167,167,167,167,167,166,164,164,164,164,163,163,162,161,159,158,158,157,156,155,154,154,153,151,151,151,150,149,147,147,146,146,146,146,145,
+        162,164,165,166,168,168,167,169,169,169,168,168,169,170,170,170,172,173,173,173,174,174,177,179,180,181,178,134,53,18,15,15,16,16,15,14,13,13,14,14,13,14,15,15,16,15,12,11,9,13,63,134,116,83,76,38,10,8,8,9,52,167,181,180,169,76,56,41,40,51,63,85,111,74,44,48,66,103,176,174,172,172,171,171,170,171,170,170,170,169,170,168,168,168,167,167,167,168,166,165,165,164,164,164,163,164,162,160,159,158,157,157,156,156,155,153,151,151,152,150,150,149,148,148,148,147,146,146,
+        163,164,164,165,167,167,167,168,167,169,169,168,168,168,169,171,171,173,174,175,175,176,177,180,183,169,99,36,17,16,15,15,16,16,16,15,14,13,12,13,13,13,14,15,15,15,15,15,12,18,29,102,90,58,55,21,9,8,8,9,29,153,182,179,179,99,59,59,54,65,64,62,70,60,53,55,46,85,168,173,172,171,170,169,169,170,170,169,169,169,168,167,167,166,166,166,166,167,165,165,165,163,162,162,162,162,160,159,158,156,155,155,154,154,153,152,150,150,149,149,147,148,148,147,147,146,146,145,
+        163,164,165,164,165,168,168,167,169,169,169,168,169,170,170,172,173,174,175,176,175,177,179,183,163,81,23,14,13,13,13,15,14,13,14,13,13,13,12,13,13,13,15,15,15,19,17,15,12,17,21,96,91,28,17,14,11,9,9,9,16,102,178,178,178,150,62,41,40,50,41,39,53,62,32,24,22,38,122,170,170,168,167,167,167,167,167,166,166,167,166,166,166,165,164,164,164,165,165,164,164,162,161,161,161,162,160,157,156,155,154,155,153,152,152,151,151,150,149,149,147,148,148,146,146,145,144,143,
+        161,164,165,165,165,166,166,166,168,169,168,168,168,167,169,169,171,172,174,175,176,177,179,149,65,20,16,14,12,11,11,14,14,12,11,12,12,12,12,13,13,13,14,15,17,36,26,15,10,11,17,76,68,17,17,18,18,12,9,11,19,46,138,154,183,174,141,92,91,91,98,120,133,106,29,20,14,16,98,170,169,169,168,168,167,168,167,167,167,168,167,167,166,166,166,167,166,166,166,165,165,163,163,165,163,163,162,161,158,158,156,156,155,153,154,152,152,151,151,150,150,149,148,148,147,146,146,145,
+        162,163,163,163,163,163,164,165,166,166,166,166,166,167,168,169,170,171,173,174,176,177,139,52,17,15,15,16,14,12,11,11,14,14,11,12,12,12,12,12,12,12,13,14,14,16,19,15,9,9,13,77,81,20,18,18,20,17,27,75,102,110,133,112,181,135,132,113,120,126,125,141,157,139,56,37,34,52,145,170,170,169,168,167,168,168,168,167,167,168,168,167,166,165,166,167,167,166,165,165,165,164,164,165,163,162,161,160,158,157,156,156,154,154,154,151,151,150,151,151,149,148,148,148,147,146,145,145,
+        163,163,163,163,164,164,165,165,165,166,167,166,165,168,168,170,171,172,173,176,178,135,46,16,16,16,15,15,16,15,14,12,13,15,12,11,12,12,12,12,12,12,13,14,14,12,13,15,10,9,14,69,43,21,21,19,16,35,101,84,48,39,72,103,126,60,59,82,189,224,224,222,216,166,43,25,25,68,161,168,167,167,167,166,166,166,166,167,166,166,167,166,166,165,165,165,165,165,165,164,163,163,163,162,162,161,161,159,158,156,156,156,154,153,153,151,150,149,148,149,149,148,147,146,145,145,145,144,
+        162,162,163,163,163,163,164,164,164,166,166,165,165,167,167,168,171,173,174,176,138,47,16,15,16,16,16,16,16,17,17,15,14,15,13,12,12,12,13,13,12,12,13,14,14,13,13,15,11,9,13,28,23,21,16,14,34,98,62,19,13,16,60,130,126,113,110,116,217,223,236,239,199,172,65,53,49,100,169,169,167,166,166,166,166,165,166,167,167,167,167,165,165,164,164,164,165,165,165,164,164,163,162,162,163,162,162,161,159,157,156,157,155,153,153,152,150,150,149,149,150,148,146,146,146,146,145,145,
+        159,160,161,160,161,161,163,164,163,163,164,164,164,166,167,169,171,173,176,136,48,17,16,16,17,18,18,18,17,17,16,16,15,15,14,11,12,13,14,13,13,13,14,15,15,15,16,15,12,10,12,18,17,13,11,30,98,65,18,15,14,10,24,139,175,177,173,207,234,213,237,238,146,138,40,27,34,114,172,169,168,167,167,167,167,168,168,168,169,167,167,166,166,165,165,165,166,166,166,165,163,164,164,162,162,163,161,160,159,157,157,156,155,153,153,152,151,150,150,149,150,148,147,147,146,146,145,145,
+        159,160,161,162,163,163,163,164,164,164,164,165,164,166,168,169,170,174,141,49,16,15,16,17,17,17,17,16,16,16,14,13,13,13,12,10,11,12,12,12,12,13,14,14,13,11,11,11,11,11,13,12,11,12,29,99,73,16,12,14,13,10,13,100,179,170,188,217,228,229,237,196,129,110,16,10,27,126,170,168,168,166,165,166,166,166,167,166,166,166,166,165,164,163,164,164,164,165,165,163,163,163,164,162,162,161,160,158,158,156,156,155,154,153,154,152,150,148,148,149,149,147,146,145,145,144,143,143,
+        159,159,161,162,162,162,163,163,164,165,165,165,165,165,166,168,172,152,58,17,16,16,14,13,12,12,12,13,13,14,13,12,12,13,12,11,12,12,12,12,11,12,13,14,13,11,10,10,10,12,11,10,12,26,96,80,19,12,11,12,14,10,9,52,169,180,179,182,187,224,225,159,138,46,12,19,84,163,170,168,166,164,164,164,165,164,165,165,165,165,165,164,163,162,163,163,162,164,164,162,162,163,163,161,161,160,160,158,158,157,156,156,155,154,154,151,150,148,148,149,148,147,146,145,144,143,143,143,
+        159,160,160,162,162,164,163,163,163,164,164,164,164,166,166,169,166,84,19,15,15,13,11,12,13,12,12,13,12,11,12,13,13,14,12,12,13,13,12,13,12,13,13,13,14,13,12,11,12,11,11,11,20,80,78,22,15,14,11,10,11,10,9,24,125,154,132,118,135,211,214,147,52,22,19,62,155,170,170,168,167,164,164,164,164,164,164,164,164,165,165,163,163,162,163,162,161,163,163,163,163,162,161,160,159,160,160,159,158,157,156,156,155,154,153,152,151,149,149,148,149,147,146,145,144,143,143,143,
+        159,161,161,161,163,164,165,165,166,166,166,165,165,166,168,170,130,30,15,14,13,11,10,11,12,14,15,14,12,10,9,10,11,11,12,13,13,12,12,12,12,13,13,12,12,12,12,12,12,11,11,19,77,73,21,15,14,13,12,10,9,9,9,11,33,39,51,59,46,71,80,36,19,18,37,134,171,169,167,167,167,165,164,163,164,163,163,163,162,163,163,162,161,162,161,160,159,161,160,161,161,160,159,159,158,158,158,158,156,155,155,155,153,154,153,153,151,150,149,148,146,146,146,145,144,143,142,141,
+        160,159,160,161,161,163,164,164,164,165,165,164,163,165,168,167,88,14,12,13,15,13,14,15,15,15,15,13,13,12,11,9,9,10,12,12,12,12,11,12,12,13,12,12,11,11,12,13,12,11,18,80,85,22,15,14,13,13,12,10,9,9,9,9,21,13,24,33,11,11,11,12,15,13,37,148,172,169,167,166,164,164,164,163,164,163,163,163,163,163,163,162,161,162,161,161,161,161,158,158,161,160,159,159,159,160,159,158,157,156,156,156,155,154,153,153,150,150,149,148,145,147,147,146,145,143,143,141,
+        159,158,159,160,162,162,162,162,163,163,163,163,163,164,166,164,77,11,11,11,14,14,14,14,13,12,11,12,12,14,14,10,10,11,12,13,12,11,11,11,12,12,15,14,10,10,11,12,12,15,73,94,25,15,14,13,13,13,13,12,9,9,9,21,93,28,10,13,12,15,11,12,11,10,14,99,171,170,168,167,166,165,165,165,164,164,164,163,163,164,163,161,161,162,162,160,160,162,158,165,179,166,159,160,159,160,159,159,158,157,156,155,154,153,153,152,150,149,148,148,148,148,147,146,145,143,143,141,
+        158,159,160,161,162,162,164,163,164,163,164,164,164,164,165,167,106,16,9,9,10,10,11,14,14,14,14,15,16,16,16,14,14,14,13,13,11,11,11,11,12,13,14,12,10,10,10,10,13,66,100,29,11,10,11,12,12,13,13,13,10,9,9,46,116,25,18,22,17,19,12,11,11,9,10,44,153,169,167,165,165,165,164,164,164,165,164,162,163,163,163,161,161,162,161,160,160,161,152,173,204,181,160,159,159,158,158,158,156,156,156,155,154,153,153,152,150,150,149,148,148,148,148,147,145,143,143,142,
+        160,161,160,162,162,164,164,164,165,164,164,165,164,164,166,168,153,55,11,10,9,9,9,12,15,16,16,16,16,16,14,14,14,15,16,16,13,12,11,11,12,12,10,10,12,13,18,15,53,105,35,12,12,11,12,12,13,13,14,12,9,9,9,28,75,88,79,72,91,95,47,12,11,11,10,18,115,168,166,166,165,164,163,163,163,163,162,160,162,162,162,160,161,161,160,159,146,136,133,134,169,170,159,159,158,158,158,157,156,156,155,155,155,154,154,153,152,151,150,150,150,149,148,148,146,145,143,144,
+        160,161,160,161,161,163,163,164,163,162,162,163,165,165,165,166,168,131,40,11,10,9,8,9,10,12,12,12,12,13,13,14,15,16,17,17,17,16,14,12,12,12,10,9,15,47,55,20,50,39,12,11,12,13,13,12,13,15,14,12,9,8,9,19,78,150,61,82,155,151,92,16,9,11,11,18,109,169,168,166,165,164,163,163,163,164,163,161,162,161,161,161,161,161,161,159,135,116,125,111,141,160,159,159,159,159,159,158,158,157,156,156,156,155,155,153,152,151,150,150,149,149,149,148,146,144,142,144,
+        161,161,161,161,162,162,162,163,163,164,163,163,164,164,165,167,168,168,126,38,10,9,8,9,9,9,10,10,10,11,12,14,15,16,16,15,17,16,16,15,13,11,11,13,26,43,24,15,14,15,15,15,15,12,12,14,15,14,13,11,9,9,10,22,52,91,38,77,127,103,68,16,11,10,15,65,151,168,167,166,165,164,164,163,163,164,163,161,161,161,160,160,160,160,159,155,166,169,173,169,174,171,160,159,158,159,159,158,158,158,156,155,154,154,154,153,151,150,149,150,148,147,148,148,146,144,143,142,
+        162,162,163,163,163,164,164,165,164,165,165,165,165,165,166,167,168,169,168,122,34,10,9,9,10,11,11,11,11,11,12,13,14,18,25,16,15,15,16,17,17,16,27,31,26,15,15,13,11,12,13,13,11,10,12,14,13,13,13,10,9,9,9,11,28,20,15,25,24,50,48,21,16,13,61,149,167,167,166,165,164,164,163,162,162,162,162,161,161,160,159,160,159,159,159,151,176,186,185,186,185,178,161,159,159,158,160,160,159,159,157,156,154,154,154,153,151,150,150,150,148,148,148,148,146,145,144,143,
+        160,162,162,163,163,164,164,164,162,163,162,163,163,163,165,165,166,166,167,167,120,38,11,10,11,11,11,11,11,10,10,10,10,13,17,15,14,15,16,17,18,20,37,43,42,30,17,12,12,11,12,12,10,11,11,12,13,14,12,9,9,9,9,18,85,29,10,10,10,24,54,31,28,32,133,170,168,167,166,164,164,163,163,162,163,162,163,163,163,162,161,160,160,160,158,151,177,187,186,186,184,179,162,160,160,159,160,159,159,159,158,157,155,155,153,153,151,150,150,149,149,148,147,147,147,145,144,144,
+        161,162,162,163,164,164,163,161,162,163,163,164,163,164,165,165,166,166,168,170,169,131,50,13,9,10,10,10,10,9,9,10,10,10,11,14,14,14,14,15,17,19,38,44,46,53,49,34,25,14,11,11,11,12,13,14,15,13,10,8,9,9,8,29,98,23,18,36,18,12,17,16,35,36,106,170,168,167,166,166,165,164,164,163,163,163,163,163,163,162,161,160,161,161,159,152,175,187,187,185,186,180,161,160,159,160,159,159,159,158,158,157,156,155,153,152,151,150,150,148,148,148,147,147,146,145,145,144,
+        162,162,162,164,165,164,163,163,163,164,164,165,164,164,164,165,166,167,168,168,169,171,148,55,9,9,10,9,9,9,9,10,10,11,10,10,11,11,12,14,15,22,41,43,47,55,52,40,25,14,12,12,13,14,15,16,15,12,10,9,9,9,9,29,78,28,82,161,73,16,18,13,20,27,64,162,169,167,166,165,165,164,163,163,163,163,164,163,162,161,161,160,161,160,159,150,173,186,186,186,187,181,162,158,159,161,161,159,158,158,158,156,155,155,154,152,152,151,149,149,148,148,147,148,147,146,145,146,
+        162,162,163,164,163,163,162,162,162,163,164,163,163,163,163,163,164,165,166,167,168,171,168,68,10,10,10,10,9,9,9,9,9,10,10,10,11,11,12,13,14,24,35,33,37,44,38,22,14,14,13,13,14,15,15,15,13,11,9,8,8,8,9,39,51,40,132,203,97,16,13,43,22,19,46,140,170,168,166,165,166,164,164,163,163,164,164,164,163,162,161,161,160,159,159,151,173,187,186,185,185,180,161,160,160,160,161,159,159,158,157,157,156,156,155,153,153,153,151,149,149,148,149,149,147,146,145,146,
+        163,162,163,163,163,163,163,162,162,162,163,164,163,164,165,165,165,165,166,167,168,171,161,43,9,9,10,10,10,10,10,10,10,11,12,13,13,12,12,13,14,22,27,26,33,38,33,30,27,16,14,14,15,16,15,13,12,10,9,8,8,9,10,60,36,45,144,207,92,22,65,143,74,15,36,98,170,169,168,167,166,165,163,163,164,164,164,163,163,162,162,162,160,160,161,152,174,185,184,184,184,180,162,159,159,159,160,159,159,157,156,156,156,156,155,153,152,152,152,150,150,150,150,149,148,147,146,146,
+        163,162,164,163,163,164,163,163,164,164,163,163,164,164,166,164,166,166,167,168,169,172,147,29,9,9,9,9,10,11,11,12,13,14,14,14,14,14,13,13,12,18,22,26,32,32,31,24,25,21,16,15,16,16,14,13,14,13,9,8,8,9,12,56,28,46,146,207,93,84,153,170,126,24,27,56,152,170,168,166,165,164,163,163,164,165,164,163,162,161,161,161,160,161,159,150,172,183,184,184,184,181,163,159,159,159,159,159,158,157,155,155,155,156,155,154,154,152,152,151,150,149,150,149,149,147,146,146,
+        164,163,162,162,163,163,162,162,163,163,162,163,163,164,165,164,165,165,166,167,168,173,121,18,9,9,9,9,9,9,9,10,11,12,13,14,14,13,13,10,10,12,15,19,24,27,30,27,17,14,15,15,15,15,13,12,51,75,18,8,8,9,21,57,22,47,148,210,115,152,167,166,158,60,16,38,109,168,168,167,165,164,163,163,164,164,163,163,162,162,161,160,160,161,159,150,171,183,182,182,185,181,163,161,160,159,160,158,157,157,157,161,160,155,155,155,154,152,152,151,151,150,149,149,148,146,145,146,
+        162,162,161,162,163,163,162,162,163,163,163,163,162,164,164,165,164,165,166,167,168,174,101,11,9,9,9,9,8,8,8,8,9,10,10,11,12,12,10,8,8,9,12,14,17,21,17,22,24,24,21,16,14,13,12,16,100,159,93,26,9,9,29,65,15,48,154,213,128,157,166,165,166,112,18,29,65,157,168,166,164,164,163,164,163,162,163,163,163,162,161,161,160,160,160,151,171,182,180,180,184,181,163,159,159,158,159,157,157,160,173,184,181,166,161,157,152,152,150,150,151,149,148,149,148,146,145,145,
+        162,163,163,162,163,163,164,163,162,163,164,164,163,165,165,165,165,165,167,168,171,171,80,9,9,9,9,9,9,8,8,8,8,9,9,9,9,10,10,10,11,17,9,10,15,28,22,15,13,27,35,19,14,13,12,31,140,168,163,120,42,10,42,46,18,49,155,215,140,157,162,163,164,151,46,18,44,123,167,167,170,170,167,164,162,161,161,161,161,162,161,161,160,159,157,149,170,181,179,178,182,179,161,158,157,157,157,157,158,172,187,173,177,187,183,169,153,151,151,150,150,149,148,148,148,147,146,146,
+        162,162,163,163,163,163,164,163,162,163,163,164,165,165,164,164,166,165,167,169,172,160,48,10,10,10,10,10,10,9,8,8,8,9,9,9,9,11,13,13,12,15,11,10,10,13,21,24,14,16,19,16,13,13,12,69,161,166,168,171,96,13,68,47,85,62,153,213,139,155,162,162,164,165,98,16,34,82,172,184,189,193,193,186,173,163,161,160,161,160,159,160,158,158,158,150,171,182,181,180,184,181,161,158,157,157,158,157,157,160,163,159,158,160,160,161,153,151,151,150,150,149,149,149,148,148,147,146,
+        161,162,162,162,163,164,163,163,163,163,164,164,165,165,165,165,165,166,167,170,174,116,21,11,11,12,12,12,12,11,10,9,9,9,9,10,11,14,14,13,12,15,16,15,13,10,10,14,15,13,14,14,13,12,19,112,169,167,168,167,79,14,67,57,133,70,154,212,138,155,163,164,164,164,137,33,22,49,150,191,190,194,200,201,197,181,165,161,165,164,162,161,162,161,159,151,170,181,181,183,185,182,160,157,157,157,158,158,159,157,150,152,150,146,150,159,153,151,151,150,149,149,149,149,149,147,146,147,
+        160,162,162,163,164,162,163,164,163,163,164,164,165,166,165,165,166,167,169,172,160,55,14,13,13,12,12,12,12,13,13,12,11,10,10,11,14,15,15,14,13,16,17,17,16,14,13,14,15,15,14,15,14,13,41,148,167,167,168,159,49,23,69,70,142,71,155,213,139,155,162,163,162,144,119,60,14,34,96,179,184,188,191,193,194,192,179,164,170,171,168,166,166,165,159,150,168,179,180,181,184,182,162,157,157,157,157,158,158,158,152,151,148,145,147,158,153,151,151,150,150,149,149,148,147,146,146,147,
+        162,163,163,162,162,159,163,164,165,164,164,164,165,166,165,166,168,168,171,174,110,19,13,13,14,15,14,13,13,13,13,13,13,12,11,12,14,15,15,14,13,16,17,16,16,15,15,15,15,15,15,15,14,14,80,164,166,167,169,146,31,32,72,89,147,73,156,214,140,154,162,162,152,101,98,100,24,25,54,152,179,184,186,187,188,190,189,180,156,149,147,145,144,151,158,150,167,179,178,180,184,183,163,159,158,157,158,159,158,157,151,150,150,149,149,157,155,153,152,152,151,149,149,149,148,147,146,146,
+        151,154,151,146,146,151,157,161,162,162,163,164,165,166,166,165,166,167,171,158,49,12,12,12,13,14,16,15,14,14,14,13,13,13,12,12,13,14,15,14,13,16,16,15,16,14,14,16,15,15,15,14,13,24,123,166,166,167,170,119,18,46,60,107,149,74,157,212,141,154,161,159,127,89,100,119,53,15,36,104,167,171,173,176,182,184,188,194,190,181,169,158,156,158,158,149,164,176,178,180,184,183,163,158,157,157,157,158,158,157,152,150,148,149,149,156,153,151,151,151,150,149,148,148,147,147,147,147,
+        126,127,125,122,124,129,131,142,151,160,163,164,166,166,166,166,167,169,174,112,18,11,12,12,13,13,14,16,16,15,15,13,14,13,13,12,13,14,15,13,14,16,16,15,15,14,14,15,15,15,15,14,13,50,152,167,173,175,182,101,11,70,57,136,149,75,157,212,140,154,159,155,99,82,107,123,95,19,28,61,160,179,173,168,175,184,190,194,198,198,191,165,144,150,157,147,164,178,177,178,183,184,163,157,157,157,157,157,157,155,148,148,147,147,149,154,152,151,151,150,150,149,148,148,147,147,146,146,
+        114,114,113,116,116,115,116,127,143,158,163,164,165,166,167,167,168,171,162,55,11,10,10,10,11,12,13,15,15,16,15,15,15,14,14,15,14,15,17,13,14,16,15,16,15,14,15,15,15,15,15,14,17,95,162,170,180,183,179,73,12,71,59,153,149,77,158,211,139,146,145,156,107,100,130,138,133,47,19,43,133,176,142,151,166,179,186,187,188,190,192,184,158,149,155,146,166,183,179,175,183,186,164,157,156,156,157,157,157,156,146,147,147,147,148,154,152,151,151,150,151,150,149,150,149,148,147,147,
+        109,109,110,112,110,106,110,120,131,156,163,164,166,167,168,170,173,172,119,20,11,12,12,11,11,11,10,11,12,14,15,15,14,13,13,14,14,17,20,14,15,16,15,15,14,14,15,15,14,15,14,14,36,146,169,164,167,170,160,41,24,76,75,175,164,80,161,212,141,142,141,156,107,102,128,134,143,92,16,35,84,170,165,173,176,180,179,175,174,173,178,176,177,162,158,147,165,181,178,177,183,184,163,157,156,155,155,156,155,155,146,147,146,146,150,148,150,152,151,152,152,152,153,153,154,151,150,149,
+        108,109,110,107,106,107,112,123,135,149,158,168,190,185,173,184,192,179,67,10,11,12,12,12,12,12,13,12,11,10,11,13,15,14,13,13,13,14,11,12,15,16,15,14,13,14,14,14,14,14,14,14,83,184,190,188,190,194,157,28,36,91,102,195,175,82,161,213,144,152,156,167,121,117,135,136,133,133,35,23,51,147,180,180,181,180,180,182,178,172,174,171,175,176,171,163,168,175,174,175,178,177,165,158,157,153,149,146,145,147,149,150,152,155,159,152,157,161,159,162,162,163,165,163,163,161,161,159,
+        104,99,101,94,113,123,119,129,130,136,150,164,163,144,131,133,146,137,30,9,11,12,12,12,12,12,13,14,14,12,11,10,11,12,13,13,14,14,13,11,13,17,16,14,14,14,15,14,14,13,14,22,129,202,201,202,204,207,133,18,45,73,127,205,183,84,159,211,146,162,175,189,183,179,171,161,130,148,80,15,35,97,171,171,171,168,168,169,166,163,162,160,155,154,161,161,149,140,148,154,159,159,157,153,154,156,156,156,159,159,164,162,164,164,163,155,144,143,141,141,141,139,141,141,140,136,139,136,
+        127,121,102,95,151,160,157,164,160,146,158,149,116,90,85,89,90,57,12,9,11,12,12,12,12,11,12,13,13,13,12,12,11,11,11,12,14,14,13,12,13,15,13,13,15,15,15,14,12,11,14,35,171,210,209,210,211,210,107,12,68,59,150,198,180,84,160,211,148,173,186,194,198,195,171,156,143,147,103,21,26,50,140,163,162,160,159,157,157,156,154,151,146,145,153,150,117,102,125,137,145,151,155,159,167,172,173,173,175,174,176,176,178,177,177,175,167,157,149,139,132,122,124,134,145,132,145,133,
+        114,121,104,103,136,133,136,129,123,115,118,125,128,120,82,70,66,26,9,9,11,12,12,12,12,11,11,12,12,12,12,12,12,12,12,13,14,14,13,11,11,11,13,13,12,13,13,12,9,10,14,35,145,166,163,160,159,156,61,12,81,54,129,146,133,77,160,212,144,147,154,154,164,179,177,155,154,148,131,52,15,32,102,148,128,153,123,142,127,123,141,113,160,169,164,133,113,127,146,156,160,164,169,177,180,181,183,182,183,183,184,182,185,187,184,183,176,170,164,143,122,106,86,103,125,87,105,89,
+        78,76,74,75,81,79,75,74,73,73,74,74,80,82,72,69,52,16,10,10,12,12,13,13,13,13,12,13,13,13,13,13,12,13,13,14,15,14,13,11,15,15,15,14,14,14,15,14,13,12,13,54,153,161,157,158,161,147,36,20,78,60,149,158,143,79,159,212,150,156,158,146,137,149,168,131,147,130,125,95,16,22,55,101,56,118,57,90,75,64,134,85,155,182,157,101,91,104,124,147,167,177,183,184,183,182,186,184,186,186,185,186,187,185,183,174,157,140,126,113,96,91,81,97,107,93,89,76,
+        67,64,63,63,62,63,64,64,64,65,64,63,64,65,66,68,37,13,10,11,12,12,13,14,14,14,13,13,14,14,14,14,13,13,13,14,16,15,13,11,15,15,15,15,14,14,15,14,13,11,14,52,100,100,92,90,91,79,20,31,84,43,79,76,69,66,158,211,141,99,104,111,140,143,146,138,147,146,141,127,40,16,37,77,53,126,64,87,80,64,150,100,146,136,66,34,33,39,47,65,99,143,173,184,188,190,190,188,187,189,189,188,186,173,150,127,110,104,99,88,57,55,68,87,93,80,80,78,
+        76,78,78,75,76,77,79,80,82,82,83,83,83,83,86,79,27,14,10,11,12,12,14,14,14,14,14,14,14,15,14,13,13,13,13,14,15,14,12,11,15,15,14,15,14,14,14,14,13,11,18,30,38,40,38,35,31,26,11,43,80,55,61,36,40,80,158,200,136,110,106,88,97,86,107,101,108,102,111,131,83,16,26,44,50,126,80,92,86,73,138,90,97,55,28,24,28,32,35,37,41,52,82,131,173,188,193,193,193,194,190,176,145,101,90,102,102,101,99,89,60,56,57,71,88,73,74,74,
+        106,119,117,108,112,114,111,117,115,109,117,116,119,122,119,80,21,14,10,12,12,13,14,14,14,14,14,14,15,15,14,13,13,13,13,14,14,14,12,11,15,15,14,15,15,14,15,14,13,13,63,106,111,104,96,96,93,45,10,67,68,102,104,53,71,133,130,138,116,164,183,99,76,69,90,73,74,71,89,121,118,34,19,31,43,125,83,87,86,77,117,85,58,35,29,27,31,34,38,43,44,39,35,43,86,148,181,182,185,184,162,110,67,54,78,103,105,100,99,81,55,56,59,61,72,61,61,66,
+        107,128,133,124,125,127,121,131,130,122,129,125,130,141,135,58,16,13,12,12,13,13,13,14,15,14,14,14,14,14,14,14,13,13,14,15,14,13,11,11,15,14,14,15,14,14,15,14,13,24,113,152,155,147,135,130,137,43,11,88,62,126,119,75,88,129,63,72,92,156,173,135,94,109,113,88,77,71,84,102,118,62,13,28,42,121,74,75,79,70,102,90,58,48,34,33,38,37,39,52,47,40,35,32,35,55,113,160,171,143,92,70,65,49,72,103,105,99,93,53,35,40,50,50,46,40,43,45,
+        103,126,140,130,128,134,125,132,134,130,131,119,115,126,110,31,15,12,11,12,12,12,13,14,15,15,14,14,13,13,13,13,13,14,14,15,15,14,11,12,14,14,15,15,14,14,15,14,13,51,156,168,172,173,176,169,149,31,18,89,64,111,92,66,117,100,75,93,97,101,94,140,144,103,94,96,96,106,98,73,105,90,20,19,37,110,72,82,95,89,127,102,62,53,43,37,47,61,47,45,46,41,37,38,43,43,54,88,117,97,82,80,77,63,77,101,100,98,82,32,21,24,27,35,31,30,31,29,
+        107,130,137,136,138,137,127,130,131,132,144,141,136,141,89,19,15,11,11,11,12,12,12,13,13,14,13,14,14,14,14,15,14,14,14,15,15,14,11,12,14,14,14,15,14,14,14,14,14,108,226,230,231,230,232,232,156,22,33,96,97,126,62,64,139,69,102,150,124,54,47,72,142,138,88,71,85,119,117,93,111,111,51,13,27,69,88,105,120,117,125,108,80,73,77,77,83,113,97,78,80,69,64,72,81,89,99,94,103,102,111,94,92,92,101,104,109,94,63,24,21,23,27,36,33,31,32,30,
+        111,115,140,167,159,125,111,108,106,116,149,150,154,141,54,15,14,11,11,12,12,12,12,12,12,12,12,13,14,15,15,15,14,15,15,16,15,14,11,13,15,14,14,14,14,14,13,13,18,100,162,157,164,167,160,164,89,12,45,92,99,126,68,99,128,59,132,193,135,60,55,79,102,151,146,97,91,105,117,107,104,113,87,18,22,48,108,115,108,102,99,101,102,102,105,110,108,118,118,110,111,112,112,116,118,118,121,123,122,119,121,114,108,110,112,110,112,107,93,87,88,89,93,96,98,94,93,93,
+        106,122,133,143,141,137,135,131,114,109,136,135,139,109,26,13,12,10,11,11,11,13,13,13,13,12,12,12,12,12,13,14,14,14,15,15,14,13,10,13,14,14,14,14,14,14,13,13,25,102,125,126,135,140,137,136,51,10,67,70,102,140,89,145,128,70,151,209,144,114,118,122,125,112,151,150,123,127,135,129,129,133,126,44,15,33,98,137,134,131,129,131,131,133,133,134,135,135,138,138,137,139,139,139,138,138,138,140,139,139,138,137,136,135,134,133,134,135,134,135,135,134,133,132,133,133,132,133,
+        123,137,131,128,127,129,131,130,124,120,128,134,139,89,17,13,14,11,12,12,12,12,13,14,14,14,13,12,12,12,12,14,14,15,15,15,14,13,10,14,15,14,14,14,15,14,14,13,34,127,140,140,141,142,143,132,33,11,86,58,117,121,101,160,127,71,145,205,142,133,138,139,138,134,118,158,158,139,139,140,140,140,142,90,16,24,64,138,140,139,139,137,140,144,144,146,147,147,149,147,146,147,147,146,142,143,143,143,142,142,142,141,139,137,136,138,140,138,140,141,140,138,139,139,139,137,136,135,
+        138,136,134,136,136,135,137,135,134,135,136,139,134,53,13,14,15,11,12,12,12,13,13,14,14,14,14,14,13,12,12,13,14,15,16,15,14,13,11,14,15,14,15,15,14,14,14,14,47,129,138,139,141,143,150,116,21,17,88,57,135,93,136,155,140,76,119,192,132,139,143,144,144,143,138,119,159,159,141,144,141,139,146,131,36,17,40,115,142,139,140,136,139,143,140,139,140,142,143,143,143,143,144,145,140,142,141,140,141,141,139,139,139,138,137,138,137,136,137,139,139,138,137,136,135,135,134,132,
+        137,137,137,142,138,131,135,135,133,133,133,137,108,24,12,14,14,12,12,12,12,13,13,13,14,14,14,14,13,13,13,14,15,15,15,15,14,12,10,14,15,14,14,14,14,14,14,16,78,147,149,151,152,153,158,94,12,29,94,66,123,84,159,146,142,82,130,207,141,139,141,140,139,139,138,134,115,161,157,139,137,134,134,131,70,14,26,73,134,133,131,128,129,132,129,128,131,130,132,130,129,129,133,133,129,128,129,127,126,125,121,120,124,122,125,127,127,125,125,124,125,121,119,121,120,121,122,120,
+        138,139,146,146,145,142,142,146,146,144,143,146,87,15,12,13,14,13,12,12,12,12,12,13,13,14,14,13,13,13,13,14,15,15,15,15,14,12,10,15,16,15,15,14,14,13,14,42,121,140,138,138,141,143,144,66,10,42,93,76,86,115,155,133,130,78,130,205,137,134,134,129,128,129,128,130,117,109,160,142,119,121,121,122,98,23,19,42,108,123,120,121,123,121,116,118,115,113,114,115,113,117,116,115,112,109,110,110,105,103,100,101,100,101,104,105,111,112,116,115,114,112,108,109,111,112,111,112,
+        141,140,143,140,142,140,139,142,141,140,139,133,56,12,12,13,14,13,12,12,12,12,12,13,14,14,13,13,14,14,14,15,15,15,15,15,14,12,11,15,16,16,15,15,15,14,16,80,139,134,135,137,140,142,135,40,10,66,78,70,70,155,141,132,132,80,130,208,140,132,131,126,127,127,126,124,121,113,110,159,138,122,118,119,116,52,13,28,79,121,119,119,115,114,112,110,107,104,103,102,100,105,101,98,101,99,100,99,97,96,96,97,98,100,102,102,107,109,115,116,117,116,114,109,112,108,107,106,
+        137,136,136,135,135,134,132,133,132,129,130,114,30,11,12,12,12,12,12,12,12,12,12,13,13,13,13,12,13,14,14,14,15,15,15,14,14,11,10,15,16,15,15,15,15,14,26,110,135,131,130,132,133,137,115,25,10,93,62,55,103,162,134,133,132,81,133,209,139,128,128,127,130,129,127,127,125,121,116,114,161,135,116,117,116,85,18,21,46,107,113,110,109,109,112,109,109,105,106,103,102,102,99,102,104,102,103,104,106,107,107,105,104,102,105,106,107,108,113,113,109,108,107,105,105,99,103,106,
+        134,133,131,131,132,130,127,128,127,125,125,114,42,12,11,12,12,12,11,12,12,11,12,12,13,13,12,13,13,14,14,15,15,16,15,14,14,11,10,15,15,15,15,15,15,14,41,116,125,129,128,128,129,131,89,15,17,99,42,46,147,143,129,132,130,79,129,208,136,128,128,124,125,121,121,125,126,124,122,116,117,161,135,122,118,114,42,15,30,87,120,117,118,119,120,117,117,113,109,109,112,115,112,112,110,108,110,107,107,108,108,110,112,111,110,107,109,109,113,116,111,110,110,111,107,105,108,110,
+        133,130,129,129,127,128,129,128,125,127,126,125,100,38,13,12,12,13,12,12,12,12,12,12,13,13,13,13,13,14,15,15,15,16,16,14,13,11,11,16,15,15,15,15,15,15,65,129,132,135,131,132,138,139,75,11,31,101,29,80,159,130,128,129,128,79,126,208,135,125,128,127,127,123,123,126,124,123,116,114,106,112,161,126,113,119,73,15,22,57,117,120,124,124,125,128,126,125,125,122,124,123,118,119,118,114,120,123,126,125,125,125,122,121,121,119,117,124,123,124,123,121,120,123,119,117,118,121,
+        129,130,129,130,131,132,133,137,138,138,135,130,132,108,44,15,12,12,13,12,12,12,12,12,13,13,13,12,13,14,14,15,16,15,15,13,13,10,10,15,15,15,15,14,14,18,85,131,133,134,131,135,140,138,51,9,45,96,33,129,150,128,130,130,128,77,124,206,135,126,129,128,127,126,127,129,128,126,123,127,124,113,123,158,130,123,107,31,15,35,104,129,130,125,125,129,128,132,129,124,125,125,120,125,129,125,125,124,127,127,124,123,121,122,118,116,113,115,115,118,118,114,113,117,112,105,109,114,
+        129,133,134,133,129,132,137,138,139,142,142,138,138,134,114,60,22,13,12,12,12,12,11,11,13,13,13,13,13,14,14,15,15,15,14,13,12,9,10,15,16,15,15,15,14,29,121,142,144,143,145,143,143,131,32,10,66,76,58,160,144,142,142,142,140,81,114,202,136,135,139,134,133,136,139,133,135,136,135,137,139,141,125,127,165,144,135,70,14,22,72,136,136,133,132,131,130,132,130,129,125,125,126,126,125,127,128,125,121,120,126,125,124,125,123,125,119,123,117,109,107,101,101,106,109,108,113,114,
+        132,132,140,137,135,136,139,146,148,146,144,142,137,138,136,129,99,51,18,12,12,12,12,12,12,13,14,14,14,15,15,16,16,15,14,13,12,9,11,16,16,15,15,15,15,46,136,144,145,150,150,146,146,107,20,12,90,57,104,155,136,133,131,133,133,99,116,171,133,136,137,136,138,134,136,133,137,140,136,134,138,141,138,120,126,165,142,109,27,17,40,119,135,135,138,131,132,137,135,129,132,133,131,126,126,129,131,128,131,126,127,128,130,130,131,132,131,132,127,128,129,126,122,122,123,125,126,128,
+        128,134,137,138,137,138,141,144,146,139,136,133,132,133,130,137,138,124,37,13,13,13,13,13,13,14,14,14,14,15,16,17,17,15,14,13,12,9,11,16,16,15,15,14,15,67,133,130,131,135,130,123,122,70,11,18,99,55,142,135,118,115,112,119,128,134,133,139,136,136,140,139,141,137,134,138,136,136,131,134,136,136,136,131,117,129,161,132,58,14,25,82,136,140,141,138,137,140,139,130,129,129,131,132,129,128,129,125,127,125,122,123,126,119,121,119,115,117,115,121,123,124,123,124,119,120,123,128,
+        136,138,140,141,141,140,136,135,138,131,132,126,127,133,132,138,142,131,35,16,21,12,12,13,14,14,14,15,15,15,16,16,16,15,14,13,12,9,11,16,15,15,16,14,20,100,146,142,143,145,142,137,131,55,15,42,108,71,153,136,129,138,138,138,136,135,137,138,144,139,140,141,135,134,138,138,133,129,127,132,126,131,132,132,132,113,128,156,95,24,49,115,136,136,137,136,133,134,135,129,128,124,122,121,122,123,121,124,119,118,116,112,114,113,110,112,110,112,116,116,112,110,107,115,118,118,120,122,
+        136,133,137,142,138,138,134,134,135,136,131,127,129,132,136,143,143,124,31,17,40,21,10,10,12,14,15,15,15,15,15,16,16,15,14,14,12,9,11,16,15,16,16,15,30,124,141,140,146,144,144,145,124,42,64,154,174,127,146,137,137,138,132,137,139,133,136,140,150,148,151,153,149,150,145,146,141,139,132,130,133,130,124,134,135,128,111,130,163,95,135,193,138,135,133,136,135,134,131,134,136,129,126,120,123,129,124,122,117,120,123,113,114,120,119,117,113,114,112,113,112,110,106,114,122,112,116,114,
+        139,138,140,141,135,134,137,133,132,133,133,135,134,138,140,139,136,105,26,15,40,41,13,9,10,11,11,12,14,15,17,17,17,16,14,14,12,9,11,15,15,16,15,15,49,137,141,135,138,141,140,141,111,30,60,165,193,137,135,136,142,143,139,140,141,136,139,136,135,136,141,145,142,136,131,132,140,135,133,136,137,134,139,141,132,130,128,118,181,146,75,74,68,135,135,138,133,125,118,131,137,134,123,119,123,126,123,115,110,117,116,109,111,118,123,118,112,118,119,119,124,122,123,125,128,121,115,118,
+        132,135,136,135,137,135,143,140,137,136,139,143,138,135,141,142,146,107,26,14,32,53,24,10,10,10,10,9,9,11,13,15,16,17,15,15,12,9,11,16,16,16,16,16,78,149,137,133,139,147,152,149,96,15,15,109,80,101,135,132,137,144,142,137,130,123,131,129,131,135,128,132,128,124,120,123,133,132,130,127,129,128,131,130,127,133,129,128,144,122,35,15,33,107,133,135,131,120,115,118,118,121,118,119,123,126,124,122,118,122,120,117,119,117,125,122,121,124,124,128,139,136,135,135,130,136,132,132,
+        126,132,135,135,140,138,142,143,136,131,135,141,133,135,145,147,149,99,25,16,23,54,43,17,12,11,11,10,9,9,9,10,11,14,15,15,12,9,11,16,17,16,16,21,96,139,133,130,133,141,148,144,77,11,21,112,56,112,137,133,132,135,132,128,126,123,126,129,127,129,132,132,128,130,131,144,143,139,138,132,134,136,135,135,126,135,131,122,127,116,63,13,22,67,117,122,125,124,123,119,111,112,108,116,112,115,115,122,120,118,119,117,119,112,113,114,123,122,120,114,112,111,116,126,117,119,122,119,
+        130,128,131,135,135,133,131,135,129,130,133,135,130,131,141,140,139,90,23,17,18,46,55,36,15,11,11,10,9,8,8,9,9,10,10,11,10,8,10,15,16,17,17,32,106,125,126,123,122,126,130,125,45,10,34,107,58,128,138,135,131,125,121,117,125,121,110,114,116,117,117,118,130,134,139,142,135,126,129,126,137,133,131,128,125,126,121,124,126,120,102,27,16,37,101,124,123,129,129,124,124,120,117,122,121,115,115,126,123,113,106,111,107,116,115,112,114,111,107,104,106,99,96,99,93,82,73,76,
+        119,124,122,121,115,115,115,116,112,119,125,126,126,133,137,136,135,77,22,20,17,35,55,52,31,16,11,10,10,8,8,9,9,9,9,9,9,8,9,10,10,11,16,71,110,113,113,114,109,112,107,99,25,10,51,101,57,94,90,100,101,103,101,97,109,109,106,118,118,121,125,127,137,141,141,134,131,128,139,140,136,130,135,126,119,116,126,130,125,126,138,68,13,26,75,121,122,125,124,121,123,121,110,115,111,120,121,127,126,119,120,125,122,129,125,129,130,117,109,110,116,111,113,103,107,105,97,96,
+        116,121,120,117,119,117,122,132,135,137,135,134,135,138,142,144,142,76,21,21,18,28,50,56,46,31,22,14,11,10,9,9,9,9,10,10,10,9,9,9,10,10,21,99,125,127,132,125,115,117,121,89,17,11,73,80,65,92,87,105,109,117,111,125,122,121,123,129,128,131,133,130,141,137,141,142,141,137,142,141,133,130,137,131,140,136,129,137,144,142,143,107,22,18,45,121,134,136,135,123,130,132,117,113,109,115,125,124,116,111,121,118,113,112,121,123,130,130,128,123,121,117,118,118,112,110,113,114,
+        125,131,127,128,129,133,126,136,137,129,133,140,138,141,139,144,143,73,22,21,17,25,45,57,53,48,36,25,16,11,9,9,9,9,10,10,10,10,10,10,10,12,29,93,113,110,102,100,94,98,108,70,11,12,95,62,83,113,127,129,119,114,113,117,110,99,96,99,103,122,128,128,134,123,130,139,141,136,142,139,142,139,137,133,144,142,134,138,144,148,141,127,54,13,27,91,139,140,137,134,132,137,133,121,125,128,123,122,122,123,127,131,128,126,130,134,121,125,133,128,133,127,124,125,117,119,122,117,
+        123,127,124,123,122,128,124,125,123,121,130,128,131,126,125,131,135,66,22,22,17,24,43,57,58,56,51,44,35,26,14,9,9,9,10,10,10,10,10,10,13,23,40,102,118,108,105,111,127,122,115,53,9,19,106,54,109,126,125,122,121,119,117,112,110,107,108,112,115,126,142,134,121,120,129,134,132,136,140,142,140,145,147,141,144,141,142,134,138,143,128,128,95,18,19,52,116,120,123,120,127,126,119,108,114,115,115,118,126,128,122,120,122,117,116,115,111,119,114,112,119,119,123,120,117,119,116,113,
+        119,121,120,121,127,132,127,126,121,119,128,129,127,126,126,136,138,62,23,25,19,23,43,56,58,58,54,57,58,55,28,10,10,10,10,10,10,12,17,25,35,43,60,115,125,115,120,119,119,118,103,34,9,33,114,52,107,112,116,113,116,131,126,128,132,129,122,130,120,117,124,122,125,128,130,130,133,139,135,131,126,142,137,123,126,130,131,129,128,137,133,136,128,42,14,32,92,130,128,120,121,124,125,123,112,109,122,113,119,129,117,116,117,114,124,118,111,115,112,109,104,113,124,118,110,111,112,110,
+        124,121,123,137,139,133,124,125,130,128,128,130,125,131,135,141,132,54,24,24,19,21,39,56,59,54,54,58,61,82,38,9,9,10,10,10,12,21,45,55,57,52,83,130,130,121,122,128,125,124,102,52,38,43,101,67,127,111,108,110,115,130,130,117,123,133,127,129,124,123,118,122,124,127,128,131,125,136,145,144,132,138,129,130,131,140,137,137,128,130,130,120,129,78,16,42,115,133,126,122,117,120,122,121,127,120,113,119,123,126,129,126,120,126,136,121,121,125,113,108,111,109,114,109,105,111,118,110,
+        123,129,136,137,138,126,131,136,137,138,132,135,135,142,135,145,128,50,26,27,19,19,35,55,61,49,45,52,65,113,38,15,15,10,10,11,18,28,46,59,59,54,95,139,133,130,125,131,128,125,89,60,50,78,89,77,136,126,122,119,125,137,130,125,120,128,146,140,142,134,127,140,137,134,129,131,133,135,141,140,143,134,138,137,134,143,134,128,129,125,128,121,129,117,72,152,210,165,135,129,129,127,121,120,127,120,112,123,125,123,126,126,119,119,120,125,134,123,120,114,115,116,119,114,132,128,123,111,
+        123,125,129,121,123,128,130,122,119,132,123,115,125,126,124,127,112,41,28,34,23,18,30,53,60,50,41,42,84,120,47,25,21,11,17,24,18,26,41,55,59,63,110,140,135,143,132,133,126,123,84,66,151,190,153,105,124,131,125,130,140,138,131,127,121,128,132,133,137,135,127,131,135,132,119,119,125,120,120,122,118,119,130,124,132,135,132,125,133,129,135,124,128,124,97,163,208,179,139,128,124,131,124,122,122,123,119,120,125,128,127,121,129,122,116,119,120,122,117,116,120,115,115,116,118,120,131,124,
+        113,114,116,114,109,115,114,110,108,116,118,113,107,105,103,112,114,39,27,38,28,16,25,47,57,49,39,40,102,122,46,26,23,12,28,41,25,21,37,52,56,69,126,133,125,132,124,129,130,124,88,80,206,229,219,147,121,124,128,118,120,125,118,120,124,126,129,126,130,126,125,123,116,119,115,112,112,118,129,120,121,125,133,120,129,127,119,120,136,134,133,129,119,123,101,101,145,162,122,121,122,121,112,112,104,115,120,109,105,105,99,113,122,111,115,104,104,106,108,114,116,108,111,112,113,116,106,100,
+        113,116,111,118,111,110,119,105,113,123,133,123,116,121,122,126,126,40,29,39,38,20,23,47,61,50,41,46,123,135,52,31,35,26,25,38,36,23,31,52,59,88,138,140,141,141,135,130,132,132,76,97,218,246,229,146,129,128,130,119,119,122,126,130,135,127,129,131,121,122,134,125,115,126,128,121,127,131,123,116,120,124,143,125,130,128,126,123,132,142,146,131,124,128,126,81,97,193,140,120,116,125,122,117,107,127,121,120,111,111,103,115,119,116,111,108,108,110,113,117,123,111,121,124,126,127,113,104,
+        125,128,126,127,136,128,127,120,132,127,135,136,131,126,130,128,112,36,28,39,46,27,20,41,58,47,40,49,128,137,59,34,45,37,28,26,37,29,27,44,64,105,137,132,136,126,120,123,131,126,62,81,184,225,168,148,130,135,129,127,129,134,119,134,143,132,122,132,122,121,124,132,128,129,125,120,125,123,119,115,112,125,128,118,123,132,121,123,121,120,125,125,122,121,124,99,70,167,169,110,108,105,120,119,114,115,104,101,105,102,98,113,111,110,105,106,99,105,102,107,111,103,112,117,129,126,120,123,
+        137,141,137,139,140,136,127,126,129,124,130,135,139,133,129,131,119,38,29,37,51,39,19,33,55,45,39,63,120,146,69,36,48,37,28,25,28,31,26,32,60,117,128,121,120,125,119,126,134,110,51,104,207,220,134,132,134,124,126,123,128,139,117,124,135,122,124,127,137,135,130,138,132,119,128,124,125,120,127,132,125,130,130,133,118,110,105,108,115,107,110,116,110,114,116,102,68,116,193,130,122,107,113,121,118,112,112,108,120,109,104,114,117,113,100,101,99,99,106,99,94,100,111,130,122,130,125,120,
+        132,142,144,145,133,137,129,124,122,125,127,119,126,124,117,132,126,38,29,32,50,50,26,24,50,43,37,81,124,128,68,39,49,37,24,22,22,24,24,24,52,122,124,122,120,130,127,134,140,100,48,125,224,202,143,136,129,122,128,129,132,141,131,133,132,117,121,126,127,123,114,118,120,121,127,125,130,125,125,136,127,123,128,130,131,124,124,128,128,120,118,121,111,114,128,118,93,77,178,160,122,116,115,120,111,111,105,116,131,115,121,123,126,118,105,108,108,98,111,113,104,114,118,131,116,116,114,108,
+        123,123,124,124,124,129,124,115,120,114,120,122,123,123,113,128,126,38,32,27,43,57,37,21,39,39,38,101,134,134,79,41,45,39,27,21,19,18,19,20,40,116,130,125,120,129,137,133,137,86,53,148,233,183,128,123,111,121,138,131,122,136,138,137,142,135,123,128,123,122,120,123,127,121,128,131,129,136,131,125,135,130,133,139,140,136,133,121,125,130,120,117,119,125,131,121,125,76,130,187,131,124,117,116,118,115,99,103,123,120,122,119,109,120,108,115,109,103,114,112,107,122,125,124,114,110,119,123,
+        136,125,118,122,126,136,119,121,129,138,132,131,131,132,119,121,116,35,32,27,34,54,49,27,33,39,48,117,137,134,87,49,62,57,51,43,34,26,19,18,31,96,124,123,123,122,109,108,110,63,66,169,235,159,105,107,108,112,114,110,113,115,119,129,133,132,122,127,125,123,107,119,130,121,128,129,128,133,135,126,122,124,121,127,126,127,133,130,123,126,118,122,128,126,121,114,125,88,85,186,146,108,115,118,124,113,115,112,114,124,129,119,111,105,107,110,103,108,110,107,117,129,114,112,118,106,112,115,
+        127,111,106,119,135,141,132,125,124,127,121,118,124,127,117,116,99,32,32,27,25,48,54,37,37,48,77,126,133,138,92,41,66,66,66,63,61,58,48,27,22,91,124,118,118,118,115,110,102,52,84,191,232,138,111,119,114,117,122,117,111,113,117,123,133,137,126,123,120,116,115,134,135,129,131,138,141,134,139,130,127,132,124,127,120,119,125,134,132,129,124,118,119,123,118,112,125,104,70,150,181,120,122,122,127,130,133,126,113,114,124,115,104,100,107,109,109,107,109,109,100,104,110,108,107,108,115,117,
+        114,115,109,121,125,123,125,123,119,122,131,120,124,117,108,113,95,30,35,31,21,40,56,43,40,51,103,131,145,132,94,29,60,69,64,62,64,65,66,50,22,85,122,118,118,128,129,119,96,47,105,210,223,124,117,134,127,130,133,125,128,129,122,128,137,131,128,118,117,113,109,119,114,120,123,127,137,126,126,120,124,135,131,131,134,133,142,131,134,142,138,119,113,121,119,121,139,118,84,98,193,146,123,126,124,130,133,130,127,127,122,126,110,110,125,123,112,121,117,116,114,125,117,120,122,119,130,120,
+        127,118,123,116,122,123,118,127,129,118,129,129,119,116,124,131,90,29,38,34,21,32,55,50,43,69,130,127,135,123,92,24,40,63,63,57,44,33,28,23,23,96,118,120,122,120,132,132,89,49,125,223,206,134,138,133,127,127,127,115,122,131,129,125,124,117,123,124,124,120,123,110,102,111,116,114,124,122,104,110,118,132,135,128,137,131,138,131,131,132,129,128,127,115,116,117,128,119,108,74,160,170,115,119,127,127,126,124,136,136,136,130,123,124,126,111,109,122,111,109,109,129,111,112,123,126,122,109,
+        115,110,123,120,120,120,114,123,120,118,117,108,107,113,137,145,84,29,41,40,22,24,47,54,47,69,123,113,108,120,93,23,21,46,59,60,55,54,46,20,27,110,117,116,125,116,128,118,74,57,152,233,184,129,133,120,116,125,129,129,132,133,118,124,130,129,123,122,120,116,121,106,101,116,134,138,127,128,123,121,123,108,116,121,127,123,129,137,126,117,125,122,127,125,125,111,118,119,122,86,110,193,131,112,110,116,122,124,130,119,130,121,113,118,120,108,105,125,111,112,118,113,102,108,105,103,100,105,
+        120,115,120,129,132,115,123,130,118,122,117,130,131,127,140,134,73,29,41,44,26,19,34,45,46,60,107,107,110,128,103,24,14,30,51,68,67,67,63,27,40,105,109,122,132,118,119,122,61,69,173,237,166,123,127,122,115,118,123,130,128,129,111,122,129,128,122,125,130,113,118,119,116,115,127,128,139,127,129,132,132,106,110,125,121,122,112,127,126,121,125,118,121,124,118,122,120,119,122,109,76,172,163,118,102,98,98,102,114,106,112,107,104,112,115,112,113,123,114,107,122,118,113,113,103,114,126,123,
+        124,135,138,150,151,133,130,134,121,120,128,144,160,146,136,135,72,30,42,46,30,19,30,39,47,54,93,116,120,132,105,24,13,23,43,67,68,65,64,29,54,97,110,119,120,131,120,116,55,81,183,233,142,116,115,115,117,105,97,124,107,116,111,107,117,128,125,124,109,102,124,123,115,115,119,122,131,114,126,126,132,128,118,142,125,114,120,128,121,136,129,112,122,118,105,108,99,119,118,126,71,139,190,148,134,105,82,101,113,109,125,124,114,110,110,103,117,121,130,137,141,128,109,110,106,126,128,122
+    };
+    return ImageUInt8::fromRaw(img, 128, 128);
 }
 
 inline ImageUInt8Ptr getPeppersImage(){
@@ -806,8 +1053,8 @@ inline ImageUInt8Ptr getCharImage(){
         50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,48,35,33,33,33,44,50,50,50,50,50,50,63,67,67,67,69,78,84,84,84,71,59,50,50,50,50,39,33,33,33,33,33,33,33,33,44,52,65,67,67,67,67,67,67,67,67,71,84,84,84,84,84,84,84,84,84,103,164,168,174,232,236,236,236,236,236,236,236,198,151,151,142,134,134,134,134,134,134,134,134,134,134,134,134,134,134,134,134,134,134,120,118,118,118,118,118,101,99,92,
         50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,41,33,33,33,33,33,48,50,50,50,50,50,61,67,67,67,67,69,80,84,76,67,52,50,50,50,48,33,33,33,33,33,33,33,33,33,46,65,67,67,67,67,67,67,67,67,67,67,84,84,84,84,84,84,84,84,84,112,168,168,185,234,236,236,236,236,236,236,236,213,162,151,145,134,134,134,134,134,134,134,134,134,134,134,134,134,134,134,134,134,127,118,118,118,118,118,118,101,88,84,
         31,50,50,50,44,44,46,50,50,50,50,50,50,44,44,44,50,50,50,50,50,50,50,50,50,50,50,50,39,33,33,33,33,33,22,27,27,27,27,27,61,67,67,67,67,67,67,67,67,58,41,39,39,39,33,33,33,33,33,33,33,33,33,33,58,67,67,67,67,67,67,67,67,67,67,67,80,84,84,84,84,84,84,84,88,133,168,168,193,225,234,236,236,236,236,236,236,217,168,155,151,134,134,134,134,134,130,123,123,123,123,123,123,123,123,123,121,110,107,107,107,116,118,118,118,101,84,84};
-    
     return ImageUInt8::fromRaw(img, 140, 128);
+        
 }
 
 
@@ -881,66 +1128,40 @@ inline ImageUInt8Ptr getLenaCropImage(){
     152,	159,	160,	160,	160,	163,	160,	165,	165,	164,	169,	168,	165,	166,	170,	169,	173,	175,	178,	178,	182,	182,	188,	188,	190,	188,	190,	194,	196,	196,	196,	200,	200,	202,	204,	205,	207,	205,	208,	209,	208,	209,	209,	211,	210,	210,	209,	209,	214,	215,	211,	213,	212,	207,	194,	128,	86,	85,	94,	95,	103,	108,	101,	105,	103,	110,	109,	111,	107,	107,	107,	114,	104,	109,	102,	98,	98,	104,	110,	103,	102,
     154,	164,	164,	159,	159,	162,	161,	162,	165,	165,	171,	167,	166,	169,	167,	170,	174,	173,	177,	179,	181,	183,	183,	187,	188,	189,	191,	194,	196,	196,	198,	200,	200,	200,	204,	203,	202,	203,	207,	209,	210,	210,	210,	210,	212,	210,	212,	211,	212,	217,	214,	211,	212,	207,	200,	146,	88,	91,	86,	97,	96,	100,	99,	107,	108,	103,	113,	111,	106,	106,	107,	111,	108,	104,	104,	105,	103,	107,	106,	100,	106,
     153,	155,	158,	160,	160,	159,	161,	163,	163,	166,	167,	166,	166,	170,	170,	169,	178,	174,	171,	178,	182,	182,	183,	183,	190,	188,	187,	191,	191,	194,	195,	197,	202,	199,	204,	203,	204,	203,	207,	209,	210,	210,	210,	210,	213,	210,	209,	211,	211,	216,	211,	213,	212,	206,	202,	164,	98,	84,	88,	92,	103,	101,	103,	106,	106,	104,	106,	107,	103,	108,	108,	115,	114,	102,	110,	101,	100,	102,	104,	100,	105};
-
     return ImageUInt8::fromRaw(img, 68, 81);
-}
-
-inline ImageUInt8Ptr getICIP14Image(){
-    auto img=new uint8_t[49]{
-        0, 0, 0, 0, 0, 0, 0,
-        0, 4, 4, 4, 7, 7, 7,
-        0, 7, 7, 4, 7, 4, 7,
-        0, 7, 4, 4, 7, 4, 7,
-        0, 4, 4, 4, 7, 4, 7,
-        0, 7, 7, 4, 7, 7, 7,
-        0, 0, 0, 0, 0, 0, 0
-    };
-    return ImageUInt8::fromRaw(img, 7, 7);
+    
 }
 
 
+/**
+ * @brief Retorna uma imagem de teste simples 17x15.
+ * @note Mantém apenas a segunda definição (a primeira está comentada).
+ * @return Ponteiro para imagem 17x15.
+ */
 inline ImageUInt8Ptr getSimpleImage(){
     /*
     auto img=new uint8_t[255]{
-        122, 127, 166, 201, 152,  96,  54,  44,  40,  41,  42,  43,  44,  44,  37, 
-        133, 143, 213, 246, 236, 196, 137,  85,  55,  43,  44,  45,  35,  40,  42, 
-        133, 168, 231, 242, 246, 246, 228, 172, 111,  74,  76,  80,  54,  52,  41, 
-        147, 215, 222, 199, 220, 235, 244, 237, 205, 172, 181, 186, 106,  57,  47, 
-        164, 235, 224, 149, 168, 208, 231, 244, 248, 246, 246, 230, 133,  58,  62,
-        140, 224, 237, 161, 128, 149, 180, 227, 245, 248, 247, 243, 189, 103,  94, 
-        134, 211, 240, 181, 109, 105, 120, 168, 223, 240, 241, 246, 237, 176, 110, 
-        117, 188, 244, 210, 111,  74,  86, 144, 215, 230, 219, 227, 232, 212, 133,  
-        66, 159,  242, 238, 149,  75,  78, 163, 238, 212, 172, 198, 219, 175, 111,  
-        75, 144,  231, 244, 171,  81, 113, 212, 222, 149, 108, 115, 137, 118,  99,
-        78, 139,  222, 245, 185, 115, 176, 229, 176,  85,  62,  79,  95,  98, 107,  
-        48, 102,  199, 241, 220, 171, 220, 208, 125,  47,  45,  73,  90,  98, 104,  
-        41,  72,  171, 240, 242, 233, 226, 149,  65,  39,  60,  97, 104, 106, 112,
-        54,  68,  140, 228, 238, 236, 194, 100,  44,  48,  85, 100, 104, 107, 122,  
-        54,  54,   94, 181, 222, 214, 141,  67,  40,  72,  99, 105, 106, 109, 123,  
-        54,  48,   59,  95, 145, 158,  84,  52,  60,  96, 110, 115, 116, 110, 113,  
-        49,  45,   44,  48,  71,  89,  49,  47,  71,  95, 162, 156, 119, 122, 111};
-      
-    auto img=new uint8_t[255]{
-        14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14,
-        14, 14,213,253,241,193,122, 60, 14, 14, 14, 14, 14, 14, 14,
-        14,159,235,248,253,253,231,164, 91, 47, 49, 14, 14, 14, 14,
-        14,215,224,196,221,239,250,242,204,164,175,181, 85, 14, 14,
-        14,239,226,136,159,207,235,250,255,253,253,233,117, 14, 14,
-        14,226,242,151, 14, 14,174,230,251,255,254,249,184, 81, 14,
-        14,211,245,175, 14, 14, 14, 159,225,245,247,253,242,169,14,
-        14,183,250,210, 14, 14, 14, 130,215,233,220,230,236,212,14,
-        14,148,248,243,136, 14, 14, 153,243,212,164,195,220,168,14,
-        14,130,235,250,163, 14, 93, 212,224,136, 87, 96,122, 99,14,
-        14,125,224,251,180, 96,169, 232,169, 60, 32, 53, 72, 14,14,
-        14, 80,196,247,221,163,221, 207,108, 14, 12, 14, 14, 14,14,
-        14, 44,163,245,248,237,229, 136, 36, 14, 14, 14, 14, 14,14,
-        14, 40,126,231,243,241,190,  78, 14, 16, 14, 14, 14, 14,14,
-        14, 14, 71,175,224,214,127,  14, 14, 14, 14, 14, 14, 14,14,
-        14, 14, 29, 72,132,147, 59,  14, 14, 14, 14, 14, 14, 14,14,
-        14, 14, 14, 14, 14, 14, 14,  14, 14, 14, 14, 14, 14, 14,14};
-         
-        */
-        
+        122, 127, 166, 201, 152,  96,  54,  44,  40,  41,  42,  43,  44,
+        44,  37, 133, 143, 213, 246, 236, 196, 137,  85,  55,  43,  44,
+        45,  35,  40,  42, 133, 168, 231, 242, 246, 246, 228, 172, 111,
+        74,  76,  80,  54,  52,  41, 147, 215, 222, 199, 220, 235, 244,
+       237, 205, 172, 181, 186, 106,  57,  47, 164, 235, 224, 149, 168,
+       208, 231, 244, 248, 246, 246, 230, 133,  58,  62, 140, 224, 237,
+       161, 128, 149, 180, 227, 245, 248, 247, 243, 189, 103,  94, 134,
+       211, 240, 181, 109, 105, 120, 168, 223, 240, 241, 246, 237, 176,
+       110, 117, 188, 244, 210, 111,  74,  86, 144, 215, 230, 219, 227,
+       232, 212, 133,  66, 159, 242, 238, 149,  75,  78, 163, 238, 212,
+       172, 198, 219, 175, 111,  75, 144, 231, 244, 171,  81, 113, 212,
+       222, 149, 108, 115, 137, 118,  99,  78, 139, 222, 245, 185, 115,
+       176, 229, 176,  85,  62,  79,  95,  98, 107,  48, 102, 199, 241,
+       220, 171, 220, 208, 125,  47,  45,  73,  90,  98, 104,  41,  72,
+       171, 240, 242, 233, 226, 149,  65,  39,  60,  97, 104, 106, 112,
+        54,  68, 140, 228, 238, 236, 194, 100,  44,  48,  85, 100, 104,
+       107, 122,  54,  54,  94, 181, 222, 214, 141,  67,  40,  72,  99,
+       105, 106, 109, 123,  54,  48,  59,  95, 145, 158,  84,  52,  60,
+        96, 110, 115, 116, 110, 113,  49,  45,  44,  48,  71,  89,  49,
+        47,  71,  95, 162, 156, 119, 122, 111};
+    */
 
         auto img=new uint8_t[255]{
             10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
@@ -960,9 +1181,20 @@ inline ImageUInt8Ptr getSimpleImage(){
             10, 10, 10,150,225,255,150,  10, 10, 10, 10, 10, 10, 10,10,
             10, 10, 10, 10,150,150, 10,  10, 10, 10, 10, 10, 10, 10,10,
             10, 10, 10, 10, 10, 10, 10,  10, 10, 10, 10, 10, 10, 10,10};
-    
-
     return ImageUInt8::fromRaw(img, 17, 15);
+}
+
+inline ImageUInt8Ptr getICIP14Image(){
+    auto img=new uint8_t[49]{
+        0, 0, 0, 0, 0, 0, 0,
+        0, 4, 4, 4, 7, 7, 7,
+        0, 7, 7, 4, 7, 4, 7,
+        0, 7, 4, 4, 7, 4, 7,
+        0, 4, 4, 4, 7, 4, 7,
+        0, 7, 7, 4, 7, 7, 7,
+        0, 0, 0, 0, 0, 0, 0
+    };
+    return ImageUInt8::fromRaw(img, 7, 7);
 }
 
 

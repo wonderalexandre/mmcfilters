@@ -9,6 +9,9 @@
 
 class UltimateAttributeOpening;
 using UltimateAttributeOpeningPtr = std::shared_ptr<UltimateAttributeOpening>;
+/**
+ * @brief Realiza Ultimate Attribute Opening acumulando contrastes máximos.
+ */
 class UltimateAttributeOpening{
 
   protected:

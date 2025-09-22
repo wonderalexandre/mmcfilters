@@ -8,6 +8,13 @@
 
 #define PI 3.14159265358979323846
 
+/**
+ * @brief Interface base para computadores de atributos associados a árvores morfológicas.
+ *
+ * Define o contrato para classes que preenchem buffers de atributos, incluindo
+ * metadados sobre atributos produzidos e dependências necessárias para o
+ * cálculo incremental.
+ */
 class AttributeComputer {
 	public:
 		virtual ~AttributeComputer() = default;
@@ -31,6 +38,9 @@ using AttributeComputerPtr = std::shared_ptr<AttributeComputer>;
 
 
 
+/**
+ * @brief Computa a área (número de pixels) de cada nó da árvore.
+ */
 class AreaComputer : public AttributeComputer {
 public:
     std::vector<Attribute> attributes() const override { return {AREA}; }
@@ -44,6 +54,9 @@ public:
     }
 };
 
+/**
+ * @brief Calcula volume e volume relativo acumulando níveis cinza sobre a árvore.
+ */
 class VolumeComputer : public AttributeComputer {
 public:
     std::vector<Attribute> attributes() const override { return {VOLUME, RELATIVE_VOLUME}; }
@@ -77,6 +90,9 @@ public:
     }
 };
 
+/**
+ * @brief Avalia estatísticas básicas de níveis de cinza (média, variância, altura).
+ */
 class GrayLevelStatsComputer : public AttributeComputer {
 public:
     std::vector<Attribute> attributes() const override {
@@ -258,6 +274,9 @@ public:
     }
 };
 
+/**
+ * @brief Calcula momentos centrais geométricos até a terceira ordem.
+ */
 class CentralMomentsComputer : public AttributeComputer {
 public:
     std::vector<Attribute> attributes() const override {
@@ -346,6 +365,9 @@ public:
     }
 };
 
+/**
+ * @brief Deriva atributos baseados em momentos (eixos principais, excentricidade, etc.).
+ */
 class MomentBasedAttributeComputer : public AttributeComputer {
 public:
     std::vector<Attribute> attributes() const override {
@@ -457,6 +479,9 @@ public:
 };
 
 
+/**
+ * @brief Avalia os sete momentos invariantes de Hu para cada nó.
+ */
 class HuMomentsComputer : public AttributeComputer {
 public:
     std::vector<Attribute> attributes() const override {
@@ -532,6 +557,9 @@ public:
     }
 };
 
+/**
+ * @brief Produz atributos estruturais relacionados à topologia da árvore.
+ */
 class TreeTopologyComputer : public AttributeComputer {
 public:
     std::vector<Attribute> attributes() const override {
@@ -649,6 +677,9 @@ public:
 
 
 
+/**
+ * @brief Calcula atributos derivados dos padrões Bit-Quads da região.
+ */
 class BitquadsComputer : public AttributeComputer {
 	public:
 		
@@ -708,6 +739,9 @@ class BitquadsComputer : public AttributeComputer {
 };
 
 
+/**
+ * @brief Fábrica responsável por instanciar computadores de atributos sob demanda.
+ */
 class AttributeFactory {
 	private:
 		static std::shared_ptr<AttributeComputer> createImpl(Attribute attr) {

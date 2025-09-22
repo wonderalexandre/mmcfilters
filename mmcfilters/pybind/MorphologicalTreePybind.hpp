@@ -18,6 +18,9 @@ namespace py = pybind11;
 class MorphologicalTreePybind;
 using MorphologicalTreePybindPtr = std::shared_ptr<MorphologicalTreePybind>;
 
+/**
+ * @brief Interface Pybind da árvore morfológica com utilidades de reconstrução.
+ */
 class MorphologicalTreePybind : public MorphologicalTree {
 
 

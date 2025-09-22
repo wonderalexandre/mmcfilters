@@ -10,6 +10,14 @@
 class NodeRes;
 using NodeResPtr = std::shared_ptr<NodeRes>;
 
+/**
+ * @brief Representa um nó da árvore residual utilizada em filtragens por
+ * resíduos.
+ *
+ * Cada instância armazena relações de parentesco, o conjunto de nós do
+ * subárvore residual e informações auxiliares para reconstruir pixels
+ * associados às regiões preservadas durante a filtragem.
+ */
 class NodeRes : public std::enable_shared_from_this<NodeRes> {
 
     private:

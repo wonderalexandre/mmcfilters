@@ -19,6 +19,9 @@
 
 #define UNDEF -999999999999
 
+/**
+ * @brief *Wrapper* Pybind11 para expor filtragens por atributos ao Python.
+ */
 class AttributeFiltersPybind : public AttributeFilters{
 
 

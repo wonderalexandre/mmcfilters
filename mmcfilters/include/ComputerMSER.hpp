@@ -7,6 +7,9 @@
 #define UNDEF -999999999999
 
 
+/**
+ * @brief Identifica regiões MSER na árvore com base em estabilidade de atributos.
+ */
 class ComputerMSER {
 private:
 	

@@ -21,39 +21,17 @@
 class Contours; 
 class AttributeComputer; 
 
+using DependencyMap = std::unordered_map<Attribute, std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>>>;
+
 /**
  * @brief Funções utilitárias para computar atributos em árvores de forma incremental.
  *
  * A classe expõe algoritmos genéricos de travessia pós-ordem permitindo
  * compor etapas de pré-processamento, mesclagem e pós-processamento sem criar
- * estruturas auxiliares temporárias. Também oferece helpers para extração de
- * contornos e avaliação de atributos disponíveis.
+ * estruturas auxiliares temporárias. 
  */
 class AttributeComputedIncrementally {
 public:
-    
- /*
-    virtual void preProcessing(NodeId v);
-
-    virtual void mergeChildren(NodeId parent, NodeId child);
-
-    virtual void postProcessing(NodeId parent);
-
-    void computerAttribute(MorphologicalTree* tree, NodeId root);
-
-    static void computerAttribute(MorphologicalTree* tree, NodeId root, 
-										std::function<void(NodeId)> preProcessing,
-										std::function<void(NodeId, NodeId)> mergeChildren,
-										std::function<void(NodeId)> postProcessing ){
-		
-		preProcessing(root);
-		for(NodeId child: tree->getChildrenById(root)){
-			AttributeComputedIncrementally::computerAttribute(tree, child, preProcessing, mergeChildren, postProcessing);
-			mergeChildren(root, child);
-		}
-		postProcessing(root);
-	}*/
-
     
     template<class PreProcessing, class MergeProcessing, class PostProcessing>
     static void computerAttribute(MorphologicalTree* tree, NodeId root, 
@@ -100,10 +78,6 @@ public:
 
 
 
-
-/*
-Computacao incremental de countours
-*/
 /**
  * @brief Estrutura auxiliar para construir contornos compactos a partir da árvore.
  *

@@ -1193,3 +1193,4 @@ private:
     }
 };
 
+#include "MorphologicalTree.tpp"

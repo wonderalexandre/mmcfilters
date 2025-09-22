@@ -13,18 +13,18 @@ class AttributeOpeningPrimitivesFamily;
 using AttributeOpeningPrimitivesFamilyPtr = std::shared_ptr<AttributeOpeningPrimitivesFamily>;
 
 /**
- * @brief Gerencia famílias de primitivas para abertura por atributos.
+ * @brief Gerencia famílias de primitivas de abertura por atributos.
  *
  * Mantém thresholds, nós selecionados e imagem residual necessários para
- * aplicar estratégias de abertura incremental sobre árvores morfológicas.
+ * construir uma árvore residual a partir de uma família de primitivas
  */
 class AttributeOpeningPrimitivesFamily{
   
   protected:
     std::shared_ptr<float[]> attrs_increasing;
     float maxCriterion;
-    std::list<float> thresholds;
-    std::list<NodeId> nodesWithMaximumCriterium;
+    std::vector<float> thresholds;
+    std::vector<NodeId> nodesWithMaximumCriterium;
 
     //PrimitivesFamily
     MorphologicalTree* tree;
@@ -35,7 +35,12 @@ class AttributeOpeningPrimitivesFamily{
 
     void initializeRestOfImage(float threshold);
     void initializeNodesWithMaximumCriterium();
-    
+    void make_unique_vector(std::vector<float>& v) {
+          std::sort(v.begin(), v.end());
+          auto new_end = std::unique(v.begin(), v.end());
+          v.erase(new_end, v.end());
+    }
+
   public:
     AttributeOpeningPrimitivesFamily(MorphologicalTreePtr tree,   std::shared_ptr<float[]> attr, float maxCriterion): AttributeOpeningPrimitivesFamily(tree.get(), attr, maxCriterion) {}
     AttributeOpeningPrimitivesFamily(MorphologicalTree* tree,   std::shared_ptr<float[]> attr, float maxCriterion);
@@ -45,14 +50,14 @@ class AttributeOpeningPrimitivesFamily{
 
     ~AttributeOpeningPrimitivesFamily();
 
-    std::list<float> getThresholdsPrimitive();
+    std::vector<float> getThresholdsPrimitive();
 
     //PrimitivesFamily
     bool isSelectedForPruning(NodeId node) ; //first Node in Nr(i)
 
     bool hasNodeSelectedInPrimitive(NodeId node) ; //has node selected inside Nr(i)
 
-    std::list<NodeId> getNodesWithMaximumCriterium() ; 
+    std::vector<NodeId> getNodesWithMaximumCriterium() ; 
 
     ImageUInt8Ptr getRestOfImage() ;
 

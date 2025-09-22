@@ -1,6 +1,6 @@
 #include "../include/AttributeOpeningPrimitivesFamily.hpp"
 #include "../include/AttributeFilters.hpp"
-#include "../include/ComputerMSER.hpp"
+
 
 #include <vector>
 #include <stack>
@@ -43,15 +43,14 @@ int AttributeOpeningPrimitivesFamily::getNumPrimitives(){
   return this->numPrimitives;
 }
 
-std::list<float> AttributeOpeningPrimitivesFamily::getThresholdsPrimitive(){
+std::vector<float> AttributeOpeningPrimitivesFamily::getThresholdsPrimitive(){
   if(this->thresholds.size() == 0){
     for(NodeId node: this->tree->getNodeIds()){
       if(this->attrs_increasing[node] <= this->maxCriterion && this->isSelectedForPruning(node)){
         this->thresholds.push_back(this->attrs_increasing[node]);
       }
     }
-    this->thresholds.sort();
-    this->thresholds.unique();
+    this->make_unique_vector(this->thresholds);
   }
   return thresholds;
 }
@@ -113,7 +112,7 @@ void AttributeOpeningPrimitivesFamily::initializeNodesWithMaximumCriterium(){
 
 }
 
-std::list<NodeId> AttributeOpeningPrimitivesFamily::getNodesWithMaximumCriterium(){
+std::vector<NodeId> AttributeOpeningPrimitivesFamily::getNodesWithMaximumCriterium(){
   return this->nodesWithMaximumCriterium;
 }
 

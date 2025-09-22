@@ -6,8 +6,8 @@
 #include <iostream>
 #include <iomanip>
 #include <utility>
-#include <algorithm> 
-
+#include <algorithm>
+#include <cmath>
 
 #include "../include/MorphologicalTree.hpp"
 #include "../include/NodeMT.hpp"
@@ -81,71 +81,6 @@ void MorphologicalTree::build(const ImageUInt8Ptr& imgPtr, IMorphologicalTreeBui
 }
 
 
-template <typename PixelType>
-MorphologicalTreePtr MorphologicalTree::createFromAttributeMapping(ImagePtr<PixelType> attrMappingPtr, ImageUInt8Ptr imgPtr, bool isMaxtree, double radius) {
-    AdjacencyRelationPtr adj = std::make_shared<AdjacencyRelation>(imgPtr->getNumRows(), imgPtr->getNumCols(), radius);	
-    MorphologicalTreePtr tree = MorphologicalTree::create(imgPtr->getNumRows(), imgPtr->getNumCols(), isMaxtree, adj);
-    BuilderComponentTree builderUF(adj.get(), isMaxtree);
-    auto [parent, orderedPixels, numNodes] = builderUF.createTreeByUnionFind(attrMappingPtr);
-
-    int numPixels = imgPtr->getSize();
-    auto img = imgPtr->rawData();
-    auto attrMapping = attrMappingPtr->rawData();
-
-    tree->reserveNodes(numNodes);
-    tree->pixelBuffer = std::make_shared<PixelSetManager>(numPixels, numNodes);
-    tree->pixelView = tree->pixelBuffer->view();
-    int indice = 0;
-    float epsilon = 1e-5f; // Tolerância para comparação de pixels flutuantes
-    
-    auto sameLevel = [&](PixelType a, PixelType b){ 
-        if constexpr (std::is_floating_point_v<PixelType>)
-            return std::fabs(attrMapping[a] - attrMapping[parent[b]]) < epsilon; 
-        else
-            return attrMapping[a] == attrMapping[b]; 
-    };
-
-    for (int i = 0; i < numPixels; i++) {
-        int p = orderedPixels[i];
-        //Construção da árvore e arena
-        if (p == parent[p]) {
-            tree->pixelToNodeId[p] = tree->root = tree->makeNode(p, -1, img[p]);
-        } 
-        else if (!sameLevel(p, parent[p])) {
-            tree->pixelToNodeId[p] = tree->makeNode(p, tree->pixelToNodeId[parent[p]], img[p]);
-        } 
-        else {
-            tree->pixelToNodeId[p] = tree->pixelToNodeId[parent[p]];
-        }
-        
-        //Construção de PixelSetManager
-        if (p == parent[p] || !sameLevel(p, parent[p])) {
-            tree->pixelView.indexToPixel[indice] = p;
-            tree->pixelView.pixelToIndex[p] = indice;
-            tree->pixelView.sizeSets[indice] = 1;
-            tree->pixelView.pixelsNext[p] = p;
-            indice++;
-        } else {
-            tree->pixelView.pixelsNext[p] = tree->pixelView.pixelsNext[parent[p]];
-            tree->pixelView.pixelsNext[parent[p]] = p;
-            int idx = tree->pixelView.pixelToIndex[parent[p]];
-            tree->pixelView.sizeSets[idx]++;
-        }
-    }
-    tree->computerTreeAttributes();
-
-    //ajustar o level de cada nó
-    for(NodeId id: tree->getNodeIds()){
-        int media = 0;
-        for(int p: tree->getCNPsById(id)){
-            media += img[p];
-        }
-        media /=  tree->getNumCNPsById(id); 
-        tree->setLevelById(id, media);
-    }
-    return tree;
-}
-
 
 
 /*inline NodeMT ComponentTree::proxy(NodeId id) const {
@@ -175,9 +110,6 @@ NodeId MorphologicalTree::makeNode(int repNode, NodeId parentId, int threshold2)
     // Encadeia no pai (por ID) se houver
     if (parentId >= 0) {
         addChildById(parentId, id);
-    }
-    else{
-        std::cout<<"Root:" << repNode << std::endl;
     }
     //contador de nós
     this->numNodes++;    

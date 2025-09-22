@@ -33,8 +33,3 @@ area = np.asarray(attrs[1]).reshape(-1)
 flt = mmcfilters.AttributeFilters(tree)
 filtered = flt.filteringDirectRule(area > 50).reshape(img.shape)
 ```
-
-## Documentation and comments
-
-All `class` and `struct` definitions in the project now include updated docstrings and comments to make the C++ codebase easier to
-navigate. Refer to the headers in `mmcfilters/include` and `mmcfilters/pybind` for details about each component.

@@ -27,14 +27,9 @@ inline bool operator&(DiagonalConnection a, DiagonalConnection b) {
 }
 
 
-class AdjacencyUC;  // forward declaration
-using AdjacencyUCPtr = std::shared_ptr<AdjacencyUC>;
 /**
- * @brief Representa adjacência 4/8-conexa opcional com controle sobre diagonais.
+ * @brief Representa adjacência adaptativa para construção da ToS de 4/8-conectividade.
  *
- * Permite habilitar conexões diagonais dinamicamente por pixel, fornecendo
- * iteradores leves para percorrer os vizinhos válidos respeitando as
- * restrições configuradas.
  */
 class AdjacencyUC {
 private:

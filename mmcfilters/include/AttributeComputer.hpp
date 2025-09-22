@@ -9,7 +9,7 @@
 #define PI 3.14159265358979323846
 
 /**
- * @brief Interface base para computadores de atributos associados a árvores morfológicas.
+ * @brief Interface base para computadores de atributos associados a uma árvore morfológica.
  *
  * Define o contrato para classes que preenchem buffers de atributos, incluindo
  * metadados sobre atributos produzidos e dependências necessárias para o
@@ -34,7 +34,6 @@ class AttributeComputer {
 		virtual std::vector<AttributeOrGroup> requiredAttributes() const { return {}; }
 	
 };
-using AttributeComputerPtr = std::shared_ptr<AttributeComputer>;
 
 
 
@@ -91,7 +90,7 @@ public:
 };
 
 /**
- * @brief Avalia estatísticas básicas de níveis de cinza (média, variância, altura).
+ * @brief Calcula estatísticas básicas de níveis de cinza (média, variância, altura).
  */
 class GrayLevelStatsComputer : public AttributeComputer {
 public:
@@ -172,7 +171,7 @@ public:
 };
 
 /**
- * @brief Computador CT do grupo BOUNDING_BOX (mesmos comentários da versão MT).
+ * @brief Calcula atributos baseados em caixa delimitadora (bounding box).
  */
 class BoundingBoxComputer : public AttributeComputer {
 public:
@@ -366,7 +365,7 @@ public:
 };
 
 /**
- * @brief Deriva atributos baseados em momentos (eixos principais, excentricidade, etc.).
+ * @brief Calcula atributos baseados em momentos (eixos principais, excentricidade, etc.).
  */
 class MomentBasedAttributeComputer : public AttributeComputer {
 public:
@@ -480,7 +479,7 @@ public:
 
 
 /**
- * @brief Avalia os sete momentos invariantes de Hu para cada nó.
+ * @brief Calcula os sete momentos invariantes de Hu
  */
 class HuMomentsComputer : public AttributeComputer {
 public:
@@ -558,7 +557,7 @@ public:
 };
 
 /**
- * @brief Produz atributos estruturais relacionados à topologia da árvore.
+ * @brief Calcula atributos estruturais relacionados à topologia da árvore.
  */
 class TreeTopologyComputer : public AttributeComputer {
 public:
@@ -678,7 +677,7 @@ public:
 
 
 /**
- * @brief Calcula atributos derivados dos padrões Bit-Quads da região.
+ * @brief Calcula atributos derivados dos padrões Bit-Quads
  */
 class BitquadsComputer : public AttributeComputer {
 	public:

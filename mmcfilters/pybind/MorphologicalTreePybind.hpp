@@ -27,12 +27,34 @@ class MorphologicalTreePybind : public MorphologicalTree {
  public:
     using MorphologicalTree::MorphologicalTree;
 
-    MorphologicalTreePybind(py::array_t<uint8_t> input, int numRows, int numCols, std::string ToSInperpolation="self-dual")
-        : MorphologicalTree(ImageUInt8::fromExternal(static_cast<uint8_t*>(input.request().ptr), numRows, numCols), ToSInperpolation) { }
+    MorphologicalTreePybind(py::array_t<uint8_t, py::array::c_style | py::array::forcecast> input, std::string ToSInperpolation = "self-dual")
+        : MorphologicalTree(
+              [&]() {
+                  auto buf = input.request();
+                  if (buf.ndim != 2) {
+                      throw std::invalid_argument("input must be a 2D uint8 array");
+                  }
+                  int rows = static_cast<int>(buf.shape[0]);
+                  int cols = static_cast<int>(buf.shape[1]);
+                  return ImageUInt8::fromExternal(static_cast<uint8_t*>(buf.ptr), rows, cols);
+              }(),
+              ToSInperpolation) { }
 
-    MorphologicalTreePybind(py::array_t<uint8_t> input, int numRows, int numCols, bool isMaxtree, double radiusOfAdjacencyRelation=1.5)
-        : MorphologicalTree(ImageUInt8::fromExternal(static_cast<uint8_t*>(input.request().ptr), numRows, numCols), isMaxtree, radiusOfAdjacencyRelation) { }
+    MorphologicalTreePybind(py::array_t<uint8_t, py::array::c_style | py::array::forcecast> input, bool isMaxtree, double radiusOfAdjacencyRelation = 1.5)
+        : MorphologicalTree(
+              [&]() {
+                  auto buf = input.request();
+                  if (buf.ndim != 2) {
+                      throw std::invalid_argument("input must be a 2D uint8 array");
+                  }
+                  int rows = static_cast<int>(buf.shape[0]);
+                  int cols = static_cast<int>(buf.shape[1]);
+                  return ImageUInt8::fromExternal(static_cast<uint8_t*>(buf.ptr), rows, cols);
+              }(),
+              isMaxtree,
+              radiusOfAdjacencyRelation) { }
 
+              
     MorphologicalTreePybind() = delete;
 
     py::array_t<uint8_t> reconstructionImage(){

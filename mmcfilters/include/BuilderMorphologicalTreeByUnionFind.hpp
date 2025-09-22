@@ -14,9 +14,8 @@
 #include <cstdint>
 #include <climits>
 
-// 1) Base como uma interface (sem dados)
 /**
- * @brief Interface para construtores de árvores morfológicas baseados em união.
+ * @brief Interface para construtores de árvores morfológicas baseados em union-find.
  */
 class IMorphologicalTreeBuilder {
 public:
@@ -130,7 +129,7 @@ public:
 
 
 /**
- * @brief Constrói árvores de formas (ToS) usando abordagem bucketed priority.
+ * @brief Constrói árvores de formas (ToS) usando o algoritmo de Thierry Géraud et al.
  */
 class BuilderTreeOfShape: public IMorphologicalTreeBuilder {
 private:
@@ -355,8 +354,6 @@ public:
 
 
         // Aloca memória para os resultados de interpolação (mínimo e máximo)
-        //this->interpolationMin = std::make_unique<uint8_t[]>(size);
-        //this->interpolationMax = std::make_unique<uint8_t[]>(size);
         std::vector<uint8_t> interpolationMin(size);
         std::vector<uint8_t> interpolationMax(size);
 
@@ -556,9 +553,6 @@ public:
         auto [interpolationMin, interpolationMax, adj] = is4c8cConnectivity? interpolateImage4c8c(imgPtr): interpolateImage(imgPtr);
 
         
-        //std::unique_ptr<bool[]> dejavu(new bool[size]());  // Vetor de booleanos, inicializado com false
-        //this->imgR = std::make_unique<int[]>(size);  // Pixels ordenados
-        //this->imgU = std::make_unique<uint8_t[]>(size);        // Níveis de cinza da imagem
         std::vector<uint8_t> dejavu(size, 0);  
         std::vector<int> imgR(size);  // Pixels ordenados
         std::vector<uint8_t> imgU(size);        // Níveis de cinza da imagem

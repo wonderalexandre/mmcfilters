@@ -42,7 +42,7 @@ class ResidualTree{
       this->numNodes = 0;
       
       this->restOfImage = this->primitivesFamily->getRestOfImage();
-      std::list<NodeId > nodesWithMaximumCriterium = this->primitivesFamily->getNodesWithMaximumCriterium();
+      std::vector<NodeId > nodesWithMaximumCriterium = this->primitivesFamily->getNodesWithMaximumCriterium();
       bool isDesirableResidue = false;
       this->root = std::make_shared<NodeRes>(tree, InvalidNode, this->numNodes++, isDesirableResidue);
       for (NodeId nodeMaxCriterion : nodesWithMaximumCriterium){

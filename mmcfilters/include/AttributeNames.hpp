@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../include/Common.hpp"
-#include "../include/AttributeNames.hpp"
 
 enum class Attribute {
     // Geométricos básicos
@@ -356,7 +355,6 @@ public:
 	}
 
 };
-using AttributeNamesWithDeltaPtr = std::shared_ptr<AttributeNamesWithDelta>;
 
 
 /**
@@ -548,5 +546,4 @@ public:
         return std::nullopt;
     }
 };
-using AttributeNamesPtr = std::shared_ptr<AttributeNames>;
-using DependencyMap = std::unordered_map<Attribute, std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>>>;
+

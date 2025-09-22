@@ -3,10 +3,10 @@
 #include "../include/Common.hpp"
 #include "../include/MorphologicalTree.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
-#include "../include/AttributeOpeningPrimitivesFamily.hpp"
+//#include "../include/AttributeOpeningPrimitivesFamily.hpp"
 #include "../include/ComputerMSER.hpp"
-//#include "../include/NodeRes.hpp"
-//#include "../include/ResidualTree.hpp"
+#include "../include/NodeRes.hpp"
+#include "../include/ResidualTree.hpp"
 
 #include <stack>
 #include <vector>
@@ -78,7 +78,7 @@ class AttributeFilters{
         }
     }
 
-    /*
+    
     static void filteringByResidualRule(ResidualTree* rtree, std::shared_ptr<float[]> attribute, float threshold, ImageUInt8Ptr imgOutputPtr){
         std::stack<NodeResPtr> s;
         for (NodeResPtr node : rtree->getRoot()->getChildren()){
@@ -93,11 +93,11 @@ class AttributeFilters{
         while (!s.empty()){
             NodeResPtr node = s.top(); s.pop();
             for (NodeId nodeCT : node->getNodeInNr()){
-                if(tree->getParentById(nodeCT) != InvalidNode){
+                if(ctree->getParentById(nodeCT) != InvalidNode){
                     if(attribute[node->getRootNr()] > threshold)
-                        mapLevel[nodeCT] =  mapLevel[tree->getParentById(nodeCT)] + tree->getResidueById(nodeCT);
+                        mapLevel[nodeCT] =  mapLevel[ctree->getParentById(nodeCT)] + ctree->getResidueById(nodeCT);
                     else
-                        mapLevel[nodeCT] =  mapLevel[tree->getParentById(nodeCT)];
+                        mapLevel[nodeCT] =  mapLevel[ctree->getParentById(nodeCT)];
                 }
             }            
             for (NodeResPtr child : node->getChildren()){
@@ -108,7 +108,7 @@ class AttributeFilters{
         auto imgOutput = imgOutputPtr->rawData();
         auto restOfImage = rtree->getRestOfImage()->rawData();
         for(NodeId node:  ctree->getNodeIds()){
-            for (int pixel : tree->getCNPsById(node)){
+            for (int pixel : ctree->getCNPsById(node)){
                 if(ctree->isMaxtree())
                     imgOutput[pixel] = restOfImage[pixel] + mapLevel[node];
                 else
@@ -117,7 +117,7 @@ class AttributeFilters{
         }
 
     }
-*/
+
 
     static void filteringBySubtractiveRule(MorphologicalTreePtr tree, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr){ return filteringBySubtractiveRule(tree.get(), criterion, imgOutputPtr); }
     static void filteringBySubtractiveRule(MorphologicalTree* tree, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr){

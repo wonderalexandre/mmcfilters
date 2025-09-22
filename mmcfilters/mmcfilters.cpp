@@ -125,12 +125,11 @@ void init_NodeCT(py::module &m){
 }
 void init_MorphologicalTree(py::module &m){
       py::class_<MorphologicalTreePybind, std::shared_ptr<MorphologicalTreePybind>>(m, "MorphologicalTree")
-        .def(py::init<py::array_t<int>, int, int, bool, double>(),
-            "input"_a, "rows"_a, "cols"_a, "isMaxtree"_a, "radius"_a = 1.5)
-        .def(py::init<py::array_t<int>, int, int, std::string>(),
-            "input"_a, "rows"_a, "cols"_a, "ToSInperpolation"_a = "self-dual")
+        .def(py::init<py::array_t<int>, bool, double>(),
+            "input"_a, "isMaxtree"_a, "radius"_a = 1.5)
+        .def(py::init<py::array_t<int>,  std::string>(),
+            "input"_a, "ToSInperpolation"_a = "self-dual")
         .def("reconstructionImage", &MorphologicalTreePybind::reconstructionImage )
-        .def_property_readonly("numNodes", &MorphologicalTreePybind::getNumNodes )
         .def_property_readonly("listNodes", [](MorphologicalTreePybind &tree) {
             py::list nodes;
             for (NodeId id : tree.getNodeIds()) {
@@ -141,9 +140,10 @@ void init_MorphologicalTree(py::module &m){
         .def_property_readonly("root", [](MorphologicalTreePybind &tree) {
             return tree.getRoot();
         })
-        .def_property_readonly("treeType", &MorphologicalTreePybind::getTreeType)
-        .def_property_readonly("numRows", &MorphologicalTreePybind::getNumRowsOfImage )
-        .def_property_readonly("numCols", &MorphologicalTreePybind::getNumColsOfImage )
+        .def_property_readonly("treeType", [](MorphologicalTreePybind& self) { return self.getTreeType(); })
+        .def_property_readonly("numRows", [](MorphologicalTreePybind& self) { return self.getNumRowsOfImage(); })
+        .def_property_readonly("numCols", [](MorphologicalTreePybind& self) { return self.getNumColsOfImage(); })
+        .def_property_readonly("numNodes", [](MorphologicalTreePybind& self) { return self.getNumNodes(); })
         .def_property_readonly("leaves", [](MorphologicalTreePybind &tree) {
             py::list leaves;
             for (NodeId id : tree.getLeaves()) {

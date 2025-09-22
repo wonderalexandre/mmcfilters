@@ -143,6 +143,13 @@ using ImagePtr = std::shared_ptr<Image<PixelType>>;
 
 
 
+/**
+ * @brief Funções utilitárias para conversões e manipulação básica de imagens.
+ *
+ * Agrupa helpers relacionados à transformação entre coordenadas 1D/2D e à
+ * geração de imagens coloridas a partir de rótulos inteiros, facilitando
+ * depuração e visualização de resultados intermediários.
+ */
 class ImageUtils{
 public:
     // Converte (row, col) para índice 1D (row-major)
@@ -377,6 +384,9 @@ struct PixelSetManager{
     }
 
 
+    /**
+     * @brief *View* de spans que expõe os vetores internos do gerenciador.
+     */
     struct View {
         std::span<int> pixelToIndex;
         std::span<int> indexToPixel;
@@ -452,6 +462,9 @@ struct PixelSetManager{
 
     public:
         // -------- Iterator ----------
+        /**
+         * @brief Iterador que percorre os pixels dos conjuntos fornecidos.
+         */
         class PixelsBySetIterator {
             PixelSetManager::View   v_;
             RepIt it_, last_;

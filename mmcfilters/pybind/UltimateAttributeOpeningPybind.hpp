@@ -15,6 +15,9 @@
 
 namespace py = pybind11;
 
+/**
+ * @brief Adaptação Pybind da Ultimate Attribute Opening.
+ */
 class UltimateAttributeOpeningPybind: public UltimateAttributeOpening{
 
 public:

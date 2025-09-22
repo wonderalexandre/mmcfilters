@@ -8,6 +8,9 @@
 #include <tuple>
 
 
+/**
+ * @brief Calcula derivadas auxiliares para pipelines de aprendizado sobre a árvore.
+ */
 class ComputerDerivatives {
     
     private:

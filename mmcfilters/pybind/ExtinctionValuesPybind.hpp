@@ -21,6 +21,9 @@ namespace py = pybind11;
 class ExtinctionValuesPybind;
 using ExtinctionValuesPybindPtr = std::shared_ptr<ExtinctionValuesPybind>;
 
+/**
+ * @brief *Wrapper* Pybind11 para cálculo e uso de valores de extinção.
+ */
 class ExtinctionValuesPybind : public ExtinctionValues{
 
     public:

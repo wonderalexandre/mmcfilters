@@ -13,6 +13,9 @@
 #ifndef ATTRIBUTE_OPENING_PRIMITIVES_FAMILY_PYBIND_H
 #define ATTRIBUTE_OPENING_PRIMITIVES_FAMILY_PYBIND_H
 
+/**
+ * @brief Adaptador Pybind para manipular famílias de primitivas de abertura.
+ */
 class AttributeOpeningPrimitivesFamilyPybind: public AttributeOpeningPrimitivesFamily{
 
     public:

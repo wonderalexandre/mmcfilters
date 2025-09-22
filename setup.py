@@ -13,7 +13,7 @@ from setuptools.command.build_ext import build_ext
 
 
 def read_version() -> str:
-    """Lê a versão do pacote a partir do módulo python/version.py."""
+    """Read the package version from python/version.py."""
     about: Dict[str, Any] = {}
     version_file = Path(__file__).resolve().parent / "python" / "version.py"
     exec(version_file.read_text(encoding="utf-8"), about)
@@ -21,7 +21,7 @@ def read_version() -> str:
 
 
 class CMakeExtension(Extension):
-    """Extensão baseada em CMake."""
+    """CMake-backed extension."""
 
     def __init__(self, name: str, sourcedir: str = "") -> None:
         super().__init__(name, sources=[])
@@ -29,14 +29,14 @@ class CMakeExtension(Extension):
 
 
 class CMakeBuild(build_ext):
-    """Comando customizado de build para integrar CMake ao setuptools."""
+    """Custom build command that integrates CMake with setuptools."""
 
     def run(self) -> None:
         try:
             out = subprocess.check_output(["cmake", "--version"], text=True)
         except OSError as exc:
             raise RuntimeError(
-                "CMake deve estar instalado para compilar as extensões deste pacote."
+                "CMake must be installed to build the extensions for this package."
             ) from exc
 
         version_token = out.split("version", maxsplit=1)[-1].strip().split()[0]
@@ -44,11 +44,11 @@ class CMakeBuild(build_ext):
             cmake_version = Version(version_token)
         except InvalidVersion as exc:
             raise RuntimeError(
-                "Não foi possível identificar a versão do CMake instalada."
+                "Unable to identify the installed CMake version."
             ) from exc
 
         if platform.system() == "Windows" and cmake_version < Version("3.14"):
-            raise RuntimeError("CMake >= 3.14 é obrigatório em ambientes Windows.")
+            raise RuntimeError("CMake >= 3.14 is required on Windows.")
 
         super().run()
 
@@ -99,7 +99,7 @@ class CMakeBuild(build_ext):
 
         if not source_path.exists():
             raise RuntimeError(
-                f"Arquivo de saída {source_path} não encontrado. Verifique a compilação do CMake."
+                f"Output file {source_path} not found. Check the CMake build output."
             )
 
         destination.mkdir(parents=True, exist_ok=True)
@@ -119,12 +119,12 @@ NATIVE_EXTENSIONS = {
 
 system = platform.system()
 if system not in NATIVE_EXTENSIONS:
-    raise RuntimeError(f"Plataforma {system} não suportada!")
+    raise RuntimeError(f"Platform {system} is not supported!")
 
 setup(
     name="mmcfilters",
     version=read_version(),
-    description="Biblioteca para filtragem de imagens conectadas baseada em árvores morfológicas",
+    description="Library for connected image filtering based on morphological trees",
     long_description=read_long_description(),
     long_description_content_type="text/markdown",
     author="Wonder Alexandre Luz Alves",
@@ -132,8 +132,8 @@ setup(
     license="GPL-3.0",
     url="https://github.com/wonderalexandre/ComponentTreeLearn",
     project_urls={
-        "Código": "https://github.com/wonderalexandre/ComponentTreeLearn",
-        "Documentação": "https://github.com/wonderalexandre/ComponentTreeLearn",
+        "Source": "https://github.com/wonderalexandre/ComponentTreeLearn",
+        "Documentation": "https://github.com/wonderalexandre/ComponentTreeLearn",
     },
     keywords=[
         "machine learning",

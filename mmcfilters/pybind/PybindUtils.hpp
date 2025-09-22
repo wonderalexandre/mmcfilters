@@ -7,6 +7,9 @@ namespace py = pybind11;
 #ifndef PYBIND_UTILS_H
 #define PYBIND_UTILS_H
 
+/**
+ * @brief Funções auxiliares para converter entre estruturas C++ e NumPy.
+ */
 class PybindUtils{
     public:
         

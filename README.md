@@ -1,58 +1,40 @@
 # MorphologicalAttributeFilters
-MorphologicalAttributeFilters is a C++/Python library for connected image filtering based on morphological trees (component trees and tree os shapes).
 
+MorphologicalAttributeFilters is a C++/Python library for connected image filtering based on morphological trees (component
+trees and trees of shapes). The code provides high-performance implementations together with Python bindings for interactive
+experimentation.
 
-# How to install?
-> ``pip install mmcfilters``
+## Key features
 
+* Construction of morphological trees (component tree, tree of shapes) with different connectivities.
+* Incremental computation of geometric, topological and radiometric attributes.
+* Attribute-based filters (direct and subtractive rules, pruning, openings, ultimate attribute opening, etc.).
+* Utilities for extinction values, primitive families, MSER and Bit-Quads.
+* Pybind11 bindings that expose the high-level operations to Python.
 
-# Example: extracting AP and AAP from a given image
+## Installation
 
-1. Importing common libraries
+```bash
+pip install mmcfilters
 ```
+
+## Quick example
+
+```python
 import numpy as np
 import mmcfilters
+
+img = np.random.randint(0, 255, size=(128, 128), dtype=np.uint8)
+tree = mmcfilters.MorphologicalTree(img.ravel(), img.shape[0], img.shape[1], True, 1.5)
+
+attrs = mmcfilters.AttributeComputedIncrementally.computeSingleAttribute(tree, mmcfilters.Attribute.AREA)
+area = np.asarray(attrs[1]).reshape(-1)
+
+flt = mmcfilters.AttributeFilters(tree)
+filtered = flt.filteringDirectRule(area > 50).reshape(img.shape)
 ```
 
-2. Input: an image
-```
-img = np.array([
-[122,127,166,201,152, 96, 54, 44, 40, 41, 42, 43, 44, 44, 37],
-[133,143,213,246,236,196,137, 85, 55, 43, 44, 45, 35, 40, 42],
-[133,168,231,242,246,246,228,172,111, 74, 76, 80, 54, 52, 41],
-[147,215,222,199,220,235,244,237,205,172,181,186,106, 57, 47],
-[164,235,224,149,168,208,231,244,248,246,246,230,133, 58, 62],
-[140,224,237,161,128,149,180,227,245,248,247,243,189,103, 94],
-[134,211,240,181,109,105,120,168,223,240,241,246,237,176,110],
-[117,188,244,210,111, 74, 86,144,215,230,219,227,232,212,133],
-[ 66,159,242,238,149, 75, 78,163,238,212,172,198,219,175,111],
-[ 75,144,231,244,171, 81,113,212,222,149,108,115,137,118, 99],
-[ 78,139,222,245,185,115,176,229,176, 85, 62, 79, 95, 98,107],
-[ 48,102,199,241,220,171,220,208,125, 47, 45, 73, 90, 98,104],
-[ 41, 72,171,240,242,233,226,149, 65, 39, 60, 97,104,106,112],
-[ 54, 68,140,228,238,236,194,100, 44, 48, 85,100,104,107,122],
-[ 54, 54, 94,181,222,214,141, 67, 40, 72, 99,105,106,109,123],
-[ 54, 48, 59, 95,145,158, 84, 52, 60, 96,110,115,116,110,113],
-[ 49, 45, 44, 48, 71, 89, 49, 47, 71, 95,162,156,119,122,111]
-])
+## Documentation and comments
 
-numRows, numCols = img.shape
-img_vector = img.ravel()
-```
-
-3. Filtering
-```
-isMaxtree = TrueradioAdj = 1.5 # 8-connectivity
-tree = mmcfilters.MorphologicalTree(img_vector, num_rows, num_cols, isMaxtree, radioAdj)
-#tree = mmcfilters.MorphologicalTree(img_vector, num_rows, num_cols) #tree of shapes
-
-filter = mmcfilters.AttributeFilters(tree)
-Type = mmcfilters.Attribute.Type
-attr_area = mmcfilters.Attribute.computeSingleAttribute(tree, Type.AREA)
-
-img_vector_filtered = filter.filteringDirectRule(attr_area > 10) #keep only areas > 10
-img_filtered = img_vector_filtered.reshape(num_rows, num_cols)
-
-print("Filtered image:")
-print( img_filtered )
-```
+All `class` and `struct` definitions in the project now include updated docstrings and comments to make the C++ codebase easier to
+navigate. Refer to the headers in `mmcfilters/include` and `mmcfilters/pybind` for details about each component.

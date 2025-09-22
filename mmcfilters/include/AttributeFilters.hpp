@@ -19,6 +19,12 @@
 class AttributeFilters;
 using AttributeFiltersPtr = std::shared_ptr<AttributeFilters>;
 
+/**
+ * @brief Conjunto de operações de filtragem baseadas em atributos sobre árvores morfológicas.
+ *
+ * Implementa diferentes regras (direta, subtrativa, poda, extinção) para
+ * reconstruir imagens a partir de critérios definidos sobre atributos dos nós.
+ */
 class AttributeFilters{
     protected:
         MorphologicalTree* tree;

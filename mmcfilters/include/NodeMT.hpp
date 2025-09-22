@@ -132,9 +132,15 @@ public:
 
     // Ranges existentes que devolvem filhos (por ponteiro lógico) continuam,
     // mas internamente usam `tree->proxy(id)` (que agora devolve handle)
+    /**
+     * @brief Range que expõe os filhos do nó como proxies `NodeMT`.
+     */
     class ChildIdRange {
         int cur; MorphologicalTree* T;
     public:
+        /**
+         * @brief Iterador que converte IDs em handles `NodeMT` ao percorrer filhos.
+         */
         struct It {
             int id; MorphologicalTree* T;
             bool operator!=(const It& o) const { return id != o.id; }
@@ -150,6 +156,9 @@ public:
     }
 
     //============= Iterator para iterar os nodes do caminho até o root==============//
+    /**
+     * @brief Iterador que percorre ancestrais do nó atual via handles `NodeMT`.
+     */
     class InternalIteratorNodesOfPathToRoot {
     private:
         MorphologicalTree* T_ = nullptr;
@@ -178,6 +187,9 @@ public:
         value_type operator*() const { return (curId_ == -1) ? NodeMT() : NodeMT(T_, curId_); }
     };
     
+    /**
+     * @brief Range para iterar o caminho até a raiz usando proxies de nó.
+     */
     class IteratorNodesOfPathToRoot {
     private:
         MorphologicalTree* T_ = nullptr;
@@ -195,8 +207,14 @@ public:
 
 
     //============= Iterator para iterar os nodes de um percuso em pos-ordem ==============//
+    /**
+     * @brief Iterador pós-ordem que devolve proxies `NodeMT`.
+     */
     class InternalIteratorPostOrderTraversal {
     private:
+        /**
+         * @brief Estrutura auxiliar para controlar expansão da pilha.
+         */
         struct Item { int id; bool expanded; };
 
         MorphologicalTree* T_ = nullptr;
@@ -260,6 +278,9 @@ public:
         }
     };
 
+    /**
+     * @brief Range para percorrer subárvores em pós-ordem retornando handles.
+     */
     class IteratorPostOrderTraversal {
         MorphologicalTree* T_ = nullptr; NodeId rootId_ = -1;
     public:
@@ -275,6 +296,9 @@ public:
 
 
     //============= Iterator para iterar os nodes de um percuso em largura ==============//
+    /**
+     * @brief Iterador em largura que retorna `NodeMT` para cada visita.
+     */
     class InternalIteratorBreadthFirstTraversal {
     private:
         MorphologicalTree* T_ = nullptr; // apenas leitura/encaminhamento
@@ -319,6 +343,9 @@ public:
         }
     };
 
+    /**
+     * @brief Range que encapsula percursos BFS baseados em proxies `NodeMT`.
+     */
     class IteratorBreadthFirstTraversal {
     private:
         MorphologicalTree* T_ = nullptr; NodeId rootId_ = -1;

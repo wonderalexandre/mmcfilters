@@ -29,6 +29,13 @@ inline bool operator&(DiagonalConnection a, DiagonalConnection b) {
 
 class AdjacencyUC;  // forward declaration
 using AdjacencyUCPtr = std::shared_ptr<AdjacencyUC>;
+/**
+ * @brief Representa adjacência 4/8-conexa opcional com controle sobre diagonais.
+ *
+ * Permite habilitar conexões diagonais dinamicamente por pixel, fornecendo
+ * iteradores leves para percorrer os vizinhos válidos respeitando as
+ * restrições configuradas.
+ */
 class AdjacencyUC {
 private:
   int numRows, numCols;
@@ -68,6 +75,9 @@ public:
     return dconnFlags[ImageUtils::to1D(row, col, numCols)];
   }
 
+  /**
+   * @brief Iterador sobre os vizinhos válidos considerando conexões diagonais.
+   */
   class NeighborIterator {
   private:
     AdjacencyUC &instance;
@@ -112,6 +122,9 @@ public:
     }
   };
 
+  /**
+   * @brief Range helper que produz iteradores de vizinhança válidos.
+   */
   class NeighborRange {
   private:
     AdjacencyUC &instance;

@@ -15,6 +15,9 @@
 #include <climits>
 
 // 1) Base como uma interface (sem dados)
+/**
+ * @brief Interface para construtores de árvores morfológicas baseados em união.
+ */
 class IMorphologicalTreeBuilder {
 public:
     virtual ~IMorphologicalTreeBuilder() = default;
@@ -23,6 +26,9 @@ public:
 };
 
 
+/**
+ * @brief Implementa construção de component trees via algoritmo union-find.
+ */
 class BuilderComponentTree : public IMorphologicalTreeBuilder{
 private:
     AdjacencyRelation* adj;
@@ -123,11 +129,17 @@ public:
 
 
 
+/**
+ * @brief Constrói árvores de formas (ToS) usando abordagem bucketed priority.
+ */
 class BuilderTreeOfShape: public IMorphologicalTreeBuilder {
 private:
     bool is4c8cConnectivity;
 
 
+    /**
+     * @brief Fila de prioridades discreta utilizada durante a construção da ToS.
+     */
     class PriorityQueueToS {
     private:
         std::vector<std::deque<int>> buckets;

@@ -9,6 +9,13 @@
 #define PI 3.14159265358979323846
 
 
+/**
+ * @brief Estrutura auxiliar que registra informações de um extremo regional.
+ *
+ * Mantém o nó folha original, o nó de corte onde o extremo deixa de ser
+ * dominante e o valor de extinção associado calculado durante o processo de
+ * ordenação dos extremos.
+ */
 struct RegionalExtremaNode{
     NodeId leaf;
     NodeId cutoffNode;
@@ -17,6 +24,14 @@ struct RegionalExtremaNode{
     RegionalExtremaNode(NodeId leaf, NodeId cutoffNode, float extinction) : leaf(leaf), cutoffNode(cutoffNode), extinction(extinction) { }
 };
 
+/**
+ * @brief Calcula e armazena valores de extinção para extremos regionais.
+ *
+ * A classe percorre uma árvore morfológica e identifica as folhas que
+ * sobrevivem sob diferentes critérios de supressão. Ela permite gerar mapas de
+ * saliência ponderados ou discretos e aplicar filtragens mantendo apenas os
+ * extremos mais persistentes.
+ */
 class ExtinctionValues{
 
     private:

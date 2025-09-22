@@ -27,6 +27,9 @@ enum class BitQuadType {
     Descendant
 };
 
+/**
+ * @brief Define comparadores locais utilizados na avaliação de padrões Bit-Quads.
+ */
 class BitQuadComparator {
 public:
     int rowOffset;
@@ -121,6 +124,9 @@ public:
 //---------------------------------------------
 // Padrão e grupo de padrões
 //---------------------------------------------
+/**
+ * @brief Representa um conjunto de comparadores Bit-Quads compondo um padrão.
+ */
 class BitQuad {
     std::vector<BitQuadComparator> quads;
 public:
@@ -182,6 +188,9 @@ public:
     }
 };
 
+/**
+ * @brief Agrupa múltiplos padrões Bit-Quads aplicados a uma vizinhança.
+ */
 class BitQuadPattern {
     std::vector<BitQuad> patterns;
 public:
@@ -214,6 +223,9 @@ public:
 // AttributeBasedBitQuads
 //---------------------------------------------
 
+/**
+ * @brief Estrutura de atributos acumulados ao processar padrões Bit-Quads.
+ */
 struct AttributeBasedBitQuads {
     int countPatternC1C4 = 0;
     int countPatternC1 = 0;
@@ -302,6 +314,9 @@ struct AttributeBasedBitQuads {
 
 
 
+/**
+ * @brief Utilitário para computar atributos baseados em Bit-Quads na árvore.
+ */
 class ComputerAttributeBasedBitQuads {
 private:
     BitQuadPattern Q1;

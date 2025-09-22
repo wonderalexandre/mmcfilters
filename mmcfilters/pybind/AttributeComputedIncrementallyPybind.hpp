@@ -42,22 +42,22 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
 		return AttributeNames::describe(attribute);
 	}
 	
-	static ContoursMTPtr extractCompactContours(MorphologicalTreePybindPtr tree){
-		return AttributeComputedIncrementally::extractCompactContours(tree);
-	}
+        static std::shared_ptr<Contours> extractCompactContours(MorphologicalTreePybindPtr tree){
+                return AttributeComputedIncrementally::extractCompactContours(tree);
+        }
 
-	/*
-	static std::vector<std::tuple<NodeMTPtr, NodeMTPtr, float>> extractionExtinctionValues(MorphologicalTreePybindPtr tree, py::array_t<float>& attr){
+        /*
+        static std::vector<std::tuple<NodeMT, NodeMT, float>> extractionExtinctionValues(MorphologicalTreePybindPtr tree, py::array_t<float>& attr){
 
-		std::vector<std::tuple<NodeMTPtr, NodeMTPtr, float>> extinctionValues;
-		std::shared_ptr<float[]> attribute = PybindUtils::toShared_ptr(attr);
-		auto extValuesPtr = AttributeComputedIncrementally::getExtinctionValue(tree, attribute);
-		extinctionValues.reserve(extValuesPtr.size());
-		for (const auto& extValue : extValuesPtr) {
-			extinctionValues.push_back(std::make_tuple(extValue->leaf, extValue->cutoffNode, extValue->extinction));
-		}
-		return extinctionValues; 
-	}*/
+                std::vector<std::tuple<NodeMT, NodeMT, float>> extinctionValues;
+                std::shared_ptr<float[]> attribute = PybindUtils::toShared_ptr(attr);
+                auto extValuesPtr = AttributeComputedIncrementally::getExtinctionValue(tree, attribute);
+                extinctionValues.reserve(extValuesPtr.size());
+                for (const auto& extValue : extValuesPtr) {
+                        extinctionValues.push_back(std::make_tuple(tree->proxy(extValue->leaf), tree->proxy(extValue->cutoffNode), extValue->extinction));
+                }
+                return extinctionValues;
+        }*/
 
 	static py::array_t<float> computeSingleAttribute(MorphologicalTreePybindPtr tree, Attribute attribute){
 		auto [attributeNames, buffer] = AttributeComputedIncrementally::computeSingleAttribute(tree, attribute);

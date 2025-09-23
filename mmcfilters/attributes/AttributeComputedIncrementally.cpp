@@ -3,7 +3,8 @@
 #include <typeindex>
 #include <limits>
 #include "../attributes/AttributeComputedIncrementally.hpp"
-#include "../attributes/AttributeComputer.hpp"
+#include "AttributeFactory.hpp"
+namespace mmcfilters {
 
 ImageFloatPtr AttributeComputedIncrementally::computerAttributeMapping(MorphologicalTree* tree, Attribute attribute) {
     auto [attrNames, buffer] = AttributeComputedIncrementally::computeSingleAttribute(tree, attribute);
@@ -475,4 +476,4 @@ std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeCo
 
 
 
-
+} // namespace mmcfilters

@@ -1,7 +1,9 @@
 #include <iostream>
 #include "../mmcfilters/utils/AdjacencyRelation.hpp"
-#include "../mmcfilters/trees/AdjacencyUC.hpp"
+#include "../mmcfilters/trees/BuilderMorphologicalTreeByUnionFind.hpp"
 #include "../mmcfilters/utils/Common.hpp"
+
+using namespace mmcfilters;
 
 int main() {
 

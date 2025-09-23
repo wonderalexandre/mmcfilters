@@ -128,27 +128,12 @@ mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/trees/MorphologicalTree.cpp.s: cm
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/mmcfilters_lib.dir/trees/MorphologicalTree.cpp.s"
 	cd /Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/tests/build/mmcfilters_build && /Library/Developer/CommandLineTools/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/mmcfilters/trees/MorphologicalTree.cpp -o CMakeFiles/mmcfilters_lib.dir/trees/MorphologicalTree.cpp.s
 
-mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.o: mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/flags.make
-mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.o: /Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/mmcfilters/utils/AdjacencyRelation.cpp
-mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.o: mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/tests/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.o"
-	cd /Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/tests/build/mmcfilters_build && /Library/Developer/CommandLineTools/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.o -MF CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.o.d -o CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.o -c /Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/mmcfilters/utils/AdjacencyRelation.cpp
-
-mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.i"
-	cd /Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/tests/build/mmcfilters_build && /Library/Developer/CommandLineTools/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/mmcfilters/utils/AdjacencyRelation.cpp > CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.i
-
-mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.s"
-	cd /Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/tests/build/mmcfilters_build && /Library/Developer/CommandLineTools/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/mmcfilters/utils/AdjacencyRelation.cpp -o CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.s
-
 # Object files for target mmcfilters_lib
 mmcfilters_lib_OBJECTS = \
 "CMakeFiles/mmcfilters_lib.dir/attributes/AttributeComputedIncrementally.cpp.o" \
 "CMakeFiles/mmcfilters_lib.dir/filters/AttributeFilters.cpp.o" \
 "CMakeFiles/mmcfilters_lib.dir/filters/AttributeOpeningPrimitivesFamily.cpp.o" \
-"CMakeFiles/mmcfilters_lib.dir/trees/MorphologicalTree.cpp.o" \
-"CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.o"
+"CMakeFiles/mmcfilters_lib.dir/trees/MorphologicalTree.cpp.o"
 
 # External object files for target mmcfilters_lib
 mmcfilters_lib_EXTERNAL_OBJECTS =
@@ -157,10 +142,9 @@ mmcfilters_build/libmmcfilters_lib.dylib: mmcfilters_build/CMakeFiles/mmcfilters
 mmcfilters_build/libmmcfilters_lib.dylib: mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/filters/AttributeFilters.cpp.o
 mmcfilters_build/libmmcfilters_lib.dylib: mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/filters/AttributeOpeningPrimitivesFamily.cpp.o
 mmcfilters_build/libmmcfilters_lib.dylib: mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/trees/MorphologicalTree.cpp.o
-mmcfilters_build/libmmcfilters_lib.dylib: mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.o
 mmcfilters_build/libmmcfilters_lib.dylib: mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/build.make
 mmcfilters_build/libmmcfilters_lib.dylib: mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/tests/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Linking CXX shared library libmmcfilters_lib.dylib"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/tests/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Linking CXX shared library libmmcfilters_lib.dylib"
 	cd /Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/tests/build/mmcfilters_build && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/mmcfilters_lib.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

@@ -2,6 +2,7 @@
 
 #include "../trees/MorphologicalTree.hpp"
 #include "../utils/Common.hpp"
+namespace mmcfilters {
 
 
 #define UNDEF -999999999999
@@ -103,4 +104,6 @@ public:
 	void setMinAttribute(int minAttr) { this->minAttr = minAttr; }
 	void setMaxAttribute(int maxAttr) { this->maxAttr = maxAttr; }
 };
+
+} // namespace mmcfilters
 

@@ -1,5 +1,6 @@
 
 #include "../filters/AttributeFilters.hpp"
+namespace mmcfilters {
 
 
 AttributeFilters::AttributeFilters(MorphologicalTree* tree){
@@ -73,3 +74,5 @@ ImageFloatPtr AttributeFilters::filteringBySubtractiveScoreRule(std::vector<floa
 std::vector<bool> AttributeFilters::getAdaptativeCriterion(std::vector<bool>& criterion, int delta){
     return AttributeFilters::getAdaptativeCriterion(this->tree, criterion, delta);
 }
+
+} // namespace mmcfilters

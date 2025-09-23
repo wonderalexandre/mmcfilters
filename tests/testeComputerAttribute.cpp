@@ -12,6 +12,8 @@
 #include <iostream>
 #include <vector>
 
+using namespace mmcfilters;
+
 int main(int argc, char const* argv[]) {
     (void)argc;
     (void)argv;

@@ -12,6 +12,7 @@
 #include <algorithm> 
 #include <cmath>
 #include <iostream>
+namespace mmcfilters {
 
 namespace py = pybind11;
 
@@ -43,3 +44,5 @@ class ExtinctionValuesPybind : public ExtinctionValues{
     }
 
 };
+
+} // namespace mmcfilters

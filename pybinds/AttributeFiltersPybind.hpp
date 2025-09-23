@@ -14,6 +14,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
+namespace mmcfilters {
 
 #define UNDEF -999999999999
 
@@ -120,3 +121,4 @@ class AttributeFiltersPybind : public AttributeFilters{
 
 };
 
+} // namespace mmcfilters

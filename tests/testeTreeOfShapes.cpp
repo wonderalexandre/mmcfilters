@@ -7,6 +7,7 @@
 #include "../mmcfilters/utils/Common.hpp"
 #include "Tests.hpp"
 
+using namespace mmcfilters;
 
 int main() {
    

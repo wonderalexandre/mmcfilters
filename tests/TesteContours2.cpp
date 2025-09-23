@@ -9,6 +9,7 @@
 #include "../mmcfilters/attributes/AttributeComputedIncrementally.hpp"
 #include "../mmcfilters/contours/ContoursComputedIncrementally.hpp"
 
+using namespace mmcfilters;
 
 int main(int argc, char* argv[]) {
     // Definição da imagem e parâmetros

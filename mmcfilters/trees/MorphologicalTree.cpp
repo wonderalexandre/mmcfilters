@@ -13,6 +13,7 @@
 #include "../trees/NodeMT.hpp"
 #include "../utils/AdjacencyRelation.hpp"
 #include "../trees/BuilderMorphologicalTreeByUnionFind.hpp"
+namespace mmcfilters {
 
 
 //ComponentTree(ImageUInt8Ptr img, bool isMaxtree, double radius = 1.5);
@@ -295,4 +296,4 @@ inline void MorphologicalTree::reconstruction(NodeId id, uint8_t* imgOut) {
     }
 }
 
-
+} // namespace mmcfilters

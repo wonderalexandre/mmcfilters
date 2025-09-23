@@ -3,14 +3,18 @@
 #include "../utils/Common.hpp"
 #include "../trees/MorphologicalTree.hpp"
 #include "../attributes/AttributeComputedIncrementally.hpp"
-//#include "../filters/AttributeOpeningPrimitivesFamily.hpp"
 #include "../attributes/ComputerMSER.hpp"
 #include "../trees/NodeRes.hpp"
 #include "../trees/ResidualTree.hpp"
-
 #include <stack>
 #include <vector>
 #include <limits.h>
+
+
+namespace mmcfilters {
+
+//#include "../filters/AttributeOpeningPrimitivesFamily.hpp"
+
 
 
 
@@ -367,4 +371,6 @@ class AttributeFilters{
     }
 	
 };
+
+} // namespace mmcfilters
 

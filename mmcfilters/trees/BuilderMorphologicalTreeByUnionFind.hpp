@@ -2,7 +2,6 @@
 
 #include "../utils/AdjacencyRelation.hpp"
 #include "../utils/Common.hpp"
-#include "../trees/AdjacencyUC.hpp"
 
 #include <tuple>
 #include <vector>
@@ -13,6 +12,7 @@
 #include <limits>
 #include <cstdint>
 #include <climits>
+namespace mmcfilters {
 
 /**
  * @brief Interface para construtores de árvores morfológicas baseados em union-find.
@@ -125,6 +125,228 @@ public:
 
 
 
+/************************ToS******************* */
+
+/*
+Adjacência adaptativa para construção da ToS com 4 e 8-conectividade.
+As conexões diagonais são ativadas conforme necessário durante a construção da ToS para garantir a conectividade adequada dos componentes.
+As conexões diagonais são representadas usando flags de bits em um vetor. Cada pixel pode ter até quatro conexões diagonais: SW, NE, SE, NW
+Essas conexões são armazenadas em um vetor de uint8_t, onde cada bit representa uma conexão diagonal específica.
+Por exemplo, se o bit 0 estiver definido, significa que há uma conexão diagonal SW do pixel atual para o pixel ao sul-oeste.
+*/
+enum class DiagonalConnection : uint8_t {
+    None = 0,
+    SW = 1 << 0,
+    NE = 1 << 1,
+    SE = 1 << 2,
+    NW = 1 << 3
+};
+
+// Operadores auxiliares
+inline DiagonalConnection operator|(DiagonalConnection a, DiagonalConnection b) {
+    return static_cast<DiagonalConnection>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
+}
+
+inline DiagonalConnection& operator|=(DiagonalConnection &a, DiagonalConnection b) {
+    a = a | b;
+    return a;
+}
+
+inline bool operator&(DiagonalConnection a, DiagonalConnection b) {
+    return static_cast<uint8_t>(a) & static_cast<uint8_t>(b);
+}
+
+/**
+ * @brief Representa adjacência adaptativa para construção da ToS de 4/8-conectividade.
+ *
+ */
+class AdjacencyUC {
+private:
+    int numRows, numCols;
+    std::vector<uint8_t> dconnFlags;     // 4-connect.  +  diag. connect.
+                                        //  N, W, S, E,   SW, NE, SE, NW
+    const std::vector<int> offsetRows = {-1, 0, 1, 0,    1, -1,  1, -1}; 
+    const std::vector<int> offsetCols = {0, -1, 0, 1,    -1,  1,  1, -1};
+    bool enableDiagonalConnection;
+    const std::vector<DiagonalConnection> requiredDiagonal = {
+        DiagonalConnection::SW, DiagonalConnection::NE,
+        DiagonalConnection::SE, DiagonalConnection::NW
+    };
+
+public:
+    AdjacencyUC(int rows, int cols, bool enableDiagonalConnection) : numRows(rows), numCols(cols), enableDiagonalConnection(enableDiagonalConnection){
+        if(enableDiagonalConnection)
+        dconnFlags.resize(rows * cols, 0);
+    }
+
+    ~AdjacencyUC() {
+        
+    }
+
+    void setDiagonalConnection(int row, int col, DiagonalConnection conn) {
+        dconnFlags[ImageUtils::to1D(row, col, numCols)] |= static_cast<uint8_t>(conn);
+    }
+
+    void setDiagonalConnection(int idx, DiagonalConnection conn) {
+        dconnFlags[idx] |= static_cast<uint8_t>(conn);
+    }
+
+    bool hasConnection(int row, int col, DiagonalConnection conn) const {
+        return dconnFlags[ImageUtils::to1D(row, col, numCols)] & static_cast<uint8_t>(conn);
+    }
+
+    uint8_t getConnections(int row, int col) const {
+        return dconnFlags[ImageUtils::to1D(row, col, numCols)];
+    }
+
+    /**
+     * @brief Iterador sobre os vizinhos válidos considerando conexões diagonais.
+     */
+    class NeighborIterator {
+    private:
+        AdjacencyUC &instance;
+        int row, col;
+        std::size_t id;
+
+        void advanceToValid() {
+        while (id < instance.offsetRows.size()) {
+            int r = row + instance.offsetRows[id];
+            int c = col + instance.offsetCols[id];
+            if (r >= 0 && c >= 0 && r < instance.numRows && c < instance.numCols) {
+            if (id < 4 || (instance.enableDiagonalConnection && instance.dconnFlags[ImageUtils::to1D(row, col, instance.numCols)] & static_cast<uint8_t>(instance.requiredDiagonal[id - 4]))) {
+                return;
+            }
+            }
+            ++id;
+        }
+        }
+
+    public:
+        NeighborIterator(AdjacencyUC &adj, int row, int col, int id): instance(adj), row(row), col(col), id(id){
+        advanceToValid();
+        }
+
+        int operator*() const {
+        int dr = instance.offsetRows[id];
+        int dc = instance.offsetCols[id];
+        return ImageUtils::to1D(row + dr, col + dc, instance.numCols);
+        }
+
+        NeighborIterator& operator++() {
+        ++id;
+        advanceToValid();
+        return *this;
+        }
+
+        bool operator==(const NeighborIterator &other) const {
+        return id == other.id;
+        }
+
+        bool operator!=(const NeighborIterator &other) const {
+        return !(*this == other);
+        }
+    };
+
+    /**
+     * @brief Range helper que produz iteradores de vizinhança válidos.
+     */
+    class NeighborRange {
+    private:
+        AdjacencyUC &instance;
+        int row, col;
+        
+    public:
+        NeighborRange(AdjacencyUC &instance, int row, int col)
+        : instance(instance), row(row), col(col) {}
+
+        NeighborIterator begin() { return NeighborIterator(instance, row, col, 0); }
+        NeighborIterator end() { return NeighborIterator(instance, row, col, 8); }
+    };
+
+    NeighborRange getNeighborPixels(int p) {
+        auto [row, col] = ImageUtils::to2D(p, numCols);
+        return NeighborRange(*this, row, col);
+    }
+
+    NeighborRange getNeighborPixels(int row, int col) {
+        return NeighborRange(*this, row, col);
+    }
+
+};
+
+
+/**
+ * @brief Fila de prioridades discreta utilizada durante a construção da ToS.
+ */
+class PriorityQueueToS {
+private:
+    std::vector<std::deque<int>> buckets;
+    int currentPriority;
+    int numElements;
+    int maxPriorityLevels;
+    
+
+public:
+    PriorityQueueToS(int depthOfImage=8) : currentPriority(0), numElements(0), maxPriorityLevels(1 << depthOfImage){
+        buckets.resize(maxPriorityLevels);
+    }
+
+    void initial(int element, int priority) {
+        currentPriority = priority;
+        buckets[priority].push_back(element);
+        numElements++;
+    }
+    int getCurrentPriority()  {return currentPriority;}
+    bool isEmpty()  {return numElements == 0;}
+
+    void priorityPush(int element, int lower, int upper) {
+        int priority;
+        if (lower > currentPriority) {
+            priority = lower;
+        } else if (upper < currentPriority) {
+            priority = upper;
+        } else {
+            priority = currentPriority;
+        }
+        numElements++;
+        buckets[priority].push_back(element);
+    }
+
+    int priorityPop() {
+        // Se o bucket atual estiver vazio, precisamos ajustar a prioridade
+        if (buckets[currentPriority].empty()) {
+            int i = currentPriority;
+            int j = currentPriority;
+            while (true) {
+
+                // Tentar diminuir a prioridade
+                if (j > 0 && buckets[j].empty()) {
+                    j--;
+                }
+                if (!buckets[j].empty()) { // Encontrou o próximo bucket não vazio diminuindo a prioridade
+                    currentPriority = j;
+                    break;
+                }
+
+                // Tentar aumentar a prioridade
+                if (i < maxPriorityLevels && buckets[i].empty()) {
+                    i++;
+                }
+                if (i < maxPriorityLevels && !buckets[i].empty()) { // Encontrou o próximo bucket não vazio aumentando a prioridade
+                    currentPriority = i;
+                    break;
+                }
+            }
+        }
+
+        int element = buckets[currentPriority].front(); 
+        buckets[currentPriority].pop_front();           
+
+        numElements--;  
+        return element;
+    }
+};
+
 
 
 
@@ -136,78 +358,7 @@ private:
     bool is4c8cConnectivity;
 
 
-    /**
-     * @brief Fila de prioridades discreta utilizada durante a construção da ToS.
-     */
-    class PriorityQueueToS {
-    private:
-        std::vector<std::deque<int>> buckets;
-        int currentPriority;
-        int numElements;
-        int maxPriorityLevels;
-        
 
-    public:
-        PriorityQueueToS(int depthOfImage=8) : currentPriority(0), numElements(0), maxPriorityLevels(1 << depthOfImage){
-            buckets.resize(maxPriorityLevels);
-        }
-
-        void initial(int element, int priority) {
-            currentPriority = priority;
-            buckets[priority].push_back(element);
-            numElements++;
-        }
-        int getCurrentPriority()  {return currentPriority;}
-        bool isEmpty()  {return numElements == 0;}
-
-        void priorityPush(int element, int lower, int upper) {
-            int priority;
-            if (lower > currentPriority) {
-                priority = lower;
-            } else if (upper < currentPriority) {
-                priority = upper;
-            } else {
-                priority = currentPriority;
-            }
-            numElements++;
-            buckets[priority].push_back(element);
-        }
-
-        int priorityPop() {
-            // Se o bucket atual estiver vazio, precisamos ajustar a prioridade
-            if (buckets[currentPriority].empty()) {
-                int i = currentPriority;
-                int j = currentPriority;
-                while (true) {
-
-                    // Tentar diminuir a prioridade
-                    if (j > 0 && buckets[j].empty()) {
-                        j--;
-                    }
-                    if (!buckets[j].empty()) { // Encontrou o próximo bucket não vazio diminuindo a prioridade
-                        currentPriority = j;
-                        break;
-                    }
-
-                    // Tentar aumentar a prioridade
-                    if (i < maxPriorityLevels && buckets[i].empty()) {
-                        i++;
-                    }
-                    if (i < maxPriorityLevels && !buckets[i].empty()) { // Encontrou o próximo bucket não vazio aumentando a prioridade
-                        currentPriority = i;
-                        break;
-                    }
-                }
-            }
-
-            int element = buckets[currentPriority].front(); 
-            buckets[currentPriority].pop_front();           
-
-            numElements--;  
-            return element;
-        }
-    };
-    
 
 public:
 
@@ -703,3 +854,6 @@ public:
     }
 
 };
+
+} // namespace mmcfilters
+

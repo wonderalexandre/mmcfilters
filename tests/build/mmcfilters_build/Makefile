@@ -271,30 +271,6 @@ trees/MorphologicalTree.cpp.s:
 	cd /Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/tests/build && $(MAKE) $(MAKESILENT) -f mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/build.make mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/trees/MorphologicalTree.cpp.s
 .PHONY : trees/MorphologicalTree.cpp.s
 
-utils/AdjacencyRelation.o: utils/AdjacencyRelation.cpp.o
-.PHONY : utils/AdjacencyRelation.o
-
-# target to build an object file
-utils/AdjacencyRelation.cpp.o:
-	cd /Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/tests/build && $(MAKE) $(MAKESILENT) -f mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/build.make mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.o
-.PHONY : utils/AdjacencyRelation.cpp.o
-
-utils/AdjacencyRelation.i: utils/AdjacencyRelation.cpp.i
-.PHONY : utils/AdjacencyRelation.i
-
-# target to preprocess a source file
-utils/AdjacencyRelation.cpp.i:
-	cd /Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/tests/build && $(MAKE) $(MAKESILENT) -f mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/build.make mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.i
-.PHONY : utils/AdjacencyRelation.cpp.i
-
-utils/AdjacencyRelation.s: utils/AdjacencyRelation.cpp.s
-.PHONY : utils/AdjacencyRelation.s
-
-# target to generate assembly for a file
-utils/AdjacencyRelation.cpp.s:
-	cd /Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/tests/build && $(MAKE) $(MAKESILENT) -f mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/build.make mmcfilters_build/CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.s
-.PHONY : utils/AdjacencyRelation.cpp.s
-
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -320,9 +296,6 @@ help:
 	@echo "... trees/MorphologicalTree.o"
 	@echo "... trees/MorphologicalTree.i"
 	@echo "... trees/MorphologicalTree.s"
-	@echo "... utils/AdjacencyRelation.o"
-	@echo "... utils/AdjacencyRelation.i"
-	@echo "... utils/AdjacencyRelation.s"
 .PHONY : help
 
 

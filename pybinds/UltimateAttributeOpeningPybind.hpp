@@ -10,6 +10,7 @@
 #include "MorphologicalTreePybind.hpp"
 #include "PybindUtils.hpp"
 #include <pybind11/pybind11.h>
+namespace mmcfilters {
 
 
 namespace py = pybind11;
@@ -40,3 +41,5 @@ public:
 
 
 };
+
+} // namespace mmcfilters

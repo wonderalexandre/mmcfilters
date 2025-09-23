@@ -5,6 +5,7 @@
 
 #include "../trees/MorphologicalTree.hpp"
 #include "../utils/Common.hpp"
+namespace mmcfilters {
 
 
 class NodeRes;
@@ -94,3 +95,6 @@ class NodeRes : public std::enable_shared_from_this<NodeRes> {
 
         
 };
+
+} // namespace mmcfilters
+

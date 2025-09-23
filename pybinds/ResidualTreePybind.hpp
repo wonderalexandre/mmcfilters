@@ -9,6 +9,7 @@
 #include "../mmcfilters/utils/Common.hpp"
 
 #include "PybindUtils.hpp"
+namespace mmcfilters {
 
 
 /**
@@ -50,3 +51,5 @@ class ResidualTreePybind: public ResidualTree{
             return PybindUtils::toNumpy(ResidualTree::getPositiveResidues());
         }
 };
+
+} // namespace mmcfilters

@@ -7,6 +7,7 @@
 #include "../contours/ContoursComputedIncrementally.hpp"
 
 #include <algorithm>
+namespace mmcfilters {
 
 #define PI 3.14159265358979323846
 
@@ -151,4 +152,4 @@ class ExtinctionValues{
 
 };
 
-
+} // namespace mmcfilters

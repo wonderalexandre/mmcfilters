@@ -14,6 +14,7 @@
 #include "../utils/AdjacencyRelation.hpp"
 #include "../trees/MorphologicalTree.hpp"
 #include "../attributes/AttributeComputedIncrementally.hpp"
+namespace mmcfilters {
 
 //---------------------------------------------
 // CLASSES QuadBit e padrões
@@ -838,4 +839,4 @@ public:
 
 };
 
-
+} // namespace mmcfilters

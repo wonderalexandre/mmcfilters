@@ -15,6 +15,7 @@
 #include "../trees/MorphologicalTree.hpp"
 #include "../utils/AdjacencyRelation.hpp"
 #include "../trees/BuilderMorphologicalTreeByUnionFind.hpp"
+namespace mmcfilters {
 
 
 template <typename PixelType>
@@ -82,3 +83,6 @@ MorphologicalTreePtr MorphologicalTree::createFromAttributeMapping(ImagePtr<Pixe
     }
     return tree;
 }
+
+} // namespace mmcfilters
+

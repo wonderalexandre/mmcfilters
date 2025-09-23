@@ -6,6 +6,7 @@
 #include <stack>
 #include <algorithm>
 #include <iostream>
+namespace mmcfilters {
 
 AttributeOpeningPrimitivesFamily::~AttributeOpeningPrimitivesFamily(){
     //delete[] this->restOfImage;
@@ -121,3 +122,5 @@ std::vector<NodeId> AttributeOpeningPrimitivesFamily::getNodesWithMaximumCriteri
 MorphologicalTree* AttributeOpeningPrimitivesFamily::getTree(){
   return this->tree;
 }
+
+} // namespace mmcfilters

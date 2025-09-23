@@ -11,6 +11,7 @@
 #include <algorithm> 
 #include <cmath>
 #include <iostream>
+namespace mmcfilters {
 
 class ContoursComputedIncrementallyPybind;
 using ContoursComputedIncrementallyPybindPtr = std::shared_ptr<ContoursComputedIncrementallyPybind>;
@@ -46,3 +47,5 @@ class ContoursComputedIncrementallyPybind : public ContoursComputedIncrementally
 
 
 };
+
+} // namespace mmcfilters

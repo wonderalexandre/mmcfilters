@@ -1,6 +1,4 @@
-
-#ifndef TESTS_HPP
-#define TESTS_HPP  
+#pragma once
 
 #include <iostream>
 #include <unordered_set>
@@ -18,6 +16,7 @@
 
 #include "../external/stb/stb_image.h"
 #include "../external/stb/stb_image_write.h"
+using namespace mmcfilters;
 
 
 inline ImageUInt8Ptr openImage(std::string filename){
@@ -1197,5 +1196,3 @@ inline ImageUInt8Ptr getICIP14Image(){
     return ImageUInt8::fromRaw(img, 7, 7);
 }
 
-
-#endif // TESTS_HPP

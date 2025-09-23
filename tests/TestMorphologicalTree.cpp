@@ -10,6 +10,8 @@
 #include <vector>
 #include <iostream>
 
+using namespace mmcfilters;
+
 
 int main(){
     auto img = getSimpleImage();

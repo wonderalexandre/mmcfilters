@@ -10,6 +10,7 @@
 #include "../mmcfilters/contours/ContoursComputedIncrementally.hpp"
 
 
+using namespace mmcfilters;
 
 
 int main(int argc, char* argv[]) {

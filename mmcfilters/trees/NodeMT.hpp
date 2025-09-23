@@ -14,6 +14,7 @@
 
 #include "../utils/Common.hpp"
 #include "../trees/MorphologicalTree.hpp"
+namespace mmcfilters {
 
 
 /**
@@ -361,4 +362,6 @@ public:
     }
     
 };
+
+} // namespace mmcfilters
 

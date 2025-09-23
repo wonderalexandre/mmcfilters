@@ -7,8 +7,6 @@ file(REMOVE_RECURSE
   "CMakeFiles/mmcfilters_lib.dir/filters/AttributeOpeningPrimitivesFamily.cpp.o.d"
   "CMakeFiles/mmcfilters_lib.dir/trees/MorphologicalTree.cpp.o"
   "CMakeFiles/mmcfilters_lib.dir/trees/MorphologicalTree.cpp.o.d"
-  "CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.o"
-  "CMakeFiles/mmcfilters_lib.dir/utils/AdjacencyRelation.cpp.o.d"
   "libmmcfilters_lib.dylib"
   "libmmcfilters_lib.pdb"
 )

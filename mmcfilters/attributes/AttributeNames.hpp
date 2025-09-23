@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../utils/Common.hpp"
+namespace mmcfilters {
 
 enum class Attribute {
     // Geométricos básicos
@@ -109,40 +110,41 @@ struct AttributeKey {
     }
 };
 
+} // namespace mmcfilters
+
 namespace std {
-    template<>
-    struct hash<AttributeGroup> {
-        std::size_t operator()(const AttributeGroup& group) const noexcept {
+    template <>
+    struct hash<mmcfilters::AttributeGroup> {
+        std::size_t operator()(const mmcfilters::AttributeGroup& group) const noexcept {
             return static_cast<std::size_t>(group);
         }
     };
 
-    template<>
-    struct hash<Attribute> {
-        std::size_t operator()(const Attribute& attr) const noexcept {
+    template <>
+    struct hash<mmcfilters::Attribute> {
+        std::size_t operator()(const mmcfilters::Attribute& attr) const noexcept {
             return static_cast<std::size_t>(attr);
         }
     };
-    
+
     template <>
-    struct hash<AttributeOrGroup> {
-        size_t operator()(const AttributeOrGroup& attr) const {
-            return std::visit([](auto&& a) -> size_t {
+    struct hash<mmcfilters::AttributeOrGroup> {
+        std::size_t operator()(const mmcfilters::AttributeOrGroup& attr) const {
+            return std::visit([](auto&& a) -> std::size_t {
                 return std::hash<std::decay_t<decltype(a)>>{}(a);
             }, attr);
         }
     };
 
-	template<>
-    struct hash<AttributeKey> {
-        std::size_t operator()(const AttributeKey& k) const {
+    template <>
+    struct hash<mmcfilters::AttributeKey> {
+        std::size_t operator()(const mmcfilters::AttributeKey& k) const {
             return std::hash<int>()(static_cast<int>(k.attr)) ^ (std::hash<int>()(k.delta) << 1);
         }
     };
-
 }
 
-
+namespace mmcfilters {
 static const std::unordered_map<AttributeGroup, std::vector<Attribute>> ATTRIBUTE_GROUPS = {
     {AttributeGroup::GEOMETRIC, {
         AREA,
@@ -546,4 +548,6 @@ public:
         return std::nullopt;
     }
 };
+
+} // namespace mmcfilters
 

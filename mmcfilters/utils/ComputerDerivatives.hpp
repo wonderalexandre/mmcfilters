@@ -6,6 +6,7 @@
 
 #include <vector>
 #include <tuple>
+namespace mmcfilters {
 
 
 /**
@@ -72,3 +73,6 @@ class ComputerDerivatives {
         }
 
 };
+
+} // namespace mmcfilters
+

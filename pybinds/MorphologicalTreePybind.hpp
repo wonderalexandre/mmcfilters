@@ -8,6 +8,7 @@
 
 #include <stdexcept>
 #include <pybind11/numpy.h>
+namespace mmcfilters {
 
 namespace py = pybind11;
 
@@ -101,3 +102,4 @@ class MorphologicalTreePybind : public MorphologicalTree {
 
 };
 
+} // namespace mmcfilters

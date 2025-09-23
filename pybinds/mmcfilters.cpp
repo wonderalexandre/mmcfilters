@@ -19,6 +19,7 @@
 #include <pybind11/numpy.h>
 #include <pybind11/functional.h>
 
+using namespace mmcfilters;
 
 #include <optional>
 #include <sstream>

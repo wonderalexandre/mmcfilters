@@ -11,6 +11,7 @@
 #include <algorithm> 
 #include <cmath>
 #include <iostream>
+namespace mmcfilters {
 
 class AttributeComputedIncrementallyPybind;
 using AttributeComputedIncrementallyPybindPtr = std::shared_ptr<AttributeComputedIncrementallyPybind>;
@@ -148,3 +149,5 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
 	}
 
 };
+
+} // namespace mmcfilters

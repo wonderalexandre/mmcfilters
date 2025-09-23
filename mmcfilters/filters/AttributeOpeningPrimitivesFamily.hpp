@@ -8,6 +8,7 @@
 
 #include <vector>
 #include <list>
+namespace mmcfilters {
 
 class AttributeOpeningPrimitivesFamily;
 using AttributeOpeningPrimitivesFamilyPtr = std::shared_ptr<AttributeOpeningPrimitivesFamily>;
@@ -69,4 +70,4 @@ class AttributeOpeningPrimitivesFamily{
 
 
 
-
+} // namespace mmcfilters

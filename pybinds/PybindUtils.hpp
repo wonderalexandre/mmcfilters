@@ -3,6 +3,9 @@
 #include "../mmcfilters/utils/Common.hpp"
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
+
+namespace mmcfilters {
+
 namespace py = pybind11;
 
 /**
@@ -108,3 +111,4 @@ class PybindUtils{
 
 };
 
+} // namespace mmcfilters

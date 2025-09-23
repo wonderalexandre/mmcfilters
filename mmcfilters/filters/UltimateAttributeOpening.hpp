@@ -5,6 +5,7 @@
 #include "../attributes/ComputerMSER.hpp"
 #include "../attributes/AttributeComputedIncrementally.hpp"
 #include "../utils/Common.hpp"
+namespace mmcfilters {
 
 
 class UltimateAttributeOpening;
@@ -164,4 +165,5 @@ class UltimateAttributeOpening{
 
 
 	
+} // namespace mmcfilters
 

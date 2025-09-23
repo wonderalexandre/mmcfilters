@@ -14,6 +14,7 @@
 
 #include "../utils/AdjacencyRelation.hpp"
 #include "../utils/Common.hpp"
+namespace mmcfilters {
 
 // Forward declaration do builder externo
 class IMorphologicalTreeBuilder; 
@@ -1197,4 +1198,7 @@ public:
 
 };
 
+} // namespace mmcfilters
+
 #include "MorphologicalTree.tpp"
+

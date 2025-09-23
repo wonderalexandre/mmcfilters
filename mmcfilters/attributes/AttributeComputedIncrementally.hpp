@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+namespace mmcfilters {
 
 
 
@@ -61,3 +62,6 @@ public:
     static ImageFloatPtr computerAttributeMapping(MorphologicalTreePtr tree, Attribute attribute){ return computerAttributeMapping(tree.get(), attribute); }
     
 };
+
+} // namespace mmcfilters
+

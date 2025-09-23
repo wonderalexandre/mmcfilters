@@ -14,6 +14,8 @@
 #include <vector>
 #include <stdexcept>
 
+using namespace mmcfilters;
+
 int main(){
     
     

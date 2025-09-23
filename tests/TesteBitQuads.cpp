@@ -8,6 +8,7 @@
 #include "../mmcfilters/attributes/AttributeComputedIncrementally.hpp"
 #include "../mmcfilters/attributes/ComputerAttributeBasedBitQuads.hpp"
 
+using namespace mmcfilters;
 
 int main(int argc, char* argv[]) {
     // Definição da imagem e parâmetros

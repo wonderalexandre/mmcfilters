@@ -8,6 +8,7 @@
 #include <vector>
 #include <stack>
 #include <utility> // Para std::pair e std::make_pair
+namespace mmcfilters {
 
 class ResidualTree;
 using ResidualTreePtr = std::shared_ptr<ResidualTree>;
@@ -397,3 +398,6 @@ class ResidualTree{
       return ImageUtils::createRandomColor(this->getAssociatedImage()->rawData(), this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
     }
   };
+
+} // namespace mmcfilters
+

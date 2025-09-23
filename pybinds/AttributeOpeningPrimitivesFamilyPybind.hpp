@@ -11,6 +11,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
+namespace mmcfilters {
 
 /**
  * @brief Adaptador Pybind para manipular famílias de primitivas de abertura.
@@ -41,3 +42,4 @@ class AttributeOpeningPrimitivesFamilyPybind: public AttributeOpeningPrimitivesF
 
 };
 
+} // namespace mmcfilters

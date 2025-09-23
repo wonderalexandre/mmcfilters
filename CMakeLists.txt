@@ -1,8 +1,8 @@
 # Instruções de compilação
 #
-# Compilar somente os arquivos de teste: 
-#    cmake -DBUILD_PYBIND=OFF -DBUILD_DEBUG=ON -DBUILD_TESTS=ON ../
-#    cmake -DBUILD_PYBIND=OFF -DBUILD_DEBUG=OFF -DBUILD_TESTS=ON  ../
+# Compilar somente os arquivos de teste:
+#    cmake -S tests -B tests/build
+#    cmake --build tests/build
 #
 # Compilar o modulo Python:
 #    cmake -DPYTHON_LIBRARY_DIR=$(python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))") -DPYTHON_EXECUTABLE=$(python -c "import sys; print(sys.executable)") ../
@@ -44,14 +44,42 @@ message(STATUS "C++ Standard: C++${CMAKE_CXX_STANDARD}")
 if(BUILD_PYBIND)
     
     include(pybind11.cmake)
-    file (GLOB SOURCE_FILES "mmcfilters/src/*.cpp")
-    file (GLOB HEADER_FILES "mmcfilters/include/*.hpp" "mmcfilters/pybind/*.hpp")
+
+    if(NOT DEFINED MMC_PYBINDS_DIR)
+        set(MMC_PYBINDS_DIR pybinds)
+    endif()
+
+    set(MMCFILTERS_COMPONENT_DIRS
+        mmcfilters/trees
+        mmcfilters/filters
+        mmcfilters/attributes
+        mmcfilters/contours
+        mmcfilters/utils
+    )
+
+    file(GLOB_RECURSE SOURCE_FILES
+        "mmcfilters/trees/*.cpp"
+        "mmcfilters/filters/*.cpp"
+        "mmcfilters/attributes/*.cpp"
+        "mmcfilters/contours/*.cpp"
+        "mmcfilters/utils/*.cpp"
+    )
+
+    file(GLOB_RECURSE HEADER_FILES
+        "mmcfilters/trees/*.hpp"
+        "mmcfilters/trees/*.tpp"
+        "mmcfilters/filters/*.hpp"
+        "mmcfilters/attributes/*.hpp"
+        "mmcfilters/contours/*.hpp"
+        "mmcfilters/utils/*.hpp"
+        "${MMC_PYBINDS_DIR}/*.hpp"
+    )
 
     # Set up such that XCode organizes the files
     source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCE_FILES} ${HEADER_FILES} )
 
     # Arquivo fonte principal do módulo pybind
-    set(PYBIND_CPP_FILE "mmcfilters/mmcfilters.cpp")
+    set(PYBIND_CPP_FILE "${MMC_PYBINDS_DIR}/mmcfilters.cpp")
     
     pybind11_add_module(mmcfilters ${PYBIND_CPP_FILE}
       ${SOURCE_FILES}
@@ -66,67 +94,7 @@ if(BUILD_PYBIND)
 endif()
 
 # Condicionalmente adicionar a compilação de testes
+# (alternativamente, use "cmake -S tests -B tests/build" para um build dedicado)
 if(BUILD_TESTS)
-    #crei uma lib mmcfilters_lib
-    add_subdirectory(mmcfilters)
-
-
-    add_executable(testeResidualTree 
-        mmcfilters/test/testeResidualTree.cpp
-    )
-    target_link_libraries(testeResidualTree PRIVATE mmcfilters_lib)
-
-
-    add_executable(TestComponentTree2
-        mmcfilters/test/TestComponentTree2.cpp
-    )
-    target_link_libraries(TestComponentTree2 PRIVATE mmcfilters_lib)
-
-
-    # Adicionar o executável de testes: 
-    add_executable(testeTreeOfShapes 
-        mmcfilters/test/testeTreeOfShapes.cpp
-    )
-    target_link_libraries(testeTreeOfShapes PRIVATE mmcfilters_lib)
-
-
-    add_executable(TesteCountors
-        mmcfilters/test/TesteCountors.cpp
-        external/stb/stb_image.cpp
-    )
-    target_link_libraries(TesteCountors PRIVATE mmcfilters_lib)
-    target_compile_options(TesteCountors PRIVATE -Wno-deprecated-declarations)
-
-     
-    add_executable(TesteCountors2 
-        mmcfilters/test/TesteCountors2.cpp
-        external/stb/stb_image.cpp
-    )
-    target_link_libraries(TesteCountors2 PRIVATE mmcfilters_lib)
-    target_compile_options(TesteCountors2 PRIVATE -Wno-deprecated-declarations)
-  
-
-    add_executable(TesteAdjacencyUC 
-        mmcfilters/test/TesteAdjacencyUC.cpp
-        external/stb/stb_image.cpp
-    )
-    target_link_libraries(TesteAdjacencyUC PRIVATE mmcfilters_lib)
-    target_compile_options(TesteAdjacencyUC PRIVATE -Wno-deprecated-declarations)
-
-
-    add_executable(testeComputerAttribute 
-        mmcfilters/test/testeComputerAttribute.cpp
-        external/stb/stb_image.cpp
-    )
-    target_link_libraries(testeComputerAttribute PRIVATE mmcfilters_lib)
-    target_compile_options(testeComputerAttribute PRIVATE -Wno-deprecated-declarations)
-
-
-    add_executable(TesteBitQuads 
-        mmcfilters/test/TesteBitQuads.cpp
-        external/stb/stb_image.cpp
-    )
-    target_link_libraries(TesteBitQuads PRIVATE mmcfilters_lib)
-    target_compile_options(TesteBitQuads PRIVATE -Wno-deprecated-declarations)
-
+    add_subdirectory(tests)
 endif()

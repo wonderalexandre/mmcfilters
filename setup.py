@@ -64,6 +64,12 @@ class CMakeBuild(build_ext):
         if prefix:
             cmake_args.append(f"-DPYTHON_LIBRARY_DIR={prefix}")
 
+        cmake_args += [
+            "-DBUILD_PYBIND=ON",
+            "-DBUILD_TESTS=OFF",
+            "-DMMC_PYBINDS_DIR=pybinds",
+        ]
+
         cfg = "Debug" if self.debug else "Release"
         build_args = ["--config", cfg]
 

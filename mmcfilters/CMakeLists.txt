@@ -3,48 +3,66 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-# Diretórios do projeto
-set(PROJECT_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
-set(PROJECT_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
+set(MMCFILTERS_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+set(MMCFILTERS_COMPONENT_DIRS
+    ${MMCFILTERS_ROOT}/trees
+    ${MMCFILTERS_ROOT}/filters
+    ${MMCFILTERS_ROOT}/attributes
+    ${MMCFILTERS_ROOT}/contours
+    ${MMCFILTERS_ROOT}/utils
+)
 
-# Usar GLOB para obter automaticamente todos os arquivos .hpp e .cpp
-file(GLOB_RECURSE HEADER_FILES "${PROJECT_INCLUDE_DIR}/*.hpp")
-file(GLOB_RECURSE SOURCE_FILES "${PROJECT_SOURCE_DIR}/*.cpp")
+file(GLOB_RECURSE HEADER_FILES
+    "${MMCFILTERS_ROOT}/trees/*.hpp"
+    "${MMCFILTERS_ROOT}/trees/*.tpp"
+    "${MMCFILTERS_ROOT}/filters/*.hpp"
+    "${MMCFILTERS_ROOT}/attributes/*.hpp"
+    "${MMCFILTERS_ROOT}/contours/*.hpp"
+    "${MMCFILTERS_ROOT}/utils/*.hpp"
+)
 
-# Criação da biblioteca compartilhada com o nome mmcfilters_lib
+file(GLOB_RECURSE SOURCE_FILES
+    "${MMCFILTERS_ROOT}/trees/*.cpp"
+    "${MMCFILTERS_ROOT}/filters/*.cpp"
+    "${MMCFILTERS_ROOT}/attributes/*.cpp"
+    "${MMCFILTERS_ROOT}/contours/*.cpp"
+    "${MMCFILTERS_ROOT}/utils/*.cpp"
+)
+
 add_library(mmcfilters_lib SHARED ${HEADER_FILES} ${SOURCE_FILES})
 
-# Diretórios de inclusão
-target_include_directories(mmcfilters_lib PRIVATE ${PROJECT_INCLUDE_DIR})
+foreach(dir IN LISTS MMCFILTERS_COMPONENT_DIRS)
+    target_include_directories(mmcfilters_lib PRIVATE ${dir})
+endforeach()
 
-# Se pybind estiver ativado, incluir os arquivos de binding Python
 if(BUILD_PYBIND)
-    set(PROJECT_PYBIND_DIR "${CMAKE_CURRENT_SOURCE_DIR}/pybind")
+    if(DEFINED MMC_PYBINDS_DIR)
+        get_filename_component(PROJECT_PYBIND_DIR "${CMAKE_SOURCE_DIR}/${MMC_PYBINDS_DIR}" ABSOLUTE)
+    else()
+        get_filename_component(PROJECT_PYBIND_DIR "${MMCFILTERS_ROOT}/../pybinds" ABSOLUTE)
+    endif()
     file(GLOB_RECURSE PYBIND_HEADER_FILES "${PROJECT_PYBIND_DIR}/*.hpp")
     file(GLOB_RECURSE PYBIND_SOURCE_FILES "${PROJECT_PYBIND_DIR}/*.cpp")
 
-    # Adicionar os arquivos de pybind aos arquivos de compilação
     target_sources(mmcfilters_lib PRIVATE ${PYBIND_HEADER_FILES} ${PYBIND_SOURCE_FILES})
-
-    # Incluir diretórios do pybind
     target_include_directories(mmcfilters_lib PRIVATE ${PROJECT_PYBIND_DIR})
 endif()
 
-# Agrupamento para IDEs
-source_group(TREE ${PROJECT_INCLUDE_DIR} PREFIX "Headers" FILES ${HEADER_FILES})
-source_group(TREE ${PROJECT_SOURCE_DIR} PREFIX "Sources" FILES ${SOURCE_FILES})
+source_group(TREE ${MMCFILTERS_ROOT} FILES ${HEADER_FILES} ${SOURCE_FILES})
 
 if(BUILD_PYBIND)
-    source_group(TREE ${PROJECT_PYBIND_DIR} PREFIX "Pybind Headers" FILES ${PYBIND_HEADER_FILES})
-    source_group(TREE ${PROJECT_PYBIND_DIR} PREFIX "Pybind Sources" FILES ${PYBIND_SOURCE_FILES})
+    source_group(TREE ${PROJECT_PYBIND_DIR} PREFIX "Pybind" FILES ${PYBIND_HEADER_FILES} ${PYBIND_SOURCE_FILES})
 endif()
 
-# Instalação da biblioteca
 install(TARGETS mmcfilters_lib DESTINATION lib)
 
-# Instalação de headers
-install(DIRECTORY ${PROJECT_INCLUDE_DIR}/ DESTINATION include/mmcfilters)
+foreach(dir IN LISTS MMCFILTERS_COMPONENT_DIRS)
+    get_filename_component(dir_name ${dir} NAME)
+    install(DIRECTORY ${dir}/ DESTINATION include/mmcfilters/${dir_name}
+            FILES_MATCHING PATTERN "*.hpp" PATTERN "*.tpp")
+endforeach()
 
 if(BUILD_PYBIND)
-    install(DIRECTORY ${PROJECT_PYBIND_DIR}/ DESTINATION include/mmcfilters/pybind)
+    install(DIRECTORY ${PROJECT_PYBIND_DIR}/ DESTINATION include/mmcfilters/pybinds
+            FILES_MATCHING PATTERN "*.hpp")
 endif()

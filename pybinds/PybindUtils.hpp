@@ -14,8 +14,12 @@ namespace py = pybind11;
 class PybindUtils{
     public:
         
+/*1D
         template <typename PixelType>
         static py::array_t<PixelType> toNumpy(ImagePtr<PixelType> image) {
+
+            int numCols = image->getNumCols();
+            int numRows = image->getNumRows();
             
             std::shared_ptr<PixelType[]> buffer = image->rawDataPtr();
             int n = image->getSize();
@@ -35,6 +39,34 @@ class PybindUtils{
                 { sizeof(PixelType) }
             ), free_when_done);
             
+            return numpy;
+        }
+*/
+
+        template <typename PixelType>
+        static py::array_t<PixelType> toNumpy(ImagePtr<PixelType> image) {
+            int numCols = image->getNumCols();
+            int numRows = image->getNumRows();
+
+            std::shared_ptr<PixelType[]> buffer = image->rawDataPtr();
+            std::shared_ptr<PixelType[]> bufferCopy = buffer;
+
+            py::capsule free_when_done(new std::shared_ptr<PixelType[]>(bufferCopy), [](void* ptr) {
+                delete reinterpret_cast<std::shared_ptr<PixelType[]>*>(ptr);
+            });
+
+            // 2D shape: (numRows, numCols), row-major strides
+            const ssize_t itemsize = sizeof(PixelType);
+            const std::array<ssize_t, 2> shape   = { static_cast<ssize_t>(numRows), static_cast<ssize_t>(numCols) };
+            const std::array<ssize_t, 2> strides = { static_cast<ssize_t>(numCols) * itemsize, itemsize };
+
+            py::array_t<PixelType> numpy(
+                shape,
+                strides,
+                buffer.get(),
+                free_when_done
+            );
+
             return numpy;
         }
     

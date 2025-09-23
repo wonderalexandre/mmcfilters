@@ -24,6 +24,14 @@ class MorphologicalTreePybind : public MorphologicalTree {
  public:
     using MorphologicalTree::MorphologicalTree;
 
+    MorphologicalTreePybind(int r, int c, bool m, AdjacencyRelationPtr a) {
+        MorphologicalTree::numRows = r;
+        MorphologicalTree::numCols = c;
+        MorphologicalTree::treeType = m ? MAX_TREE : MIN_TREE;
+        MorphologicalTree::adj = a;
+        MorphologicalTree::pixelToNodeId.resize(r * c, -1);
+    }
+
     MorphologicalTreePybind(py::array_t<uint8_t, py::array::c_style | py::array::forcecast> input, std::string ToSInperpolation = "self-dual")
         : MorphologicalTree(
               [&]() {
@@ -61,24 +69,36 @@ class MorphologicalTreePybind : public MorphologicalTree {
     }
 
 
-    static MorphologicalTreePybindPtr createTreeFromAttributeMapping(py::array_t<float> attrMapping, py::array_t<uint8_t> input, bool isMaxtree, double radius=1.5) {
+    static MorphologicalTreePybindPtr createTreeFromAttributeMapping(
+        py::array_t<float, py::array::c_style | py::array::forcecast> attrMapping,
+        py::array_t<uint8_t, py::array::c_style | py::array::forcecast> input,
+        bool isMaxtree, double radius = 1.5) {
         auto buf_attr = attrMapping.request();
         if (buf_attr.ndim != 2) {
-            throw std::invalid_argument("input must be a 2D float array");
+            throw std::invalid_argument("attrMapping must be a 2D float32 array");
         }
-        int numRows = static_cast<int>(buf_attr.shape[0]);
-        int numCols = static_cast<int>(buf_attr.shape[1]);
-
-        ImageFloatPtr attributeMapping = ImageFloat::fromExternal(static_cast<float*>(buf_attr.ptr), numRows, numCols);
-
         auto buf_input = input.request();
+        if (buf_input.ndim != 2) {
+            throw std::invalid_argument("input image must be a 2D uint8 array");
+        }
+        int numRows = static_cast<int>(buf_input.shape[0]);
+        int numCols = static_cast<int>(buf_input.shape[1]);
+        if (buf_attr.shape[0] != buf_input.shape[0] || buf_attr.shape[1] != buf_input.shape[1]) {
+            throw std::invalid_argument("attrMapping and input must have identical shapes");
+        }
         ImageUInt8Ptr img = ImageUInt8::fromExternal(static_cast<uint8_t*>(buf_input.ptr), numRows, numCols);
-
-        MorphologicalTreePtr tree = MorphologicalTree::createFromAttributeMapping(attributeMapping, img, isMaxtree, radius);
-
-        return std::static_pointer_cast<MorphologicalTreePybind>(tree);
-
+        ImageFloatPtr attributeMapping = ImageFloat::fromExternal(static_cast<float*>(buf_attr.ptr), numRows, numCols);
+        
+        auto tree = std::make_shared<MorphologicalTreePybind>(
+            numRows, numCols, isMaxtree,
+            std::make_shared<AdjacencyRelation>(numRows, numCols, radius));
+        // call the overload that RECEIVES an existing instance (by reference) and builds it:
+        MorphologicalTree::createFromAttributeMapping(tree, attributeMapping, img, isMaxtree, radius);
+        return tree;
     }
+        
+
+    
 
     static py::array_t<uint8_t> recNode(NodeMT node) {
         if (!node) {

@@ -6,7 +6,7 @@ CXX_DEFINES =
 
 CXX_INCLUDES = -I/Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/tests
 
-CXX_FLAGSarm64 = -O3 -Wall -Wextra -Wpedantic -std=c++20 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.0.sdk
+CXX_FLAGSarm64 = -g -O0 -Wall -Wextra -Wpedantic -std=c++20 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.0.sdk
 
-CXX_FLAGS = -O3 -Wall -Wextra -Wpedantic -std=c++20 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.0.sdk
+CXX_FLAGS = -g -O0 -Wall -Wextra -Wpedantic -std=c++20 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.0.sdk
 

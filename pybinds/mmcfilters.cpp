@@ -127,6 +127,7 @@ void init_NodeCT(py::module &m){
         });
 }
 void init_MorphologicalTree(py::module &m){
+      py::class_<MorphologicalTree, std::shared_ptr<MorphologicalTree>>(m, "MorphologicalTreeBase");
       py::class_<MorphologicalTreePybind, std::shared_ptr<MorphologicalTreePybind>>(m, "MorphologicalTree")
         .def(py::init<py::array_t<int>, bool, double>(),
             "input"_a, "isMaxtree"_a, "radius"_a = 1.5)
@@ -165,7 +166,7 @@ void init_MorphologicalTree(py::module &m){
             return tree.proxy(nodeId);
         })
         .def_static("createFromAttributeMapping", &MorphologicalTreePybind::createTreeFromAttributeMapping );
-
+        
 }
 
 void init_ContoursComputedIncrementally(py::module &m){

@@ -416,6 +416,11 @@ protected:
 
     void computerTreeAttributes();
     MorphologicalTree() = default;
+
+    /*MorphologicalTree(int rows, int cols, bool isMaxtree, AdjacencyRelationPtr adj): root(-1), numRows(rows), numCols(cols), treeType(isMaxtree ? MAX_TREE : MIN_TREE), adj(adj), numNodes(0) {
+        pixelToNodeId.resize(rows * cols, -1);
+    }*/
+
 public:
 
    	static const int MAX_TREE = 0;
@@ -435,11 +440,14 @@ public:
                 this->numCols = c;
                 this->treeType = m ? MAX_TREE : MIN_TREE;
                 this->adj = a;
+                this->pixelToNodeId.resize(r * c, -1);
             }
         };
         return std::make_shared<Enabler>(rows, cols, isMaxtree, adj);
     }
-    
+
+    template <typename PixelType>
+    static MorphologicalTreePtr createFromAttributeMapping(MorphologicalTreePtr tree, ImagePtr<PixelType> attrMappingPtr, ImageUInt8Ptr imgPtr, bool isMaxtree, double radius);
 
     template <typename PixelType>
     static MorphologicalTreePtr createFromAttributeMapping(ImagePtr<PixelType> attrMappingPtr, ImageUInt8Ptr imgPtr, bool isMaxtree, double radius);

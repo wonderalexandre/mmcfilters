@@ -6,7 +6,7 @@ CXX_DEFINES = -Dmmcfilters_lib_EXPORTS
 
 CXX_INCLUDES = -I/Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/mmcfilters/trees -I/Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/mmcfilters/filters -I/Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/mmcfilters/attributes -I/Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/mmcfilters/contours -I/Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/mmcfilters/utils
 
-CXX_FLAGSarm64 = -O3 -Wall -Wextra -Wpedantic -std=c++20 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.0.sdk -fPIC
+CXX_FLAGSarm64 = -g -O0 -Wall -Wextra -Wpedantic -std=c++20 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.0.sdk -fPIC
 
-CXX_FLAGS = -O3 -Wall -Wextra -Wpedantic -std=c++20 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.0.sdk -fPIC
+CXX_FLAGS = -g -O0 -Wall -Wextra -Wpedantic -std=c++20 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.0.sdk -fPIC
 

@@ -17,11 +17,18 @@
 #include "../trees/BuilderMorphologicalTreeByUnionFind.hpp"
 namespace mmcfilters {
 
-
 template <typename PixelType>
 MorphologicalTreePtr MorphologicalTree::createFromAttributeMapping(ImagePtr<PixelType> attrMappingPtr, ImageUInt8Ptr imgPtr, bool isMaxtree, double radius) {
-    AdjacencyRelationPtr adj = std::make_shared<AdjacencyRelation>(imgPtr->getNumRows(), imgPtr->getNumCols(), radius);	
+    AdjacencyRelationPtr adj = std::make_shared<AdjacencyRelation>(imgPtr->getNumRows(), imgPtr->getNumCols(), radius);
     MorphologicalTreePtr tree = MorphologicalTree::create(imgPtr->getNumRows(), imgPtr->getNumCols(), isMaxtree, adj);
+    return createFromAttributeMapping(tree, attrMappingPtr, imgPtr, isMaxtree, radius);
+}
+
+
+template <typename PixelType>
+MorphologicalTreePtr MorphologicalTree::createFromAttributeMapping(MorphologicalTreePtr tree, ImagePtr<PixelType> attrMappingPtr, ImageUInt8Ptr imgPtr, bool isMaxtree, double radius) {
+    AdjacencyRelationPtr adj = std::make_shared<AdjacencyRelation>(imgPtr->getNumRows(), imgPtr->getNumCols(), radius);
+    
     BuilderComponentTree builderUF(adj.get(), isMaxtree);
     auto [parent, orderedPixels, numNodes] = builderUF.createTreeByUnionFind(attrMappingPtr);
 

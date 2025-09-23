@@ -99,5 +99,9 @@ int main(int argc, char const* argv[]) {
         }
     }
 
+
+    ImageFloatPtr attributeMapping = ImageFloat::fromExternal(static_cast<float*>(attrsRectangularity.get()), image->getNumRows(), image->getNumCols());
+    MorphologicalTreePtr treeAttrMap = MorphologicalTree::createFromAttributeMapping(attributeMapping, image, false, 1.5);
+    printTree(treeAttrMap->getRoot());
     return 0;
 }

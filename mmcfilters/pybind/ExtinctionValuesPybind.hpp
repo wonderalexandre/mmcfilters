@@ -1,6 +1,4 @@
-#ifndef EXTINCTION_VALUES_PYBIND_H
-#define EXTINCTION_VALUES_PYBIND_H
-
+#pragma once
 
 #include "../include/ExtinctionValues.hpp"
 #include "../include/NodeMT.hpp"
@@ -45,5 +43,3 @@ class ExtinctionValuesPybind : public ExtinctionValues{
     }
 
 };
-
-#endif // EXTINCTION_VALUES_PYBIND_H

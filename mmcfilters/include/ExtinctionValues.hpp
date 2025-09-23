@@ -4,6 +4,8 @@
 #include "../include/AdjacencyRelation.hpp"
 #include "../include/Common.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
+#include "../include/ContoursComputedIncrementally.hpp"
+
 #include <algorithm>
 
 #define PI 3.14159265358979323846
@@ -97,7 +99,7 @@ class ExtinctionValues{
             ImageFloatPtr imgOutputPtr = ImageFloat::create(tree->getNumRowsOfImage(), tree->getNumColsOfImage(), 0);
             auto saliencyOutput = imgOutputPtr->rawData();
 
-            auto contoursCT = AttributeComputedIncrementally::extractCompactContours(tree);
+            auto contoursCT = ContoursComputedIncrementally::extractCompactContours(tree);
             for (auto&& [node, contourNode] : contoursCT->contoursLazy()) {
                 if (keep[node]) {
                     for (int p : contourNode) {
@@ -116,7 +118,7 @@ class ExtinctionValues{
             for(int i=0; i < leafToKeep; i++){
                 criterion[regionalExtremaNodes[i].leaf] = true;
             }
-            for(NodeId node: tree->getNodeIds()){
+            for(NodeId node: tree->getIteratorPostOrderTraversalById()){
                 NodeId parent = tree->getParentById(node);
                 if (parent != InvalidNode && criterion[node]) {
                     criterion[parent] = true;

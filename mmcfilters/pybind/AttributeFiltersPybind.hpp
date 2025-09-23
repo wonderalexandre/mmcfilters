@@ -1,6 +1,4 @@
-
-#ifndef ATTRIBUTE_FILTERS_PYBIND_H
-#define ATTRIBUTE_FILTERS_PYBIND_H
+#pragma once
 
 #include "../include/NodeMT.hpp"
 #include "../include/AttributeFilters.hpp"
@@ -122,4 +120,3 @@ class AttributeFiltersPybind : public AttributeFilters{
 
 };
 
-#endif

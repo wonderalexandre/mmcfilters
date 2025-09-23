@@ -1,6 +1,4 @@
-#ifndef COMPONENT_TREE_PYBIND_H
-#define COMPONENT_TREE_PYBIND_H
-
+#pragma once
 
 #include "../include/MorphologicalTree.hpp"
 #include "../include/NodeMT.hpp"
@@ -10,8 +8,6 @@
 
 #include <stdexcept>
 #include <pybind11/numpy.h>
-
-
 
 namespace py = pybind11;
 
@@ -64,8 +60,14 @@ class MorphologicalTreePybind : public MorphologicalTree {
     }
 
 
-    static MorphologicalTreePybindPtr createTreeFromAttributeMapping(py::array_t<float> attrMapping, py::array_t<uint8_t> input, int numRows, int numCols, bool isMaxtree, double radius=1.5) {
+    static MorphologicalTreePybindPtr createTreeFromAttributeMapping(py::array_t<float> attrMapping, py::array_t<uint8_t> input, bool isMaxtree, double radius=1.5) {
         auto buf_attr = attrMapping.request();
+        if (buf_attr.ndim != 2) {
+            throw std::invalid_argument("input must be a 2D float array");
+        }
+        int numRows = static_cast<int>(buf_attr.shape[0]);
+        int numCols = static_cast<int>(buf_attr.shape[1]);
+
         ImageFloatPtr attributeMapping = ImageFloat::fromExternal(static_cast<float*>(buf_attr.ptr), numRows, numCols);
 
         auto buf_input = input.request();
@@ -99,6 +101,3 @@ class MorphologicalTreePybind : public MorphologicalTree {
 
 };
 
-
-
-#endif

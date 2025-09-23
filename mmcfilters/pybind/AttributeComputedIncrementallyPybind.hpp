@@ -1,6 +1,4 @@
-#ifndef ATTRIBUTE_COMPUTED_INCREMENTALLY_PYBIND_H
-#define ATTRIBUTE_COMPUTED_INCREMENTALLY_PYBIND_H
-
+#pragma once
 
 #include "../include/AttributeComputedIncrementally.hpp"
 #include "../include/NodeMT.hpp"
@@ -26,41 +24,23 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
     using AttributeComputedIncrementally::AttributeComputedIncrementally;
 
 	
-	static py::dict extractContours(MorphologicalTreePybindPtr tree) {
-		auto contours = AttributeComputedIncrementally::extractNonCompactContours(tree);  // chama o método original
-	
-		py::dict pyContours;
-		for (size_t nodeIdx = 0; nodeIdx < contours.size(); ++nodeIdx) {
-			py::set pySet;
-			for (int pixel : contours[nodeIdx]) {
-				pySet.add(pixel);
-			}
-			pyContours[py::int_(nodeIdx)] = pySet;
-		}
-	
-		return pyContours;
-	}
 
 	static std::string describeAttribute(Attribute attribute) {
 		return AttributeNames::describe(attribute);
 	}
-	
-        static std::shared_ptr<Contours> extractCompactContours(MorphologicalTreePybindPtr tree){
-                return AttributeComputedIncrementally::extractCompactContours(tree);
-        }
 
-        /*
-        static std::vector<std::tuple<NodeMT, NodeMT, float>> extractionExtinctionValues(MorphologicalTreePybindPtr tree, py::array_t<float>& attr){
+	/*
+	static std::vector<std::tuple<NodeMT, NodeMT, float>> extractionExtinctionValues(MorphologicalTreePybindPtr tree, py::array_t<float>& attr){
 
-                std::vector<std::tuple<NodeMT, NodeMT, float>> extinctionValues;
-                std::shared_ptr<float[]> attribute = PybindUtils::toShared_ptr(attr);
-                auto extValuesPtr = AttributeComputedIncrementally::getExtinctionValue(tree, attribute);
-                extinctionValues.reserve(extValuesPtr.size());
-                for (const auto& extValue : extValuesPtr) {
-                        extinctionValues.push_back(std::make_tuple(tree->proxy(extValue->leaf), tree->proxy(extValue->cutoffNode), extValue->extinction));
-                }
-                return extinctionValues;
-        }*/
+			std::vector<std::tuple<NodeMT, NodeMT, float>> extinctionValues;
+			std::shared_ptr<float[]> attribute = PybindUtils::toShared_ptr(attr);
+			auto extValuesPtr = AttributeComputedIncrementally::getExtinctionValue(tree, attribute);
+			extinctionValues.reserve(extValuesPtr.size());
+			for (const auto& extValue : extValuesPtr) {
+					extinctionValues.push_back(std::make_tuple(tree->proxy(extValue->leaf), tree->proxy(extValue->cutoffNode), extValue->extinction));
+			}
+			return extinctionValues;
+	}*/
 
 	static py::array_t<float> computeSingleAttribute(MorphologicalTreePybindPtr tree, Attribute attribute){
 		auto [attributeNames, buffer] = AttributeComputedIncrementally::computeSingleAttribute(tree, attribute);
@@ -168,4 +148,3 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
 	}
 
 };
-#endif 

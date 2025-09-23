@@ -1,3 +1,5 @@
+#pragma once
+
 #include "../include/AttributeOpeningPrimitivesFamily.hpp"
 
 #include "../pybind/MorphologicalTreePybind.hpp"
@@ -9,9 +11,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
-
-#ifndef ATTRIBUTE_OPENING_PRIMITIVES_FAMILY_PYBIND_H
-#define ATTRIBUTE_OPENING_PRIMITIVES_FAMILY_PYBIND_H
 
 /**
  * @brief Adaptador Pybind para manipular famílias de primitivas de abertura.
@@ -42,4 +41,3 @@ class AttributeOpeningPrimitivesFamilyPybind: public AttributeOpeningPrimitivesF
 
 };
 
-#endif

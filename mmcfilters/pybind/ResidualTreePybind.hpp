@@ -1,3 +1,5 @@
+#pragma once
+
 #include <list>
 
 #include "../include/NodeMT.hpp"
@@ -7,9 +9,6 @@
 #include "../include/Common.hpp"
 
 #include "../pybind/PybindUtils.hpp"
-
-#ifndef RESIDUAL_TREE_PYBIND_H
-#define RESIDUAL_TREE_PYBIND_H
 
 
 /**
@@ -51,5 +50,3 @@ class ResidualTreePybind: public ResidualTree{
             return PybindUtils::toNumpy(ResidualTree::getPositiveResidues());
         }
 };
-
-#endif

@@ -1,6 +1,5 @@
+#pragma once
 
-#ifndef ULTIMATE_ATTR_OPENING_PYBIND_H
-#define ULTIMATE_ATTR_OPENING_PYBIND_H
 
 #include <array>
 #include "../include/NodeMT.hpp"
@@ -41,5 +40,3 @@ public:
 
 
 };
-
-#endif

@@ -7,7 +7,7 @@
 
 #include "../include/MorphologicalTree.hpp"
 #include "../include/AttributeComputedIncrementally.hpp"
-
+#include "../include/ContoursComputedIncrementally.hpp"
 
 
 int main(int argc, char* argv[]) {
@@ -63,7 +63,7 @@ int main(int argc, char* argv[]) {
     std::cout << std::endl;
     printMappingSC(tree, 3);
     
-    std::shared_ptr<Contours> contoursCT = AttributeComputedIncrementally::extractCompactContours(tree);
+    std::shared_ptr<Contours> contoursCT = ContoursComputedIncrementally::extractCompactContours(tree);
     //ImagePtr imgContours = Image::create(numRows, numCols, 0);
 
     bool isEquals = true;

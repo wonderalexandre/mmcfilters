@@ -1085,7 +1085,13 @@ public:
 };
 
 
+
+
+
 /**
+ * @brief Estrutura LCA baseada em percurso Euler e RMQ para arvores morfologicas.
+ * 
+ * 
  * Método Euler Tour + RMQ
   
  Etapa 1: Euler Tour
@@ -1121,38 +1127,14 @@ public:
       3. O correspondente em no vetor euler: euler[4] = 0 que é o indice do LCA
 	
  */
-/**
- * @brief Estrutura LCA baseada em percurso Euler e RMQ para component trees.
- */
-class LCAEulerRMQ_CT {
+class LCAEulerRMQ {
 private:
     std::vector<int> euler;            // timePreOrder dos nós na ordem de visita
     std::vector<int> depth;            // profundidade associada a cada posição em euler
     std::vector<int> firstOccurrence;  // [timePreOrder] = posição no vetor euler
     std::vector<std::vector<int>> st;  // Sparse Table para RMQ
     MorphologicalTree* tree;
-public:
-    LCAEulerRMQ_CT(MorphologicalTree* tree): tree(tree) {
-        
-        int n = tree->getNumNodes();
-        euler.reserve(n);
-        depth.reserve(n);
-        firstOccurrence.resize(n, -1);
 
-        depthFirstTraversal(tree->getRootById(), 0);
-        buildSparseTable();
-    }
-
-	NodeId findLowestCommonAncestor(NodeId u, NodeId v) {
-        int i = firstOccurrence[u];
-        int j = firstOccurrence[v];
-        if (i > j) std::swap(i, j);
-        int idx = rmq(i, j);
-        return euler[idx];
-    }
-
-
-private:
     void depthFirstTraversal(NodeId timeNode, int d) {
         if (firstOccurrence[timeNode] == -1)
             firstOccurrence[timeNode] = euler.size();
@@ -1191,6 +1173,27 @@ private:
         int b = st[r - (1 << k) + 1][k];
         return (depth[a] < depth[b]) ? a : b;
     }
+
+public:
+    
+    explicit LCAEulerRMQ(MorphologicalTree* tree): tree(tree) {
+        int n = tree->getNumNodes();
+        euler.reserve(n);
+        depth.reserve(n);
+        firstOccurrence.resize(n, -1);
+
+        depthFirstTraversal(tree->getRootById(), 0);
+        buildSparseTable();
+    }
+
+	NodeId findLowestCommonAncestor(NodeId u, NodeId v) {
+        int i = firstOccurrence[u];
+        int j = firstOccurrence[v];
+        if (i > j) std::swap(i, j);
+        int idx = rmq(i, j);
+        return euler[idx];
+    }
+
 };
 
 #include "MorphologicalTree.tpp"

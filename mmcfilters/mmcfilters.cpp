@@ -3,7 +3,9 @@
 #include "include/AdjacencyRelation.hpp"
 #include "include/Common.hpp"
 
+
 #include "pybind/AttributeComputedIncrementallyPybind.hpp"
+#include "pybind/ContoursComputedIncrementallyPybind.hpp"
 #include "pybind/MorphologicalTreePybind.hpp"
 #include "pybind/ExtinctionValuesPybind.hpp"
 #include "pybind/AttributeFiltersPybind.hpp"
@@ -165,6 +167,18 @@ void init_MorphologicalTree(py::module &m){
 
 }
 
+void init_ContoursComputedIncrementally(py::module &m){
+    auto cls = py::class_<ContoursComputedIncrementallyPybind>(m, "ContourComputation")
+        .def_static("compactExtraction", &ContoursComputedIncrementallyPybind::extractCompactContours)
+        .def_static("nonCompactExtraction", &ContoursComputedIncrementallyPybind::extractContours);
+        
+        py::class_<Contours, std::shared_ptr<Contours>>(m, "Contours")
+            .def("contours", [](Contours &self) {
+                auto range = self.contoursLazy();
+                return py::make_iterator(range.begin(), range.end());
+            }, py::keep_alive<0, 1>())
+            .def("getContour", &Contours::getContour);
+}
 
 void init_AttributeComputedIncrementally(py::module &m){
         auto cls = py::class_<AttributeComputedIncrementallyPybind>(m, "Attribute")
@@ -199,17 +213,7 @@ void init_AttributeComputedIncrementally(py::module &m){
         .def_static("computeSingleAttribute", &AttributeComputedIncrementallyPybind::computeSingleAttribute)
         .def_static("computeSingleAttributeWithDelta", &AttributeComputedIncrementallyPybind::computeSingleAttributeWithDelta)
         .def_static("describe", &AttributeComputedIncrementallyPybind::describeAttribute)
-        .def_static("extractContours", &AttributeComputedIncrementallyPybind::extractCompactContours)
-        .def_static("extractContoursNonCompact", &AttributeComputedIncrementallyPybind::extractContours)
         .def_static("computerAttributeMapping", &AttributeComputedIncrementallyPybind::computerAttributeMapping);
-
-
-        py::class_<Contours, std::shared_ptr<Contours>>(m, "ContoursMT")
-            .def("contours", [](Contours &self) {
-                auto range = self.contoursLazy();
-                return py::make_iterator(range.begin(), range.end());
-            }, py::keep_alive<0, 1>())
-            .def("getContour", &Contours::getContour);
 
         py::enum_<AttributeGroup>(cls, "Group")
             .value("ALL", AttributeGroup::ALL)
@@ -369,6 +373,7 @@ PYBIND11_MODULE(mmcfilters, m) {
     init_NodeCT(m);
     init_MorphologicalTree(m);
     init_AttributeComputedIncrementally(m);
+    init_ContoursComputedIncrementally(m);
     init_AttributeFilters(m);
     init_ExtinctionValues(m);
     init_AdjacencyRelation(m);

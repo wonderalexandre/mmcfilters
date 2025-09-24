@@ -40,6 +40,9 @@ target_compile_options(TesteContours PRIVATE -Wno-deprecated-declarations)
 mmcfilters_add_test(TesteContours2 TesteContours2.cpp ../external/stb/stb_image.cpp)
 target_compile_options(TesteContours2 PRIVATE -Wno-deprecated-declarations)
 
+mmcfilters_add_test(TesteContours3 TesteContours3.cpp ../external/stb/stb_image.cpp)
+target_compile_options(TesteContours3 PRIVATE -Wno-deprecated-declarations)
+
 mmcfilters_add_test(TesteAdjacencyUC TesteAdjacencyUC.cpp ../external/stb/stb_image.cpp)
 target_compile_options(TesteAdjacencyUC PRIVATE -Wno-deprecated-declarations)
 

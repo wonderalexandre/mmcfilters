@@ -45,8 +45,22 @@ if(BUILD_PYBIND)
     
     include(pybind11.cmake)
 
+    # Se MMC_PYBINDS_DIR não vier, use 'pybinds'
     if(NOT DEFINED MMC_PYBINDS_DIR)
-        set(MMC_PYBINDS_DIR pybinds)
+    set(MMC_PYBINDS_DIR "pybinds")
+    endif()
+
+    # Se for relativo, torne-o absoluto baseado no CMakeLists atual
+    if(NOT IS_ABSOLUTE "${MMC_PYBINDS_DIR}")
+    set(MMC_PYBINDS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/${MMC_PYBINDS_DIR}")
+    endif()
+
+    set(PYBIND_CPP_FILE "${MMC_PYBINDS_DIR}/mmcfilters.cpp")
+
+    if(NOT EXISTS "${PYBIND_CPP_FILE}")
+    message(FATAL_ERROR
+        "pybind source não encontrado: ${PYBIND_CPP_FILE}\n"
+        "Verifique se 'pybinds/mmcfilters.cpp' está no sdist (MANIFEST.in).")
     endif()
 
     set(MMCFILTERS_COMPONENT_DIRS

@@ -24,7 +24,6 @@ int main(int argc, char* argv[]) {
     
     int numRows = image->getNumRows();
     int numCols = image->getNumCols();
-    int n = numRows * numCols;
 
     AdjacencyRelationPtr adj = std::make_shared<AdjacencyRelation>(numRows, numCols, 1);
 
@@ -66,8 +65,8 @@ int main(int argc, char* argv[]) {
     
     std::shared_ptr<Contours> contoursCT = ContoursComputedIncrementally::extractCompactContours(tree);
     //ImagePtr imgContours = Image::create(numRows, numCols, 0);
-
-    bool isEquals = true;
+    //bool isEquals = true;
+    
     for (auto&& [node, contourNode] : contoursCT->contoursLazy()) {
         ImageUInt8Ptr imgContours = ImageUInt8::create(numRows, numCols, 0);
         

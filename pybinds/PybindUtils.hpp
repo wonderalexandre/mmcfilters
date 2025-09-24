@@ -13,36 +13,7 @@ namespace py = pybind11;
  */
 class PybindUtils{
     public:
-        
-/*1D
-        template <typename PixelType>
-        static py::array_t<PixelType> toNumpy(ImagePtr<PixelType> image) {
-
-            int numCols = image->getNumCols();
-            int numRows = image->getNumRows();
-            
-            std::shared_ptr<PixelType[]> buffer = image->rawDataPtr();
-            int n = image->getSize();
-            std::shared_ptr<PixelType[]> bufferCopy = buffer;
-
-            py::capsule free_when_done(new std::shared_ptr<PixelType[]>(bufferCopy), [](void* ptr) {
-                // Converte de volta e destrói corretamente
-                delete reinterpret_cast<std::shared_ptr<PixelType[]>*>(ptr);
-            });
-            
-            py::array_t<PixelType> numpy = py::array(py::buffer_info(
-                buffer.get(),
-                sizeof(PixelType),
-                py::format_descriptor<PixelType>::value,
-                1,
-                { n },
-                { sizeof(PixelType) }
-            ), free_when_done);
-            
-            return numpy;
-        }
-*/
-
+   
         template <typename PixelType>
         static py::array_t<PixelType> toNumpy(ImagePtr<PixelType> image) {
             int numCols = image->getNumCols();
@@ -121,15 +92,6 @@ class PybindUtils{
             return numpy;
         }
         
-        /*
-        static std::shared_ptr<float[]> toShared_ptr(py::array_t<float>& arr) {
-            // Cria um capsule que sabe como liberar o ponteiro
-            return std::shared_ptr<float[]>(
-                static_cast<float*>(arr.request().ptr),
-                [obj = py::object(arr)](float*) mutable { obj.dec_ref(); }
-            );
-        }*/
-
         static std::shared_ptr<float[]> toShared_ptr(py::array_t<float>& arr) {
             // Captura o objeto Python no deleter — isso garante que o buffer não será liberado prematuramente
             return std::shared_ptr<float[]>(

@@ -28,8 +28,8 @@ namespace mmcfilters {
 class Contours{
 private:
 	MorphologicalTree* tree;	
-	std::vector<std::list<int>> contours;
-	std::vector<std::list<int>> contoursToRemove;
+	std::vector<std::vector<int>> contours;
+	std::vector<std::vector<int>> contoursToRemove;
 	
 	
 public:
@@ -46,8 +46,8 @@ public:
 	std::unordered_set<int> getContour(NodeId nodeSubtree) {
 		std::unordered_set<int> contour;
 		AttributeComputedIncrementally::computerAttribute(tree, nodeSubtree,
-			[](NodeId node) -> void {},  // pre-processing
-			[](NodeId parent, NodeId child) -> void { }, // merge-processing
+			[](NodeId) -> void {},  // pre-processing
+			[](NodeId, NodeId) -> void { }, // merge-processing
 			[&contour, this](NodeId node) -> void { //post-processing
 				for(int p: this->contours[node]){
 					contour.insert(p);
@@ -173,9 +173,9 @@ public:
 	}
 
 
-        /**
-         * @brief Iterador pós-ordem que fornece pares (nó, contorno) consolidados.
-         */
+	/**
+	 * @brief Iterador pós-ordem que fornece pares (nó, contorno) consolidados.
+	 */
     class ContourPostOrderIterator {
 	private:
 		using value_type = std::pair<NodeId, std::unordered_set<int>>;
@@ -262,9 +262,9 @@ public:
 		ContourPostOrderIterator& operator=(ContourPostOrderIterator&&) = default;
 	};
 
-        /**
-         * @brief Range que produz iteradores pós-ordem sobre contornos compactados.
-         */
+	/**
+	 * @brief Range que produz iteradores pós-ordem sobre contornos compactados.
+	 */
     class ContourPostOrderRange {
 	private:
 		NodeId root;
@@ -309,10 +309,10 @@ public:
         LCAEulerRMQ lca(tree);	
 
         AttributeComputedIncrementally::computerAttribute(tree, tree->getRootById(),
-            [](NodeId node) -> void { // pre-processing
+            [](NodeId) -> void { // pre-processing
 
             },
-            [](NodeId parent, NodeId child) -> void { // merge-processing
+            [](NodeId, NodeId) -> void { // merge-processing
                 
             },
             [&contoursMT, &contoursToRemoveLCA, &lca, &ncount, tree, adj4](NodeId nodeP) -> void { // post-processing
@@ -374,20 +374,20 @@ public:
         std::vector<std::unordered_set<int>> contours(tree->getNumNodes());
         std::vector<std::vector<int>> contoursToRemoveLCA(tree->getNumNodes());
         std::vector<std::int8_t> ncount(tree->getNumRowsOfImage() * tree->getNumColsOfImage(), 0);
-        AdjacencyRelationPtr adj4 = std::make_shared<AdjacencyRelation>(tree->getNumRowsOfImage(), tree->getNumColsOfImage(), 1);
+        AdjacencyRelation adj4(tree->getNumRowsOfImage(), tree->getNumColsOfImage(), 1);
         LCAEulerRMQ lca(tree);	
 
         AttributeComputedIncrementally::computerAttribute(tree, tree->getRootById(),
-            [](NodeId node) -> void { // pre-processing
+            [](NodeId) -> void { // pre-processing
 
             },
-            [&contours](NodeId parent, NodeId child) -> void { // merge-processing
+            [&contours](NodeId child, NodeId parent) -> void { // merge-processing
                 std::unordered_set<int> &Ncontour = contours[parent];
                 for (int p : contours[child]){
                     Ncontour.insert(p);
                 }
             },
-            [&contours, &contoursToRemoveLCA, &lca, &ncount, tree, adj4](NodeId nodeP) -> void { // post-processing
+            [&contours, &contoursToRemoveLCA, &lca, &ncount, tree, &adj4](NodeId nodeP) -> void { // post-processing
                 // Initialise contours of node "N"
                 std::unordered_set<int> &Ncontour = contours[nodeP];
                 std::vector<int> &NcontourToRemoveLCA = contoursToRemoveLCA[nodeP];
@@ -395,7 +395,7 @@ public:
                 for(int p: NcontourToRemoveLCA){ //pixels que sao contornos de nodes descendentes ao NodeAtual
                     bool isPixelToBeRemoved = true;
                     
-                    for (int r : adj4->getNeighborPixels(p)) { //Existe um nodeQ ascendente de NodeAtual contendo p como contorno? (p, q) in A
+                    for (int r : adj4.getNeighborPixels(p)) { //Existe um nodeQ ascendente de NodeAtual contendo p como contorno? (p, q) in A
                         NodeId nodeR = tree->getSCById(r); 
                         if (tree->isStrictAncestor(nodeR, nodeLCA)){
                             contoursToRemoveLCA[nodeR].push_back(p); 
@@ -406,16 +406,16 @@ public:
                             isPixelToBeRemoved = false;
                         }
                     }
-                    if(!adj4->isBorderDomainImage(p) && isPixelToBeRemoved){
+                    if(!adj4.isBorderDomainImage(p) && isPixelToBeRemoved){
                         Ncontour.erase(p);
                     }
                 }
             
                 for (int p : tree->getCNPsById(nodeP)) {
-                    if (adj4->isBorderDomainImage(p)){
+                    if (adj4.isBorderDomainImage(p)){
                         ncount[p]++;
                     }
-                    for (int q : adj4->getNeighborPixels(p)) {
+                    for (int q : adj4.getNeighborPixels(p)) {
                         NodeId nodeQ = tree->getSCById(q); 
                         if(!tree->isComparable(nodeP, nodeQ)){ //se os nodeP e nodeQ não sao comparaveis, então p pode ser removido pelo LCA de nodeP e nodeQ 
                             NodeId nodeLCA = lca.findLowestCommonAncestor(nodeP, nodeQ);

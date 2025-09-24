@@ -26,7 +26,6 @@ int main(int argc, char* argv[]) {
     
     int numRows = image->getNumRows();
     int numCols = image->getNumCols();
-    int n = numRows * numCols;
 
     AdjacencyRelationPtr adj = std::make_shared<AdjacencyRelation>(numRows, numCols, 1);
 

@@ -210,7 +210,7 @@ class AttributeFilters{
             [&criterion](NodeId parent, NodeId child) -> void { 
                 criterion[parent] = (criterion[parent] & criterion[child]);
             },
-            [](NodeId node) -> void { //post-processing
+            [](NodeId) -> void { //post-processing
                                         
             }
         );
@@ -265,10 +265,10 @@ class AttributeFilters{
                 if(attribute[node] <= threshold)
                     criterion[node] = true;
             },
-            [&criterion, attribute, threshold](NodeId parent, NodeId child) -> void { 
+            [&criterion](NodeId parent, NodeId child) -> void { 
                 criterion[parent] = (criterion[parent] & criterion[child]);
             },
-            [&criterion, attribute, threshold](NodeId node) -> void { //post-processing
+            [](NodeId) -> void { //post-processing
                                         
             }
         );

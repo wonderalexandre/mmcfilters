@@ -142,10 +142,10 @@ setup(
         "Documentation": "https://github.com/wonderalexandre/ComponentTreeLearn",
     },
     keywords=[
-        "machine learning",
         "morphological trees",
         "mathematical morphology",
         "image processing",
+        "computer vision",
     ],
     classifiers=[
         "Development Status :: 3 - Alpha",

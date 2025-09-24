@@ -1,20 +1,25 @@
 #pragma once
 
-//#define NDEBUG  // Remove os asserts do código
+#define NDEBUG  // Remove os asserts do código
 #include <cassert>
 #include <cstdint>
 #include <list>
+#include <vector>
 #include <unordered_set>
 #include <unordered_map>
+#include <string>
 
 #include <memory>
 #include <limits>
 #include <algorithm>
 #include <cmath>
-#include <type_traits>
 #include <span>
 #include <iostream>
 
+#include <variant>     // std::variant
+#include <optional>    // std::optional
+#include <functional>  // std::hash
+#include <type_traits> // std::underlying_type_t (se usar)
 
 #include "Image.hpp"
 #include "PixelSetManager.hpp"

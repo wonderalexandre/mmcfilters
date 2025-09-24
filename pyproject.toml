@@ -1,9 +1,26 @@
 [build-system]
 requires = [
-  "setuptools>=61",
+  "setuptools>=68",
   "wheel",
-  "cmake>=3.14",
+  "cmake>=3.18",
   "packaging>=21",
 ]
 build-backend = "setuptools.build_meta"
 
+# ---- setuptools config (keeps metadata in setup.py if you have one) ----
+[tool.setuptools]
+# allow MANIFEST.in and package_data to be respected
+include-package-data = true
+
+# your pure-Python package lives under the 'python/' folder
+[tool.setuptools.package-dir]
+"" = "python"
+
+# discover packages inside 'python/'
+[tool.setuptools.packages.find]
+where = ["python"]
+namespaces = false
+
+# if maf/version.py defines __version__, use it for package version
+[tool.setuptools.dynamic]
+version = { attr = "maf.version.__version__" }

@@ -1,2 +1,21 @@
-include README.md LICENSE CMakeLists.txt pybind11.cmake
-recursive-include mmcfilters *.cpp *.hpp CMakeLists.txt
+# arquivos de controle do build
+include README.md
+include LICENSE
+include pyproject.toml
+include CMakeLists.txt
+include pybind11.cmake
+recursive-include cmake *.cmake
+
+# fontes C++ e headers do projeto
+recursive-include mmcfilters *.h *.hh *.hpp *.hxx *.c *.cc *.cpp *.cxx CMakeLists.txt
+
+# bindings pybind11
+recursive-include pybinds *.h *.hh *.hpp *.hxx *.c *.cc *.cpp *.cxx
+
+# (se houver) includes externos
+recursive-include include *.h *.hh *.hpp *.hxx
+
+# opcional: mantenha fora artefatos de build
+prune build
+prune dist
+prune *.egg-info

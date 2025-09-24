@@ -7,7 +7,7 @@
 
 #include "../mmcfilters/trees/MorphologicalTree.hpp"
 #include "../mmcfilters/attributes/AttributeComputedIncrementally.hpp"
-#include "../mmcfilters/contours/ContoursComputedIncrementally2.hpp"
+#include "../mmcfilters/contours/ContoursComputedIncrementally.hpp"
 
 using namespace mmcfilters;
 
@@ -63,7 +63,7 @@ int main(int argc, char* argv[]) {
     std::cout << std::endl;
     printMappingSC(tree, 3);
     
-    auto contoursCT = ContoursComputedIncrementally2::extractCompactContours(tree.get());
+    auto contoursCT = ContoursComputedIncrementally::extractCompactContours(tree.get());
     //ImagePtr imgContours = Image::create(numRows, numCols, 0);
     //bool isEquals = true;
     

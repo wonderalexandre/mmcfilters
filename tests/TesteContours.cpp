@@ -65,7 +65,7 @@ int main(int argc, char* argv[]) {
     //std::cout << std::endl;
     //printMappingSC(tree, 3);
     
-    std::shared_ptr<Contours> contoursCT = ContoursComputedIncrementally::extractCompactContours(tree);
+    auto contoursCT = ContoursComputedIncrementally::extractCompactContours(tree.get());
     //std::vector<std::unordered_set<int>> countors =  ContoursComputedIncrementally::extractCountors(tree);
     
     ImageUInt8Ptr imgBin = ImageUInt8::create(numRows, numCols, 0);
@@ -73,28 +73,31 @@ int main(int argc, char* argv[]) {
     ImageUInt8Ptr contoursNonInc = ImageUInt8::create(numRows, numCols, 0);
 
     bool isEquals = true;
-    contoursCT->visitContoursAndCCs([&](NodeId node, const std::list<int>& cc, const std::unordered_set<int>& contourNode) {
-       
+    for (auto&& [node, contourNode] : contoursCT.contoursLazy()) {
+        std::list<int> cc;
+        for (int p : tree->getCNPsById(node)) {
+            cc.push_back(p);
+        }
 
-        //contorno incremental
-        for(int p: contourNode){
+        // contorno incremental
+        for (int p : contourNode) {
             (*contoursInc)[p] = 1;
         }
-        
-        //contorno nao-incremental
-        for(int p: cc){
-            if(tree->isDescendant(tree->getSCById(p), node)){
+
+        // contorno não incremental
+        for (int p : cc) {
+            if (tree->isDescendant(tree->getSCById(p), node)) {
                 (*imgBin)[p] = 1;
-            }        
+            }
         }
 
-        for(int p: cc){
+        for (int p : cc) {
             auto [row, col] = ImageUtils::to2D(p, numCols);
-            if((*imgBin)[p]==1 && (row ==0 || col ==0 || col == numCols-1 || row == numRows-1)){
+            if ((*imgBin)[p] == 1 && (row == 0 || col == 0 || col == numCols - 1 || row == numRows - 1)) {
                 (*contoursNonInc)[p] = 1;
-            }else{
+            } else {
                 for (int q : adj->getAdjPixels(p)) {
-                    if ((*imgBin)[p]==1 && (*imgBin)[q]==0) {
+                    if ((*imgBin)[p] == 1 && (*imgBin)[q] == 0) {
                         (*contoursNonInc)[p] = 1;
                     }
                 }
@@ -102,32 +105,31 @@ int main(int argc, char* argv[]) {
         }
 
         bool isEqualsCC = true;
-        for(int p: cc){
-            if((*contoursNonInc)[p] != (*contoursInc)[p]){
+        for (int p : cc) {
+            if ((*contoursNonInc)[p] != (*contoursInc)[p]) {
                 isEquals = false;
                 isEqualsCC = false;
-                std::pair<int, int> point = ImageUtils::to2D(p, numCols);
+                auto point = ImageUtils::to2D(p, numCols);
                 std::cout << "(row, col) = (" << point.first << ", " << point.second << ")\n";
             }
         }
-        std::cout << "CC(nodeID):"<< node << "\t is equals? " << isEqualsCC << std::endl;
-        
-        if(!isEqualsCC){
+        std::cout << "CC(nodeID):" << node << "\t is equals? " << isEqualsCC << std::endl;
+
+        if (!isEqualsCC) {
             std::cout << "\nContorno não incremental" << std::endl;
             printImage(contoursNonInc, 3);
-    
+
             std::cout << "\nContorno incremental" << std::endl;
             printImage(contoursInc, 3);
         }
-        
-        //limpa as estruturas para o proximo nó
-        for(int p: cc){
+
+        // limpa as estruturas para o próximo nó
+        for (int p : cc) {
             (*imgBin)[p] = 0;
             (*contoursInc)[p] = 0;
             (*contoursNonInc)[p] = 0;
         }
-        
-    });
+    }
   
 /*
     

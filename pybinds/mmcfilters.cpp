@@ -2,7 +2,7 @@
 #include "../mmcfilters/trees/NodeMT.hpp"
 #include "../mmcfilters/utils/AdjacencyRelation.hpp"
 #include "../mmcfilters/utils/Common.hpp"
-
+#include "../mmcfilters/contours/ContoursComputedIncrementally.hpp"
 
 #include "AttributeComputedIncrementallyPybind.hpp"
 #include "ContoursComputedIncrementallyPybind.hpp"
@@ -170,16 +170,48 @@ void init_MorphologicalTree(py::module &m){
 }
 
 void init_ContoursComputedIncrementally(py::module &m){
-    auto cls = py::class_<ContoursComputedIncrementallyPybind>(m, "ContourComputation")
-        .def_static("compactExtraction", &ContoursComputedIncrementallyPybind::extractCompactContours)
-        .def_static("nonCompactExtraction", &ContoursComputedIncrementallyPybind::extractContours);
-        
-        py::class_<Contours, std::shared_ptr<Contours>>(m, "Contours")
-            .def("contours", [](Contours &self) {
-                auto range = self.contoursLazy();
-                return py::make_iterator(range.begin(), range.end());
-            }, py::keep_alive<0, 1>())
-            .def("getContour", &Contours::getContour);
+    // Alias locais
+    using Contours     = ContoursComputedIncrementally::IncrementalContours;
+    using ContourProxy = Contours::ContourProxy;
+    using Range = decltype(std::declval<Contours&>().contoursLazy());
+    using Iter  = decltype(std::declval<Range&>().begin());
+    
+    // Torna ContourProxy iterável em Python
+    py::class_<ContourProxy>(m, "ContourProxy")
+        .def("__iter__", [](const ContourProxy& p) {
+            // usa os iteradores já existentes do proxy
+            return py::make_iterator(p.begin(), p.end());
+        }, py::keep_alive<0, 1>())
+        .def("empty", &ContourProxy::empty);
+
+    struct ContoursIterator {
+        Contours* owner;
+        Range range;
+        Iter it, itEnd;
+        ContoursIterator(Contours& self)
+            : owner(&self), range(self.contoursLazy()), it(range.begin()), itEnd(range.end()) {}
+    };
+
+    py::class_<ContoursIterator>(m, "ContoursIterator")
+        .def(py::init<Contours&>())
+        .def("__iter__", [](ContoursIterator& self) -> ContoursIterator& { return self; }, py::return_value_policy::reference_internal)
+        .def("__next__", [](ContoursIterator& self) -> py::object {
+            if (self.it == self.itEnd) throw py::stop_iteration();
+            auto entry = *self.it++;  // <— cópia do par temporário
+            auto nodeId = std::get<0>(entry);
+            auto proxy  = std::get<1>(entry);  // ContourProxy
+            return py::make_tuple(nodeId, proxy);
+        });
+
+
+    py::class_<Contours, std::shared_ptr<Contours>>(m, "Contours")
+        .def("contours", [](Contours &self) {
+            return ContoursIterator(self);
+        }, py::keep_alive<0, 1>())
+        .def("getContour", &Contours::contour);
+
+    py::class_<ContoursComputedIncrementallyPybind>(m, "ContourComputation")
+        .def_static("extraction", &ContoursComputedIncrementallyPybind::extraction);
 }
 
 void init_AttributeComputedIncrementally(py::module &m){

@@ -100,10 +100,10 @@ class ExtinctionValues{
             ImageFloatPtr imgOutputPtr = ImageFloat::create(tree->getNumRowsOfImage(), tree->getNumColsOfImage(), 0);
             auto saliencyOutput = imgOutputPtr->rawData();
 
-            auto contoursCT = ContoursComputedIncrementally::extractCompactContours(tree);
-            for (auto&& [node, contourNode] : contoursCT->contoursLazy()) {
+            auto contours = ContoursComputedIncrementally::extractCompactContours(tree);
+            for (auto&& [node, contour] : contours.contoursLazy()) {
                 if (keep[node]) {
-                    for (int p : contourNode) {
+                    for (int p : contour) {
                         saliencyOutput[p] = extinctionByNode[node];
                     }
                 }

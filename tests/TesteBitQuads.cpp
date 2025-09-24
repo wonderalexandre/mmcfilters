@@ -10,7 +10,7 @@
 
 using namespace mmcfilters;
 
-int main(int argc, char* argv[]) {
+int main() {
     // Definição da imagem e parâmetros
     ImageUInt8Ptr image = getICIP14Image();
     

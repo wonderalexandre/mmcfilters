@@ -63,13 +63,13 @@ int main(int argc, char* argv[]) {
     std::cout << std::endl;
     printMappingSC(tree, 3);
     
-    std::shared_ptr<Contours> contoursCT = ContoursComputedIncrementally::extractCompactContours(tree);
+    auto contoursCT = ContoursComputedIncrementally::extractCompactContours(tree.get());
     //ImagePtr imgContours = Image::create(numRows, numCols, 0);
     //bool isEquals = true;
     
-    for (auto&& [node, contourNode] : contoursCT->contoursLazy()) {
+    for (auto&& [node, contourNode] : contoursCT.contoursLazy()) {
         ImageUInt8Ptr imgContours = ImageUInt8::create(numRows, numCols, 0);
-        
+
         //contorno incremental
         for(int p: contourNode){
             (*imgContours)[p] = 1;

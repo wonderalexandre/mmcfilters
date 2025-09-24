@@ -49,6 +49,7 @@ void init_NodeCT(py::module &m){
         })
         .def_property_readonly("level", &NodeMT::getLevel)
         .def_property_readonly("area", &NodeMT::getArea)
+        .def_property_readonly("repNode", &NodeMT::getRepNode)
         .def_property_readonly("numDescendants", &NodeMT::getNumDescendants)
         .def_property_readonly("isMaxtree", &NodeMT::isMaxtreeNode)
         .def_property_readonly("numSiblings", &NodeMT::getNumSiblings)

@@ -425,6 +425,7 @@ public:
 
             aggregated = ListArena(tree->getNumNodes(), static_cast<int>(contours.entries.size()));
             std::vector<std::vector<int>> accumulator(tree->getNumNodes());
+            // bitmap linear (1 byte por pixel) utilizado para deduplicar/remover em O(1)
             std::vector<uint8_t> bitmap(tree->getNumRowsOfImage() * tree->getNumColsOfImage(), 0);
 
             // percorre em pós-ordem para propagar primeiro os filhos
@@ -491,11 +492,14 @@ public:
         const int numNodes = tree->getNumNodes();
         const int totalPixels = tree->getNumRowsOfImage() * tree->getNumColsOfImage();
 
+        // estrutura final que será exposta ao chamador (contornos + remoções)
         IncrementalContours result(tree, numNodes, std::max(totalPixels / 4, 1));
+        // arena temporária que carrega pixels até o LCA correto antes da remoção
         ListArena contoursToRemoveLCA(numNodes, std::max(totalPixels / 4, 1));
 
         // contador auxiliar para saber quando um pixel deixa de ser contorno (cf. artigo original)
         std::vector<int> ncount(totalPixels, 0);
+        // reuso de armazenamento para pixels que devem ser removidos neste nó
         std::vector<int> removalBuffer;
         removalBuffer.reserve(64);
         auto adj4 = std::make_shared<AdjacencyRelation>(tree->getNumRowsOfImage(), tree->getNumColsOfImage(), 1);
@@ -507,6 +511,7 @@ public:
             [](NodeId) -> void {},
             [](NodeId, NodeId) -> void {},
             [&](NodeId nodeP) {
+                // remove e processa todas as remoções pendentes deste nó
                 removalBuffer.clear();
                 contoursToRemoveLCA.consumeInto(nodeP, removalBuffer);
                 for (int p : removalBuffer) {
@@ -527,6 +532,7 @@ public:
                     }
                 }
 
+                // percorre os CNPs pertencentes ao nó atual
                 for (int p : tree->getCNPsById(nodeP)) {
                     if (adj4->isBorderDomainImage(p)) {
                         ncount[p]++;
@@ -534,16 +540,16 @@ public:
 
                     for (int q : adj4->getNeighborPixels(p)) {
                         NodeId nodeQ = tree->getSCById(q);
-                        if (!tree->isComparable(nodeP, nodeQ)) {
-                            NodeId nodeLCA = lca.findLowestCommonAncestor(nodeP, nodeQ);
-                            contoursToRemoveLCA.add(nodeLCA, p);
-                            ncount[p]++;
-                        } else if (tree->isStrictDescendant(nodeP, nodeQ)) {
-                            ncount[p]++;
-                        } else if (tree->isStrictAncestor(nodeP, nodeQ)) {
-                            ncount[q]--;
-                            if (ncount[q] == 0) {
-                                result.removals.add(nodeP, q);
+                    if (!tree->isComparable(nodeP, nodeQ)) { // contorno será tratado pelo LCA
+                        NodeId nodeLCA = lca.findLowestCommonAncestor(nodeP, nodeQ);
+                        contoursToRemoveLCA.add(nodeLCA, p);
+                        ncount[p]++;
+                    } else if (tree->isStrictDescendant(nodeP, nodeQ)) { // pixel ainda é fronteira
+                        ncount[p]++;
+                    } else if (tree->isStrictAncestor(nodeP, nodeQ)) {
+                        ncount[q]--;
+                        if (ncount[q] == 0) {
+                            result.removals.add(nodeP, q);
                             }
                         }
                     }

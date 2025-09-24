@@ -11,3 +11,5 @@ Pipfile
 *.o
 notebooks/.ipynb_checkpoints/*
 notebooks/.virtual_documents/*
+/tests/build
+/tests/build

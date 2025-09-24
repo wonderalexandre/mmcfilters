@@ -135,6 +135,7 @@ setup(
     long_description_content_type="text/markdown",
     author="Wonder Alexandre Luz Alves",
     author_email="worderalexandre@gmail.com",
+    license_files=["LICENSE"],
     license="GPL-3.0",
     url="https://github.com/wonderalexandre/ComponentTreeLearn",
     project_urls={

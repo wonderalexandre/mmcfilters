@@ -31,6 +31,6 @@ tos = mmcfilters.MorphologicalTree(img)
 
 area = mmcfilters.AttributeComputedIncrementally.computeSingleAttribute(tree, mmcfilters.Attribute.AREA)
 
-flt = mmcfilters.AttributeFilters(tree)
-filtered = flt.filteringDirectRule(area > 50).reshape(img.shape)
+filter = mmcfilters.AttributeFilters(tree)
+img_filtered = filter.filteringDirectRule(area > 50)
 ```

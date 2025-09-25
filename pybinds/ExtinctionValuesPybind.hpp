@@ -38,7 +38,7 @@ class ExtinctionValuesPybind : public ExtinctionValues{
     }
 
     // Return a Python list of (leaf, cutoffNode, extinction) tuples for easy unpacking
-    std::vector<py::tuple> getExtinctionValues()  {
+    std::vector<py::tuple> getExtinctionValuesPy()  {
         auto &vec = ExtinctionValues::getExtinctionValues();
         std::vector<py::tuple> out;
         out.reserve(vec.size());

@@ -1,3 +1,13 @@
+###############################################################
+#Comando para publicacao
+#0. Apague tudo não comitado (limpeza): git clean -xdf
+#1. Criar um nova tag: git tag v0.1.x
+#2. Publique a nova tag: git push origin v0.1.x
+#3. Gere wheels: MACOSX_DEPLOYMENT_TARGET=11.0 python -m build
+#4. Publique no pypi: pytwine upload dist/*
+###############################################################
+
+
 [build-system]
 requires = [
   "scikit-build-core>=0.9",
@@ -29,7 +39,7 @@ classifiers = [
 # grava a versão resolvida (a partir da tag) dentro do seu pacote python
 write_to = "python/mmcfilters/_version.py"
 version_scheme = "post-release"
-local_scheme = "node-and-date"
+local_scheme = "no-local-version"
 tag_regex = "^v?(?P<version>\\d+\\.\\d+\\.\\d+(?:[.-].*)?)$"
 
 [tool.scikit-build]
@@ -51,7 +61,8 @@ CMAKE_OSX_DEPLOYMENT_TARGET = "11.0"
 #args = ["-j", "0"]  # 0 = auto
 
 [tool.scikit-build.metadata]
-version-provider = "scikit_build_core.metadata.setuptools_scm"
+# Use setuptools-scm as the version provider for scikit-build-core
+version = { provider = "scikit_build_core.metadata.setuptools_scm" }
 
 [tool.scikit-build.sdist]
 include = [

@@ -1,12 +1,9 @@
 #pragma once
 
-#include <list>
-#include <algorithm>
-
 #include "../trees/MorphologicalTree.hpp"
 #include "../utils/Common.hpp"
-namespace mmcfilters {
 
+namespace mmcfilters {
 
 class NodeRes;
 using NodeResPtr = std::shared_ptr<NodeRes>;

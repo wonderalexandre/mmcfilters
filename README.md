@@ -25,7 +25,9 @@ import numpy as np
 import mmcfilters
 
 img = np.random.randint(0, 255, size=(128, 128), dtype=np.uint8)
-tree = mmcfilters.MorphologicalTree(img, True, 1.5)
+maxtree = mmcfilters.MorphologicalTree(img, True, 1.5)
+mintree = mmcfilters.MorphologicalTree(img, False, 1.5)
+tos = mmcfilters.MorphologicalTree(img, 
 
 attrs = mmcfilters.AttributeComputedIncrementally.computeSingleAttribute(tree, mmcfilters.Attribute.AREA)
 area = np.asarray(attrs[1]).reshape(-1)

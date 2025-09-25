@@ -1,19 +1,10 @@
 #pragma once
 
-#include <vector>
-#include <set>
-#include <memory>
-#include <functional>
-#include <cmath>
-#include <string>
-#include <sstream>
-#include <iomanip>
-#include <cstdint>
-#include <cassert>
 #include "../utils/Common.hpp"
 #include "../utils/AdjacencyRelation.hpp"
 #include "../trees/MorphologicalTree.hpp"
 #include "../attributes/AttributeComputedIncrementally.hpp"
+
 namespace mmcfilters {
 
 //---------------------------------------------

@@ -4,16 +4,7 @@
 #include "../attributes/AttributeNames.hpp"
 #include "../trees/MorphologicalTree.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <functional>
-#include <iostream>
-#include <limits>
-#include <memory>
-#include <stdexcept>
-#include <unordered_map>
-#include <utility>
-#include <vector>
+
 namespace mmcfilters {
 
 

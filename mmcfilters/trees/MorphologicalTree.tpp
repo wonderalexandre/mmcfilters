@@ -1,20 +1,6 @@
-
-#include <list>
-#include <array>
-#include <vector>
-#include <unordered_map>
-#include <unordered_set>
-#include <iostream>
-#include <iomanip>
-#include <utility>
-#include <algorithm>
-
-#include <cmath>
-#include <type_traits>
-
 #include "../trees/MorphologicalTree.hpp"
-#include "../utils/AdjacencyRelation.hpp"
 #include "../trees/BuilderMorphologicalTreeByUnionFind.hpp"
+
 namespace mmcfilters {
 
 template <typename PixelType>
@@ -54,7 +40,7 @@ MorphologicalTreePtr MorphologicalTree::createFromAttributeMapping(Morphological
         int p = orderedPixels[i];
         //Construção da árvore e arena
         if (p == parent[p]) {
-            tree->pixelToNodeId[p] = tree->root = tree->makeNode(p, -1, img[p]);
+            tree->pixelToNodeId[p] = tree->root = tree->makeNode(p, InvalidNode, img[p]);
         } 
         else if (!sameLevel(p, parent[p])) {
             tree->pixelToNodeId[p] = tree->makeNode(p, tree->pixelToNodeId[parent[p]], img[p]);

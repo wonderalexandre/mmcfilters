@@ -1,16 +1,6 @@
 #pragma once
 
-#include <cassert>
-#include <cstdint>
-#include <list>
-#include <unordered_set>
-#include <unordered_map>
-
-#include <memory>
-#include <limits>
-#include <algorithm>
-#include <cmath>
-#include <type_traits>
+#include "Common.hpp"
 
 namespace mmcfilters {
 

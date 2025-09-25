@@ -4,8 +4,6 @@
 #include "ComputerAttributeBasedBitQuads.hpp"
 #include "../trees/MorphologicalTree.hpp"
 
-#include <algorithm>
-#include <vector>
 
 namespace mmcfilters {
 
@@ -27,9 +25,8 @@ class BitquadsComputer : public AttributeComputer {
 					BITQUADS_WIDTH_AVERAGE};
 		}
 
-		void compute(MorphologicalTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>& dependencySources= {}) const override {
+		void compute(MorphologicalTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>&) const override {
 			if(PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing BITQUADS group" << std::endl;
-			int numCols = tree->getNumColsOfImage();
 			auto indexOf = [&](int idx, Attribute attr) {
 				return attrNames->linearIndex(idx, attr);
 			};

@@ -1,15 +1,17 @@
 #pragma once
 
-#include <array>
+#include "../utils/Common.hpp"
 #include "../trees/MorphologicalTree.hpp"
 #include "../attributes/ComputerMSER.hpp"
 #include "../attributes/AttributeComputedIncrementally.hpp"
-#include "../utils/Common.hpp"
+
+
 namespace mmcfilters {
 
 
 class UltimateAttributeOpening;
 using UltimateAttributeOpeningPtr = std::shared_ptr<UltimateAttributeOpening>;
+
 /**
  * @brief Realiza Ultimate Attribute Opening acumulando contrastes máximos.
  */

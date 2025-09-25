@@ -6,19 +6,11 @@
 #include "../attributes/ComputerMSER.hpp"
 #include "../trees/NodeRes.hpp"
 #include "../trees/ResidualTree.hpp"
-#include <stack>
-#include <vector>
-#include <limits.h>
+
 
 
 namespace mmcfilters {
 
-//#include "../filters/AttributeOpeningPrimitivesFamily.hpp"
-
-
-
-
-#define UNDEF -999999999999
 
 class AttributeFilters;
 using AttributeFiltersPtr = std::shared_ptr<AttributeFilters>;
@@ -56,7 +48,6 @@ class AttributeFilters{
 
     ImageFloatPtr filteringBySubtractiveScoreRule(std::vector<float>& prob);
 
-    ImageUInt8Ptr filteringByExtinctionValue(MorphologicalTree* tree, std::shared_ptr<float[]> attribute, int numLeaf);
 
     static void filteringBySubtractiveScoreRule(MorphologicalTreePtr tree, std::vector<float>& prob, ImageFloatPtr imgOutputPtr){ return filteringBySubtractiveScoreRule(tree.get(), prob, imgOutputPtr);}
     static void filteringBySubtractiveScoreRule(MorphologicalTree* tree, std::vector<float>& prob, ImageFloatPtr imgOutputPtr){
@@ -303,7 +294,7 @@ class AttributeFilters{
 		for(NodeId node: tree->getNodeIds()){
             if(attribute[node] < threshold){ //node pruned
 
-                if(stability[node] == UNDEF){
+                if(std::isnan(stability[node])){
                     isPruned[node] = true;
                 }else{
                     
@@ -342,7 +333,7 @@ class AttributeFilters{
 		for(NodeId node: tree->getNodeIds()){
             if(!criterion[node]){ //node pruned
 
-                if(stability[node] == UNDEF){
+                if(std::isnan(stability[node])){
                     isPruned[node] = true;
                 }else{
                     
@@ -350,8 +341,8 @@ class AttributeFilters{
                     //isPruned[nodeMax] = true;
                     
                     float max = stability[node];
-                    int indexDescMaxStability = mser.descendantWithMaxStability(node);
-                    int indexAscMaxStability = mser.ascendantWithMaxStability(node);
+                    NodeId indexDescMaxStability = mser.descendantWithMaxStability(node);
+                    NodeId indexAscMaxStability = mser.ascendantWithMaxStability(node);
                     float maxDesc = stability[indexDescMaxStability];
                     float maxAnc = stability[indexAscMaxStability];
                     
@@ -369,6 +360,7 @@ class AttributeFilters{
 		}
         return isPruned;
     }
+
 	
 };
 

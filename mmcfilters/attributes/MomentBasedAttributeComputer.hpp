@@ -4,9 +4,6 @@
 #include "AttributeComputedIncrementally.hpp"
 #include "../trees/MorphologicalTree.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <limits>
 
 namespace mmcfilters {
 

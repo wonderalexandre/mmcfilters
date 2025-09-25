@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../mmcfilters/attributes/ExtinctionValues.hpp"
+#include "../mmcfilters/filters/ExtinctionValues.hpp"
 #include "../mmcfilters/trees/NodeMT.hpp"
 
 

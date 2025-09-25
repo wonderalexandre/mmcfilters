@@ -1,17 +1,5 @@
 #pragma once
 
-#include <list>
-#include <vector>
-#include <stack>
-#include <queue>
-#include <iterator>
-#include <utility>
-#include <functional> 
-#include <optional>
-#include <stdexcept>
-#include <type_traits>
-
-
 #include "../utils/Common.hpp"
 #include "../trees/MorphologicalTree.hpp"
 namespace mmcfilters {
@@ -74,7 +62,7 @@ class NodeMT{
 private:
     friend class MorphologicalTree;
 
-    NodeId id = -1;
+    NodeId id = InvalidNode;
     MorphologicalTree* tree = nullptr;  // árvore dona
     
 public:
@@ -95,7 +83,7 @@ public:
 
     //acesso e escrita de dados na arena
     inline int getRepNode() const noexcept{ return tree->arena.repNode[id]; }
-    inline int getIndex() const noexcept{ return id; }
+    inline NodeId getIndex() const noexcept{ return id; }
     inline int getLevel() const noexcept{ return tree->arena.threshold2[id]; }
     inline int32_t getArea() const noexcept{ return tree->arena.areaCC[id]; }
     inline int getNumChildren() const noexcept{ return tree->arena.childCount[id]; }
@@ -137,23 +125,23 @@ public:
      * @brief Range que expõe os filhos do nó como proxies `NodeMT`.
      */
     class ChildIdRange {
-        int cur; MorphologicalTree* T;
+        NodeId cur; MorphologicalTree* T;
     public:
         /**
          * @brief Iterador que converte IDs em handles `NodeMT` ao percorrer filhos.
          */
         struct It {
-            int id; MorphologicalTree* T;
+            NodeId id; MorphologicalTree* T;
             bool operator!=(const It& o) const { return id != o.id; }
-            void operator++() { id = (id == -1) ? -1 : T->arena.nextSiblingId[id]; }
+            void operator++() { if(id != InvalidNode) id = T->arena.nextSiblingId[id]; }
             NodeMT operator*() const { return T->proxy(id); }
         };
         It begin() const { return {cur, T}; }
-        It end()   const { return {-1,  T}; }
+        It end()   const { return {InvalidNode,  T}; }
         ChildIdRange(int first, MorphologicalTree* t) : cur(first), T(t) {}
     };
     auto getChildren() const {
-        return ChildIdRange(tree ? tree->arena.firstChildId[id] : -1, tree);
+        return ChildIdRange(tree ? tree->arena.firstChildId[id] : InvalidNode, tree);
     }
 
     //============= Iterator para iterar os nodes do caminho até o root==============//
@@ -163,7 +151,7 @@ public:
     class InternalIteratorNodesOfPathToRoot {
     private:
         MorphologicalTree* T_ = nullptr;
-        NodeId curId_ = -1;
+        NodeId curId_ = InvalidNode;
     public:
         using iterator_category = std::input_iterator_tag;
         using value_type = NodeMT;
@@ -171,10 +159,10 @@ public:
         using pointer = NodeMT*;
         using reference = NodeMT; // retornamos por valor (handle leve)
 
-        InternalIteratorNodesOfPathToRoot(NodeMT obj) : T_(obj.tree), curId_(obj ? obj.getIndex() : -1) {}
+        InternalIteratorNodesOfPathToRoot(NodeMT obj) : T_(obj.tree), curId_(obj ? obj.getIndex() : InvalidNode) {}
 
         InternalIteratorNodesOfPathToRoot& operator++() {
-            if (T_ && curId_ != -1) {
+            if (T_ && curId_ != InvalidNode) {
                 curId_ = T_->getParentById(curId_);
             }
             return *this;
@@ -185,7 +173,7 @@ public:
         }
         bool operator!=(const InternalIteratorNodesOfPathToRoot& other) const { return !(*this == other); }
 
-        value_type operator*() const { return (curId_ == -1) ? NodeMT() : NodeMT(T_, curId_); }
+        value_type operator*() const { return (curId_ == InvalidNode) ? NodeMT() : NodeMT(T_, curId_); }
     };
     
     /**
@@ -194,9 +182,9 @@ public:
     class IteratorNodesOfPathToRoot {
     private:
         MorphologicalTree* T_ = nullptr;
-        NodeId startId_ = -1;
+        NodeId startId_ = InvalidNode;
     public:
-        explicit IteratorNodesOfPathToRoot(NodeMT obj) : T_(obj.tree), startId_(obj ? obj.getIndex() : -1) {}
+        explicit IteratorNodesOfPathToRoot(NodeMT obj) : T_(obj.tree), startId_(obj ? obj.getIndex() : InvalidNode) {}
         InternalIteratorNodesOfPathToRoot begin() const { return InternalIteratorNodesOfPathToRoot(NodeMT(T_, startId_)); }
         InternalIteratorNodesOfPathToRoot end() const { return InternalIteratorNodesOfPathToRoot(NodeMT()); }
     };
@@ -216,11 +204,11 @@ public:
         /**
          * @brief Estrutura auxiliar para controlar expansão da pilha.
          */
-        struct Item { int id; bool expanded; };
+        struct Item { NodeId id; bool expanded; };
 
         MorphologicalTree* T_ = nullptr;
         FastStack<Item> st_;
-        NodeId current_ = -1;
+        NodeId current_ = InvalidNode;
 
         inline void settle_() noexcept {
             while (!st_.empty()) {
@@ -228,7 +216,7 @@ public:
                 if (!top.expanded) {
                     top.expanded = true;
                     // empilha filhos (direita→esquerda na prática; inverta se quiser L→R)
-                    for (int c = T_->arena.firstChildId[top.id]; c != -1; c = T_->arena.nextSiblingId[c]) {
+                    for (NodeId c = T_->arena.firstChildId[top.id]; c != InvalidNode; c = T_->arena.nextSiblingId[c]) {
                         st_.push(Item{c, false});
                     }
                 } else {
@@ -236,7 +224,7 @@ public:
                     return;
                 }
             }
-            current_ = -1; // fim
+            current_ = InvalidNode; // fim
         }
 
     public:
@@ -252,7 +240,7 @@ public:
                 st_.push({root.getIndex(), false});
                 settle_();
             } else {
-                current_ = -1;
+                current_ = InvalidNode;
             }
         }
 
@@ -268,8 +256,8 @@ public:
         }
 
         inline bool operator==(const InternalIteratorPostOrderTraversal& other) const noexcept {
-            const bool aEnd = (current_ == -1);
-            const bool bEnd = (other.current_ == -1);
+            const bool aEnd = (current_ == InvalidNode);
+            const bool bEnd = (other.current_ == InvalidNode);
             if (aEnd || bEnd) return aEnd == bEnd;
             // fora do fim, basta comparar o id atual
             return current_ == other.current_;
@@ -283,9 +271,9 @@ public:
      * @brief Range para percorrer subárvores em pós-ordem retornando handles.
      */
     class IteratorPostOrderTraversal {
-        MorphologicalTree* T_ = nullptr; NodeId rootId_ = -1;
+        MorphologicalTree* T_ = nullptr; NodeId rootId_ = InvalidNode;
     public:
-        explicit IteratorPostOrderTraversal(NodeMT root) : T_(root.tree), rootId_(root ? root.getIndex() : -1) {}
+        explicit IteratorPostOrderTraversal(NodeMT root) : T_(root.tree), rootId_(root ? root.getIndex() : InvalidNode) {}
         InternalIteratorPostOrderTraversal begin() const { return InternalIteratorPostOrderTraversal(NodeMT(T_, rootId_)); }
         InternalIteratorPostOrderTraversal end()   const { return InternalIteratorPostOrderTraversal(NodeMT()); }
     };
@@ -349,9 +337,9 @@ public:
      */
     class IteratorBreadthFirstTraversal {
     private:
-        MorphologicalTree* T_ = nullptr; NodeId rootId_ = -1;
+        MorphologicalTree* T_ = nullptr; NodeId rootId_ = InvalidNode;
     public:
-        explicit IteratorBreadthFirstTraversal(NodeMT root) : T_(root.tree), rootId_(root ? root.getIndex() : -1) {}
+        explicit IteratorBreadthFirstTraversal(NodeMT root) : T_(root.tree), rootId_(root ? root.getIndex() : InvalidNode) {}
         InternalIteratorBreadthFirstTraversal begin() const { return InternalIteratorBreadthFirstTraversal(NodeMT(T_, rootId_)); }
         InternalIteratorBreadthFirstTraversal end()   const { return InternalIteratorBreadthFirstTraversal(NodeMT()); }
     };

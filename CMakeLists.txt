@@ -11,8 +11,10 @@
 #   make
 #   make install
 
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.20)
+
 project(mmcfilters)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Opções configuráveis
 option(BUILD_PYBIND "Enable building Python bindings with pybind11" ON)
@@ -95,15 +97,28 @@ if(BUILD_PYBIND)
     # Arquivo fonte principal do módulo pybind
     set(PYBIND_CPP_FILE "${MMC_PYBINDS_DIR}/mmcfilters.cpp")
     
-    pybind11_add_module(mmcfilters ${PYBIND_CPP_FILE}
+    pybind11_add_module(mmcfilters 
+      ${PYBIND_CPP_FILE}
       ${SOURCE_FILES}
       ${HEADER_FILES}
     )
 
+    # Install into Python's platlib when building with scikit-build-core.
+    # Fallbacks: PYTHON_LIBRARY_DIR (legacy) -> standard CMake libdir.
+    set(_PY_INSTALL_DIR "${SKBUILD_PLATLIB_DIR}")
+    if(NOT _PY_INSTALL_DIR)
+        if(DEFINED PYTHON_LIBRARY_DIR)
+            set(_PY_INSTALL_DIR "${PYTHON_LIBRARY_DIR}")
+        else()
+            include(GNUInstallDirs)
+            set(_PY_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}")
+        endif()
+    endif()
+
     install(TARGETS mmcfilters
-      COMPONENT python
-      LIBRARY DESTINATION "${PYTHON_LIBRARY_DIR}"
-      )
+        LIBRARY DESTINATION "${_PY_INSTALL_DIR}"
+        RUNTIME DESTINATION "${_PY_INSTALL_DIR}"
+        ARCHIVE DESTINATION "${_PY_INSTALL_DIR}")
 
 endif()
 

@@ -1,43 +1,73 @@
 #pragma once
 
-#define NDEBUG  // Remove os asserts do código
-#include <cassert>
-#include <cstdint>
-#include <list>
-#include <vector>
-#include <unordered_set>
-#include <unordered_map>
-#include <string>
 
-#include <memory>
-#include <limits>
-#include <algorithm>
-#include <cmath>
-#include <span>
-#include <iostream>
+// ---------------------------------------------------------------------------
+// Controle de assertivas
+// ---------------------------------------------------------------------------
+#define NDEBUG          // Desativa asserts (remova se quiser manter assert ativo)
+#include <cassert>      // assert()
 
-#include <variant>     // std::variant
-#include <optional>    // std::optional
-#include <functional>  // std::hash
-#include <type_traits> // std::underlying_type_t (se usar)
+// ---------------------------------------------------------------------------
+// Estruturas de dados (STL containers e algoritmos)
+// ---------------------------------------------------------------------------
+#include <list>          // Lista duplamente ligada
+#include <vector>        // Vetor dinâmico redimensionável
+#include <array>         // Array de tamanho fixo em tempo de compilação
+#include <deque>         // Deque (fila dupla)
+#include <stack>         // Pilha adaptada (baseada em deque por padrão)
+#include <unordered_set> // Conjunto hash (não ordenado, busca O(1) médio)
+#include <unordered_map> // Mapa hash (não ordenado, busca O(1) médio)
+#include <typeindex>     // std::type_index, permite comparar/hashear typeid para usar em containers
+#include <set>           // std::set, std::multiset (conjunto ordenado, árvore balanceada)
+#include <map>           // std::map, std::multimap (dicionário ordenado, árvore balanceada)
+#include <span>          // Visão não-dona de sequência contígua (C++20+)
+#include <tuple>         // Estruturas heterogêneas fixas
+#include <algorithm>     // Funções genéricas: sort, copy, fill, etc.
+#include <iterator> //funções e utilitários para trabalhar com iteradores.
+#include <utility>   // std::pair, std::move, std::swap
 
+// ---------------------------------------------------------------------------
+// Utilitários gerais
+// ---------------------------------------------------------------------------
+#include <cstdint>   // Tipos inteiros fixos (uint8_t, int32_t, etc.)
+#include <limits>    // Limites numéricos: std::numeric_limits<T>
+#include <cmath>     // Funções matemáticas em std:: (sqrt, sin, cos, pow, etc.)
+#include <iostream>  // Entrada/saída padrão: std::cout, std::cin
+#include <string>    // std::string
+#include <iomanip>   // Manipuladores de IO (std::setw, std::setprecision, etc.)
+#include <numeric>   // Algoritmos numéricos (std::accumulate, std::inner_product)
+#include <stdexcept> // Exceções padrão (std::runtime_error, std::invalid_argument)
+#include <sstream>  // std::istringstream, std::ostringstream, std::stringstream (streams baseados em string)
+#include <numbers>  // Constantes matemáticas (C++20+): std::numbers::pi, e, phi, sqrt2, etc.
+
+// ---------------------------------------------------------------------------
+// Memória, funções e metaprogramação
+// ---------------------------------------------------------------------------
+#include <memory>       // Ponteiros inteligentes (shared_ptr, unique_ptr, weak_ptr)
+#include <variant>      // std::variant (union segura com tipo discriminado)
+#include <optional>     // std::optional (valor opcional)
+#include <functional>   // std::function, std::bind, std::hash
+#include <type_traits>  // Traits e SFINAE (std::is_same, std::enable_if, etc.)
+
+// ---------------------------------------------------------------------------
+// mmcfilters: includes comuns a todo o projeto
+// ---------------------------------------------------------------------------
 #include "Image.hpp"
-#include "PixelSetManager.hpp"
 #include "../dataStructure/FastStack.hpp"
 #include "../dataStructure/FastQueue.hpp"
 
 
 namespace mmcfilters {
 
+//habilitar ou desabilitar logs/debugs.
+constexpr bool PRINT_LOG   = false;
+constexpr bool PRINT_DEBUG = false;
 
-#define PRINT_LOG 0
-#define PRINT_DEBUG 0
-
-using NodeId = int;
-constexpr NodeId InvalidNode = -1;  // ou std::numeric_limits<NodeId>::max()
-inline bool isValidNode(NodeId id) noexcept {
-    return id != InvalidNode;
-}
+//tipo de dado NodeId
+using NodeId = int; //não usar unsigned int
+constexpr NodeId InvalidNode = -1; //-1 indica nó inválido
+inline bool isValidNode(NodeId id) noexcept { return id != InvalidNode;}
+inline bool isInvalid(NodeId id) noexcept { return id == InvalidNode; }
 
 
 /**

@@ -1,16 +1,9 @@
 #include "../filters/AttributeOpeningPrimitivesFamily.hpp"
 #include "../filters/AttributeFilters.hpp"
 
-
-#include <vector>
-#include <stack>
-#include <algorithm>
-#include <iostream>
 namespace mmcfilters {
 
-AttributeOpeningPrimitivesFamily::~AttributeOpeningPrimitivesFamily(){
-    //delete[] this->restOfImage;
-}
+AttributeOpeningPrimitivesFamily::~AttributeOpeningPrimitivesFamily(){ }
 
 AttributeOpeningPrimitivesFamily::AttributeOpeningPrimitivesFamily(MorphologicalTree* tree, std::shared_ptr<float[]> attrs_increasing, float maxCriterion, int deltaMSER){
   this->tree = tree;

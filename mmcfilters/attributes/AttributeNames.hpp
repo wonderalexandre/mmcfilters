@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../utils/Common.hpp"
+
 namespace mmcfilters {
 
 enum class Attribute {

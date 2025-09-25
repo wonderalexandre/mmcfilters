@@ -129,10 +129,8 @@ void init_NodeCT(py::module &m){
 void init_MorphologicalTree(py::module &m){
       py::class_<MorphologicalTree, std::shared_ptr<MorphologicalTree>>(m, "MorphologicalTreeBase");
       py::class_<MorphologicalTreePybind, std::shared_ptr<MorphologicalTreePybind>>(m, "MorphologicalTree")
-        .def(py::init<py::array_t<int>, bool, double>(),
-            "input"_a, "isMaxtree"_a, "radius"_a = 1.5)
-        .def(py::init<py::array_t<int>,  std::string>(),
-            "input"_a, "ToSInperpolation"_a = "self-dual")
+        .def(py::init<py::array_t<int>, bool, double>(), "input"_a, "isMaxtree"_a, "radius"_a = 1.5)
+        .def(py::init<py::array_t<int>,  std::string>(), "input"_a, "ToSInperpolation"_a = "self-dual")
         .def("reconstructionImage", &MorphologicalTreePybind::reconstructionImage )
         .def_property_readonly("listNodes", [](MorphologicalTreePybind &tree) {
             py::list nodes;
@@ -332,8 +330,8 @@ void init_AttributeFilters(py::module &m){
     .def("filteringSubtractiveRule", py::overload_cast<std::vector<bool>&>(&AttributeFiltersPybind::filteringBySubtractiveRule))
     .def("filteringSubtractiveScoreRule", py::overload_cast<std::vector<float>&>(&AttributeFiltersPybind::filteringBySubtractiveScoreRule))
     .def("filteringMax", py::overload_cast<py::array_t<float> &, float>(&AttributeFiltersPybind::filteringByPruningMax))
-    //.def("filteringByExtinctionValue", py::overload_cast<py::array_t<float> &, int>(&AttributeFiltersPybind::filteringByExtinctionValue))
-    //.def("saliencyMapByExtinction", py::overload_cast<py::array_t<float> &, int>(&AttributeFiltersPybind::saliencyMapByExtinction))
+    .def("filteringByExtinction", py::overload_cast<py::array_t<float> &, int>(&AttributeFiltersPybind::filteringByExtinctionValue))
+    .def("saliencyMapByExtinction", py::overload_cast<py::array_t<float> &, int, bool>(&AttributeFiltersPybind::saliencyMapByExtinctionValue), "attr"_a, "leafToKeep"_a, "unweighted"_a = false)
     .def("getAdaptativeCriterion", &AttributeFiltersPybind::getAdaptativeCriterion);       
 }
 

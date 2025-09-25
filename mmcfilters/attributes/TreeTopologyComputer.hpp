@@ -4,7 +4,6 @@
 #include "AttributeComputedIncrementally.hpp"
 #include "../trees/MorphologicalTree.hpp"
 
-#include <algorithm>
 
 namespace mmcfilters {
 
@@ -47,13 +46,20 @@ public:
             return computeNumLeafDescendants ? attrNames->linearIndex(idx, NUM_LEAF_DESCENDANTS_NODE) : idx;
         };
 
+        std::shared_ptr<float[]> bufferDepth = computeDepth ? buffer : std::shared_ptr<float[]>(new float[tree->getNumNodes()]);
+        auto indexOfDepth = [&](NodeId idx) {
+            return computeDepth ? attrNames->linearIndex(idx, DEPTH_NODE) : idx;
+        };
+
         AttributeComputedIncrementally::computerAttribute(tree,
             tree->getRootById(),
             [&](NodeId node) {
                 NodeId parent = tree->getParentById(node);
-                int parentDepth = parent != -1? static_cast<int>(bufferHeight[indexOfHeight(parent)]) : 0;
-                bufferHeight[indexOfHeight(node)] = parent!=-1 ? parentDepth + 1.0f : 0.0f;
 
+                float parentDepth = (parent != InvalidNode) ? bufferDepth[indexOfDepth(parent)] : InvalidNode;
+                bufferDepth[indexOfDepth(node)] = parent != InvalidNode ? parentDepth + 1.0f : 0.0f;
+                
+                bufferHeight[indexOfHeight(node)] = 0.0f;
                 bufferNumDesc[indexOfNumDescendants(node)] = 0.0f;
                 bufferNumLeafDesc[indexOfNumLeafDescendants(node)] = tree->getNumChildrenById(node) == 0 ? 1.0f : 0.0f;
 
@@ -62,11 +68,11 @@ public:
                 if (computeIsLeaf)
                     buffer[attrNames->linearIndex(node, IS_LEAF_NODE)] = tree->getNumChildrenById(node) == 0 ? 1.0f : 0.0f;
                 if (computeIsRoot)
-                    buffer[attrNames->linearIndex(node, IS_ROOT_NODE)] = parent!=-1 ? 0.0f : 1.0f;
+                    buffer[attrNames->linearIndex(node, IS_ROOT_NODE)] = parent!=InvalidNode ? 0.0f : 1.0f;
                 if (computeNumChildren)
                     buffer[attrNames->linearIndex(node, NUM_CHILDREN_NODE)] = static_cast<float>(tree->getNumChildrenById(node));
                 if (computeNumSiblings)
-                    buffer[attrNames->linearIndex(node, NUM_SIBLINGS_NODE)] = parent!=-1 ? static_cast<float>( tree->getNumChildrenById(parent) - 1) : 0.0f;
+                    buffer[attrNames->linearIndex(node, NUM_SIBLINGS_NODE)] = parent!=InvalidNode ? static_cast<float>( tree->getNumChildrenById(parent) - 1) : 0.0f;
                 if (computeLeafRatio)
                     buffer[attrNames->linearIndex(node, LEAF_RATIO_NODE)] = 0.0f;
                 if (computeBalance)

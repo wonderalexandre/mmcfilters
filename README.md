@@ -23,14 +23,16 @@ pip install mmcfilters
 ```python
 import numpy as np
 import mmcfilters
+Type = mmcfilters.Attribute.Type
 
 img = np.random.randint(0, 255, size=(128, 128), dtype=np.uint8)
+
 maxtree = mmcfilters.MorphologicalTree(img, True, 1.5)
-mintree = mmcfilters.MorphologicalTree(img, False, 1.5)
-tos = mmcfilters.MorphologicalTree(img) 
+#mintree = mmcfilters.MorphologicalTree(img, False, 1.5)
+#tos = mmcfilters.MorphologicalTree(img) 
 
-area = mmcfilters.AttributeComputedIncrementally.computeSingleAttribute(tree, mmcfilters.Attribute.AREA)
+filter = mmcfilters.AttributeFilters(maxtree)
+area = mmcfilters.Attribute.computeSingleAttribute(maxtree, Type.AREA)
 
-filter = mmcfilters.AttributeFilters(tree)
 img_filtered = filter.filteringDirectRule(area > 50)
 ```

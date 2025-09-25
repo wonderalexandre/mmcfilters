@@ -340,12 +340,7 @@ void init_ExtinctionValues(py::module &m){
     .def(py::init<MorphologicalTreePybindPtr, py::array_t<float>&>())
     .def("filtering", &ExtinctionValuesPybind::filtering)
     .def("saliencyMap", &ExtinctionValuesPybind::saliencyMap, "leafToKeep"_a, "unweighted"_a = true)
-    .def("getExtinctionValues", &ExtinctionValues::getExtinctionValues, py::return_value_policy::reference_internal);
-    
-    py::class_<RegionalExtremaNode>(m, "RegionalExtremaNode")
-        .def_readonly("leaf", &RegionalExtremaNode::leaf)
-        .def_readonly("cutoffNode", &RegionalExtremaNode::cutoffNode)
-        .def_readonly("extinction", &RegionalExtremaNode::extinction);
+    .def("getExtinctionValues", &ExtinctionValuesPybind::getExtinctionValues);
     
 }
 

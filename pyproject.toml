@@ -3,8 +3,9 @@
 #0. Apague tudo não comitado (limpeza): git clean -xdf
 #1. Criar um nova tag: git tag v0.1.x
 #2. Publique a nova tag: git push origin v0.1.x
-#3. Gere wheels: MACOSX_DEPLOYMENT_TARGET=11.0 python -m build
-#4. Publique no pypi: pytwine upload dist/*
+#3. Ative a tag: git checkout v0.1.x
+#4. Gere wheels: MACOSX_DEPLOYMENT_TARGET=11.0 python -m build
+#5. Publique no pypi: twine upload dist/*
 ###############################################################
 
 

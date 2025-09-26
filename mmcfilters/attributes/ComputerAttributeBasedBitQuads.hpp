@@ -282,7 +282,7 @@ struct AttributeBasedBitQuads {
     double getCircularity() const {
         double area = getAreaDuda();
         double per = getPerimeterContinuous();
-        return (4.0 * M_PI * area) / (per * per);
+        return (4.0 * std::numbers::pi * area) / (per * per);
     }
 
     double getAreaAverage() const {

@@ -50,8 +50,8 @@ wheel.packages = ["python"]
 [tool.scikit-build.cmake]
 build-type = "Release"
 args = [
-  "-DBUILD_PYBIND=ON",
-  "-DBUILD_TESTS=OFF",
+  "-DMMCFILTERS_BUILD_PYTHON=ON",
+  "-DMMCFILTERS_BUILD_TESTS=OFF",
   "-DMMC_PYBINDS_DIR=pybinds",
 ]
 

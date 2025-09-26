@@ -170,7 +170,7 @@ public:
     inline int getNumNodes()const noexcept{ return numNodes; }
     inline int getNumRowsOfImage()const noexcept{ return numRows;}
     inline int getNumColsOfImage()const noexcept{ return numCols;}
-    inline AdjacencyRelationPtr getAdjacencyRelation() noexcept {return adj;}
+    inline AdjacencyRelation* getAdjacencyRelation() noexcept {return adj.get();}
     inline bool isAncestor(NodeId u, NodeId v) const noexcept {return arena.timePreOrder[u] <= arena.timePreOrder[v] && arena.timePostOrder[u] >= arena.timePostOrder[v];}
     inline bool isDescendant(NodeId u, NodeId v) const noexcept {return arena.timePreOrder[v] <= arena.timePreOrder[u] && arena.timePostOrder[v] >= arena.timePostOrder[u];}
     inline bool isComparable(NodeId u, NodeId v) const noexcept {return isAncestor(u, v) || isAncestor(v, u);}

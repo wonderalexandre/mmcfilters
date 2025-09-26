@@ -49,7 +49,10 @@ void init_NodeCT(py::module &m){
         })
         .def_property_readonly("level", &NodeMT::getLevel)
         .def_property_readonly("area", &NodeMT::getArea)
+        .def_property_readonly("repNode", &NodeMT::getRepNode)
         .def_property_readonly("numDescendants", &NodeMT::getNumDescendants)
+        .def_property_readonly("isLeaf", &NodeMT::isLeaf)
+        .def_property_readonly("residue", &NodeMT::getResidue)
         .def_property_readonly("isMaxtree", &NodeMT::isMaxtreeNode)
         .def_property_readonly("numSiblings", &NodeMT::getNumSiblings)
         .def_property_readonly("residue", &NodeMT::getResidue)
@@ -96,23 +99,8 @@ void init_NodeCT(py::module &m){
             return nodes;
         })
         .def("nodesDescendants", [](NodeMT &node) {
-            py::list nodes;
-            auto traversal = node.getIteratorBreadthFirstTraversal();
-            auto it = traversal.begin();
-            auto itEnd = traversal.end();
-            if (it != itEnd) {
-                NodeMT first = *it;
-                if (first == node) {
-                    ++it;
-                }
-            }
-            for (; it != itEnd; ++it) {
-                NodeMT current = *it;
-                if (current) {
-                    nodes.append(current);
-                }
-            }
-            return nodes;
+            auto range = node.getNodesDescendants();
+            return py::make_iterator(range.begin(), range.end());
         })
         .def("bfsTraversal", [](NodeMT &node) {
             auto traversal = node.getIteratorBreadthFirstTraversal();
@@ -124,6 +112,9 @@ void init_NodeCT(py::module &m){
         }, py::keep_alive<0, 1>())
         .def("recNode", [](NodeMT node) {
             return MorphologicalTreePybind::recNode(node);
+        })
+        .def_property_readonly("repCNPs", [](NodeMT &node) {
+            return MorphologicalTreePybind::repCNPsByFlood(node);
         });
 }
 void init_MorphologicalTree(py::module &m){

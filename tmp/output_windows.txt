@@ -1,0 +1,170 @@
+Using pip 23.2.1 from c:\Python312\Lib\site-packages\pip (python 3.12)
+Collecting mmcfilters
+  Using cached mmcfilters-0.1.19.tar.gz (11.7 MB)
+  Installing build dependencies: started
+  Running command pip subprocess to install build dependencies
+  Collecting scikit-build-core>=0.9
+    Obtaining dependency information for scikit-build-core>=0.9 from https://files.pythonhosted.org/packages/43/49/ec16b3db6893db788ae35f98506ff5a9c25dca7eb18cc38ada8a4c1dc944/scikit_build_core-0.11.6-py3-none-any.whl.metadata
+    Using cached scikit_build_core-0.11.6-py3-none-any.whl.metadata (18 kB)
+  Collecting setuptools-scm>=8
+    Obtaining dependency information for setuptools-scm>=8 from https://files.pythonhosted.org/packages/f7/14/dd3a6053325e882fe191fb4b42289bbdfabf5f44307c302903a8a3236a0a/setuptools_scm-9.2.0-py3-none-any.whl.metadata
+    Using cached setuptools_scm-9.2.0-py3-none-any.whl.metadata (7.7 kB)
+  Collecting pybind11>=3.0.1
+    Obtaining dependency information for pybind11>=3.0.1 from https://files.pythonhosted.org/packages/cd/8a/37362fc2b949d5f733a8b0f2ff51ba423914cabefe69f1d1b6aab710f5fe/pybind11-3.0.1-py3-none-any.whl.metadata
+    Using cached pybind11-3.0.1-py3-none-any.whl.metadata (10.0 kB)
+  Collecting packaging>=23.2 (from scikit-build-core>=0.9)
+    Obtaining dependency information for packaging>=23.2 from https://files.pythonhosted.org/packages/20/12/38679034af332785aac8774540895e234f4d07f7545804097de4b666afd8/packaging-25.0-py3-none-any.whl.metadata
+    Using cached packaging-25.0-py3-none-any.whl.metadata (3.3 kB)
+  Collecting pathspec>=0.10.1 (from scikit-build-core>=0.9)
+    Obtaining dependency information for pathspec>=0.10.1 from https://files.pythonhosted.org/packages/cc/20/ff623b09d963f88bfde16306a54e12ee5ea43e9b597108672ff3a408aad6/pathspec-0.12.1-py3-none-any.whl.metadata
+    Using cached pathspec-0.12.1-py3-none-any.whl.metadata (21 kB)
+  Collecting setuptools (from setuptools-scm>=8)
+    Obtaining dependency information for setuptools from https://files.pythonhosted.org/packages/a3/dc/17031897dae0efacfea57dfd3a82fdd2a2aeb58e0ff71b77b87e44edc772/setuptools-80.9.0-py3-none-any.whl.metadata
+    Using cached setuptools-80.9.0-py3-none-any.whl.metadata (6.6 kB)
+  Using cached scikit_build_core-0.11.6-py3-none-any.whl (185 kB)
+  Using cached setuptools_scm-9.2.0-py3-none-any.whl (62 kB)
+  Using cached pybind11-3.0.1-py3-none-any.whl (293 kB)
+  Using cached packaging-25.0-py3-none-any.whl (66 kB)
+  Using cached pathspec-0.12.1-py3-none-any.whl (31 kB)
+  Using cached setuptools-80.9.0-py3-none-any.whl (1.2 MB)
+  Installing collected packages: setuptools, pybind11, pathspec, packaging, setuptools-scm, scikit-build-core
+  Successfully installed packaging-25.0 pathspec-0.12.1 pybind11-3.0.1 scikit-build-core-0.11.6 setuptools-80.9.0 setuptools-scm-9.2.0
+
+  [notice] A new release of pip is available: 23.2.1 -> 25.2
+  [notice] To update, run: python.exe -m pip install --upgrade pip
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Running command Getting requirements to build wheel
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Running command Preparing metadata (pyproject.toml)
+  [32m*** [1mscikit-build-core 0.11.6[0m using [34mCMake 3.26.4[39m[0m [31m(metadata_wheel)[0m
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Building wheels for collected packages: mmcfilters
+  Building wheel for mmcfilters (pyproject.toml): started
+  Running command Building wheel for mmcfilters (pyproject.toml)
+  [32m*** [1mscikit-build-core 0.11.6[0m using [34mCMake 3.26.4[39m[0m [31m(wheel)[0m
+  [32m***[0m [1mConfiguring CMake...[0m
+  2025-09-26 08:42:18,961 - scikit_build_core - WARNING - Can't find a Python library, got libdir=None, ldlibrary=None, multiarch=None, masd=None
+  loading initial cache file C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\CMakeInit.txt
+  -- Building for: Visual Studio 16 2019
+  -- Selecting Windows SDK version 10.0.19041.0 to target Windows 6.2.9200.
+  -- The C compiler identification is MSVC 19.29.30152.0
+  -- The CXX compiler identification is MSVC 19.29.30152.0
+  -- Detecting C compiler ABI info
+  -- Detecting C compiler ABI info - done
+  -- Check for working C compiler: C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/VC/Tools/MSVC/14.29.30133/bin/Hostx64/x64/cl.exe - skipped
+  -- Detecting C compile features
+  -- Detecting C compile features - done
+  -- Detecting CXX compiler ABI info
+  -- Detecting CXX compiler ABI info - done
+  -- Check for working CXX compiler: C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/VC/Tools/MSVC/14.29.30133/bin/Hostx64/x64/cl.exe - skipped
+  -- Detecting CXX compile features
+  -- Detecting CXX compile features - done
+  -- Build type: Release
+  -- Compiler: C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/VC/Tools/MSVC/14.29.30133/bin/Hostx64/x64/cl.exe
+  -- C++ Standard: C++20
+  -- Populating pybind11
+  -- Selecting Windows SDK version 10.0.19041.0 to target Windows 6.2.9200.
+  -- Configuring done (0.5s)
+  -- Generating done (0.0s)
+  -- Build files have been written to: C:/Users/table/AppData/Local/Temp/tmpt9z9ovl3/build/_deps/pybind11-subbuild
+  Microsoft (R) Build Engine version 16.11.2+f32259642 for .NET Framework
+  Copyright (C) Microsoft Corporation. All rights reserved.
+
+  C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Microsoft\VC\v160\Microsoft.CppBuild.targets(517,5): warning MSB8029: The Intermediate directory or Output directory cannot reside under the Temporary directory as it could lead to issues with incremental build. [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\_deps\pybind11-subbuild\ZERO_CHECK.vcxproj]
+    Checking Build System
+  C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Microsoft\VC\v160\Microsoft.CppBuild.targets(517,5): warning MSB8029: The Intermediate directory or Output directory cannot reside under the Temporary directory as it could lead to issues with incremental build. [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\_deps\pybind11-subbuild\pybind11-populate.vcxproj]
+    Creating directories for 'pybind11-populate'
+    Building Custom Rule C:/Users/table/AppData/Local/Temp/tmpt9z9ovl3/build/_deps/pybind11-subbuild/CMakeLists.txt
+    Performing download step (download, verify and extract) for 'pybind11-populate'
+    -- Downloading...
+       dst='C:/Users/table/AppData/Local/Temp/tmpt9z9ovl3/build/_deps/pybind11-subbuild/pybind11-populate-prefix/src/v3.0.1.tar.gz'
+       timeout='none'
+       inactivity timeout='none'
+    -- Using src='https://github.com/pybind/pybind11/archive/refs/tags/v3.0.1.tar.gz'
+    -- Downloading... done
+    -- extracting...
+         src='C:/Users/table/AppData/Local/Temp/tmpt9z9ovl3/build/_deps/pybind11-subbuild/pybind11-populate-prefix/src/v3.0.1.tar.gz'
+         dst='C:/Users/table/AppData/Local/Temp/tmpt9z9ovl3/build/_deps/pybind11-src'
+    -- extracting... [tar xfz]
+    -- extracting... [analysis]
+    -- extracting... [rename]
+    -- extracting... [clean up]
+    -- extracting... done
+    No update step for 'pybind11-populate'
+    No patch step for 'pybind11-populate'
+    No configure step for 'pybind11-populate'
+    No build step for 'pybind11-populate'
+    No install step for 'pybind11-populate'
+    No test step for 'pybind11-populate'
+    Completed 'pybind11-populate'
+  C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Microsoft\VC\v160\Microsoft.CppBuild.targets(517,5): warning MSB8029: The Intermediate directory or Output directory cannot reside under the Temporary directory as it could lead to issues with incremental build. [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\_deps\pybind11-subbuild\ALL_BUILD.vcxproj]
+    Building Custom Rule C:/Users/table/AppData/Local/Temp/tmpt9z9ovl3/build/_deps/pybind11-subbuild/CMakeLists.txt
+  -- pybind11 v3.0.1
+  -- Found Python: c:/Python312/python.exe (found suitable version "3.12.0", minimum required is "3.8") found components: Interpreter Development.Module Development.Embed
+  Using compatibility mode for Python, set PYBIND11_FINDPYTHON to NEW/OLD to silence this message
+  -- Performing Test HAS_MSVC_GL_LTCG
+  -- Performing Test HAS_MSVC_GL_LTCG - Failed
+  -- Configuring done (10.8s)
+  -- Generating done (0.0s)
+  -- Build files have been written to: C:/Users/table/AppData/Local/Temp/tmpt9z9ovl3/build
+  [32m***[0m [1mBuilding project with [34mVisual Studio 16 2019[39m...[0m
+  Microsoft (R) Build Engine version 16.11.2+f32259642 for .NET Framework
+  Copyright (C) Microsoft Corporation. All rights reserved.
+
+  C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Microsoft\VC\v160\Microsoft.CppBuild.targets(517,5): warning MSB8029: The Intermediate directory or Output directory cannot reside under the Temporary directory as it could lead to issues with incremental build. [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\ZERO_CHECK.vcxproj]
+    Checking Build System
+  C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Microsoft\VC\v160\Microsoft.CppBuild.targets(517,5): warning MSB8029: The Intermediate directory or Output directory cannot reside under the Temporary directory as it could lead to issues with incremental build. [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+    Building Custom Rule C:/Users/table/AppData/Local/Temp/pip-install-mq959m38/mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c/CMakeLists.txt
+  cl : command line warning D9002: ignoring unknown option '-O3' [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  cl : command line warning D9002: ignoring unknown option '-O3' [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  cl : command line warning D9002: ignoring unknown option '-O3' [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  cl : command line warning D9002: ignoring unknown option '-O3' [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  cl : command line warning D9002: ignoring unknown option '-O3' [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  cl : command line warning D9002: ignoring unknown option '-O3' [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  cl : command line warning D9002: ignoring unknown option '-O3' [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  cl : command line warning D9002: ignoring unknown option '-O3' [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+    mmcfilters.cpp
+    AttributeComputedIncrementally.cpp
+    AttributeFilters.cpp
+  cl : command line warning D9002: ignoring unknown option '-O3' [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  cl : command line warning D9002: ignoring unknown option '-O3' [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+    AttributeOpeningPrimitivesFamily.cpp
+  C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\attributes\MomentBasedAttributeComputer.hpp(265,94): error C2065: 'M_PI': undeclared identifier (compiling source file C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\attributes\AttributeComputedIncrementally.cpp) [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\attributes\MomentBasedAttributeComputer.hpp(274,60): error C2065: 'M_PI': undeclared identifier (compiling source file C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\attributes\AttributeComputedIncrementally.cpp) [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\attributes\ComputerAttributeBasedBitQuads.hpp(285,23): error C2065: 'M_PI': undeclared identifier (compiling source file C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\attributes\AttributeComputedIncrementally.cpp) [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.29.30133\include\vector(1296,1): warning C4530: C++ exception handler used, but unwind semantics are not enabled. Specify /EHsc (compiling source file C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\filters\AttributeFilters.cpp) [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.29.30133\include\vector(1286): message : while compiling class template member function 'void std::vector<int,std::allocator<int>>::_Reallocate_exactly(const unsigned __int64)' (compiling source file C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\filters\AttributeFilters.cpp) [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.29.30133\include\vector(1363): message : see reference to function template instantiation 'void std::vector<int,std::allocator<int>>::_Reallocate_exactly(const unsigned __int64)' being compiled (compiling source file C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\filters\AttributeFilters.cpp) [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\trees\../utils/AdjacencyRelation.hpp(32): message : see reference to class template instantiation 'std::vector<int,std::allocator<int>>' being compiled (compiling source file C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\filters\AttributeFilters.cpp) [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.29.30133\include\vector(1296,1): warning C4530: C++ exception handler used, but unwind semantics are not enabled. Specify /EHsc (compiling source file C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\filters\AttributeOpeningPrimitivesFamily.cpp) [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.29.30133\include\vector(1286): message : while compiling class template member function 'void std::vector<int,std::allocator<int>>::_Reallocate_exactly(const unsigned __int64)' (compiling source file C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\filters\AttributeOpeningPrimitivesFamily.cpp) [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.29.30133\include\vector(1363): message : see reference to function template instantiation 'void std::vector<int,std::allocator<int>>::_Reallocate_exactly(const unsigned __int64)' being compiled (compiling source file C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\filters\AttributeOpeningPrimitivesFamily.cpp) [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\trees\../utils/AdjacencyRelation.hpp(32): message : see reference to class template instantiation 'std::vector<int,std::allocator<int>>' being compiled (compiling source file C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\filters\AttributeOpeningPrimitivesFamily.cpp) [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+    MorphologicalTree.cpp
+  C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\pybinds\PybindUtils.hpp(31,66): error C2760: syntax error: unexpected token 'identifier', expected 'type specifier' (compiling source file C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\pybinds\mmcfilters.cpp) [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\pybinds\PybindUtils.hpp(18,39): message : This diagnostic occurred in the compiler generated function 'pybind11::array_t<PixelType,16> mmcfilters::PybindUtils::toNumpy(std::shared_ptr<mmcfilters::Image<PixelType>>)' (compiling source file C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\pybinds\mmcfilters.cpp) [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.29.30133\include\vector(1296,1): warning C4530: C++ exception handler used, but unwind semantics are not enabled. Specify /EHsc (compiling source file C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\trees\MorphologicalTree.cpp) [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.29.30133\include\vector(1286): message : while compiling class template member function 'void std::vector<int,std::allocator<int>>::_Reallocate_exactly(const unsigned __int64)' (compiling source file C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\trees\MorphologicalTree.cpp) [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\pybinds\mmcfilters.cpp(396,1): warning C4530: C++ exception handler used, but unwind semantics are not enabled. Specify /EHsc [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\MSVC\14.29.30133\include\vector(1363): message : see reference to function template instantiation 'void std::vector<int,std::allocator<int>>::_Reallocate_exactly(const unsigned __int64)' being compiled (compiling source file C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\trees\MorphologicalTree.cpp) [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\trees\../utils/AdjacencyRelation.hpp(32): message : see reference to class template instantiation 'std::vector<int,std::allocator<int>>' being compiled (compiling source file C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c\mmcfilters\trees\MorphologicalTree.cpp) [C:\Users\table\AppData\Local\Temp\tmpt9z9ovl3\build\mmcfilters.vcxproj]
+  [31m
+  [1m***[0m [31mCMake build failed[0m
+  error: subprocess-exited-with-error
+  
+  × Building wheel for mmcfilters (pyproject.toml) did not run successfully.
+  │ exit code: 1
+  ╰─> See above for output.
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+  full command: 'c:\Python312\python.exe' 'c:\Python312\Lib\site-packages\pip\_vendor\pyproject_hooks\_in_process\_in_process.py' build_wheel 'C:\Users\table\AppData\Local\Temp\tmptjqpemed'
+  cwd: C:\Users\table\AppData\Local\Temp\pip-install-mq959m38\mmcfilters_91108409e3dd45e5bc17b46f2ae52d3c
+  Building wheel for mmcfilters (pyproject.toml): finished with status 'error'
+  ERROR: Failed building wheel for mmcfilters
+Failed to build mmcfilters
+ERROR: Could not build wheels for mmcfilters, which is required to install pyproject.toml-based projects
+
+[notice] A new release of pip is available: 23.2.1 -> 25.2
+[notice] To update, run: python.exe -m pip install --upgrade pip

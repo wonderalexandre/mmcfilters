@@ -81,6 +81,8 @@ public:
     //id é o operador int
     operator int() const noexcept { return id; }
 
+    MorphologicalTree* getTree() const noexcept { return tree; }
+
     //acesso e escrita de dados na arena
     inline int getRepNode() const noexcept{ return tree->arena.repNode[id]; }
     inline NodeId getIndex() const noexcept{ return id; }

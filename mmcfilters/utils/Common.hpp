@@ -4,7 +4,11 @@
 // ---------------------------------------------------------------------------
 // Controle de assertivas
 // ---------------------------------------------------------------------------
-#define NDEBUG          // Desativa asserts (remova se quiser manter assert ativo)
+#if defined(MMCFILTERS_ENABLE_ASSERTS)
+#  ifdef NDEBUG
+#    undef NDEBUG
+#  endif
+#endif
 #include <cassert>      // assert()
 
 // ---------------------------------------------------------------------------
@@ -31,6 +35,10 @@
 // ---------------------------------------------------------------------------
 #include <cstdint>   // Tipos inteiros fixos (uint8_t, int32_t, etc.)
 #include <limits>    // Limites numéricos: std::numeric_limits<T>
+
+#ifndef _USE_MATH_DEFINES
+#define _USE_MATH_DEFINES
+#endif
 #include <cmath>     // Funções matemáticas em std:: (sqrt, sin, cos, pow, etc.)
 #include <iostream>  // Entrada/saída padrão: std::cout, std::cin
 #include <string>    // std::string
@@ -39,6 +47,7 @@
 #include <stdexcept> // Exceções padrão (std::runtime_error, std::invalid_argument)
 #include <sstream>  // std::istringstream, std::ostringstream, std::stringstream (streams baseados em string)
 #include <numbers>  // Constantes matemáticas (C++20+): std::numbers::pi, e, phi, sqrt2, etc.
+
 
 // ---------------------------------------------------------------------------
 // Memória, funções e metaprogramação
@@ -135,4 +144,3 @@ struct GenerationStampSet {
 
 
 } // namespace mmcfilters
-

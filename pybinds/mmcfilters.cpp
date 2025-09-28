@@ -166,7 +166,7 @@ void init_ContoursComputedIncrementally(py::module &m){
     using Iter  = decltype(std::declval<Range&>().begin());
     
     // Torna ContourProxy iterável em Python
-    py::class_<ContourProxy>(m, "ContourProxy")
+    py::class_<ContourProxy>(m, "ContourProxy", py::module_local(false))
         .def("__iter__", [](const ContourProxy& p) {
             // usa os iteradores já existentes do proxy
             return py::make_iterator(p.begin(), p.end());
@@ -181,7 +181,7 @@ void init_ContoursComputedIncrementally(py::module &m){
             : owner(&self), range(self.contoursLazy()), it(range.begin()), itEnd(range.end()) {}
     };
 
-    py::class_<ContoursIterator>(m, "ContoursIterator")
+    py::class_<ContoursIterator>(m, "ContoursIterator", py::module_local(false))
         .def(py::init<Contours&>())
         .def("__iter__", [](ContoursIterator& self) -> ContoursIterator& { return self; }, py::return_value_policy::reference_internal)
         .def("__next__", [](ContoursIterator& self) -> py::object {
@@ -193,18 +193,18 @@ void init_ContoursComputedIncrementally(py::module &m){
         });
 
 
-    py::class_<Contours, std::shared_ptr<Contours>>(m, "Contours")
+    py::class_<Contours, std::shared_ptr<Contours>>(m, "Contours", py::module_local(false))
         .def("contours", [](Contours &self) {
             return ContoursIterator(self);
         }, py::keep_alive<0, 1>())
         .def("getContour", &Contours::contour);
 
-    py::class_<ContoursComputedIncrementallyPybind>(m, "ContourComputation")
+    py::class_<ContoursComputedIncrementallyPybind>(m, "ContourComputation", py::module_local(false))
         .def_static("extraction", &ContoursComputedIncrementallyPybind::extraction);
 }
 
 void init_AttributeComputedIncrementally(py::module &m){
-        auto cls = py::class_<AttributeComputedIncrementallyPybind>(m, "Attribute")
+        auto cls = py::class_<AttributeComputedIncrementallyPybind>(m, "Attribute", py::module_local(false))
         .def_static(
             "computerAttribute",
             [](MorphologicalTreePybind &tree,
@@ -238,7 +238,7 @@ void init_AttributeComputedIncrementally(py::module &m){
         .def_static("describe", &AttributeComputedIncrementallyPybind::describeAttribute)
         .def_static("computerAttributeMapping", &AttributeComputedIncrementallyPybind::computerAttributeMapping);
 
-        py::enum_<AttributeGroup>(cls, "Group")
+        py::enum_<AttributeGroup>(cls, "Group", py::module_local(false))
             .value("ALL", AttributeGroup::ALL)
             .value("GEOMETRIC", AttributeGroup::GEOMETRIC)
             .value("BOUNDING_BOX", AttributeGroup::BOUNDING_BOX)
@@ -249,7 +249,7 @@ void init_AttributeComputedIncrementally(py::module &m){
             .value("BITQUADS", AttributeGroup::BITQUADS)
             .export_values();
 
-         py::enum_<Attribute>(cls, "Type")
+         py::enum_<Attribute>(cls, "Type", py::module_local(false))
             .value("AREA", Attribute::AREA)
             .value("VOLUME", Attribute::VOLUME)
             .value("RELATIVE_VOLUME", Attribute::RELATIVE_VOLUME)
@@ -312,7 +312,7 @@ void init_AttributeComputedIncrementally(py::module &m){
 }
 
 void init_AttributeFilters(py::module &m){
-    py::class_<AttributeFiltersPybind>(m, "AttributeFilters")
+    py::class_<AttributeFiltersPybind>(m, "AttributeFilters", py::module_local(false))
     .def(py::init<MorphologicalTreePybindPtr>())
     .def("filteringMin", py::overload_cast<py::array_t<float> &, float>(&AttributeFiltersPybind::filteringByPruningMin))
     .def("filteringMin", py::overload_cast<std::vector<bool>&>(&AttributeFiltersPybind::filteringByPruningMin))
@@ -327,7 +327,7 @@ void init_AttributeFilters(py::module &m){
 }
 
 void init_ExtinctionValues(py::module &m){
-    py::class_<ExtinctionValuesPybind>(m, "ExtinctionValues")
+    py::class_<ExtinctionValuesPybind>(m, "ExtinctionValues", py::module_local(false))
     .def(py::init<MorphologicalTreePybindPtr, py::array_t<float>&>())
     .def("filtering", &ExtinctionValuesPybind::filtering)
     .def("saliencyMap", &ExtinctionValuesPybind::saliencyMap, "leafToKeep"_a, "unweighted"_a = true)
@@ -337,7 +337,7 @@ void init_ExtinctionValues(py::module &m){
 
 
 void init_AdjacencyRelation(py::module &m){
-    	py::class_<AdjacencyRelation>(m, "AdjacencyRelation")
+    	py::class_<AdjacencyRelation>(m, "AdjacencyRelation", py::module_local(false))
         .def(py::init<int, int, double>())
         .def_property_readonly("size", &AdjacencyRelation::getSize )
         .def("getAdjPixels", py::overload_cast<int, int>( &AdjacencyRelation::getAdjPixels ));
@@ -345,7 +345,7 @@ void init_AdjacencyRelation(py::module &m){
 
 
 void init_UltimateAttributeOpening(py::module &m){
-    	py::class_<UltimateAttributeOpeningPybind>(m, "UltimateAttributeOpening")
+    	py::class_<UltimateAttributeOpeningPybind>(m, "UltimateAttributeOpening", py::module_local(false))
         .def(py::init<MorphologicalTreePybindPtr, py::array_t<float>&>())
         .def("execute", py::overload_cast<int>(&UltimateAttributeOpeningPybind::execute))
         .def("executeWithMSER", &UltimateAttributeOpeningPybind::executeWithMSER)
@@ -355,7 +355,7 @@ void init_UltimateAttributeOpening(py::module &m){
 }
 
 void init_ResidualTree(py::module &m){
-    	py::class_<ResidualTreePybind>(m, "ResidualTree")
+    	py::class_<ResidualTreePybind>(m, "ResidualTree", py::module_local(false))
         .def(py::init<std::shared_ptr<AttributeOpeningPrimitivesFamilyPybind>>())
         .def("reconstruction", &ResidualTreePybind::reconstruction)
         .def("filtering", &ResidualTreePybind::filtering)
@@ -369,7 +369,7 @@ void init_ResidualTree(py::module &m){
 }
 
 void init_AttributeOpeningPrimitivesFamily(py::module &m){
-    	py::class_<AttributeOpeningPrimitivesFamilyPybind, std::shared_ptr<AttributeOpeningPrimitivesFamilyPybind>>(m, "AttributeOpeningPrimitivesFamily")
+    	py::class_<AttributeOpeningPrimitivesFamilyPybind, std::shared_ptr<AttributeOpeningPrimitivesFamilyPybind>>(m, "AttributeOpeningPrimitivesFamily", py::module_local(false))
         .def(py::init<MorphologicalTreePybindPtr, py::array_t<float>&, float>())
         .def(py::init<MorphologicalTreePybindPtr, py::array_t<float>&, float, int>())
         .def_property_readonly("numPrimitives", &AttributeOpeningPrimitivesFamilyPybind::getNumPrimitives)

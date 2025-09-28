@@ -7,9 +7,9 @@ experimentation.
 ## Key features
 
 * Construction of morphological trees (component tree, tree of shapes) with different connectivities.
-* Incremental computation of geometric, topological and radiometric attributes.
-* Attribute-based filters (direct and subtractive rules, pruning, openings, ultimate attribute opening, etc.).
-* Utilities for extinction values, primitive families, MSER and Bit-Quads.
+* Incremental computation of geometric, bit-quads, topological, stats and other attributes.
+* Attribute-based filters (direct and subtractive rules).
+* Utilities for extinction values and MSER.
 * Pybind11 bindings that expose the high-level operations to Python.
 
 ## Installation

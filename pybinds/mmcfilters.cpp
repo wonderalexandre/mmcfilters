@@ -30,7 +30,7 @@ namespace py = pybind11;
 using namespace pybind11::literals;
 
 void init_NodeCT(py::module &m){
-    py::class_<NodeMT>(m, "NodeMT")
+    py::class_<NodeMT>(m, "NodeMT", py::module_local(false))
         .def(py::init<>())
         .def("__bool__", [](const NodeMT& node) { return static_cast<bool>(node); })
         .def_property_readonly("id", &NodeMT::getIndex)
@@ -118,8 +118,8 @@ void init_NodeCT(py::module &m){
         });
 }
 void init_MorphologicalTree(py::module &m){
-      py::class_<MorphologicalTree, std::shared_ptr<MorphologicalTree>>(m, "MorphologicalTreeBase");
-      py::class_<MorphologicalTreePybind, std::shared_ptr<MorphologicalTreePybind>>(m, "MorphologicalTree")
+      py::class_<MorphologicalTree, std::shared_ptr<MorphologicalTree>>(m, "MorphologicalTreeBase", py::module_local(false));
+      py::class_<MorphologicalTreePybind, std::shared_ptr<MorphologicalTreePybind>>(m, "MorphologicalTree", py::module_local(false))
         .def(py::init<py::array_t<int>, bool, double>(), "input"_a, "isMaxtree"_a, "radius"_a = 1.5)
         .def(py::init<py::array_t<int>,  std::string>(), "input"_a, "ToSInperpolation"_a = "self-dual")
         .def("reconstructionImage", &MorphologicalTreePybind::reconstructionImage )

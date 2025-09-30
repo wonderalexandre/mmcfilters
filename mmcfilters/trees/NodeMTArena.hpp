@@ -10,10 +10,10 @@ class NodeMT;
 class MorphologicalTree;
 
 /**
- * @brief Arena de nós para Component Trees com armazenamento contíguo e acesso rápido.
+ * @brief Arena de nós para Morphological trees com armazenamento contíguo e acesso rápido.
  *
  * A `NodeMTArena<CNPsType>` gerencia os atributos estruturais e dados de cada nó da árvore
- * de componentes (component tree) em vetores paralelos, proporcionando eficiência de cache
+ * de componentes (Morphological tree) em vetores paralelos, proporcionando eficiência de cache
  * e operações O(1) para acesso a campos.
  *
  * ## Estrutura de dados
@@ -116,6 +116,7 @@ class NodeMTArena {
         return id;
     }
 
+    //aloca espaço para n nós (sem inicialização)
     inline void reserve(size_t n) {
         repNode.reserve(n); threshold2.reserve(n); areaCC.reserve(n);
         parentId.reserve(n); firstChildId.reserve(n); nextSiblingId.reserve(n); 

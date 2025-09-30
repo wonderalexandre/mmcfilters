@@ -14,18 +14,12 @@ class MorphologicalTree;
 using MorphologicalTreePtr = std::shared_ptr<MorphologicalTree>;
 
 /**
- * @brief Estrutura de árvore de componentes (Component Tree) para imagens, com suporte a Pixels ou FlatZones.
+ * @brief Estrutura de árvore morfológica (Component Tree e Tree of shapes) para imagens.
  *
  * `MorphologicalTree<CNPsType>` organiza hierarquicamente regiões conexas de uma imagem
  * (componentes) em uma estrutura de árvore, permitindo análise multiescala e operações
- * de filtragem baseadas em atributos. O parâmetro de template `CNPsType` define se a
- * árvore é construída diretamente por pixels (`Pixels`) ou por flat-zones (`FlatZones`).
+ * de filtragem baseadas em atributos. 
  *
- * ## Características principais
- * - **Construção**: via Union-Find (otimizado) usando pixels ou flat-zones.
- * - **Estrutura interna**: dados de nós armazenados em `NodeMTArena`, com acesso rápido O(1).
- * - **Proxy**: interface de nó exposta via `NodeMT<CNPsType>`, que encapsula acesso e
- *   relações pai/filho.
  *
  * ## Exemplo mínimo
  * @code
@@ -52,8 +46,6 @@ protected:
     int treeType; //0-mintree, 1-maxtree, 2-tree of shapes
     AdjacencyRelationPtr adj; //disk of a given ratio: ratio(1) for 4-connect and ratio(1.5) for 8-connect 
     int numNodes;
-    
-
 
     std::vector<NodeId> pixelToNodeId; //Mapeamento dos pixels representantes para NodeID. Para adquirir todos os representantes valido utilize o método getAllRepCNPs
     std::shared_ptr<PixelSetManager> pixelBuffer; PixelSetManager::View pixelView; //gerenciamento de pixels da arvore

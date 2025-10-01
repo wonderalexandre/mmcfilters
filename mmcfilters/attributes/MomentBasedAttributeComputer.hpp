@@ -4,9 +4,6 @@
 #include "AttributeComputedIncrementally.hpp"
 #include "../trees/MorphologicalTree.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <limits>
 
 namespace mmcfilters {
 
@@ -265,7 +262,7 @@ public:
                 if(computeCompactness){
                     float denom = mu20 + mu02;
                     if (denom > std::numeric_limits<float>::epsilon()) {
-                        buffer[indexOfCompactness(idx)] = (1.0f / (2.0f * static_cast<float>(M_PI))) * (area / denom);
+                        buffer[indexOfCompactness(idx)] = (1.0f / (2.0f * std::numbers::pi) ) * (area / denom);
                     } else {
                         buffer[indexOfCompactness(idx)] = 0.0f;
                     }
@@ -274,7 +271,7 @@ public:
                     // Verificar se o denominador é zero antes de calcular atan2 para evitar divisão por zero
                     if (mu20 != mu02 || mu11 != 0) {
                         float radians = 0.5 * std::atan2(2 * mu11, mu20 - mu02);// orientação em radianos
-                        float degrees = radians * (180.0 / M_PI); // Converter para graus
+                        float degrees = radians * (180.0 / std::numbers::pi); // Converter para graus
                         buffer[indexOfAxisOrientation(idx)] = std::fmod(std::abs(degrees), 360.0f); ; // Armazenar a orientação no intervalo [0, 360]
                     } else {
                         buffer[indexOfAxisOrientation(idx)] = 0.0; // Se não for possível calcular a orientação, definir um valor padrão

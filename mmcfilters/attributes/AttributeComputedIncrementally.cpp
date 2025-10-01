@@ -1,9 +1,7 @@
-#include <set>
-#include <map>
-#include <typeindex>
-#include <limits>
+
 #include "../attributes/AttributeComputedIncrementally.hpp"
 #include "AttributeFactory.hpp"
+
 namespace mmcfilters {
 
 ImageFloatPtr AttributeComputedIncrementally::computerAttributeMapping(MorphologicalTree* tree, Attribute attribute) {
@@ -73,7 +71,7 @@ std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeCo
 
     // Construir o objeto AttributeNames
     std::unordered_map<Attribute, int> attrOffsets;
-    for (int i = 0; i < computedAttrs.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(computedAttrs.size()); ++i) {
         attrOffsets[computedAttrs[i]] = i;
     }
     auto attrNames = std::make_shared<AttributeNames>(std::move(attrOffsets));
@@ -151,7 +149,7 @@ std::pair<std::shared_ptr<AttributeNames>, std::shared_ptr<float[]>> AttributeCo
 
     // Construir AttributeNames com apenas os atributos solicitados
     std::unordered_map<Attribute, int> attrOffsets;
-    for (int i = 0; i < requestedAttrs.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(requestedAttrs.size()); ++i) {
         attrOffsets[requestedAttrs[i]] = i;
     }
     auto attrNames = std::make_shared<AttributeNames>(std::move(attrOffsets));

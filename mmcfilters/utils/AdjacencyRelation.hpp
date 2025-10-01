@@ -1,11 +1,6 @@
 #pragma once
 
 #include "../utils/Common.hpp"
-#include <math.h>
-#include <cmath> 
-#include <stdexcept>
-
-#define PI 3.14159265358979323846
 
 
 namespace mmcfilters {
@@ -85,9 +80,9 @@ public:
         for (i = 0; i < n; i++) {
             dx = this->offsetCol[i];
             dy = this->offsetRow[i];
-            dr[i] = sqrt((dx * dx) + (dy * dy));
+            dr[i] = std::sqrt((dx * dx) + (dy * dy));
             if (i != i0) {
-                da[i] = (atan2(-dy, -dx) * 180.0 / PI);
+                da[i] = (std::atan2(-dy, -dx) * 180.0 / std::numbers::pi);
                 if (da[i] < 0.0)
                     da[i] += 360.0;
             }

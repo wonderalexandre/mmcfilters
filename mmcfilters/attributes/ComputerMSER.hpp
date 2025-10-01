@@ -2,11 +2,8 @@
 
 #include "../trees/MorphologicalTree.hpp"
 #include "../utils/Common.hpp"
+
 namespace mmcfilters {
-
-
-#define UNDEF -999999999999
-
 
 /**
  * @brief Identifica regiões MSER na árvore com base em estabilidade de atributos.
@@ -25,8 +22,6 @@ private:
 	std::vector<NodeId> descendants;
 
 	
-	
-	
 public:
 	ComputerMSER(MorphologicalTreePtr tree): ComputerMSER(tree.get()) {}
 	ComputerMSER(MorphologicalTreePtr tree, std::shared_ptr<float[]> attr_increasing){ ComputerMSER(tree.get(), attr_increasing); }
@@ -43,8 +38,8 @@ public:
 		std::pair<std::vector<NodeId>, std::vector<NodeId>> ascDesc = tree->computerAscendantsAndDescendants(delta);
 		this->ascendants = std::move(ascDesc.first);
 		this->descendants = std::move(ascDesc.second);
-		this->stability.assign(tree->getNumNodes(), UNDEF);
-		
+		this->stability.assign(tree->getNumNodes(), std::numeric_limits<float>::quiet_NaN());
+
 		for(NodeId node: tree->getNodeIds()){
 			if(this->ascendants[node] != InvalidNode && this->descendants[node] != InvalidNode){
 				this->stability[node] = this->getStability(node);
@@ -55,7 +50,7 @@ public:
 		double maxStabilityDesc, maxStabilityAsc;
 		std::vector<uint8_t> mser(this->tree->getNumNodes(), false);
 		for(NodeId node: tree->getNodeIds()){
-			if(this->stability[node] != UNDEF && this->stability[this->ascendants[node]] != UNDEF && this->stability[this->descendants[node]] != UNDEF){
+			if(!std::isnan(this->stability[node]) && !std::isnan(this->stability[this->ascendants[node]]) && !std::isnan(this->stability[this->descendants[node]])){
 				maxStabilityDesc = this->stability[this->descendants[node]];
 				maxStabilityAsc = this->stability[this->ascendants[node]];
 				if(this->stability[node] < maxStabilityDesc && this->stability[node] < maxStabilityAsc){

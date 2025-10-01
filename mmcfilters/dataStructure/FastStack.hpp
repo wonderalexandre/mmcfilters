@@ -1,8 +1,8 @@
 #pragma once
 
-#include <vector>
-#include <utility>
-#include <cstdint>
+#include <vector>   // usado como armazenamento dinâmico
+#include <cstddef>  // para size_t (tamanho de container)
+#include <utility>  // para std::move nas operações push/pop
 
 namespace mmcfilters {
 /**

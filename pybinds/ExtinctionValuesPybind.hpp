@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../mmcfilters/attributes/ExtinctionValues.hpp"
+#include "../mmcfilters/filters/ExtinctionValues.hpp"
 #include "../mmcfilters/trees/NodeMT.hpp"
 
 
@@ -35,6 +35,17 @@ class ExtinctionValuesPybind : public ExtinctionValues{
 
         auto saliencyMapPtr = ExtinctionValues::saliencyMap(leafToKeep, unweighted);
         return PybindUtils::toNumpy(saliencyMapPtr);
+    }
+
+    // Return a Python list of (leaf, cutoffNode, extinction) tuples for easy unpacking
+    std::vector<py::tuple> getExtinctionValuesPy()  {
+        auto &vec = ExtinctionValues::getExtinctionValues();
+        std::vector<py::tuple> out;
+        out.reserve(vec.size());
+        for (const auto &item : vec) {
+            out.push_back(py::make_tuple(this->tree->proxy(item.leaf), tree->proxy(item.cutoffNode), item.extinction));
+        }
+        return out;
     }
 
     py::array_t<uint8_t> filtering(int leafToKeep) {

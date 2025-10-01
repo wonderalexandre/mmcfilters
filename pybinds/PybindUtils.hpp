@@ -3,6 +3,7 @@
 #include "../mmcfilters/utils/Common.hpp"
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
+#include <array>
 
 namespace mmcfilters {
 
@@ -27,9 +28,9 @@ class PybindUtils{
             });
 
             // 2D shape: (numRows, numCols), row-major strides
-            const ssize_t itemsize = sizeof(PixelType);
-            const std::array<ssize_t, 2> shape   = { static_cast<ssize_t>(numRows), static_cast<ssize_t>(numCols) };
-            const std::array<ssize_t, 2> strides = { static_cast<ssize_t>(numCols) * itemsize, itemsize };
+            const py::ssize_t itemsize = sizeof(PixelType);
+            const std::array<py::ssize_t, 2> shape   = { static_cast<py::ssize_t>(numRows), static_cast<py::ssize_t>(numCols) };
+            const std::array<py::ssize_t, 2> strides = { static_cast<py::ssize_t>(numCols) * itemsize, itemsize };
 
             py::array_t<PixelType> numpy(
                 shape,

@@ -1,18 +1,10 @@
 #pragma once
 
-#include <cassert>
-#include <cstdint>
-#include <list>
-#include <unordered_set>
-#include <unordered_map>
-
-#include <memory>
-#include <limits>
-#include <algorithm>
-#include <cmath>
-#include <type_traits>
-#include <span>
-#include <iostream>
+#include <memory> // Ponteiros inteligentes
+#include <cstdint> // Tipos fixos
+#include <algorithm> // Algoritmos STL
+#include <utility> // Utilidades diversas
+#include <cstdlib>  // para rand()
 
 namespace mmcfilters {
 
@@ -130,7 +122,6 @@ using ImageFloatPtr = std::shared_ptr<ImageFloat>;
 
 template <typename PixelType>
 using ImagePtr = std::shared_ptr<Image<PixelType>>;
-
 
 
 /**

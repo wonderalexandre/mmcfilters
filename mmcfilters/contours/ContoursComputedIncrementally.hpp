@@ -61,14 +61,6 @@
 #include "../attributes/AttributeComputedIncrementally.hpp"
 #include "../utils/AdjacencyRelation.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
-#include <iterator>
-#include <memory>
-#include <utility>
-#include <vector>
-
 namespace mmcfilters {
 
 /**

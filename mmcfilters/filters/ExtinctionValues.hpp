@@ -6,10 +6,9 @@
 #include "../attributes/AttributeComputedIncrementally.hpp"
 #include "../contours/ContoursComputedIncrementally.hpp"
 
-#include <algorithm>
+
 namespace mmcfilters {
 
-#define PI 3.14159265358979323846
 
 
 /**
@@ -37,7 +36,7 @@ struct RegionalExtremaNode{
  */
 class ExtinctionValues{
 
-    private:
+    protected:
         std::vector<RegionalExtremaNode> regionalExtremaNodes;
         MorphologicalTree* tree;
         std::shared_ptr<float[]> attribute;

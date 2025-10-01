@@ -3,8 +3,6 @@
 #include "../utils/Common.hpp"
 #include "AttributeNames.hpp"
 
-#include <memory>
-#include <vector>
 
 namespace mmcfilters {
 

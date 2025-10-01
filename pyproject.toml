@@ -1,0 +1,77 @@
+###############################################################
+#Comando para publicacao
+#0. Apague tudo não comitado (limpeza): git clean -xdf
+#1. Criar um nova tag: git tag v0.1.x
+#2. Publique a nova tag: git push origin v0.1.x
+#3. Ative a tag: git checkout v0.1.x
+#4. Gere wheels: MACOSX_DEPLOYMENT_TARGET=11.0 python -m build
+#5. Publique no pypi: twine upload dist/*
+###############################################################
+
+
+
+[build-system]
+requires = [
+  "scikit-build-core>=0.9",
+  "setuptools-scm>=8",
+  "pybind11>=3.0.1",
+#  "cmake>=3.20",
+#  "ninja"
+]
+build-backend = "scikit_build_core.build"
+
+[project]
+dynamic = ["version"]
+name = "mmcfilters"
+description = "Library for connected image filtering based on morphological trees"
+readme = "README.md"
+authors = [{ name = "Wonder Alexandre Luz Alves", email = "worderalexandre@gmail.com" }]
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+keywords = ["morphological trees", "mathematical morphology", "image processing", "computer vision"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Image Processing",
+  "Programming Language :: Python",
+  "Programming Language :: C++",
+]
+
+[tool.setuptools_scm]
+# grava a versão resolvida (a partir da tag) dentro do seu pacote python
+write_to = "python/mmcfilters/_version.py"
+version_scheme = "post-release"
+local_scheme = "no-local-version"
+tag_regex = "^v?(?P<version>\\d+\\.\\d+\\.\\d+(?:[.-].*)?)$"
+
+[tool.scikit-build]
+wheel.packages = ["python"]
+
+[tool.scikit-build.cmake]
+build-type = "Release"
+args = [
+  "-DMMCFILTERS_BUILD_PYTHON=ON",
+  "-DMMCFILTERS_BUILD_TESTS=OFF",
+  "-DMMC_PYBINDS_DIR=pybinds",
+]
+
+[tool.scikit-build.cmake.define]
+CMAKE_OSX_DEPLOYMENT_TARGET = "11.0"
+
+# (opcional)
+#[tool.scikit-build.ninja]
+#args = ["-j", "0"]  # 0 = auto
+
+[tool.scikit-build.metadata]
+# Use setuptools-scm as the version provider for scikit-build-core
+version = { provider = "scikit_build_core.metadata.setuptools_scm" }
+
+[tool.scikit-build.sdist]
+include = [
+  "python/**",
+  "pybinds/**",
+  "mmcfilters/**",
+  "CMakeLists.txt",
+  "LICENSE",
+  "README.md",
+]

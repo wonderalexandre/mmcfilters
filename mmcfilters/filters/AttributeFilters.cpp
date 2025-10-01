@@ -1,7 +1,7 @@
 
 #include "../filters/AttributeFilters.hpp"
-namespace mmcfilters {
 
+namespace mmcfilters {
 
 AttributeFilters::AttributeFilters(MorphologicalTree* tree){
     this->tree = tree;
@@ -21,12 +21,6 @@ ImageUInt8Ptr AttributeFilters::filteringByPruningMin(std::shared_ptr<float[]> a
     return imgOutput;
 }
 
-/*
-ImageUInt8Ptr AttributeFilters::filteringByExtinctionValue(MorphologicalTreePtr tree, std::shared_ptr<float[]> attribute, int k){
-    ImageUInt8Ptr imgOutput = ImageUInt8::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
-    AttributeFilters::filteringByExtinctionValue(this->tree, attribute, k, imgOutput);
-    return imgOutput;
-}*/
 
 ImageUInt8Ptr AttributeFilters::filteringByPruningMax(std::shared_ptr<float[]> attribute, float threshold){
     ImageUInt8Ptr imgOutput = ImageUInt8::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());

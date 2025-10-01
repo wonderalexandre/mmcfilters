@@ -3,15 +3,7 @@
 #include "../utils/AdjacencyRelation.hpp"
 #include "../utils/Common.hpp"
 
-#include <tuple>
-#include <vector>
-#include <deque>
-#include <algorithm>
-#include <numeric>
-#include <type_traits>
-#include <limits>
-#include <cstdint>
-#include <climits>
+
 namespace mmcfilters {
 
 /**
@@ -93,8 +85,8 @@ public:
         auto img = imgPtr->rawData();
 
         int numPixels = imgPtr->getSize();
-        std::vector<int> zPar(numPixels, -1);
-        std::vector<int> parent(numPixels, -1);
+        std::vector<int> zPar(numPixels, InvalidNode);
+        std::vector<int> parent(numPixels, InvalidNode);
         auto findRoot = [&](int p) {
             while (zPar[p] != p) { zPar[p] = zPar[zPar[p]]; p = zPar[p]; }
             return p;
@@ -105,7 +97,7 @@ public:
             parent[p] = p;
             zPar[p] = p;
             for (int q : adj->getNeighborPixels(p)) {
-                if (zPar[q] != -1) {
+                if (zPar[q] != InvalidNode) {
                     int r = findRoot(q);
                     if (p != r) { parent[r] = p; zPar[r] = p; }
                 }
@@ -459,8 +451,8 @@ public:
                         adjSize = 2;
                     } 
 
-                    min = INT_MAX;
-                    max = INT_MIN;
+                    min = std::numeric_limits<int>::max();
+                    max = std::numeric_limits<int>::min();
                     for (int i = 0; i < adjSize; i++) {
                         qRow = row + adjRow[i];
                         qCol = col + adjCol[i];
@@ -766,8 +758,8 @@ public:
         auto [imgInterpolate, orderedPixelsInterpolete, adj] = sort(imgPtr);
 
         // ---------- UF em imagem interpolada ----------
-        std::vector<int> zPar(numPixelsInterp, -1);
-        std::vector<int> parentInterpolate(numPixelsInterp, -1);
+        std::vector<int> zPar(numPixelsInterp, InvalidNode);
+        std::vector<int> parentInterpolate(numPixelsInterp, InvalidNode);
         auto findRoot = [&](int pStar) {
             while (zPar[pStar] != pStar) { zPar[pStar] = zPar[zPar[pStar]]; pStar = zPar[pStar]; }
             return pStar;
@@ -795,7 +787,7 @@ public:
         
         // Passo 1 — canonização + marcar apenas representantes
         int numNodes=0;
-        std::vector<int> repPixelsOriginais(numPixelsInterp, -1); // válido só quando o índice é representante de platô
+        std::vector<int> repPixelsOriginais(numPixelsInterp, InvalidNode); // válido só quando o índice é representante de platô
         for (int i = 0; i < numPixelsInterp; ++i) {  // raiz -> folhas
             int pStar = orderedPixelsInterpolete[i];
             int qStar = parentInterpolate[pStar];
@@ -809,12 +801,12 @@ public:
 
             if (isOriginal1D(pStar, interpNumCols)) {
                 int rep = repOf(pStar);              // calculado na hora
-                if (repPixelsOriginais[rep] == -1) repPixelsOriginais[rep] = pStar;  // elege o o primeiro original do platô
+                if (repPixelsOriginais[rep] == InvalidNode) repPixelsOriginais[rep] = pStar;  // elege o o primeiro original do platô
             }
         }
 
 
-        std::vector<int> parent(numPixels, -1);
+        std::vector<int> parent(numPixels, InvalidNode);
         std::vector<int> orderedPixels; orderedPixels.reserve(numPixels);
         for (int i = 0; i < numPixelsInterp; ++i) { // raiz -> folhas
             int pStar = orderedPixelsInterpolete[i];

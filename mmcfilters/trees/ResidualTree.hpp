@@ -4,10 +4,7 @@
 #include "../trees/MorphologicalTree.hpp"
 #include "../filters/AttributeOpeningPrimitivesFamily.hpp"
 #include "../utils/Common.hpp"
-#include <list>
-#include <vector>
-#include <stack>
-#include <utility> // Para std::pair e std::make_pair
+
 namespace mmcfilters {
 
 class ResidualTree;

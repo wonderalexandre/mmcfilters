@@ -7,9 +7,9 @@ experimentation.
 ## Key features
 
 * Construction of morphological trees (component tree, tree of shapes) with different connectivities.
-* Incremental computation of geometric, topological and radiometric attributes.
-* Attribute-based filters (direct and subtractive rules, pruning, openings, ultimate attribute opening, etc.).
-* Utilities for extinction values, primitive families, MSER and Bit-Quads.
+* Incremental computation of geometric, bit-quads, topological, stats and other attributes.
+* Attribute-based filters (direct and subtractive rules).
+* Utilities for extinction values and MSER.
 * Pybind11 bindings that expose the high-level operations to Python.
 
 ## Installation
@@ -23,13 +23,16 @@ pip install mmcfilters
 ```python
 import numpy as np
 import mmcfilters
+Type = mmcfilters.Attribute.Type
 
 img = np.random.randint(0, 255, size=(128, 128), dtype=np.uint8)
-tree = mmcfilters.MorphologicalTree(img, True, 1.5)
 
-attrs = mmcfilters.AttributeComputedIncrementally.computeSingleAttribute(tree, mmcfilters.Attribute.AREA)
-area = np.asarray(attrs[1]).reshape(-1)
+maxtree = mmcfilters.MorphologicalTree(img, True, 1.5)
+#mintree = mmcfilters.MorphologicalTree(img, False, 1.5)
+#tos = mmcfilters.MorphologicalTree(img) 
 
-flt = mmcfilters.AttributeFilters(tree)
-filtered = flt.filteringDirectRule(area > 50).reshape(img.shape)
+filter = mmcfilters.AttributeFilters(maxtree)
+area = mmcfilters.Attribute.computeSingleAttribute(maxtree, Type.AREA)
+
+img_filtered = filter.filteringDirectRule(area > 50)
 ```

@@ -6,8 +6,6 @@
 #include "../attributes/AttributeComputedIncrementally.hpp"
 #include "../utils/Common.hpp"
 
-#include <vector>
-#include <list>
 namespace mmcfilters {
 
 class AttributeOpeningPrimitivesFamily;

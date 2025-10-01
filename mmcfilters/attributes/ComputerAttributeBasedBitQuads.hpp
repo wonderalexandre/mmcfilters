@@ -1,19 +1,10 @@
 #pragma once
 
-#include <vector>
-#include <set>
-#include <memory>
-#include <functional>
-#include <cmath>
-#include <string>
-#include <sstream>
-#include <iomanip>
-#include <cstdint>
-#include <cassert>
 #include "../utils/Common.hpp"
 #include "../utils/AdjacencyRelation.hpp"
 #include "../trees/MorphologicalTree.hpp"
 #include "../attributes/AttributeComputedIncrementally.hpp"
+
 namespace mmcfilters {
 
 //---------------------------------------------
@@ -291,7 +282,7 @@ struct AttributeBasedBitQuads {
     double getCircularity() const {
         double area = getAreaDuda();
         double per = getPerimeterContinuous();
-        return (4.0 * M_PI * area) / (per * per);
+        return (4.0 * std::numbers::pi * area) / (per * per);
     }
 
     double getAreaAverage() const {

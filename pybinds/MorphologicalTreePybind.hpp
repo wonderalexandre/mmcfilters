@@ -120,6 +120,52 @@ class MorphologicalTreePybind : public MorphologicalTree {
         return PybindUtils::toNumpy(imgOut);
     }
 
+
+    static py::list repCNPsByFlood(NodeMT node)  {
+        if (!node) {
+            throw std::invalid_argument("NodeMT inválido.");
+        }
+        MorphologicalTree* tree = node.getTree();
+        AdjacencyRelation* adj = tree->getAdjacencyRelation(); 
+        const int N = tree->getNumRowsOfImage() * tree->getNumColsOfImage();
+        const int target = node.getLevel(); // nível da flatzone
+
+        auto levelOf = [&](int p) -> int {
+            // Acesso ao nível do pixel p via SC-id (conforme seu item 3)
+            return tree->getLevelById(tree->getSCById(p));
+        };
+        auto inNode = [&](int p) -> int {
+            return tree->getSCById(p) == node.getIndex();
+        };
+        
+        
+        py::list reps;
+        FastQueue<int> Q(1024);
+        std::vector<uint8_t> visited(N, 0);
+        for (int p : node.getPixelsOfCC()) {
+            if (!inNode(p) || visited[p]) continue;
+
+            // Encontramos uma nova flatzone; s será o representante
+            reps.append(p);
+            visited[p] = true;
+            Q.push(p);
+
+            while (!Q.empty()) {
+                int cnp = Q.pop();
+                
+                // Ajuste esta chamada se sua adjacência tiver outra API
+                for (int q : adj->getAdjPixels(cnp)) {
+                    if (!inNode(q) || visited[q]) continue;
+                    if (levelOf(q) != target) continue; // zona plana: mesmo nível
+                    visited[q] = true;
+                    Q.push(q);
+                }
+            }
+        }
+
+        return reps;
+    }
+
 };
 
 } // namespace mmcfilters

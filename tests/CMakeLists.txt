@@ -23,6 +23,23 @@ if(NOT TARGET mmcfilters::core)
     message(FATAL_ERROR "O alvo mmcfilters::core não foi encontrado. Verifique se o diretório 'mmcfilters' existe." )
 endif()
 
+
+# Define build padrão, se não for especificado
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
+endif()
+
+# Flags específicas por tipo de build
+set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall -Wextra -Wpedantic")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -Wextra -Wpedantic")
+
+# Mensagens úteis
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "Compiler: ${CMAKE_CXX_COMPILER}")
+message(STATUS "C++ Standard: C++${CMAKE_CXX_STANDARD}")
+
+
+
 function(mmcfilters_add_program target)
     add_executable(${target} ${ARGN})
     target_link_libraries(${target} PRIVATE mmcfilters::core)

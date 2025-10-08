@@ -19,7 +19,7 @@ int main() {
     
 
     MorphologicalTreePtr tree = nullptr;
-    std::string treeType = "mintree";
+    std::string treeType = "maxtree";
     if(treeType=="mintree"){
         tree = std::make_shared<MorphologicalTree>(image, false);
         //std::cout << "mintree" << std::endl;
@@ -35,13 +35,15 @@ int main() {
     std::cout << "--- Tree: " << treeType << " --- ["<<tree->getTreeType() << "]" << std::endl;
     printTree(tree->getRoot());
     std::cout << std::endl;
-    
 
-    ComputerAttributeBasedBitQuads computer(tree);
+    auto v = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::BITQUADS_CIRCULARITY).second;
+
+    ComputerAttributeBasedBitQuads computer(tree.get());
     std::vector<AttributeBasedBitQuads> attr = computer.getAttributes();
     std::cout << "Patterns: " << std::endl;
     for (NodeId node : tree->getNodeIds()) {
-        std::cout << "Node ID: " << node << ",\tLevel: " << tree->getLevelById(node) << ",\tPatterns: " << attr[node].printPattern() << std::endl;
+        std::cout << "Node ID: " << node << ",\tLevel: " << tree->getLevelById(node) << ",\tPatterns: " << attr[node].printPattern() << 
+        "Attr:" << v[node] << std::endl;
     }
 
     return 0;

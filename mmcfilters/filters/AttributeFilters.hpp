@@ -59,10 +59,7 @@ class AttributeFilters{
         for(NodeId node: tree->getNodeIds()){
             if(tree->getParentById(node) != InvalidNode){ 
                 int residue = tree->getResidueById(node);
-                if(tree->isMaxtreeNodeById(node))
-                    mapLevel[node] =  (float)mapLevel[tree->getParentById(node)] + (residue * prob[node]);
-                else
-                    mapLevel[node] = (float) mapLevel[tree->getParentById(node)] - (residue * prob[node]);
+                mapLevel[node] =  (float)mapLevel[tree->getParentById(node)] + (residue * prob[node]);
             }
         }
         auto imgOutput = imgOutputPtr->rawData();
@@ -123,10 +120,7 @@ class AttributeFilters{
         for(NodeId node: tree->getNodeIds()){
             if(tree->getParentById(node) != InvalidNode){ 
                 if(criterion[node]){
-                    if(tree->isMaxtreeNodeById(node))
-                        mapLevel[node] = mapLevel[tree->getParentById(node)] + tree->getResidueById(node);
-                    else
-                        mapLevel[node] = mapLevel[tree->getParentById(node)] - tree->getResidueById(node);
+                    mapLevel[node] = mapLevel[tree->getParentById(node)] + tree->getResidueById(node);
                 }
                 else
                     mapLevel[node] = mapLevel[tree->getParentById(node)];

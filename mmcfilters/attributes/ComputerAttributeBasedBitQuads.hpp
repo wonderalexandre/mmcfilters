@@ -32,7 +32,7 @@ public:
     bool isValid(int row, int col, MorphologicalTree* tree) const {
         return row + rowOffset >= 0 && row + rowOffset < tree->getNumRowsOfImage() && col + colOffset >= 0 && col + colOffset < tree->getNumColsOfImage();
     }
-
+    BitQuadComparator() = default;
     BitQuadComparator(int rowOffset, int colOffset, BitQuadType type) : rowOffset(rowOffset), colOffset(colOffset), type(type) {
         switch (type) {
             case BitQuadType::StrictAncestor:
@@ -231,7 +231,7 @@ struct AttributeBasedBitQuads {
     int countPatternCT2 = 0;
     int countPatternCTD = 0;
     int countPatternCT3 = 0;
-    AdjacencyRelationPtr adj;
+    AdjacencyRelation* adj;
 
     std::string printPattern() const {
         std::ostringstream oss;
@@ -250,7 +250,7 @@ struct AttributeBasedBitQuads {
         return oss.str();
     }
 
-    AttributeBasedBitQuads(AdjacencyRelationPtr adj) : adj(adj) {}
+    AttributeBasedBitQuads(AdjacencyRelation* adj) : adj(adj) {}
 
     int getNumberEuler() const {
         if (adj || adj->is4connectivity()) // ou use uma constante do seu projeto
@@ -325,7 +325,7 @@ private:
     BitQuadPattern Q3T;
 
     MorphologicalTree* tree;
-    AdjacencyRelationPtr adj;
+    AdjacencyRelation* adj;
     std::vector<AttributeBasedBitQuads> attr;
     NonComparablePixels pixelsOfLCA;
 
@@ -780,9 +780,10 @@ public:
 
     // Construtor principal
     ComputerAttributeBasedBitQuads(MorphologicalTreePtr tree): ComputerAttributeBasedBitQuads(tree.get()) {}
-    ComputerAttributeBasedBitQuads(MorphologicalTree* tree) : tree(tree), adj(tree->getAdjacencyRelation()), attr(tree->getNumNodes(), AttributeBasedBitQuads(adj)) {
+    ComputerAttributeBasedBitQuads(MorphologicalTree* tree) : tree(tree), adj(tree->getAdjacencyRelation()), 
+    attr(tree->getNumNodes(), AttributeBasedBitQuads(tree->getAdjacencyRelation())) {
         
-        assert(tree->getTreeType() != MorphologicalTree::TREE_OF_SHAPES && "Não está implementado para tree of shapes!");
+       // assert(tree->getTreeType() != MorphologicalTree::TREE_OF_SHAPES && "Não está implementado para tree of shapes!");
         
         initializePatterns();
         AttributeComputedIncrementally::computerAttribute(tree,

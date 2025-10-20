@@ -40,7 +40,7 @@ int main(int argc, char const* argv[]) {
     auto [attrNamesInertia, attrsInertia] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::INERTIA);
     auto [attrNamesLength, attrsLength] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::LENGTH_MINOR_AXIS);
     auto [attrNamesEccentricity, attrsEccentricity] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::ECCENTRICITY);
-    auto [attrNamesCompactness, attrsCompactness] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::COMPACTNESS);
+    auto [attrNamesCompactness, attrsCompactness] = AttributeComputedIncrementally::computeSingleAttribute(tree, Attribute::BITQUADS_CIRCULARITY);
 
     for (NodeId nodeIndex: tree->getNodeIds()) {
         std::cout << "Atributo AREA do nó " << nodeIndex << ": " << attrsArea[nodeIndex] << std::endl;
@@ -58,7 +58,7 @@ int main(int argc, char const* argv[]) {
         std::cout << "Atributo INERTIA do nó " << nodeIndex << ": " << attrsInertia[nodeIndex] << std::endl;
         std::cout << "Atributo LENGTH_MINOR_AXIS do nó " << nodeIndex << ": " << attrsLength[nodeIndex] << std::endl;
         std::cout << "Atributo ECCENTRICITY do nó " << nodeIndex << ": " << attrsEccentricity[nodeIndex] << std::endl;
-        std::cout << "Atributo COMPACTNESS do nó " << nodeIndex << ": " << attrsCompactness[nodeIndex] << std::endl;
+        std::cout << "Atributo BITQUADS_CIRCULARITY do nó " << nodeIndex << ": " << attrsCompactness[nodeIndex] << std::endl;
     }
 
     auto [attrNames, attrsPtr] = AttributeComputedIncrementally::computeAttributes(tree, {

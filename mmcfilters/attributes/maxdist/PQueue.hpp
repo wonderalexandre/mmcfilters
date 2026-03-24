@@ -45,7 +45,7 @@ namespace mmcfilters
   
     inline bool empty() const noexcept { return size_ == 0; }
     inline int costOf(int pidx) const noexcept { return cost_[pidx]; }
-    inline stateOf(int pidx) const noexcept { return state_[pidx]; }
+    inline State stateOf(int pidx) const noexcept { return state_[pidx]; }
     
     void reset();
 

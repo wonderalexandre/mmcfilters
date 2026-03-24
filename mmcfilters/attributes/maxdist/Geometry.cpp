@@ -32,6 +32,11 @@ namespace mmcfilters
       return p.sub(q);
     }
 
+    std::ostream &operator<<(std::ostream &os, const Point2D &p)
+    {
+      return os << "(" << p.x() << ", " << p.y() <<  ")";
+    }
+
     // -----------------------------------------------------------
     // Box2D 
     // -----------------------------------------------------------
@@ -41,7 +46,7 @@ namespace mmcfilters
         height_{bottomRight.y() - topLeft.y() + 1}
     {}
 
-    Box2D::Box2D(int topLeftX, int topLeftY, int bomttomRightX, int bototmRightY)
+    Box2D::Box2D(int topLeftX, int topLeftY, int bottomRightX, int bottomRightY)
       : topLeft_{topLeftX, topLeftY}, bottomRight_{bottomRightX, bottomRightY},
         width_{bottomRightX - topLeftX + 1},
         height_{bottomRightY - topLeftY + 1} 
@@ -87,7 +92,7 @@ namespace mmcfilters
       return {px, py};
     }
 
-    std::pair<int, int> Box2D::pointPair(int index) const noexcept
+    std::pair<int, int> Box2D::pointPair(int idx) const noexcept
     {
       int px = idx % width_ + topLeft_.x();
       int py = idx / width_ + topLeft_.y();
@@ -97,8 +102,8 @@ namespace mmcfilters
 
     bool Box2D::contains(const Point2D &p) const noexcept
     {
-      if (topLeft_.x() <= p.x() && x <= bottomRight_.x() && 
-          topLeft_.y() <= p.y() && y <= bottomRight_.y())
+      if (topLeft_.x() <= p.x() && p.x() <= bottomRight_.x() && 
+          topLeft_.y() <= p.y() && p.y() <= bottomRight_.y())
         return true;
     
         return false;

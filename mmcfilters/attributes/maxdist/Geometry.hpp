@@ -1,6 +1,7 @@
 #pragma once 
 
 #include <utility>
+#include <ostream>
 
 namespace mmcfilters
 {
@@ -30,6 +31,8 @@ namespace mmcfilters
 
     Point2D operator+(const Point2D &p, const Point2D &q);
     Point2D operator-(const Point2D &p, const Point2D &q);
+    std::ostream &operator<<(std::ostream &os, const Point2D &p);
+
 
     class Box2D
     {

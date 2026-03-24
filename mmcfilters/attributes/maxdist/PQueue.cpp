@@ -22,7 +22,7 @@ namespace mmcfilters
       assert(cost >= 0 && cost <= maxCost_);
       cost_[pidx] = cost;
       state_[pidx] = State::ACTIVE;
-      pushFront(buckets_[cost], p);
+      pushFront(buckets_[cost], pidx);
       ++size_;
     }
 

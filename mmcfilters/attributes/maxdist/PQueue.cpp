@@ -36,6 +36,25 @@ namespace mmcfilters
       // pidx is still in the queue.
     }
 
+    void PQueue::reinsert(int pidx, int cost)
+    {
+      assert(state_[pidx] == State::DONE);
+      assert(cost >= 0 && cost <= maxCost_);
+      cost_[pidx] = cost;
+      state_[pidx] = State::ACTIVE;
+      pushFront(buckets_[cost], pidx);
+      scan_ = std::min(scan_, cost); // rewind - new seed may have lower cost
+      ++size_;
+    }
+
+    void PQueue::reopen(int pidx, int cost)
+    {
+      assert(state_[pidx] == State::DONE);
+      assert(cost >= 0 && cost <= maxCost_);
+      cost_[pidx] = cost;
+      state_[pidx] = State::ABSENT;
+    }
+
     // Remove and return the pixel with the minimum cost.
     // Returns -1 if the queue is empty.
     int PQueue::popMin() 

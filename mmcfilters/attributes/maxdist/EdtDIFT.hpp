@@ -79,28 +79,36 @@ namespace mmcfilters
       std::vector<AdaptiveAdj> bank_;
     };
 
-    // class EdtDIFT
-    // {
-    // public:
-    //   static const int NIL = -1;
+    class EdtDIFT
+    {
+    public:
+      static const int NIL = -1;
 
-    //   EdtDIFT(int nrows, int ncols);
-    //   void run();
+      EdtDIFT(int nrows, int ncols);
+      void run();
 
-    // private:
-    //   void setUpAdjMap();
+      void insertNeighborsPQueue(int pidx);
+      void seed(int pidx);
 
-    // private:
-    //   ImageUInt8 bin_;
-    //   ImageInt32 root_;
-    //   ImageInt32 pred_;
-    //   ImageInt32 cost_;
-    //   ImageInt32 Bedt_;
-    //   ImageUInt8 adjMap_;
-    //   ImageUInt8 O_;
+    private:
+      void setUpAdjMap();
 
-    //   PQueue Q_;
-    //   AdjacencyRelation adj8_;
-    // };
+      void treeRemoval(const std::vector<int> &toRemove,
+        std::vector<int> &stack);
+
+
+    private:
+      ImageUInt8 bin_;
+      ImageInt32 root_;
+      ImageInt32 cost_;
+      ImageInt32 Bedt_;
+      ImageUInt8 adjMap_;
+      ImageUInt8 O_;
+
+      PQueue Q_;
+      AdjacencyRelation adj4_;
+      AdaptiveAdjBank AAB_;
+      Box2D domain_;
+    };
   }
 }

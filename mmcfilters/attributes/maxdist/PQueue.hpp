@@ -35,6 +35,20 @@ namespace mmcfilters
       // Lower the cost of pixel p (already ACTIVE). New cost must be <= old cost.
       void decreaseCost(int pidx, int newCost);
 
+      // Re-insert a DONE pixel as a new seed (DIFT)
+      // The pixel is treated as freshly inserted: its predecessor and root must
+      // be updated by the caller before propagation resumes
+      // Because the new cost may be smaller tha the current scan position,
+      // the scan pointer is rewound so the pixel is not silently skipped.
+      void reinsert(int pidx, int cost);
+
+      // Reopen a DONE pixel for processing without inserting it into the queue
+      // (DIFT). Its cost is updated and its state is reset to ABSENT so that
+      // the normal propagation step - when a neighbor is relaxed - can enqueue
+      // it via insert() or ignore it if a cheaper path already exists,
+      // The caller is responsible for updating root and pred accordingly.
+      void reopen(int pidx, int cost);
+
       // Remove and return the pixel with the minimum cost.
       // Returns -1 if the queue is empty
       int popMin();
@@ -42,7 +56,8 @@ namespace mmcfilters
       // Peak at the minimum cost without removing anything
       std::optional<int> minCost() const;
 
-  
+    
+    inline int maxCost() const noexcept { return maxCost_; }  
     inline bool empty() const noexcept { return size_ == 0; }
     inline int costOf(int pidx) const noexcept { return cost_[pidx]; }
     inline State stateOf(int pidx) const noexcept { return state_[pidx]; }

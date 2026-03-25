@@ -8,7 +8,6 @@ namespace mmcfilters
     #define MIN(a, b) (((a) < (b)) ? (a) : (b)) 
     #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 
-
     // ---------------------------------------------------------------------------------
     // Adaptive Adjacency Neighbors Iterator
     // ---------------------------------------------------------------------------------
@@ -171,78 +170,129 @@ namespace mmcfilters
     // ---------------------------------------------------------------------------------------------------
     // EdtDIFT
     // ---------------------------------------------------------------------------------------------------
-    // EdtDIFT::EdtDIFT(int nrows, int ncols) :
-    //   bin_{nrows, ncols},
-    //   root_{nrows, ncols},
-    //   pred_{nrows, ncols},
-    //   cost_{nrows, ncols},
-    //   Bedt_{nrows, ncols},
-    //   adj8_{nrows, ncols, 1.5},
-    //   Q_{nrows * ncols, SQUARE(MIN(ncols, nrow) / 2.0 + 1)}
-    // { 
-    //   for (int pidx = 0; pidx < bin_.getSize(); ++pidx) {
-    //     pred_[pidx] = NIL;
-    //     root_[pidx] = pidx;
-    //   }
-    // }
+    EdtDIFT::EdtDIFT(int nrows, int ncols) :
+      bin_{nrows, ncols},
+      root_{nrows, ncols},
+      cost_{nrows, ncols},
+      Bedt_{nrows, ncols},
+      O_{nrows, ncols},
+      adjMap_{nrows, ncols},
+      adj4_{nrows, ncols, 1.0},
+      Q_{nrows * ncols, SQUARE(static_cast<int>(MIN(ncols, nrows) / 2.0 + 1))},
+      domain_{ncols, ncols}
+    { 
+      for (int pidx = 0; pidx < bin_.getSize(); ++pidx) {
+        root_[pidx] = pidx;
+      }
 
-    // void EdtDIFT::setUpAdjMap()
-    // {
-    //   int lastCol = Bedt_.getNumCols() - 1;
-    //   for (int i = 1; i < Bedt_.getNumRows(); i++) {
-    //     adjMap_[i * Bedt_.getNumCols()] = 1;            // fill first column
-    //     adjMap_[i * Bedt_.getNumCols() + lastCol] = 2;  // fill last column
-    //   }
+      setUpAdjMap();
+    }
 
-    //   int lastRow = Bedt_.getNumCols() * (Bedt_.getNumRows()-1);
-    //   for (int i = 1; i < Bedt_.getNumCols()-1; i++) {
-    //     adjMap_[i] = 4;             // fill first row
-    //     adjMap_[lastRow + i] = 3;   // fill last row
-    //   }
+    void EdtDIFT::setUpAdjMap()
+    {
+      int lastCol = Bedt_.getNumCols() - 1;
+      for (int i = 1; i < Bedt_.getNumRows(); i++) {
+        adjMap_[i * Bedt_.getNumCols()] = 1;            // fill first column
+        adjMap_[i * Bedt_.getNumCols() + lastCol] = 2;  // fill last column
+      }
 
-    //   adjMap_[0] = 6;
-    //   adjMap_[Bedt_.getNumCols()-1] = 8;
-    //   adjMap_[Bedt_.getNumCols() * (Bedt_.getNumRows()-1)] = 5;
-    //   adjMap_[Bedt_.getNumCols() * (Bedt_.getNumRows()-1) + Bedt_.getNumCols() - 1] = 7;
-    // }
+      int lastRow = Bedt_.getNumCols() * (Bedt_.getNumRows()-1);
+      for (int i = 1; i < Bedt_.getNumCols()-1; i++) {
+        adjMap_[i] = 4;             // fill first row
+        adjMap_[lastRow + i] = 3;   // fill last row
+      }
 
-    // void EdtDIFT::run()
-    // {
-    //   while (!Q_.empty())
-    //   {
-    //     int pidx = Q_.popMin();
-    //     int ridx = root_[pidx];
-        
-    //     int rx = ridx % Bedt_.getNumCols();
-    //     int ry = ridx / Bedt_.getNumCols();
-        
-    //     Bedt_[ridx] = MAX(Bedt_[ridx], cost_[pidx]);
+      adjMap_[0] = 6;
+      adjMap_[Bedt_.getNumCols()-1] = 8;
+      adjMap_[Bedt_.getNumCols() * (Bedt_.getNumRows()-1)] = 5;
+      adjMap_[Bedt_.getNumCols() * (Bedt_.getNumRows()-1) + Bedt_.getNumCols() - 1] = 7;
+    }
 
-    //     for (int qidx : adj8_.getNeighborPixels(pidx)) {
-    //       int qx = qidx % Bedt_.getNumCols();
-    //       int qy = qidx / Bedt_.getNumCols();
-          
-    //       int dx = qx - rx;
-    //       int dy = qy - ry;
-    //       int tmp = SQUARE(dx) + SQUARE(dy);
+    void EdtDIFT::treeRemoval(const std::vector<int> &toRemove,
+        std::vector<int> &stack)
+    {
+      int top = -1;
+      for (int pidx : toRemove) {
+        O_[pidx] = 1;
+        cost_[pidx] = Q_.maxCost();
+        Q_.reopen(pidx, cost_[pidx]);
+        stack[++top] = pidx;
+      }
 
-    //       if (tmp < cost_[qidx]) {
-    //         if (Q_.stateOf(qidx) != PQueue::State::ACTIVE) {
-    //           cost_[qidx] = tmp;
-    //           Q_.insert(pidx, tmp);
-    //         }
-    //         else
-    //           Q_.decreaseCost(qidx, tmp);
+      while (top > -1) {
+        int pidx = stack[top];
+        Point2D p = domain_.point(pidx);
+        --top;
 
-    //         pred_[qidx] = pidx;
-    //         root_[qidx] = ridx;
-    //       }
-    //       else if (pred[qidx] == pidx) {
-    //         if (tmp > cost_[qidx] || root_[pidx] != root_[qidx])
-    //           removeSubTree(qidx);
-    //       }
-    //     }
-    // }      
-  //  }
+        const AdaptiveAdj &AA = AAB_[adjMap_[pidx]];
+        for (const auto& [q, ai] : AA.neighbors(p)) {
+          int qidx = domain_.index(q);
+          if (cost_[root_[qidx]] == Q_.maxCost()) {
+            if (O_[qidx] == 0) {
+              O_[qidx] = 1;
+              cost_[qidx] = Q_.maxCost();
+              Q_.reopen(qidx, cost_[qidx]);
+              stack[++top] = qidx;
+            }
+          }
+          else if (bin_[qidx] > 0 && Q_.stateOf(qidx) != PQueue::State::ACTIVE) {
+            Q_.reinsert(qidx, cost_[qidx]);
+          }
+        }
+      }
+    }
+
+    void EdtDIFT::run()
+    {
+      while (!Q_.empty()) {
+        int pidx = Q_.popMin();
+        Point2D p = domain_.point(pidx);
+
+        int ridx = root_[pidx];
+
+        Point2D r = domain_.point(ridx);
+        Bedt_[ridx] = MAX(Bedt_[ridx], cost_[pidx]);
+
+        const AdaptiveAdj &AA = AAB_[adjMap_[pidx]];
+        for (const auto &[q, ai] : AA.neighbors(p)) {
+          int qidx = domain_.index(q);
+          int dx = q.x() - r.x();
+          int dy = q.y() - r.y();
+          int tmp = SQUARE(dx) + SQUARE(dy);
+
+          if (tmp < cost_[qidx] && O_[qidx] == 1) {
+            if (Q_.stateOf(qidx) != PQueue::State::ACTIVE) {
+              cost_[qidx] = tmp;
+              Q_.insert(qidx, cost_[qidx]);
+            }
+            else {
+              Q_.decreaseCost(qidx, tmp);
+            }
+
+            root_[qidx] = ridx;
+            adjMap_[qidx] = ai;
+          }
+        }
+      }
+    }
+    
+    void EdtDIFT::seed(int pidx)
+    {
+      root_[pidx] = pidx;
+      cost_[pidx] = 0;
+      Q_.insert(pidx, cost_[pidx]);
+    }
+
+    void EdtDIFT::insertNeighborsPQueue(int pidx)
+    {
+      Point2D p = domain_.point(pidx);
+
+      for (int qidx : adj4_.getNeighborPixels(pidx)) {
+        if (bin_[qidx] > 0 && cost_[qidx] != Q_.maxCost() 
+              && Q_.stateOf(qidx) != PQueue::State::ACTIVE) {
+          Q_.reopen(qidx, cost_[qidx]);
+        }
+      }
+    }
   }
 }

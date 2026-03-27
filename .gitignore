@@ -15,3 +15,9 @@ notebooks/.virtual_documents/*
 /tests/build
 mmcfilters.cpython-312-darwin.so
 python/mmcfilters/_version.py
+
+
+# ------
+# Dennis
+# -------
+tests/debug/*

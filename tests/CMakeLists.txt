@@ -79,3 +79,6 @@ endfunction()
 # -----------------------------------------------------------------
 mmcfilters_add_program(maxdist_AdaptiveAdj maxdist/TestAdaptiveAdj.cpp)
 target_compile_options(maxdist_AdaptiveAdj PRIVATE -Wno-deprecated-declarations)
+
+mmcfilters_add_program(test_MaxDist maxdist/TestMaxDist.cpp)
+target_compile_options(test_MaxDist PRIVATE -Wno-deprecated-declarations)

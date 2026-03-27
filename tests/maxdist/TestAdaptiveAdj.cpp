@@ -11,26 +11,15 @@ void printAdj(const AdaptiveAdj &adj, const Point2D p)
   }
 }
 
-
 int main()
 {
   AdaptiveAdjBank bank;
   Point2D p{ 5, 5 };
 
-  std::cout << "Adaptive Adj #0\n";
-  printAdj(bank[0], p);
-
-  std::cout << "Adaptive Adj #1\n";
-  printAdj(bank[1], p);
-
-  std::cout << "Adaptive Adj #2\n";
-  printAdj(bank[2], p);
-
-  std::cout << "Adaptive Adj #3\n";
-  printAdj(bank[3], p);
-
-  std::cout << "Adaptive Adj #4\n";
-  printAdj(bank[4], p);
-
+  for (int i = 0; i < bank.size(); i++) {
+    std::cout << "Adaptive Adj #" << i << "\n";
+    printAdj(bank[i], p);
+  }
+  
   return 0;
 }

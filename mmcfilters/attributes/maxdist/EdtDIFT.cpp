@@ -36,7 +36,7 @@ namespace mmcfilters
     {}
 
     Point2D AdaptiveAdj::Neighbors::point(int idx) const
-    {
+    {      
       return p_ + adj_.offset_[idx];
     }
 
@@ -135,7 +135,7 @@ namespace mmcfilters
       // Top right:
       AdaptiveAdj adj6(
         { Point2D( 0, -1), Point2D(1, -1), Point2D(1, 0), Point2D(-1, -1),
-          Point2D(-1, -1), Point2D(1,  1)}, {4, 6, 1, 8, 5});
+          Point2D(1,  1)}, {4, 6, 1, 8, 5});
       bank_.push_back(adj6);
 
       // bottom right:
@@ -179,8 +179,15 @@ namespace mmcfilters
       adjMap_{nrows, ncols},
       adj4_{nrows, ncols, 1.0},
       Q_{nrows * ncols, SQUARE(static_cast<int>(MIN(ncols, nrows) / 2.0 + 1))},
-      domain_{ncols, ncols}
+      domain_{ncols, ncols},
+      stack_(nrows * ncols)
     { 
+      bin_.fill(0);
+      root_.fill(0);
+      cost_.fill(0);
+      Bedt_.fill(0);
+      O_.fill(0);
+      
       for (int pidx = 0; pidx < bin_.getSize(); ++pidx) {
         root_[pidx] = pidx;
       }
@@ -208,31 +215,30 @@ namespace mmcfilters
       adjMap_[Bedt_.getNumCols() * (Bedt_.getNumRows()-1) + Bedt_.getNumCols() - 1] = 7;
     }
 
-    void EdtDIFT::treeRemoval(const std::vector<int> &toRemove,
-        std::vector<int> &stack)
+    void EdtDIFT::treeRemoval(const std::vector<int> &toRemove)
     {
       int top = -1;
       for (int pidx : toRemove) {
         O_[pidx] = 1;
         cost_[pidx] = Q_.maxCost();
         Q_.reopen(pidx, cost_[pidx]);
-        stack[++top] = pidx;
+        stack_[++top] = pidx;
       }
 
       while (top > -1) {
-        int pidx = stack[top];
+        int pidx = stack_[top];
         Point2D p = domain_.point(pidx);
         --top;
 
         const AdaptiveAdj &AA = AAB_[adjMap_[pidx]];
-        for (const auto& [q, ai] : AA.neighbors(p)) {
-          int qidx = domain_.index(q);
-          if (cost_[root_[qidx]] == Q_.maxCost()) {
-            if (O_[qidx] == 0) {
+        for (const auto& [q, ai] : AA.neighbors(p)) {          
+          int qidx = domain_.index(q);          
+          if (cost_[root_[qidx]] == Q_.maxCost()) {                        
+            if (O_[qidx] == 0) {                            
               O_[qidx] = 1;
-              cost_[qidx] = Q_.maxCost();
-              Q_.reopen(qidx, cost_[qidx]);
-              stack[++top] = qidx;
+              cost_[qidx] = Q_.maxCost();              
+              Q_.reopen(qidx, cost_[qidx]);              
+              stack_[++top] = qidx;              
             }
           }
           else if (bin_[qidx] > 0 && Q_.stateOf(qidx) != PQueue::State::ACTIVE) {
@@ -283,6 +289,12 @@ namespace mmcfilters
       Q_.insert(pidx, cost_[pidx]);
     }
 
+    void EdtDIFT::open(int pidx)
+    {
+      cost_[pidx] = Q_.maxCost();
+      O_[pidx] = 1;
+    }
+
     void EdtDIFT::insertNeighborsPQueue(int pidx)
     {
       Point2D p = domain_.point(pidx);
@@ -293,6 +305,18 @@ namespace mmcfilters
           Q_.reopen(qidx, cost_[qidx]);
         }
       }
+    }
+
+    int EdtDIFT::maxBedt(const std::vector<int> &Ncontour) const
+    {
+      int max = 0;
+      for (int pidx : Ncontour) {
+        int d = Bedt_[pidx];
+        if (d > max)
+          max = d;
+      }
+
+      return max;
     }
   }
 }

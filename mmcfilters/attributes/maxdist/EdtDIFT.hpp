@@ -38,13 +38,13 @@ namespace mmcfilters
         inline int nextAdj(int idx) const { return adj_.nextAdj_[idx]; }
         inline Point2D operator()(int idx) const { return point(idx); }
 
-        inline int size() const noexcept { return adj_.offset_.size(); }
+        inline int size() const { return adj_.offset_.size(); }
 
         Iterator begin() const;
         Iterator end() const;
 
       private:
-        const Point2D &p_;
+        Point2D p_;
         const AdaptiveAdj &adj_;
       };
 
@@ -72,6 +72,8 @@ namespace mmcfilters
     public:
       AdaptiveAdjBank();
 
+      inline size_t size() const noexcept { return bank_.size(); }
+
       const AdaptiveAdj &adj(int idx) const;
       const AdaptiveAdj &operator[](int idx) const;
 
@@ -87,15 +89,21 @@ namespace mmcfilters
       EdtDIFT(int nrows, int ncols);
       void run();
 
+      inline void addPixelToBinaryImage(int pidx) { bin_[pidx] = 1; }
+
       void insertNeighborsPQueue(int pidx);
       void seed(int pidx);
 
+      void open(int pidx);
+
+      void treeRemoval(const std::vector<int> &toRemove);
+
+      int maxBedt(const std::vector<int> &Ncontour) const;
+
+      inline const ImageInt32& cost() const { return cost_; }
+
     private:
       void setUpAdjMap();
-
-      void treeRemoval(const std::vector<int> &toRemove,
-        std::vector<int> &stack);
-
 
     private:
       ImageUInt8 bin_;
@@ -109,6 +117,7 @@ namespace mmcfilters
       AdjacencyRelation adj4_;
       AdaptiveAdjBank AAB_;
       Box2D domain_;
+      std::vector<int> stack_;
     };
   }
 }

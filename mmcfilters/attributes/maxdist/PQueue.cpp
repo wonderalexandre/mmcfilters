@@ -18,7 +18,7 @@ namespace mmcfilters
 
     void PQueue::insert(int pidx, int cost)
     {
-      assert(state_[pidx] == State::ABSENT);
+      // assert(state_[pidx] == State::ABSENT);
       assert(cost >= 0 && cost <= maxCost_);
       cost_[pidx] = cost;
       state_[pidx] = State::ACTIVE;

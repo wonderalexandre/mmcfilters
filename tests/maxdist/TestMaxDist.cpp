@@ -33,6 +33,17 @@ int main()
     0, 0, 0, 0, 0, 0, 0
   };
 
+  // uint8_t *data = new u_int8_t[] {
+  //   7, 7, 7, 7, 7, 7, 7,
+  //   7, 7, 7, 7, 7, 7, 7,
+  //   7, 7, 7, 7, 7, 7, 7,
+  //   7, 7, 7, 7, 7, 7, 7,
+  //   7, 7, 7, 7, 7, 7, 7,
+  //   7, 7, 7, 7, 7, 7, 7,
+  //   7, 7, 7, 7, 7, 7, 7,
+  // };
+
+
   ImageUInt8Ptr f = ImageUInt8::fromRaw(data, 7, 7);
   MorphologicalTreePtr tree = std::make_shared<MorphologicalTree>(f, true, 1.0);      // 4-connected max-tree
 

@@ -83,21 +83,23 @@ namespace mmcfilters
             edtDIFT.treeRemoval(toRemove);
 
           // compute new contour points
-          for (int pidx : node.getCNPs()) {
+          for (int pidx : node.getCNPs()) {            
             // Incrementally create level-set binary image
             edtDIFT.addPixelToBinaryImage(pidx);
 
             // Check if CNP is contour pixel 
             if (feroded[pidx] < static_cast<int>(node.getLevel())) {
               // pidx us a contour pixel
-              // add to contour 
+              // add to contour               
               Ncontour.push_back(pidx);
 
               // set pidx as DIFT seed
               edtDIFT.seed(pidx);
             }
-            else 
+            else {
               edtDIFT.open(pidx);
+              edtDIFT.insertNeighborsPQueue(pidx);
+            }
           } // end of cnps       
         } // end of node in the level loop
 
@@ -119,7 +121,6 @@ namespace mmcfilters
           maxDist[nid] = edtDIFT.maxBedt(contours[nid]);
       }  // level loop
 
-      // std::cout << "test" << "\n"; 
       return maxDist;
     }
 

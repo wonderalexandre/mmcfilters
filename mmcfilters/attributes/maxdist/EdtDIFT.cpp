@@ -1,4 +1,5 @@
 #include "EdtDIFT.hpp"
+#include "../../../tests/Tests.hpp"
 
 namespace mmcfilters
 {
@@ -31,8 +32,8 @@ namespace mmcfilters
     // ---------------------------------------------------------------------------------------
     // Adaptive Adjacency Neighbors 
     // ---------------------------------------------------------------------------------------
-    AdaptiveAdj::Neighbors::Neighbors(const Point2D &p, const AdaptiveAdj &adj)
-      : p_{p}, adj_{adj}
+    AdaptiveAdj::Neighbors::Neighbors(const Point2D &p, const AdaptiveAdj &adj, size_t end)
+      : p_{p}, adj_{adj}, end_{end}
     {}
 
     Point2D AdaptiveAdj::Neighbors::point(int idx) const
@@ -47,51 +48,56 @@ namespace mmcfilters
 
     AdaptiveAdj::Neighbors::Iterator AdaptiveAdj::Neighbors::end() const
     {
-      return Iterator(*this, adj_.offset_.size());
+      return Iterator(*this, end_);
     }
 
     // -----------------------------------------------------------------------------------------
     // Adaptive Adjacency 
     // ------------------------------------------------------------------------------------------
-    AdaptiveAdj::AdaptiveAdj(std::vector<Point2D> offset, std::vector<int> nextAdj)
-      : offset_(std::move(offset)), nextAdj_(std::move(nextAdj))
+    AdaptiveAdj::AdaptiveAdj(std::vector<Point2D> offset, std::vector<int> nextAdj, size_t npropagation)
+      : offset_(std::move(offset)), nextAdj_(std::move(nextAdj)), npropagation_{npropagation}
     {}
  
-    AdaptiveAdj::AdaptiveAdj(std::vector<Point2D> &&offset, std::vector<int> nextAdj)
-      : offset_(std::move(offset)), nextAdj_(std::move(nextAdj))
+    AdaptiveAdj::AdaptiveAdj(std::vector<Point2D> &&offset, std::vector<int> nextAdj, size_t npropagation)
+      : offset_(std::move(offset)), nextAdj_(std::move(nextAdj)), npropagation_{npropagation}
     {}
 
-    AdaptiveAdj::AdaptiveAdj(std::vector<Point2D> offset, std::vector<int> &&nextAdj)
-      : offset_(std::move(offset)), nextAdj_(std::move(nextAdj))
+    AdaptiveAdj::AdaptiveAdj(std::vector<Point2D> offset, std::vector<int> &&nextAdj, size_t npropagation)
+      : offset_(std::move(offset)), nextAdj_(std::move(nextAdj)), npropagation_{npropagation}
     {}
 
-    AdaptiveAdj::AdaptiveAdj(std::vector<Point2D> &&offset, std::vector<int> &&nextAdj)
-      : offset_(std::move(offset)), nextAdj_(std::move(nextAdj))
+    AdaptiveAdj::AdaptiveAdj(std::vector<Point2D> &&offset, std::vector<int> &&nextAdj, size_t npropagation)
+      : offset_(std::move(offset)), nextAdj_(std::move(nextAdj)), npropagation_{npropagation}
     {}
 
-    AdaptiveAdj::AdaptiveAdj(std::vector<Point2D> offset, std::initializer_list<int> nextAdj)
-       : offset_(std::move(offset)), nextAdj_(nextAdj)
+    AdaptiveAdj::AdaptiveAdj(std::vector<Point2D> offset, std::initializer_list<int> nextAdj, size_t npropagation)
+       : offset_(std::move(offset)), nextAdj_(nextAdj), npropagation_{npropagation}
     {}
 
-    AdaptiveAdj::AdaptiveAdj(std::initializer_list<Point2D> offset, std::vector<int> nextAdj)
-       : offset_(offset), nextAdj_(std::move(nextAdj))
+    AdaptiveAdj::AdaptiveAdj(std::initializer_list<Point2D> offset, std::vector<int> nextAdj, size_t npropagation)
+       : offset_(offset), nextAdj_(std::move(nextAdj)), npropagation_{npropagation}
     {}
 
-    AdaptiveAdj::AdaptiveAdj(std::initializer_list<Point2D> offset, std::initializer_list<int> nextAdj)
-      : offset_{offset}, nextAdj_{nextAdj}
+    AdaptiveAdj::AdaptiveAdj(std::initializer_list<Point2D> offset, std::initializer_list<int> nextAdj, size_t npropagation)
+      : offset_{offset}, nextAdj_{nextAdj}, npropagation_{npropagation}
     {}
     
-    AdaptiveAdj::AdaptiveAdj(std::vector<Point2D>&& offset, std::initializer_list<int> nextAdj)
-      : offset_(std::move(offset)), nextAdj_{nextAdj}
+    AdaptiveAdj::AdaptiveAdj(std::vector<Point2D>&& offset, std::initializer_list<int> nextAdj, size_t npropagation)
+      : offset_(std::move(offset)), nextAdj_{nextAdj}, npropagation_{npropagation}
     {}
 
-    AdaptiveAdj::AdaptiveAdj(std::initializer_list<Point2D> offset, std::vector<int>&& nextAdj)
-      : offset_(offset), nextAdj_(nextAdj)
+    AdaptiveAdj::AdaptiveAdj(std::initializer_list<Point2D> offset, std::vector<int>&& nextAdj, size_t npropagation)
+      : offset_(offset), nextAdj_(nextAdj), npropagation_{npropagation}
     {}
 
     AdaptiveAdj::Neighbors AdaptiveAdj::neighbors(const Point2D &p) const
     {
-      return Neighbors(p, *this);
+      return Neighbors(p, *this, offset_.size());
+    }
+
+    AdaptiveAdj::Neighbors AdaptiveAdj::neighborsPropogation(const Point2D &p) const
+    {
+      return Neighbors(p, *this, npropagation_);
     }
 
     // --------------------------------------------------------------------------------------------------
@@ -99,61 +105,61 @@ namespace mmcfilters
     // --------------------------------------------------------------------------------------------------
     AdaptiveAdjBank::AdaptiveAdjBank()
     {
-      bank_.reserve(9);
+      // bank_.reserve(9);
 
       // All:
       AdaptiveAdj adj1(
         { Point2D( 1, -1), Point2D( 1,  0), Point2D( 1,  1), Point2D(-1, -1),
           Point2D(-1,  0), Point2D(-1,  1), Point2D( 0, -1), Point2D( 0,  1)}, 
-        { 5, 1, 6, 7, 2, 8, 3, 4});
+        { 5, 1, 6, 7, 2, 8, 3, 4}, 8);
       bank_.push_back(adj1);
       
       // Right:
       AdaptiveAdj adj2(
         { Point2D( 1, -1), Point2D( 1, 0), Point2D(1, 1) },
-        {5, 1, 6});
+        {5, 1, 6}, 3);
       bank_.push_back(adj2);
 
       // Left:
       AdaptiveAdj adj3(
         { Point2D( -1, -1), Point2D( -1, 0), Point2D( -1, 1) },
-        { 7, 2, 8});
+        { 7, 2, 8}, 3);
       bank_.push_back(adj3);
 
       // Top:
       AdaptiveAdj adj4(
         { Point2D(-1, -1), Point2D(0, -1), Point2D(1, -1) },
-        {7, 3, 5});
+        {7, 3, 5}, 3);
       bank_.push_back(adj4);
 
       // Bottom:
       AdaptiveAdj adj5(
         { Point2D(-1, 1), Point2D(0, 1), Point2D(1, 1) },
-        {8, 4, 6});
+        {8, 4, 6}, 3);
       bank_.push_back(adj5);
 
       // Top right:
       AdaptiveAdj adj6(
         { Point2D( 0, -1), Point2D(1, -1), Point2D(1, 0), Point2D(-1, -1),
-          Point2D(1,  1)}, {4, 6, 1, 8, 5});
+          Point2D(1,  1)}, {3, 5, 1, 7, 6}, 3);
       bank_.push_back(adj6);
 
       // bottom right:
       AdaptiveAdj adj7(
         { Point2D( 0, 1), Point2D( 1, 1), Point2D( 1, 0), Point2D(-1, 1),
-          Point2D( 1,-1) }, {4, 6, 1, 8, 5});
+          Point2D( 1,-1) }, {4, 6, 1, 8, 5}, 3);
       bank_.push_back(adj7);
 
       // Top left:
       AdaptiveAdj adj8(
         { Point2D( 0, -1), Point2D(-1, -1), Point2D(-1, 0), Point2D( 1,-1),
-          Point2D(-1, 1) }, { 3, 7, 2, 5, 8});
+          Point2D(-1, 1) }, { 3, 7, 2, 5, 8}, 3);
       bank_.push_back(adj8);
 
       // Bottom left:
       AdaptiveAdj adj9(
         { Point2D( 0, 1), Point2D(-1, 1), Point2D(-1, 0), Point2D(1, 1),
-          Point2D(-1, -1) }, {4, 8, 2, 6, 7});
+          Point2D(-1, -1) }, {4, 8, 2, 6, 7}, 3);
       bank_.push_back(adj9);
     }
 
@@ -187,6 +193,7 @@ namespace mmcfilters
       cost_.fill(0);
       Bedt_.fill(0);
       O_.fill(0);
+      adjMap_.fill(0);
       
       for (int pidx = 0; pidx < bin_.getSize(); ++pidx) {
         root_[pidx] = pidx;
@@ -197,22 +204,22 @@ namespace mmcfilters
 
     void EdtDIFT::setUpAdjMap()
     {
-      int lastCol = Bedt_.getNumCols() - 1;
-      for (int i = 1; i < Bedt_.getNumRows(); i++) {
-        adjMap_[i * Bedt_.getNumCols()] = 1;            // fill first column
-        adjMap_[i * Bedt_.getNumCols() + lastCol] = 2;  // fill last column
+      int lastCol = adjMap_.getNumCols() - 1;
+      for (int i = 1; i < adjMap_.getNumRows(); i++) {
+        adjMap_[i * adjMap_.getNumCols()] = 1;            // fill first column
+        adjMap_[(i * adjMap_.getNumCols()) + lastCol] = 2;  // fill last column
       }
 
-      int lastRow = Bedt_.getNumCols() * (Bedt_.getNumRows()-1);
-      for (int i = 1; i < Bedt_.getNumCols()-1; i++) {
+      int lastRow = adjMap_.getNumCols() * (adjMap_.getNumRows()-1);
+      for (int i = 1; i < adjMap_.getNumCols()-1; i++) {
         adjMap_[i] = 4;             // fill first row
         adjMap_[lastRow + i] = 3;   // fill last row
       }
 
       adjMap_[0] = 6;
-      adjMap_[Bedt_.getNumCols()-1] = 8;
-      adjMap_[Bedt_.getNumCols() * (Bedt_.getNumRows()-1)] = 5;
-      adjMap_[Bedt_.getNumCols() * (Bedt_.getNumRows()-1) + Bedt_.getNumCols() - 1] = 7;
+      adjMap_[adjMap_.getNumCols()-1] = 8;
+      adjMap_[adjMap_.getNumCols() * (adjMap_.getNumRows()-1)] = 5;
+      adjMap_[adjMap_.getNumCols() * (adjMap_.getNumRows()-1) + adjMap_.getNumCols() - 1] = 7;
     }
 
     void EdtDIFT::treeRemoval(const std::vector<int> &toRemove)
@@ -220,7 +227,7 @@ namespace mmcfilters
       int top = -1;
       for (int pidx : toRemove) {
         O_[pidx] = 1;
-        cost_[pidx] = Q_.maxCost();
+        cost_[pidx] = PQueue::INF;
         Q_.reopen(pidx, cost_[pidx]);
         stack_[++top] = pidx;
       }
@@ -232,11 +239,12 @@ namespace mmcfilters
 
         const AdaptiveAdj &AA = AAB_[adjMap_[pidx]];
         for (const auto& [q, ai] : AA.neighbors(p)) {          
-          int qidx = domain_.index(q);          
-          if (cost_[root_[qidx]] == Q_.maxCost()) {                        
+          int qidx = domain_.index(q); 
+
+          if (cost_[root_[qidx]] == PQueue::INF) {                        
             if (O_[qidx] == 0) {                            
               O_[qidx] = 1;
-              cost_[qidx] = Q_.maxCost();              
+              cost_[qidx] = PQueue::INF;
               Q_.reopen(qidx, cost_[qidx]);              
               stack_[++top] = qidx;              
             }
@@ -251,28 +259,31 @@ namespace mmcfilters
     void EdtDIFT::run()
     {
       while (!Q_.empty()) {
+        ImageUInt8Ptr d = ImageUInt8::create(cost_.getNumRows(), cost_.getNumCols());
         int pidx = Q_.popMin();
         Point2D p = domain_.point(pidx);
+        O_[pidx] = 0;
 
         int ridx = root_[pidx];
 
         Point2D r = domain_.point(ridx);
+
         Bedt_[ridx] = MAX(Bedt_[ridx], cost_[pidx]);
 
         const AdaptiveAdj &AA = AAB_[adjMap_[pidx]];
-        for (const auto &[q, ai] : AA.neighbors(p)) {
+        for (const auto &[q, ai] : AA.neighborsPropogation(p)) {
           int qidx = domain_.index(q);
           int dx = q.x() - r.x();
           int dy = q.y() - r.y();
           int tmp = SQUARE(dx) + SQUARE(dy);
 
           if (tmp < cost_[qidx] && O_[qidx] == 1) {
+            cost_[qidx] = tmp;
             if (Q_.stateOf(qidx) != PQueue::State::ACTIVE) {
-              cost_[qidx] = tmp;
               Q_.insert(qidx, cost_[qidx]);
             }
             else {
-              Q_.decreaseCost(qidx, tmp);
+              Q_.decreaseCost(qidx, cost_[qidx]);
             }
 
             root_[qidx] = ridx;
@@ -291,18 +302,17 @@ namespace mmcfilters
 
     void EdtDIFT::open(int pidx)
     {
-      cost_[pidx] = Q_.maxCost();
+      cost_[pidx] = PQueue::INF;
+      Q_.reopen(pidx, cost_[pidx]);
       O_[pidx] = 1;
     }
 
     void EdtDIFT::insertNeighborsPQueue(int pidx)
     {
-      Point2D p = domain_.point(pidx);
-
       for (int qidx : adj4_.getNeighborPixels(pidx)) {
-        if (bin_[qidx] > 0 && cost_[qidx] != Q_.maxCost() 
+        if (bin_[qidx] > 0 && cost_[qidx] != PQueue::INF 
               && Q_.stateOf(qidx) != PQueue::State::ACTIVE) {
-          Q_.reopen(qidx, cost_[qidx]);
+          Q_.reinsert(qidx, cost_[qidx]);
         }
       }
     }

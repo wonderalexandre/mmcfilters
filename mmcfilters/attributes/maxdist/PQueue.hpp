@@ -1,95 +1,128 @@
 #pragma once 
 #include <vector>
 #include <optional>
-#include <stdexcept>
 #include <cassert>
+#include <algorithm>
+#include <cstdint>
 
-// ----------------------------------------------------------------------------
-// IFT Bucket Queue (Dial's Algorithm)
+// ------------------------------------------------------------------------------------------
+// IFT / DIFT Bucket Queue - Falcão's circular + growing Dial implementation
 //
-// A priority queue for integer costs in [0, max_cost].
-// Supports O(1) insert, decrease-key, and amortised O(1) pop-min.
-// Storage; O(n + C), where C = max_cost
+// Two structural improvements over the plain linear Dial queue:
+// 1. CIRCULAR - the bucket array of capacity C is addressed as physical slot = cost % C
+//    The scan pointer advances modulo C and wraps around, so the same C slots are reused 
+//    across the entire algorithm. No slot is ever "past" the pointer: reinsert() with an 
+//    arbitrarily low cost drops the pixel into the correct slot with no rewind needed.
 //
-// Pixels are identified by integer IDs in [0, num_pixels).
-// Each pixel can be in one of three states:
-//    - Not yet inserted    (state = ABSENT)
-//    - In the queue        (state = ACTIVE)
-//    - Already removed     (state = DONE)
-// ----------------------------------------------------------------------------
-namespace mmcfilters
-{
+// 2. GROWING - if a new cost exceeds the current capacity, the array doubles until it fits, 
+//    and all ACTIVE pixels are rehashed into the new layout. The queue can therefore start 
+//    small and expand lazily - useful when the true cost range is unknown at construction time,
+//    or when DIFT seeds introduce costs that exceed the original IFT range.
+//
+//  3. INFINITY - PQueue::INF (= INT_MAX) is a first-class cost. INF pixels live in a dedicated 
+//     overflow list that sits entirely outside the circular array - they never touch slot 
+//     arithmentic or trigger a grow. All finite-cost pixels are always popped before any INF
+//     pixel. decrease_key() / reinsert() from INF to a finite value moves the pixel into 
+//     the correct circular slot ,growing if needed.
+//  
+// Correctness invariant (circular aliasing):
+//  capacity > maxActiveCost - scan_ at all times.
+//  ensureCapacity() grows before any insertion that would break it.
+//
+// Complexity:
+//   insert / decrease_key / reinsert / reopen       - O(1) amortised
+//   pop_min                                         - O(1) amortised
+//   grow (rare, triggered by ensure_capacity)       - O(n + C_new)
+//   storage                                         - O(n + C)
+
+namespace mmcfilters {
   namespace maxdist
   {
     class PQueue
     {
-    public:
-      enum class State : u_int8_t { ABSENT, ACTIVE, DONE };
+      public:
+        // Sentinel for "infinite" cost. Use freely in every public method - the queue 
+        // routes INF pixels to a separate overflow list.
+        static const int INF;
 
-      // Construct the queue fpr 'numPixels' pixels and costs in [0, maxCost]
-      PQueue(int numPixels, int maxCost);
+        enum class State : uint8_t { ABSENT, ACTIVE, DONE };
 
-      // Insert pixel pidx with the given cost. pidx must be ABSENT.
-      void insert(int pidx, int cost);
+        // numPixels      : total number of pixels in the image.
+        // initialCapacity: starting number of buckets. Does not need to be equal to the true 
+        //                   max cost - the queue grows automatically. Rounded up to the next power
+        //                   of two internally so modulo reduces to a cheap bitmask operation.
+        PQueue(int numPixels, int initialCapacity = 256);
 
-      // Lower the cost of pixel p (already ACTIVE). New cost must be <= old cost.
-      void decreaseCost(int pidx, int newCost);
+        // -------------- Core Operations -----------------------------------------------------------
 
-      // Re-insert a DONE pixel as a new seed (DIFT)
-      // The pixel is treated as freshly inserted: its predecessor and root must
-      // be updated by the caller before propagation resumes
-      // Because the new cost may be smaller tha the current scan position,
-      // the scan pointer is rewound so the pixel is not silently skipped.
-      void reinsert(int pidx, int cost);
+        // Insert pixel pidx with the given cost (maybe INFO). pidx must be ABSENT 
+        void insert(int pidx, int cost);
 
-      // Reopen a DONE pixel for processing without inserting it into the queue
-      // (DIFT). Its cost is updated and its state is reset to ABSENT so that
-      // the normal propagation step - when a neighbor is relaxed - can enqueue
-      // it via insert() or ignore it if a cheaper path already exists,
-      // The caller is responsible for updating root and pred accordingly.
-      void reopen(int pidx, int cost);
+        // Lower the cost of an ACTIVE pixel. newCost must be <= old cost.
+        // Lowering from INF to a finite value is explicitly supported.
+        void decreaseCost(int pidx, int newCost);
 
-      // Remove and return the pixel with the minimum cost.
-      // Returns -1 if the queue is empty
-      int popMin();
-      
-      // Peak at the minimum cost without removing anything
-      std::optional<int> minCost() const;
+        // Re-enqueue a DONE pixel as new seed (DIFT). Cost may be INF
+        // No scan rewind needed - circular addressing handles any cost value.
+        void reinsert(int pdix, int cost);
 
-    
-    inline int maxCost() const noexcept { return maxCost_; }  
-    inline bool empty() const noexcept { return size_ == 0; }
-    inline int costOf(int pidx) const noexcept { return cost_[pidx]; }
-    inline State stateOf(int pidx) const noexcept { return state_[pidx]; }
-    
-    void reset();
+        // Reset a DONE pixel to ABSENT without enqueuing it (DIFT). Cost may be INF
+        // The propagation loop will insert() when a neighbor relaxes it
+        void reopen(int pdix, int cost);
+
+        // Remove and return the pixel with the minimum cost.
+        // Finite-cost pixels are always returned before INF-cost pixels.
+        // Returns -1 if the queue is empty.
+        int popMin();
+
+        // Peek at the minimum cost without removing anything
+        // Returns INF if only infinite-cost pixels remain, nullopt if empty.
+        std::optional<int> minCost() const;
+
+        // ------- Accessors ----------------------------------------------------------------
+        inline bool empty() const noexcept { return size_ == 0; }
+        inline int size() const noexcept { return size_; }
+        inline int costOf(int pidx) const noexcept { return cost_[pidx]; }
+        inline State stateOf(int pidx) const noexcept { return state_[pidx]; }
+        int capacity() const noexcept { return static_cast<int>(buckets_.size()); }
+
+        void reset();
+
+      private:
+        std::vector<int> buckets_;   // circular bucket array; size always a power of 2
+        std::vector<int> cost_;      
+        std::vector<int> next_;
+        std::vector<int> prev_;
+        std::vector<State> state_;
+        int numPixels_;
+        int infHead_;          // head of overflow list for INF-cost pixels 
+        int mask_;             // buckets_.size() - 1 - bitmask for fast modulo
+        int scan_;             // logical scan position; physical slot = scan _ & mask_
+        int size_;   
+        int finiteSize_;       // ACTIVE pixels with finite cost - O(1) INF check
 
 
-    private:
-      // Prepend pixel pidx to the bucket's intrusive list
-      void pushFront(int &head, int pidx);
+        // Map a cost value to its physical slot in the circular array.
+        inline int slot(int cost) const noexcept { return cost & mask_; }
 
-      // Unlink pixel pidx from the given bucket's list.
-      void removeFromBucket(int cost, int pidx);
+        // Ensure capacity > (cost - scan_) so no two live finite costs alias
+        void ensureCapacity(int cost);
 
-      // Advance the scan pointer to the next non-empty bucket.
-      // Because path costs are non-decreasing along optimal paths (the
-      // IFT monotone condition), we never need to look back.
-      void advanceScan();
+        void grow();
 
-    private:
-      // Each bucket is the head of an intrusive doubly-linked list.
-      // Sentinel value -1 means "no pixel".
-      std::vector<int> buckets_;  // buckets_[cost] = head pixel list
-      std::vector<int> cost_;     // current cost of each pixel 
-      std::vector<int> next_;     // next pixel in the same bucket list
-      std::vector<int> prev_;     // prev pixel in the same bucket list
-      
-      std::vector<State> state_;
-      int numPixels_;
-      int maxCost_;
-      int scan_;                  // monotone scan pointer - never decremented
-      int size_;
+        void pushFront(int& head, int pidx);
+        void removeFromList(int& head, int pidx);
+
+        // Walk scan_ forward until its slot is non-empty.
+        // The circular invariant guarantees all ACTIVE pixels liew within
+        // [scan_, scan_ + capacity + 1], so this terminates in O(C) steps 
+        // amortised over all popMin() calls.
+        void advanceScan();
     };
   }
 }
+
+
+
+
+

@@ -32,13 +32,13 @@ namespace mmcfilters
           const Neighbors &neighbors_;
         };        
       
-        Neighbors(const Point2D &p, const AdaptiveAdj &adj);
+        Neighbors(const Point2D &p, const AdaptiveAdj &adj, size_t end);
 
         Point2D point(int idx) const;
         inline int nextAdj(int idx) const { return adj_.nextAdj_[idx]; }
         inline Point2D operator()(int idx) const { return point(idx); }
 
-        inline int size() const { return adj_.offset_.size(); }
+        inline int size() const { return end_; }
 
         Iterator begin() const;
         Iterator end() const;
@@ -46,25 +46,28 @@ namespace mmcfilters
       private:
         Point2D p_;
         const AdaptiveAdj &adj_;
+        size_t end_;
       };
 
-      AdaptiveAdj(std::vector<Point2D> offset, std::vector<int> nextAdj);      
-      AdaptiveAdj(std::vector<Point2D> &&offset, std::vector<int> nextAdj);
-      AdaptiveAdj(std::vector<Point2D> offset, std::vector<int> &&nextAdj);
-      AdaptiveAdj(std::vector<Point2D> &&offset, std::vector<int> &&nextAdj);
+      AdaptiveAdj(std::vector<Point2D> offset, std::vector<int> nextAdj, size_t npropagation);      
+      AdaptiveAdj(std::vector<Point2D> &&offset, std::vector<int> nextAdj, size_t npropagation);
+      AdaptiveAdj(std::vector<Point2D> offset, std::vector<int> &&nextAdj, size_t npropagation);
+      AdaptiveAdj(std::vector<Point2D> &&offset, std::vector<int> &&nextAdj, size_t npropagation);
 
-      AdaptiveAdj(std::vector<Point2D> offset, std::initializer_list<int> nextAdj);
-      AdaptiveAdj(std::initializer_list<Point2D> offset, std::vector<int> nextAdj);
-      AdaptiveAdj(std::initializer_list<Point2D> offset, std::initializer_list<int> nextAdj);
+      AdaptiveAdj(std::vector<Point2D> offset, std::initializer_list<int> nextAdj, size_t npropagation);
+      AdaptiveAdj(std::initializer_list<Point2D> offset, std::vector<int> nextAdj, size_t npropagation);
+      AdaptiveAdj(std::initializer_list<Point2D> offset, std::initializer_list<int> nextAdj, size_t npropagation);
       
-      AdaptiveAdj(std::vector<Point2D>&& offset, std::initializer_list<int> nextAdj);
-      AdaptiveAdj(std::initializer_list<Point2D> offset, std::vector<int>&& nextAdj);
+      AdaptiveAdj(std::vector<Point2D>&& offset, std::initializer_list<int> nextAdj, size_t npropagation);
+      AdaptiveAdj(std::initializer_list<Point2D> offset, std::vector<int>&& nextAdj, size_t npropagation);
 
       Neighbors neighbors(const Point2D &p) const;
-    
+      Neighbors neighborsPropogation(const Point2D &p) const;
+
     private:
       std::vector<Point2D> offset_;
       std::vector<int> nextAdj_;
+      size_t npropagation_;         // number of elements for propagation
     };
 
     class AdaptiveAdjBank

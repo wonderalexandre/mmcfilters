@@ -21,3 +21,4 @@ python/mmcfilters/_version.py
 # Dennis
 # -------
 tests/debug/*
+tests/build_asan/*

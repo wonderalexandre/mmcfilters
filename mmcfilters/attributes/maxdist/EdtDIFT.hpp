@@ -103,7 +103,9 @@ namespace mmcfilters
 
       int maxBedt(const std::vector<int> &Ncontour) const;
 
-      inline const ImageInt32& cost() const { return cost_; }
+      void saveDistanceTransform(const std::string &filename = "") const;
+      void saveUnderlyingBinaryImage(const std::string &filename = "") const;
+      void displayRootMapForSmallImages() const;
 
     private:
       void setUpAdjMap();
@@ -111,7 +113,6 @@ namespace mmcfilters
     private:
       ImageUInt8 bin_;
       ImageInt32 root_;
-      ImageInt32 cost_;
       ImageInt32 Bedt_;
       ImageUInt8 adjMap_;
       ImageUInt8 O_;

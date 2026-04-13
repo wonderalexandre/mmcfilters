@@ -307,6 +307,7 @@ void init_AttributeComputedIncrementally(py::module &m){
             .value("BITQUADS_PERIMETER_AVERAGE", Attribute::BITQUADS_PERIMETER_AVERAGE)
             .value("BITQUADS_LENGTH_AVERAGE", Attribute::BITQUADS_LENGTH_AVERAGE)
             .value("BITQUADS_WIDTH_AVERAGE", Attribute::BITQUADS_WIDTH_AVERAGE)
+            .value("MAX_DIST", Attribute::MAX_DIST)
             
             .export_values();
 }
@@ -379,10 +380,6 @@ void init_AttributeOpeningPrimitivesFamily(py::module &m){
         .def("getThresholdsPrimitive", &AttributeOpeningPrimitivesFamilyPybind::getThresholdsPrimitive);
 
 }
-
-
-
-
 
 PYBIND11_MODULE(mmcfilters, m) {
     // Optional docstring

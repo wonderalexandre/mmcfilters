@@ -1,6 +1,11 @@
 #include "EdtDIFT.hpp"
 #include "../../../tests/Tests.hpp"
 
+#include "../../../tests/Tests.hpp"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "../../../external/stb/stb_image_write.h"
+
 namespace mmcfilters
 {
   namespace maxdist
@@ -87,7 +92,7 @@ namespace mmcfilters
     {}
 
     AdaptiveAdj::AdaptiveAdj(std::initializer_list<Point2D> offset, std::vector<int>&& nextAdj, size_t npropagation)
-      : offset_(offset), nextAdj_(nextAdj), npropagation_{npropagation}
+      : offset_(offset), nextAdj_(std::move(nextAdj)), npropagation_{npropagation}
     {}
 
     AdaptiveAdj::Neighbors AdaptiveAdj::neighbors(const Point2D &p) const
@@ -179,18 +184,16 @@ namespace mmcfilters
     EdtDIFT::EdtDIFT(int nrows, int ncols) :
       bin_{nrows, ncols},
       root_{nrows, ncols},
-      cost_{nrows, ncols},
       Bedt_{nrows, ncols},
       O_{nrows, ncols},
       adjMap_{nrows, ncols},
       adj4_{nrows, ncols, 1.0},
-      Q_{nrows * ncols, SQUARE(static_cast<int>(MIN(ncols, nrows) / 2.0 + 1))},
-      domain_{ncols, ncols},
+      Q_{SQUARE(static_cast<int>(MIN(ncols, nrows) / 2.0 + 1)), nrows * ncols},
+      domain_{ncols, nrows},
       stack_(nrows * ncols)
     { 
       bin_.fill(0);
       root_.fill(0);
-      cost_.fill(0);
       Bedt_.fill(0);
       O_.fill(0);
       adjMap_.fill(0);
@@ -227,9 +230,10 @@ namespace mmcfilters
       int top = -1;
       for (int pidx : toRemove) {
         O_[pidx] = 1;
-        cost_[pidx] = PQueue::INF;
-        Q_.reopen(pidx, cost_[pidx]);
-        stack_[++top] = pidx;
+        Q_.setCost(pidx, PQueue::PINF);
+        Q_.setState(pidx, PQueue::State::NOT_PROCESSED);
+        ++top;
+        stack_[top] = pidx;
       }
 
       while (top > -1) {
@@ -241,16 +245,18 @@ namespace mmcfilters
         for (const auto& [q, ai] : AA.neighbors(p)) {          
           int qidx = domain_.index(q); 
 
-          if (cost_[root_[qidx]] == PQueue::INF) {                        
+          if (Q_.cost(root_[qidx]) == PQueue::PINF) {                        
             if (O_[qidx] == 0) {                            
               O_[qidx] = 1;
-              cost_[qidx] = PQueue::INF;
-              Q_.reopen(qidx, cost_[qidx]);              
-              stack_[++top] = qidx;              
+              Q_.setCost(qidx, PQueue::PINF);
+              Q_.setState(qidx, PQueue::State::NOT_PROCESSED);
+              ++top;
+              stack_[top] = qidx;              
             }
           }
-          else if (bin_[qidx] > 0 && Q_.stateOf(qidx) != PQueue::State::ACTIVE) {
-            Q_.reinsert(qidx, cost_[qidx]);
+          else if (bin_[qidx] > 0 && Q_.state(qidx) != PQueue::State::QUEUED) {            
+            Q_.setState(qidx, PQueue::State::NOT_PROCESSED);
+            Q_.insert(qidx);
           }
         }
       }
@@ -258,9 +264,8 @@ namespace mmcfilters
 
     void EdtDIFT::run()
     {
-      while (!Q_.empty()) {
-        ImageUInt8Ptr d = ImageUInt8::create(cost_.getNumRows(), cost_.getNumCols());
-        int pidx = Q_.popMin();
+      while (!Q_.isEmpty()) {
+        int pidx = Q_.popMinFIFO();
         Point2D p = domain_.point(pidx);
         O_[pidx] = 0;
 
@@ -268,7 +273,7 @@ namespace mmcfilters
 
         Point2D r = domain_.point(ridx);
 
-        Bedt_[ridx] = MAX(Bedt_[ridx], cost_[pidx]);
+        Bedt_[ridx] = MAX(Bedt_[ridx], Q_.cost(pidx));
 
         const AdaptiveAdj &AA = AAB_[adjMap_[pidx]];
         for (const auto &[q, ai] : AA.neighborsPropogation(p)) {
@@ -277,17 +282,17 @@ namespace mmcfilters
           int dy = q.y() - r.y();
           int tmp = SQUARE(dx) + SQUARE(dy);
 
-          if (tmp < cost_[qidx] && O_[qidx] == 1) {
-            cost_[qidx] = tmp;
-            if (Q_.stateOf(qidx) != PQueue::State::ACTIVE) {
-              Q_.insert(qidx, cost_[qidx]);
+          if (tmp < Q_.cost(qidx) && O_[qidx] == 1) {
+            if (Q_.state(qidx) != PQueue::State::QUEUED) {
+              Q_.setCost(qidx, tmp);
+              Q_.insert(qidx);
             }
             else {
-              Q_.decreaseCost(qidx, cost_[qidx]);
+              Q_.update(qidx, tmp);
             }
 
             root_[qidx] = ridx;
-            adjMap_[qidx] = ai;
+            adjMap_[qidx] = ai;            
           }
         }
       }
@@ -296,23 +301,22 @@ namespace mmcfilters
     void EdtDIFT::seed(int pidx)
     {
       root_[pidx] = pidx;
-      cost_[pidx] = 0;
-      Q_.insert(pidx, cost_[pidx]);
+      Q_.setCost(pidx, 0);
+      Q_.insert(pidx);
     }
 
     void EdtDIFT::open(int pidx)
     {
-      cost_[pidx] = PQueue::INF;
-      Q_.reopen(pidx, cost_[pidx]);
       O_[pidx] = 1;
+      Q_.setCost(pidx, PQueue::PINF);
     }
 
     void EdtDIFT::insertNeighborsPQueue(int pidx)
     {
       for (int qidx : adj4_.getNeighborPixels(pidx)) {
-        if (bin_[qidx] > 0 && cost_[qidx] != PQueue::INF 
-              && Q_.stateOf(qidx) != PQueue::State::ACTIVE) {
-          Q_.reinsert(qidx, cost_[qidx]);
+        if (bin_[qidx] > 0 && Q_.cost(qidx) != PQueue::PINF && Q_.state(qidx) != PQueue::State::QUEUED) {
+          Q_.setState(qidx, PQueue::State::NOT_PROCESSED);
+          Q_.insert(qidx);
         }
       }
     }
@@ -327,6 +331,62 @@ namespace mmcfilters
       }
 
       return max;
+    }
+
+    void EdtDIFT::saveDistanceTransform(const std::string &filename) const
+    {
+      const std::vector<int> &cost = Q_.cost();
+
+      ImageUInt8Ptr d = ImageUInt8::create(bin_.getNumRows(), bin_.getNumCols());
+
+      if (!filename.empty()) {
+        int maxCost = 0;
+        for (int pidx = 0; pidx < bin_.getSize(); ++pidx) {
+          if (maxCost < cost[pidx])
+            maxCost = cost[pidx];
+        }
+
+        for (int pidx = 0; pidx < bin_.getSize(); ++pidx) {
+          (*d)[pidx] = static_cast<uint8_t>((static_cast<float>(cost[pidx]) / static_cast<float>(maxCost) * 255));
+        }
+
+        stbi_write_png(filename.c_str(), d->getNumCols(), d->getNumRows(), 1, d->rawData(), 0);     
+      }
+      else {
+        ImageUInt8Ptr d = ImageUInt8::create(bin_.getNumRows(), bin_.getNumCols());
+        for (int pidx = 0; pidx < bin_.getSize(); pidx++) {
+          (*d)[pidx] = cost[pidx];
+        }
+        
+        printImage(d);
+        std::cout << "\n ---- Queue Cost --- \n";
+      }
+    }
+
+    void EdtDIFT::saveUnderlyingBinaryImage(const std::string &filename) const
+    {
+      if (!filename.empty()) {
+        ImageUInt8Ptr b = ImageUInt8::create(bin_.getNumRows(), bin_.getNumCols());
+        for (int pidx = 0; pidx < b->getSize(); pidx++)
+          (*b)[pidx] = bin_[pidx] == 0 ? 255 : 0; 
+
+        stbi_write_png(filename.c_str(), b->getNumCols(), b->getNumRows(), 1, b->rawData(), 0);
+      }
+      else {
+        ImageUInt8Ptr b = bin_.clone();
+        printImage(b);
+      }
+    }
+
+    void EdtDIFT::displayRootMapForSmallImages() const
+    {
+      for (int row = 0; row < root_.getNumRows(); row++) {
+        std::cout << std::setw(4) << row;  // row index
+        for (int col = 0; col < root_.getNumCols(); col++) {
+          std::cout << std::setw(4) << root_[ImageUtils::to1D(row, col, root_.getNumCols())];
+        }
+        std::cout << "\n";
+      }
     }
   }
 }

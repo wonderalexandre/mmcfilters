@@ -77,6 +77,8 @@ enum class Attribute {
     LEAF_RATIO_NODE,
     BALANCE_NODE,
 
+    MAX_DIST,
+
     AVG_CHILD_HEIGHT_NODE //Manter como o ultimo atributo do enum
 
 };
@@ -346,6 +348,7 @@ public:
 			case BITQUADS_PERIMETER_AVERAGE: name = "BITQUADS_PERIMETER_AVERAGE"; break;
 			case BITQUADS_LENGTH_AVERAGE: name = "BITQUADS_LENGTH_AVERAGE"; break;
 			case BITQUADS_WIDTH_AVERAGE: name = "BITQUADS_WIDTH_AVERAGE"; break;
+            case MAX_DIST: name = "MAX_DIST"; break;
 			default: name = "UNKNOWN"; break;
 		}
 
@@ -453,6 +456,7 @@ public:
 			case BITQUADS_PERIMETER_AVERAGE: return "BITQUADS_PERIMETER_AVERAGE";
 			case BITQUADS_LENGTH_AVERAGE: return "BITQUADS_LENGTH_AVERAGE";
 			case BITQUADS_WIDTH_AVERAGE: return "BITQUADS_WIDTH_AVERAGE";
+            case MAX_DIST: return "MAX_DIST";
             default: return "UNKNOWN";
         }
     }
@@ -529,6 +533,9 @@ public:
 			case Attribute::BITQUADS_PERIMETER_AVERAGE: return "BitQuads average perimeter: Mean perimeter per connected component, accounting for complex structures and holes.";
 			case Attribute::BITQUADS_LENGTH_AVERAGE: return "BitQuads average length: Estimated average longitudinal extent per component, derived from the average perimeter.";
 			case Attribute::BITQUADS_WIDTH_AVERAGE: return "BitQuads average width: Estimated transverse extent per component, computed as (2 x average area) / average perimeter.";
+
+            // Max dist
+            case Attribute::MAX_DIST: return "Maximum distance transform value of the node, computed using incremental contour extraction and Differential Image Foresting Transform.";
 
             default:
                 return "Unknown attribute.";

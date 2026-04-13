@@ -1,4 +1,4 @@
-#include "MaxDistComputer.hpp"
+#include "MaxDistAlg.hpp"
 #include "EdtDIFT.hpp"
 #include "../../trees/NodeMT.hpp"
 #include "../../../tests/Tests.hpp"
@@ -9,11 +9,11 @@ namespace mmcfilters
 {
   namespace maxdist
   {
-    MaxDistComputer::MaxDistComputer(MorphologicalTree *tree)
+    MaxDistAlg::MaxDistAlg(MorphologicalTree *tree)
       :tree_{tree}
     {}
 
-    std::array<std::vector<NodeId>, 256> MaxDistComputer::extractLevelMap() const
+    std::array<std::vector<NodeId>, 256> MaxDistAlg::extractLevelMap() const
     {
       std::array<std::vector<NodeId>, 256> levelToNodes;
       FastStack<int> stack{static_cast<size_t>(tree_->getNumNodes())};
@@ -34,7 +34,7 @@ namespace mmcfilters
       return levelToNodes;
     }
 
-    std::vector<float> MaxDistComputer::getAttributes() const 
+    std::vector<float> MaxDistAlg::getAttributes() const 
     {
       std::vector<float> maxDist(tree_->getNumNodes(), 0.0f);
       std::array<std::vector<NodeId>, 256> levelToNodes = extractLevelMap();
@@ -108,15 +108,6 @@ namespace mmcfilters
         // the nodes in the level
         edtDIFT.run();
 
-        const ImageInt32 c = edtDIFT.cost();
-        ImageUInt8Ptr fc = ImageUInt8::create(c.getNumRows(), c.getNumCols());
-
-        for (int pidx = 0; pidx < c.getSize(); pidx++) {
-          (*fc)[pidx] = static_cast<unsigned char>(c[pidx]);
-        }
-
-        printImage(fc);
-
         for (NodeId nid : nodes) 
           maxDist[nid] = edtDIFT.maxBedt(contours[nid]);
       }  // level loop
@@ -124,7 +115,7 @@ namespace mmcfilters
       return maxDist;
     }
 
-    ImageInt32 MaxDistComputer::erode(const Box2D& domain, ImageUInt8Ptr f) const
+    ImageInt32 MaxDistAlg:: erode(const Box2D& domain, ImageUInt8Ptr f) const
     {
       const Point2D cross[] = { Point2D(-1, 0), Point2D(0, -1), Point2D(1 ,0), Point2D(0, 1) };
       const int OUT_OF_DOMAIN_VAL = -1;

@@ -16,7 +16,7 @@ int main()
   AdaptiveAdjBank bank;
   Point2D p{ 0, 0 };
 
-  for (int i = 0; i < bank.size(); i++) {
+  for (size_t i = 0; i < bank.size(); i++) {
     std::cout << "Adaptive Adj #" << i << "\n";
     printAdj(bank[i], p);
   }

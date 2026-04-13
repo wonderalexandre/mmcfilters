@@ -1,206 +1,209 @@
-#include <iostream>
 #include "PQueue.hpp"
-#include <cassert>
-#include <algorithm>
 #include <limits>
 
 namespace mmcfilters
 {
   namespace maxdist
   {
-    const int PQueue::INF = std::numeric_limits<int>::max();
+    const int PQueue::PINF = std::numeric_limits<int>::max();   
+    const int PQueue::NINF = std::numeric_limits<int>::min();   
+    const int PQueue::NIL = -1;
 
-    PQueue::PQueue(int numPixels, int initialCapacity)
-      : cost_(numPixels, -1),
-        next_(numPixels, -1),
-        prev_(numPixels, -1),
-        state_(numPixels, State::ABSENT),
-        numPixels_{numPixels},
-        infHead_{-1},
-        scan_{0},
-        size_{0},
-        finiteSize_{0}
+    // nbuckets = maximum cost and nelems = number of pixels
+    PQueue::PQueue(int nbuckets, int nelems)
+      : nadded_{0}
     {
-      int cap = 1;
-      while (cap < initialCapacity) cap <<= 1;
-      buckets_.assign(cap, -1);
-      mask_ = cap - 1;
-    }
+      pixels_.nelems = nelems;
+      pixels_.cost.resize(nelems);
+      pixels_.elem.resize(nelems);
 
-    void PQueue::insert(int pidx, int cost)
-    {
-      assert(state_[pidx] == State::ABSENT);
-      assert(cost >= 0);
-      cost_[pidx] = cost;
-      state_[pidx] = State::ACTIVE;
-      if (cost == INF) 
-        pushFront(infHead_, pidx);
-      else {
-        ensureCapacity(cost);
-        pushFront(buckets_[slot(cost)], pidx);
-        ++finiteSize_;
+      std::fill(pixels_.cost.begin(), pixels_.cost.end(), 0);
+
+      buckets_.nbuckets = nbuckets;
+      buckets_.first.resize(nbuckets+1);
+      buckets_.last.resize(nbuckets+1);
+      buckets_.maxvalue = NINF;
+      buckets_.minvalue = PINF;
+
+      for (int i = 0; i < buckets_.nbuckets; i++) {
+        buckets_.first[i] = NIL;
+        buckets_.last[i] = NIL;
       }
-      ++size_;
+
+      for (int pidx = 0; pidx < pixels_.nelems; pidx++) {
+        pixels_.elem[pidx].next = NIL;
+        pixels_.elem[pidx].prev = NIL;
+        pixels_.elem[pidx].state = State::NOT_PROCESSED;
+      }
     }
 
-    void PQueue::decreaseCost(int pidx, int newCost)
+    void PQueue::insert(int elem)
     {
-      assert(state_[pidx] == State::ACTIVE);
-      assert(newCost >= 0 && newCost <= cost_[pidx]);
+      ++nadded_;
+      int bucket = pixels_.cost[elem];
       
-      // Remove from current location.
-      if (cost_[pidx] == INF)
-        removeFromList(infHead_, pidx);
-      else {
-        removeFromList(buckets_[slot(cost_[pidx])], pidx);
-        --finiteSize_;
+      // Update min and max value if necessary
+      if (bucket < buckets_.minvalue)
+        buckets_.minvalue = bucket;
+      if (bucket > buckets_.maxvalue)
+        buckets_.maxvalue = bucket;
+
+      if (buckets_.first[bucket] == NIL) {
+        buckets_.first[bucket] = elem;
+        pixels_.elem[elem].prev = NIL;
       }
+      else {
+        pixels_.elem[buckets_.last[bucket]].next = elem;
+        pixels_.elem[elem].prev = buckets_.last[bucket];
+      }
+
+      buckets_.last[bucket] = elem;
+      pixels_.elem[elem].next = NIL;
+      pixels_.elem[elem].state = State::QUEUED;
+    } 
+
+    void PQueue::remove(int elem)
+    {
+      --nadded_;
+      int bucket = pixels_.cost[elem];
+      int prev = pixels_.elem[elem].prev;
+      int next = pixels_.elem[elem].next;
+
+      // elem is the head of the "bucket"
+      if (buckets_.first[bucket] == elem) {
+        buckets_.first[bucket] = next;
+        if (next == NIL) // elem is also the last element
+          buckets_.last[bucket] = NIL;
+        else
+          pixels_.elem[next].prev = NIL;
+      }
+      else {   // elem is either in the middle or in the last item in the bucket
+        pixels_.elem[prev].next = next;
+        if (next == NIL)  // if elem is the last element
+          buckets_.last[bucket] = prev;
+        else
+          pixels_.elem[next].prev = prev;
+      }
+      pixels_.elem[elem].state = State::POPPED;
+    }
+
+    void PQueue::update(int elem, int newcost)
+    {
+      remove(elem);
+      pixels_.cost[elem] = newcost;
+      insert(elem);
+    }
+
+    int PQueue::maxValue()
+    {
+      return findMaxBucket();
+    }
+
+    int PQueue::minValue()
+    {
+      return findMinBucket();
+    }
+
+    int PQueue::minElemFIFO()
+    {
+      int bucket = findMinBucket();
+      return buckets_.first[bucket];
+    }
+
+    int PQueue::popMinFIFO()
+    {
+      --nadded_;
+      int bucket = findMinBucket();
+      return bucketFIFO(bucket);
+    }
+
+    int PQueue::popMaxFIFO()
+    {
+      --nadded_;
+      int bucket = findMaxBucket();
+      return bucketFIFO(bucket);
+    }
+
+    int PQueue::popMinLIFO()
+    {
+      --nadded_;
+      int bucket = findMinBucket();
+      return bucketLIFO(bucket);
+    }
+
+    int PQueue::popMaxLIFO()
+    {
+      --nadded_;
+      int bucket = findMaxBucket();
+      return bucketLIFO(bucket);
+    }
+
+    int PQueue::bucketFIFO(int bucket)
+    {
+      int elem = buckets_.first[bucket];
+      int next = pixels_.elem[elem].next;
       
-      // Insert into new location.
-      cost_[pidx] = newCost;
-      if (newCost == INF) 
-        pushFront(infHead_, pidx);
-      else {
-        ensureCapacity(newCost);
-        pushFront(buckets_[slot(newCost)], pidx);
-        ++finiteSize_;
-      }      
-     // size_ unchanged - pixel stays in the queue.
-    }
-
-    void PQueue::reinsert(int pidx, int cost)
-    {
-      assert(state_[pidx] == State::DONE);
-      assert(cost >= 0);
-
-      cost_[pidx] = cost;
-      state_[pidx] = State::ACTIVE;
-
-      if (cost == INF) 
-        pushFront(infHead_, pidx);
-      else {
-        ensureCapacity(cost);
-        pushFront(buckets_[slot(cost)], pidx);
-        ++finiteSize_;
-      }
-
-      ++size_;
-    }
-
-    void PQueue::reopen(int pidx, int cost)
-    {
-      // assert(state_[pidx] == State::DONE);
-      assert(cost >= 0);
-      cost_[pidx] = cost;
-      state_[pidx] = State::ABSENT;
-    }
-
-    int PQueue::popMin()
-    {
-      if (empty()) 
-        return -1;
-
-      int pidx;
-      if (finiteSize_ > 0) {
-        advanceScan();
-        int &head = buckets_[scan_ & mask_];
-        pidx = head;
-        removeFromList(head, pidx);
-        --finiteSize_;
+      if (next == NIL) { // there was a single element in the list
+        buckets_.first[bucket] = NIL;
+        buckets_.last[bucket] = NIL;
       }
       else {
-        pidx = infHead_;
-        removeFromList(infHead_, pidx);
+        buckets_.first[bucket] = next;
+        pixels_.elem[elem].prev = NIL;
       }
-      
-      state_[pidx] = State::DONE;
-      --size_;
-
-      return pidx;
+      pixels_.elem[elem].state = State::POPPED;
+      return elem;
     }
 
-    std::optional<int> PQueue::minCost() const
+    int PQueue::bucketLIFO(int bucket)
     {
-      if (empty()) 
-        return std::nullopt;
-      if (finiteSize_ == 0) 
-        return INF;
+      int elem = buckets_.last[bucket];
+      int prev = pixels_.elem[elem].prev;
 
-      int cap = static_cast<int>(buckets_.size());
-      for (int i = 0; i < cap; ++i) {
-        if (buckets_[(scan_ + i) & mask_] != -1)
-          return scan_ + i;        
+      if (prev == NIL) {
+        buckets_.last[bucket] = NIL;
+        buckets_.last[bucket] = NIL;
       }
-      return INF; // unreacheable if finiteSize > 0, but satisfies the compiler
+      else {
+        buckets_.last[bucket] = prev;
+        pixels_.elem[elem].next = NIL;
+      }
+      pixels_.elem[elem].state = State::POPPED;
+      return elem;
+    }
+    
+    int PQueue::findMinBucket()
+    {
+      int current = buckets_.minvalue;
+      if (buckets_.first[current] == NIL) {
+        do
+        {
+          ++current;
+        } while ((current < buckets_.nbuckets) && (buckets_.first[current] == NIL));        
+
+        if (current < buckets_.nbuckets)
+          buckets_.minvalue = current;
+        else
+          return NIL;
+      }
+      return current;
     }
 
-    void PQueue::reset()
+    int PQueue::findMaxBucket()
     {
-      std::fill(cost_.begin(), cost_.end(), -1);
-      std::fill(next_.begin(), next_.end(), -1);
-      std::fill(prev_.begin(), prev_.end(), -1);
-      std::fill(state_.begin(), state_.end(), State::ABSENT);
-      std::fill(buckets_.begin(), buckets_.end(), -1);
-      infHead_ = -1;
-      scan_ = 0;
-      size_ = 0;
-      finiteSize_ = 0;
-    }
+      int current = buckets_.maxvalue;
+      if (buckets_.first[current] == NIL) {
+        do {
+          --current;
+        } while ((current >= 0) && (buckets_.first[current] == NIL));
 
-    void PQueue::ensureCapacity(int cost) 
-    {
-      while (cost - scan_ >= static_cast<int>(buckets_.size()))
-        grow();
-    }
-
-    void PQueue::grow()
-    {
-      int newCap = static_cast<int>(buckets_.size());
-      int newMask = newCap - 1;
-
-      std::vector<int> newBuckets(newCap, -1);
-
-      for (int pidx = 0; pidx < numPixels_; pidx++) {
-        if (state_[pidx] != State::ACTIVE || cost_[pidx] == INF)
-          continue;
-        
-        int s = cost_[pidx] & newMask;
-        next_[pidx] = newBuckets[s];
-        prev_[pidx] = -1;
-        if (newBuckets[s] != -1)
-          prev_[newBuckets[s]] = pidx;
-        newBuckets[s] = pidx;
+        if (current >= 0) 
+          buckets_.maxvalue = current;
+        else
+          return NIL;
       }
 
-      buckets_ = std::move(newBuckets);
-      mask_ = newMask;
-    }
-
-    void PQueue::pushFront(int &head, int pidx)
-    {
-      next_[pidx] = head;
-      prev_[pidx] = -1;
-      if (head != -1)
-        prev_[head] = pidx;
-      head = pidx;
-    }
-
-    void PQueue::removeFromList(int &head, int pidx)
-    {
-      if (prev_[pidx] != -1) 
-        next_[prev_[pidx]] = next_[pidx];
-      else 
-        head = next_[pidx];
-
-      if (next_[pidx] != -1) 
-        prev_[next_[pidx]] = prev_[pidx];
-      next_[pidx] = prev_[pidx] = -1;
-    }
-
-    void PQueue::advanceScan() 
-    {
-      while (buckets_[scan_ & mask_] == -1) 
-        ++scan_;
-    }
+      return current;
+    }    
   }
 }

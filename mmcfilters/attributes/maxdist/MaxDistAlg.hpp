@@ -11,12 +11,11 @@ namespace mmcfilters
 {
   namespace maxdist
   {
-    class MaxDistComputer
+    class MaxDistAlg
     {
     public:
-      MaxDistComputer(MorphologicalTree *tree);
-
-      std::vector<float> getAttributes() const;
+      MaxDistAlg(MorphologicalTree *tree);
+      std::vector<float> getAttributes() const;      
 
     private:
       std::array<std::vector<NodeId>, 256> extractLevelMap() const;

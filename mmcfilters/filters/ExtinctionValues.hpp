@@ -6,6 +6,8 @@
 #include "../attributes/AttributeComputedIncrementally.hpp"
 #include "../contours/ContoursComputedIncrementally.hpp"
 
+#include <limits>
+
 
 namespace mmcfilters {
 
@@ -48,7 +50,7 @@ class ExtinctionValues{
             regionalExtremaNodes.reserve(leaves.size());
             std::vector<uint8_t> visited(tree->getNumNodes(), false); //inicializa com false
             for(NodeId leaf: leaves){
-                float extinction = 0;
+                float extinction =  std::numeric_limits<float>::max();  //0;
                 NodeId cutoffNode = leaf;
                 NodeId parent = tree->getParentById(cutoffNode);
                 bool flag = true;

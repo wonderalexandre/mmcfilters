@@ -20,6 +20,7 @@ set(MMCFILTERS_COMPONENT_DIRS
     ${MMCFILTERS_ROOT}/attributes
     ${MMCFILTERS_ROOT}/contours
     ${MMCFILTERS_ROOT}/utils
+    ${MMCFILTERS_ROOT}/attributes/maxdist
 )
 
 # Agrupa headers e fontes do núcleo. Usamos GLOB para manter listas atualizadas
@@ -31,6 +32,7 @@ file(GLOB_RECURSE MMCFILTERS_HEADER_FILES
     "${MMCFILTERS_ROOT}/attributes/*.hpp"
     "${MMCFILTERS_ROOT}/contours/*.hpp"
     "${MMCFILTERS_ROOT}/utils/*.hpp"
+    "${MMCFILTERS_ROOT}/attributes/maxdist/*.hpp"
 )
 
 file(GLOB_RECURSE MMCFILTERS_SOURCE_FILES
@@ -39,6 +41,7 @@ file(GLOB_RECURSE MMCFILTERS_SOURCE_FILES
     "${MMCFILTERS_ROOT}/attributes/*.cpp"
     "${MMCFILTERS_ROOT}/contours/*.cpp"
     "${MMCFILTERS_ROOT}/utils/*.cpp"
+    "${MMCFILTERS_ROOT}/attributes/maxdist/*.cpp"
 )
 
 if(NOT TARGET mmcfilters_lib)

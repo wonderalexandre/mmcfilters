@@ -48,24 +48,37 @@ function(mmcfilters_add_program target)
     target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 endfunction()
 
-mmcfilters_add_program(testeResidualTree testeResidualTree.cpp)
-mmcfilters_add_program(TestMorphologicalTree TestMorphologicalTree.cpp)
-mmcfilters_add_program(testeTreeOfShapes testeTreeOfShapes.cpp)
 
-mmcfilters_add_program(TesteContours TesteContours.cpp ../external/stb/stb_image.cpp)
-target_compile_options(TesteContours PRIVATE -Wno-deprecated-declarations)
 
-mmcfilters_add_program(TesteContours2 TesteContours2.cpp ../external/stb/stb_image.cpp)
-target_compile_options(TesteContours2 PRIVATE -Wno-deprecated-declarations)
 
-mmcfilters_add_program(TesteContours3 TesteContours3.cpp ../external/stb/stb_image.cpp)
-target_compile_options(TesteContours3 PRIVATE -Wno-deprecated-declarations)
+# mmcfilters_add_program(testeResidualTree testeResidualTree.cpp)
+#mmcfilters_add_program(TestMorphologicalTree TestMorphologicalTree.cpp)
+# mmcfilters_add_program(testeTreeOfShapes testeTreeOfShapes.cpp)
 
-mmcfilters_add_program(TesteAdjacencyUC TesteAdjacencyUC.cpp ../external/stb/stb_image.cpp)
-target_compile_options(TesteAdjacencyUC PRIVATE -Wno-deprecated-declarations)
+# mmcfilters_add_program(TesteContours TesteContours.cpp ../external/stb/stb_image.cpp)
+# target_compile_options(TesteContours PRIVATE -Wno-deprecated-declarations)
 
-mmcfilters_add_program(testeComputerAttribute testeComputerAttribute.cpp ../external/stb/stb_image.cpp)
-target_compile_options(testeComputerAttribute PRIVATE -Wno-deprecated-declarations)
+# mmcfilters_add_program(TesteContours2 TesteContours2.cpp ../external/stb/stb_image.cpp)
+# target_compile_options(TesteContours2 PRIVATE -Wno-deprecated-declarations)
 
-mmcfilters_add_program(TesteBitQuads TesteBitQuads.cpp ../external/stb/stb_image.cpp)
-target_compile_options(TesteBitQuads PRIVATE -Wno-deprecated-declarations)
+# mmcfilters_add_program(TesteContours3 TesteContours3.cpp ../external/stb/stb_image.cpp)
+# target_compile_options(TesteContours3 PRIVATE -Wno-deprecated-declarations)
+
+# mmcfilters_add_program(TesteAdjacencyUC TesteAdjacencyUC.cpp ../external/stb/stb_image.cpp)
+# target_compile_options(TesteAdjacencyUC PRIVATE -Wno-deprecated-declarations)
+
+# mmcfilters_add_program(testeComputerAttribute testeComputerAttribute.cpp ../external/stb/stb_image.cpp)
+# target_compile_options(testeComputerAttribute PRIVATE -Wno-deprecated-declarations)
+
+# mmcfilters_add_program(TesteBitQuads TesteBitQuads.cpp ../external/stb/stb_image.cpp)
+# target_compile_options(TesteBitQuads PRIVATE -Wno-deprecated-declarations)
+
+
+# ----------------------------------------------------------------
+# max-dist playground
+# -----------------------------------------------------------------
+mmcfilters_add_program(maxdist_AdaptiveAdj maxdist/TestAdaptiveAdj.cpp)
+target_compile_options(maxdist_AdaptiveAdj PRIVATE -Wno-deprecated-declarations)
+
+mmcfilters_add_program(test_MaxDist maxdist/TestMaxDist.cpp)
+target_compile_options(test_MaxDist PRIVATE -Wno-deprecated-declarations)

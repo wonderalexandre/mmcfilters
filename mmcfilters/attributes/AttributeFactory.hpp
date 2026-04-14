@@ -8,6 +8,7 @@
 #include "TreeTopologyComputer.hpp"
 #include "VolumeComputer.hpp"
 #include "BitquadsComputer.hpp"
+#include "MaxDistComputer.hpp"
 
 namespace mmcfilters {
 
@@ -89,6 +90,9 @@ private:
             case BITQUADS_LENGTH_AVERAGE:
             case BITQUADS_WIDTH_AVERAGE:
                 return std::make_shared<BitquadsComputer>();
+
+            case MAX_DIST:
+                return std::make_shared<MaxDistComputer>();
 
             default:
                 throw std::runtime_error("Attribute not supported.");

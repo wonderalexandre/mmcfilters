@@ -40,12 +40,15 @@ class WeightedMorphologicalTree {
         tree.numNodes_ = 0;
     }
 
-    void assignExternalAltitude(NodeId nodeId, AltitudeType altitudeValue) {
-        const size_t nodeIndex = static_cast<size_t>(nodeId);
-        if (altitude.size() <= nodeIndex) {
-            altitude.resize(nodeIndex + 1, AltitudeType{});
+    void assignAltitudeFromDirectProperParts(const ImageUInt8Ptr& img) {
+        altitude.assign(static_cast<size_t>(tree.getNumInternalNodeSlots()), AltitudeType{});
+        for (NodeId nodeId : tree.getAliveNodeIds()) {
+            const auto& properParts = tree.getProperParts(nodeId);
+            if (properParts.empty()) {
+                throw std::runtime_error("Cannot infer node altitude from a topology node without direct proper parts.");
+            }
+            altitude[static_cast<size_t>(nodeId)] = static_cast<AltitudeType>((*img)[properParts.front()]);
         }
-        altitude[nodeIndex] = altitudeValue;
     }
 
     template <typename AltitudeValue>
@@ -80,12 +83,8 @@ public:
             std::nullopt,
             static_cast<NodeId>(img->getSize()));
         BuilderTreeOfShape builderUF(interpolation == ToSInterpolation::Min4cMax8c);
-        tree.build(
-            img,
-            builderUF,
-            [this](NodeId nodeId, AltitudeType altitudeValue) {
-                assignExternalAltitude(nodeId, altitudeValue);
-            });
+        tree.build(img, builderUF);
+        assignAltitudeFromDirectProperParts(img);
         validateAltitudeBufferShape();
     }
 
@@ -97,12 +96,8 @@ public:
             std::optional<AdjacencyRelation>(std::in_place, img->getNumRows(), img->getNumCols(), radius),
             static_cast<NodeId>(img->getSize()));
         BuilderComponentTree builderUF(&*tree.adj_, isMaxtree);
-        tree.build(
-            img,
-            builderUF,
-            [this](NodeId nodeId, AltitudeType altitudeValue) {
-                assignExternalAltitude(nodeId, altitudeValue);
-            });
+        tree.build(img, builderUF);
+        assignAltitudeFromDirectProperParts(img);
         validateAltitudeBufferShape();
     }
 

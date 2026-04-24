@@ -1,4 +1,5 @@
 #include "support/TestSupport.hpp"
+#include "../../mmcfilters/trees/TreeAltitudeOps.hpp"
 
 #include <memory>
 #include <stdexcept>

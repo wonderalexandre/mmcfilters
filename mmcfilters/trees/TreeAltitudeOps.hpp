@@ -75,26 +75,56 @@ inline NodeId getNodeAscendant(const MorphologicalTree& tree, const AltitudeBuff
     return getNodeAscendant(tree, std::span<const AltitudeType>(requireAltitudeBuffer(altitude)), nodeId, delta, useLevel);
 }
 
+inline std::vector<int32_t> computeAreasIncrementally(const MorphologicalTree& tree) {
+    std::vector<int32_t> area(static_cast<size_t>(tree.getNumInternalNodeSlots()), 0);
+    for (NodeId nodeId : tree.getPostOrderNodes()) {
+        area[static_cast<size_t>(nodeId)] += static_cast<int32_t>(tree.getNumProperParts(nodeId));
+        const NodeId parentNodeId = tree.getNodeParent(nodeId);
+        if (parentNodeId != InvalidNode && parentNodeId != nodeId) {
+            area[static_cast<size_t>(parentNodeId)] += area[static_cast<size_t>(nodeId)];
+        }
+    }
+    return area;
+}
+
+inline void maxAreaDescendants(
+    const MorphologicalTree& tree,
+    const std::vector<int32_t>& areaByNode,
+    std::vector<NodeId>& descendants,
+    NodeId ascendantNodeId,
+    NodeId candidateNodeId) {
+    if (!tree.isNode(ascendantNodeId) || !tree.isNode(candidateNodeId)) {
+        return;
+    }
+    NodeId& currentNodeId = descendants[static_cast<size_t>(ascendantNodeId)];
+    if (currentNodeId == InvalidNode ||
+        areaByNode[static_cast<size_t>(candidateNodeId)] > areaByNode[static_cast<size_t>(currentNodeId)] ||
+        (areaByNode[static_cast<size_t>(candidateNodeId)] == areaByNode[static_cast<size_t>(currentNodeId)] &&
+         candidateNodeId < currentNodeId)) {
+        currentNodeId = candidateNodeId;
+    }
+}
+
 inline std::pair<std::vector<NodeId>, std::vector<NodeId>> computeAscendantsAndDescendants(
     const MorphologicalTree& tree,
     const AltitudeBuffer* altitude,
     int delta,
-    bool useLevel) {
+    bool useLevel = false) {
     if (!useLevel) {
-        return const_cast<MorphologicalTree&>(tree).computeAscendantsAndDescendants(delta, false);
+        return tree.computeAscendantsAndDescendants(delta);
     }
 
     const AltitudeBuffer& altitudeBuffer = requireAltitudeBuffer(altitude);
     std::vector<NodeId> ascendants(static_cast<size_t>(tree.getNumInternalNodeSlots()), InvalidNode);
     std::vector<NodeId> descendants(static_cast<size_t>(tree.getNumInternalNodeSlots()), InvalidNode);
-    const std::vector<int32_t> areaByNode = const_cast<MorphologicalTree&>(tree).computeAreasIncrementally();
+    const std::vector<int32_t> areaByNode = computeAreasIncrementally(tree);
 
     for (NodeId nodeId : tree.getAliveNodeIds()) {
         const NodeId ascendantNodeId = getNodeAscendant(tree, altitudeBuffer, nodeId, delta, true);
         if (ascendantNodeId == InvalidNode) {
             continue;
         }
-        const_cast<MorphologicalTree&>(tree).maxAreaDescendants(areaByNode, descendants, ascendantNodeId, nodeId);
+        maxAreaDescendants(tree, areaByNode, descendants, ascendantNodeId, nodeId);
         if (descendants[static_cast<size_t>(ascendantNodeId)] != InvalidNode) {
             ascendants[static_cast<size_t>(nodeId)] = ascendantNodeId;
         }

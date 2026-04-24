@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../trees/TreeAltitudeOps.hpp"
 #include "../trees/WeightedMorphologicalTree.hpp"
 #include "../utils/AdjacencyRelation.hpp"
 #include "../utils/Common.hpp"

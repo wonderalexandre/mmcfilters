@@ -4,6 +4,7 @@
 #include "../attributes/AttributeComputer.hpp"
 #include "../attributes/AttributeNames.hpp"
 #include "../trees/MorphologicalTree.hpp"
+#include "../trees/TreeAltitudeOps.hpp"
 
 
 namespace mmcfilters {

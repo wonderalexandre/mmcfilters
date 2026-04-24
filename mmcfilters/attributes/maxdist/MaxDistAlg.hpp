@@ -4,6 +4,7 @@
 
 #include "../../utils/Common.hpp"
 #include "../../trees/MorphologicalTree.hpp"
+#include "../../trees/TreeAltitudeOps.hpp"
 
 #include "EdtDIFT.hpp"
 #include "Geometry.hpp"

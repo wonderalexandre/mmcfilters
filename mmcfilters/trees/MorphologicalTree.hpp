@@ -38,31 +38,16 @@ class MorphologicalTreePybind;
 class TreeEditor;
 class WeightedMorphologicalTree;
 
-namespace tree_altitude_ops {
-std::pair<std::vector<NodeId>, std::vector<NodeId>> computeAscendantsAndDescendants(
-    const MorphologicalTree& tree,
-    const AltitudeBuffer* altitude,
-    int delta,
-    bool useLevel = false);
-}
-
 /**
  * @brief Mutable topology and proper-part ownership for component-tree-like hierarchies.
  *
  * The class owns only structural state: dense internal node ids, parent/child
- * links, and the smallest component that owns each proper part. Weighted state
- * such as node altitude lives in `WeightedMorphologicalTree` or in explicit
- * altitude buffers passed to `tree_altitude_ops`.
+ * links, and the smallest component that owns each proper part.
  */
 class MorphologicalTree {
     friend class MorphologicalTreePybind;
     friend class TreeEditor;
     friend class WeightedMorphologicalTree;
-    friend std::pair<std::vector<NodeId>, std::vector<NodeId>> tree_altitude_ops::computeAscendantsAndDescendants(
-        const MorphologicalTree& tree,
-        const AltitudeBuffer* altitude,
-        int delta,
-        bool useLevel);
 
 public:
     static constexpr int MAX_TREE = 0;
@@ -460,8 +445,7 @@ private:
         resetIteratorVersions();
     }
 
-    template <class AltitudeSink>
-    void build(ImageUInt8Ptr img, const IMorphologicalTreeBuilder& builder, AltitudeSink&& altitudeSink) {
+    void build(ImageUInt8Ptr img, const IMorphologicalTreeBuilder& builder) {
         if (!img) {
             throw std::invalid_argument("MorphologicalTree construction requires a non-null image.");
         }
@@ -489,14 +473,12 @@ private:
             NodeId ownerNodeId = InvalidNode;
             if (parentProperPart == properPart) {
                 ownerNodeId = createNode(InvalidNode);
-                altitudeSink(ownerNodeId, static_cast<AltitudeType>(pixel[properPart]));
             } else if (pixel[parentProperPart] != pixel[properPart]) {
                 const NodeId parentNodeId = properPartOwner_[static_cast<size_t>(parentProperPart)];
                 if (parentNodeId == InvalidNode) {
                     throw std::runtime_error("Union-find builder produced a child before its parent component.");
                 }
                 ownerNodeId = createNode(parentNodeId);
-                altitudeSink(ownerNodeId, static_cast<AltitudeType>(pixel[properPart]));
             } else {
                 ownerNodeId = properPartOwner_[static_cast<size_t>(parentProperPart)];
                 if (ownerNodeId == InvalidNode) {
@@ -665,10 +647,7 @@ public:
         treeType_ = TREE_OF_SHAPES;
         adj_ = std::nullopt;
         BuilderTreeOfShape builder(interpolation == ToSInterpolation::Min4cMax8c);
-        build(
-            img,
-            builder,
-            [](NodeId, AltitudeType) {});
+        build(img, builder);
     }
 
     explicit MorphologicalTree(ImageUInt8Ptr img, bool isMaxtree, double radius = 1.5) {
@@ -677,10 +656,7 @@ public:
         numCols_ = img ? img->getNumCols() : 0;
         adj_.emplace(numRows_, numCols_, radius);
         BuilderComponentTree builder(&*adj_, isMaxtree);
-        build(
-            img,
-            builder,
-            [](NodeId, AltitudeType) {});
+        build(img, builder);
     }
 
     MorphologicalTree(
@@ -1346,10 +1322,7 @@ public:
         markTopologyChanged();
     }
 
-    std::pair<std::vector<NodeId>, std::vector<NodeId>> computeAscendantsAndDescendants(int delta, bool useLevel = false) {
-        if (useLevel) {
-            throw std::logic_error("Level-based ascendant computation requires an explicit altitude buffer.");
-        }
+    std::pair<std::vector<NodeId>, std::vector<NodeId>> computeAscendantsAndDescendants(int delta) const {
         if (delta < 0) {
             throw std::invalid_argument("delta must be non-negative.");
         }
@@ -1384,5 +1357,3 @@ public:
 };
 
 } // namespace mmcfilters
-
-#include "TreeAltitudeOps.hpp"

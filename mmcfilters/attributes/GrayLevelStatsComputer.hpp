@@ -2,6 +2,7 @@
 
 #include "AttributeComputer.hpp"
 #include "AttributeComputedIncrementally.hpp"
+#include "../trees/TreeAltitudeOps.hpp"
 namespace mmcfilters {
 
 namespace detail {

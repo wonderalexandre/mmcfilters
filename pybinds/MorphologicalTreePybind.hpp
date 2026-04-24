@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../mmcfilters/trees/MorphologicalTree.hpp"
+#include "../mmcfilters/trees/TreeAltitudeOps.hpp"
 #include "../mmcfilters/utils/Common.hpp"
 
 #include "PybindUtils.hpp"

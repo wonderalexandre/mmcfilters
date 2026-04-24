@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../utils/Common.hpp"
+#include "../trees/TreeAltitudeOps.hpp"
 #include "../trees/WeightedMorphologicalTree.hpp"
 #include "../attributes/AttributeComputedIncrementally.hpp"
 #include "../attributes/ComputerMSER.hpp"

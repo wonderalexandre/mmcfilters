@@ -13,12 +13,16 @@ namespace mmcfilters {
 class WeightedTreeEditor;
 
 /**
- * @brief Transitional Higra-style wrapper pairing topology with an external altitude buffer.
+ * @brief Wrapper pairing `MorphologicalTree` topology with an external altitude buffer.
  *
  * `WeightedMorphologicalTree` keeps the mutable topology in `tree` and the
  * node-altitude state in `altitude`, indexed by dense internal `NodeId`. The
  * wrapper offers the weighted conveniences that are intentionally kept out of
  * `MorphologicalTree`.
+ *
+ * `createFromHigraParent()` imports a static Higra hierarchy and preserves its
+ * original node-id domain until the topology is edited. `exportHigraHierarchy()`
+ * creates a new compact Higra domain for the current live rooted tree.
  */
 class WeightedMorphologicalTree {
     friend class WeightedTreeEditor;
@@ -28,34 +32,32 @@ class WeightedMorphologicalTree {
         tree.numRows_ = rows;
         tree.numCols_ = cols;
         tree.adj_ = std::move(adjacency);
-        tree.resetEmptyStorage(static_cast<size_t>(numProperParts));
+        tree.initializeEmptyStorage(static_cast<size_t>(numProperParts));
         altitude.clear();
-    }
-
-    void configureImportedTopology(int rows, int cols, bool isMaxtree, std::optional<AdjacencyRelation> adjacency) {
-        tree.treeType_ = isMaxtree ? MorphologicalTree::MAX_TREE : MorphologicalTree::MIN_TREE;
-        tree.numRows_ = rows;
-        tree.numCols_ = cols;
-        tree.adj_ = std::move(adjacency);
-        tree.numNodes_ = 0;
     }
 
     void assignAltitudeFromDirectProperParts(const ImageUInt8Ptr& img) {
         altitude.assign(static_cast<size_t>(tree.getNumInternalNodeSlots()), AltitudeType{});
         for (NodeId nodeId : tree.getAliveNodeIds()) {
-            const auto& properParts = tree.getProperParts(nodeId);
-            if (properParts.empty()) {
+            const auto properParts = tree.getProperParts(nodeId);
+            auto it = properParts.begin();
+            if (it == properParts.end()) {
                 throw std::runtime_error("Cannot infer node altitude from a topology node without direct proper parts.");
             }
-            altitude[static_cast<size_t>(nodeId)] = static_cast<AltitudeType>((*img)[properParts.front()]);
+            altitude[static_cast<size_t>(nodeId)] = static_cast<AltitudeType>((*img)[*it]);
         }
     }
 
-    template <typename AltitudeValue>
-        requires std::is_arithmetic_v<AltitudeValue>
-    void importAltitudeFromHigra(std::span<const AltitudeValue> higraAltitude) {
+    void assignInternalAltitude(std::span<const AltitudeType> altitudeValues) {
+        if (altitudeValues.size() != static_cast<size_t>(tree.getNumInternalNodeSlots())) {
+            throw std::invalid_argument("Internal altitude buffer size must match the dense internal-node domain.");
+        }
+        altitude.assign(altitudeValues.begin(), altitudeValues.end());
+    }
+
+    void importAltitudeFromHigra(std::span<const AltitudeType> higraAltitude) {
         if (static_cast<size_t>(tree.getNumHigraNodes()) != higraAltitude.size()) {
-            throw std::invalid_argument("Higra altitude buffer size must match the imported hierarchy.");
+            throw std::invalid_argument("Higra altitude buffer size must match the preserved imported Higra hierarchy.");
         }
         altitude.assign(static_cast<size_t>(tree.getNumInternalNodeSlots()), AltitudeType{});
         for (NodeId slotId = 0; slotId < tree.getNumInternalNodeSlots(); ++slotId) {
@@ -68,10 +70,10 @@ public:
     MorphologicalTree tree;
     AltitudeBuffer altitude;
 
+private:
     WeightedMorphologicalTree() = default;
 
-    WeightedMorphologicalTree(MorphologicalTree&& topology, AltitudeBuffer altitudeBuffer)
-        : tree(std::move(topology)), altitude(std::move(altitudeBuffer)) {
+    WeightedMorphologicalTree(MorphologicalTree&& topology, AltitudeBuffer altitudeBuffer) : tree(std::move(topology)), altitude(std::move(altitudeBuffer)) {
         validateAltitudeBufferShape();
     }
 
@@ -101,165 +103,39 @@ public:
         validateAltitudeBufferShape();
     }
 
-    WeightedMorphologicalTree(
-        std::span<const NodeId> parent,
-        NodeId numProperParts,
-        int rows,
-        int cols,
-        bool isMaxtree,
-        std::optional<AdjacencyRelation> adjacency = std::nullopt)
-        : tree(parent, numProperParts, rows, cols, isMaxtree, std::move(adjacency)),
-          altitude(static_cast<size_t>(tree.getNumInternalNodeSlots()), AltitudeType{}) {}
+public:
+    WeightedMorphologicalTree(const WeightedMorphologicalTree&) = delete;
+    WeightedMorphologicalTree& operator=(const WeightedMorphologicalTree&) = delete;
+    WeightedMorphologicalTree(WeightedMorphologicalTree&&) noexcept = default;
+    WeightedMorphologicalTree& operator=(WeightedMorphologicalTree&&) noexcept = default;
 
-    WeightedMorphologicalTree(
-        std::span<const NodeId> parent,
-        int rows,
-        int cols,
-        bool isMaxtree,
-        std::optional<AdjacencyRelation> adjacency = std::nullopt)
-        : WeightedMorphologicalTree(parent, rows * cols, rows, cols, isMaxtree, std::move(adjacency)) {}
-
-    template <typename AltitudeValue>
-        requires std::is_arithmetic_v<AltitudeValue>
-    WeightedMorphologicalTree(
-        std::span<const NodeId> higraParent,
-        std::span<const AltitudeValue> higraAltitude,
-        NodeId numProperParts,
-        int rows,
-        int cols,
-        bool isMaxtree,
-        std::optional<AdjacencyRelation> adjacency = std::nullopt) {
-        configureImportedTopology(rows, cols, isMaxtree, std::move(adjacency));
-        tree.resetFromHigraTopology(higraParent, numProperParts);
-        importAltitudeFromHigra(higraAltitude);
+    static WeightedMorphologicalTree createComponentTree(ImageUInt8Ptr img, bool isMaxtree, double radius = 1.5) {
+        return WeightedMorphologicalTree(img, isMaxtree, radius);
     }
 
-    template <typename AltitudeValue>
-        requires std::is_arithmetic_v<AltitudeValue>
-    WeightedMorphologicalTree(
+    static WeightedMorphologicalTree createTreeOfShapes(ImageUInt8Ptr img, ToSInterpolation interpolation = ToSInterpolation::SelfDual) {
+        return WeightedMorphologicalTree(img, interpolation);
+    }
+
+    /**
+     * @brief Imports topology and altitude from a static Higra parent/altitude representation.
+     */
+    static WeightedMorphologicalTree createFromHigraParent(
         std::span<const NodeId> higraParent,
-        std::span<const AltitudeValue> higraAltitude,
+        std::span<const AltitudeType> higraAltitude,
         int rows,
         int cols,
-        bool isMaxtree,
-        std::optional<AdjacencyRelation> adjacency = std::nullopt)
-        : WeightedMorphologicalTree(higraParent, higraAltitude, rows * cols, rows, cols, isMaxtree, std::move(adjacency)) {}
-
-    template <class ParentRange>
-    WeightedMorphologicalTree(
-        const ParentRange& parent,
-        NodeId numProperParts,
-        int rows,
-        int cols,
-        bool isMaxtree,
-        std::optional<AdjacencyRelation> adjacency = std::nullopt)
-        : WeightedMorphologicalTree(
-            std::span<const NodeId>(parent.data(), parent.size()),
-            numProperParts,
-            rows,
-            cols,
-            isMaxtree,
-            std::move(adjacency)) {}
-
-    template <class ParentRange>
-    WeightedMorphologicalTree(
-        const ParentRange& parent,
-        int rows,
-        int cols,
-        bool isMaxtree,
-        std::optional<AdjacencyRelation> adjacency = std::nullopt)
-        : WeightedMorphologicalTree(
-            std::span<const NodeId>(parent.data(), parent.size()),
-            rows,
-            cols,
-            isMaxtree,
-            std::move(adjacency)) {}
-
-    template <class ParentRange, class AltitudeRange>
-        requires std::is_arithmetic_v<typename AltitudeRange::value_type>
-    WeightedMorphologicalTree(
-        const ParentRange& higraParent,
-        const AltitudeRange& higraAltitude,
-        NodeId numProperParts,
-        int rows,
-        int cols,
-        bool isMaxtree,
-        std::optional<AdjacencyRelation> adjacency = std::nullopt)
-        : WeightedMorphologicalTree(
-            std::span<const NodeId>(higraParent.data(), higraParent.size()),
-            std::span<const typename AltitudeRange::value_type>(higraAltitude.data(), higraAltitude.size()),
-            numProperParts,
-            rows,
-            cols,
-            isMaxtree,
-            std::move(adjacency)) {}
-
-    template <class ParentRange, class AltitudeRange>
-        requires std::is_arithmetic_v<typename AltitudeRange::value_type>
-    WeightedMorphologicalTree(
-        const ParentRange& higraParent,
-        const AltitudeRange& higraAltitude,
-        int rows,
-        int cols,
-        bool isMaxtree,
-        std::optional<AdjacencyRelation> adjacency = std::nullopt)
-        : WeightedMorphologicalTree(
-            std::span<const NodeId>(higraParent.data(), higraParent.size()),
-            std::span<const typename AltitudeRange::value_type>(higraAltitude.data(), higraAltitude.size()),
-            rows,
-            cols,
-            isMaxtree,
-            std::move(adjacency)) {}
-
-    static WeightedMorphologicalTree create(int rows, int cols, bool isMaxtree, std::optional<AdjacencyRelation> adjacency = std::nullopt) {
+        int treeType,
+        std::optional<AdjacencyRelation> adjacency = std::nullopt) {
         WeightedMorphologicalTree weighted;
-        weighted.configureEmptyTopology(
-            rows,
-            cols,
-            isMaxtree ? MorphologicalTree::MAX_TREE : MorphologicalTree::MIN_TREE,
-            adjacency ? std::move(adjacency) : std::optional<AdjacencyRelation>(std::in_place, rows, cols, 1.5),
-            static_cast<NodeId>(rows * cols));
-        return weighted;
-    }
-
-    template <typename AltitudeValue>
-        requires std::is_arithmetic_v<AltitudeValue>
-    static WeightedMorphologicalTree createFromHigra(
-        std::span<const NodeId> higraParent,
-        std::span<const AltitudeValue> higraAltitude,
-        NodeId numProperParts,
-        int rows,
-        int cols,
-        bool isMaxtree,
-        std::optional<AdjacencyRelation> adjacency = std::nullopt) {
-        return WeightedMorphologicalTree(
+        weighted.tree = MorphologicalTree::createFromHigraParent(
             higraParent,
-            higraAltitude,
-            numProperParts,
             rows,
             cols,
-            isMaxtree,
+            treeType,
             std::move(adjacency));
-    }
-
-    template <class ParentRange, class AltitudeRange>
-        requires std::is_arithmetic_v<typename AltitudeRange::value_type>
-    static WeightedMorphologicalTree createFromHigra(
-        const ParentRange& higraParent,
-        const AltitudeRange& higraAltitude,
-        NodeId numProperParts,
-        int rows,
-        int cols,
-        bool isMaxtree,
-        std::optional<AdjacencyRelation> adjacency = std::nullopt) {
-        return createFromHigra(
-            std::span<const NodeId>(higraParent.data(), higraParent.size()),
-            std::span<const typename AltitudeRange::value_type>(higraAltitude.data(), higraAltitude.size()),
-            numProperParts,
-            rows,
-            cols,
-            isMaxtree,
-            std::move(adjacency));
+        weighted.importAltitudeFromHigra(higraAltitude);
+        return weighted;
     }
 
     void validateAltitudeBufferShape() const {
@@ -311,41 +187,11 @@ public:
         return tree_altitude_ops::reconstructImage(tree, altitude);
     }
 
+    /**
+     * @brief Exports the current live rooted tree to a new compact Higra parent/altitude representation.
+     */
     std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportHigraHierarchy() const {
         return tree_altitude_ops::exportHigraHierarchy(tree, altitude);
-    }
-
-    template <typename AltitudeValue>
-        requires std::is_arithmetic_v<AltitudeValue>
-    void resetFromHigra(std::span<const NodeId> parent, std::span<const AltitudeValue> higraAltitude, NodeId numProperParts) {
-        tree.resetFromHigraTopology(parent, numProperParts);
-        importAltitudeFromHigra(higraAltitude);
-    }
-
-    template <typename AltitudeValue>
-        requires std::is_arithmetic_v<AltitudeValue>
-    void resetFromHigra(std::span<const NodeId> parent, std::span<const AltitudeValue> higraAltitude) {
-        if (tree.getNumTotalProperParts() <= 0) {
-            throw std::logic_error("resetFromHigra(parent, altitude) requires a known proper-part domain.");
-        }
-        resetFromHigra(parent, higraAltitude, static_cast<NodeId>(tree.getNumTotalProperParts()));
-    }
-
-    template <class ParentRange, class AltitudeRange>
-        requires std::is_arithmetic_v<typename AltitudeRange::value_type>
-    void resetFromHigra(const ParentRange& parent, const AltitudeRange& higraAltitude, NodeId numProperParts) {
-        resetFromHigra(
-            std::span<const NodeId>(parent.data(), parent.size()),
-            std::span<const typename AltitudeRange::value_type>(higraAltitude.data(), higraAltitude.size()),
-            numProperParts);
-    }
-
-    template <class ParentRange, class AltitudeRange>
-        requires std::is_arithmetic_v<typename AltitudeRange::value_type>
-    void resetFromHigra(const ParentRange& parent, const AltitudeRange& higraAltitude) {
-        resetFromHigra(
-            std::span<const NodeId>(parent.data(), parent.size()),
-            std::span<const typename AltitudeRange::value_type>(higraAltitude.data(), higraAltitude.size()));
     }
 
     WeightedTreeEditor edit();

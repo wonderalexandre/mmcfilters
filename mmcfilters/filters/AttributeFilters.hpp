@@ -204,6 +204,70 @@ protected:
         }
     }
 
+    static std::vector<bool> getAdaptiveCriterionImpl(MorphologicalTree& tree, const AltitudeBuffer* altitude, const float* attribute, float threshold, int delta) {
+        assert(attribute != nullptr);
+
+        ComputerMSER mser(tree, altitude);
+        std::vector<uint8_t> isMSER = mser.computeMSER(delta);
+        (void)isMSER;
+
+        std::vector<float> stability = mser.getStabilities();
+        std::vector<bool> isPruned(tree.getNumInternalNodeSlots(), false);
+        for (NodeId nodeId : tree.getAliveNodeIds()) {
+            if (attribute[nodeId] < threshold) {
+                if (std::isnan(stability[nodeId])) {
+                    isPruned[nodeId] = true;
+                } else {
+                    const float max = stability[nodeId];
+                    const NodeId indexDescMaxStability = mser.descendantWithMaxStability(nodeId);
+                    const NodeId indexAscMaxStability = mser.ascendantWithMaxStability(nodeId);
+                    const float maxDesc = stability[indexDescMaxStability];
+                    const float maxAnc = stability[indexAscMaxStability];
+
+                    if (max >= maxDesc && max >= maxAnc) {
+                        isPruned[nodeId] = true;
+                    } else if (maxDesc >= max && maxDesc >= maxAnc) {
+                        isPruned[indexDescMaxStability] = true;
+                    } else {
+                        isPruned[indexAscMaxStability] = true;
+                    }
+                }
+            }
+        }
+        return isPruned;
+    }
+
+    static std::vector<bool> getAdaptiveCriterionImpl(MorphologicalTree& tree, const AltitudeBuffer* altitude, std::vector<bool>& criterion, int delta) {
+        ComputerMSER mser(tree, altitude);
+        std::vector<uint8_t> isMSER = mser.computeMSER(delta);
+        (void)isMSER;
+
+        std::vector<float> stability = mser.getStabilities();
+        std::vector<bool> isPruned(tree.getNumInternalNodeSlots(), false);
+        for (NodeId nodeId : tree.getAliveNodeIds()) {
+            if (!criterion[nodeId]) {
+                if (std::isnan(stability[nodeId])) {
+                    isPruned[nodeId] = true;
+                } else {
+                    const float max = stability[nodeId];
+                    const NodeId indexDescMaxStability = mser.descendantWithMaxStability(nodeId);
+                    const NodeId indexAscMaxStability = mser.ascendantWithMaxStability(nodeId);
+                    const float maxDesc = stability[indexDescMaxStability];
+                    const float maxAnc = stability[indexAscMaxStability];
+
+                    if (max >= maxDesc && max >= maxAnc) {
+                        isPruned[nodeId] = true;
+                    } else if (maxDesc >= max && maxDesc >= maxAnc) {
+                        isPruned[indexDescMaxStability] = true;
+                    } else {
+                        isPruned[indexAscMaxStability] = true;
+                    }
+                }
+            }
+        }
+        return isPruned;
+    }
+
 public:
     explicit AttributeFilters(MorphologicalTree& tree)
         : tree{tree}, altitude_{nullptr} {}
@@ -214,7 +278,7 @@ public:
     ~AttributeFilters() = default;
 
     std::vector<bool> getAdaptiveCriterion(std::vector<bool>& criterion, int delta) {
-        return AttributeFilters::getAdaptiveCriterion(this->tree, criterion, delta);
+        return AttributeFilters::getAdaptiveCriterionImpl(this->tree, this->altitude_, criterion, delta);
     }
 
     ImageUInt8Ptr filteringByPruningMin(const std::shared_ptr<float[]>& attr, float threshold) {
@@ -346,78 +410,23 @@ public:
     }
 
     static std::vector<bool> getAdaptiveCriterion(WeightedMorphologicalTree& weighted, const std::shared_ptr<float[]>& attribute, float threshold, int delta) {
-        return getAdaptiveCriterion(weighted.tree, attribute.get(), threshold, delta);
+        return getAdaptiveCriterionImpl(weighted.tree, &weighted.altitude, attribute.get(), threshold, delta);
     }
 
     static std::vector<bool> getAdaptiveCriterion(MorphologicalTree& tree, const float* attribute, float threshold, int delta) {
-        assert(attribute != nullptr);
-
-        ComputerMSER mser(tree);
-        std::vector<uint8_t> isMSER = mser.computeMSER(delta);
-
-        std::vector<float> stability = mser.getStabilities();
-        std::vector<bool> isPruned(tree.getNumInternalNodeSlots(), false);
-        for (NodeId nodeId : tree.getAliveNodeIds()) {
-            if (attribute[nodeId] < threshold) {
-                if (std::isnan(stability[nodeId])) {
-                    isPruned[nodeId] = true;
-                } else {
-                    const float max = stability[nodeId];
-                    const NodeId indexDescMaxStability = mser.descendantWithMaxStability(nodeId);
-                    const NodeId indexAscMaxStability = mser.ascendantWithMaxStability(nodeId);
-                    const float maxDesc = stability[indexDescMaxStability];
-                    const float maxAnc = stability[indexAscMaxStability];
-
-                    if (max >= maxDesc && max >= maxAnc) {
-                        isPruned[nodeId] = true;
-                    } else if (maxDesc >= max && maxDesc >= maxAnc) {
-                        isPruned[indexDescMaxStability] = true;
-                    } else {
-                        isPruned[indexAscMaxStability] = true;
-                    }
-                }
-            }
-        }
-        return isPruned;
+        return getAdaptiveCriterionImpl(tree, nullptr, attribute, threshold, delta);
     }
 
     static std::vector<bool> getAdaptiveCriterion(WeightedMorphologicalTree& weighted, const float* attribute, float threshold, int delta) {
-        return getAdaptiveCriterion(weighted.tree, attribute, threshold, delta);
+        return getAdaptiveCriterionImpl(weighted.tree, &weighted.altitude, attribute, threshold, delta);
     }
 
     static std::vector<bool> getAdaptiveCriterion(MorphologicalTree& tree, std::vector<bool>& criterion, int delta) {
-        ComputerMSER mser(tree);
-        std::vector<uint8_t> isMSER = mser.computeMSER(delta);
-        (void)isMSER;
-
-        std::vector<float> stability = mser.getStabilities();
-        std::vector<bool> isPruned(tree.getNumInternalNodeSlots(), false);
-        for (NodeId nodeId : tree.getAliveNodeIds()) {
-            if (!criterion[nodeId]) {
-                if (std::isnan(stability[nodeId])) {
-                    isPruned[nodeId] = true;
-                } else {
-                    const float max = stability[nodeId];
-                    const NodeId indexDescMaxStability = mser.descendantWithMaxStability(nodeId);
-                    const NodeId indexAscMaxStability = mser.ascendantWithMaxStability(nodeId);
-                    const float maxDesc = stability[indexDescMaxStability];
-                    const float maxAnc = stability[indexAscMaxStability];
-
-                    if (max >= maxDesc && max >= maxAnc) {
-                        isPruned[nodeId] = true;
-                    } else if (maxDesc >= max && maxDesc >= maxAnc) {
-                        isPruned[indexDescMaxStability] = true;
-                    } else {
-                        isPruned[indexAscMaxStability] = true;
-                    }
-                }
-            }
-        }
-        return isPruned;
+        return getAdaptiveCriterionImpl(tree, nullptr, criterion, delta);
     }
 
     static std::vector<bool> getAdaptiveCriterion(WeightedMorphologicalTree& weighted, std::vector<bool>& criterion, int delta) {
-        return getAdaptiveCriterion(weighted.tree, criterion, delta);
+        return getAdaptiveCriterionImpl(weighted.tree, &weighted.altitude, criterion, delta);
     }
 };
 

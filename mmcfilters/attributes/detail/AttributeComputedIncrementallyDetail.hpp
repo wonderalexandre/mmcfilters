@@ -241,8 +241,9 @@ inline std::vector<const AttributeComputer*> getOrderedComputers(const std::vect
  * @details
  * The internal pipeline always computes in `MORPHOLOGICAL_TREE` space. This
  * projection step is only applied at the API boundary, for example to expose
- * results in the static Higra convention. Nodes that do not exist in the
- * target space are left as `NaN`.
+ * results in the preserved imported Higra convention. Proper-part/leaf ids in
+ * that target space are left as `NaN`; every live internal node must have a
+ * valid target id.
  */
 inline ComputedAttributeData projectComputedDataToNodeIdSpace(const MorphologicalTree& tree, ComputedAttributeData computed, NodeIdSpace outputSpace) {
     if (outputSpace == NodeIdSpace::MORPHOLOGICAL_TREE) {
@@ -256,8 +257,8 @@ inline ComputedAttributeData projectComputedDataToNodeIdSpace(const Morphologica
 
     for (NodeId nodeId : tree.getAliveNodeIds()) {
         const NodeId outputNodeId = tree.getHigraNodeId(nodeId);
-        if (outputNodeId == InvalidNode) {
-            continue;
+        if (outputNodeId == InvalidNode || outputNodeId < 0 || outputNodeId >= outputSize) {
+            throw std::runtime_error("Cannot project attributes to Higra node-id space: a live node has no valid Higra id.");
         }
         for (const auto& [attribute, _] : computed.first.indexMap) {
             projected[computed.first.linearIndex(outputNodeId, attribute)] =
@@ -283,8 +284,8 @@ inline ComputedAttributeDataWithDelta projectComputedDataToNodeIdSpace(const Mor
 
     for (NodeId nodeId : tree.getAliveNodeIds()) {
         const NodeId outputNodeId = tree.getHigraNodeId(nodeId);
-        if (outputNodeId == InvalidNode) {
-            continue;
+        if (outputNodeId == InvalidNode || outputNodeId < 0 || outputNodeId >= outputSize) {
+            throw std::runtime_error("Cannot project delta attributes to Higra node-id space: a live node has no valid Higra id.");
         }
         for (const auto& [attributeKey, _] : computed.first.indexMap) {
             projected[computed.first.linearIndex(outputNodeId, attributeKey.attr, attributeKey.delta)] =

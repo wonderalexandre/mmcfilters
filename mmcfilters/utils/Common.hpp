@@ -81,14 +81,16 @@ inline bool isInvalid(NodeId id) noexcept { return id == InvalidNode; }
 
 /// Canonical value type stored for node altitudes / gray levels in component trees.
 using AltitudeType = int;
+
 /// Dense altitude buffer indexed by internal node id.
 using AltitudeBuffer = std::vector<AltitudeType>;
+
 /// Signed/arithmetic type used for altitude differences such as residues.
 using AltitudeDiffType = decltype(std::declval<AltitudeType>() - std::declval<AltitudeType>());
 
 // Optional deprecation hook for the legacy weighted API that still lives on
-// MorphologicalTree during the transition to the Higra-style split between
-// topology/ownership and external altitude buffers.
+// MorphologicalTree during the transition to the split between topology/
+// ownership and external altitude buffers.
 #if defined(MMCFILTERS_ENABLE_LEGACY_WEIGHTED_TREE_API_DEPRECATION)
 #define MMCFILTERS_LEGACY_WEIGHTED_TREE_API [[deprecated("Use WeightedMorphologicalTree or tree_altitude_ops with an explicit altitude buffer.")]]
 #else

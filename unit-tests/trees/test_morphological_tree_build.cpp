@@ -11,17 +11,20 @@ int main() {
         auto [attrNames, buffer] = AttributeComputedIncrementally::computeSingleAttribute(tree, AREA);
         return static_cast<int>(buffer[attrNames.linearIndex(nodeId, AREA)]);
     };
+    auto requireThrows = [](auto&& fn, const std::string& label) {
+        bool threw = false;
+        try {
+            fn();
+        } catch (const std::exception&) {
+            threw = true;
+        }
+        require(threw, label);
+    };
 
     auto image = makeComponentTreeFixture();
-    auto emptyShell = MorphologicalTree::create(4, 4, true, AdjacencyRelation(4, 4, 1.5));
-    auto maxTree = std::make_shared<WeightedMorphologicalTree>(image, true);
-    auto minTree = std::make_shared<WeightedMorphologicalTree>(image, false);
+    auto maxTree = makeWeightedComponentTree(image, true);
+    auto minTree = makeWeightedComponentTree(image, false);
     auto [higraParent, higraAltitude] = exportHigraHierarchy(*maxTree);
-
-    requireEqual(emptyShell.getRoot(), InvalidNode, "empty tree shell root");
-    requireEqual(emptyShell.getNumNodes(), 0, "empty tree shell node count");
-    requireEqual(emptyShell.getNumInternalNodeSlots(), 0, "empty tree shell slot count");
-    requireVectorEqual(emptyShell.getLeaves(), std::vector<NodeId>{}, "empty tree shell leaves");
 
     require(static_cast<bool>(maxTree), "max-tree instance must be created");
     require(static_cast<bool>(minTree), "min-tree instance must be created");
@@ -57,31 +60,35 @@ int main() {
     requireVectorEqual(collectImageValues(maxReconstruction), collectImageValues(image), "max-tree reconstruction values");
     requireVectorEqual(collectImageValues(minReconstruction), collectImageValues(image), "min-tree reconstruction values");
 
-    auto importedFromHigra = WeightedMorphologicalTree::createFromHigra(higraParent, higraAltitude, 16, 4, 4, true, AdjacencyRelation(4, 4, 1.5));
-    require(importedFromHigra.tree.hasHigraNodeIdMapping(), "Higra import must preserve node-id mapping");
+    auto importedFromHigra = WeightedMorphologicalTree::createFromHigraParent(higraParent, higraAltitude, 4, 4, MorphologicalTree::MAX_TREE, AdjacencyRelation(4, 4, 1.5));
     requireEqual(importedFromHigra.tree.getNumHigraNodes(), 22, "Higra import node-id domain size");
-    requireEqual(importedFromHigra.tree.getNodeIdFromHigra(5), InvalidNode, "Higra leaves are not internal-node ids");
+    requireEqual(importedFromHigra.tree.getHigraNodeId(3), 19, "Higra import slot->node-id mapping");
     requireEqual(computeArea(importedFromHigra.tree, importedFromHigra.tree.getRoot()), 16, "Higra import area");
     requireImageShape(importedFromHigra.reconstructionImage(), 4, 4);
     requireVectorEqual(collectImageValues(importedFromHigra.reconstructionImage()), collectImageValues(image), "Higra import reconstruction values");
     auto [reexportedHigraParent, reexportedHigraAltitude] = importedFromHigra.exportHigraHierarchy();
     requireVectorEqual(reexportedHigraParent, higraParent, "Higra export/import parent round-trip");
     requireVectorEqual(reexportedHigraAltitude, higraAltitude, "Higra export/import altitude round-trip");
-    importedFromHigra.tree.reset(exportParentArray(maxTree->tree));
-    require(!importedFromHigra.tree.hasHigraNodeIdMapping(), "parent-array reset must clear stale Higra node-id mapping");
+
+    auto imageBuiltTopology = MorphologicalTree::createComponentTree(image, true);
+    requireThrows([&]() { imageBuiltTopology.getNumHigraNodes(); }, "image-built topology must not expose a Higra node-id domain");
+
+    auto mutatedImport = WeightedMorphologicalTree::createFromHigraParent(higraParent, higraAltitude, 4, 4, MorphologicalTree::MAX_TREE, AdjacencyRelation(4, 4, 1.5));
+    mutatedImport.mergeNodeIntoParent(0);
+    requireThrows([&]() { mutatedImport.tree.getNumHigraNodes(); }, "mutated Higra import must drop the original Higra node-id domain");
+    requireEqual(mutatedImport.tree.getHigraNodeId(3), InvalidNode, "mutated Higra import must not expose stale slot->node-id mapping");
 
     {
-        auto sparseTree = std::make_shared<WeightedMorphologicalTree>(image, true);
+        auto sparseTree = makeWeightedComponentTree(image, true);
         sparseTree->mergeNodeIntoParent(5);
         auto [sparseHigraParent, sparseHigraAltitude] = sparseTree->exportHigraHierarchy();
         requireEqual(static_cast<int>(sparseHigraParent.size()), 16 + 5, "Higra export must compact dead node slots");
-        auto sparseImported = WeightedMorphologicalTree::createFromHigra(
+        auto sparseImported = WeightedMorphologicalTree::createFromHigraParent(
             sparseHigraParent,
             sparseHigraAltitude,
-            16,
             4,
             4,
-            true,
+            MorphologicalTree::MAX_TREE,
             AdjacencyRelation(4, 4, 1.5));
         requireEqual(sparseImported.tree.getNumNodes(), 5, "compact Higra round-trip node count");
         requireEqual(sparseImported.tree.getNumInternalNodeSlots(), 5, "compact Higra round-trip slot count");

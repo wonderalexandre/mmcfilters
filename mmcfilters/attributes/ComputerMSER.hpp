@@ -2,9 +2,12 @@
 
 #include "../attributes/AttributeComputedIncrementally.hpp"
 #include "../trees/MorphologicalTree.hpp"
+#include "../trees/TreeAltitudeOps.hpp"
+#include "../trees/WeightedMorphologicalTree.hpp"
 #include "../utils/Common.hpp"
 
 #include <cassert>
+#include <stdexcept>
 
 namespace mmcfilters {
 
@@ -14,9 +17,10 @@ namespace mmcfilters {
  *
  * @details
  * The class implements the classical MSER stability criterion in tree form.
- * Given a non-decreasing node attribute and a delta value, each node is paired
- * with an ascendant and a descendant located approximately `delta` units away
- * in attribute space. The node stability is then defined as:
+ * Given a node altitude buffer and a delta value, each node is paired with an
+ * ascendant and a descendant located approximately `delta` units away in
+ * altitude space. The node stability is then defined from a monotone
+ * increasing attribute as:
  *
  * `stability(node) = (attr(asc(node)) - attr(desc(node))) / attr(node)`
  *
@@ -32,13 +36,15 @@ namespace mmcfilters {
  * either as a lightweight view over an externally owned buffer or as a small
  * owner of the fallback `AREA` buffer.
  *
- * @note The caller is responsible for providing an attribute that is
- * meaningful for MSER-like selection. The implementation assumes that larger
- * values correspond to ancestors reached when moving upward by `delta`.
+ * @note The caller is responsible for providing explicit node altitudes and an
+ * attribute that is meaningful for MSER-like selection. The implementation uses
+ * altitude for the delta neighbourhood and the attribute for the stability
+ * score.
  */
 class ComputerMSER {
 private:
 	MorphologicalTree& tree;
+	const AltitudeBuffer* altitude_;
 	const float* attrMserView_;
 	std::vector<float> ownedAttrMser_;
 	float maxVariation;
@@ -54,31 +60,50 @@ public:
 	/**
 	 * @brief Creates an MSER detector backed by an owned attribute buffer.
 	 */
-	ComputerMSER(MorphologicalTree& tree, std::vector<float> attr_increasing)
+	ComputerMSER(MorphologicalTree& tree, const AltitudeBuffer* altitude, std::vector<float> attr_increasing)
 		: tree(tree),
+		  altitude_(&tree_altitude_ops::requireAltitudeBuffer(altitude)),
 		  attrMserView_(nullptr),
 		  ownedAttrMser_(std::move(attr_increasing)),
 		  maxVariation(10.0),
 		  minAttr(0),
 		  maxAttr(this->tree.getNumColsOfImage() * this->tree.getNumRowsOfImage()) {
+		tree_altitude_ops::validateAltitudeBufferShape(this->tree, this->altitude_);
 		this->attrMserView_ = this->ownedAttrMser_.data();
 	}
 
 	/**
 	 * @brief Creates an MSER detector backed by a non-owning attribute view.
 	 */
-	ComputerMSER(MorphologicalTree& tree, const float* attr_increasing)
+	ComputerMSER(MorphologicalTree& tree, const AltitudeBuffer* altitude, const float* attr_increasing)
 		: tree(tree),
+		  altitude_(&tree_altitude_ops::requireAltitudeBuffer(altitude)),
 		  attrMserView_(attr_increasing),
 		  ownedAttrMser_(),
 		  maxVariation(10.0),
 		  minAttr(0),
-		  maxAttr(this->tree.getNumColsOfImage() * this->tree.getNumRowsOfImage()) {}
+		  maxAttr(this->tree.getNumColsOfImage() * this->tree.getNumRowsOfImage()) {
+		tree_altitude_ops::validateAltitudeBufferShape(this->tree, this->altitude_);
+	}
+
+	ComputerMSER(WeightedMorphologicalTree& weighted, std::vector<float> attr_increasing)
+		: ComputerMSER(weighted.tree, &weighted.altitude, std::move(attr_increasing)) {}
+
+	ComputerMSER(WeightedMorphologicalTree& weighted, const float* attr_increasing)
+		: ComputerMSER(weighted.tree, &weighted.altitude, attr_increasing) {}
 	
 	/**
 	 * @brief Creates an MSER detector that lazily falls back to `AREA`.
 	 */
-	ComputerMSER(MorphologicalTree& tree): ComputerMSER(tree, static_cast<const float*>(nullptr)) { }
+	ComputerMSER(MorphologicalTree& tree, const AltitudeBuffer* altitude)
+		: ComputerMSER(tree, altitude, static_cast<const float*>(nullptr)) { }
+
+	ComputerMSER(WeightedMorphologicalTree& weighted)
+		: ComputerMSER(weighted.tree, &weighted.altitude, static_cast<const float*>(nullptr)) { }
+
+	ComputerMSER(MorphologicalTree& tree) = delete;
+	ComputerMSER(MorphologicalTree& tree, std::vector<float> attr_increasing) = delete;
+	ComputerMSER(MorphologicalTree& tree, const float* attr_increasing) = delete;
 
 	~ComputerMSER(){}
 
@@ -89,7 +114,8 @@ public:
 	 * slots, with `true` at the nodes selected as MSER-like regions.
 	 */
 	std::vector<uint8_t> computeMSER(int delta){
-		std::pair<std::vector<NodeId>, std::vector<NodeId>> ascDesc = tree.computeAscendantsAndDescendants(delta);
+		std::pair<std::vector<NodeId>, std::vector<NodeId>> ascDesc =
+			tree_altitude_ops::computeAscendantsAndDescendants(tree, altitude_, delta);
 		this->ascendants = std::move(ascDesc.first);
 		this->descendants = std::move(ascDesc.second);
 		this->stability.assign(tree.getNumInternalNodeSlots(), std::numeric_limits<float>::quiet_NaN());
@@ -134,7 +160,7 @@ public:
 	 */
 	float getAttrMSER(NodeId node){
 			if(attrMserView_ == nullptr) {
-				auto area = AttributeComputedIncrementally::computeSingleAttribute(tree, AREA);
+				auto area = AttributeComputedIncrementally::computeSingleAttribute(tree, altitude_, AREA);
 				ownedAttrMser_ = std::move(area.second);
 				attrMserView_ = ownedAttrMser_.data();
 			}

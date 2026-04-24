@@ -12,7 +12,7 @@ int main() {
     auto image = makeComponentTreeFixture();
 
     for (bool isMaxtree : {true, false}) {
-        auto weighted = std::make_shared<WeightedMorphologicalTree>(image, isMaxtree);
+        auto weighted = makeWeightedComponentTree(image, isMaxtree);
         auto& tree = weighted->tree;
 
         auto levelMapping = AttributeComputedIncrementally::computeAttributeMapping(*weighted, LEVEL);
@@ -67,7 +67,7 @@ int main() {
     }
 
     {
-        auto tree = std::make_shared<MorphologicalTree>(image, true);
+        auto tree = makeComponentTree(image, true);
 
         auto requireAttributeValues = [&](Attribute attr, const std::vector<float>& expected, const std::string& label, float tolerance = 1e-5f) {
             auto [names, buffer] = AttributeComputedIncrementally::computeSingleAttribute(*tree, attr);
@@ -140,7 +140,8 @@ int main() {
         auto [groupBitquadsNames, groupBitquadsBuffer] = AttributeComputedIncrementally::computeSingleAttribute(*tree, AttributeGroup::BITQUADS);
         requireEqual(groupBitquadsBuffer[groupBitquadsNames.linearIndex(5, BITQUADS_PERIMETER)], 6.0f, "BITQUADS group path");
 
-        auto [deltaNames, deltaBuffer] = AttributeComputedIncrementally::computeSingleAttributeWithDelta(*tree, AREA, 2, "last-padding");
+        auto weightedForDelta = makeWeightedComponentTree(image, true);
+        auto [deltaNames, deltaBuffer] = AttributeComputedIncrementally::computeSingleAttributeWithDelta(*weightedForDelta, AREA, 2, "last-padding");
         requireEqual(deltaNames.NUM_ATTRIBUTES, 5, "delta attribute count");
         requireNear(deltaBuffer[deltaNames.linearIndex(0, AREA, -2)], 16.0f, 1e-6f, "delta asc2 node0");
         requireNear(deltaBuffer[deltaNames.linearIndex(3, AREA, -1)], 12.0f, 1e-6f, "delta asc1 node3");
@@ -148,7 +149,7 @@ int main() {
         requireNear(deltaBuffer[deltaNames.linearIndex(3, AREA, 1)], 5.0f, 1e-6f, "delta desc1 node3");
         requireNear(deltaBuffer[deltaNames.linearIndex(5, AREA, 2)], 2.0f, 1e-6f, "delta last-padding leaf");
 
-        auto [deltaNullNames, deltaNullBuffer] = AttributeComputedIncrementally::computeSingleAttributeWithDelta(*tree, AREA, 1, "null-padding");
+        auto [deltaNullNames, deltaNullBuffer] = AttributeComputedIncrementally::computeSingleAttributeWithDelta(*weightedForDelta, AREA, 1, "null-padding");
         require(std::isnan(deltaNullBuffer[deltaNullNames.linearIndex(0, AREA, -1)]), "delta null-padding root missing asc");
         requireNear(deltaNullBuffer[deltaNullNames.linearIndex(0, AREA, 0)], 16.0f, 1e-6f, "delta null-padding root center");
         requireNear(deltaNullBuffer[deltaNullNames.linearIndex(0, AREA, 1)], 15.0f, 1e-6f, "delta null-padding root desc");
@@ -158,7 +159,7 @@ int main() {
 
         bool invalidPaddingRejected = false;
         try {
-            (void)AttributeComputedIncrementally::computeSingleAttributeWithDelta(*tree, AREA, 1, "unsupported-padding");
+            (void)AttributeComputedIncrementally::computeSingleAttributeWithDelta(*weightedForDelta, AREA, 1, "unsupported-padding");
         } catch (const std::invalid_argument&) {
             invalidPaddingRejected = true;
         }
@@ -166,7 +167,7 @@ int main() {
     }
 
     {
-        auto weighted = std::make_shared<WeightedMorphologicalTree>(image, true);
+        auto weighted = makeWeightedComponentTree(image, true);
         weighted->altitude[5] = 7;
 
         requireEqual(weighted->getAltitude(5), 7, "weighted wrapper must read the external altitude buffer");
@@ -184,13 +185,12 @@ int main() {
         requireEqual(levelValues[14], 7.0f, "weighted LEVEL mapping must project external altitude buffer on second leaf pixel");
 
         auto [weightedParent, weightedAltitude] = weighted->exportHigraHierarchy();
-        auto weightedRoundtrip = WeightedMorphologicalTree::createFromHigra(
+        auto weightedRoundtrip = WeightedMorphologicalTree::createFromHigraParent(
             weightedParent,
             weightedAltitude,
-            weighted->tree.getNumTotalProperParts(),
             weighted->tree.getNumRowsOfImage(),
             weighted->tree.getNumColsOfImage(),
-            true,
+            MorphologicalTree::MAX_TREE,
             AdjacencyRelation(weighted->tree.getNumRowsOfImage(), weighted->tree.getNumColsOfImage(), 1.5));
 
         auto requireMappedAttributeMatch = [&](Attribute attr, const std::string& label) {

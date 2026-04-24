@@ -94,10 +94,7 @@ void bindTreeQueryApi(PyClass& cls) {
         })
         .def_property_readonly("numHigraNodes", [](TreeLike &self) {
             return topology(self).getNumHigraNodes();
-        })
-        .def_property_readonly("hasHigraNodeIdMapping", [](TreeLike &self) {
-            return topology(self).hasHigraNodeIdMapping();
-        })
+        }, "Size of the preserved imported Higra node-id domain.")
         .def("getRoot", [](TreeLike &self) {
             return topology(self).getRoot();
         }, "Return the current root node id.")
@@ -167,10 +164,7 @@ void bindTreeQueryApi(PyClass& cls) {
         }, "pixelId"_a)
         .def("getHigraNodeId", [](TreeLike &self, NodeId nodeId) {
             return topology(self).getHigraNodeId(nodeId);
-        }, "nodeId"_a)
-        .def("getNodeIdFromHigra", [](TreeLike &self, NodeId higraNodeId) {
-            return topology(self).getNodeIdFromHigra(higraNodeId);
-        }, "higraNodeId"_a)
+        }, "nodeId"_a, "Return the preserved imported Higra node id for a live internal NodeId, or InvalidNode.")
         .def("getNumChildren", [](TreeLike &self, NodeId nodeId) {
             return topology(self).getNumChildren(nodeId);
         }, "nodeId"_a)
@@ -225,7 +219,7 @@ void bindTreeQueryApi(PyClass& cls) {
             }, "Reconstruct the current tree into a 2D image using the attached image domain.")
             .def("exportHigraHierarchy", [](TreeLike &self) {
                 return exportHigraHierarchyOf(self);
-            }, "Export the current rooted tree to Higra's static (parent, altitude) representation.");
+            }, "Export the current rooted tree to a new compact Higra (parent, altitude) representation.");
     }
 }
 
@@ -245,46 +239,44 @@ void init_MorphologicalTree(py::module &m){
       py::class_<MorphologicalTree, std::shared_ptr<MorphologicalTree>>(m, "MorphologicalTreeBase", py::module_local(false));
       auto treeCls = py::class_<MorphologicalTreePybind, std::shared_ptr<MorphologicalTreePybind>>(m, "MorphologicalTree", py::module_local(false),
         "Morphological tree with a NodeId-first public API. Prefer getRoot/getAliveNodeIds/getChildren/getProperParts and related NodeId-based operations for new code. "
-        "Weighted quantities such as altitude, image reconstruction, and Higra altitude export live on WeightedMorphologicalTree.");
+        "Weighted quantities such as altitude, image reconstruction, and compact Higra parent/altitude export live on WeightedMorphologicalTree.");
       treeCls
-        .def(py::init<UInt8InputArray, bool, double>(), "input"_a, "isMaxtree"_a, "radius"_a = 1.5)
-        .def(py::init<UInt8InputArray, ToSInterpolation>(), "input"_a, "interpolation"_a = ToSInterpolation::SelfDual)
-        .def(py::init([](const std::vector<NodeId>& parent, int rows, int cols, bool isMaxtree, double radius) {
-            auto tree = std::make_shared<MorphologicalTreePybind>(
-                rows,
-                cols,
-                isMaxtree,
-                AdjacencyRelation(rows, cols, radius));
-            tree->reset(parent);
-            return tree;
-        }), "parent"_a, "rows"_a, "cols"_a, "isMaxtree"_a, "radius"_a = 1.5,
-        "Construct a tree from the compact parent representation [proper-part owners | node parents] using dense node ids.")
-	        .def("reset", [](MorphologicalTreePybind &tree, const std::vector<NodeId>& parent) {
-	            tree.reset(parent);
-	        }, "parent"_a, "Reset the tree from the compact parent representation [proper-part owners | node parents].");
+        .def_static("createComponentTree", [](UInt8InputArray input, bool isMaxtree, double radius) {
+            return std::make_shared<MorphologicalTreePybind>(input, isMaxtree, radius);
+        }, "input"_a, "isMaxtree"_a, "radius"_a = 1.5)
+        .def_static("createTreeOfShapes", [](UInt8InputArray input, ToSInterpolation interpolation) {
+            return std::make_shared<MorphologicalTreePybind>(input, interpolation);
+        }, "input"_a, "interpolation"_a = ToSInterpolation::SelfDual)
+        .def_static("createFromHigraParent", [](const std::vector<NodeId>& parent, int rows, int cols, int treeType, std::optional<double> radius) {
+            return std::make_shared<MorphologicalTreePybind>(
+                MorphologicalTree::createFromHigraParent(
+                    parent,
+                    rows,
+                    cols,
+                    treeType,
+                    radius ? std::optional<AdjacencyRelation>(std::in_place, rows, cols, *radius) : std::nullopt));
+        },
+            "parent"_a,
+            "rows"_a,
+            "cols"_a,
+            "treeType"_a,
+            "radius"_a = py::none(),
+            "Create a tree from an imported static Higra parent representation [leaves | internal nodes]. "
+            "The imported Higra node-id domain is preserved until the tree is edited.");
       bindTreeQueryApi<MorphologicalTreePybind>(treeCls);
 
       auto weightedCls = py::class_<WeightedMorphologicalTree, std::shared_ptr<WeightedMorphologicalTree>>(m, "WeightedMorphologicalTree", py::module_local(false),
-        "Higra-style wrapper pairing MorphologicalTree topology with an external dense altitude buffer.");
+        "Wrapper pairing MorphologicalTree topology with an external dense altitude buffer. "
+        "Imports can preserve an original Higra node-id domain; exports always create a new compact Higra domain.");
       weightedCls
-        .def(py::init([](UInt8InputArray input, bool isMaxtree, double radius) {
-            return std::make_shared<WeightedMorphologicalTree>(imageFromArray(input), isMaxtree, radius);
-        }), "input"_a, "isMaxtree"_a, "radius"_a = 1.5)
-        .def(py::init([](UInt8InputArray input, ToSInterpolation interpolation) {
-            return std::make_shared<WeightedMorphologicalTree>(imageFromArray(input), interpolation);
-        }), "input"_a, "interpolation"_a = ToSInterpolation::SelfDual)
-        .def(py::init([](const std::vector<NodeId>& parent, int rows, int cols, bool isMaxtree, double radius) {
+        .def_static("createComponentTree", [](UInt8InputArray input, bool isMaxtree, double radius) {
             return std::make_shared<WeightedMorphologicalTree>(
-                parent,
-                rows,
-                cols,
-                isMaxtree,
-                AdjacencyRelation(rows, cols, radius));
-        }), "parent"_a, "rows"_a, "cols"_a, "isMaxtree"_a, "radius"_a = 1.5,
-        "Construct a weighted tree from the compact parent representation [proper-part owners | node parents] using dense node ids.")
-        .def("resetFromHigra", [](WeightedMorphologicalTree &tree, const std::vector<NodeId>& parent, const std::vector<AltitudeType>& altitude) {
-            tree.resetFromHigra(parent, altitude);
-        }, "parent"_a, "altitude"_a, "Reset the weighted tree from a static Higra hierarchy [leaves | internal nodes].")
+                WeightedMorphologicalTree::createComponentTree(imageFromArray(input), isMaxtree, radius));
+        }, "input"_a, "isMaxtree"_a, "radius"_a = 1.5)
+        .def_static("createTreeOfShapes", [](UInt8InputArray input, ToSInterpolation interpolation) {
+            return std::make_shared<WeightedMorphologicalTree>(
+                WeightedMorphologicalTree::createTreeOfShapes(imageFromArray(input), interpolation));
+        }, "input"_a, "interpolation"_a = ToSInterpolation::SelfDual)
         .def("setAltitude", [](WeightedMorphologicalTree &tree, NodeId nodeId, AltitudeType altitude) {
             if (!tree.tree.isNode(nodeId)) {
                 throw std::invalid_argument("invalid NodeId for altitude update");
@@ -307,27 +299,28 @@ void init_MorphologicalTree(py::module &m){
             "Dense altitude buffer indexed by internal NodeId.")
         .def("validateAltitudeBufferShape", &WeightedMorphologicalTree::validateAltitudeBufferShape)
         .def("validateMonotoneAltitude", &WeightedMorphologicalTree::validateMonotoneAltitude)
-        .def_static("createFromHigra", [](const std::vector<NodeId>& parent, const std::vector<AltitudeType>& altitude, int rows, int cols, bool isMaxtree, std::optional<double> radius) {
+        .def_static("createFromHigraParent", [](const std::vector<NodeId>& parent, const std::vector<AltitudeType>& altitude, int rows, int cols, int treeType, std::optional<double> radius) {
             if (parent.size() != altitude.size()) {
                 throw std::invalid_argument("parent and altitude must have the same size");
             }
 
             return std::make_shared<WeightedMorphologicalTree>(
-                parent,
-                altitude,
-                rows,
-                cols,
-                isMaxtree,
-                radius ? std::optional<AdjacencyRelation>(std::in_place, rows, cols, *radius) : std::nullopt);
+                WeightedMorphologicalTree::createFromHigraParent(
+                    parent,
+                    altitude,
+                    rows,
+                    cols,
+                    treeType,
+                    radius ? std::optional<AdjacencyRelation>(std::in_place, rows, cols, *radius) : std::nullopt));
         },
             "parent"_a,
             "altitude"_a,
             "rows"_a,
             "cols"_a,
-            "isMaxtree"_a,
+            "treeType"_a,
             "radius"_a = py::none(),
-            "Create a weighted tree from the static Higra representation [leaves | internal nodes]. "
-            "No adjacency relation is assumed unless an explicit radius is provided.");
+            "Create a weighted tree from an imported static Higra parent/altitude representation [leaves | internal nodes]. "
+            "The imported Higra node-id domain is preserved until the tree is edited.");
       bindTreeQueryApi<WeightedMorphologicalTree>(weightedCls);
 	}
 

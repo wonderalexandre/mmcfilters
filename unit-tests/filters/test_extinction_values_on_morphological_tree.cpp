@@ -12,7 +12,7 @@ int main() {
     auto image = makeComponentTreeFixture();
 
     for (bool isMaxtree : {true, false}) {
-        auto weighted = std::make_shared<WeightedMorphologicalTree>(image, isMaxtree);
+        auto weighted = makeWeightedComponentTree(image, isMaxtree);
         auto [attrNames, attrBuffer] = AttributeComputedIncrementally::computeSingleAttribute(*weighted, LEVEL);
         (void)attrNames;
 
@@ -28,7 +28,7 @@ int main() {
     }
 
     {
-        auto weighted = std::make_shared<WeightedMorphologicalTree>(image, true);
+        auto weighted = makeWeightedComponentTree(image, true);
         weighted->tree.mergeNodeIntoParent(4);
 
         auto expectedAfterMerge = ImageUInt8::create(weighted->tree.getNumRowsOfImage(), weighted->tree.getNumColsOfImage(), 0);

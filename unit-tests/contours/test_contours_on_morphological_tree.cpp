@@ -26,7 +26,7 @@ int main() {
     auto image = makeComponentTreeFixture();
 
     for (bool isMaxtree : {true, false}) {
-        auto tree = std::make_shared<MorphologicalTree>(image, isMaxtree);
+        auto tree = makeComponentTree(image, isMaxtree);
         auto contours = ContoursComputedIncrementally::extractCompactContours(*tree);
         AdjacencyRelation adj4(tree->getNumRowsOfImage(), tree->getNumColsOfImage(), 1);
         std::vector<uint8_t> mask(static_cast<std::size_t>(image->getSize()), 0);
@@ -67,7 +67,7 @@ int main() {
     }
 
     {
-        auto tree = std::make_shared<MorphologicalTree>(image, true);
+        auto tree = makeComponentTree(image, true);
         tree->mergeNodeIntoParent(4);
 
         auto contours = ContoursComputedIncrementally::extractCompactContours(*tree);

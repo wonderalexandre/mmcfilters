@@ -16,8 +16,8 @@ int main() {
         }
     );
 
-    auto tree = std::make_shared<MorphologicalTree>(image, ToSInterpolation::Min4cMax8c);
-    auto weighted = std::make_shared<WeightedMorphologicalTree>(image, ToSInterpolation::Min4cMax8c);
+    auto tree = makeTreeOfShapes(image, ToSInterpolation::Min4cMax8c);
+    auto weighted = makeWeightedTreeOfShapes(image, ToSInterpolation::Min4cMax8c);
 
     require(static_cast<bool>(tree), "tree of shapes instance must be created");
     requireEqual(tree->getTreeType(), 2, "tree type");

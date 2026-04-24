@@ -16,7 +16,7 @@ The suite covers:
 - proper parts, reconstruction, and tree-of-shapes behaviour;
 - incremental attributes and secondary attribute consumers;
 - filters, extinction values, contours, and Python bindings;
-- structural invariants and parent-array round trips.
+- structural invariants, preserved imported Higra domains, and compact Higra export round trips.
 
 ## Running the suite
 

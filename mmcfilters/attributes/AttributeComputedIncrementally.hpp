@@ -51,8 +51,9 @@ namespace mmcfilters {
  *   NumPy array in the pybind layer.
  *
  * A crucial design rule is that computation always happens first in the dense
- * internal `MorphologicalTree` node-id space. Any projection to Higra or other
- * public node-id conventions happens only at the boundary of the public API.
+ * internal `MorphologicalTree` node-id space. `NodeIdSpace::HIGRA` projection
+ * refers to the preserved imported Higra node-id domain and happens only at
+ * the boundary of the public API.
  */
 struct ComputedAttributeView {
     const AttributeNames* first = nullptr;
@@ -180,12 +181,12 @@ using DependencyMap = std::unordered_map<Attribute, ComputedAttributeView>;
  * - cache-aware materialisation of one attribute, one group, or several
  *   heterogeneous requests at once;
  * - projection from the internal `MorphologicalTree` node-id space to other
- *   public node-id spaces such as the static Higra convention;
+ *   public node-id spaces such as the preserved imported Higra convention;
  * - convenience helpers that project node attributes back to the image domain.
  *
  * The canonical execution space is always the tree's dense internal node-id
- * space. Projection to Higra or other spaces only happens at the boundary of
- * the public API.
+ * space. Projection to the preserved imported Higra space only happens at the
+ * boundary of the public API.
  */
 class AttributeComputedIncrementally {
 public:

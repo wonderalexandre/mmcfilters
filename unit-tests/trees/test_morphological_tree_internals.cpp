@@ -68,14 +68,14 @@ int main() {
         requireEqual(numNodesMin, 1, "BuilderComponentTree constant min numNodes");
         requireEqual(static_cast<int>(orderMin.size()), 4, "BuilderComponentTree constant min order size");
 
-        MorphologicalTree maxTree(image, true);
-        MorphologicalTree minTree(image, false);
+        auto maxTree = MorphologicalTree::createComponentTree(image, true);
+        auto minTree = MorphologicalTree::createComponentTree(image, false);
         requireEqual(maxTree.getNumNodes(), 1, "constant max-tree node count");
         requireEqual(minTree.getNumNodes(), 1, "constant min-tree node count");
         requireVectorEqual(collectNodeIds(maxTree.getProperParts(maxTree.getRoot())), std::vector<NodeId>{0, 1, 2, 3}, "constant max-tree proper parts");
         requireVectorEqual(collectNodeIds(minTree.getProperParts(minTree.getRoot())), std::vector<NodeId>{0, 1, 2, 3}, "constant min-tree proper parts");
 
-        WeightedMorphologicalTree weighted(image, true);
+        auto weighted = WeightedMorphologicalTree::createComponentTree(image, true);
         requireVectorEqual(collectImageValues(weighted.reconstructionImage()), collectImageValues(image), "constant weighted reconstruction");
     }
 
@@ -155,29 +155,24 @@ int main() {
 
     {
         auto image = makeComponentTreeFixture();
-        auto tree = std::make_shared<MorphologicalTree>(image, true);
-        auto parent = exportParentArray(*tree);
-        auto rebuilt = std::make_shared<MorphologicalTree>(
-            std::span<const NodeId>(parent),
-            tree->getNumTotalProperParts(),
-            image->getNumRows(),
-            image->getNumCols(),
-            true
-        );
+        auto tree = makeComponentTree(image, true);
+        auto parent = exportFlatHigraHierarchy(*tree).first;
+        auto rebuilt = makeTreeFromHigraParent(parent, image->getNumRows(), image->getNumCols(), true);
+        const NodeId rebuiltRoot = rebuilt->getRoot();
 
-        requireEqual(rebuilt->getRoot(), 0, "ParentArray rebuild root");
-        requireEqual(rebuilt->getNumNodes(), 6, "ParentArray rebuild numNodes");
-        requireEqual(rebuilt->getSmallestComponent(10), 5, "ParentArray rebuild proper-part ownership");
-        requireEqual(rebuilt->getNodeParent(5), 4, "ParentArray rebuild parent relation");
-        requireVectorEqual(collectNodeIds(rebuilt->getChildren(4)), std::vector<NodeId>{5}, "ParentArray rebuild first child");
-        requireEqual(rebuilt->getNumChildren(3), 1, "ParentArray rebuild child count");
-        require(rebuilt->isAlive(5), "ParentArray rebuild alive marker");
+        requireEqual(rebuilt->getNodeParent(rebuiltRoot), rebuiltRoot, "Higra rebuild root parent");
+        requireEqual(rebuilt->getNumNodes(), 6, "Higra rebuild numNodes");
+        requireEqual(computeAreaAttribute(*rebuilt, rebuiltRoot), 16, "Higra rebuild root area");
+        const NodeId ownerOfPixel10 = rebuilt->getSmallestComponent(10);
+        require(rebuilt->isAlive(ownerOfPixel10), "Higra rebuild proper-part owner must be alive");
+        require(rebuilt->getNodeParent(ownerOfPixel10) != InvalidNode, "Higra rebuild owner must remain attached");
+        requireEqual(static_cast<int>(rebuilt->getLeaves().size()), 1, "Higra rebuild leaf count");
     }
 
     {
         auto image = makeComponentTreeFixture();
-        auto maxTree = std::make_shared<MorphologicalTree>(image, true);
-        auto minTree = std::make_shared<MorphologicalTree>(image, false);
+        auto maxTree = makeComponentTree(image, true);
+        auto minTree = makeComponentTree(image, false);
         TreeEditor editor(*maxTree);
 
         requireEqual(maxTree->getLowestCommonAncestor(5, 5), 5, "LCA self");
@@ -203,18 +198,27 @@ int main() {
         constexpr NodeId secondBranchLeaf = branchLength * 2;
         constexpr NodeId numNodeSlots = secondBranchLeaf + 1;
 
+        auto higraNodeId = [](NodeId slotId) {
+            return numProperParts + slotId;
+        };
+
         std::vector<NodeId> parent(static_cast<size_t>(numProperParts + numNodeSlots), InvalidNode);
-        parent[0] = firstBranchLeaf;
-        parent[static_cast<size_t>(numProperParts)] = 0;
+        parent[0] = higraNodeId(firstBranchLeaf);
+        parent[static_cast<size_t>(higraNodeId(0))] = higraNodeId(0);
         for (NodeId nodeId = 1; nodeId <= firstBranchLeaf; ++nodeId) {
-            parent[static_cast<size_t>(numProperParts + nodeId)] = nodeId - 1;
+            parent[static_cast<size_t>(higraNodeId(nodeId))] = higraNodeId(nodeId - 1);
         }
-        parent[static_cast<size_t>(numProperParts + secondBranchRoot)] = 0;
+        parent[static_cast<size_t>(higraNodeId(secondBranchRoot))] = higraNodeId(0);
         for (NodeId nodeId = secondBranchRoot + 1; nodeId <= secondBranchLeaf; ++nodeId) {
-            parent[static_cast<size_t>(numProperParts + nodeId)] = nodeId - 1;
+            parent[static_cast<size_t>(higraNodeId(nodeId))] = higraNodeId(nodeId - 1);
         }
 
-        MorphologicalTree deepTree(std::span<const NodeId>(parent), numProperParts, 1, 1, true);
+        auto deepTree = MorphologicalTree::createFromHigraParent(
+            parent,
+            1,
+            1,
+            MorphologicalTree::MAX_TREE,
+            AdjacencyRelation(1, 1, 1.5));
         requireEqual(deepTree.getNodeNumDescendants(0), numNodeSlots - 1, "deep tree descendant count");
         requireEqual(deepTree.getLowestCommonAncestor(firstBranchLeaf, secondBranchLeaf), 0, "deep tree LCA across branches");
     }
@@ -222,40 +226,79 @@ int main() {
     {
         requireThrows(
             [] {
-                std::vector<NodeId> badOwner = {5, 0, 0, 0, 0};
-                MorphologicalTree tree(std::span<const NodeId>(badOwner), 2, 1, 2, true);
+                std::vector<NodeId> noAdjacencyParent = {1, 1};
+                auto tree = MorphologicalTree::createFromHigraParent(
+                    noAdjacencyParent,
+                    1,
+                    1,
+                    MorphologicalTree::MAX_TREE);
+                static_cast<void>(tree);
             },
-            "parent-array import must reject invalid proper-part owners"
+            "Higra max-tree import must reject missing adjacency"
+        );
+
+        {
+            std::vector<NodeId> tosParent = {1, 1};
+            auto tree = MorphologicalTree::createFromHigraParent(
+                tosParent,
+                1,
+                1,
+                MorphologicalTree::TREE_OF_SHAPES);
+            require(!tree.hasAdjacencyRelation(), "Higra tree-of-shapes import may omit adjacency");
+        }
+
+        requireThrows(
+            [] {
+                std::vector<NodeId> badOwner = {0, 2, 2};
+                auto tree = MorphologicalTree::createFromHigraParent(
+                    badOwner,
+                    1,
+                    2,
+                    MorphologicalTree::MAX_TREE,
+                    AdjacencyRelation(1, 2, 1.5));
+                static_cast<void>(tree);
+            },
+            "Higra import must reject invalid proper-part owners"
         );
 
         requireThrows(
             [] {
-                std::vector<NodeId> cyclicParent = {0, 0, 2, 1};
-                MorphologicalTree tree(std::span<const NodeId>(cyclicParent), 1, 1, 1, true);
+                std::vector<NodeId> cyclicParent = {1, 2, 1};
+                auto tree = MorphologicalTree::createFromHigraParent(
+                    cyclicParent,
+                    1,
+                    1,
+                    MorphologicalTree::MAX_TREE,
+                    AdjacencyRelation(1, 1, 1.5));
+                static_cast<void>(tree);
             },
-            "parent-array import must reject disconnected cycles"
+            "Higra import must reject disconnected cycles"
         );
 
         requireThrows(
             [] {
-                auto shell = MorphologicalTree::create(2, 2, true, AdjacencyRelation(2, 2, 1.5));
-                std::vector<NodeId> wrongDomain = {0, 0, 0};
-                shell.reset(std::span<const NodeId>(wrongDomain), 2);
+                std::vector<NodeId> noInternalNodes = {0, 0, 0, 0};
+                auto tree = MorphologicalTree::createFromHigraParent(
+                    noInternalNodes,
+                    2,
+                    2,
+                    MorphologicalTree::MAX_TREE,
+                    AdjacencyRelation(2, 2, 1.5));
+                static_cast<void>(tree);
             },
-            "parent-array reset must reject proper-part count mismatches"
+            "Higra import must reject missing internal nodes"
         );
 
         requireThrows(
             [] {
                 std::vector<NodeId> badHigraParent = {1, 2, 3, 3};
                 std::vector<AltitudeType> altitude = {0, 0, 0, 0};
-                auto weighted = WeightedMorphologicalTree::createFromHigra(
+                auto weighted = WeightedMorphologicalTree::createFromHigraParent(
                     badHigraParent,
                     altitude,
-                    2,
                     1,
                     2,
-                    true,
+                    MorphologicalTree::MAX_TREE,
                     AdjacencyRelation(1, 2, 1.5));
                 static_cast<void>(weighted);
             },
@@ -264,16 +307,15 @@ int main() {
 
         requireThrows(
             [] {
-                auto weighted = std::make_shared<WeightedMorphologicalTree>(makeComponentTreeFixture(), true);
+                auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
                 auto [higraParent, higraAltitude] = weighted->exportHigraHierarchy();
                 higraAltitude.pop_back();
-                auto imported = WeightedMorphologicalTree::createFromHigra(
+                auto imported = WeightedMorphologicalTree::createFromHigraParent(
                     higraParent,
                     higraAltitude,
-                    16,
                     4,
                     4,
-                    true,
+                    MorphologicalTree::MAX_TREE,
                     AdjacencyRelation(4, 4, 1.5));
                 static_cast<void>(imported);
             },
@@ -282,7 +324,7 @@ int main() {
 
         requireThrows(
             [] {
-                WeightedMorphologicalTree weighted(makeComponentTreeFixture(), true);
+                auto weighted = WeightedMorphologicalTree::createComponentTree(makeComponentTreeFixture(), true);
                 static_cast<void>(weighted.getAltitude(999));
             },
             "weighted altitude access must reject invalid node ids"

@@ -10,8 +10,17 @@ using namespace mmcfilters::unit_tests;
 
 int main() {
     auto image = makeComponentTreeFixture();
-    auto weighted = std::make_shared<WeightedMorphologicalTree>(image, true);
+    auto weighted = makeWeightedComponentTree(image, true);
     auto& tree = weighted->tree;
+    auto requireThrows = [](auto&& fn, const std::string& label) {
+        bool threw = false;
+        try {
+            fn();
+        } catch (const std::exception&) {
+            threw = true;
+        }
+        require(threw, label);
+    };
 
     tree.mergeNodeIntoParent(4);
 
@@ -115,14 +124,23 @@ int main() {
     requireEqual(reusedBuffer[reusedNames.linearIndex(0, AREA)], 16.0f, "provided dependency AREA must be copied into final buffer");
     requireEqual(reusedBuffer[reusedNames.linearIndex(3, VOLUME)], 28.0f, "provided dependency AREA must remain usable by downstream computers");
 
+    requireThrows([&]() {
+        (void)AttributeComputedIncrementally::computeSingleAttribute(
+            *weighted,
+            AREA,
+            DependencyMap{},
+            NodeIdSpace::HIGRA
+        );
+    }, "image-built or edited tree must reject Higra-space attribute projection");
+
     auto [higraParent, higraAltitude] = weighted->exportHigraHierarchy();
-    auto fromHigra = WeightedMorphologicalTree::createFromHigra(
+    auto fromHigra = WeightedMorphologicalTree::createFromHigraParent(
         higraParent,
         higraAltitude,
-        tree.getNumTotalProperParts(),
         tree.getNumRowsOfImage(),
         tree.getNumColsOfImage(),
-        true
+        MorphologicalTree::MAX_TREE,
+        AdjacencyRelation(tree.getNumRowsOfImage(), tree.getNumColsOfImage(), 1.5)
     );
     auto areaInHigraSpace = AttributeComputedIncrementally::computeSingleAttribute(
         fromHigra,
@@ -153,6 +171,50 @@ int main() {
             "Higra-space dependency must be recomputed internally before reuse"
         );
     }
+
+    auto mutatedFromHigra = WeightedMorphologicalTree::createFromHigraParent(
+        higraParent,
+        higraAltitude,
+        tree.getNumRowsOfImage(),
+        tree.getNumColsOfImage(),
+        MorphologicalTree::MAX_TREE,
+        AdjacencyRelation(tree.getNumRowsOfImage(), tree.getNumColsOfImage(), 1.5)
+    );
+    NodeId firstNonRootNodeId = InvalidNode;
+    for (NodeId nodeId : mutatedFromHigra.tree.getAliveNodeIds()) {
+        if (!mutatedFromHigra.tree.isRoot(nodeId)) {
+            firstNonRootNodeId = nodeId;
+            break;
+        }
+    }
+    require(firstNonRootNodeId != InvalidNode, "Higra projection mutation test needs one non-root node");
+    mutatedFromHigra.mergeNodeIntoParent(firstNonRootNodeId);
+    requireThrows([&]() {
+        (void)AttributeComputedIncrementally::computeSingleAttribute(
+            mutatedFromHigra,
+            AREA,
+            DependencyMap{},
+            NodeIdSpace::HIGRA
+        );
+    }, "mutated Higra import must reject scalar Higra-space projection");
+    requireThrows([&]() {
+        (void)AttributeComputedIncrementally::computeSingleAttributeWithDelta(
+            mutatedFromHigra,
+            AREA,
+            1,
+            "null-padding",
+            DependencyMap{},
+            NodeIdSpace::HIGRA
+        );
+    }, "mutated Higra import must reject delta Higra-space projection");
+    requireThrows([&]() {
+        (void)AttributeComputedIncrementally::computeAttributes(
+            mutatedFromHigra,
+            {AREA, VOLUME},
+            DependencyMap{},
+            NodeIdSpace::HIGRA
+        );
+    }, "mutated Higra import must reject multi-attribute Higra-space projection");
 
     auto [deltaLevelNames, deltaLevelBuffer] =
         AttributeComputedIncrementally::computeSingleAttributeWithDelta(*weighted, LEVEL, 1, "last-padding");
@@ -213,13 +275,13 @@ int main() {
     requireEqual(grayBuffer[grayNames.linearIndex(3, VOLUME)], 28.0f, "node 3 volume after middle-slot merge");
     requireEqual(grayBuffer[grayNames.linearIndex(3, RELATIVE_VOLUME)], 14.0f, "node 3 relative volume after middle-slot merge");
 
-    ComputerMSER mser(tree);
+    ComputerMSER mser(*weighted);
     std::vector<uint8_t> isMSER = mser.computeMSER(1);
     const std::vector<float> implicitStabilities = mser.getStabilities();
-    ComputerMSER mserExplicit(tree, areaBuffer);
+    ComputerMSER mserExplicit(tree, &weighted->altitude, areaBuffer);
     std::vector<uint8_t> isMSERExplicit = mserExplicit.computeMSER(1);
     const std::vector<float> explicitStabilities = mserExplicit.getStabilities();
-    ComputerMSER mserRaw(tree, areaBuffer.data());
+    ComputerMSER mserRaw(tree, &weighted->altitude, areaBuffer.data());
     std::vector<uint8_t> isMSERRaw = mserRaw.computeMSER(1);
     const std::vector<float> rawStabilities = mserRaw.getStabilities();
     requireEqual(static_cast<int>(isMSER.size()), tree.getNumInternalNodeSlots(), "MSER buffer size after middle-slot merge");

@@ -9,7 +9,7 @@ using namespace mmcfilters::unit_tests;
 int main() {
     {
         auto image = makeComponentTreeFixture();
-        auto tree = std::make_shared<MorphologicalTree>(image, true);
+        auto tree = makeComponentTree(image, true);
         TreeEditor editor(*tree);
 
         tree->mergeNodeIntoParent(5);
@@ -63,27 +63,30 @@ int main() {
 
     {
         auto image = makeComponentTreeFixture();
-        auto tree = std::make_shared<MorphologicalTree>(image, true);
+        auto tree = makeComponentTree(image, true);
         TreeEditor editor(*tree);
 
         editor.moveProperPart(5, 4, 5);
         editor.moveProperParts(5, 4);
-        auto parent = exportParentArray(*tree);
-        auto rebuilt = std::make_shared<MorphologicalTree>(std::span<const NodeId>(parent), 4, 4, true);
+        auto parent = exportFlatHigraHierarchy(*tree).first;
+        auto rebuilt = makeTreeFromHigraParent(parent, 4, 4, true);
 
         requireVectorEqual(collectNodeIds(rebuilt->getAliveNodeIds()), {0, 1, 2, 3, 4, 5}, "alive ids after rebuilding ownership-moved tree");
         requireEqual(rebuilt->getNodeParent(rebuilt->getRoot()), rebuilt->getRoot(), "rebuilt ownership-moved tree root parent must point to itself");
-        requireVectorEqual(collectNodeIds(rebuilt->getChildren(4)), {5}, "children after rebuilding ownership-moved tree");
-        requireVectorEqual(collectNodeIds(rebuilt->getProperParts(4)), {}, "source proper parts after rebuilding ownership-moved tree");
-        requireVectorEqual(collectNodeIds(rebuilt->getProperParts(5)), {5, 6, 9, 10, 14}, "target proper parts after rebuilding ownership-moved tree");
-        requireEqual(rebuilt->getSmallestComponent(10), 5, "smallest component after rebuilding merged tree");
-        requireEqual(computeAreaAttribute(*rebuilt, 4), 5, "source subtree area after rebuilding ownership-moved tree");
-        requireEqual(computeAreaAttribute(*rebuilt, 5), 5, "target subtree area after rebuilding ownership-moved tree");
+        const NodeId targetNodeId = rebuilt->getSmallestComponent(10);
+        const NodeId sourceNodeId = rebuilt->getNodeParent(targetNodeId);
+        require(sourceNodeId != InvalidNode && sourceNodeId != targetNodeId, "rebuilt ownership-moved tree must keep the source above the target");
+        requireVectorEqual(collectNodeIds(rebuilt->getChildren(sourceNodeId)), {targetNodeId}, "children after rebuilding ownership-moved tree");
+        requireVectorEqual(collectNodeIds(rebuilt->getProperParts(sourceNodeId)), {}, "source proper parts after rebuilding ownership-moved tree");
+        requireVectorEqual(collectNodeIds(rebuilt->getProperParts(targetNodeId)), {5, 6, 9, 10, 14}, "target proper parts after rebuilding ownership-moved tree");
+        requireEqual(rebuilt->getSmallestComponent(5), targetNodeId, "moved proper part must share the rebuilt target component");
+        requireEqual(computeAreaAttribute(*rebuilt, sourceNodeId), 5, "source subtree area after rebuilding ownership-moved tree");
+        requireEqual(computeAreaAttribute(*rebuilt, targetNodeId), 5, "target subtree area after rebuilding ownership-moved tree");
     }
 
     {
         auto image = makeComponentTreeFixture();
-        auto tree = std::make_shared<MorphologicalTree>(image, false);
+        auto tree = makeComponentTree(image, false);
         TreeEditor editor(*tree);
 
         editor.moveChildren(4, 3);
@@ -94,7 +97,7 @@ int main() {
 
     {
         auto image = makeComponentTreeFixture();
-        auto tree = std::make_shared<MorphologicalTree>(image, true);
+        auto tree = makeComponentTree(image, true);
 
         tree->pruneNode(4);
 

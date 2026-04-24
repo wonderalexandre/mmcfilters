@@ -3,6 +3,7 @@
 #include <cmath>
 #include <initializer_list>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -11,6 +12,7 @@
 #include "mmcfilters/attributes/AttributeComputedIncrementally.hpp"
 #include "mmcfilters/utils/Common.hpp"
 #include "mmcfilters/trees/MorphologicalTree.hpp"
+#include "mmcfilters/trees/TreeAltitudeOps.hpp"
 #include "mmcfilters/trees/WeightedMorphologicalTree.hpp"
 
 namespace mmcfilters::unit_tests {
@@ -89,6 +91,43 @@ inline ImageUInt8Ptr makeComponentTreeFixture() {
     );
 }
 
+inline std::shared_ptr<MorphologicalTree> makeComponentTree(ImageUInt8Ptr image, bool isMaxtree, double radius = 1.5) {
+    return std::make_shared<MorphologicalTree>(MorphologicalTree::createComponentTree(image, isMaxtree, radius));
+}
+
+inline std::shared_ptr<MorphologicalTree> makeTreeOfShapes(
+    ImageUInt8Ptr image,
+    ToSInterpolation interpolation = ToSInterpolation::SelfDual) {
+    return std::make_shared<MorphologicalTree>(MorphologicalTree::createTreeOfShapes(image, interpolation));
+}
+
+inline std::shared_ptr<MorphologicalTree> makeTreeFromHigraParent(
+    const std::vector<NodeId>& parent,
+    int rows,
+    int cols,
+    bool isMaxtree,
+    double radius = 1.5) {
+    return std::make_shared<MorphologicalTree>(
+        MorphologicalTree::createFromHigraParent(
+            parent,
+            rows,
+            cols,
+            isMaxtree ? MorphologicalTree::MAX_TREE : MorphologicalTree::MIN_TREE,
+            AdjacencyRelation(rows, cols, radius)));
+}
+
+inline std::shared_ptr<WeightedMorphologicalTree> makeWeightedComponentTree(ImageUInt8Ptr image, bool isMaxtree, double radius = 1.5) {
+    return std::make_shared<WeightedMorphologicalTree>(
+        WeightedMorphologicalTree::createComponentTree(image, isMaxtree, radius));
+}
+
+inline std::shared_ptr<WeightedMorphologicalTree> makeWeightedTreeOfShapes(
+    ImageUInt8Ptr image,
+    ToSInterpolation interpolation = ToSInterpolation::SelfDual) {
+    return std::make_shared<WeightedMorphologicalTree>(
+        WeightedMorphologicalTree::createTreeOfShapes(image, interpolation));
+}
+
 inline std::vector<NodeId> collectNodeIds(auto range) {
     std::vector<NodeId> ids;
     for (NodeId id : range) {
@@ -97,21 +136,9 @@ inline std::vector<NodeId> collectNodeIds(auto range) {
     return ids;
 }
 
-inline std::vector<NodeId> exportParentArray(const MorphologicalTree& tree) {
-    std::vector<NodeId> parent(
-        static_cast<size_t>(tree.getNumTotalProperParts() + tree.getNumInternalNodeSlots()),
-        InvalidNode
-    );
-
-    for (NodeId properPart = 0; properPart < tree.getNumTotalProperParts(); ++properPart) {
-        parent[static_cast<size_t>(properPart)] = tree.getSmallestComponent(properPart);
-    }
-
-    for (NodeId nodeId : tree.getAliveNodeIds()) {
-        parent[static_cast<size_t>(tree.getNumTotalProperParts() + nodeId)] = tree.getNodeParent(nodeId);
-    }
-
-    return parent;
+inline std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportFlatHigraHierarchy(const MorphologicalTree& tree) {
+    AltitudeBuffer altitude(static_cast<size_t>(tree.getNumInternalNodeSlots()), AltitudeType{});
+    return tree_altitude_ops::exportHigraHierarchy(tree, std::span<const AltitudeType>(altitude));
 }
 
 inline std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportHigraHierarchy(const WeightedMorphologicalTree& tree) {

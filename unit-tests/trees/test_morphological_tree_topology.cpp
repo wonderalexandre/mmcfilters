@@ -13,11 +13,11 @@ int main() {
     };
 
     auto image = makeComponentTreeFixture();
-    auto maxTree = std::make_shared<MorphologicalTree>(image, true);
-    auto minTree = std::make_shared<MorphologicalTree>(image, false);
-    auto weightedMaxTree = std::make_shared<WeightedMorphologicalTree>(image, true);
-    auto weightedMinTree = std::make_shared<WeightedMorphologicalTree>(image, false);
-    const auto maxParent = exportParentArray(*maxTree);
+    auto maxTree = makeComponentTree(image, true);
+    auto minTree = makeComponentTree(image, false);
+    auto weightedMaxTree = makeWeightedComponentTree(image, true);
+    auto weightedMinTree = makeWeightedComponentTree(image, false);
+    const auto maxHigraParent = exportFlatHigraHierarchy(*maxTree).first;
 
     requireEqual(maxTree->getNumTotalProperParts(), 16, "max-tree num proper parts");
     requireEqual(maxTree->getNumInternalNodeSlots(), 6, "max-tree internal slots");
@@ -53,25 +53,18 @@ int main() {
     require(!maxTree->isLeaf(4), "4 must not be leaf in max-tree");
     require(maxTree->isLeaf(5), "5 must be leaf in max-tree");
 
-    auto rebuiltFromParent = std::make_shared<MorphologicalTree>(std::span<const NodeId>(maxParent), 4, 4, true);
-    std::cerr << "after parent-array constructor\n";
-    requireEqual(rebuiltFromParent->getRoot(), 0, "parent-array constructor root alias");
-    requireVectorEqual(collectNodeIds(rebuiltFromParent->getAliveNodeIds()), {0, 1, 2, 3, 4, 5}, "parent-array constructor alive nodes");
-    requireVectorEqual(collectNodeIds(rebuiltFromParent->getChildren(3)), {4}, "parent-array constructor children");
-    requireVectorEqual(collectNodeIds(rebuiltFromParent->getPathToRootNodes(5)), {5, 4, 3, 2, 1, 0}, "parent-array constructor path to root");
-    requireEqual(computeArea(*rebuiltFromParent, 3), 8, "parent-array constructor area");
-    requireEqual(rebuiltFromParent->getSmallestComponent(10), 5, "parent-array constructor smallest component");
-    requireEqual(rebuiltFromParent->getNodeParent(0), 0, "parent-array constructor root parent must point to itself");
-
-    auto resetFromParent = MorphologicalTree::create(4, 4, true, AdjacencyRelation(4, 4, 1.5));
-    resetFromParent.reset(maxParent);
-    requireEqual(resetFromParent.getRoot(), 0, "parent-array reset root alias");
-    requireVectorEqual(collectNodeIds(resetFromParent.getAliveNodeIds()), {0, 1, 2, 3, 4, 5}, "parent-array reset alive nodes");
-    requireVectorEqual(collectNodeIds(resetFromParent.getChildren(3)), {4}, "parent-array reset children");
-    requireVectorEqual(collectNodeIds(resetFromParent.getPathToRootNodes(5)), {5, 4, 3, 2, 1, 0}, "parent-array reset path to root");
-    requireEqual(computeArea(resetFromParent, 3), 8, "parent-array reset area");
-    requireEqual(resetFromParent.getSmallestComponent(10), 5, "parent-array reset smallest component");
-    requireEqual(resetFromParent.getNodeParent(0), 0, "parent-array reset root parent must point to itself");
+    auto rebuiltFromHigra = makeTreeFromHigraParent(maxHigraParent, 4, 4, true);
+    const NodeId rebuiltRoot = rebuiltFromHigra->getRoot();
+    requireVectorEqual(collectNodeIds(rebuiltFromHigra->getAliveNodeIds()), {0, 1, 2, 3, 4, 5}, "Higra import alive nodes");
+    requireEqual(rebuiltFromHigra->getNodeParent(rebuiltRoot), rebuiltRoot, "Higra import root parent must point to itself");
+    requireEqual(computeArea(*rebuiltFromHigra, rebuiltRoot), 16, "Higra import root area");
+    const auto rebuiltLeaves = rebuiltFromHigra->getLeaves();
+    requireEqual(static_cast<int>(rebuiltLeaves.size()), 1, "Higra import leaf count");
+    auto rebuiltLeafPath = collectNodeIds(rebuiltFromHigra->getPathToRootNodes(rebuiltLeaves.front()));
+    requireEqual(static_cast<int>(rebuiltLeafPath.size()), 6, "Higra import path to root length");
+    requireEqual(rebuiltLeafPath.back(), rebuiltRoot, "Higra import path must end at root");
+    const NodeId rebuiltOwnerOfPixel10 = rebuiltFromHigra->getSmallestComponent(10);
+    require(rebuiltFromHigra->isAlive(rebuiltOwnerOfPixel10), "Higra import smallest component must be alive");
 
     requireEqual(minTree->getNumTotalProperParts(), 16, "min-tree num proper parts");
     requireEqual(minTree->getNumInternalNodeSlots(), 6, "min-tree internal slots");

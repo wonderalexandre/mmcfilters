@@ -7,10 +7,42 @@
 using namespace mmcfilters;
 using namespace mmcfilters::unit_tests;
 
+void requireCompactHigraHierarchy(
+    const std::vector<NodeId>& parent,
+    const std::vector<AltitudeType>& altitude,
+    int numProperParts,
+    const std::string& label) {
+    requireEqual(parent.size(), altitude.size(), label + " parent/altitude size agreement");
+
+    const NodeId totalNodes = static_cast<NodeId>(parent.size());
+    int numRoots = 0;
+
+    for (NodeId properPartId = 0; properPartId < numProperParts; ++properPartId) {
+        const NodeId ownerNodeId = parent[static_cast<size_t>(properPartId)];
+        require(ownerNodeId >= numProperParts && ownerNodeId < totalNodes, label + " leaf parent must be an internal Higra node");
+        requireEqual(
+            altitude[static_cast<size_t>(properPartId)],
+            altitude[static_cast<size_t>(ownerNodeId)],
+            label + " leaf altitude must match its owning internal node");
+    }
+
+    for (NodeId nodeId = numProperParts; nodeId < totalNodes; ++nodeId) {
+        const NodeId parentNodeId = parent[static_cast<size_t>(nodeId)];
+        require(parentNodeId >= numProperParts && parentNodeId < totalNodes, label + " internal parent must stay in the internal Higra domain");
+        if (parentNodeId == nodeId) {
+            ++numRoots;
+        } else {
+            require(parentNodeId > nodeId, label + " internal parent must appear after its child");
+        }
+    }
+
+    requireEqual(numRoots, 1, label + " must encode exactly one self-parented root");
+}
+
 int main() {
     {
         auto image = makeComponentTreeFixture();
-        auto weighted = std::make_shared<WeightedMorphologicalTree>(image, true);
+        auto weighted = makeWeightedComponentTree(image, true);
 
         weighted->validateAltitudeBufferShape();
         weighted->validateMonotoneAltitude();
@@ -49,14 +81,18 @@ int main() {
             static_cast<int>(higraAltitude.size()),
             weighted->tree.getNumTotalProperParts() + weighted->tree.getNumNodes(),
             "weighted Higra export altitude size");
-
-        auto roundtrip = WeightedMorphologicalTree::createFromHigra(
+        requireCompactHigraHierarchy(
             higraParent,
             higraAltitude,
-            16,
+            weighted->tree.getNumTotalProperParts(),
+            "weighted Higra export");
+
+        auto roundtrip = WeightedMorphologicalTree::createFromHigraParent(
+            higraParent,
+            higraAltitude,
             4,
             4,
-            true,
+            MorphologicalTree::MAX_TREE,
             AdjacencyRelation(4, 4, 1.5));
         roundtrip.validateAltitudeBufferShape();
         roundtrip.validateMonotoneAltitude();
@@ -79,20 +115,49 @@ int main() {
         requireVectorEqual(reexportedAltitude, higraAltitude, "weighted Higra altitude round-trip");
 
         roundtrip.setAltitude(importedSampleNodeId, static_cast<AltitudeType>(importedSampleAltitude + 4));
-        roundtrip.resetFromHigra(higraParent, higraAltitude, 16);
-        requireEqual(roundtrip.getAltitude(importedSampleNodeId), importedSampleAltitude, "weighted Higra reset must repopulate the external altitude buffer");
+        auto reimported = WeightedMorphologicalTree::createFromHigraParent(
+            higraParent,
+            higraAltitude,
+            4,
+            4,
+            MorphologicalTree::MAX_TREE,
+            AdjacencyRelation(4, 4, 1.5));
+        requireEqual(reimported.getAltitude(importedSampleNodeId), importedSampleAltitude, "weighted Higra import must repopulate the external altitude buffer");
     }
 
     {
-        auto weighted = std::make_shared<WeightedMorphologicalTree>(makeComponentTreeFixture(), true);
+        auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
+        weighted->setAltitudeBuffer(AltitudeBuffer(static_cast<size_t>(weighted->tree.getNumInternalNodeSlots()), AltitudeType{7}));
 
-        const auto [weightedAsc, weightedDesc] = tree_altitude_ops::computeAscendantsAndDescendants(weighted->tree, &weighted->altitude, 2, true);
-        requireVectorEqual(weightedAsc, {0, 0, 0, 1, 2, 3}, "weighted level-based ascendants must use the external altitude buffer");
-        requireVectorEqual(weightedDesc, {0, 3, 4, 5, InvalidNode, InvalidNode}, "weighted level-based descendants must use the external altitude buffer");
+        const auto [higraParent, higraAltitude] = weighted->exportHigraHierarchy();
+        requireCompactHigraHierarchy(
+            higraParent,
+            higraAltitude,
+            weighted->tree.getNumTotalProperParts(),
+            "equal-altitude Higra export");
+
+        auto roundtrip = WeightedMorphologicalTree::createFromHigraParent(
+            higraParent,
+            higraAltitude,
+            4,
+            4,
+            MorphologicalTree::MAX_TREE,
+            AdjacencyRelation(4, 4, 1.5));
+        const auto [reexportedParent, reexportedAltitude] = roundtrip.exportHigraHierarchy();
+        requireVectorEqual(reexportedParent, higraParent, "equal-altitude Higra parent round-trip");
+        requireVectorEqual(reexportedAltitude, higraAltitude, "equal-altitude Higra altitude round-trip");
     }
 
     {
-        auto weighted = std::make_shared<WeightedMorphologicalTree>(makeComponentTreeFixture(), true);
+        auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
+
+        const auto [weightedAsc, weightedDesc] = tree_altitude_ops::computeAscendantsAndDescendants(weighted->tree, &weighted->altitude, 2);
+        requireVectorEqual(weightedAsc, {InvalidNode, 0, 0, 1, 2, 3}, "weighted level-based ascendants must use the external altitude buffer");
+        requireVectorEqual(weightedDesc, {1, 3, 4, 5, InvalidNode, InvalidNode}, "weighted level-based descendants must use the external altitude buffer");
+    }
+
+    {
+        auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
 
         weighted->setAltitude(5, 9);
         requireEqual(weighted->getAltitude(5), 9, "weighted setAltitude must update the external buffer");
@@ -104,7 +169,7 @@ int main() {
     }
 
     {
-        auto weighted = std::make_shared<WeightedMorphologicalTree>(makeComponentTreeFixture(), true);
+        auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
         weighted->setAltitude(4, 10);
 
         weighted->mergeNodeIntoParent(5);
@@ -112,7 +177,7 @@ int main() {
     }
 
     {
-        auto weighted = std::make_shared<WeightedMorphologicalTree>(makeComponentTreeFixture(), true);
+        auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
         weighted->setAltitude(3, 12);
 
         weighted->pruneNode(5);
@@ -120,7 +185,7 @@ int main() {
     }
 
     {
-        auto weighted = std::make_shared<WeightedMorphologicalTree>(makeComponentTreeFixture(), true);
+        auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
         const auto rootChildren = collectNodeIds(weighted->tree.getChildren(weighted->tree.getRoot()));
         require(!rootChildren.empty(), "fixture must expose at least one root child");
 
@@ -144,7 +209,7 @@ int main() {
                 5, 3, 3,
                 2, 2, 1,
             });
-        auto weighted = std::make_shared<WeightedMorphologicalTree>(tosImage, ToSInterpolation::SelfDual);
+        auto weighted = makeWeightedTreeOfShapes(tosImage, ToSInterpolation::SelfDual);
         weighted->validateAltitudeBufferShape();
         if (!weighted->altitude.empty()) {
             weighted->altitude.front() += 100;
@@ -153,7 +218,7 @@ int main() {
     }
 
     {
-        auto weighted = std::make_shared<WeightedMorphologicalTree>(makeComponentTreeFixture(), false);
+        auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), false);
         auto editor = weighted->edit();
 
         const int expectedInsertedArea =

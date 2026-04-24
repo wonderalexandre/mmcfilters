@@ -79,8 +79,8 @@ def main() -> int:
         dtype=np.uint8,
     )
 
-    tree = mmcfilters.MorphologicalTree(image, True)
-    weighted = mmcfilters.WeightedMorphologicalTree(image, True)
+    tree = mmcfilters.MorphologicalTree.createComponentTree(image, True)
+    weighted = mmcfilters.WeightedMorphologicalTree.createComponentTree(image, True)
 
     require(tree.getRoot() == 0, "getRoot")
     require(tree.hasAdjacencyRelation is True, "max-tree should expose adjacency relation context")
@@ -164,12 +164,12 @@ def main() -> int:
     weighted_area_attr = mmcfilters.Attribute.computeSingleAttribute(weighted, mmcfilters.Attribute.AREA)
     require(weighted_area_attr.tolist() == area_attr.tolist(), "weighted exact AREA attribute by NodeId")
     default_delta_names, default_delta_attrs = mmcfilters.Attribute.computeSingleAttributeWithDelta(
-        tree, mmcfilters.Attribute.AREA, 1
+        weighted, mmcfilters.Attribute.AREA, 1
     )
     require(int(default_delta_attrs[0, default_delta_names["AREA_ASC_1"]]) == 16, "default delta must use last-padding on missing asc")
     require(int(default_delta_attrs[5, default_delta_names["AREA_DESC_1"]]) == 2, "default delta must use last-padding on missing desc")
     delta_names, delta_attrs = mmcfilters.Attribute.computeSingleAttributeWithDelta(
-        tree, mmcfilters.Attribute.AREA, 1, "null-padding"
+        weighted, mmcfilters.Attribute.AREA, 1, "null-padding"
     )
     require(delta_names["AREA_ASC_1"] == 0, "delta names asc offset")
     require(delta_names["AREA"] == 1, "delta names center offset")
@@ -197,15 +197,17 @@ def main() -> int:
     require(int(attrs[0, names["AREA"]]) == 16, "combined AREA attribute root")
     require(int(attrs[3, names["VOLUME"]]) == 31, "combined VOLUME attribute node 3")
     require(int(attrs[3, names["RELATIVE_VOLUME"]]) == 22, "combined RELATIVE_VOLUME attribute node 3")
-    sparse = mmcfilters.MorphologicalTree(image, True)
+    sparse = mmcfilters.MorphologicalTree.createComponentTree(image, True)
+    sparse_weighted_for_delta = mmcfilters.WeightedMorphologicalTree.createComponentTree(image, True)
     sparse.mergeNodeIntoParent(4)
+    sparse_weighted_for_delta.mergeNodeIntoParent(4)
     require(sparse.numNodes == 5, "sparse tree live node count")
     require(sparse.numInternalNodeSlots == 6, "sparse tree slot count")
     sparse_area = mmcfilters.Attribute.computeSingleAttribute(sparse, mmcfilters.Attribute.AREA)
     require(sparse_area.shape == (sparse.numInternalNodeSlots,), "single attribute shape must follow internal slots")
     require(int(sparse_area[5]) == 2, "single attribute must preserve sparse slot values")
     sparse_delta_names, sparse_delta = mmcfilters.Attribute.computeSingleAttributeWithDelta(
-        sparse, mmcfilters.Attribute.AREA, 1, "null-padding"
+        sparse_weighted_for_delta, mmcfilters.Attribute.AREA, 1, "null-padding"
     )
     require(sparse_delta.shape == (sparse.numInternalNodeSlots, 3), "delta attribute shape must follow internal slots")
     require(int(sparse_delta[3, sparse_delta_names["AREA"]]) == 8, "delta attribute must preserve live sparse slot values")
@@ -213,7 +215,7 @@ def main() -> int:
     require(int(sparse_delta[5, sparse_delta_names["AREA_ASC_1"]]) == 8, "delta attribute must preserve sparse leaf asc value")
     require(int(sparse_delta[5, sparse_delta_names["AREA"]]) == 2, "delta attribute must preserve sparse leaf center value")
     require(np.isnan(sparse_delta[5, sparse_delta_names["AREA_DESC_1"]]), "delta attribute must preserve sparse leaf missing desc as NaN")
-    sparse_weighted = mmcfilters.WeightedMorphologicalTree(image, True)
+    sparse_weighted = mmcfilters.WeightedMorphologicalTree.createComponentTree(image, True)
     sparse_weighted.mergeNodeIntoParent(4)
     sparse_names, sparse_attrs = mmcfilters.Attribute.computeAttributes(
         sparse_weighted, [mmcfilters.Attribute.AREA, mmcfilters.Attribute.VOLUME]
@@ -223,18 +225,30 @@ def main() -> int:
 
     higra_parent, higra_altitude = build_higra_hierarchy(weighted)
 
-    from_higra = mmcfilters.WeightedMorphologicalTree.createFromHigra(
+    require_raises(
+        lambda: mmcfilters.WeightedMorphologicalTree.createFromHigraParent(
+            higra_parent,
+            higra_altitude,
+            weighted.numRows,
+            weighted.numCols,
+            weighted.treeType,
+        ),
+        "Higra max/min import without explicit adjacency should be rejected",
+    )
+
+    from_higra = mmcfilters.WeightedMorphologicalTree.createFromHigraParent(
         higra_parent,
         higra_altitude,
         weighted.numRows,
         weighted.numCols,
-        True,
+        weighted.treeType,
+        1.5,
     )
-    require(from_higra.hasAdjacencyRelation is False, "Higra import without explicit adjacency must not invent one")
-    require(from_higra.hasHigraNodeIdMapping is True, "Higra import must preserve id mapping")
+    require(from_higra.hasAdjacencyRelation is True, "Higra import with explicit adjacency must preserve it")
     require(from_higra.numHigraNodes == len(higra_parent), "Higra import must expose total Higra node count")
     require(from_higra.getHigraNodeId(3) == weighted.numTotalProperParts + 3, "slot->Higra mapping")
-    require(from_higra.getNodeIdFromHigra(weighted.numTotalProperParts + 3) == 3, "Higra->slot mapping")
+    require(not hasattr(from_higra, "hasHigraNodeIdMapping"), "Higra mapping predicate must not be public")
+    require(not hasattr(from_higra, "getNodeIdFromHigra"), "Higra reverse mapping must not be public")
     higra_area = mmcfilters.Attribute.computeSingleAttribute(
         from_higra,
         mmcfilters.Attribute.AREA,
@@ -260,35 +274,25 @@ def main() -> int:
     )
     require(higra_attrs.shape == (from_higra.numHigraNodes, 2), "Higra-projected combined attribute shape")
     require(int(higra_attrs[weighted.numTotalProperParts + 3, higra_names["AREA"]]) == 8, "Higra-projected combined area")
-    try:
-        mmcfilters.Attribute.computeSingleAttribute(from_higra, mmcfilters.Attribute.MAX_DIST)
-        raise RuntimeError("MAX_DIST should require an explicit adjacency relation on Higra imports")
-    except Exception:
-        pass
-    try:
-        mmcfilters.ContourComputation.extraction(from_higra)
-        raise RuntimeError("Contour extraction should require an explicit adjacency relation on Higra imports")
-    except Exception:
-        pass
 
-    from_higra_with_adj = mmcfilters.WeightedMorphologicalTree.createFromHigra(
+    from_higra_with_adj = mmcfilters.WeightedMorphologicalTree.createFromHigraParent(
         higra_parent,
         higra_altitude,
         weighted.numRows,
         weighted.numCols,
-        True,
+        weighted.treeType,
         1.5,
     )
     require(from_higra_with_adj.hasAdjacencyRelation is True, "explicit Higra adjacency must be preserved")
 
     exported_higra_parent, exported_higra_altitude = weighted.exportHigraHierarchy()
     require(len(exported_higra_parent) == weighted.numTotalProperParts + weighted.numNodes, "exported Higra hierarchy size")
-    exported_roundtrip = mmcfilters.WeightedMorphologicalTree.createFromHigra(
+    exported_roundtrip = mmcfilters.WeightedMorphologicalTree.createFromHigraParent(
         exported_higra_parent,
         exported_higra_altitude,
         weighted.numRows,
         weighted.numCols,
-        True,
+        weighted.treeType,
         1.5,
     )
     require(exported_roundtrip.numNodes == weighted.numNodes, "Higra export round-trip node count")
@@ -299,12 +303,12 @@ def main() -> int:
 
     sparse_higra_parent, sparse_higra_altitude = sparse_weighted.exportHigraHierarchy()
     require(len(sparse_higra_parent) == sparse_weighted.numTotalProperParts + sparse_weighted.numNodes, "sparse Higra export must compact dead slots")
-    sparse_roundtrip = mmcfilters.WeightedMorphologicalTree.createFromHigra(
+    sparse_roundtrip = mmcfilters.WeightedMorphologicalTree.createFromHigraParent(
         sparse_higra_parent,
         sparse_higra_altitude,
         sparse_weighted.numRows,
         sparse_weighted.numCols,
-        True,
+        sparse_weighted.treeType,
         1.5,
     )
     require(sparse_roundtrip.numInternalNodeSlots == sparse_weighted.numNodes, "sparse Higra round-trip slot count")
@@ -312,21 +316,21 @@ def main() -> int:
     require(sparse_reexported_parent == sparse_higra_parent, "sparse Higra parent round-trip")
     require(sparse_reexported_altitude == sparse_higra_altitude, "sparse Higra altitude round-trip")
 
-    parent = [tree.getSmallestComponent(pixel_id) for pixel_id in range(tree.numTotalProperParts)]
-    parent.extend(tree.getNodeParent(node_id) for node_id in tree.getAliveNodeIds())
-
-    rebuilt = mmcfilters.MorphologicalTree(parent, 4, 4, True)
-    require(rebuilt.getRoot() == 0, "parent-array constructor root alias")
-    require(rebuilt.getAliveNodeIds() == [0, 1, 2, 3, 4, 5], "parent-array constructor alive NodeIds")
-    require(rebuilt.getChildren(3) == [4], "parent-array constructor children")
-    require(rebuilt.getSmallestComponent(10) == 5, "parent-array constructor smallest component")
-
-    rebuilt.reset(parent)
-    require(rebuilt.getRoot() == 0, "parent-array reset root alias")
-    require(rebuilt.getNodeParent(0) == 0, "parent-array reset root parent must point to itself")
-    require(rebuilt.getPathToRootNodes(5) == [5, 4, 3, 2, 1, 0], "parent-array reset path to root")
-    require(rebuilt.getPathBetweenNodes(5, 2) == [5, 4, 3, 2], "parent-array reset path between nodes")
-    require(int(mmcfilters.Attribute.computeSingleAttribute(rebuilt, mmcfilters.Attribute.AREA)[3]) == 8, "parent-array reset area")
+    rebuilt = mmcfilters.MorphologicalTree.createFromHigraParent(
+        higra_parent,
+        tree.numRows,
+        tree.numCols,
+        tree.treeType,
+        1.5,
+    )
+    require(rebuilt.getRoot() == 0, "Higra topology import root alias")
+    require(rebuilt.getAliveNodeIds() == [0, 1, 2, 3, 4, 5], "Higra topology import alive NodeIds")
+    require(rebuilt.getChildren(3) == [4], "Higra topology import children")
+    require(rebuilt.getSmallestComponent(10) == 5, "Higra topology import smallest component")
+    require(rebuilt.getNodeParent(0) == 0, "Higra topology import root parent must point to itself")
+    require(rebuilt.getPathToRootNodes(5) == [5, 4, 3, 2, 1, 0], "Higra topology import path to root")
+    require(rebuilt.getPathBetweenNodes(5, 2) == [5, 4, 3, 2], "Higra topology import path between nodes")
+    require(int(mmcfilters.Attribute.computeSingleAttribute(rebuilt, mmcfilters.Attribute.AREA)[3]) == 8, "Higra topology import area")
 
     visits = []
     mmcfilters.Attribute.traversePostOrder(
@@ -351,7 +355,7 @@ def main() -> int:
     require(not hasattr(tree, "reconstructionImage"), "reconstructionImage should be hidden on topology-only trees")
     require(hasattr(weighted, "reconstructionImage"), "reconstructionImage should live on WeightedMorphologicalTree")
     require(not hasattr(mmcfilters.MorphologicalTree, "createFromHigra"), "topology-only MorphologicalTree should not expose weighted Higra import")
-    require(hasattr(mmcfilters.WeightedMorphologicalTree, "createFromHigra"), "WeightedMorphologicalTree should expose Higra import")
+    require(not hasattr(mmcfilters.WeightedMorphologicalTree, "createFromHigra"), "legacy weighted Higra import alias should be removed")
     require(not hasattr(tree, "reconstructAltitude"), "reconstructAltitude should be removed from the tree API")
     require(not hasattr(mmcfilters, "reconstructionImage"), "module-level reconstructionImage should be removed")
     require(not hasattr(tree, "getNodeLevel"), "legacy altitude alias should be removed")
@@ -378,11 +382,11 @@ def main() -> int:
     require(not hasattr(tree, "setRootNode"), "low-level setRoot mutator should be hidden from Python API")
     require(hasattr(mmcfilters.ExtinctionValues(tree, attr), "getExtinctionValues"), "extinction tuple API should be exposed under the canonical name")
 
-    tos = mmcfilters.MorphologicalTree(
+    tos = mmcfilters.MorphologicalTree.createTreeOfShapes(
         np.array([[1, 2, 1], [2, 3, 2], [1, 2, 1]], dtype=np.uint8),
         mmcfilters.ToSInterpolation.Min4cMax8c,
     )
-    weighted_tos = mmcfilters.WeightedMorphologicalTree(
+    weighted_tos = mmcfilters.WeightedMorphologicalTree.createTreeOfShapes(
         np.array([[1, 2, 1], [2, 3, 2], [1, 2, 1]], dtype=np.uint8),
         mmcfilters.ToSInterpolation.Min4cMax8c,
     )

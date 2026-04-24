@@ -41,38 +41,23 @@ inline AltitudeDiffType getNodeResidue(const MorphologicalTree& tree, const Alti
     return getNodeResidue(tree, std::span<const AltitudeType>(requireAltitudeBuffer(altitude)), nodeId);
 }
 
-inline NodeId getNodeAscendant(const MorphologicalTree& tree, std::span<const AltitudeType> altitude, NodeId nodeId, int delta, bool useLevel) noexcept {
+inline NodeId getNodeAscendant(const MorphologicalTree& tree, std::span<const AltitudeType> altitude, NodeId nodeId, int delta) noexcept {
     NodeId currentNodeId = nodeId;
-    if (useLevel) {
-        for (int i = 0; i <= delta; i++) {
-            if (tree.isMaxtree()) {
-                if (getAltitude(altitude, nodeId) >= getAltitude(altitude, currentNodeId) + delta) {
-                    return currentNodeId;
-                }
-            } else {
-                if (getAltitude(altitude, nodeId) <= getAltitude(altitude, currentNodeId) - delta) {
-                    return currentNodeId;
-                }
-            }
-            if (tree.isRoot(currentNodeId)) {
+    while (true) {
+        if (tree.isMaxtree()) {
+            if (getAltitude(altitude, nodeId) >= getAltitude(altitude, currentNodeId) + delta) {
                 return currentNodeId;
             }
-            currentNodeId = tree.getNodeParent(currentNodeId);
-        }
-    } else {
-        int step = 0;
-        while (step++ < delta) {
-            if (tree.isRoot(currentNodeId)) {
-                return InvalidNode;
+        } else {
+            if (getAltitude(altitude, nodeId) <= getAltitude(altitude, currentNodeId) - delta) {
+                return currentNodeId;
             }
-            currentNodeId = tree.getNodeParent(currentNodeId);
         }
+        if (tree.isRoot(currentNodeId)) {
+            return currentNodeId;
+        }
+        currentNodeId = tree.getNodeParent(currentNodeId);
     }
-    return currentNodeId;
-}
-
-inline NodeId getNodeAscendant(const MorphologicalTree& tree, const AltitudeBuffer* altitude, NodeId nodeId, int delta, bool useLevel) {
-    return getNodeAscendant(tree, std::span<const AltitudeType>(requireAltitudeBuffer(altitude)), nodeId, delta, useLevel);
 }
 
 inline std::vector<int32_t> computeAreasIncrementally(const MorphologicalTree& tree) {
@@ -97,6 +82,9 @@ inline void maxAreaDescendants(
         return;
     }
     NodeId& currentNodeId = descendants[static_cast<size_t>(ascendantNodeId)];
+    if (ascendantNodeId == candidateNodeId) {
+        return;
+    }
     if (currentNodeId == InvalidNode ||
         areaByNode[static_cast<size_t>(candidateNodeId)] > areaByNode[static_cast<size_t>(currentNodeId)] ||
         (areaByNode[static_cast<size_t>(candidateNodeId)] == areaByNode[static_cast<size_t>(currentNodeId)] &&
@@ -108,19 +96,15 @@ inline void maxAreaDescendants(
 inline std::pair<std::vector<NodeId>, std::vector<NodeId>> computeAscendantsAndDescendants(
     const MorphologicalTree& tree,
     const AltitudeBuffer* altitude,
-    int delta,
-    bool useLevel = false) {
-    if (!useLevel) {
-        return tree.computeAscendantsAndDescendants(delta);
-    }
-
-    const AltitudeBuffer& altitudeBuffer = requireAltitudeBuffer(altitude);
+    int delta) {
     std::vector<NodeId> ascendants(static_cast<size_t>(tree.getNumInternalNodeSlots()), InvalidNode);
     std::vector<NodeId> descendants(static_cast<size_t>(tree.getNumInternalNodeSlots()), InvalidNode);
+    validateAltitudeBufferShape(tree, altitude);
     const std::vector<int32_t> areaByNode = computeAreasIncrementally(tree);
+    const AltitudeBuffer& altitudeBuffer = requireAltitudeBuffer(altitude);
 
     for (NodeId nodeId : tree.getAliveNodeIds()) {
-        const NodeId ascendantNodeId = getNodeAscendant(tree, altitudeBuffer, nodeId, delta, true);
+        const NodeId ascendantNodeId = getNodeAscendant(tree, std::span<const AltitudeType>(altitudeBuffer), nodeId, delta);
         if (ascendantNodeId == InvalidNode) {
             continue;
         }
@@ -148,6 +132,13 @@ inline ImageUInt8Ptr reconstructImage(const MorphologicalTree& tree, const Altit
     return reconstructImage(tree, std::span<const AltitudeType>(requireAltitudeBuffer(altitude)));
 }
 
+/**
+ * @brief Exports the current live rooted tree to a new compact Higra hierarchy.
+ *
+ * The returned domain always uses `[proper parts | live internal nodes]`.
+ * Internal nodes are re-numbered for the export, so this representation is
+ * independent from any previously imported Higra node-id space.
+ */
 inline std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportHigraHierarchy(
     const MorphologicalTree& tree,
     std::span<const AltitudeType> altitude) {
@@ -164,7 +155,7 @@ inline std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportHigraHier
     }
 
     if (static_cast<int>(exportedNodes.size()) != tree.getNumNodes()) {
-        throw std::runtime_error("Cannot export a forest or a tree with detached alive nodes to Higra's static representation.");
+        throw std::runtime_error("Cannot export a forest or a tree with detached alive nodes to a compact Higra representation.");
     }
 
     const NodeId numLeaves = tree.getNumTotalProperParts();
@@ -176,6 +167,10 @@ inline std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportHigraHier
     std::vector<NodeId> oldToNew(static_cast<size_t>(tree.getNumInternalNodeSlots()), InvalidNode);
     auto sortedNodes = exportedNodes;
 
+    // Exported Higra parent arrays use a compact domain where leaves come first and
+    // each non-root internal node appears before its parent. Altitude gives the
+    // primary order; postorder keeps descendants before ancestors when adjacent
+    // nodes have equal altitude.
     bool sortAscendingAltitude = true;
     for (NodeId nodeId : sortedNodes) {
         if (tree.isRoot(nodeId)) {
@@ -200,7 +195,7 @@ inline std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportHigraHier
             if (altL != altR) {
                 return sortAscendingAltitude ? altL < altR : altL > altR;
             }
-            return lhs < rhs;
+            return tree.getNodeTimePostOrder(lhs) < tree.getNodeTimePostOrder(rhs);
         });
 
     for (NodeId i = 0; i < numAliveNodes; ++i) {
@@ -213,7 +208,7 @@ inline std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportHigraHier
     for (NodeId properPart = 0; properPart < numLeaves; ++properPart) {
         const NodeId ownerNodeId = tree.getSmallestComponent(properPart);
         if (ownerNodeId == InvalidNode || !tree.isAlive(ownerNodeId)) {
-            throw std::runtime_error("Each proper part must belong to one alive node when exporting to Higra.");
+            throw std::runtime_error("Each proper part must belong to one alive node when exporting a compact Higra hierarchy.");
         }
         parent[static_cast<size_t>(properPart)] = oldToNew[static_cast<size_t>(ownerNodeId)];
         exportedAltitude[static_cast<size_t>(properPart)] = getAltitude(altitude, ownerNodeId);

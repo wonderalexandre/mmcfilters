@@ -14,7 +14,7 @@ int main() {
     auto image = makeComponentTreeFixture();
 
     for (bool isMaxtree : {true, false}) {
-        auto weighted = std::make_shared<WeightedMorphologicalTree>(image, isMaxtree);
+        auto weighted = makeWeightedComponentTree(image, isMaxtree);
         auto reconstruction = weighted->reconstructionImage();
         AttributeFilters weightedFilters(*weighted);
 

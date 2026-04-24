@@ -82,6 +82,8 @@ Weighted quantities are intentionally outside the topology-only tree:
 - image reconstruction, node residues, and Higra `(parent, altitude)` export live on `WeightedMorphologicalTree`;
 - attribute computation still runs first in the internal `MorphologicalTree` node-id space and is projected only at API boundaries when requested.
 
+`NodeIdSpace::HIGRA`, `getNumHigraNodes()`, and `getHigraNodeId()` refer only to the original Higra node-id domain preserved by `createFromHigraParent`. Image-built trees and trees edited after import do not expose that domain. `exportHigraHierarchy()` always creates a new compact Higra representation of the current live rooted tree.
+
 The main public C++/Python surface is centred on:
 
 - `getRoot`

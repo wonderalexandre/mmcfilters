@@ -170,7 +170,7 @@ NodeId randomElement(std::vector<NodeId> values, URBG& rng) {
 
 int main() {
     {
-        auto tree = std::make_shared<MorphologicalTree>(makeComponentTreeFixture(), true);
+        auto tree = makeComponentTree(makeComponentTreeFixture(), true);
         TreeEditor editor(*tree);
         requireTreeInvariantSnapshot(*tree, "initial max-tree forest invariants");
 
@@ -196,7 +196,7 @@ int main() {
     }
 
     for (bool isMaxtree : {true, false}) {
-        auto tree = std::make_shared<MorphologicalTree>(makeComponentTreeFixture(), isMaxtree);
+        auto tree = makeComponentTree(makeComponentTreeFixture(), isMaxtree);
         TreeEditor editor(*tree);
         std::mt19937 rng(isMaxtree ? 1337u : 4242u);
 
@@ -378,15 +378,16 @@ int main() {
 
             requireTreeInvariantSnapshot(*tree, (isMaxtree ? "max-tree" : "min-tree") + std::string(" connected mutation step ") + std::to_string(step));
 
-            const auto exportedParent = exportParentArray(*tree);
-            auto rebuilt = std::make_shared<MorphologicalTree>(
-                std::span<const NodeId>(exportedParent),
+            const auto exportedHigra = exportFlatHigraHierarchy(*tree);
+            auto rebuilt = makeTreeFromHigraParent(
+                exportedHigra.first,
                 tree->getNumRowsOfImage(),
                 tree->getNumColsOfImage(),
-                isMaxtree
-            );
+                isMaxtree);
             requireTreeInvariantSnapshot(*rebuilt, (isMaxtree ? "max-tree" : "min-tree") + std::string(" rebuilt mutation step ") + std::to_string(step));
-            requireVectorEqual(exportParentArray(*rebuilt), exportedParent, (isMaxtree ? "max-tree" : "min-tree") + std::string(" parent-array round-trip step ") + std::to_string(step));
+            const auto reexportedHigra = exportFlatHigraHierarchy(*rebuilt);
+            requireVectorEqual(reexportedHigra.first, exportedHigra.first, (isMaxtree ? "max-tree" : "min-tree") + std::string(" Higra parent round-trip step ") + std::to_string(step));
+            requireVectorEqual(reexportedHigra.second, exportedHigra.second, (isMaxtree ? "max-tree" : "min-tree") + std::string(" Higra altitude round-trip step ") + std::to_string(step));
         }
     }
 

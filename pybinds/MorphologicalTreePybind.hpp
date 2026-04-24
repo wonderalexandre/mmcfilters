@@ -34,20 +34,13 @@ class MorphologicalTreePybind : public MorphologicalTree {
     }
 
  public:
-    using MorphologicalTree::MorphologicalTree;
-
-    MorphologicalTreePybind(int r, int c, bool m, std::optional<AdjacencyRelation> a = std::nullopt) {
-        MorphologicalTree::treeType_ = m ? MAX_TREE : MIN_TREE;
-        MorphologicalTree::adj_ = std::move(a);
-        MorphologicalTree::numRows_ = r;
-        MorphologicalTree::numCols_ = c;
-        MorphologicalTree::resetEmptyStorage(static_cast<size_t>(r * c));
-    }
+    explicit MorphologicalTreePybind(MorphologicalTree&& tree)
+        : MorphologicalTree(std::move(tree)) {}
 
     MorphologicalTreePybind(
         py::array_t<uint8_t, py::array::c_style | py::array::forcecast> input,
         ToSInterpolation interpolation = ToSInterpolation::SelfDual)
-        : MorphologicalTree(
+        : MorphologicalTree(MorphologicalTree::createTreeOfShapes(
               [&]() {
                   auto buf = input.request();
                   if (buf.ndim != 2) {
@@ -57,10 +50,10 @@ class MorphologicalTreePybind : public MorphologicalTree {
                   int cols = static_cast<int>(buf.shape[1]);
                   return ImageUInt8::fromExternal(static_cast<uint8_t*>(buf.ptr), rows, cols);
               }(),
-              interpolation) { }
+              interpolation)) { }
 
     MorphologicalTreePybind(py::array_t<uint8_t, py::array::c_style | py::array::forcecast> input, bool isMaxtree, double radiusOfAdjacencyRelation = 1.5)
-        : MorphologicalTree(
+        : MorphologicalTree(MorphologicalTree::createComponentTree(
               [&]() {
                   auto buf = input.request();
                   if (buf.ndim != 2) {
@@ -71,7 +64,7 @@ class MorphologicalTreePybind : public MorphologicalTree {
                   return ImageUInt8::fromExternal(static_cast<uint8_t*>(buf.ptr), rows, cols);
               }(),
               isMaxtree,
-              radiusOfAdjacencyRelation) { }
+              radiusOfAdjacencyRelation)) { }
 
               
     MorphologicalTreePybind() = delete;

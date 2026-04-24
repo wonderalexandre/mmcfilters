@@ -21,7 +21,7 @@ std::vector<int> pixelsOfConnectedComponent(const MorphologicalTree& tree, NodeI
 
 int main() {
     auto image = makeComponentTreeFixture();
-    auto tree = std::make_shared<MorphologicalTree>(image, true);
+    auto tree = makeComponentTree(image, true);
 
     requireEqual(tree->getNumProperParts(0), 1, "root direct proper parts");
     requireEqual(tree->getNumProperParts(1), 3, "node 1 direct proper parts");

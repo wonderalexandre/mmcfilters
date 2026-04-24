@@ -59,14 +59,14 @@ def main() -> int:
         dtype=np.uint8,
     )
 
-    weighted = mmcfilters.WeightedMorphologicalTree(image, True)
+    weighted = mmcfilters.WeightedMorphologicalTree.createComponentTree(image, True)
     weighted_reconstruction = weighted.reconstructionImage()
 
     adjacency = mmcfilters.AdjacencyRelation(4, 4, 1.5)
     require(adjacency.size == 9, "AdjacencyRelation stencil size")
     require(type(adjacency.getAdjPixels(1, 1)).__name__ == "AdjacencyRelation", "AdjacencyRelation getAdjPixels return type")
 
-    tree = mmcfilters.MorphologicalTree(image, True)
+    tree = mmcfilters.MorphologicalTree.createComponentTree(image, True)
     keep_all = [True] * weighted.numInternalNodeSlots
     require_raises(
         lambda: mmcfilters.AttributeFilters(tree).filteringDirectRule(keep_all),

@@ -43,6 +43,7 @@ protected:
     AttributeOpeningPrimitivesFamily(
         MorphologicalTree& tree,
         std::unique_ptr<AttributeFilters> filters,
+        const AltitudeBuffer* altitude,
         const float* attrs_increasing,
         float maxCriterion,
         int deltaMSER)
@@ -54,7 +55,7 @@ protected:
         assert(this->attrs_increasing != nullptr);
         assert(this->filters_ != nullptr);
         if (deltaMSER > 0) {
-            ComputerMSER mser(this->tree);
+            ComputerMSER mser(this->tree, altitude);
             this->selectedForFiltering = mser.computeMSER(deltaMSER);
         } else {
             this->selectedForFiltering.assign(this->tree.getNumInternalNodeSlots(), true);
@@ -95,6 +96,7 @@ public:
         : AttributeOpeningPrimitivesFamily(
             tree,
             std::make_unique<AttributeFilters>(tree),
+            nullptr,
             attrs_increasing,
             maxCriterion,
             deltaMSER) {}
@@ -120,6 +122,7 @@ public:
         : AttributeOpeningPrimitivesFamily(
             weighted.tree,
             std::make_unique<AttributeFilters>(weighted),
+            &weighted.altitude,
             attrs_increasing,
             maxCriterion,
             deltaMSER) {}

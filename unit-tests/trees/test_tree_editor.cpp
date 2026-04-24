@@ -8,8 +8,18 @@ using namespace mmcfilters;
 using namespace mmcfilters::unit_tests;
 
 int main() {
+    auto requireThrows = [](auto&& fn, const std::string& label) {
+        bool threw = false;
+        try {
+            fn();
+        } catch (const std::exception&) {
+            threw = true;
+        }
+        require(threw, label);
+    };
+
     {
-        auto tree = std::make_shared<MorphologicalTree>(makeComponentTreeFixture(), false);
+        auto tree = makeComponentTree(makeComponentTreeFixture(), false);
         TreeEditor editor(*tree);
 
         requireEqual(tree->getNumInternalNodeSlots(), 6, "initial internal slot count");
@@ -38,16 +48,17 @@ int main() {
         requireVectorEqual(collectNodeIds(tree->getPathToRootNodes(5)), {5, 3, 6, 2, 1, 0}, "path to root after staged insertion");
         requireEqual(computeAreaAttribute(*tree, insertedNode), expectedInsertedArea, "inserted node area after commit");
 
-        const auto exportedParent = exportParentArray(*tree);
-        requireEqual(static_cast<int>(exportedParent.size()), tree->getNumTotalProperParts() + tree->getNumInternalNodeSlots(), "exported compact parent size after commit");
+        const auto exportedHigra = exportFlatHigraHierarchy(*tree);
+        requireEqual(static_cast<int>(exportedHigra.first.size()), tree->getNumTotalProperParts() + tree->getNumNodes(), "exported Higra parent size after commit");
     }
 
     {
-        auto tree = std::make_shared<MorphologicalTree>(makeComponentTreeFixture(), true);
+        auto tree = makeComponentTree(makeComponentTreeFixture(), true);
         TreeEditor editor(*tree);
 
         const NodeId detachedNode = editor.createDetachedNode();
         require(editor.hasDetachedAliveNodes(), "detached edit must be visible before commit");
+        requireThrows([&]() { (void)exportFlatHigraHierarchy(*tree); }, "Higra export must reject detached alive nodes");
 
         bool threw = false;
         try {

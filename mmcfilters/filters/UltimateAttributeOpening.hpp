@@ -151,7 +151,7 @@ public:
     }
 
     void executeWithMSER(int maxCriterion, int deltaMSER) {
-        ComputerMSER mser(this->tree);
+        ComputerMSER mser(this->tree, this->altitude_);
         executeImpl(maxCriterion, mser.computeMSER(deltaMSER));
     }
 

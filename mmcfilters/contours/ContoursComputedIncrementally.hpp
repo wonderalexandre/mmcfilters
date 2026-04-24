@@ -1,59 +1,38 @@
 #pragma once
 
 /*
- * Visão Geral
- * -----------
- * Aqui implementamos uma versão baseada em arena para o cálculo
- * incremental de contornos em árvores morfológicas. O desenho nasceu das
- * discussões sobre performance e reaproveitamento de memória e captura alguns
- * pontos principais:
+ * Overview
+ * --------
+ * This file implements an arena-based incremental contour computation for
+ * morphological trees. The design focuses on memory reuse and locality during
+ * the post-order passes used to extract and aggregate contour pixels.
  *
  * 1. ListArena
- *    Arena leve que armazena várias listas simplesmente encadeadas dentro de um
- *    único buffer contíguo (`entries`). Cada nó da árvore possui a sua lista
- *    (controlada por `head`). Com isso, evitamos alocações dinâmicas
- *    frequentes enquanto adicionamos ou removemos pixels durante a travessia em
- *    pós-ordem.
+ *    A lightweight arena stores many singly linked lists inside one contiguous
+ *    buffer (`entries`). Each node owns one list through `head`, which avoids
+ *    repeated heap allocation while contour pixels are inserted and removed.
  *
- * 2. recycle() e consumeInto()
- *    Mesmo que um pixel removido jamais volte a ser contorno na mesma execução,
- *    outros pixels ou nós ainda precisarão de novos slots. Sem reciclagem, cada
- *    chamada a `add()` faria um `push_back` e deixaria entradas antigas sem uso,
- *    fazendo o vetor crescer com o número total de operações e não apenas com o
- *    pico simultâneo. `consumeInto()` drena uma lista, entrega seus valores a um
- *    recipiente temporário e devolve os nós ao freelist via `recycle()`,
- *    permitindo reutilização barata (O(1) e amigável ao cache) em inserções
- *    futuras.
+ * 2. recycle() and consumeInto()
+ *    Removed contour pixels do not normally reappear during the same pass, yet
+ *    other nodes still need fresh slots. Without recycling, every `add()` call
+ *    would keep extending `entries` and memory usage would scale with the
+ *    total number of list operations rather than with the simultaneous peak.
+ *    `consumeInto()` drains a list, forwards the values to a temporary
+ *    container, and returns the slots to the free list through `recycle()`.
  *
  * 3. extractCompactContours()
- *    Durante a travessia incremental criamos uma instância de
- *    `IncrementalContours` (referida como `result`). Ela guarda as arenas que
- *    serão expostas ao usuário (`contours`, `removals`) e que poderão ser
- *    iteradas depois. O auxiliar `contoursToRemoveLCA` é outra `ListArena`
- *    temporária: quando descobrimos que um pixel precisa ser removido em um
- *    ancestral (normalmente o LCA de dois nós incomparáveis), enfileiramos esse
- *    pixel até que o ancestral seja visitado.
+ *    The incremental traversal builds an `IncrementalContours` object
+ *    (`result`) that stores the exposed contour and removal arenas. A
+ *    temporary arena, `contoursToRemoveLCA`, stores pixels that must be
+ *    removed at some ancestor, typically the lowest common ancestor of two
+ *    incomparable nodes.
  *
- *    Em cada nó drenamos (`consumeInto`) as remoções pendentes daquele nó,
- *    propagamos para ancestrais quando necessário ou registramos a remoção
- *    definitiva em `result.removals`. Os contornos válidos são adicionados a
- *    `result.contours`. Mais tarde, quando o chamador pede o contorno
- *    consolidado (`contour(node)`), a agregação lazy combina os pixels locais
- *    com os dos filhos, subtraindo as remoções acumuladas.
- *
- * 4. Etapa de agregação
- *    O método `ensureAggregated()` realiza uma segunda passagem em pós-ordem
- *    assim que algum iterador público é requisitado. Ele acumula os pixels por
- *    nó, aplica as remoções e elimina duplicidades usando um bitmap temporário
- *    bem leve (a ordem final corresponde à ordem de descoberta, não à raster).
- *    O resultado é gravado em outra arena (`aggregated`). Dessa forma, leituras
- *    subsequentes ficam rápidas e pagamos o custo de consolidação apenas uma
- *    vez.
- *
- * Em resumo: `ListArena` evita alocações durante a fase incremental, `recycle`
- * impede o crescimento desnecessário da arena, `result` guarda o resultado
- * visível pelo usuário e `contoursToRemoveLCA` carrega remoções adiadas até que
- * o ancestral correto seja processado.
+ * 4. Aggregation phase
+ *    `ensureAggregated()` performs a second post-order pass on demand. It
+ *    accumulates local contour pixels, applies deferred removals, and removes
+ *    duplicates using a compact bitmap. The final result is stored in the
+ *    `aggregated` arena, so subsequent reads pay only the already materialised
+ *    access cost.
  */
 
 #include "../utils/Common.hpp"
@@ -64,16 +43,20 @@
 namespace mmcfilters {
 
 /**
- * @brief Estruturas auxiliares baseadas em arena para armazenar contornos incrementais.
+ * @brief Arena-based incremental contour extraction and aggregation for `MorphologicalTree`.
  */
 class ContoursComputedIncrementally {
 public:
+    static inline NodeId nodeIdOf(const MorphologicalTree&, NodeId nodeId) noexcept {
+        return nodeId;
+    }
+
     /**
-     * @brief Arena que guarda diversas listas encadeadas de inteiros em memória contígua.
+     * @brief Arena storing many integer lists inside a single contiguous buffer.
      */
     struct ListArena {
         /**
-         * @brief Nó simples da lista: valor + ponteiro (índice) para o próximo elemento.
+         * @brief Single linked-list entry stored in the arena.
          */
         struct Entry {
             int value;
@@ -81,13 +64,7 @@ public:
         };
 
         /**
-         * @brief Iterador forward constante sobre uma lista armazenada no arena.
-         */
-        /**
-         * @brief Iterador forward que percorre uma lista pertencente ao arena.
-         *
-         * Implementa interface de forward iterator padrão permitindo uso em
-         * range-based for (`for (int v : arena.range(node))`).
+         * @brief Forward iterator over one arena-managed list.
          */
         class const_iterator {
         public:
@@ -127,7 +104,7 @@ public:
         };
 
         /**
-         * @brief View helper que expõe begin/end para um dado identificador de lista.
+         * @brief Lightweight range wrapper for one arena-managed list.
          */
         class Range {
         public:
@@ -142,7 +119,7 @@ public:
             int head_;
         }; 
 
-        /// Cria arena vazia sem reservar memória.
+        /// Builds an empty arena without reserving storage.
         ListArena() = default;
 
         std::vector<Entry> entries;
@@ -150,14 +127,14 @@ public:
         std::vector<int> size;
         int freeHead = -1;
 
-        /// Cria arena com `numNodes` listas potenciais e hint opcional de capacidade.
+        /// Builds an arena for `numNodes` lists with an optional capacity hint.
         explicit ListArena(int numNodes, int capacityHint = 0): head(numNodes, -1), size(numNodes, 0){
             if (capacityHint > 0) {
                 entries.reserve(capacityHint);
             }
         }
 
-        /// Remove todos os elementos associados a `node`, devolvendo-os ao freelist.
+        /// Removes every element associated with `node` and returns the slots to the free list.
         void clearNode(int node) {
             int idx = head[node];
             while (idx != -1) {
@@ -169,7 +146,7 @@ public:
             size[node] = 0;
         }
 
-        /// Insere `value` na lista pertencente a `node`.
+        /// Inserts `value` into the list owned by `node`.
         void add(int node, int value) {
             const int slot = allocate();
             entries[slot] = Entry{value, head[node]};
@@ -180,7 +157,7 @@ public:
         Range range(int node) const { return Range(this, head[node]); }
 
         /**
-         * @brief Move todos os elementos da lista `node` para `out` reutilizando os slots.
+         * @brief Moves every element of `node` into `out` while recycling the used slots.
          *
          * @tparam OutputContainer container que expõe `push_back(int)`.
          * @param node índice da lista a ser drenada.
@@ -199,14 +176,14 @@ public:
             size[node] = 0;
         }
 
-        /// @return número de elementos atualmente associados a `node`.
+        /// @return Number of elements currently associated with `node`.
         int sizeOf(int node) const { return size[node]; }
 
         const_iterator begin(int node) const { return const_iterator(this, head[node]); }
         const_iterator end() const { return const_iterator(this, -1); }
 
     private:
-        /// Obtém um slot livre (do freelist ou via push_back).
+        /// Returns a free slot, either from the free list or via `push_back`.
         int allocate() {
             if (freeHead == -1) {
                 entries.push_back(Entry{0, -1});
@@ -217,7 +194,7 @@ public:
             return idx;
         }
 
-        /// Devolve um índice para o freelist.
+        /// Returns an index to the free list.
         void recycle(int idx) {
             entries[idx].next = freeHead;
             freeHead = idx;
@@ -225,14 +202,13 @@ public:
     };
 
     /**
-     * @brief Resultado da computação incremental armazenado em arenas.
+     * @brief Incremental contour result stored in arenas.
      *
-     * Contém os contornos crus, as informações de remoção e a arena agregada construída
-     * sob demanda. As funções de utilidade expõem iteração conveniente sobre os pixels
-     * sem obrigar o chamador a conhecer detalhes internos de armazenamento.
+     * It keeps raw contour lists, deferred removals, and the lazily aggregated
+     * representation exposed to callers through range-based iteration helpers.
      */
     struct IncrementalContours {
-        const MorphologicalTree* tree;
+        const MorphologicalTree& tree;
         ListArena contours;
         ListArena removals;
         mutable ListArena aggregated;
@@ -243,7 +219,7 @@ public:
          * @param numNodes número de nós (define o tamanho das arenas).
          * @param capacityHint sugestão para reserva inicial de entradas.
          */
-        IncrementalContours(const MorphologicalTree* tree, int numNodes, int capacityHint)
+        IncrementalContours(const MorphologicalTree& tree, int numNodes, int capacityHint)
             : tree(tree), contours(numNodes, capacityHint), removals(numNodes, capacityHint) {}
 
         /**
@@ -326,12 +302,15 @@ public:
                 using reference = value_type;
 
                 iterator() = default;
-                iterator(const IncrementalContours* owner, NodeId node): owner_(owner), node_(node) {}
+                iterator(const IncrementalContours* owner, NodeId node): owner_(owner), node_(node) {
+                    settle_();
+                }
 
                 value_type operator*() const { return {node_, ContourProxy(owner_, node_)}; }
 
                 iterator& operator++() {
                     ++node_;
+                    settle_();
                     return *this;
                 }
 
@@ -350,6 +329,21 @@ public:
                 }
 
             private:
+                void settle_() {
+                    if (!owner_) {
+                        node_ = InvalidNode;
+                        return;
+                    }
+                    const NodeId numNodeSlots = owner_->tree.getNumInternalNodeSlots();
+                    while (node_ >= 0 && node_ < numNodeSlots &&
+                           !owner_->tree.isAlive(nodeIdOf(owner_->tree, node_))) {
+                        ++node_;
+                    }
+                    if (node_ >= numNodeSlots) {
+                        node_ = numNodeSlots;
+                    }
+                }
+
                 const IncrementalContours* owner_ = nullptr;
                 NodeId node_ = 0;
             };
@@ -358,16 +352,16 @@ public:
                 : owner_(owner) {}
 
             iterator begin() const { return iterator(owner_, 0); }
-            iterator end() const { return iterator(owner_, owner_->tree->getNumNodes()); }
+            iterator end() const { return iterator(owner_, owner_->tree.getNumInternalNodeSlots()); }
 
         private:
             const IncrementalContours* owner_ = nullptr;
         };
 
-        /// @return proxy que permite iterar o contorno agregado do nó informado.
+        /// @return Proxy that iterates the aggregated contour of `nodeId`.
         ContourProxy contour(NodeId node) const { return ContourProxy(this, node); }
 
-        /// @return range lazy sobre todos os nós da árvore, produzindo pares `(nodeId, proxy)`.
+        /// @return Lazy range over all live nodes as `(nodeId, contourProxy)` pairs.
         ContoursLazyRange contoursLazy() const { return ContoursLazyRange(this); }
 
         /**
@@ -415,18 +409,20 @@ public:
                 return;
             }
 
-            aggregated = ListArena(tree->getNumNodes(), static_cast<int>(contours.entries.size()));
-            std::vector<std::vector<int>> accumulator(tree->getNumNodes());
+            aggregated = ListArena(tree.getNumInternalNodeSlots(), static_cast<int>(contours.entries.size()));
+            std::vector<std::vector<int>> accumulator(tree.getNumInternalNodeSlots());
             // bitmap linear (1 byte por pixel) utilizado para deduplicar/remover em O(1)
-            std::vector<uint8_t> bitmap(tree->getNumRowsOfImage() * tree->getNumColsOfImage(), 0);
+            std::vector<uint8_t> bitmap(tree.getNumRowsOfImage() * tree.getNumColsOfImage(), 0);
 
             // percorre em pós-ordem para propagar primeiro os filhos
-            auto traversal = const_cast<MorphologicalTree*>(tree)->getIteratorPostOrderTraversalById();
-            for (NodeId node : traversal) {
+            auto traversal = tree.getPostOrderNodes();
+            for (NodeId nodeId : traversal) {
+                const NodeId node = nodeId;
                 auto& values = accumulator[node];
 
                 //acumula contornos dos filhos
-                for (NodeId child : tree->getChildrenById(node)) {
+                for (NodeId childNodeId : tree.getChildren(nodeId)) {
+                    const NodeId child = childNodeId;
                     auto& childValues = accumulator[child];
                     values.insert(values.end(), childValues.begin(), childValues.end());
                     childValues.clear();
@@ -475,14 +471,18 @@ public:
      *
      * Exemplo:
      * @code
-     * auto contours = ContoursComputedIncrementally::extractCompactContours(tree.get());
+     * auto contours = ContoursComputedIncrementally::extractCompactContours(tree);
      * auto proxy = contours.contour(nodeId);
      * std::vector<int> pixels(proxy.begin(), proxy.end());
      * @endcode
      */
-    static IncrementalContours extractCompactContours(MorphologicalTree* tree) {
-        const int numNodes = tree->getNumNodes();
-        const int totalPixels = tree->getNumRowsOfImage() * tree->getNumColsOfImage();
+    static IncrementalContours extractCompactContours(MorphologicalTree& tree) {
+        const int numNodes = tree.getNumInternalNodeSlots();
+        const int totalPixels = tree.getNumRowsOfImage() * tree.getNumColsOfImage();
+        const AdjacencyRelation* adjacencyContext = tree.getAdjacencyRelation();
+        if (adjacencyContext == nullptr) {
+            throw std::invalid_argument("Contour extraction requires an adjacency relation.");
+        }
 
         // estrutura final que será exposta ao chamador (contornos + remoções)
         IncrementalContours result(tree, numNodes, std::max(totalPixels / 4, 1));
@@ -494,54 +494,53 @@ public:
         // reuso de armazenamento para pixels que devem ser removidos neste nó
         std::vector<int> removalBuffer;
         removalBuffer.reserve(64);
-        auto adj4 = std::make_shared<AdjacencyRelation>(tree->getNumRowsOfImage(), tree->getNumColsOfImage(), 1);
-        LCAEulerRMQ lca(tree);
-
-        AttributeComputedIncrementally::computerAttribute(
+        AdjacencyRelation adj4(tree.getNumRowsOfImage(), tree.getNumColsOfImage(), 1);
+        AttributeComputedIncrementally::traversePostOrder(
             tree,
-            tree->getRootById(),
+            tree.getRoot(),
             [](NodeId) -> void {},
             [](NodeId, NodeId) -> void {},
-            [&](NodeId nodeP) {
+            [&](NodeId nodePId) {
+                const NodeId nodeP = nodePId;
                 // remove e processa todas as remoções pendentes deste nó
                 removalBuffer.clear();
                 contoursToRemoveLCA.consumeInto(nodeP, removalBuffer);
                 for (int p : removalBuffer) {
                     bool isPixelToBeRemoved = true;
-                    for (int r : adj4->getNeighborPixels(p)) {
-                        NodeId nodeR = tree->getSCById(r);
-                        if (tree->isStrictAncestor(nodeR, nodeP)) {
-                            contoursToRemoveLCA.add(nodeR, p);
+                    for (int r : adj4.getNeighborPixels(p)) {
+                        NodeId nodeRId = tree.getSmallestComponent(r);
+                        if (tree.isStrictAncestor(nodeRId, nodePId)) {
+                            contoursToRemoveLCA.add(nodeRId, p);
                             isPixelToBeRemoved = false;
-                        } else if (!tree->isComparable(nodeP, nodeR)) {
-                            NodeId otherNodeLCA = lca.findLowestCommonAncestor(nodeP, nodeR);
+                        } else if (!tree.isComparable(nodePId, nodeRId)) {
+                            NodeId otherNodeLCA = tree.getLowestCommonAncestor(nodePId, nodeRId);
                             contoursToRemoveLCA.add(otherNodeLCA, p);
                             isPixelToBeRemoved = false;
                         }
                     }
-                    if (!adj4->isBorderDomainImage(p) && isPixelToBeRemoved) {
+                    if (!adj4.isBorderDomainImage(p) && isPixelToBeRemoved) {
                         result.removals.add(nodeP, p);
                     }
                 }
 
-                // percorre os CNPs pertencentes ao nó atual
-                for (int p : tree->getCNPsById(nodeP)) {
-                    if (adj4->isBorderDomainImage(p)) {
+                // percorre os proper parts pertencentes ao nó atual
+                for (int p : tree.getProperParts(nodePId)) {
+                    if (adj4.isBorderDomainImage(p)) {
                         ncount[p]++;
                     }
 
-                    for (int q : adj4->getNeighborPixels(p)) {
-                        NodeId nodeQ = tree->getSCById(q);
-                    if (!tree->isComparable(nodeP, nodeQ)) { // contorno será tratado pelo LCA
-                        NodeId nodeLCA = lca.findLowestCommonAncestor(nodeP, nodeQ);
-                        contoursToRemoveLCA.add(nodeLCA, p);
-                        ncount[p]++;
-                    } else if (tree->isStrictDescendant(nodeP, nodeQ)) { // pixel ainda é fronteira
-                        ncount[p]++;
-                    } else if (tree->isStrictAncestor(nodeP, nodeQ)) {
-                        ncount[q]--;
-                        if (ncount[q] == 0) {
-                            result.removals.add(nodeP, q);
+                    for (int q : adj4.getNeighborPixels(p)) {
+                        NodeId nodeQId = tree.getSmallestComponent(q);
+                        if (!tree.isComparable(nodePId, nodeQId)) { // contorno será tratado pelo LCA
+                            NodeId nodeLCA = tree.getLowestCommonAncestor(nodePId, nodeQId);
+                            contoursToRemoveLCA.add(nodeLCA, p);
+                            ncount[p]++;
+                        } else if (tree.isStrictDescendant(nodePId, nodeQId)) { // pixel ainda é fronteira
+                            ncount[p]++;
+                        } else if (tree.isStrictAncestor(nodePId, nodeQId)) {
+                            ncount[q]--;
+                            if (ncount[q] == 0) {
+                                result.removals.add(nodeP, q);
                             }
                         }
                     }

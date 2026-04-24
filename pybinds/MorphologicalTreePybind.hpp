@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../mmcfilters/trees/MorphologicalTree.hpp"
-#include "../mmcfilters/trees/NodeMT.hpp"
 #include "../mmcfilters/utils/Common.hpp"
 
 #include "PybindUtils.hpp"
@@ -16,23 +15,37 @@ class MorphologicalTreePybind;
 using MorphologicalTreePybindPtr = std::shared_ptr<MorphologicalTreePybind>;
 
 /**
- * @brief Interface Pybind da árvore morfológica com utilidades de reconstrução.
+ * @brief Pybind-facing wrapper for `MorphologicalTree`.
+ *
+ * This subclass exposes Python-friendly constructors and a few helper methods
+ * that return NumPy arrays or Python lists while preserving the ownership
+ * model of the underlying C++ tree.
  */
 class MorphologicalTreePybind : public MorphologicalTree {
-
+    static std::vector<int> collectPixelsOfConnectedComponent(const MorphologicalTree& tree, NodeId nodeId) {
+        std::vector<int> pixels;
+        for (NodeId subtreeNodeId : tree.getNodeSubtree(nodeId)) {
+            for (int properPart : tree.getProperParts(subtreeNodeId)) {
+                pixels.push_back(properPart);
+            }
+        }
+        return pixels;
+    }
 
  public:
     using MorphologicalTree::MorphologicalTree;
 
-    MorphologicalTreePybind(int r, int c, bool m, AdjacencyRelationPtr a) {
-        MorphologicalTree::numRows = r;
-        MorphologicalTree::numCols = c;
-        MorphologicalTree::treeType = m ? MAX_TREE : MIN_TREE;
-        MorphologicalTree::adj = a;
-        MorphologicalTree::pixelToNodeId.resize(r * c, -1);
+    MorphologicalTreePybind(int r, int c, bool m, std::optional<AdjacencyRelation> a = std::nullopt) {
+        MorphologicalTree::treeType_ = m ? MAX_TREE : MIN_TREE;
+        MorphologicalTree::adj_ = std::move(a);
+        MorphologicalTree::numRows_ = r;
+        MorphologicalTree::numCols_ = c;
+        MorphologicalTree::resetEmptyStorage(static_cast<size_t>(r * c));
     }
 
-    MorphologicalTreePybind(py::array_t<uint8_t, py::array::c_style | py::array::forcecast> input, std::string ToSInperpolation = "self-dual")
+    MorphologicalTreePybind(
+        py::array_t<uint8_t, py::array::c_style | py::array::forcecast> input,
+        ToSInterpolation interpolation = ToSInterpolation::SelfDual)
         : MorphologicalTree(
               [&]() {
                   auto buf = input.request();
@@ -43,7 +56,7 @@ class MorphologicalTreePybind : public MorphologicalTree {
                   int cols = static_cast<int>(buf.shape[1]);
                   return ImageUInt8::fromExternal(static_cast<uint8_t*>(buf.ptr), rows, cols);
               }(),
-              ToSInperpolation) { }
+              interpolation) { }
 
     MorphologicalTreePybind(py::array_t<uint8_t, py::array::c_style | py::array::forcecast> input, bool isMaxtree, double radiusOfAdjacencyRelation = 1.5)
         : MorphologicalTree(
@@ -62,103 +75,64 @@ class MorphologicalTreePybind : public MorphologicalTree {
               
     MorphologicalTreePybind() = delete;
 
-    py::array_t<uint8_t> reconstructionImage(){
-        ImageUInt8Ptr imgOut = ImageUInt8::create(this->numRows, this->numCols);
-        MorphologicalTree::reconstruction(this->root, imgOut->rawData());
-        return PybindUtils::toNumpy(imgOut);
-    }
-
-
-    static MorphologicalTreePybindPtr createTreeFromAttributeMapping(
-        py::array_t<float, py::array::c_style | py::array::forcecast> attrMapping,
-        py::array_t<uint8_t, py::array::c_style | py::array::forcecast> input,
-        bool isMaxtree, double radius = 1.5) {
-        auto buf_attr = attrMapping.request();
-        if (buf_attr.ndim != 2) {
-            throw std::invalid_argument("attrMapping must be a 2D float32 array");
-        }
-        auto buf_input = input.request();
-        if (buf_input.ndim != 2) {
-            throw std::invalid_argument("input image must be a 2D uint8 array");
-        }
-        int numRows = static_cast<int>(buf_input.shape[0]);
-        int numCols = static_cast<int>(buf_input.shape[1]);
-        if (buf_attr.shape[0] != buf_input.shape[0] || buf_attr.shape[1] != buf_input.shape[1]) {
-            throw std::invalid_argument("attrMapping and input must have identical shapes");
-        }
-        ImageUInt8Ptr img = ImageUInt8::fromExternal(static_cast<uint8_t*>(buf_input.ptr), numRows, numCols);
-        ImageFloatPtr attributeMapping = ImageFloat::fromExternal(static_cast<float*>(buf_attr.ptr), numRows, numCols);
-        
-        auto tree = std::make_shared<MorphologicalTreePybind>(
-            numRows, numCols, isMaxtree,
-            std::make_shared<AdjacencyRelation>(numRows, numCols, radius));
-        // call the overload that RECEIVES an existing instance (by reference) and builds it:
-        MorphologicalTree::createFromAttributeMapping(tree, attributeMapping, img, isMaxtree, radius);
-        return tree;
-    }
-        
-
-    
-
-    static py::array_t<uint8_t> recNode(NodeMT node) {
-        if (!node) {
-            throw std::invalid_argument("NodeMT inválido para reconstrução");
+    static py::array_t<uint8_t> reconstructNode(const MorphologicalTree& tree, NodeId nodeId) {
+        if (!tree.isNode(nodeId) || !tree.isAlive(nodeId)) {
+            throw std::invalid_argument("invalid NodeId for reconstruction");
         }
 
-        int totalPixels = node.getArea();
-        NodeMT parent = node.getParent();
-        while (parent) {
-            totalPixels = parent.getArea();
-            parent = parent.getParent();
-        }
-
-        ImageUInt8Ptr imgOut = ImageUInt8::create(totalPixels, 1);
+        ImageUInt8Ptr imgOut = ImageUInt8::create(tree.getNumRowsOfImage(), tree.getNumColsOfImage());
         imgOut->fill(0);
-        for (int p : node.getPixelsOfCC()) {
+        for (int p : collectPixelsOfConnectedComponent(tree, nodeId)) {
             (*imgOut)[p] = 255;
         }
         return PybindUtils::toNumpy(imgOut);
     }
 
 
-    static py::list repCNPsByFlood(NodeMT node)  {
-        if (!node) {
-            throw std::invalid_argument("NodeMT inválido.");
+    static py::list representativeProperPartsByFlood(MorphologicalTree& tree, const AltitudeBuffer& altitude, NodeId nodeId) {
+        if (!tree.isNode(nodeId) || !tree.isAlive(nodeId)) {
+            throw std::invalid_argument("invalid NodeId");
         }
-        MorphologicalTree* tree = node.getTree();
-        AdjacencyRelation* adj = tree->getAdjacencyRelation(); 
-        const int N = tree->getNumRowsOfImage() * tree->getNumColsOfImage();
-        const int target = node.getLevel(); // nível da flatzone
+
+        AdjacencyRelation* adjacency = tree.getAdjacencyRelation();
+        if (adjacency == nullptr) {
+            throw std::invalid_argument("adjacency relation is unavailable for this tree type");
+        }
+        const int numPixels = tree.getNumRowsOfImage() * tree.getNumColsOfImage();
+        const AltitudeType targetAltitude = tree_altitude_ops::getAltitude(altitude, nodeId);
 
         auto levelOf = [&](int p) -> int {
-            // Acesso ao nível do pixel p via SC-id (conforme seu item 3)
-            return tree->getLevelById(tree->getSCById(p));
+            const NodeId smallestComponent = tree.getSmallestComponent(p);
+            return tree_altitude_ops::getAltitude(altitude, smallestComponent);
         };
-        auto inNode = [&](int p) -> int {
-            return tree->getSCById(p) == node.getIndex();
+        auto inNode = [&](int p) -> bool {
+            return tree.getSmallestComponent(p) == nodeId;
         };
-        
-        
-        py::list reps;
-        FastQueue<int> Q(1024);
-        std::vector<uint8_t> visited(N, 0);
-        for (int p : node.getPixelsOfCC()) {
-            if (!inNode(p) || visited[p]) continue;
 
-            // Encontramos uma nova flatzone; s será o representante
+        py::list reps;
+        FastQueue<int> queue(1024);
+        std::vector<uint8_t> visited(numPixels, 0);
+
+        for (int p : collectPixelsOfConnectedComponent(tree, nodeId)) {
+            if (!inNode(p) || visited[p]) {
+                continue;
+            }
+
             reps.append(p);
             visited[p] = true;
-            Q.push(p);
+            queue.push(p);
 
-            while (!Q.empty()) {
-                int cnp = Q.pop();
-                
-                // Ajuste esta chamada se sua adjacência tiver outra API
-                for (int q : adj->getAdjPixels(cnp)) {
-                    if (!inNode(q) || visited[q]) continue;
-                    if (levelOf(q) != target) continue; // zona plana: mesmo nível
+            while (!queue.empty()) {
+                const int properPart = queue.pop();
+                for (int q : adjacency->getAdjPixels(properPart)) {
+                    if (!inNode(q) || visited[q]) {
+                        continue;
+                    }
+                    if (levelOf(q) != targetAltitude) {
+                        continue;
+                    }
                     visited[q] = true;
-                    Q.push(q);
+                    queue.push(q);
                 }
             }
         }

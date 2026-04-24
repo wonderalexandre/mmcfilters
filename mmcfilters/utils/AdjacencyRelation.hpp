@@ -5,16 +5,13 @@
 
 namespace mmcfilters {
 
-class AdjacencyRelation;  // forward declaration
-using AdjacencyRelationPtr = std::shared_ptr<AdjacencyRelation>;
-
 /**
- * @brief Relação de adjacência em grade 2D com raio arbitrário e iteração eficiente.
+ * @brief Two-dimensional adjacency relation with configurable radius and efficient iteration.
  *
- * Define offsets de vizinhança para uma janela de raio real (ex.: 1.0 → 4-adj, 1.5 → 8-adj),
- * provendo utilitários para listar vizinhos de um pixel e iterar por eles com um iterador leve.
- * Também oferece uma variação "forward" que emite somente metade dos vizinhos (sem simetria),
- * útil para varreduras assimétricas e construção de arestas únicas.
+ * `AdjacencyRelation` stores a reusable stencil of offsets for a regular image
+ * grid. The stencil can be traversed either fully or in forward-only mode,
+ * which exposes only one directed half of the neighbourhood and is therefore
+ * convenient when unique undirected edges are needed.
  */
 class AdjacencyRelation {
 private:
@@ -27,19 +24,19 @@ private:
     double radius;
     double radius2;
     int n;
-    bool forwardOnly = false; //meia 
+    bool forwardOnly = false;
 
     std::vector<int> offsetRow;
     std::vector<int> offsetCol;
-    std::vector<uint8_t> forwardMask;// máscara “forward” por offset i: true se (dy>0) || (dy==0 && dx>0)
+    std::vector<uint8_t> forwardMask;
 
 
 public:
     /**
-     * @brief Constrói uma relação de adjacência para imagem `numRows`×`numCols`.
-     * @param numRows Número de linhas da imagem.
-     * @param numCols Número de colunas da imagem.
-     * @param radius Raio da vizinhança (1.0 ≈ 4-conexão, 1.5 ≈ 8-conexão).
+     * @brief Builds an adjacency relation for a `numRows` by `numCols` image.
+     * @param numRows Number of image rows.
+     * @param numCols Number of image columns.
+     * @param radius Radius of the neighbourhood stencil.
      */    
     AdjacencyRelation(int numRows, int numCols, double radius){
         this->numRows = numRows;
@@ -153,7 +150,7 @@ public:
                 
         }
 
-        // máscara forward: 1, se (dy>0) || (dy==0 && dx>0); caso contrario é 0
+        // Forward-only mask: keep only offsets in the positive half-plane.
         forwardMask.resize(n, 0);
         for (int k = 1; k < n; ++k) {
             int dx = offsetCol[k], dy = offsetRow[k];
@@ -164,17 +161,17 @@ public:
 
 
     /**
-     * @brief Avança para o próximo offset válido conforme os limites e máscara.
-     * @return Índice do próximo offset válido, ou tamanho para fim.
+     * @brief Advances to the next valid offset under the current bounds and mode.
+     * @return Index of the next valid offset, or `getSize()` if none remain.
      */
     int nextValid() {
         id += 1;
         while (id < n) {
 
-            // checa "forward" se necessário
+            // Apply the forward-only mask when required.
             if (forwardOnly && !forwardMask[id]) { id += 1; continue; }
 
-            // coordenadas do vizinho
+            // Candidate neighbour coordinates.
             const int newRow = row + offsetRow[id];
             const int newCol = col + offsetCol[id];
 
@@ -187,14 +184,28 @@ public:
     }
 
     /**
-     * @brief Retorna a quantidade de offsets no stencil atual.
+     * @brief Returns the number of offsets in the current stencil.
      */
     int getSize(){
         return this->n;
     }
 
     /**
-     * @brief Configura (row,col) e prepara iteração de adjacentes sem filtro forward. Esse método incluí a origem.
+     * @brief Returns the number of rows in the attached image domain.
+     */
+    int getNumRows() const noexcept {
+        return numRows;
+    }
+
+    /**
+     * @brief Returns the number of columns in the attached image domain.
+     */
+    int getNumCols() const noexcept {
+        return numCols;
+    }
+
+    /**
+     * @brief Prepares iteration over adjacent pixels, including the origin.
      */
     AdjacencyRelation& getAdjPixels(int row, int col){
         if (row < 0 || row >= this->numRows || col < 0 || col >= this->numCols) {
@@ -209,7 +220,7 @@ public:
     }
 
     /**
-     * @brief Configura por índice linear e prepara iteração de adjacentes sem filtro. Esse método incluí a origem.
+     * @brief Prepares iteration over adjacent pixels from a linear index, including the origin.
      */
     AdjacencyRelation& getAdjPixels(int indexVector){
         return getAdjPixels(indexVector / this->numCols, indexVector % this->numCols);
@@ -217,7 +228,7 @@ public:
     
 
     /**
-     * @brief Configura (row,col) e prepara iteração de vizinhos dentro dos limites. Esse método NÃO incluí a origem.
+     * @brief Prepares iteration over valid neighbouring pixels, excluding the origin.
      */
         AdjacencyRelation& getNeighborPixels(int row, int col){
         if (row < 0 || row >= this->numRows || col < 0 || col >= this->numCols) {
@@ -231,15 +242,15 @@ public:
     }
 
     /**
-     * @brief Configura por índice linear e prepara iteração de vizinhos dentro dos limites. Esse método NÃO incluí a origem.
+     * @brief Prepares iteration over valid neighbouring pixels from a linear index, excluding the origin.
      */
     AdjacencyRelation& getNeighborPixels(int indexVector){
         return getNeighborPixels(indexVector / this->numCols, indexVector % this->numCols);
     }
 
     /**
-     * @brief Prepara iteração apenas sobre metade dos vizinhos (forward-only) em (row,col).
-     * @note Útil para gerar pares (p,q) sem duplicação (p→q, nunca q→p).
+     * @brief Prepares forward-only neighbour iteration at `(row, col)`.
+     * @details Only one directed half of the neighbourhood is emitted.
      */
     AdjacencyRelation& getNeighborPixelsForward(int row, int col){
         if (row < 0 || row >= this->numRows || col < 0 || col >= this->numCols) {
@@ -253,7 +264,7 @@ public:
     }
     
     /**
-     * @brief Versão por índice linear de `getNeighborPixelsForward`.
+     * @brief Prepares forward-only neighbour iteration from a linear index.
      */
     AdjacencyRelation& getNeighborPixelsForward(int indexVector){
         return getNeighborPixelsForward(indexVector / this->numCols, indexVector % this->numCols);
@@ -261,7 +272,7 @@ public:
     
 
     /**
-     * @brief Verifica adjacência por índices lineares (p,q).
+     * @brief Tests adjacency between two linear pixel indices.
      */
     inline bool isAdjacent(int p, int q) const noexcept {
         int py = p / numCols, px = p % numCols;
@@ -271,7 +282,7 @@ public:
     }
 
     /**
-     * @brief Verifica adjacência por coordenadas (px,py) e (qx,qy).
+     * @brief Tests adjacency between two pixel coordinates.
      */
     inline bool isAdjacent(int px, int py, int qx, int qy) const noexcept {
         int dx = px - qx;
@@ -280,7 +291,7 @@ public:
     }
 
     /**
-     * @brief Retorna o raio em uso.
+     * @brief Returns the configured neighbourhood radius.
      */
     double getRadius(){
         return this->radius;
@@ -306,10 +317,10 @@ public:
 
 
     /**
-     * @brief Iterador leve para percorrer vizinhos já configurados via `get*`.
+     * @brief Lightweight iterator over the currently configured traversal.
      *
-     * Produz índices lineares de pixels vizinhos válidos, respeitando os limites e,
-     * quando configurado, a máscara forward-only.
+     * The iterator yields linear pixel indices and respects both image bounds
+     * and the optional forward-only mask.
      */
     class IteratorAdjacency { 
     private:
@@ -341,14 +352,14 @@ public:
         }
     };
     /**
-     * @brief Início da iteração de vizinhos conforme configuração atual.
+     * @brief Returns the beginning of the current traversal.
      */
     IteratorAdjacency begin() { 
         return IteratorAdjacency(this, nextValid()); 
     }
 
     /**
-     * @brief Marcador de fim da iteração de vizinhos.
+     * @brief Returns the end sentinel of the current traversal.
      */
     IteratorAdjacency end() { 
         return IteratorAdjacency(this, this->n); 
@@ -356,6 +367,3 @@ public:
 };
 
 } // namespace mmcfilters
-
-
-

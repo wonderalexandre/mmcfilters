@@ -1,37 +1,22 @@
 #pragma once
 
-#include <vector>   // container dinâmico usado como buffer
-#include <cstddef>  // definição de size_t
-#include <utility>  // std::move para otimizar push e pop
+#include <vector>
+#include <cstddef>
+#include <utility>
 
 namespace mmcfilters {
 /**
- * @brief Fila linear baseada em std::vector para alto desempenho em BFS.
+ * @brief Lightweight FIFO queue backed by a contiguous `std::vector`.
  *
- * Essa estrutura encapsula um std::vector<T> e um índice de leitura (`head_`),
- * funcionando como uma fila FIFO.  
- * Ao contrário de std::queue, não tem overhead de alocações/push/pop, pois:
- *   - `push` adiciona ao fim do vetor.
- *   - `pop` apenas avança o índice `head_`.
- *   - `clear` reseta o índice e o tamanho para reutilização sem desalocar memória.
- *
- * Uso típico:
- * @code
- * FastQueue<int> q;
- * q.reserve(2048);
- * q.push(10);
- * q.push(20);
- * while (!q.empty()) {
- *     int x = q.pop();
- *     // processa x
- * }
- * @endcode
+ * The queue avoids the container indirection of `std::queue` by storing
+ * elements in a single vector and advancing a read head during `pop()`.
+ * Clearing the queue reuses the allocated storage.
  */
 template <typename T>
 struct FastQueue {
 private:
     std::vector<T> data_;
-    size_t head_ = 0; // índice do próximo elemento a ser lido
+    size_t head_ = 0;
 
 public:
     FastQueue() = default;
@@ -40,27 +25,27 @@ public:
         data_.reserve(n); 
     } 
 
-    /// Reserva espaço inicial (opcional, para evitar realocações)
+    /// Reserves storage to avoid future reallocations.
     void reserve(size_t n) { data_.reserve(n); }
 
-    /// Remove todos os elementos, reseta o índice de leitura
+    /// Clears the queue and resets the read head.
     void clear() { data_.clear(); head_ = 0; }
 
-    /// Retorna se a fila está vazia
+    /// Returns whether the queue is empty.
     bool empty() const { return head_ >= data_.size(); }
 
-    /// Retorna o tamanho atual da fila
+    /// Returns the number of unread elements.
     size_t size() const { return data_.size() - head_; }
 
-    /// Adiciona um elemento ao fim
+    /// Appends an element to the tail.
     void push(const T& value) { data_.push_back(value); }
 
     void push(T&& value) { data_.push_back(std::move(value)); }
 
-    /// Remove e retorna o próximo elemento
+    /// Removes and returns the next element.
     T pop() { return std::move(data_[head_++]); }
 
-    /// Acesso ao próximo elemento sem remover
+    /// Returns the next element without removing it.
     T& front() { return data_[head_]; }
     const T& front() const { return data_[head_]; }
 };

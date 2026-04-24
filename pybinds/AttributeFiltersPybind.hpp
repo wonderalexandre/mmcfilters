@@ -1,6 +1,5 @@
 #pragma once
 
-#include "../mmcfilters/trees/NodeMT.hpp"
 #include "../mmcfilters/filters/AttributeFilters.hpp"
 #include "../mmcfilters/utils/Common.hpp"
 
@@ -22,90 +21,104 @@ namespace mmcfilters {
  * @brief *Wrapper* Pybind11 para expor filtragens por atributos ao Python.
  */
 class AttributeFiltersPybind : public AttributeFilters{
+    using FloatArray = py::array_t<float, py::array::c_style | py::array::forcecast>;
 
+    MorphologicalTreePybindPtr treeOwner_;
+    std::shared_ptr<WeightedMorphologicalTree> weightedOwner_;
+
+    const MorphologicalTree& topology() const noexcept {
+        return this->tree;
+    }
+
+    static void requireNodeAttributeArray(const FloatArray& attr, const MorphologicalTree& tree, std::string_view argumentName = "attr") {
+        PybindUtils::require1DArray(attr.request(), tree.getNumInternalNodeSlots(), argumentName);
+    }
+
+    static void requireNodeCriterion(const std::vector<bool>& criterion, const MorphologicalTree& tree, std::string_view argumentName = "criterion") {
+        PybindUtils::requireVectorSize(criterion, static_cast<std::size_t>(tree.getNumInternalNodeSlots()), argumentName);
+    }
+
+    static void requireNodeScores(const std::vector<float>& prob, const MorphologicalTree& tree, std::string_view argumentName = "prob") {
+        PybindUtils::requireVectorSize(prob, static_cast<std::size_t>(tree.getNumInternalNodeSlots()), argumentName);
+    }
 
     public:
     using AttributeFilters::AttributeFilters;
 
-    AttributeFiltersPybind(MorphologicalTreePybindPtr tree): AttributeFilters(tree){}
+    explicit AttributeFiltersPybind(MorphologicalTreePybindPtr tree)
+        : AttributeFilters(*tree), treeOwner_(std::move(tree)) {}
 
-    py::array_t<uint8_t> filteringByPruningMin(py::array_t<float> &attr, float threshold){
+    explicit AttributeFiltersPybind(std::shared_ptr<WeightedMorphologicalTree> weighted)
+        : AttributeFilters(*weighted), weightedOwner_(std::move(weighted)) {}
+
+    py::array_t<uint8_t> filteringByPruningMin(FloatArray attr, float threshold){
+        requireNodeAttributeArray(attr, topology());
 
         std::shared_ptr<float[]> attribute = PybindUtils::toShared_ptr(attr);
-
-        ImageUInt8Ptr imgOutput = ImageUInt8::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
-
-        AttributeFilters::filteringByPruningMin(this->tree, attribute, threshold, imgOutput);
-
-        return PybindUtils::toNumpy(imgOutput);
+        return PybindUtils::toNumpy(AttributeFilters::filteringByPruningMin(attribute, threshold));
     }
 
-    py::array_t<uint8_t> filteringByPruningMax(py::array_t<float> &attr, float threshold){
+    py::array_t<uint8_t> filteringByPruningMax(FloatArray attr, float threshold){
+        requireNodeAttributeArray(attr, topology());
 
         std::shared_ptr<float[]> attribute = PybindUtils::toShared_ptr(attr);
-
-        ImageUInt8Ptr imgOutput = ImageUInt8::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
-        AttributeFilters::filteringByPruningMax(this->tree, attribute, threshold, imgOutput);
-
-        return PybindUtils::toNumpy(imgOutput);
+        return PybindUtils::toNumpy(AttributeFilters::filteringByPruningMax(attribute, threshold));
 
     }
 
     py::array_t<uint8_t> filteringByPruningMin(std::vector<bool>& criterion){
-        ImageUInt8Ptr imgOutput = ImageUInt8::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
-        AttributeFilters::filteringByPruningMin(this->tree, criterion, imgOutput);
-
-        return PybindUtils::toNumpy(imgOutput);
+        requireNodeCriterion(criterion, topology());
+        return PybindUtils::toNumpy(AttributeFilters::filteringByPruningMin(criterion));
     }
 
     py::array_t<uint8_t> filteringByDirectRule(std::vector<bool>& criterion){
-        ImageUInt8Ptr imgOutput = ImageUInt8::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
-        AttributeFilters::filteringByDirectRule(this->tree, criterion, imgOutput);
-
-        return PybindUtils::toNumpy(imgOutput);
+        requireNodeCriterion(criterion, topology());
+        return PybindUtils::toNumpy(AttributeFilters::filteringByDirectRule(criterion));
     }
 
     py::array_t<uint8_t> filteringByPruningMax(std::vector<bool>& criterion){
-        ImageUInt8Ptr imgOutput = ImageUInt8::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
-        AttributeFilters::filteringByPruningMax(this->tree, criterion, imgOutput);
-
-        return PybindUtils::toNumpy(imgOutput);
+        requireNodeCriterion(criterion, topology());
+        return PybindUtils::toNumpy(AttributeFilters::filteringByPruningMax(criterion));
 
     }
 
-    std::vector<bool> getAdaptativeCriterion(std::vector<bool>& criterion, int delta){
-        return AttributeFilters::getAdaptativeCriterion(criterion, delta);
+    std::vector<bool> getAdaptiveCriterion(std::vector<bool>& criterion, int delta){
+        requireNodeCriterion(criterion, topology());
+        return AttributeFilters::getAdaptiveCriterion(criterion, delta);
     }
 
 
 
     py::array_t<uint8_t> filteringBySubtractiveRule(std::vector<bool>& criterion){
-        ImageUInt8Ptr imgOutput = ImageUInt8::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
-        AttributeFilters::filteringBySubtractiveRule(this->tree, criterion, imgOutput);
-
-        return PybindUtils::toNumpy(imgOutput);
+        requireNodeCriterion(criterion, topology());
+        return PybindUtils::toNumpy(AttributeFilters::filteringBySubtractiveRule(criterion));
 
     }
 
     py::array_t<float> filteringBySubtractiveScoreRule(std::vector<float>& prob){
-        ImageFloatPtr imgOutput = ImageFloat::create(this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
-        AttributeFilters::filteringBySubtractiveScoreRule(this->tree, prob, imgOutput);
-
-        return PybindUtils::toNumpy(imgOutput);
+        requireNodeScores(prob, topology());
+        return PybindUtils::toNumpy(AttributeFilters::filteringBySubtractiveScoreRule(prob));
 
     }
 
-    py::array_t<uint8_t> filteringByExtinctionValue(py::array_t<float>& attr, int leafToKeep){
+    py::array_t<uint8_t> filteringByExtinctionValue(FloatArray attr, int leafToKeep){
+        requireNodeAttributeArray(attr, topology());
+        if (this->weightedOwner_ != nullptr) {
+            ExtinctionValues ev(*this->weightedOwner_, PybindUtils::toShared_ptr(attr));
+            return PybindUtils::toNumpy(ev.filtering(leafToKeep));
+        }
         ExtinctionValues ev(this->tree, PybindUtils::toShared_ptr(attr));
-        ImageUInt8Ptr filteredImagePtr =  ev.filtering(leafToKeep);
-        return PybindUtils::toNumpy(filteredImagePtr);
+        return PybindUtils::toNumpy(ev.filtering(leafToKeep));
     }
 
-    py::array_t<float> saliencyMapByExtinctionValue(py::array_t<float>& attr, int leafToKeep, bool unweighted=false){
-        
+    py::array_t<float> saliencyMapByExtinctionValue(FloatArray attr, int leafToKeep, bool unweighted=false){
+        requireNodeAttributeArray(attr, topology());
+        if (this->weightedOwner_ != nullptr) {
+            ExtinctionValues ev(*this->weightedOwner_, PybindUtils::toShared_ptr(attr));
+            return PybindUtils::toNumpy(ev.saliencyMap(leafToKeep, unweighted));
+        }
         ExtinctionValues ev(this->tree, PybindUtils::toShared_ptr(attr));
-        auto saliencyMapPtr = ev.saliencyMap(leafToKeep, unweighted);
-        return PybindUtils::toNumpy(saliencyMapPtr);
+        return PybindUtils::toNumpy(ev.saliencyMap(leafToKeep, unweighted));
     }
 
 

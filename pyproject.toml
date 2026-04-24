@@ -45,7 +45,7 @@ local_scheme = "no-local-version"
 tag_regex = "^v?(?P<version>\\d+\\.\\d+\\.\\d+(?:[.-].*)?)$"
 
 [tool.scikit-build]
-wheel.packages = ["python"]
+wheel.packages = ["python/mmcfilters"]
 
 [tool.scikit-build.cmake]
 build-type = "Release"

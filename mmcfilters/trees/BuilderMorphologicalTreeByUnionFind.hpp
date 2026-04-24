@@ -7,7 +7,7 @@
 namespace mmcfilters {
 
 /**
- * @brief Interface para construtores de árvores morfológicas baseados em union-find.
+ * @brief Common interface for union-find builders of morphological trees.
  */
 class IMorphologicalTreeBuilder {
 public:
@@ -18,7 +18,7 @@ public:
 
 
 /**
- * @brief Implementa construção de component trees via algoritmo union-find.
+ * @brief Union-find builder for max-trees and min-trees.
  */
 class BuilderComponentTree : public IMorphologicalTreeBuilder{
 private:
@@ -55,18 +55,16 @@ public:
             if(isMaxtree){
                 for (int i = 0; i < n; i++)
                     counter[img[i]]++;
-                for (int i = 1; i < maxvalue; i++) 
+                for (int i = 1; i <= maxvalue; i++)
                     counter[i] += counter[i - 1];
-                counter[maxvalue] += counter[maxvalue-1];
                 for (int i = n - 1; i >= 0; --i)
                     orderedPixels[--counter[img[i]]] = i;	
 
             }else{
                 for (int i = 0; i < n; i++)
                     counter[maxvalue - img[i]]++;
-                for (int i = 1; i < maxvalue; i++) 
+                for (int i = 1; i <= maxvalue; i++)
                     counter[i] += counter[i - 1];
-                counter[maxvalue] += counter[maxvalue-1];
                 for (int i = n - 1; i >= 0; --i)
                     orderedPixels[--counter[maxvalue - img[i]]] = i;
             }
@@ -117,15 +115,15 @@ public:
 
 
 
-/************************ToS******************* */
+/************************ Tree of Shapes support ************************/
 
 /*
-Adjacência adaptativa para construção da ToS com 4 e 8-conectividade.
-As conexões diagonais são ativadas conforme necessário durante a construção da ToS para garantir a conectividade adequada dos componentes.
-As conexões diagonais são representadas usando flags de bits em um vetor. Cada pixel pode ter até quatro conexões diagonais: SW, NE, SE, NW
-Essas conexões são armazenadas em um vetor de uint8_t, onde cada bit representa uma conexão diagonal específica.
-Por exemplo, se o bit 0 estiver definido, significa que há uma conexão diagonal SW do pixel atual para o pixel ao sul-oeste.
-*/
+ * Adaptive adjacency backend used by the tree-of-shapes construction.
+ *
+ * Diagonal links are activated on demand so that the interpolated grid can
+ * emulate the required 4/8-connectivity behaviour during the union-find pass.
+ * Each pixel may carry four diagonal flags: SW, NE, SE, and NW.
+ */
 enum class DiagonalConnection : uint8_t {
     None = 0,
     SW = 1 << 0,
@@ -149,8 +147,7 @@ inline bool operator&(DiagonalConnection a, DiagonalConnection b) {
 }
 
 /**
- * @brief Representa adjacência adaptativa para construção da ToS de 4/8-conectividade.
- *
+ * @brief Adaptive adjacency used during 4/8-connected tree-of-shapes construction.
  */
 class AdjacencyUC {
 private:
@@ -848,4 +845,3 @@ public:
 };
 
 } // namespace mmcfilters
-

@@ -8,11 +8,30 @@
 namespace mmcfilters {
 
 /**
- * @brief Calcula atributos derivados dos padrões Bit-Quads
+ * @brief Computes the family of descriptors derived from bit-quad counts.
+ *
+ * @details
+ * Bit-quad descriptors are obtained by analysing local binary patterns around
+ * the contour representation of each component. The low-level extraction is
+ * delegated to `ComputerAttributeBasedBitQuads`, which traverses the tree and
+ * accumulates the bit-quad counts required to derive Euler number, number of
+ * holes, discrete and continuous perimeters, circularity, and average shape
+ * measures.
+ *
+ * This wrapper is intentionally thin: it triggers the low-level computation
+ * once, then materialises only the requested descriptors into the attribute
+ * buffer.
+ *
+ * @note These descriptors require a tree with valid connectivity metadata. If
+ * the tree has been imported without an adjacency relation, the delegated
+ * implementation is expected to reject requests that depend on that missing
+ * information.
  */
 class BitquadsComputer : public AttributeComputer {
 	public:
-		
+		/**
+		 * @brief Returns the full family of bit-quad descriptors.
+		 */
 		std::vector<Attribute> attributes() const override {
 			return {BITQUADS_AREA,
 					BITQUADS_NUMBER_EULER,
@@ -25,10 +44,13 @@ class BitquadsComputer : public AttributeComputer {
 					BITQUADS_WIDTH_AVERAGE};
 		}
 
-		void compute(MorphologicalTree* tree, std::shared_ptr<float[]> buffer, std::shared_ptr<AttributeNames> attrNames, const std::vector<Attribute>& requestedAttributes, const std::vector<std::pair<std::shared_ptr<AttributeNames>, const std::shared_ptr<float[]>>>&) const override {
+		/**
+		 * @brief Computes the requested bit-quad descriptors for each live node.
+		 */
+		void compute(MorphologicalTree& tree, const AltitudeBuffer*, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes, std::span<const DependencySource>) const override {
 			if(PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing BITQUADS group" << std::endl;
 			auto indexOf = [&](int idx, Attribute attr) {
-				return attrNames->linearIndex(idx, attr);
+				return attrNames.linearIndex(idx, attr);
 			};
 			bool computeArea = std::find(requestedAttributes.begin(), requestedAttributes.end(), BITQUADS_AREA) != requestedAttributes.end();
 			bool computeNumberEuler = std::find(requestedAttributes.begin(), requestedAttributes.end(), BITQUADS_NUMBER_EULER) != requestedAttributes.end();
@@ -43,7 +65,8 @@ class BitquadsComputer : public AttributeComputer {
 
 			ComputerAttributeBasedBitQuads computerBitQuads(tree);
 			std::vector<AttributeBasedBitQuads> attr = computerBitQuads.getAttributes();
-			for(NodeId node: tree->getNodeIds()){
+			for (NodeId nodeId : tree.getAliveNodeIds()) {
+				const NodeId node = nodeId;
 				if(computeArea)
 					buffer[indexOf(node, BITQUADS_AREA)] = attr[node].getAreaDuda();
 				if(computeNumberEuler)
@@ -68,4 +91,3 @@ class BitquadsComputer : public AttributeComputer {
 };
 
 } // namespace mmcfilters
-

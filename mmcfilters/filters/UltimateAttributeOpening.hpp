@@ -1,171 +1,184 @@
 #pragma once
 
 #include "../utils/Common.hpp"
-#include "../trees/MorphologicalTree.hpp"
+#include "../trees/WeightedMorphologicalTree.hpp"
 #include "../attributes/ComputerMSER.hpp"
 #include "../attributes/AttributeComputedIncrementally.hpp"
 
+#include <cassert>
 
 namespace mmcfilters {
 
-
-class UltimateAttributeOpening;
-using UltimateAttributeOpeningPtr = std::shared_ptr<UltimateAttributeOpening>;
-
 /**
- * @brief Realiza Ultimate Attribute Opening acumulando contrastes máximos.
+ * @brief Computes an Ultimate Attribute Opening by accumulating maximal contrasts.
  */
-class UltimateAttributeOpening{
-
-  protected:
+class UltimateAttributeOpening {
+protected:
     int maxCriterion;
-    std::shared_ptr<float[]> attrs_increasing;
-    MorphologicalTree* tree;
-    std::shared_ptr<uint8_t[]> maxContrastLUT;
-    std::shared_ptr<int[]> associatedIndexLUT;
-    std::vector<uint8_t> selectedForFiltering; //mappping between nodes and selected nodes
+    const float* attrs_increasing = nullptr;
+    std::shared_ptr<float[]> ownedAttrsIncreasing_;
+    MorphologicalTree& tree;
+    const AltitudeBuffer* altitude_ = nullptr;
+    std::vector<uint8_t> maxContrastLUT;
+    std::vector<int> associatedIndexLUT;
+    std::vector<uint8_t> selectedForFiltering;
 
-    void computeUAO(NodeId currentNode, int levelNodeNotInNR, bool qPropag, bool isCalculateResidue){
-      NodeId parentNode = tree->getParentById(currentNode);
-      int levelNodeInNR = tree->getLevelById(currentNode);
-      bool flagPropag = false;
-      int contrast = 0;
-      if (this->isSelectedForPruning(currentNode)){ // new primitive?
-        levelNodeNotInNR = tree->getLevelById(parentNode);
-
-        if (this->attrs_increasing[currentNode] <= this->maxCriterion){ // node selected for pruning = first node in Nr
-          isCalculateResidue = hasNodeSelectedInPrimitive(currentNode);
-        }
-      }
-
-      if (this->attrs_increasing[currentNode] <= this->maxCriterion){
-
-        if (isCalculateResidue) // non Filter?
-          contrast = (int)std::abs(levelNodeInNR - levelNodeNotInNR);
-
-        if (this->maxContrastLUT[parentNode] >= contrast){
-          this->maxContrastLUT[currentNode] = this->maxContrastLUT[parentNode];
-          this->associatedIndexLUT[currentNode] = this->associatedIndexLUT[parentNode];
-        }
-        else{
-          this->maxContrastLUT[currentNode] = contrast;
-          if (!qPropag){                                                                                                      // new primitive with max contrast?
-            this->associatedIndexLUT[currentNode] = this->attrs_increasing[currentNode] + 1;
-          }
-          else{
-            this->associatedIndexLUT[currentNode] = this->associatedIndexLUT[parentNode];
-          }
-          flagPropag = true;
-        }
-      }
-
-      for (NodeId son : tree->getChildrenById(currentNode)){
-        this->computeUAO(son, levelNodeNotInNR, flagPropag, isCalculateResidue);
-      }
+    AltitudeType altitudeOf(NodeId nodeId) const {
+        return tree_altitude_ops::getAltitude(altitude_, nodeId);
     }
 
-    void execute(int maxCriterion, const std::vector<uint8_t>& selectedForFiltering){
-      this->maxCriterion = maxCriterion;
-      
-      this->selectedForFiltering = selectedForFiltering;
+    void computeUAO(NodeId currentNodeId, AltitudeType altitudeNodeNotInNR, bool qPropag, bool isCalculateResidue) {
+        const NodeId parentNodeId = tree.getNodeParent(currentNodeId);
+        const AltitudeType altitudeNodeInNR = altitudeOf(currentNodeId);
+        bool flagPropag = false;
+        int contrast = 0;
 
-      for (NodeId id: tree->getNodeIds()){
-        maxContrastLUT[id] = 0;
-        associatedIndexLUT[id] = 0;
-      }
-
-      NodeId rootId = tree->getRootById();
-      int level = tree->getLevelById(rootId);
-      for (NodeId son : tree->getChildrenById(rootId)){
-        computeUAO(son, level, false, false);
-      }
-    }
-    
-    //first Node in Nr(i)
-    bool isSelectedForPruning(NodeId currentNode){
-      // primitiva: attribute opening
-      return this->attrs_increasing[currentNode] != this->attrs_increasing[ tree->getParentById(currentNode)];
-    }
-
-    //has node selected inside Nr(i)
-    bool hasNodeSelectedInPrimitive(NodeId currentNode){
-      std::stack<NodeId> s;
-      s.push(currentNode);
-      while (!s.empty()){
-        NodeId node = s.top();
-        s.pop();
-        if (selectedForFiltering[node]){
-          return true;
+        if (this->isSelectedForPruning(currentNodeId)) {
+            altitudeNodeNotInNR = altitudeOf(parentNodeId);
+            if (this->attrs_increasing[currentNodeId] <= this->maxCriterion) {
+                isCalculateResidue = hasNodeSelectedInPrimitive(currentNodeId);
+            }
         }
 
-        for (NodeId n : tree->getChildrenById(node)){
-          if (this->attrs_increasing[n] == this->attrs_increasing[tree->getParentById(n)]){ // if n in Nr?
-            s.push(n);
-          }
+        if (this->attrs_increasing[currentNodeId] <= this->maxCriterion) {
+            if (isCalculateResidue) {
+                contrast = static_cast<int>(std::abs(altitudeNodeInNR - altitudeNodeNotInNR));
+            }
+
+            if (this->maxContrastLUT[parentNodeId] >= contrast) {
+                this->maxContrastLUT[currentNodeId] = this->maxContrastLUT[parentNodeId];
+                this->associatedIndexLUT[currentNodeId] = this->associatedIndexLUT[parentNodeId];
+            } else {
+                this->maxContrastLUT[currentNodeId] = static_cast<uint8_t>(contrast);
+                this->associatedIndexLUT[currentNodeId] = !qPropag
+                    ? static_cast<int>(this->attrs_increasing[currentNodeId] + 1)
+                    : this->associatedIndexLUT[parentNodeId];
+                flagPropag = true;
+            }
         }
-      }
-      return false;
+
+        for (NodeId childNodeId : tree.getChildren(currentNodeId)) {
+            this->computeUAO(childNodeId, altitudeNodeNotInNR, flagPropag, isCalculateResidue);
+        }
     }
 
-  public:
+    void executeImpl(int maxCriterion, const std::vector<uint8_t>& selectedForFiltering) {
+        this->maxCriterion = maxCriterion;
+        this->selectedForFiltering = selectedForFiltering;
 
-    UltimateAttributeOpening(MorphologicalTreePtr tree,  std::shared_ptr<float[]> attrs_increasing): UltimateAttributeOpening(tree.get(), std::move(attrs_increasing)) {}
-    UltimateAttributeOpening(MorphologicalTree* tree, std::shared_ptr<float[]> attrs_increasing){
-      this->tree = tree;
-      this->maxContrastLUT = std::shared_ptr<uint8_t[]>(new uint8_t[this->tree->getNumNodes()]);
-      this->associatedIndexLUT = std::shared_ptr<int[]>(new int[this->tree->getNumNodes()]);
-      this->selectedForFiltering.assign(this->tree->getNumNodes(), true);
-      this->attrs_increasing = attrs_increasing;
+        for (NodeId id : tree.getAliveNodeIds()) {
+            maxContrastLUT[id] = 0;
+            associatedIndexLUT[id] = 0;
+        }
+
+        const NodeId rootNodeId = tree.getRoot();
+        const AltitudeType level = altitudeOf(rootNodeId);
+        for (NodeId childNodeId : tree.getChildren(rootNodeId)) {
+            computeUAO(childNodeId, level, false, false);
+        }
     }
 
-    ~UltimateAttributeOpening(){ }
-
-
-    void execute(int maxCriterion){
-      std::vector<uint8_t> tmp(this->tree->getNumNodes(), true);
-      execute(maxCriterion, tmp);
+    bool isSelectedForPruning(NodeId currentNodeId) {
+        const NodeId parentNodeId = tree.getNodeParent(currentNodeId);
+        if (parentNodeId == InvalidNode) {
+            return false;
+        }
+        return this->attrs_increasing[currentNodeId] != this->attrs_increasing[parentNodeId];
     }
 
-    void executeWithMSER(int maxCriterion, int deltaMSER){
-      ComputerMSER mser(this->tree);
-      execute(maxCriterion, mser.computerMSER(deltaMSER));
+    bool hasNodeSelectedInPrimitive(NodeId currentNodeId) {
+        std::stack<NodeId> stack;
+        stack.push(currentNodeId);
+        while (!stack.empty()) {
+            const NodeId nodeId = stack.top();
+            stack.pop();
+            if (selectedForFiltering[nodeId]) {
+                return true;
+            }
+
+            for (NodeId childNodeId : tree.getChildren(nodeId)) {
+                if (this->attrs_increasing[childNodeId] == this->attrs_increasing[nodeId]) {
+                    stack.push(childNodeId);
+                }
+            }
+        }
+        return false;
     }
 
-
-    ImageUInt8Ptr getMaxConstrastImage(){
-      int size = this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage();
-      ImageUInt8Ptr imgOut = ImageUInt8::create(this->tree->getNumColsOfImage(), this->tree->getNumRowsOfImage());
-      auto out = imgOut->rawData();
-
-      for (int pidx = 0; pidx < size; pidx++){
-        out[pidx] = this->maxContrastLUT[tree->getSCById(pidx)];
-      }
-      return imgOut;
+public:
+    UltimateAttributeOpening(MorphologicalTree& tree, const AltitudeBuffer* altitude, const float* attrs_increasing)
+        : tree(tree),
+          altitude_(altitude),
+          maxContrastLUT(this->tree.getNumInternalNodeSlots()),
+          associatedIndexLUT(this->tree.getNumInternalNodeSlots()) {
+        assert(attrs_increasing != nullptr);
+        this->selectedForFiltering.assign(this->tree.getNumInternalNodeSlots(), true);
+        this->attrs_increasing = attrs_increasing;
     }
 
-    ImageInt32Ptr getAssociatedImage(){
-      int size = this->tree->getNumColsOfImage() * this->tree->getNumRowsOfImage();
-      ImageInt32Ptr imgOut = ImageInt32::create(this->tree->getNumColsOfImage(), this->tree->getNumRowsOfImage());
-      auto out = imgOut->rawData();
-
-
-      for (int pidx = 0; pidx < size; pidx++){
-        out[pidx] = this->associatedIndexLUT[tree->getSCById(pidx)];
-      }
-      return imgOut;
+    UltimateAttributeOpening(MorphologicalTree& tree, const std::shared_ptr<float[]>& attrs_increasing)
+        : UltimateAttributeOpening(tree, attrs_increasing.get()) {
+        this->ownedAttrsIncreasing_ = attrs_increasing;
     }
-    
-    ImageUInt8Ptr getAssociatedColorImage(){
-      return ImageUtils::createRandomColor(this->getAssociatedImage()->rawData(), this->tree->getNumRowsOfImage(), this->tree->getNumColsOfImage());
+
+    UltimateAttributeOpening(MorphologicalTree& tree, const std::vector<float>& attrs_increasing)
+        : UltimateAttributeOpening(tree, attrs_increasing.data()) {}
+
+    UltimateAttributeOpening(MorphologicalTree& tree, const float* attrs_increasing)
+        : UltimateAttributeOpening(tree, nullptr, attrs_increasing) {}
+
+    UltimateAttributeOpening(WeightedMorphologicalTree& weighted, const std::shared_ptr<float[]>& attrs_increasing)
+        : UltimateAttributeOpening(weighted, attrs_increasing.get()) {
+        this->ownedAttrsIncreasing_ = attrs_increasing;
+    }
+
+    UltimateAttributeOpening(WeightedMorphologicalTree& weighted, const std::vector<float>& attrs_increasing)
+        : UltimateAttributeOpening(weighted, attrs_increasing.data()) {}
+
+    UltimateAttributeOpening(WeightedMorphologicalTree& weighted, const float* attrs_increasing)
+        : UltimateAttributeOpening(weighted.tree, &weighted.altitude, attrs_increasing) {}
+
+    ~UltimateAttributeOpening() = default;
+
+    void execute(int maxCriterion) {
+        std::vector<uint8_t> tmp(this->tree.getNumInternalNodeSlots(), true);
+        executeImpl(maxCriterion, tmp);
+    }
+
+    void execute(int maxCriterion, const std::vector<uint8_t>& selectedForFiltering) {
+        executeImpl(maxCriterion, selectedForFiltering);
+    }
+
+    void executeWithMSER(int maxCriterion, int deltaMSER) {
+        ComputerMSER mser(this->tree);
+        executeImpl(maxCriterion, mser.computeMSER(deltaMSER));
+    }
+
+    ImageUInt8Ptr getMaxContrastImage() {
+        const int size = this->tree.getNumColsOfImage() * this->tree.getNumRowsOfImage();
+        ImageUInt8Ptr imgOut = ImageUInt8::create(this->tree.getNumColsOfImage(), this->tree.getNumRowsOfImage());
+        auto out = imgOut->rawData();
+
+        for (int pidx = 0; pidx < size; pidx++) {
+            out[pidx] = this->maxContrastLUT[tree.getSmallestComponent(pidx)];
+        }
+        return imgOut;
+    }
+
+    ImageInt32Ptr getAssociatedImage() {
+        const int size = this->tree.getNumColsOfImage() * this->tree.getNumRowsOfImage();
+        ImageInt32Ptr imgOut = ImageInt32::create(this->tree.getNumColsOfImage(), this->tree.getNumRowsOfImage());
+        auto out = imgOut->rawData();
+
+        for (int pidx = 0; pidx < size; pidx++) {
+            out[pidx] = this->associatedIndexLUT[tree.getSmallestComponent(pidx)];
+        }
+        return imgOut;
+    }
+
+    ImageUInt8Ptr getAssociatedColorImage() {
+        return ImageUtils::createRandomColor(this->getAssociatedImage()->rawData(), this->tree.getNumRowsOfImage(), this->tree.getNumColsOfImage());
     }
 };
 
-
-
-
-
-
-
-	
 } // namespace mmcfilters
-

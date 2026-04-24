@@ -2,903 +2,1387 @@
 
 #include "../utils/AdjacencyRelation.hpp"
 #include "../utils/Common.hpp"
-#include "../utils/PixelSetManager.hpp"
-#include "NodeMTArena.hpp"
+#include "BuilderMorphologicalTreeByUnionFind.hpp"
+
+#include <algorithm>
+#include <cstddef>
+#include <deque>
+#include <optional>
+#include <queue>
+#include <span>
+#include <stdexcept>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 
 namespace mmcfilters {
 
-// Forward declaration do builder externo
-class IMorphologicalTreeBuilder; 
-class NodeMT;
-class MorphologicalTree;
-using MorphologicalTreePtr = std::shared_ptr<MorphologicalTree>;
-
 /**
- * @brief Estrutura de árvore morfológica (Component Tree e Tree of shapes) para imagens.
- *
- * `MorphologicalTree<CNPsType>` organiza hierarquicamente regiões conexas de uma imagem
- * (componentes) em uma estrutura de árvore, permitindo análise multiescala e operações
- * de filtragem baseadas em atributos. 
- *
- *
- * ## Exemplo mínimo
- * @code
- * ImageUInt8Ptr img = ...;
- * auto adj = std::make_shared<AdjacencyRelation>(rows, cols, 1.5);
- * MorphologicalTree<Pixels> T(img, true, adj); // max-tree por pixels
- *
- * NodeMT<Pixels> root = T.getRoot();
- * for (auto c : root.getChildren()) {
- *     int area = c.getArea();
- * }
- * auto recon = T.reconstructionImage();
- * @endcode
- *
- * @tparam CNPsType Define o tipo de construção da árvore: `Pixels` ou `FlatZones`.
+ * @brief Selects the node-id domain used by attribute buffers exposed to callers.
  */
-class MorphologicalTree : public std::enable_shared_from_this<MorphologicalTree> {
-    friend class NodeMT; 
-
-protected:
-    NodeId root;
-    int numRows;
-    int numCols;
-    int treeType; //0-mintree, 1-maxtree, 2-tree of shapes
-    AdjacencyRelationPtr adj; //disk of a given ratio: ratio(1) for 4-connect and ratio(1.5) for 8-connect 
-    int numNodes;
-
-    std::vector<NodeId> pixelToNodeId; //Mapeamento dos pixels representantes para NodeID. Para adquirir todos os representantes valido utilize o método getAllRepCNPs
-    std::shared_ptr<PixelSetManager> pixelBuffer; PixelSetManager::View pixelView; //gerenciamento de pixels da arvore
-    NodeMTArena arena; // armazenamento indexado dos dados de todos os nós 
-    
-    NodeId makeNode(int repNode, NodeId parentId, int threshold2);
-    void reserveNodes(int expected) { arena.reserve(expected);}
-    void reconstruction(NodeId node, uint8_t* data);
-    void build(const ImageUInt8Ptr& imgPtr, IMorphologicalTreeBuilder& builderUF);
-
-    NodeId getNodeAscendant(NodeId node, int h, bool useLevel) {
-        NodeId current = node;
-        if(useLevel){
-            for(int i=0; i <= h; i++){
-                if(isMaxtreeNodeById(node)){
-                    if(getLevelById(node) >= getLevelById(current) + h)
-                        return current;
-                }else{
-                    if(getLevelById(node) <= getLevelById(current) - h)
-                        return current;
-                }
-                if(getParentById(current) != InvalidNode)
-                    current = getParentById(current);
-                else 
-                    return current;
-            }
-        }
-        else{
-            int step = 0;
-            while (step++ < h) {
-                current = getParentById(current);
-                if (current == InvalidNode) return current;
-            }
-        }
-        return current;
-    }
-
-    void maxAreaDescendants(std::vector<NodeId>& descendants, NodeId nodeAsc, NodeId nodeDes) {
-        if (descendants[nodeAsc] == InvalidNode)
-            descendants[nodeAsc] = nodeDes;
-
-        if (getAreaById(descendants[nodeAsc]) < getAreaById(nodeDes))
-            descendants[nodeAsc] = nodeDes;
-    }
-
-    template<class PreProcessing, class MergeProcessing, class PostProcessing>
-    static void computerIncrementalAttributes(MorphologicalTree* tree, NodeId root, 
-                                    PreProcessing&& preProcessing, 
-                                    MergeProcessing&& mergeProcessing, 
-                                    PostProcessing&& postProcessing) {
-        preProcessing(root);
-        for (NodeId child : tree->getChildrenById(root)) {
-            computerIncrementalAttributes(tree, child, preProcessing, mergeProcessing, postProcessing); 
-            mergeProcessing(root, child);
-        }
-        postProcessing(root);
-    }
-
-    void computerTreeAttributes();
-    MorphologicalTree() = default;
-
-    
-public:
-
-   	static const int MAX_TREE = 0;
-	static const int MIN_TREE = 1;
-	static const int TREE_OF_SHAPES = 2;
-
-	MorphologicalTree(ImageUInt8Ptr img, std::string ToSInperpolation="self-dual");
-	explicit MorphologicalTree(ImageUInt8Ptr img, bool isMaxtree, double radius = 1.5);
-    MorphologicalTree(ImageUInt8Ptr img, const char* ToSInterpolation) : MorphologicalTree(img, std::string(ToSInterpolation)) {}
-
-    virtual ~MorphologicalTree() = default;
-
-    static MorphologicalTreePtr create(int rows, int cols, bool isMaxtree, AdjacencyRelationPtr adj) {
-        struct Enabler : public MorphologicalTree {
-            Enabler(int r, int c, bool m, AdjacencyRelationPtr a) {
-                this->numRows = r;
-                this->numCols = c;
-                this->treeType = m ? MAX_TREE : MIN_TREE;
-                this->adj = a;
-                this->pixelToNodeId.resize(r * c, InvalidNode);
-            }
-        };
-        return std::make_shared<Enabler>(rows, cols, isMaxtree, adj);
-    }
-
-    template <typename PixelType>
-    static MorphologicalTreePtr createFromAttributeMapping(MorphologicalTreePtr tree, ImagePtr<PixelType> attrMappingPtr, ImageUInt8Ptr imgPtr, bool isMaxtree, double radius);
-
-    template <typename PixelType>
-    static MorphologicalTreePtr createFromAttributeMapping(ImagePtr<PixelType> attrMappingPtr, ImageUInt8Ptr imgPtr, bool isMaxtree, double radius);
-
-
-    
-
-    NodeMT proxy(NodeId id) const ;
-    NodeMT getSC(int p) const;
-    NodeMT getRoot() const;
-    void setSC(int p, NodeMT node);
-    void setRoot(NodeMT n);
-
-    void computerArea(NodeId node);
-    ImageUInt8Ptr reconstructionImage();
-    std::vector<NodeId> getLeaves();
-
-    void prunning(NodeId nodeId);
-    void mergeWithParent(NodeId nodeId);
-    void mergeWithParent(std::vector<int>& flatzone);
-    
-
-    inline int getTreeType() const noexcept{return treeType;}
-    inline bool isMaxtree()const noexcept{ return treeType == MAX_TREE;}
-    inline int getNumNodes()const noexcept{ return numNodes; }
-    inline int getNumRowsOfImage()const noexcept{ return numRows;}
-    inline int getNumColsOfImage()const noexcept{ return numCols;}
-    inline AdjacencyRelation* getAdjacencyRelation() noexcept {return adj.get();}
-    inline bool isAncestor(NodeId u, NodeId v) const noexcept {return arena.timePreOrder[u] <= arena.timePreOrder[v] && arena.timePostOrder[u] >= arena.timePostOrder[v];}
-    inline bool isDescendant(NodeId u, NodeId v) const noexcept {return arena.timePreOrder[v] <= arena.timePreOrder[u] && arena.timePostOrder[v] >= arena.timePostOrder[u];}
-    inline bool isComparable(NodeId u, NodeId v) const noexcept {return isAncestor(u, v) || isAncestor(v, u);}
-    inline bool isStrictAncestor(NodeId u, NodeId v) const noexcept {return u != v && arena.timePreOrder[u] <= arena.timePreOrder[v] && arena.timePostOrder[u] >= arena.timePostOrder[v];}
-    inline bool isStrictDescendant(NodeId u, NodeId v) const noexcept { return u != v && arena.timePreOrder[v] <= arena.timePreOrder[u] && arena.timePostOrder[v] >= arena.timePostOrder[u];}
-    inline bool isStrictComparable(NodeId u, NodeId v) const noexcept { return isStrictAncestor(u, v) || isStrictAncestor(v, u);}
-	//inline int getDepth() const noexcept {return depth;}
-
-    inline NodeMTArena::RepsOfCCRangeById getAllRepCNPs() const { return arena.getRepsOfCC(root); } //iterador
-    inline NodeMTArena::RepsOfCCRangeById getRepCNPsOfCCById(NodeId id) const { return arena.getRepsOfCC(id); } //iterador
-    inline auto getPixelsOfCCById(NodeId id) const{ return pixelBuffer->getPixelsBySet(arena.getRepsOfCC(id));  } //iterador
-    inline auto getPixelsOfFlatzone(int repFZ) const{ return pixelBuffer->getPixelsBySet(repFZ); } //iterador
-    inline auto getPixelsOfFlatzones(std::vector<int> repFZs) const{ return pixelBuffer->getPixelsBySet(repFZs); } //iterador
-    inline int getLevelById(NodeId id) const noexcept{return arena.threshold2[id];}
-    inline void setLevelById(NodeId id, int level){ arena.threshold2[id] = level;}
-    inline int getResidueById(NodeId id) const noexcept{  
-        if(arena.parentId[id] == InvalidNode) return arena.threshold2[id]; 
-        else return arena.threshold2[id] - arena.threshold2[arena.parentId[id]]; 
-    }
-    
-    inline void releaseNode(NodeId id) noexcept { arena.releaseNode(id); numNodes--; }
-    inline int32_t getAreaById(NodeId id) const noexcept{ return arena.areaCC[id];}
-    inline void setAreaById(NodeId id, int32_t area) noexcept { arena.areaCC[id] = area;}
-    inline int getTimePostOrderById(NodeId id) const noexcept{ return arena.timePostOrder[id]; }
-    inline void setTimePostOrderById(NodeId id, int time) noexcept{ arena.timePostOrder[id] = time; } 
-    inline int getTimePreOrderById(NodeId id) const noexcept{ return arena.timePreOrder[id]; }
-    inline void setTimePreOrderById(NodeId id, int time) noexcept { arena.timePreOrder[id] = time; }
-
-    inline NodeId getParentById(NodeId id) const noexcept {return arena.parentId[id];}
-    inline int getNumChildrenById(NodeId id) const noexcept{ return arena.childCount[id]; }
-    inline int getNumSiblingsById(NodeId id) const noexcept{ return arena.parentId[id] == InvalidNode? 0 : arena.childCount[ arena.parentId[id] ] - 1; }
-    inline bool hasChildById(NodeId nodeId, NodeId childId) const { return arena.parentId[childId] == nodeId;}
-    inline bool isLeafById(NodeId id) const noexcept{ return arena.childCount[id] == 0; }
-    inline bool isMaxtreeNodeById(NodeId id) const noexcept{ return arena.parentId[id] != InvalidNode && arena.threshold2[id] > arena.threshold2[arena.parentId[id]];}
-    inline NodeMTArena::ChildRange getChildrenById(NodeId id) const {return arena.children(id);}    
-    inline NodeId getRootById()const noexcept { return this->root;}
-    inline void setRootById(NodeId n){ setParentById(n, -1); this->root = n; }
-    inline NodeId getSCById(int p) const noexcept{ return this->pixelToNodeId[p];}
-    inline void setSCById(int p, NodeId id) noexcept { this->pixelToNodeId[p] = id;}    
-    inline auto getCNPsById(NodeId id) const { return pixelBuffer->getPixelsBySet(arena.repNode[id]);}
-    inline int getNumCNPsById(NodeId id) const { return this->pixelBuffer->numPixelsInSet(arena.repNode[id]);}
-    inline int getRepNodeById(NodeId id) const noexcept { return arena.repNode[id]; }
-
-    inline int getNumDescendantsById(NodeId id) { return (getTimePostOrderById(id) - getTimePreOrderById(id) - 1) / 2; }
-
-    inline void setParentById(NodeId nodeId, NodeId parentId) {
-        if (parentId == arena.parentId[nodeId]) return;
-        if (parentId == InvalidNode) {
-            if (arena.parentId[nodeId] != InvalidNode) 
-                removeChildById(arena.parentId[nodeId], parentId, false);
-        } else {
-            addChildById(parentId, nodeId);
-        }        
-    }
-
-    void addChildById(NodeId parentId, NodeId childId) {
-        if (parentId < 0 || childId < 0) return;
-
-        // Se o filho já tem pai, desconecta antes de ler P/C
-        if (arena.parentId[childId] != InvalidNode) {
-            removeChildById(arena.parentId[childId], childId, false);
-        }
-
-        arena.parentId[childId]      = parentId;
-        arena.prevSiblingId[childId] = arena.lastChildId[parentId];
-        arena.nextSiblingId[childId] = InvalidNode;
-
-        if (arena.firstChildId[parentId] == InvalidNode) {
-            arena.firstChildId[parentId] = arena.lastChildId[parentId] = childId;
-        } else {
-            arena.nextSiblingId[arena.lastChildId[parentId]] = childId;
-            arena.lastChildId[parentId] = childId;
-        }
-        ++arena.childCount[parentId];
-
-    }
-
-    // Remove um filho 'childId' da lista encadeada de filhos do pai 'parentId'.
-    inline void removeChildById(NodeId parentId, NodeId childId, bool release) {
-        if (parentId < 0 || childId < 0) return;
-        if (arena.parentId[childId] != parentId) return;
-
-        const NodeId prev = arena.prevSiblingId[childId];
-        const NodeId next = arena.nextSiblingId[childId];
-
-        if (prev == InvalidNode) 
-            arena.firstChildId[parentId] = next;
-        else
-            arena.nextSiblingId[prev] = next;
-
-        if (next == InvalidNode) 
-            arena.lastChildId[parentId] = prev;
-        else
-            arena.prevSiblingId[next] = prev;
-
-        if (arena.childCount[parentId] > 0) 
-            --arena.childCount[parentId];
-
-        arena.parentId[childId] = InvalidNode;
-        arena.prevSiblingId[childId] = InvalidNode;
-        arena.nextSiblingId[childId] = InvalidNode;
-        if(release){
-            releaseNode(childId);
-        }
-    }
-
-
-    // Move todos os filhos de 'fromId' para o fim da lista de filhos de 'toId'.
-    inline void spliceChildrenById(NodeId toId, NodeId fromId) {
-        if (toId < 0 || fromId < 0 || toId == fromId) return;
-
-        NodeId firstFrom = arena.firstChildId[fromId];
-        if (firstFrom == InvalidNode) return; // nada para mover
-
-        // 1) todos os filhos de 'fromId' passam a ter pai 'toId'
-        for (NodeId c = arena.firstChildId[fromId]; c != InvalidNode; c = arena.nextSiblingId[c]) {
-            arena.parentId[c] = toId;
-        }
-
-        // 2) concatena a lista de filhos de 'fromId' no fim da lista de 'toId'
-        if (arena.firstChildId[toId] == InvalidNode) {
-            // 'toId' não tinha filhos — vira exatamente a lista de 'fromId'
-            arena.firstChildId[toId] = arena.firstChildId[fromId];
-            arena.lastChildId[toId]  = arena.lastChildId[fromId];
-            // o primeiro filho já tem prevSiblingId == InvalidNode porque era o primeiro de 'fromId'
-        } else {
-            // 'toId' já tinha filhos — encadeia no final
-            arena.nextSiblingId[ arena.lastChildId[toId] ] = arena.firstChildId[fromId];
-            arena.prevSiblingId[ arena.firstChildId[fromId] ] = arena.lastChildId[toId];
-            arena.lastChildId[toId] = arena.lastChildId[fromId];
-        }
-
-        // 3) atualiza contadores
-        arena.childCount[toId] += arena.childCount[fromId];
-
-        // 4) zera a lista de 'fromId'
-        arena.firstChildId[fromId] = InvalidNode;
-        arena.lastChildId[fromId]  = InvalidNode;
-        arena.childCount[fromId]   = 0;
-
-    }
-
-
-
-    static bool validateStructure(MorphologicalTreePtr tree)  {
-        return validateStructure(tree.get());
-    }
-    static bool validateStructure(const MorphologicalTree* tree){
-        const auto erroMsg = [&](std::string msg){ 
-            std::cerr << "❌ Erro " << msg << "\n";
-            return false;
-        };
-        const auto infoMsg = [&](std::string msg){ 
-            std::cout << "✅ " << msg << "\n";
-        };
-
-        if (tree->root < 0 || tree->root >= (int)tree->arena.size())
-            return erroMsg("root inválido");
-
-        // 1) Exigir exatamente 1 raiz (DESCONSIDERANDO slots liberados pela free-list)
-        int roots = 0;
-        for (int id = 0; id < (int)tree->arena.size(); ++id) {
-            if (!tree->arena.isFree(id) && tree->arena.parentId[id] == InvalidNode) {
-                ++roots;
-            }
-        }
-        if (roots != 1)
-            return erroMsg("1: A árvore NÃO possui exatamente uma raiz; a soma de parentId == -1 (desconsiderando slots livres) é "+ std::to_string(roots) +" mas deveria ser 1");
-        else
-            infoMsg("A árvore contém exatamente 1 raiz (excluindo slots livres)");
-    
-
-        // 2) Pai consistente
-        for (int id = 0; id < (int)tree->arena.size(); ++id) {
-            if (tree->arena.parentId[id] != InvalidNode) {
-                if (tree->arena.parentId[id] < 0 || tree->arena.parentId[id] >= (int)tree->arena.size()) 
-                    return erroMsg("2: O parentId="+ std::to_string(id)+" está fora do range [0, "+ std::to_string(tree->arena.size()) + "]");
-                if (id == tree->arena.parentId[id]) 
-                    return erroMsg("3: O parentId="+std::to_string(id)+" está apontando para si mesmo");
-            }
-        }
-        infoMsg("A estrutura de parentesco arena.parentId está consistente");
-
-        // 3) Encadeamento filhos/irmãos + lastChildId + childCount
-        for (int u = 0; u < (int)tree->arena.size(); ++u) {
-            int cnt = 0, last = InvalidNode;
-            if (tree->arena.firstChildId[u] == InvalidNode) {
-                if (tree->arena.lastChildId[u] != InvalidNode || tree->arena.childCount[u] != 0) 
-                    return erroMsg("4: Nó sem filhos mas last/childCount incoerentes");
-            } else {
-                // Caminha pela lista de filhos de u
-                for (NodeId c = tree->arena.firstChildId[u]; c != InvalidNode; c = tree->arena.nextSiblingId[c]) {
-                    if (c < 0 || c >= (int)tree->arena.size()) 
-                        return erroMsg("5: Estrutura de filhos e irmãos (firstChildId/nextSiblingId) fora do range [0, "+ std::to_string(tree->arena.size()) + "]");
-                    if (tree->arena.parentId[c] != u) 
-                        return erroMsg("6: Filho com parentId diferente do pai");
-                    
-                        // Checa simetria prev/next
-                    if (tree->arena.prevSiblingId[c] != last) 
-                        return erroMsg("7: Estrutura de irmãos prevSiblingId está inconsistente");
-                    if (last != InvalidNode && tree->arena.nextSiblingId[last] != c) 
-                        return erroMsg("8: Estrutura de irmãos nextSiblingId está inconsistente");
-                    last = c; 
-                    ++cnt;
-                }
-                if (last != tree->arena.lastChildId[u]) 
-                    return erroMsg("8: Estrutura de filhos lastChildId não bate com último encadeado");
-                if (cnt != tree->arena.childCount[u]) 
-                    return erroMsg("9: Estrutura que armazena a quantidade de filhos childCount não bate com encadeamento");
-            }
-        }
-        infoMsg("A estrutura de filhos/irmãos está consistente");
-        return true;
-    }
-
-    // Retorna o ascendente de 'node' que está 'delta' níveis acima na hierarquia.
-    // Se não houver ascendente nesse nível, retorna InvalidNode.
-    std::pair<std::vector<NodeId>, std::vector<NodeId>> computerAscendantsAndDescendants(int delta, bool useLevel = false) {
-        std::vector<NodeId> ascendants(getNumNodes(), InvalidNode);
-        std::vector<NodeId> descendants(getNumNodes(), InvalidNode);
-        
-        for (NodeId node: getNodeIds()) {
-            NodeId nodeAsc = getNodeAscendant(node, delta, useLevel);
-            if (nodeAsc == InvalidNode) continue;
-            maxAreaDescendants(descendants, nodeAsc, node);
-            if (descendants[nodeAsc] != InvalidNode) {
-                ascendants[node] = nodeAsc;
-            }
-        }
-        return {ascendants, descendants};
-    }
-    
-    static std::vector<NodeId> getNodesThreshold(MorphologicalTreePtr tree, int areaThreshold){
-        std::vector<NodeId> lista;
-        FastQueue<NodeId> queue;
-        queue.push(tree->root);
-
-        while (!queue.empty()) {
-            NodeId id = queue.pop();
-            if (tree->arena.areaCC[id] > areaThreshold) {
-                for(NodeId c: tree->arena.children(id)){
-                    queue.push(c);
-                }
-            } else {
-                lista.push_back(id);
-            }
-        }
-        
-        return lista;
-    }
-    
-    // ====================== Iteradores por ID (sem proxy) ====================== //
-
-    // ================== Iterador de NodeIds VÁLIDOS — versão otimizada ================== //
-    /**
-     * @brief Iterador interno que salta slots vazios e retorna IDs válidos.
-     */
-    class InternalIteratorValidNodeIds {
-    private:
-        const int* rep_;        // ponteiro p/ arena.repNode[0]
-        NodeId cur_;            // posição atual
-        NodeId end_;            // N = arena.repNode.size()
-
-        // avança cur_ até um id válido ou coloca cur_ = end_
-        inline void settle_() noexcept {
-            while (cur_ < end_ && rep_[cur_] == InvalidNode) ++cur_;
-        }
-
-    public:
-        using iterator_category = std::input_iterator_tag;
-        using value_type        = NodeId;
-        using difference_type   = std::ptrdiff_t;
-        using pointer           = const NodeId*;
-        using reference         = const NodeId&;
-
-        inline InternalIteratorValidNodeIds(MorphologicalTree* T, NodeId start) noexcept
-        : rep_(T ? T->arena.repNode.data() : nullptr),
-        cur_(T ? start : 0),
-        end_(T ? static_cast<NodeId>(T->arena.repNode.size()) : 0) {
-            settle_();
-        }
-
-        inline InternalIteratorValidNodeIds& operator++() noexcept {
-            ++cur_;
-            settle_();
-            return *this;
-        }
-
-        inline NodeId operator*() const noexcept { return cur_; }
-
-        // iterador input: comparar só posição é suficiente
-        inline bool operator==(const InternalIteratorValidNodeIds& other) const noexcept { return cur_ == other.cur_; }
-        inline bool operator!=(const InternalIteratorValidNodeIds& other) const noexcept { return cur_ != other.cur_; }
-    };
-
-    /**
-     * @brief Range wrapper para percorrer todos os NodeId ativos da arena.
-     */
-    class IteratorValidNodeIds {
-    private:
-        MorphologicalTree* T_ = nullptr;
-    public:
-        inline explicit IteratorValidNodeIds(MorphologicalTree* T) noexcept : T_(T) {}
-
-        inline InternalIteratorValidNodeIds begin() const noexcept { return InternalIteratorValidNodeIds(T_, 0); }
-        inline InternalIteratorValidNodeIds end() const noexcept {
-            // end iterator shares the same end_ (size) as begin();
-            // if T_ is null, both begin/end will be empty
-            return InternalIteratorValidNodeIds(T_, T_ ? static_cast<NodeId>(T_->arena.repNode.size()) : 0);
-        }
-    };
-
-    /** Range para iterar NodeId válidos (exclui slots livres) */
-    inline IteratorValidNodeIds getNodeIds() noexcept { return IteratorValidNodeIds(this); }
-    inline IteratorValidNodeIds getNodeIds() const noexcept { return IteratorValidNodeIds(const_cast<MorphologicalTree*>(this)); }
-
-
-    // Pós-ordem (retorna NodeId)
-    /**
-     * @brief Iterador que visita IDs em pós-ordem usando pilha explícita.
-     */
-    class InternalIteratorPostOrderTraversalId {
-    private:
-        /**
-         * @brief Estado de pilha usado durante a travessia.
-         */
-        struct Item { NodeId id; bool expanded; };
-
-        MorphologicalTree* T_ = nullptr;
-        FastStack<Item> st_;
-        NodeId current_ = InvalidNode;
-
-        // Avança até o próximo nó a ser emitido (ou deixa current_ = -1 se acabou)
-        void settle_() noexcept {
-            while (!st_.empty()) {
-                Item &top = st_.top();
-                if (!top.expanded) {
-                    top.expanded = true;
-
-                    // A ordem resultante não é garantida (costuma ser direita->esquerda).
-                    for (NodeId c = T_->arena.firstChildId[top.id]; c != InvalidNode; c = T_->arena.nextSiblingId[c]) {
-                        st_.push(Item{c, false});
-                    }
-                    // volta ao loop: agora o topo será algum filho
-                } else {
-                    current_ = top.id;      // todos os filhos já emitidos
-                    return;
-                }
-            }
-            current_ = InvalidNode; // fim
-        }
-
-    public:
-        using iterator_category = std::input_iterator_tag;
-        using value_type        = NodeId;
-        using difference_type   = std::ptrdiff_t;
-        using pointer           = const NodeId*;
-        using reference         = const NodeId&;
-
-        InternalIteratorPostOrderTraversalId(MorphologicalTree* T, NodeId rootId) noexcept : T_(T) {
-            if (T_ && rootId >= 0) {
-                st_.push(Item{rootId, false});
-                settle_(); // posiciona no primeiro elemento
-            } else {
-                current_ = InvalidNode;
-            }
-        }
-
-        // pré-incremento
-        InternalIteratorPostOrderTraversalId& operator++() noexcept {
-            if (!st_.empty()) st_.pop();  // consome o atual
-            settle_();                    // acha o próximo
-            return *this;
-        }
-
-        // desreferência → NodeId atual
-        NodeId operator*() const noexcept { return current_; }
-
-        bool operator==(const InternalIteratorPostOrderTraversalId& other) const noexcept {
-            return current_ == other.current_;
-        }
-        bool operator!=(const InternalIteratorPostOrderTraversalId& other) const noexcept {
-            return !(*this == other);
-        }
-    };
-
-    /**
-     * @brief Range gerador para percorrer IDs em pós-ordem.
-     */
-    class IteratorPostOrderTraversalId {
-    private:
-        MorphologicalTree* T_ = nullptr;
-        int rootId_ = InvalidNode;
-    public:
-        explicit IteratorPostOrderTraversalId(MorphologicalTree* T, int rootId) noexcept : T_(T), rootId_(rootId) {}
-
-        InternalIteratorPostOrderTraversalId begin() const noexcept {
-            return InternalIteratorPostOrderTraversalId(T_, rootId_);
-        }
-        InternalIteratorPostOrderTraversalId end() const noexcept {
-            return InternalIteratorPostOrderTraversalId(nullptr, InvalidNode);
-        }
-    };
-
-    auto getIteratorPostOrderTraversalById(int id) {        
-        return IteratorPostOrderTraversalId(this, id);
-    }
-    auto getIteratorPostOrderTraversalById() {        
-        return IteratorPostOrderTraversalId(this, root);
-    }
-
-    // Largura (BFS) — retorna NodeId
-    /**
-     * @brief Iterador em largura que devolve IDs dos nós visitados.
-     */
-    class InternalIteratorBreadthFirstTraversalId {
-    private:
-        MorphologicalTree* T_ = nullptr;
-        FastQueue<int> q_;
-
-    public:
-        using iterator_category = std::input_iterator_tag;
-        using value_type        = int;
-        using difference_type   = std::ptrdiff_t;
-        using pointer           = const int*;
-        using reference         = const int&;
-
-        InternalIteratorBreadthFirstTraversalId(MorphologicalTree* T, int rootId) noexcept : T_(T) {
-            if (T_ && rootId != InvalidNode) q_.push(rootId);
-        }
-
-        InternalIteratorBreadthFirstTraversalId& operator++() noexcept {
-            if (!q_.empty()) {
-                int u = q_.pop();
-                for (int c: T_->arena.children(u)) {
-                    q_.push(c);
-                }
-            }
-            return *this;
-        }
-
-        int operator*() const noexcept { return q_.front(); }
-
-        bool operator==(const InternalIteratorBreadthFirstTraversalId& other) const noexcept {
-            return q_.empty() == other.q_.empty();
-        }
-        bool operator!=(const InternalIteratorBreadthFirstTraversalId& other) const noexcept {
-            return !(*this == other);
-        }
-    };
-
-    /**
-     * @brief Range que encapsula a travessia em largura a partir de um nó.
-     */
-    class IteratorBreadthFirstTraversalId {
-    private:
-        MorphologicalTree* T_ = nullptr;
-        int rootId_ = InvalidNode;
-    public:
-        explicit IteratorBreadthFirstTraversalId(MorphologicalTree* T, int rootId) noexcept : T_(T), rootId_(rootId) {}
-
-        InternalIteratorBreadthFirstTraversalId begin() const noexcept {
-            return InternalIteratorBreadthFirstTraversalId(T_, rootId_);
-        }
-        InternalIteratorBreadthFirstTraversalId end() const noexcept {
-            return InternalIteratorBreadthFirstTraversalId(nullptr, InvalidNode);
-        }
-    };
-
-    IteratorBreadthFirstTraversalId getIteratorBreadthFirstTraversalById(NodeId id) noexcept {
-        return IteratorBreadthFirstTraversalId(this, id);
-    }
-    IteratorBreadthFirstTraversalId getIteratorBreadthFirstTraversalById() noexcept {
-        return IteratorBreadthFirstTraversalId(this, root);
-    }
-    // ================== Fim dos iteradores por ID (sem proxy) ================== //
-
-    // ================== Iterador para caminho até a raiz por NodeId (sem proxy) ================== //
-    /**
-     * @brief Iterador que sobe a cadeia de ancestrais até a raiz.
-     */
-    class InternalIteratorNodesOfPathToRootId {
-    private:
-        MorphologicalTree* T_ = nullptr;
-        NodeId currentId_ = InvalidNode;
-
-    public:
-        using iterator_category = std::input_iterator_tag;
-        using value_type        = NodeId;
-        using difference_type   = std::ptrdiff_t;
-        using pointer           = const NodeId*;
-        using reference         = const NodeId&;
-
-        InternalIteratorNodesOfPathToRootId(MorphologicalTree* T, NodeId startId) noexcept : T_(T), currentId_(startId) {}
-
-        InternalIteratorNodesOfPathToRootId& operator++() noexcept {
-            if (T_ && currentId_ != InvalidNode) {
-                currentId_ = T_->arena.parentId[currentId_];
-            }
-            return *this;
-        }
-
-        NodeId operator*() const noexcept { return currentId_; }
-
-        bool operator==(const InternalIteratorNodesOfPathToRootId& other) const noexcept {
-            return currentId_ == other.currentId_;
-        }
-        bool operator!=(const InternalIteratorNodesOfPathToRootId& other) const noexcept {
-            return !(*this == other);
-        }
-    };
-
-    /**
-     * @brief Range que percorre os ancestrais de um nó até a raiz.
-     */
-    class IteratorNodesOfPathToRootId {
-    private:
-        MorphologicalTree* T_ = nullptr;
-        NodeId startId_ = -1;
-
-    public:
-        IteratorNodesOfPathToRootId(MorphologicalTree* T, NodeId startId) noexcept : T_(T), startId_(startId) {}
-
-        InternalIteratorNodesOfPathToRootId begin() const noexcept {
-            return InternalIteratorNodesOfPathToRootId(T_, startId_);
-        }
-        InternalIteratorNodesOfPathToRootId end() const noexcept {
-            return InternalIteratorNodesOfPathToRootId(nullptr, InvalidNode);
-        }
-    };
-
-    IteratorNodesOfPathToRootId getNodesOfPathToRootById(NodeId id) noexcept {
-        return IteratorNodesOfPathToRootId(this, id);
-    }
-
-
-    // ================== Iterador BFS de subárvore (com ou sem raiz) ================== //
-    /**
-     * @brief Iterador em largura (BFS) sobre os nós de uma subárvore.
-     * Configurável para incluir ou excluir o nó raiz do percurso.
-     */
-    class InternalIteratorSubtreeBFS {
-    private:
-        MorphologicalTree* T_ = nullptr;
-        FastQueue<int> q_;
-
-    public:
-        using iterator_category = std::input_iterator_tag;
-        using value_type        = NodeId;
-        using difference_type   = std::ptrdiff_t;
-        using pointer           = const NodeId*;
-        using reference         = const NodeId&;
-
-        explicit InternalIteratorSubtreeBFS(MorphologicalTree* T, NodeId rootId, bool includeRoot) noexcept : T_(T) {
-            if (T_ && rootId >= 0) {
-                if (includeRoot) {
-                    // Inclui a própria raiz no percurso
-                    q_.push(rootId);
-                } else {
-                    // Exclui a raiz: começa nos filhos diretos
-                    for (int c : T_->arena.children(rootId)) q_.push(c);
-                }
-            }
-        }
-
-        InternalIteratorSubtreeBFS& operator++() noexcept {
-            if (!q_.empty()) {
-                int u = q_.pop();
-                // Empilha os filhos de u para manter ordem BFS
-                for (int v : T_->arena.children(u)) q_.push(v);
-            }
-            return *this;
-        }
-
-        NodeId operator*() const noexcept { return q_.front(); }
-
-        bool operator==(const InternalIteratorSubtreeBFS& other) const noexcept {
-            // Sentinela de fim: ambas filas vazias
-            return q_.empty() == other.q_.empty();
-        }
-        bool operator!=(const InternalIteratorSubtreeBFS& other) const noexcept { return !(*this == other); }
-    };
-
-    /**
-     * @brief Range leve para iterar a subárvore via range-for.
-     */
-    class IteratorSubtreeBFS {
-    private:
-        MorphologicalTree* T_ = nullptr;
-        NodeId rootId_ = InvalidNode;
-        bool includeRoot_ = false;
-
-    public:
-        explicit IteratorSubtreeBFS(MorphologicalTree* T, NodeId rootId, bool includeRoot) noexcept
-            : T_(T), rootId_(rootId), includeRoot_(includeRoot) {}
-
-        InternalIteratorSubtreeBFS begin() const noexcept { return InternalIteratorSubtreeBFS(T_, rootId_, includeRoot_); }
-        InternalIteratorSubtreeBFS end()   const noexcept { return InternalIteratorSubtreeBFS(nullptr, InvalidNode, false); }
-    };
-
-    // ================== Facades (duas chamadas pedidas) ================== //
-
-    /**
-     * @brief Descendentes de `id` em BFS, **exclui** o próprio `id`.
-     */
-    IteratorSubtreeBFS getNodesDescendantsById(NodeId id) noexcept {
-        return IteratorSubtreeBFS(this, id, /*includeRoot=*/false);
-    }
-    IteratorSubtreeBFS getNodesDescendantsById() noexcept {
-        return IteratorSubtreeBFS(this, root, /*includeRoot=*/false);
-    }
-
-    /**
-     * @brief Subárvore de `id` em BFS, **inclui** o próprio `id`.
-     */
-    IteratorSubtreeBFS getNodesOfSubtree(NodeId id) noexcept {
-        return IteratorSubtreeBFS(this, id, /*includeRoot=*/true);
-    }
-    IteratorSubtreeBFS getNodesOfSubtree() noexcept {
-        return IteratorSubtreeBFS(this, root, /*includeRoot=*/true);
-    }
+enum class NodeIdSpace {
+    MORPHOLOGICAL_TREE,
+    HIGRA
 };
 
+/**
+ * @brief Selects the interpolation mode used to build a tree of shapes.
+ */
+enum class ToSInterpolation {
+    SelfDual,
+    Min4cMax8c
+};
 
+class MorphologicalTree;
+class MorphologicalTreePybind;
+class TreeEditor;
+class WeightedMorphologicalTree;
 
-
+namespace tree_altitude_ops {
+std::pair<std::vector<NodeId>, std::vector<NodeId>> computeAscendantsAndDescendants(
+    const MorphologicalTree& tree,
+    const AltitudeBuffer* altitude,
+    int delta,
+    bool useLevel = false);
+}
 
 /**
- * @brief Estrutura LCA baseada em percurso Euler e RMQ para arvores morfologicas.
- * 
- * 
- * Método Euler Tour + RMQ
-  
- Etapa 1: Euler Tour
-    Realiza um DFS na árvore e registra:
-	1.	A ordem dos nós visitados → euler[]
-	2.	A profundidade de cada nó na árvore durante o percurso → depth[]
-	3.	A índice da primeira ocorrência de cada nó no vetor euler → firstOccurrence[]
-
-  Etapa 2: RMQ na profundidade
-    Para responder LCA(u, v):
-	1.	Pegue i = firstOccurrence[u], 
-              j = firstOccurrence[v]
-	2.	Realize um RMQ (Range Minimum Query) sobre o vetor depth[] entre as posições min(i, j) e max(i, j) no vetor euler[].
-	3.	O resultado do RMQ será o índice do nó com menor profundidade entre u e v no caminho — ou seja, o LCA!
-
-    Exemplo:
-      0
-     / \
-    1   2
-   /
-  3
-  Índices:         0  1  2  3  4  5  6
-  euler =         [0, 1, 3, 1, 0, 2, 0]
-  depth =         [0, 1, 2, 1, 0, 1, 0]
-  firstOccurrence=[0, 1, 5, 2         ]
-    
-  LCA(3, 2) = 0
-    i = firstOccurrence[3] = 2
-    j = firstOccurrence[2] = 5
-    RMQ: 
-      1. Descobrir o intervalo no vetor depth: depth[2..5] = [2, 1, 0, 1]
-      2. Encontrar a posição do menor valor: O mínimo é 0, que ocorre em depth[4]
-      3. O correspondente em no vetor euler: euler[4] = 0 que é o indice do LCA
-	
+ * @brief Mutable topology and proper-part ownership for component-tree-like hierarchies.
+ *
+ * The class owns only structural state: dense internal node ids, parent/child
+ * links, and the smallest component that owns each proper part. Weighted state
+ * such as node altitude lives in `WeightedMorphologicalTree` or in explicit
+ * altitude buffers passed to `tree_altitude_ops`.
  */
-class LCAEulerRMQ {
+class MorphologicalTree {
+    friend class MorphologicalTreePybind;
+    friend class TreeEditor;
+    friend class WeightedMorphologicalTree;
+    friend std::pair<std::vector<NodeId>, std::vector<NodeId>> tree_altitude_ops::computeAscendantsAndDescendants(
+        const MorphologicalTree& tree,
+        const AltitudeBuffer* altitude,
+        int delta,
+        bool useLevel);
+
+public:
+    static constexpr int MAX_TREE = 0;
+    static constexpr int MIN_TREE = 1;
+    static constexpr int TREE_OF_SHAPES = 2;
+
 private:
-    std::vector<int> euler;            // timePreOrder dos nós na ordem de visita
-    std::vector<int> depth;            // profundidade associada a cada posição em euler
-    std::vector<int> firstOccurrence;  // [timePreOrder] = posição no vetor euler
-    std::vector<std::vector<int>> st;  // Sparse Table para RMQ
-    MorphologicalTree* tree;
+    NodeId rootNodeId_ = InvalidNode;
+    int treeType_ = MAX_TREE; // 0=max-tree, 1=min-tree, 2=tree of shapes
+    int numRows_ = 0;
+    int numCols_ = 0;
+    int numNodes_ = 0;
+    std::optional<AdjacencyRelation> adj_;
 
-    void depthFirstTraversal(NodeId timeNode, int d) {
-        if (firstOccurrence[timeNode] == -1)
-            firstOccurrence[timeNode] = euler.size();
+    std::vector<NodeId> properPartOwner_;
+    std::vector<NodeId> nodeParent_;
+    std::vector<std::vector<NodeId>> children_;
+    std::vector<uint8_t> alive_;
+    std::vector<NodeId> freeNodeIds_;
+    std::vector<std::vector<NodeId>> properPartsByNode_;
 
-        euler.push_back(timeNode);
-        depth.push_back(d);
+    std::vector<NodeId> higraNodeIdBySlot_;
+    std::vector<NodeId> slotByHigraNodeId_;
 
-        for (NodeId child : tree->getChildrenById(timeNode)) {
-            depthFirstTraversal(child, d + 1);
-            euler.push_back(timeNode);
-            depth.push_back(d);
+    mutable bool traversalTimesValid_ = false;
+    mutable std::vector<int> preOrderTime_;
+    mutable std::vector<int> postOrderTime_;
+    mutable size_t nodeStructureVersion_ = 0;
+    mutable size_t topologyVersion_ = 0;
+    mutable size_t properPartVersion_ = 0;
+
+    void invalidateTraversalTimes() const noexcept {
+        traversalTimesValid_ = false;
+    }
+
+    void invalidateHigraNodeIdMapping() {
+        higraNodeIdBySlot_.clear();
+        slotByHigraNodeId_.clear();
+    }
+
+    void resetIteratorVersions() const noexcept {
+        ++nodeStructureVersion_;
+        ++topologyVersion_;
+        ++properPartVersion_;
+        invalidateTraversalTimes();
+    }
+
+    void markTopologyChanged() {
+        resetIteratorVersions();
+        invalidateHigraNodeIdMapping();
+    }
+
+    void markProperPartChanged() {
+        ++properPartVersion_;
+        invalidateHigraNodeIdMapping();
+    }
+
+    void ensureNodeId(NodeId nodeId, const char* context) const {
+        if (!isNode(nodeId)) {
+            throw std::invalid_argument(context);
         }
     }
 
-    void buildSparseTable() {
-        int n = depth.size();
-        int logn = std::log2(n) + 1;
-        st.assign(n, std::vector<int>(logn));
+    void ensureAliveNodeId(NodeId nodeId, const char* context) const {
+        if (!isAlive(nodeId)) {
+            throw std::invalid_argument(context);
+        }
+    }
 
-        for (int i = 0; i < n; ++i)
-            st[i][0] = i;
+    void resetEmptyStorage(size_t numProperParts) {
+        rootNodeId_ = InvalidNode;
+        numNodes_ = 0;
+        properPartOwner_.assign(numProperParts, InvalidNode);
+        nodeParent_.clear();
+        children_.clear();
+        alive_.clear();
+        freeNodeIds_.clear();
+        properPartsByNode_.clear();
+        invalidateHigraNodeIdMapping();
+        resetIteratorVersions();
+    }
 
-        for (int j = 1; (1 << j) <= n; ++j) {
-            for (int i = 0; i + (1 << j) <= n; ++i) {
-                int l = st[i][j - 1];
-                int r = st[i + (1 << (j - 1))][j - 1];
-                st[i][j] = (depth[l] < depth[r]) ? l : r;
+    NodeId allocateNodeSlot() {
+        NodeId nodeId = InvalidNode;
+        if (!freeNodeIds_.empty()) {
+            nodeId = freeNodeIds_.back();
+            freeNodeIds_.pop_back();
+            const auto index = static_cast<size_t>(nodeId);
+            alive_[index] = true;
+            nodeParent_[index] = nodeId;
+            children_[index].clear();
+            properPartsByNode_[index].clear();
+        } else {
+            nodeId = static_cast<NodeId>(nodeParent_.size());
+            nodeParent_.push_back(nodeId);
+            children_.emplace_back();
+            alive_.push_back(true);
+            properPartsByNode_.emplace_back();
+        }
+        ++numNodes_;
+        return nodeId;
+    }
+
+    NodeId createDetachedNode() {
+        const NodeId nodeId = allocateNodeSlot();
+        if (rootNodeId_ == InvalidNode) {
+            rootNodeId_ = nodeId;
+        }
+        markTopologyChanged();
+        return nodeId;
+    }
+
+    NodeId createNode(NodeId parentNodeId) {
+        const NodeId nodeId = allocateNodeSlot();
+        if (parentNodeId == InvalidNode) {
+            rootNodeId_ = nodeId;
+            nodeParent_[static_cast<size_t>(nodeId)] = nodeId;
+        } else {
+            children_[static_cast<size_t>(parentNodeId)].push_back(nodeId);
+            nodeParent_[static_cast<size_t>(nodeId)] = parentNodeId;
+        }
+        resetIteratorVersions();
+        return nodeId;
+    }
+
+    void releaseNode(NodeId nodeId) {
+        ensureAliveNodeId(nodeId, "releaseNode requires a live node.");
+        const auto index = static_cast<size_t>(nodeId);
+        if (!children_[index].empty() || !properPartsByNode_[index].empty()) {
+            throw std::logic_error("releaseNode requires an empty detached node.");
+        }
+        if (nodeId == rootNodeId_) {
+            rootNodeId_ = InvalidNode;
+        }
+        alive_[index] = false;
+        nodeParent_[index] = InvalidNode;
+        freeNodeIds_.push_back(nodeId);
+        --numNodes_;
+        markTopologyChanged();
+    }
+
+    void removeChildLink(NodeId parentNodeId, NodeId childNodeId) {
+        if (!isNode(parentNodeId)) {
+            return;
+        }
+        auto& siblings = children_[static_cast<size_t>(parentNodeId)];
+        siblings.erase(std::remove(siblings.begin(), siblings.end(), childNodeId), siblings.end());
+    }
+
+    void linkChild(NodeId parentNodeId, NodeId childNodeId) {
+        ensureAliveNodeId(parentNodeId, "linkChild requires a live parent node.");
+        ensureAliveNodeId(childNodeId, "linkChild requires a live child node.");
+        if (parentNodeId == childNodeId) {
+            throw std::invalid_argument("A node cannot be linked as its own child.");
+        }
+        const NodeId oldParentId = nodeParent_[static_cast<size_t>(childNodeId)];
+        if (oldParentId != InvalidNode && oldParentId != childNodeId) {
+            removeChildLink(oldParentId, childNodeId);
+        }
+        nodeParent_[static_cast<size_t>(childNodeId)] = parentNodeId;
+        children_[static_cast<size_t>(parentNodeId)].push_back(childNodeId);
+        markTopologyChanged();
+    }
+
+    void rebuildProperPartsFromOwnership() {
+        properPartsByNode_.assign(nodeParent_.size(), {});
+        for (NodeId properPart = 0; properPart < static_cast<NodeId>(properPartOwner_.size()); ++properPart) {
+            const NodeId ownerNodeId = properPartOwner_[static_cast<size_t>(properPart)];
+            if (ownerNodeId != InvalidNode && isAlive(ownerNodeId)) {
+                properPartsByNode_[static_cast<size_t>(ownerNodeId)].push_back(properPart);
+            }
+        }
+        ++properPartVersion_;
+    }
+
+    int expectedProperPartCountFromDomain() const noexcept {
+        if (numRows_ <= 0 || numCols_ <= 0) {
+            return -1;
+        }
+        return numRows_ * numCols_;
+    }
+
+    void validateProperPartDomain(NodeId numProperParts) const {
+        if (numProperParts < 0) {
+            throw std::invalid_argument("The proper-part domain size must be non-negative.");
+        }
+        const int imageDomainSize = expectedProperPartCountFromDomain();
+        if (imageDomainSize >= 0 && numProperParts != imageDomainSize) {
+            throw std::invalid_argument("The proper-part domain must match the configured image domain.");
+        }
+        if (adj_.has_value()) {
+            const int adjacencyDomainSize = adj_->getNumRows() * adj_->getNumCols();
+            if (numProperParts != adjacencyDomainSize) {
+                throw std::invalid_argument("The proper-part domain must match the adjacency relation domain.");
             }
         }
     }
 
-    int rmq(int l, int r) {
-        int len = r - l + 1;
-        int k = std::log2(len);
-        int a = st[l][k];
-        int b = st[r - (1 << k) + 1][k];
-        return (depth[a] < depth[b]) ? a : b;
+    void validateParentArrayInput(std::span<const NodeId> parent, NodeId numProperParts) const {
+        validateProperPartDomain(numProperParts);
+        if (parent.size() <= static_cast<size_t>(numProperParts)) {
+            throw std::invalid_argument("The compact parent array must contain at least one internal node.");
+        }
+
+        const NodeId numNodeSlots = static_cast<NodeId>(parent.size()) - numProperParts;
+        std::vector<uint8_t> nodeAlive(static_cast<size_t>(numNodeSlots), false);
+        for (NodeId nodeId = 0; nodeId < numNodeSlots; ++nodeId) {
+            if (parent[static_cast<size_t>(numProperParts + nodeId)] != InvalidNode) {
+                nodeAlive[static_cast<size_t>(nodeId)] = true;
+            }
+        }
+
+        for (NodeId properPart = 0; properPart < numProperParts; ++properPart) {
+            const NodeId ownerNodeId = parent[static_cast<size_t>(properPart)];
+            if (ownerNodeId < 0 || ownerNodeId >= numNodeSlots || !nodeAlive[static_cast<size_t>(ownerNodeId)]) {
+                throw std::invalid_argument("Each proper part must point to a live internal node.");
+            }
+        }
+
+        NodeId rootNodeId = InvalidNode;
+        for (NodeId nodeId = 0; nodeId < numNodeSlots; ++nodeId) {
+            if (!nodeAlive[static_cast<size_t>(nodeId)]) {
+                continue;
+            }
+            const NodeId parentNodeId = parent[static_cast<size_t>(numProperParts + nodeId)];
+            if (parentNodeId < 0 || parentNodeId >= numNodeSlots || !nodeAlive[static_cast<size_t>(parentNodeId)]) {
+                throw std::invalid_argument("Each live internal node must point to a live internal parent.");
+            }
+            if (parentNodeId == nodeId) {
+                if (rootNodeId != InvalidNode) {
+                    throw std::invalid_argument("The compact parent array must contain exactly one root.");
+                }
+                rootNodeId = nodeId;
+            }
+        }
+        if (rootNodeId == InvalidNode) {
+            throw std::invalid_argument("The compact parent array must contain exactly one root.");
+        }
+
+        for (NodeId nodeId = 0; nodeId < numNodeSlots; ++nodeId) {
+            if (!nodeAlive[static_cast<size_t>(nodeId)]) {
+                continue;
+            }
+            std::vector<uint8_t> seen(static_cast<size_t>(numNodeSlots), false);
+            NodeId currentNodeId = nodeId;
+            while (true) {
+                if (currentNodeId < 0 || currentNodeId >= numNodeSlots || !nodeAlive[static_cast<size_t>(currentNodeId)]) {
+                    throw std::invalid_argument("Parent chains must remain inside the live node domain.");
+                }
+                if (seen[static_cast<size_t>(currentNodeId)]) {
+                    throw std::invalid_argument("Parent chains must be acyclic.");
+                }
+                seen[static_cast<size_t>(currentNodeId)] = true;
+                const NodeId parentNodeId = parent[static_cast<size_t>(numProperParts + currentNodeId)];
+                if (parentNodeId == currentNodeId) {
+                    if (currentNodeId != rootNodeId) {
+                        throw std::invalid_argument("Every live node must reach the unique root.");
+                    }
+                    break;
+                }
+                currentNodeId = parentNodeId;
+            }
+        }
+    }
+
+    void validateHigraTopologyInput(std::span<const NodeId> parent, NodeId numProperParts) const {
+        validateProperPartDomain(numProperParts);
+        if (parent.size() <= static_cast<size_t>(numProperParts)) {
+            throw std::invalid_argument("The Higra parent array must contain leaves and internal nodes.");
+        }
+
+        const NodeId numHigraNodes = static_cast<NodeId>(parent.size());
+        for (NodeId properPart = 0; properPart < numProperParts; ++properPart) {
+            const NodeId parentNodeId = parent[static_cast<size_t>(properPart)];
+            if (parentNodeId < numProperParts || parentNodeId >= numHigraNodes) {
+                throw std::invalid_argument("Higra leaves must point to the internal-node domain.");
+            }
+        }
+
+        NodeId rootHigraId = InvalidNode;
+        for (NodeId higraNodeId = numProperParts; higraNodeId < numHigraNodes; ++higraNodeId) {
+            const NodeId parentNodeId = parent[static_cast<size_t>(higraNodeId)];
+            if (parentNodeId < numProperParts || parentNodeId >= numHigraNodes) {
+                throw std::invalid_argument("Higra internal nodes must point to internal-node parents.");
+            }
+            if (parentNodeId == higraNodeId) {
+                if (rootHigraId != InvalidNode) {
+                    throw std::invalid_argument("The Higra parent array must contain exactly one root.");
+                }
+                rootHigraId = higraNodeId;
+            }
+        }
+        if (rootHigraId == InvalidNode) {
+            throw std::invalid_argument("The Higra parent array must contain exactly one root.");
+        }
+
+        for (NodeId higraNodeId = numProperParts; higraNodeId < numHigraNodes; ++higraNodeId) {
+            std::vector<uint8_t> seen(static_cast<size_t>(numHigraNodes), false);
+            NodeId currentNodeId = higraNodeId;
+            while (true) {
+                if (currentNodeId < numProperParts || currentNodeId >= numHigraNodes) {
+                    throw std::invalid_argument("Higra parent chains must remain inside the internal-node domain.");
+                }
+                if (seen[static_cast<size_t>(currentNodeId)]) {
+                    throw std::invalid_argument("Higra parent chains must be acyclic.");
+                }
+                seen[static_cast<size_t>(currentNodeId)] = true;
+                const NodeId parentNodeId = parent[static_cast<size_t>(currentNodeId)];
+                if (parentNodeId == currentNodeId) {
+                    if (currentNodeId != rootHigraId) {
+                        throw std::invalid_argument("Every Higra internal node must reach the unique root.");
+                    }
+                    break;
+                }
+                currentNodeId = parentNodeId;
+            }
+        }
+    }
+
+    void resetFromParentArray(std::span<const NodeId> parent, NodeId numProperParts) {
+        validateParentArrayInput(parent, numProperParts);
+        const NodeId numNodeSlots = static_cast<NodeId>(parent.size()) - numProperParts;
+
+        resetEmptyStorage(static_cast<size_t>(numProperParts));
+        nodeParent_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
+        children_.assign(static_cast<size_t>(numNodeSlots), {});
+        alive_.assign(static_cast<size_t>(numNodeSlots), false);
+        properPartsByNode_.assign(static_cast<size_t>(numNodeSlots), {});
+        freeNodeIds_.clear();
+
+        for (NodeId nodeId = 0; nodeId < numNodeSlots; ++nodeId) {
+            const NodeId parentNodeId = parent[static_cast<size_t>(numProperParts + nodeId)];
+            if (parentNodeId == InvalidNode) {
+                freeNodeIds_.push_back(nodeId);
+                continue;
+            }
+            alive_[static_cast<size_t>(nodeId)] = true;
+            nodeParent_[static_cast<size_t>(nodeId)] = parentNodeId;
+            ++numNodes_;
+            if (parentNodeId == nodeId) {
+                rootNodeId_ = nodeId;
+            } else {
+                children_[static_cast<size_t>(parentNodeId)].push_back(nodeId);
+            }
+        }
+
+        for (NodeId properPart = 0; properPart < numProperParts; ++properPart) {
+            properPartOwner_[static_cast<size_t>(properPart)] = parent[static_cast<size_t>(properPart)];
+        }
+        rebuildProperPartsFromOwnership();
+        invalidateHigraNodeIdMapping();
+        resetIteratorVersions();
+    }
+
+    void resetFromHigraTopology(std::span<const NodeId> parent, NodeId numProperParts) {
+        validateHigraTopologyInput(parent, numProperParts);
+        const NodeId numHigraNodes = static_cast<NodeId>(parent.size());
+        const NodeId numNodeSlots = numHigraNodes - numProperParts;
+
+        resetEmptyStorage(static_cast<size_t>(numProperParts));
+        nodeParent_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
+        children_.assign(static_cast<size_t>(numNodeSlots), {});
+        alive_.assign(static_cast<size_t>(numNodeSlots), true);
+        properPartsByNode_.assign(static_cast<size_t>(numNodeSlots), {});
+        freeNodeIds_.clear();
+        numNodes_ = numNodeSlots;
+
+        higraNodeIdBySlot_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
+        slotByHigraNodeId_.assign(static_cast<size_t>(numHigraNodes), InvalidNode);
+        for (NodeId higraNodeId = numProperParts; higraNodeId < numHigraNodes; ++higraNodeId) {
+            const NodeId slotId = higraNodeId - numProperParts;
+            higraNodeIdBySlot_[static_cast<size_t>(slotId)] = higraNodeId;
+            slotByHigraNodeId_[static_cast<size_t>(higraNodeId)] = slotId;
+        }
+
+        for (NodeId properPart = 0; properPart < numProperParts; ++properPart) {
+            properPartOwner_[static_cast<size_t>(properPart)] =
+                slotByHigraNodeId_[static_cast<size_t>(parent[static_cast<size_t>(properPart)])];
+        }
+
+        for (NodeId higraNodeId = numProperParts; higraNodeId < numHigraNodes; ++higraNodeId) {
+            const NodeId slotId = higraNodeId - numProperParts;
+            const NodeId parentHigraId = parent[static_cast<size_t>(higraNodeId)];
+            if (parentHigraId == higraNodeId) {
+                nodeParent_[static_cast<size_t>(slotId)] = slotId;
+                rootNodeId_ = slotId;
+            } else {
+                const NodeId parentSlotId = slotByHigraNodeId_[static_cast<size_t>(parentHigraId)];
+                nodeParent_[static_cast<size_t>(slotId)] = parentSlotId;
+                children_[static_cast<size_t>(parentSlotId)].push_back(slotId);
+            }
+        }
+
+        rebuildProperPartsFromOwnership();
+        resetIteratorVersions();
+    }
+
+    template <class AltitudeSink>
+    void build(ImageUInt8Ptr img, const IMorphologicalTreeBuilder& builder, AltitudeSink&& altitudeSink) {
+        if (!img) {
+            throw std::invalid_argument("MorphologicalTree construction requires a non-null image.");
+        }
+        numRows_ = img->getNumRows();
+        numCols_ = img->getNumCols();
+        resetEmptyStorage(static_cast<size_t>(img->getSize()));
+
+        auto [parentPixels, orderedPixels, expectedNumNodes] = builder.createTreeByUnionFind(img);
+        if (parentPixels.size() != static_cast<size_t>(img->getSize()) ||
+            orderedPixels.size() != static_cast<size_t>(img->getSize())) {
+            throw std::runtime_error("Union-find builder returned an invalid image-domain hierarchy.");
+        }
+
+        auto* pixel = img->rawData();
+        for (int properPart : orderedPixels) {
+            if (properPart < 0 || properPart >= img->getSize()) {
+                throw std::runtime_error("Union-find builder returned an invalid pixel id.");
+            }
+
+            const int parentProperPart = parentPixels[static_cast<size_t>(properPart)];
+            if (parentProperPart < 0 || parentProperPart >= img->getSize()) {
+                throw std::runtime_error("Union-find builder returned an invalid parent pixel id.");
+            }
+
+            NodeId ownerNodeId = InvalidNode;
+            if (parentProperPart == properPart) {
+                ownerNodeId = createNode(InvalidNode);
+                altitudeSink(ownerNodeId, static_cast<AltitudeType>(pixel[properPart]));
+            } else if (pixel[parentProperPart] != pixel[properPart]) {
+                const NodeId parentNodeId = properPartOwner_[static_cast<size_t>(parentProperPart)];
+                if (parentNodeId == InvalidNode) {
+                    throw std::runtime_error("Union-find builder produced a child before its parent component.");
+                }
+                ownerNodeId = createNode(parentNodeId);
+                altitudeSink(ownerNodeId, static_cast<AltitudeType>(pixel[properPart]));
+            } else {
+                ownerNodeId = properPartOwner_[static_cast<size_t>(parentProperPart)];
+                if (ownerNodeId == InvalidNode) {
+                    throw std::runtime_error("Union-find builder produced a flat zone before its representative component.");
+                }
+            }
+            properPartOwner_[static_cast<size_t>(properPart)] = ownerNodeId;
+        }
+
+        rebuildProperPartsFromOwnership();
+        if (expectedNumNodes != numNodes_) {
+            throw std::runtime_error("Union-find builder node count does not match the imported topology.");
+        }
+        validateConnectedRootedTree();
+    }
+
+    void detachNode(NodeId nodeId) {
+        ensureAliveNodeId(nodeId, "detachNode requires a live node.");
+        const NodeId parentNodeId = nodeParent_[static_cast<size_t>(nodeId)];
+        if (parentNodeId != InvalidNode && parentNodeId != nodeId) {
+            removeChildLink(parentNodeId, nodeId);
+        }
+        nodeParent_[static_cast<size_t>(nodeId)] = nodeId;
+        markTopologyChanged();
+    }
+
+    void moveNode(NodeId nodeId, NodeId newParentId) {
+        ensureAliveNodeId(nodeId, "moveNode requires a live node.");
+        ensureAliveNodeId(newParentId, "moveNode requires a live parent node.");
+        if (nodeId == rootNodeId_) {
+            throw std::invalid_argument("moveNode cannot move the connected root.");
+        }
+        if (nodeId == newParentId || isAncestor(nodeId, newParentId)) {
+            throw std::invalid_argument("moveNode would create a cycle.");
+        }
+        linkChild(newParentId, nodeId);
+    }
+
+    void attachNode(NodeId parentNodeId, NodeId detachedNodeId) {
+        ensureAliveNodeId(parentNodeId, "attachNode requires a live parent node.");
+        ensureAliveNodeId(detachedNodeId, "attachNode requires a live detached node.");
+        if (nodeParent_[static_cast<size_t>(detachedNodeId)] != detachedNodeId) {
+            throw std::invalid_argument("attachNode expects a detached self-parented node.");
+        }
+        if (detachedNodeId == parentNodeId || isAncestor(detachedNodeId, parentNodeId)) {
+            throw std::invalid_argument("attachNode would create a cycle.");
+        }
+        linkChild(parentNodeId, detachedNodeId);
+    }
+
+    void moveChildren(NodeId targetNodeId, NodeId sourceNodeId) {
+        ensureAliveNodeId(targetNodeId, "moveChildren requires a live target node.");
+        ensureAliveNodeId(sourceNodeId, "moveChildren requires a live source node.");
+        if (targetNodeId == sourceNodeId || isAncestor(sourceNodeId, targetNodeId)) {
+            throw std::invalid_argument("moveChildren would create a cycle.");
+        }
+
+        auto movingChildren = std::move(children_[static_cast<size_t>(sourceNodeId)]);
+        children_[static_cast<size_t>(sourceNodeId)].clear();
+        auto& targetChildren = children_[static_cast<size_t>(targetNodeId)];
+        for (NodeId childNodeId : movingChildren) {
+            nodeParent_[static_cast<size_t>(childNodeId)] = targetNodeId;
+            targetChildren.push_back(childNodeId);
+        }
+        markTopologyChanged();
+    }
+
+    void moveProperPart(NodeId targetNodeId, NodeId sourceNodeId, NodeId properPartId) {
+        ensureAliveNodeId(targetNodeId, "moveProperPart requires a live target node.");
+        ensureAliveNodeId(sourceNodeId, "moveProperPart requires a live source node.");
+        if (!isProperPart(properPartId)) {
+            throw std::invalid_argument("moveProperPart requires a valid proper-part id.");
+        }
+        if (properPartOwner_[static_cast<size_t>(properPartId)] != sourceNodeId) {
+            throw std::invalid_argument("moveProperPart requires a direct proper part of the source node.");
+        }
+        properPartOwner_[static_cast<size_t>(properPartId)] = targetNodeId;
+        rebuildProperPartsFromOwnership();
+        markProperPartChanged();
+    }
+
+    void moveProperParts(NodeId targetNodeId, NodeId sourceNodeId) {
+        ensureAliveNodeId(targetNodeId, "moveProperParts requires a live target node.");
+        ensureAliveNodeId(sourceNodeId, "moveProperParts requires a live source node.");
+        for (NodeId& ownerNodeId : properPartOwner_) {
+            if (ownerNodeId == sourceNodeId) {
+                ownerNodeId = targetNodeId;
+            }
+        }
+        rebuildProperPartsFromOwnership();
+        markProperPartChanged();
+    }
+
+    void setRoot(NodeId nodeId) {
+        ensureAliveNodeId(nodeId, "setRoot requires a live node.");
+        detachNode(nodeId);
+        rootNodeId_ = nodeId;
+        nodeParent_[static_cast<size_t>(nodeId)] = nodeId;
+        markTopologyChanged();
+    }
+
+    void rebuildTraversalTimes() const {
+        preOrderTime_.assign(nodeParent_.size(), -1);
+        postOrderTime_.assign(nodeParent_.size(), -1);
+        if (!isAlive(rootNodeId_)) {
+            traversalTimesValid_ = true;
+            return;
+        }
+
+        int timestamp = 0;
+        std::vector<std::pair<NodeId, size_t>> stack;
+        stack.emplace_back(rootNodeId_, 0);
+        preOrderTime_[static_cast<size_t>(rootNodeId_)] = timestamp++;
+
+        while (!stack.empty()) {
+            auto& [nodeId, nextChildIndex] = stack.back();
+            const auto& children = children_[static_cast<size_t>(nodeId)];
+            if (nextChildIndex < children.size()) {
+                const NodeId childNodeId = children[nextChildIndex++];
+                if (!isAlive(childNodeId)) {
+                    continue;
+                }
+                preOrderTime_[static_cast<size_t>(childNodeId)] = timestamp++;
+                stack.emplace_back(childNodeId, 0);
+            } else {
+                postOrderTime_[static_cast<size_t>(nodeId)] = timestamp++;
+                stack.pop_back();
+            }
+        }
+        traversalTimesValid_ = true;
+    }
+
+    std::vector<int32_t> computeAreasIncrementally() const {
+        std::vector<int32_t> area(nodeParent_.size(), 0);
+        for (NodeId nodeId : getPostOrderNodes()) {
+            area[static_cast<size_t>(nodeId)] += static_cast<int32_t>(getNumProperParts(nodeId));
+            const NodeId parentNodeId = getNodeParent(nodeId);
+            if (parentNodeId != InvalidNode && parentNodeId != nodeId) {
+                area[static_cast<size_t>(parentNodeId)] += area[static_cast<size_t>(nodeId)];
+            }
+        }
+        return area;
+    }
+
+    void maxAreaDescendants(
+        const std::vector<int32_t>& areaByNode,
+        std::vector<NodeId>& descendants,
+        NodeId ascendantNodeId,
+        NodeId candidateNodeId) const {
+        if (!isNode(ascendantNodeId) || !isNode(candidateNodeId)) {
+            return;
+        }
+        NodeId& currentNodeId = descendants[static_cast<size_t>(ascendantNodeId)];
+        if (currentNodeId == InvalidNode ||
+            areaByNode[static_cast<size_t>(candidateNodeId)] > areaByNode[static_cast<size_t>(currentNodeId)] ||
+            (areaByNode[static_cast<size_t>(candidateNodeId)] == areaByNode[static_cast<size_t>(currentNodeId)] &&
+             candidateNodeId < currentNodeId)) {
+            currentNodeId = candidateNodeId;
+        }
     }
 
 public:
-    
-    explicit LCAEulerRMQ(MorphologicalTree* tree): tree(tree) {
-        int n = tree->getNumNodes();
-        euler.reserve(n);
-        depth.reserve(n);
-        firstOccurrence.resize(n, -1);
+    MorphologicalTree() = default;
 
-        depthFirstTraversal(tree->getRootById(), 0);
-        buildSparseTable();
+    MorphologicalTree(ImageUInt8Ptr img, ToSInterpolation interpolation = ToSInterpolation::SelfDual) {
+        treeType_ = TREE_OF_SHAPES;
+        adj_ = std::nullopt;
+        BuilderTreeOfShape builder(interpolation == ToSInterpolation::Min4cMax8c);
+        build(
+            img,
+            builder,
+            [](NodeId, AltitudeType) {});
     }
 
-	NodeId findLowestCommonAncestor(NodeId u, NodeId v) {
-        int i = firstOccurrence[u];
-        int j = firstOccurrence[v];
-        if (i > j) std::swap(i, j);
-        int idx = rmq(i, j);
-        return euler[idx];
+    explicit MorphologicalTree(ImageUInt8Ptr img, bool isMaxtree, double radius = 1.5) {
+        treeType_ = isMaxtree ? MAX_TREE : MIN_TREE;
+        numRows_ = img ? img->getNumRows() : 0;
+        numCols_ = img ? img->getNumCols() : 0;
+        adj_.emplace(numRows_, numCols_, radius);
+        BuilderComponentTree builder(&*adj_, isMaxtree);
+        build(
+            img,
+            builder,
+            [](NodeId, AltitudeType) {});
     }
 
+    MorphologicalTree(
+        std::span<const NodeId> parent,
+        NodeId numProperParts,
+        int rows,
+        int cols,
+        bool isMaxtree,
+        std::optional<AdjacencyRelation> adjacency = std::nullopt)
+        : treeType_(isMaxtree ? MAX_TREE : MIN_TREE),
+          numRows_(rows),
+          numCols_(cols),
+          adj_(std::move(adjacency)) {
+        resetFromParentArray(parent, numProperParts);
+    }
+
+    MorphologicalTree(
+        std::span<const NodeId> parent,
+        int rows,
+        int cols,
+        bool isMaxtree,
+        std::optional<AdjacencyRelation> adjacency = std::nullopt)
+        : MorphologicalTree(parent, static_cast<NodeId>(rows * cols), rows, cols, isMaxtree, std::move(adjacency)) {}
+
+    template <class ParentRange>
+        requires requires(const ParentRange& range) {
+            range.data();
+            range.size();
+        }
+    MorphologicalTree(
+        const ParentRange& parent,
+        NodeId numProperParts,
+        int rows,
+        int cols,
+        bool isMaxtree,
+        std::optional<AdjacencyRelation> adjacency = std::nullopt)
+        : MorphologicalTree(
+              std::span<const NodeId>(parent.data(), parent.size()),
+              numProperParts,
+              rows,
+              cols,
+              isMaxtree,
+              std::move(adjacency)) {}
+
+    template <class ParentRange>
+        requires requires(const ParentRange& range) {
+            range.data();
+            range.size();
+        }
+    MorphologicalTree(
+        const ParentRange& parent,
+        int rows,
+        int cols,
+        bool isMaxtree,
+        std::optional<AdjacencyRelation> adjacency = std::nullopt)
+        : MorphologicalTree(
+              std::span<const NodeId>(parent.data(), parent.size()),
+              rows,
+              cols,
+              isMaxtree,
+              std::move(adjacency)) {}
+
+    MorphologicalTree(const MorphologicalTree&) = delete;
+    MorphologicalTree& operator=(const MorphologicalTree&) = delete;
+    MorphologicalTree(MorphologicalTree&&) noexcept = default;
+    MorphologicalTree& operator=(MorphologicalTree&&) noexcept = default;
+
+    static MorphologicalTree create(int rows, int cols, bool isMaxtree, std::optional<AdjacencyRelation> adjacency = std::nullopt) {
+        MorphologicalTree tree;
+        tree.treeType_ = isMaxtree ? MAX_TREE : MIN_TREE;
+        tree.numRows_ = rows;
+        tree.numCols_ = cols;
+        tree.adj_ = adjacency ? std::move(adjacency) : std::optional<AdjacencyRelation>(std::in_place, rows, cols, 1.5);
+        tree.resetEmptyStorage(static_cast<size_t>(rows * cols));
+        return tree;
+    }
+
+    void reset(std::span<const NodeId> parent, NodeId numProperParts) {
+        resetFromParentArray(parent, numProperParts);
+    }
+
+    void reset(std::span<const NodeId> parent) {
+        if (properPartOwner_.empty()) {
+            throw std::logic_error("reset(parent) requires a known proper-part domain.");
+        }
+        resetFromParentArray(parent, static_cast<NodeId>(properPartOwner_.size()));
+    }
+
+    template <class ParentRange>
+        requires requires(const ParentRange& range) {
+            range.data();
+            range.size();
+        }
+    void reset(const ParentRange& parent, NodeId numProperParts) {
+        reset(std::span<const NodeId>(parent.data(), parent.size()), numProperParts);
+    }
+
+    template <class ParentRange>
+        requires requires(const ParentRange& range) {
+            range.data();
+            range.size();
+        }
+    void reset(const ParentRange& parent) {
+        reset(std::span<const NodeId>(parent.data(), parent.size()));
+    }
+
+    int getNumInternalNodeSlots() const noexcept { return static_cast<int>(nodeParent_.size()); }
+    int getNumTotalProperParts() const noexcept { return static_cast<int>(properPartOwner_.size()); }
+    int getNumNodes() const noexcept { return numNodes_; }
+    NodeId getRoot() const noexcept { return rootNodeId_; }
+    int getTreeType() const noexcept { return treeType_; }
+    bool isMaxtree() const noexcept { return treeType_ == MAX_TREE; }
+    int getNumRowsOfImage() const noexcept { return numRows_; }
+    int getNumColsOfImage() const noexcept { return numCols_; }
+    bool hasAdjacencyRelation() const noexcept { return adj_.has_value(); }
+
+    AdjacencyRelation* getAdjacencyRelation() noexcept {
+        return adj_ ? &*adj_ : nullptr;
+    }
+
+    const AdjacencyRelation* getAdjacencyRelation() const noexcept {
+        return adj_ ? &*adj_ : nullptr;
+    }
+
+    int getNumFreeNodeSlots() const noexcept { return static_cast<int>(freeNodeIds_.size()); }
+
+    bool hasHigraNodeIdMapping() const noexcept {
+        return !higraNodeIdBySlot_.empty() && !slotByHigraNodeId_.empty();
+    }
+
+    int getNumHigraNodes() const noexcept {
+        return hasHigraNodeIdMapping() ? static_cast<int>(slotByHigraNodeId_.size()) : 0;
+    }
+
+    int getNodeIdSpaceSize(NodeIdSpace nodeIdSpace) const noexcept {
+        switch (nodeIdSpace) {
+            case NodeIdSpace::MORPHOLOGICAL_TREE:
+                return getNumInternalNodeSlots();
+            case NodeIdSpace::HIGRA:
+                return getNumHigraNodes();
+        }
+        return 0;
+    }
+
+    NodeId getHigraNodeId(NodeId nodeId) const noexcept {
+        if (!hasHigraNodeIdMapping() || !isNode(nodeId)) {
+            return InvalidNode;
+        }
+        return higraNodeIdBySlot_[static_cast<size_t>(nodeId)];
+    }
+
+    NodeId getNodeIdFromHigra(NodeId higraNodeId) const noexcept {
+        if (!hasHigraNodeIdMapping() ||
+            higraNodeId < 0 ||
+            higraNodeId >= static_cast<NodeId>(slotByHigraNodeId_.size())) {
+            return InvalidNode;
+        }
+        return slotByHigraNodeId_[static_cast<size_t>(higraNodeId)];
+    }
+
+    bool isNode(NodeId nodeId) const noexcept {
+        return nodeId >= 0 && nodeId < static_cast<NodeId>(nodeParent_.size());
+    }
+
+    bool isProperPart(NodeId properPartId) const noexcept {
+        return properPartId >= 0 && properPartId < static_cast<NodeId>(properPartOwner_.size());
+    }
+
+    bool isAlive(NodeId nodeId) const noexcept {
+        return isNode(nodeId) && alive_[static_cast<size_t>(nodeId)] != 0;
+    }
+
+    bool isRoot(NodeId nodeId) const noexcept {
+        return nodeId == rootNodeId_ && isAlive(nodeId) && getNodeParent(nodeId) == nodeId;
+    }
+
+    NodeId getNodeParent(NodeId nodeId) const noexcept {
+        return isNode(nodeId) ? nodeParent_[static_cast<size_t>(nodeId)] : InvalidNode;
+    }
+
+    int getNumChildren(NodeId nodeId) const noexcept {
+        return isAlive(nodeId) ? static_cast<int>(children_[static_cast<size_t>(nodeId)].size()) : 0;
+    }
+
+    const std::vector<NodeId>& getChildren(NodeId nodeId) const {
+        static const std::vector<NodeId> empty;
+        return isAlive(nodeId) ? children_[static_cast<size_t>(nodeId)] : empty;
+    }
+
+    NodeId getFirstChild(NodeId nodeId) const noexcept {
+        if (!isAlive(nodeId) || children_[static_cast<size_t>(nodeId)].empty()) {
+            return InvalidNode;
+        }
+        return children_[static_cast<size_t>(nodeId)].front();
+    }
+
+    NodeId getNextSibling(NodeId nodeId) const noexcept {
+        if (!isAlive(nodeId)) {
+            return InvalidNode;
+        }
+        const NodeId parentNodeId = getNodeParent(nodeId);
+        if (!isAlive(parentNodeId) || parentNodeId == nodeId) {
+            return InvalidNode;
+        }
+        const auto& siblings = children_[static_cast<size_t>(parentNodeId)];
+        auto it = std::find(siblings.begin(), siblings.end(), nodeId);
+        if (it == siblings.end() || ++it == siblings.end()) {
+            return InvalidNode;
+        }
+        return *it;
+    }
+
+    bool hasChild(NodeId parentNodeId, NodeId childNodeId) const {
+        if (!isAlive(parentNodeId)) {
+            return false;
+        }
+        const auto& children = this->children_[static_cast<size_t>(parentNodeId)];
+        return std::find(children.begin(), children.end(), childNodeId) != children.end();
+    }
+
+    bool isLeaf(NodeId nodeId) const noexcept {
+        return isAlive(nodeId) && children_[static_cast<size_t>(nodeId)].empty();
+    }
+
+    int getNumLeafNodes() const {
+        return static_cast<int>(getLeaves().size());
+    }
+
+    std::vector<NodeId> getLeaves() const {
+        std::vector<NodeId> leaves;
+        for (NodeId nodeId = 0; nodeId < static_cast<NodeId>(nodeParent_.size()); ++nodeId) {
+            if (isLeaf(nodeId)) {
+                leaves.push_back(nodeId);
+            }
+        }
+        return leaves;
+    }
+
+    std::vector<NodeId> getLeafNodeIds() const {
+        return getLeaves();
+    }
+
+    NodeId getSmallestComponent(NodeId properPartId) const noexcept {
+        return isProperPart(properPartId) ? properPartOwner_[static_cast<size_t>(properPartId)] : InvalidNode;
+    }
+
+    int getNumProperParts(NodeId nodeId) const noexcept {
+        return isAlive(nodeId) ? static_cast<int>(properPartsByNode_[static_cast<size_t>(nodeId)].size()) : 0;
+    }
+
+    const std::vector<NodeId>& getProperParts(NodeId nodeId) const {
+        static const std::vector<NodeId> empty;
+        return isAlive(nodeId) ? properPartsByNode_[static_cast<size_t>(nodeId)] : empty;
+    }
+
+    std::vector<NodeId> getAliveNodeIds() const {
+        std::vector<NodeId> ids;
+        ids.reserve(static_cast<size_t>(numNodes_));
+        for (NodeId nodeId = 0; nodeId < static_cast<NodeId>(nodeParent_.size()); ++nodeId) {
+            if (isAlive(nodeId)) {
+                ids.push_back(nodeId);
+            }
+        }
+        return ids;
+    }
+
+    int getNodeNumSiblings(NodeId nodeId) const noexcept {
+        if (!isAlive(nodeId) || isRoot(nodeId)) {
+            return 0;
+        }
+        const NodeId parentNodeId = getNodeParent(nodeId);
+        return std::max(0, getNumChildren(parentNodeId) - 1);
+    }
+
+    std::vector<NodeId> getNodeSubtree(NodeId rootNodeId) const {
+        if (!isAlive(rootNodeId)) {
+            return {};
+        }
+        std::vector<NodeId> traversal;
+        std::vector<NodeId> stack{rootNodeId};
+        while (!stack.empty()) {
+            const NodeId nodeId = stack.back();
+            stack.pop_back();
+            if (!isAlive(nodeId)) {
+                continue;
+            }
+            traversal.push_back(nodeId);
+            const auto& children = children_[static_cast<size_t>(nodeId)];
+            for (auto it = children.rbegin(); it != children.rend(); ++it) {
+                stack.push_back(*it);
+            }
+        }
+        return traversal;
+    }
+
+    std::vector<NodeId> getDescendants(NodeId nodeId) const {
+        auto subtree = getNodeSubtree(nodeId);
+        if (!subtree.empty()) {
+            subtree.erase(subtree.begin());
+        }
+        return subtree;
+    }
+
+    int getNodeNumDescendants(NodeId nodeId) const {
+        return static_cast<int>(getDescendants(nodeId).size());
+    }
+
+    std::vector<NodeId> getPostOrderNodes() const {
+        return getPostOrderNodes(rootNodeId_);
+    }
+
+    std::vector<NodeId> getPostOrderNodes(NodeId rootNodeId) const {
+        if (!isAlive(rootNodeId)) {
+            return {};
+        }
+
+        std::vector<NodeId> traversal;
+        std::vector<std::pair<NodeId, bool>> stack;
+        stack.emplace_back(rootNodeId, false);
+        while (!stack.empty()) {
+            auto [nodeId, expanded] = stack.back();
+            stack.pop_back();
+            if (!isAlive(nodeId)) {
+                continue;
+            }
+            if (expanded) {
+                traversal.push_back(nodeId);
+                continue;
+            }
+            stack.emplace_back(nodeId, true);
+            const auto& children = children_[static_cast<size_t>(nodeId)];
+            for (auto it = children.rbegin(); it != children.rend(); ++it) {
+                stack.emplace_back(*it, false);
+            }
+        }
+        return traversal;
+    }
+
+    std::vector<NodeId> getIteratorBreadthFirstTraversal() const {
+        return getIteratorBreadthFirstTraversal(rootNodeId_);
+    }
+
+    std::vector<NodeId> getIteratorBreadthFirstTraversal(NodeId rootNodeId) const {
+        if (!isAlive(rootNodeId)) {
+            return {};
+        }
+        std::vector<NodeId> traversal;
+        std::queue<NodeId> queue;
+        queue.push(rootNodeId);
+        while (!queue.empty()) {
+            const NodeId nodeId = queue.front();
+            queue.pop();
+            if (!isAlive(nodeId)) {
+                continue;
+            }
+            traversal.push_back(nodeId);
+            for (NodeId childNodeId : children_[static_cast<size_t>(nodeId)]) {
+                queue.push(childNodeId);
+            }
+        }
+        return traversal;
+    }
+
+    std::vector<NodeId> getPathToRootNodes(NodeId nodeId) const {
+        if (!isAlive(nodeId)) {
+            return {};
+        }
+        std::vector<NodeId> path;
+        std::unordered_set<NodeId> seen;
+        NodeId currentNodeId = nodeId;
+        while (currentNodeId != InvalidNode && isAlive(currentNodeId)) {
+            if (!seen.insert(currentNodeId).second) {
+                return {};
+            }
+            path.push_back(currentNodeId);
+            const NodeId parentNodeId = getNodeParent(currentNodeId);
+            if (parentNodeId == currentNodeId) {
+                break;
+            }
+            currentNodeId = parentNodeId;
+        }
+        return path;
+    }
+
+    std::vector<NodeId> getPathBetweenNodes(NodeId sourceNodeId, NodeId targetNodeId) const {
+        if (!isAlive(sourceNodeId) || !isAlive(targetNodeId)) {
+            return {};
+        }
+        if (sourceNodeId == targetNodeId) {
+            return {sourceNodeId};
+        }
+        const NodeId lcaNodeId = getLowestCommonAncestor(sourceNodeId, targetNodeId);
+        if (lcaNodeId == InvalidNode) {
+            return {};
+        }
+
+        std::vector<NodeId> path;
+        NodeId currentNodeId = sourceNodeId;
+        while (currentNodeId != InvalidNode) {
+            path.push_back(currentNodeId);
+            if (currentNodeId == lcaNodeId) {
+                break;
+            }
+            const NodeId parentNodeId = getNodeParent(currentNodeId);
+            if (parentNodeId == currentNodeId) {
+                break;
+            }
+            currentNodeId = parentNodeId;
+        }
+        if (path.empty() || path.back() != lcaNodeId) {
+            return {};
+        }
+
+        std::vector<NodeId> targetTail;
+        currentNodeId = targetNodeId;
+        while (currentNodeId != InvalidNode && currentNodeId != lcaNodeId) {
+            targetTail.push_back(currentNodeId);
+            const NodeId parentNodeId = getNodeParent(currentNodeId);
+            if (parentNodeId == currentNodeId) {
+                return {};
+            }
+            currentNodeId = parentNodeId;
+        }
+        std::reverse(targetTail.begin(), targetTail.end());
+        path.insert(path.end(), targetTail.begin(), targetTail.end());
+        return path;
+    }
+
+    bool isAncestor(NodeId ancestorNodeId, NodeId nodeId) const {
+        if (!isAlive(ancestorNodeId) || !isAlive(nodeId)) {
+            return false;
+        }
+        NodeId currentNodeId = nodeId;
+        std::unordered_set<NodeId> seen;
+        while (currentNodeId != InvalidNode && isAlive(currentNodeId)) {
+            if (currentNodeId == ancestorNodeId) {
+                return true;
+            }
+            if (!seen.insert(currentNodeId).second) {
+                return false;
+            }
+            const NodeId parentNodeId = getNodeParent(currentNodeId);
+            if (parentNodeId == currentNodeId) {
+                return false;
+            }
+            currentNodeId = parentNodeId;
+        }
+        return false;
+    }
+
+    bool isDescendant(NodeId nodeId, NodeId ancestorNodeId) const {
+        return isAncestor(ancestorNodeId, nodeId);
+    }
+
+    bool isStrictAncestor(NodeId ancestorNodeId, NodeId nodeId) const {
+        return ancestorNodeId != nodeId && isAncestor(ancestorNodeId, nodeId);
+    }
+
+    bool isStrictDescendant(NodeId nodeId, NodeId ancestorNodeId) const {
+        return nodeId != ancestorNodeId && isDescendant(nodeId, ancestorNodeId);
+    }
+
+    bool isComparable(NodeId lhs, NodeId rhs) const {
+        return isAncestor(lhs, rhs) || isAncestor(rhs, lhs);
+    }
+
+    bool isStrictComparable(NodeId lhs, NodeId rhs) const {
+        return lhs != rhs && isComparable(lhs, rhs);
+    }
+
+    NodeId getLowestCommonAncestor(NodeId lhs, NodeId rhs) const {
+        if (!isAlive(lhs) || !isAlive(rhs)) {
+            return InvalidNode;
+        }
+        std::unordered_set<NodeId> lhsAncestors;
+        NodeId currentNodeId = lhs;
+        while (currentNodeId != InvalidNode && isAlive(currentNodeId)) {
+            lhsAncestors.insert(currentNodeId);
+            const NodeId parentNodeId = getNodeParent(currentNodeId);
+            if (parentNodeId == currentNodeId) {
+                break;
+            }
+            currentNodeId = parentNodeId;
+        }
+
+        currentNodeId = rhs;
+        std::unordered_set<NodeId> seen;
+        while (currentNodeId != InvalidNode && isAlive(currentNodeId)) {
+            if (lhsAncestors.find(currentNodeId) != lhsAncestors.end()) {
+                return currentNodeId;
+            }
+            if (!seen.insert(currentNodeId).second) {
+                return InvalidNode;
+            }
+            const NodeId parentNodeId = getNodeParent(currentNodeId);
+            if (parentNodeId == currentNodeId) {
+                break;
+            }
+            currentNodeId = parentNodeId;
+        }
+        return InvalidNode;
+    }
+
+    int getNodeTimePreOrder(NodeId nodeId) const {
+        if (!traversalTimesValid_) {
+            rebuildTraversalTimes();
+        }
+        return isNode(nodeId) ? preOrderTime_[static_cast<size_t>(nodeId)] : -1;
+    }
+
+    int getNodeTimePostOrder(NodeId nodeId) const {
+        if (!traversalTimesValid_) {
+            rebuildTraversalTimes();
+        }
+        return isNode(nodeId) ? postOrderTime_[static_cast<size_t>(nodeId)] : -1;
+    }
+
+    bool hasDetachedAliveNodes() const noexcept {
+        for (NodeId nodeId = 0; nodeId < static_cast<NodeId>(nodeParent_.size()); ++nodeId) {
+            if (isAlive(nodeId) && nodeId != rootNodeId_ && nodeParent_[static_cast<size_t>(nodeId)] == nodeId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void validateConnectedRootedTree() const {
+        if (!isAlive(rootNodeId_)) {
+            throw std::runtime_error("A connected tree requires a live root.");
+        }
+        if (getNodeParent(rootNodeId_) != rootNodeId_) {
+            throw std::runtime_error("The connected root must be self-parented.");
+        }
+
+        int selfParentCount = 0;
+        std::vector<int> childReferenceCount(nodeParent_.size(), 0);
+        for (NodeId nodeId = 0; nodeId < static_cast<NodeId>(nodeParent_.size()); ++nodeId) {
+            if (!isAlive(nodeId)) {
+                continue;
+            }
+            const NodeId parentNodeId = getNodeParent(nodeId);
+            if (parentNodeId == nodeId) {
+                ++selfParentCount;
+                if (nodeId != rootNodeId_) {
+                    throw std::runtime_error("Connected validation found a detached self-parented node.");
+                }
+            } else if (!isAlive(parentNodeId)) {
+                throw std::runtime_error("Connected validation found a node with an invalid parent.");
+            }
+
+            std::unordered_set<NodeId> seen;
+            NodeId currentNodeId = nodeId;
+            while (currentNodeId != InvalidNode) {
+                if (!isAlive(currentNodeId) || !seen.insert(currentNodeId).second) {
+                    throw std::runtime_error("Connected validation found an invalid parent chain.");
+                }
+                const NodeId parentId = getNodeParent(currentNodeId);
+                if (parentId == currentNodeId) {
+                    if (currentNodeId != rootNodeId_) {
+                        throw std::runtime_error("Every live node must reach the connected root.");
+                    }
+                    break;
+                }
+                currentNodeId = parentId;
+            }
+
+            for (NodeId childNodeId : children_[static_cast<size_t>(nodeId)]) {
+                if (!isAlive(childNodeId) || getNodeParent(childNodeId) != nodeId) {
+                    throw std::runtime_error("Connected validation found inconsistent child links.");
+                }
+                ++childReferenceCount[static_cast<size_t>(childNodeId)];
+            }
+        }
+
+        if (selfParentCount != 1) {
+            throw std::runtime_error("Connected validation requires exactly one self-parented root.");
+        }
+        for (NodeId nodeId = 0; nodeId < static_cast<NodeId>(nodeParent_.size()); ++nodeId) {
+            if (!isAlive(nodeId)) {
+                continue;
+            }
+            const int expectedReferences = nodeId == rootNodeId_ ? 0 : 1;
+            if (childReferenceCount[static_cast<size_t>(nodeId)] != expectedReferences) {
+                throw std::runtime_error("Connected validation found inconsistent child reference counts.");
+            }
+        }
+
+        for (NodeId ownerNodeId : properPartOwner_) {
+            if (!isAlive(ownerNodeId)) {
+                throw std::runtime_error("Every proper part must be owned by a live node.");
+            }
+        }
+    }
+
+    void pruneNode(NodeId nodeId) {
+        ensureAliveNodeId(nodeId, "pruneNode requires a live node.");
+        if (isRoot(nodeId)) {
+            throw std::invalid_argument("pruneNode cannot prune the root.");
+        }
+        const NodeId parentNodeId = getNodeParent(nodeId);
+        if (!isAlive(parentNodeId) || parentNodeId == nodeId) {
+            throw std::invalid_argument("pruneNode requires an attached non-root node.");
+        }
+
+        const auto subtree = getPostOrderNodes(nodeId);
+        std::unordered_set<NodeId> subtreeNodes(subtree.begin(), subtree.end());
+        for (NodeId& ownerNodeId : properPartOwner_) {
+            if (subtreeNodes.find(ownerNodeId) != subtreeNodes.end()) {
+                ownerNodeId = parentNodeId;
+            }
+        }
+        rebuildProperPartsFromOwnership();
+
+        for (NodeId subtreeNodeId : subtree) {
+            const NodeId currentParentId = getNodeParent(subtreeNodeId);
+            if (currentParentId != InvalidNode && currentParentId != subtreeNodeId) {
+                removeChildLink(currentParentId, subtreeNodeId);
+            }
+            children_[static_cast<size_t>(subtreeNodeId)].clear();
+            nodeParent_[static_cast<size_t>(subtreeNodeId)] = subtreeNodeId;
+            releaseNode(subtreeNodeId);
+        }
+        markProperPartChanged();
+        markTopologyChanged();
+    }
+
+    void mergeNodeIntoParent(NodeId nodeId) {
+        ensureAliveNodeId(nodeId, "mergeNodeIntoParent requires a live node.");
+        if (isRoot(nodeId)) {
+            throw std::invalid_argument("mergeNodeIntoParent cannot merge the root.");
+        }
+        const NodeId parentNodeId = getNodeParent(nodeId);
+        if (!isAlive(parentNodeId) || parentNodeId == nodeId) {
+            throw std::invalid_argument("mergeNodeIntoParent requires an attached non-root node.");
+        }
+
+        for (NodeId& ownerNodeId : properPartOwner_) {
+            if (ownerNodeId == nodeId) {
+                ownerNodeId = parentNodeId;
+            }
+        }
+        rebuildProperPartsFromOwnership();
+
+        auto movingChildren = std::move(children_[static_cast<size_t>(nodeId)]);
+        children_[static_cast<size_t>(nodeId)].clear();
+
+        auto& siblings = children_[static_cast<size_t>(parentNodeId)];
+        auto position = std::find(siblings.begin(), siblings.end(), nodeId);
+        const auto insertOffset = static_cast<std::ptrdiff_t>(std::distance(siblings.begin(), position));
+        if (position != siblings.end()) {
+            siblings.erase(position);
+        }
+        auto insertPosition = siblings.begin() + std::min<std::ptrdiff_t>(insertOffset, static_cast<std::ptrdiff_t>(siblings.size()));
+        for (NodeId childNodeId : movingChildren) {
+            nodeParent_[static_cast<size_t>(childNodeId)] = parentNodeId;
+            insertPosition = siblings.insert(insertPosition, childNodeId);
+            ++insertPosition;
+        }
+
+        nodeParent_[static_cast<size_t>(nodeId)] = nodeId;
+        releaseNode(nodeId);
+        markProperPartChanged();
+        markTopologyChanged();
+    }
+
+    std::pair<std::vector<NodeId>, std::vector<NodeId>> computeAscendantsAndDescendants(int delta, bool useLevel = false) {
+        if (useLevel) {
+            throw std::logic_error("Level-based ascendant computation requires an explicit altitude buffer.");
+        }
+        if (delta < 0) {
+            throw std::invalid_argument("delta must be non-negative.");
+        }
+
+        std::vector<NodeId> ascendants(nodeParent_.size(), InvalidNode);
+        std::vector<NodeId> descendants(nodeParent_.size(), InvalidNode);
+        const std::vector<int32_t> areaByNode = computeAreasIncrementally();
+
+        for (NodeId nodeId : getAliveNodeIds()) {
+            NodeId currentNodeId = nodeId;
+            bool valid = true;
+            for (int step = 0; step < delta; ++step) {
+                if (isRoot(currentNodeId)) {
+                    valid = false;
+                    break;
+                }
+                currentNodeId = getNodeParent(currentNodeId);
+                if (!isAlive(currentNodeId)) {
+                    valid = false;
+                    break;
+                }
+            }
+            if (!valid) {
+                continue;
+            }
+            ascendants[static_cast<size_t>(nodeId)] = currentNodeId;
+            maxAreaDescendants(areaByNode, descendants, currentNodeId, nodeId);
+        }
+
+        return {std::move(ascendants), std::move(descendants)};
+    }
 };
 
 } // namespace mmcfilters
 
-#include "MorphologicalTree.tpp"
-
+#include "TreeAltitudeOps.hpp"

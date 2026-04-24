@@ -25,7 +25,7 @@ set(MMCFILTERS_COMPONENT_DIRS
 
 # Agrupa headers e fontes do núcleo. Usamos GLOB para manter listas atualizadas
 # automaticamente ao adicionar novos arquivos.
-file(GLOB_RECURSE MMCFILTERS_HEADER_FILES
+file(GLOB_RECURSE MMCFILTERS_HEADER_FILES CONFIGURE_DEPENDS
     "${MMCFILTERS_ROOT}/trees/*.hpp"
     "${MMCFILTERS_ROOT}/trees/*.tpp"
     "${MMCFILTERS_ROOT}/filters/*.hpp"
@@ -35,7 +35,7 @@ file(GLOB_RECURSE MMCFILTERS_HEADER_FILES
     "${MMCFILTERS_ROOT}/attributes/maxdist/*.hpp"
 )
 
-file(GLOB_RECURSE MMCFILTERS_SOURCE_FILES
+file(GLOB_RECURSE MMCFILTERS_SOURCE_FILES CONFIGURE_DEPENDS
     "${MMCFILTERS_ROOT}/trees/*.cpp"
     "${MMCFILTERS_ROOT}/filters/*.cpp"
     "${MMCFILTERS_ROOT}/attributes/*.cpp"
@@ -45,27 +45,22 @@ file(GLOB_RECURSE MMCFILTERS_SOURCE_FILES
 )
 
 if(NOT TARGET mmcfilters_lib)
-    add_library(mmcfilters_lib)
-    target_sources(mmcfilters_lib
-        PRIVATE
-            ${MMCFILTERS_HEADER_FILES}
-            ${MMCFILTERS_SOURCE_FILES}
-    )
+    add_library(mmcfilters_lib INTERFACE)
 endif()
 
 # Exponha os diretórios de include para consumidores externos.
 target_include_directories(mmcfilters_lib
-    PUBLIC
+    INTERFACE
         $<BUILD_INTERFACE:${MMCFILTERS_ROOT}>
         $<INSTALL_INTERFACE:include/mmcfilters>
 )
 
 # Garante C++20 para tudo que linkar nesta biblioteca.
-target_compile_features(mmcfilters_lib PUBLIC cxx_std_20)
+target_compile_features(mmcfilters_lib INTERFACE cxx_std_20)
 
 # Ajusta flags de otimização dependendo do compilador: evita passar -O3 ao MSVC.
 target_compile_options(mmcfilters_lib
-    PUBLIC
+    INTERFACE
         $<$<CXX_COMPILER_ID:MSVC>:/O2>
         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-O3>
 )

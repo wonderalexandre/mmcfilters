@@ -8,7 +8,7 @@
 namespace mmcfilters {
 
 //---------------------------------------------
-// CLASSES QuadBit e padrões
+// Bit-Quad comparators and patterns
 //---------------------------------------------
 using NonComparablePixels = std::vector<std::set<int>>;
 
@@ -20,7 +20,7 @@ enum class BitQuadType {
 };
 
 /**
- * @brief Define comparadores locais utilizados na avaliação de padrões Bit-Quads.
+ * @brief Stores one local comparison used when evaluating Bit-Quad patterns.
  */
 class BitQuadComparator {
 public:
@@ -36,15 +36,15 @@ public:
     BitQuadComparator(int rowOffset, int colOffset, BitQuadType type) : rowOffset(rowOffset), colOffset(colOffset), type(type) {
         switch (type) {
             case BitQuadType::StrictAncestor:
-                comparator = [=](int row, int col, MorphologicalTree* tree, NonComparablePixels& pixelsOfLCA) {
+                comparator = [=](int row, int col, MorphologicalTree* tree, [[maybe_unused]] NonComparablePixels& pixelsOfLCA) {
                     
                     auto idP = ImageUtils::to1D(row, col, tree->getNumColsOfImage());
                     auto idQ = ImageUtils::to1D(row + rowOffset, col + colOffset, tree->getNumColsOfImage());
                     
-                    NodeId nodeP = tree->getSCById(idP);
-                    NodeId nodeQ = tree->getSCById(idQ);
+                    NodeId nodeP = tree->getSmallestComponent(idP);
+                    NodeId nodeQ = tree->getSmallestComponent(idQ);
                     /*if(tree->isComparable(nodeP, nodeQ) == false) {
-                        NodeId lca = tree->findLowestCommonAncestor(nodeP, nodeQ);
+                        NodeId lca = tree->getLowestCommonAncestor(nodeP, nodeQ);
                         pixelsOfLCA[lca->getIndex()].push_back( ImageUtils::to1D(row, col, tree->getNumColsOfImage()) );
                         return false;
                     }*/
@@ -53,14 +53,14 @@ public:
                 };
                 break;
             case BitQuadType::Ancestor:
-                comparator = [=](int row, int col, MorphologicalTree* tree, NonComparablePixels& pixelsOfLCA) {
+                comparator = [=](int row, int col, MorphologicalTree* tree, [[maybe_unused]] NonComparablePixels& pixelsOfLCA) {
                     
                     auto idP = ImageUtils::to1D(row, col, tree->getNumColsOfImage());
                     auto idQ = ImageUtils::to1D(row + rowOffset, col + colOffset, tree->getNumColsOfImage());
-                    NodeId nodeP = tree->getSCById(idP);
-                    NodeId nodeQ = tree->getSCById(idQ);
+                    NodeId nodeP = tree->getSmallestComponent(idP);
+                    NodeId nodeQ = tree->getSmallestComponent(idQ);
                     /*if(tree->isComparable(nodeP, nodeQ) == false) {
-                        NodeId lca = tree->findLowestCommonAncestor(nodeP, nodeQ);
+                        NodeId lca = tree->getLowestCommonAncestor(nodeP, nodeQ);
                         pixelsOfLCA[lca->getIndex()].push_back( ImageUtils::to1D(row, col, tree->getNumColsOfImage()) );
                         return false;
                     }*/
@@ -68,14 +68,14 @@ public:
                 };
                 break;
             case BitQuadType::StrictDescendant:
-                comparator = [=](int row, int col, MorphologicalTree* tree, NonComparablePixels& pixelsOfLCA) {
+                comparator = [=](int row, int col, MorphologicalTree* tree, [[maybe_unused]] NonComparablePixels& pixelsOfLCA) {
                     
                     auto idP = ImageUtils::to1D(row, col, tree->getNumColsOfImage());
                     auto idQ = ImageUtils::to1D(row + rowOffset, col + colOffset, tree->getNumColsOfImage());
-                    NodeId nodeP = tree->getSCById(idP);
-                    NodeId nodeQ = tree->getSCById(idQ);
+                    NodeId nodeP = tree->getSmallestComponent(idP);
+                    NodeId nodeQ = tree->getSmallestComponent(idQ);
                     /*if(tree->isComparable(nodeP, nodeQ) == false) {
-                        NodeId lca = tree->findLowestCommonAncestor(nodeP, nodeQ);
+                        NodeId lca = tree->getLowestCommonAncestor(nodeP, nodeQ);
                         pixelsOfLCA[lca->getIndex()].push_back( ImageUtils::to1D(row, col, tree->getNumColsOfImage()) );
                         return false;
                     }*/
@@ -83,14 +83,14 @@ public:
                 };
                 break;
             case BitQuadType::Descendant:
-                comparator = [=](int row, int col, MorphologicalTree* tree, NonComparablePixels& pixelsOfLCA) {
+                comparator = [=](int row, int col, MorphologicalTree* tree, [[maybe_unused]] NonComparablePixels& pixelsOfLCA) {
                     
                     auto idP = ImageUtils::to1D(row, col, tree->getNumColsOfImage());
                     auto idQ = ImageUtils::to1D(row + rowOffset, col + colOffset, tree->getNumColsOfImage());
-                    NodeId nodeP = tree->getSCById(idP);
-                    NodeId nodeQ = tree->getSCById(idQ);
+                    NodeId nodeP = tree->getSmallestComponent(idP);
+                    NodeId nodeQ = tree->getSmallestComponent(idQ);
                     /*if(tree->isComparable(nodeP, nodeQ) == false) {
-                        NodeId lca = tree->findLowestCommonAncestor(nodeP, nodeQ);
+                        NodeId lca = tree->getLowestCommonAncestor(nodeP, nodeQ);
                         pixelsOfLCA[lca->getIndex()].push_back( ImageUtils::to1D(row, col, tree->getNumColsOfImage()) );
                         return false;
                     }*/
@@ -114,10 +114,10 @@ public:
 };
 
 //---------------------------------------------
-// Padrão e grupo de padrões
+// Bit-Quad patterns
 //---------------------------------------------
 /**
- * @brief Representa um conjunto de comparadores Bit-Quads compondo um padrão.
+ * @brief Represents one Bit-Quad pattern composed of local comparisons.
  */
 class BitQuad {
     std::vector<BitQuadComparator> quads;
@@ -129,7 +129,7 @@ public:
         quads.push_back(quad);
         return *this;
     }
-    // Função que retorna o símbolo Unicode para o tipo
+    /// Returns the printable symbol associated with one comparator type.
     std::string symbolForType(BitQuadType type) {
         switch (type) {
             case BitQuadType::StrictAncestor:    return "A";
@@ -140,7 +140,7 @@ public:
         }
     }
 
-    // Imprime os padrões BitQuad em uma grade 3x3 com símbolos Unicode
+    /// Prints the pattern on a 3x3 grid for debugging purposes.
     void print() {
         const int SIZE = 3;
         std::vector<std::vector<std::string>> matrix(SIZE, std::vector<std::string>(SIZE, " "));
@@ -155,11 +155,11 @@ public:
             if (row >= 0 && row < SIZE && col >= 0 && col < SIZE) {
                 matrix[row][col] = symbolForType(quad.type);
             } else {
-                std::cerr << "Aviso: posição fora do grid: (" << row << ", " << col << ")\n";
+                std::cerr << "Warning: position outside the 3x3 grid: (" << row << ", " << col << ")\n";
             }
         }
 
-        // Impressão com grid (7x7 visual)
+        // Print the visual 3x3 grid.
         for (int i = 0; i < SIZE; ++i) {
             std::cout << "+---+---+---+\n";
             std::cout << "| ";
@@ -181,7 +181,7 @@ public:
 };
 
 /**
- * @brief Agrupa múltiplos padrões Bit-Quads aplicados a uma vizinhança.
+ * @brief Groups several Bit-Quad patterns evaluated on the same neighbourhood.
  */
 class BitQuadPattern {
     std::vector<BitQuad> patterns;
@@ -212,11 +212,11 @@ public:
 };
 
 //---------------------------------------------
-// AttributeBasedBitQuads
+// Attribute-based Bit-Quads
 //---------------------------------------------
 
 /**
- * @brief Estrutura de atributos acumulados ao processar padrões Bit-Quads.
+ * @brief Stores the counters accumulated while evaluating Bit-Quad patterns.
  */
 struct AttributeBasedBitQuads {
     int countPatternC1C4 = 0;
@@ -231,7 +231,6 @@ struct AttributeBasedBitQuads {
     int countPatternCT2 = 0;
     int countPatternCTD = 0;
     int countPatternCT3 = 0;
-    AdjacencyRelation* adj;
 
     std::string printPattern() const {
         std::ostringstream oss;
@@ -250,13 +249,10 @@ struct AttributeBasedBitQuads {
         return oss.str();
     }
 
-    AttributeBasedBitQuads(AdjacencyRelation* adj) : adj(adj) {}
+    AttributeBasedBitQuads() = default;
 
     int getNumberEuler() const {
-        if (adj || adj->is4connectivity()) // ou use uma constante do seu projeto
-            return (countPatternC1C4 - countPatternC3) / 4;
-        else
-            return (countPatternC1 - countPatternC3 - (2 * countPatternCD)) / 4;
+        return (countPatternC1C4 - countPatternC3) / 4;
     }
 
     int getNumberHoles() const {
@@ -311,6 +307,14 @@ struct AttributeBasedBitQuads {
  */
 class ComputerAttributeBasedBitQuads {
 private:
+    static AdjacencyRelation& requireAdjacency(MorphologicalTree& tree) {
+        AdjacencyRelation* adjacency = tree.getAdjacencyRelation();
+        if (adjacency == nullptr) {
+            throw std::invalid_argument("BitQuads attributes require an adjacency relation.");
+        }
+        return *adjacency;
+    }
+
     BitQuadPattern Q1;
     BitQuadPattern Q1C4;
     BitQuadPattern Q2;
@@ -324,14 +328,14 @@ private:
     BitQuadPattern QDT;
     BitQuadPattern Q3T;
 
-    MorphologicalTree* tree;
-    AdjacencyRelation* adj;
+    MorphologicalTree& tree;
+    AdjacencyRelation& adj;
     std::vector<AttributeBasedBitQuads> attr;
     NonComparablePixels pixelsOfLCA;
 
 
     void initializePatterns() {
-        if(!adj || adj->is4connectivity()) {
+        if(adj.is4connectivity()) {
             createQ1C4Patterns();
             createQ1C4TPatterns();
         }else { // 8-connectivity
@@ -348,24 +352,24 @@ private:
     }
 
     void computerLocalPattern(NodeId nodeId, int p, std::vector<AttributeBasedBitQuads>& attr) {
-        auto [row,col] = ImageUtils::to2D(p, tree->getNumColsOfImage());
+        auto [row,col] = ImageUtils::to2D(p, tree.getNumColsOfImage());
         
 
-        if (!adj || adj->is4connectivity()) {
-            attr[nodeId].countPatternC1C4  += Q1C4.count(row, col, tree, pixelsOfLCA);
-            attr[nodeId].countPatternCT1C4 += Q1C4T.count(row, col, tree, pixelsOfLCA);
+        if (adj.is4connectivity()) {
+            attr[nodeId].countPatternC1C4  += Q1C4.count(row, col, &tree, pixelsOfLCA);
+            attr[nodeId].countPatternCT1C4 += Q1C4T.count(row, col, &tree, pixelsOfLCA);
         } else { // 8-connectivity
-            attr[nodeId].countPatternC1   += Q1.count(row, col, tree, pixelsOfLCA);
-            attr[nodeId].countPatternCD   += QD.count(row, col, tree, pixelsOfLCA);
-            attr[nodeId].countPatternCTD  += QDT.count(row, col, tree, pixelsOfLCA);
-            attr[nodeId].countPatternCT1  += Q1T.count(row, col, tree, pixelsOfLCA);
+            attr[nodeId].countPatternC1   += Q1.count(row, col, &tree, pixelsOfLCA);
+            attr[nodeId].countPatternCD   += QD.count(row, col, &tree, pixelsOfLCA);
+            attr[nodeId].countPatternCTD  += QDT.count(row, col, &tree, pixelsOfLCA);
+            attr[nodeId].countPatternCT1  += Q1T.count(row, col, &tree, pixelsOfLCA);
         }
 
-        attr[nodeId].countPatternC2  += Q2.count(row, col, tree, pixelsOfLCA);
-        attr[nodeId].countPatternC3  += Q3.count(row, col, tree, pixelsOfLCA);
-        attr[nodeId].countPatternC4  += Q4.count(row, col, tree, pixelsOfLCA);
-        attr[nodeId].countPatternCT2 += Q2T.count(row, col, tree, pixelsOfLCA);
-        attr[nodeId].countPatternCT3 += Q3T.count(row, col, tree, pixelsOfLCA);
+        attr[nodeId].countPatternC2  += Q2.count(row, col, &tree, pixelsOfLCA);
+        attr[nodeId].countPatternC3  += Q3.count(row, col, &tree, pixelsOfLCA);
+        attr[nodeId].countPatternC4  += Q4.count(row, col, &tree, pixelsOfLCA);
+        attr[nodeId].countPatternCT2 += Q2T.count(row, col, &tree, pixelsOfLCA);
+        attr[nodeId].countPatternCT3 += Q3T.count(row, col, &tree, pixelsOfLCA);
     }
 
     void createQ1Patterns() {
@@ -779,22 +783,24 @@ public:
 
 
     // Construtor principal
-    ComputerAttributeBasedBitQuads(MorphologicalTreePtr tree): ComputerAttributeBasedBitQuads(tree.get()) {}
-    ComputerAttributeBasedBitQuads(MorphologicalTree* tree) : tree(tree), adj(tree->getAdjacencyRelation()), 
-    attr(tree->getNumNodes(), AttributeBasedBitQuads(tree->getAdjacencyRelation())) {
+    explicit ComputerAttributeBasedBitQuads(MorphologicalTree& tree) : tree(tree), adj(requireAdjacency(tree)),
+    attr(tree.getNumInternalNodeSlots(), AttributeBasedBitQuads()) {
         
-       // assert(tree->getTreeType() != MorphologicalTree::TREE_OF_SHAPES && "Não está implementado para tree of shapes!");
+       // assert(tree.getTreeType() != MorphologicalTree::TREE_OF_SHAPES && "Não está implementado para tree of shapes!");
         
         initializePatterns();
-        AttributeComputedIncrementally::computerAttribute(tree,
-            tree->getRootById(),
-            [&](NodeId node) {
-                for(int p: tree->getCNPsById(node)){
+        AttributeComputedIncrementally::traversePostOrder(tree,
+            tree.getRoot(),
+            [&](NodeId nodeId) {
+                const NodeId node = nodeId;
+                for(int p: tree.getProperParts(nodeId)){
                     computerLocalPattern(node, p, attr) ;
                 }	
             },
-            [&](NodeId parent, NodeId child) {
-                if (!adj || adj->is4connectivity()) // 4-connectivity
+            [&](NodeId parentNodeId, NodeId childNodeId) {
+                const NodeId parent = parentNodeId;
+                const NodeId child = childNodeId;
+                if (adj.is4connectivity()) // 4-connectivity
                     attr[parent].countPatternC1C4 += attr[child].countPatternC1C4;
                 else {
                     attr[parent].countPatternC1 += attr[child].countPatternC1;
@@ -804,7 +810,8 @@ public:
                 attr[parent].countPatternC3 += attr[child].countPatternC3;
                 attr[parent].countPatternC4 += attr[child].countPatternC4;
             },
-            [&](NodeId node) {
+            [&](NodeId nodeId) {
+                const NodeId node = nodeId;
 
                 /*std::vector<int>& pixelsNonComparable = pixelsOfLCA[node];
                 std::cout << "Node: " << node << " - Non-comparable pixels: " << pixelsNonComparable.size() << std::endl;
@@ -812,7 +819,7 @@ public:
                     computerLocalPattern(node, p, attr);
                 }*/
 
-                if (!adj || adj->is4connectivity()) 
+                if (adj.is4connectivity())
                     attr[node].countPatternC1C4 = attr[node].countPatternC1C4 - attr[node].countPatternCT1C4;
                 else {
                     attr[node].countPatternC1 = attr[node].countPatternC1 - attr[node].countPatternCT1;

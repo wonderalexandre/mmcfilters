@@ -2,7 +2,6 @@
 
 
 #include <array>
-#include "../mmcfilters/trees/NodeMT.hpp"
 #include "../mmcfilters/attributes/ComputerMSER.hpp"
 #include "../mmcfilters/attributes/AttributeComputedIncrementally.hpp"
 #include "../mmcfilters/filters/UltimateAttributeOpening.hpp"
@@ -19,20 +18,39 @@ namespace py = pybind11;
  * @brief Adaptação Pybind da Ultimate Attribute Opening.
  */
 class UltimateAttributeOpeningPybind: public UltimateAttributeOpening{
+    using FloatArray = py::array_t<float, py::array::c_style | py::array::forcecast>;
+
+    MorphologicalTreePybindPtr treeOwner_;
+    std::shared_ptr<WeightedMorphologicalTree> weightedOwner_;
 
 public:
     using UltimateAttributeOpening::UltimateAttributeOpening;
 
-    UltimateAttributeOpeningPybind(MorphologicalTreePybindPtr tree,  py::array_t<float> &attr) : 
-        UltimateAttributeOpening(tree, PybindUtils::toShared_ptr(attr) ){}
+    UltimateAttributeOpeningPybind(MorphologicalTreePybindPtr tree, FloatArray attr) : 
+        UltimateAttributeOpening(
+            *tree,
+            [&]() {
+                PybindUtils::require1DArray(attr.request(), tree->getNumInternalNodeSlots(), "attr");
+                return PybindUtils::toShared_ptr(attr);
+            }()),
+        treeOwner_(std::move(tree)) {}
 
-    py::array_t<uint8_t> getMaxConstrastImage(){
-        return PybindUtils::toNumpy(UltimateAttributeOpening::getMaxConstrastImage());
+    UltimateAttributeOpeningPybind(std::shared_ptr<WeightedMorphologicalTree> weighted, FloatArray attr) :
+        UltimateAttributeOpening(
+            *weighted,
+            [&]() {
+                PybindUtils::require1DArray(attr.request(), weighted->tree.getNumInternalNodeSlots(), "attr");
+                return PybindUtils::toShared_ptr(attr);
+            }()),
+        weightedOwner_(std::move(weighted)) {}
+
+    py::array_t<uint8_t> getMaxContrastImage(){
+        return PybindUtils::toNumpy(UltimateAttributeOpening::getMaxContrastImage());
     }       
 
     py::array_t<int32_t> getAssociatedImage(){
         auto imgOut = UltimateAttributeOpening::getAssociatedImage();
-        return PybindUtils::toNumpyInt(imgOut->rawData(), imgOut->getSize());
+        return PybindUtils::toNumpy(imgOut);
     }
     py::array_t<uint8_t> getAssociatedColorImage(){
         return PybindUtils::toNumpy(UltimateAttributeOpening::getAssociatedColorImage());

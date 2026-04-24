@@ -13,14 +13,19 @@ namespace mmcfilters {
  * role is to make explicit that the caller is performing a staged edit where
  * the tree may become temporarily disconnected, and to centralize the final
  * strong validation in `commit()`.
+ *
+ * Callers cannot construct `TreeEditor` directly. Use
+ * `MorphologicalTree::edit()` so the edit boundary remains explicit at the
+ * call site.
  */
 class TreeEditor {
+    friend class MorphologicalTree;
+
 private:
     MorphologicalTree& tree_;
-
-public:
     explicit TreeEditor(MorphologicalTree& tree) noexcept : tree_(tree) {}
 
+public:
     /**
      * @brief Creates a live detached node in the topological hierarchy.
      */
@@ -134,10 +139,17 @@ public:
 
     /**
      * @brief Finalizes the edit by validating that the tree is connected again.
+     *
+     * This validation is linear in the current dense internal-node domain plus
+     * the direct proper-part domain.
      */
     void commit() const {
         tree_.validateConnectedRootedTree();
     }
 };
+
+inline TreeEditor MorphologicalTree::edit() {
+    return TreeEditor(*this);
+}
 
 } // namespace mmcfilters

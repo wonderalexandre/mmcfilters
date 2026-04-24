@@ -39,7 +39,7 @@ class ExtinctionValuesPybind : public ExtinctionValues{
         : ExtinctionValues(
             *weighted,
             [&]() {
-                PybindUtils::require1DArray(attribute.request(), weighted->tree.getNumInternalNodeSlots(), "attribute");
+                PybindUtils::require1DArray(attribute.request(), weighted->topology().getNumInternalNodeSlots(), "attribute");
                 return PybindUtils::toShared_ptr(attribute);
             }()),
           weightedOwner_(std::move(weighted)) { }

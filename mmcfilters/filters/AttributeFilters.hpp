@@ -21,32 +21,32 @@ namespace mmcfilters {
  */
 class AttributeFilters {
 protected:
-    MorphologicalTree& tree;
+    const MorphologicalTree& tree;
     const AltitudeBuffer* altitude_ = nullptr;
 
     static AltitudeType altitudeOf(const AltitudeBuffer* altitude, NodeId nodeId) {
         return tree_altitude_ops::getAltitude(altitude, nodeId);
     }
 
-    static AltitudeDiffType residueOf(MorphologicalTree& tree, const AltitudeBuffer* altitude, NodeId nodeId) {
+    static AltitudeDiffType residueOf(const MorphologicalTree& tree, const AltitudeBuffer* altitude, NodeId nodeId) {
         return tree_altitude_ops::getNodeResidue(tree, altitude, nodeId);
     }
 
     template <typename TValue>
-    static void writeProperParts(MorphologicalTree& tree, NodeId nodeId, TValue* output, TValue value) {
+    static void writeProperParts(const MorphologicalTree& tree, NodeId nodeId, TValue* output, TValue value) {
         for (int pixel : tree.getProperParts(nodeId)) {
             output[pixel] = value;
         }
     }
 
     template <typename TValue>
-    static void writeSubtreeProperParts(MorphologicalTree& tree, NodeId nodeId, TValue* output, TValue value) {
+    static void writeSubtreeProperParts(const MorphologicalTree& tree, NodeId nodeId, TValue* output, TValue value) {
         for (NodeId subtreeNodeId : tree.getNodeSubtree(nodeId)) {
             writeProperParts(tree, subtreeNodeId, output, value);
         }
     }
 
-    static void filteringBySubtractiveScoreRuleImpl(MorphologicalTree& tree, const AltitudeBuffer* altitude, std::vector<float>& prob, ImageFloatPtr imgOutputPtr) {
+    static void filteringBySubtractiveScoreRuleImpl(const MorphologicalTree& tree, const AltitudeBuffer* altitude, std::vector<float>& prob, ImageFloatPtr imgOutputPtr) {
         std::unique_ptr<float[]> mapLevel(new float[tree.getNumInternalNodeSlots()]);
 
         const NodeId rootNodeId = tree.getRoot();
@@ -65,7 +65,7 @@ protected:
         }
     }
 
-    static void filteringBySubtractiveRuleImpl(MorphologicalTree& tree, const AltitudeBuffer* altitude, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
+    static void filteringBySubtractiveRuleImpl(const MorphologicalTree& tree, const AltitudeBuffer* altitude, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
         std::unique_ptr<AltitudeType[]> mapLevel(new AltitudeType[tree.getNumInternalNodeSlots()]);
         const NodeId rootNodeId = tree.getRoot();
         mapLevel[rootNodeId] = altitudeOf(altitude, rootNodeId);
@@ -85,7 +85,7 @@ protected:
         }
     }
 
-    static void filteringByDirectRuleImpl(MorphologicalTree& tree, const AltitudeBuffer* altitude, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
+    static void filteringByDirectRuleImpl(const MorphologicalTree& tree, const AltitudeBuffer* altitude, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
         std::unique_ptr<AltitudeType[]> mapLevel(new AltitudeType[tree.getNumInternalNodeSlots()]);
         const NodeId rootNodeId = tree.getRoot();
         mapLevel[rootNodeId] = altitudeOf(altitude, rootNodeId);
@@ -103,7 +103,7 @@ protected:
         }
     }
 
-    static void filteringByPruningMinCriterionImpl(MorphologicalTree& tree, const AltitudeBuffer* altitude, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
+    static void filteringByPruningMinCriterionImpl(const MorphologicalTree& tree, const AltitudeBuffer* altitude, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
         std::stack<NodeId> stack;
         stack.push(tree.getRoot());
         auto imgOutput = imgOutputPtr->rawData();
@@ -122,7 +122,7 @@ protected:
         }
     }
 
-    static void filteringByPruningMaxCriterionImpl(MorphologicalTree& tree, const AltitudeBuffer* altitude, std::vector<bool>& keepCriterion, ImageUInt8Ptr imgOutputPtr) {
+    static void filteringByPruningMaxCriterionImpl(const MorphologicalTree& tree, const AltitudeBuffer* altitude, std::vector<bool>& keepCriterion, ImageUInt8Ptr imgOutputPtr) {
         std::vector<uint8_t> criterion(tree.getNumInternalNodeSlots(), false);
         AttributeComputedIncrementally::traversePostOrder(
             tree,
@@ -152,7 +152,7 @@ protected:
         }
     }
 
-    static void filteringByPruningMinAttributeImpl(MorphologicalTree& tree, const AltitudeBuffer* altitude, const float* attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
+    static void filteringByPruningMinAttributeImpl(const MorphologicalTree& tree, const AltitudeBuffer* altitude, const float* attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
         assert(attribute != nullptr);
         auto imgOutput = imgOutputPtr->rawData();
         std::stack<NodeId> stack;
@@ -171,7 +171,7 @@ protected:
         }
     }
 
-    static void filteringByPruningMaxAttributeImpl(MorphologicalTree& tree, const AltitudeBuffer* altitude, const float* attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
+    static void filteringByPruningMaxAttributeImpl(const MorphologicalTree& tree, const AltitudeBuffer* altitude, const float* attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
         assert(attribute != nullptr);
         std::vector<uint8_t> criterion(tree.getNumInternalNodeSlots(), false);
         AttributeComputedIncrementally::traversePostOrder(
@@ -204,7 +204,7 @@ protected:
         }
     }
 
-    static std::vector<bool> getAdaptiveCriterionImpl(MorphologicalTree& tree, const AltitudeBuffer* altitude, const float* attribute, float threshold, int delta) {
+    static std::vector<bool> getAdaptiveCriterionImpl(const MorphologicalTree& tree, const AltitudeBuffer* altitude, const float* attribute, float threshold, int delta) {
         assert(attribute != nullptr);
 
         ComputerMSER mser(tree, altitude);
@@ -237,7 +237,7 @@ protected:
         return isPruned;
     }
 
-    static std::vector<bool> getAdaptiveCriterionImpl(MorphologicalTree& tree, const AltitudeBuffer* altitude, std::vector<bool>& criterion, int delta) {
+    static std::vector<bool> getAdaptiveCriterionImpl(const MorphologicalTree& tree, const AltitudeBuffer* altitude, std::vector<bool>& criterion, int delta) {
         ComputerMSER mser(tree, altitude);
         std::vector<uint8_t> isMSER = mser.computeMSER(delta);
         (void)isMSER;
@@ -269,11 +269,11 @@ protected:
     }
 
 public:
-    explicit AttributeFilters(MorphologicalTree& tree)
+    explicit AttributeFilters(const MorphologicalTree& tree)
         : tree{tree}, altitude_{nullptr} {}
 
-    explicit AttributeFilters(WeightedMorphologicalTree& weighted)
-        : tree{weighted.tree}, altitude_{&weighted.altitude} {}
+    explicit AttributeFilters(const WeightedMorphologicalTree& weighted)
+        : tree{weighted.tree_}, altitude_{&weighted.altitude_} {}
 
     ~AttributeFilters() = default;
 
@@ -333,100 +333,100 @@ public:
         return imgOutput;
     }
 
-    static void filteringBySubtractiveScoreRule(MorphologicalTree& tree, std::vector<float>& prob, ImageFloatPtr imgOutputPtr) {
+    static void filteringBySubtractiveScoreRule(const MorphologicalTree& tree, std::vector<float>& prob, ImageFloatPtr imgOutputPtr) {
         filteringBySubtractiveScoreRuleImpl(tree, nullptr, prob, imgOutputPtr);
     }
 
-    static void filteringBySubtractiveScoreRule(WeightedMorphologicalTree& weighted, std::vector<float>& prob, ImageFloatPtr imgOutputPtr) {
-        filteringBySubtractiveScoreRuleImpl(weighted.tree, &weighted.altitude, prob, imgOutputPtr);
+    static void filteringBySubtractiveScoreRule(const WeightedMorphologicalTree& weighted, std::vector<float>& prob, ImageFloatPtr imgOutputPtr) {
+        filteringBySubtractiveScoreRuleImpl(weighted.tree_, &weighted.altitude_, prob, imgOutputPtr);
     }
 
-    static void filteringBySubtractiveRule(MorphologicalTree& tree, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
+    static void filteringBySubtractiveRule(const MorphologicalTree& tree, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
         filteringBySubtractiveRuleImpl(tree, nullptr, criterion, imgOutputPtr);
     }
 
-    static void filteringBySubtractiveRule(WeightedMorphologicalTree& weighted, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
-        filteringBySubtractiveRuleImpl(weighted.tree, &weighted.altitude, criterion, imgOutputPtr);
+    static void filteringBySubtractiveRule(const WeightedMorphologicalTree& weighted, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
+        filteringBySubtractiveRuleImpl(weighted.tree_, &weighted.altitude_, criterion, imgOutputPtr);
     }
 
-    static void filteringByDirectRule(MorphologicalTree& tree, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
+    static void filteringByDirectRule(const MorphologicalTree& tree, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
         filteringByDirectRuleImpl(tree, nullptr, criterion, imgOutputPtr);
     }
 
-    static void filteringByDirectRule(WeightedMorphologicalTree& weighted, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
-        filteringByDirectRuleImpl(weighted.tree, &weighted.altitude, criterion, imgOutputPtr);
+    static void filteringByDirectRule(const WeightedMorphologicalTree& weighted, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
+        filteringByDirectRuleImpl(weighted.tree_, &weighted.altitude_, criterion, imgOutputPtr);
     }
 
-    static void filteringByPruningMin(MorphologicalTree& tree, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
+    static void filteringByPruningMin(const MorphologicalTree& tree, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
         filteringByPruningMinCriterionImpl(tree, nullptr, criterion, imgOutputPtr);
     }
 
-    static void filteringByPruningMin(WeightedMorphologicalTree& weighted, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
-        filteringByPruningMinCriterionImpl(weighted.tree, &weighted.altitude, criterion, imgOutputPtr);
+    static void filteringByPruningMin(const WeightedMorphologicalTree& weighted, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
+        filteringByPruningMinCriterionImpl(weighted.tree_, &weighted.altitude_, criterion, imgOutputPtr);
     }
 
-    static void filteringByPruningMax(MorphologicalTree& tree, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
+    static void filteringByPruningMax(const MorphologicalTree& tree, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
         filteringByPruningMaxCriterionImpl(tree, nullptr, criterion, imgOutputPtr);
     }
 
-    static void filteringByPruningMax(WeightedMorphologicalTree& weighted, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
-        filteringByPruningMaxCriterionImpl(weighted.tree, &weighted.altitude, criterion, imgOutputPtr);
+    static void filteringByPruningMax(const WeightedMorphologicalTree& weighted, std::vector<bool>& criterion, ImageUInt8Ptr imgOutputPtr) {
+        filteringByPruningMaxCriterionImpl(weighted.tree_, &weighted.altitude_, criterion, imgOutputPtr);
     }
 
-    static void filteringByPruningMin(MorphologicalTree& tree, const std::shared_ptr<float[]>& attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
+    static void filteringByPruningMin(const MorphologicalTree& tree, const std::shared_ptr<float[]>& attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
         filteringByPruningMin(tree, attribute.get(), threshold, imgOutputPtr);
     }
 
-    static void filteringByPruningMin(WeightedMorphologicalTree& weighted, const std::shared_ptr<float[]>& attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
+    static void filteringByPruningMin(const WeightedMorphologicalTree& weighted, const std::shared_ptr<float[]>& attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
         filteringByPruningMin(weighted, attribute.get(), threshold, imgOutputPtr);
     }
 
-    static void filteringByPruningMin(MorphologicalTree& tree, const float* attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
+    static void filteringByPruningMin(const MorphologicalTree& tree, const float* attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
         filteringByPruningMinAttributeImpl(tree, nullptr, attribute, threshold, imgOutputPtr);
     }
 
-    static void filteringByPruningMin(WeightedMorphologicalTree& weighted, const float* attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
-        filteringByPruningMinAttributeImpl(weighted.tree, &weighted.altitude, attribute, threshold, imgOutputPtr);
+    static void filteringByPruningMin(const WeightedMorphologicalTree& weighted, const float* attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
+        filteringByPruningMinAttributeImpl(weighted.tree_, &weighted.altitude_, attribute, threshold, imgOutputPtr);
     }
 
-    static void filteringByPruningMax(MorphologicalTree& tree, const std::shared_ptr<float[]>& attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
+    static void filteringByPruningMax(const MorphologicalTree& tree, const std::shared_ptr<float[]>& attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
         filteringByPruningMax(tree, attribute.get(), threshold, imgOutputPtr);
     }
 
-    static void filteringByPruningMax(WeightedMorphologicalTree& weighted, const std::shared_ptr<float[]>& attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
+    static void filteringByPruningMax(const WeightedMorphologicalTree& weighted, const std::shared_ptr<float[]>& attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
         filteringByPruningMax(weighted, attribute.get(), threshold, imgOutputPtr);
     }
 
-    static void filteringByPruningMax(MorphologicalTree& tree, const float* attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
+    static void filteringByPruningMax(const MorphologicalTree& tree, const float* attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
         filteringByPruningMaxAttributeImpl(tree, nullptr, attribute, threshold, imgOutputPtr);
     }
 
-    static void filteringByPruningMax(WeightedMorphologicalTree& weighted, const float* attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
-        filteringByPruningMaxAttributeImpl(weighted.tree, &weighted.altitude, attribute, threshold, imgOutputPtr);
+    static void filteringByPruningMax(const WeightedMorphologicalTree& weighted, const float* attribute, float threshold, ImageUInt8Ptr imgOutputPtr) {
+        filteringByPruningMaxAttributeImpl(weighted.tree_, &weighted.altitude_, attribute, threshold, imgOutputPtr);
     }
 
-    static std::vector<bool> getAdaptiveCriterion(MorphologicalTree& tree, const std::shared_ptr<float[]>& attribute, float threshold, int delta) {
+    static std::vector<bool> getAdaptiveCriterion(const MorphologicalTree& tree, const std::shared_ptr<float[]>& attribute, float threshold, int delta) {
         return getAdaptiveCriterion(tree, attribute.get(), threshold, delta);
     }
 
-    static std::vector<bool> getAdaptiveCriterion(WeightedMorphologicalTree& weighted, const std::shared_ptr<float[]>& attribute, float threshold, int delta) {
-        return getAdaptiveCriterionImpl(weighted.tree, &weighted.altitude, attribute.get(), threshold, delta);
+    static std::vector<bool> getAdaptiveCriterion(const WeightedMorphologicalTree& weighted, const std::shared_ptr<float[]>& attribute, float threshold, int delta) {
+        return getAdaptiveCriterionImpl(weighted.tree_, &weighted.altitude_, attribute.get(), threshold, delta);
     }
 
-    static std::vector<bool> getAdaptiveCriterion(MorphologicalTree& tree, const float* attribute, float threshold, int delta) {
+    static std::vector<bool> getAdaptiveCriterion(const MorphologicalTree& tree, const float* attribute, float threshold, int delta) {
         return getAdaptiveCriterionImpl(tree, nullptr, attribute, threshold, delta);
     }
 
-    static std::vector<bool> getAdaptiveCriterion(WeightedMorphologicalTree& weighted, const float* attribute, float threshold, int delta) {
-        return getAdaptiveCriterionImpl(weighted.tree, &weighted.altitude, attribute, threshold, delta);
+    static std::vector<bool> getAdaptiveCriterion(const WeightedMorphologicalTree& weighted, const float* attribute, float threshold, int delta) {
+        return getAdaptiveCriterionImpl(weighted.tree_, &weighted.altitude_, attribute, threshold, delta);
     }
 
-    static std::vector<bool> getAdaptiveCriterion(MorphologicalTree& tree, std::vector<bool>& criterion, int delta) {
+    static std::vector<bool> getAdaptiveCriterion(const MorphologicalTree& tree, std::vector<bool>& criterion, int delta) {
         return getAdaptiveCriterionImpl(tree, nullptr, criterion, delta);
     }
 
-    static std::vector<bool> getAdaptiveCriterion(WeightedMorphologicalTree& weighted, std::vector<bool>& criterion, int delta) {
-        return getAdaptiveCriterionImpl(weighted.tree, &weighted.altitude, criterion, delta);
+    static std::vector<bool> getAdaptiveCriterion(const WeightedMorphologicalTree& weighted, std::vector<bool>& criterion, int delta) {
+        return getAdaptiveCriterionImpl(weighted.tree_, &weighted.altitude_, criterion, delta);
     }
 };
 

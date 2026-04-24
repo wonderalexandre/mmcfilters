@@ -53,7 +53,7 @@ public:
     /**
      * @brief Computes the requested central moments.
      */
-    void compute(MorphologicalTree& tree, const AltitudeBuffer*, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute> requested, std::span<const DependencySource> dependencySources) const override {
+    void compute(const MorphologicalTree& tree, const AltitudeBuffer*, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute> requested, std::span<const DependencySource> dependencySources) const override {
         if (PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing CENTRAL_MOMENT group" << std::endl;
 
         int numCols = tree.getNumColsOfImage();
@@ -180,7 +180,7 @@ public:
     /**
      * @brief Computes the requested Hu invariant moments.
      */
-    void compute(MorphologicalTree& tree, const AltitudeBuffer*, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute> requested, std::span<const DependencySource> dependencySources) const override {
+    void compute(const MorphologicalTree& tree, const AltitudeBuffer*, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute> requested, std::span<const DependencySource> dependencySources) const override {
         if (PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing HU_MOMENT group" << std::endl;
 
         auto indexOf = [&](NodeId idx, Attribute attr) { return attrNames.linearIndex(idx, attr); };
@@ -293,7 +293,7 @@ public:
     /**
      * @brief Computes the requested moment-derived descriptors.
      */
-    void compute(MorphologicalTree& tree, const AltitudeBuffer*, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes, std::span<const DependencySource> dependencySources) const override {
+    void compute(const MorphologicalTree& tree, const AltitudeBuffer*, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes, std::span<const DependencySource> dependencySources) const override {
         if (PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing MOMENT_BASED group" << std::endl;
 
 

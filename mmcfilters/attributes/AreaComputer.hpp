@@ -35,7 +35,7 @@ public:
     /**
      * @brief Materialises `AREA` for every live node of the tree.
      */
-    void compute(MorphologicalTree& tree, const AltitudeBuffer*, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute>, std::span<const DependencySource>) const override{
+    void compute(const MorphologicalTree& tree, const AltitudeBuffer*, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute>, std::span<const DependencySource>) const override{
         if (PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing AREA" << std::endl;
         auto indexOf = [&](NodeId idx) { return attrNames.linearIndex(idx, AREA); };
         AttributeComputedIncrementally::traversePostOrder(

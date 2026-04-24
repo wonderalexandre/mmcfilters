@@ -46,8 +46,8 @@ import mmcfilters
 
 img = np.random.randint(0, 255, size=(128, 128), dtype=np.uint8)
 
-tree = mmcfilters.MorphologicalTree(img, True, 1.5)
-weighted = mmcfilters.WeightedMorphologicalTree(img, True, 1.5)
+tree = mmcfilters.MorphologicalTree.createComponentTree(img, True, 1.5)
+weighted = mmcfilters.WeightedMorphologicalTree.createComponentTree(img, True, 1.5)
 root_id = tree.getRoot()
 alive_ids = tree.getAliveNodeIds()
 children_of_root = tree.getChildren(root_id)
@@ -73,14 +73,25 @@ mmcfilters.Attribute.traversePostOrder(
 
 - a dynamic hierarchy over dense internal `NodeId` values;
 - direct ownership of proper parts;
-- structural traversal and mutation operations;
+- structural traversal and safe local mutation operations;
 - optional adjacency metadata plus explicit image-domain dimensions.
 
 Weighted quantities are intentionally outside the topology-only tree:
 
 - `WeightedMorphologicalTree` owns the dense node-altitude buffer;
+- `WeightedMorphologicalTree` encapsulates its topology and exposes it only as `const MorphologicalTree&`;
 - image reconstruction, node residues, and Higra `(parent, altitude)` export live on `WeightedMorphologicalTree`;
 - attribute computation still runs first in the internal `MorphologicalTree` node-id space and is projected only at API boundaries when requested.
+
+The editing API has three levels:
+
+- read-only topology queries such as `getRoot`, `getAliveNodeIds`, `getChildren`, and `getProperParts`;
+- safe public mutators, `pruneNode` and `mergeNodeIntoParent`, on both topology-only and weighted trees;
+- staged structural edits through `MorphologicalTree::edit()` / `TreeEditor` and `WeightedMorphologicalTree::edit()` / `WeightedTreeEditor`.
+
+Low-level topology rewiring is not public API. Full connected-tree validation
+and weighted monotone-altitude validation run at editor `commit()` time. See
+[docs/editing-api.md](docs/editing-api.md) for the detailed contract.
 
 `NodeIdSpace::HIGRA`, `getNumHigraNodes()`, and `getHigraNodeId()` refer only to the original Higra node-id domain preserved by `createFromHigraParent`. Image-built trees and trees edited after import do not expose that domain. `exportHigraHierarchy()` always creates a new compact Higra representation of the current live rooted tree.
 
@@ -120,9 +131,11 @@ auto combined = AttributeComputedIncrementally::computeAttributes(
 
 ## Repository guide
 
-- [unit-tests/README.md](/Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/unit-tests/README.md)
+- [unit-tests/README.md](unit-tests/README.md)
   Official regression suite for the active API.
-- [notebooks/README.md](/Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/notebooks/README.md)
+- [notebooks/README.md](notebooks/README.md)
   Notes for the maintained notebooks.
-- [examples/README.md](/Users/wonderalexandre/GitHub/MorphologicalAttributeFilters/examples/README.md)
+- [examples/README.md](examples/README.md)
   Standalone examples, including the `EdtDIFT` PNG export example.
+- [docs/editing-api.md](docs/editing-api.md)
+  Contract for safe mutators, staged editors, and weighted topology ownership.

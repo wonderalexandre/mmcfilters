@@ -20,7 +20,7 @@ int main() {
 
     {
         auto tree = makeComponentTree(makeComponentTreeFixture(), false);
-        TreeEditor editor(*tree);
+        auto editor = tree->edit();
 
         requireEqual(tree->getNumInternalNodeSlots(), 6, "initial internal slot count");
         requireEqual(tree->getNumFreeNodeSlots(), 0, "initial free slot count");
@@ -54,7 +54,7 @@ int main() {
 
     {
         auto tree = makeComponentTree(makeComponentTreeFixture(), true);
-        TreeEditor editor(*tree);
+        auto editor = tree->edit();
 
         const NodeId detachedNode = editor.createDetachedNode();
         require(editor.hasDetachedAliveNodes(), "detached edit must be visible before commit");
@@ -72,6 +72,23 @@ int main() {
         editor.commit();
         requireEqual(tree->getNodeParent(detachedNode), 4, "editor must remain usable after a failed commit");
         require(!editor.hasDetachedAliveNodes(), "successful re-attachment must clear the detached state");
+    }
+
+    {
+        auto tree = makeComponentTree(makeComponentTreeFixture(), true);
+        auto editor = tree->edit();
+
+        editor.reparent(3, 4);
+        requireThrows([&]() { editor.commit(); }, "commit must reject a cycle introduced by staged reparent");
+    }
+
+    {
+        auto tree = makeComponentTree(makeComponentTreeFixture(), true);
+        auto editor = tree->edit();
+
+        editor.detach(3);
+        editor.attach(4, 3);
+        requireThrows([&]() { editor.commit(); }, "commit must reject a cycle introduced by staged attach");
     }
 
     return 0;

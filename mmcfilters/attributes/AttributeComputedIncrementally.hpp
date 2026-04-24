@@ -217,9 +217,9 @@ public:
      * dependency resolver. It is mainly useful when the caller already knows
      * which concrete computer they want to run.
      */
-    static ComputedAttributeData computeAttributesByComputer(MorphologicalTree& tree, const AltitudeBuffer* altitude, const AttributeComputer& comp, const DependencyMap& available = {}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
-    static ComputedAttributeData computeAttributesByComputer(MorphologicalTree& tree, const AttributeComputer& comp, const DependencyMap& available = {}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
-    static ComputedAttributeData computeAttributesByComputer(WeightedMorphologicalTree& tree, const AttributeComputer& comp, const DependencyMap& available = {}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
+    static ComputedAttributeData computeAttributesByComputer(const MorphologicalTree& tree, const AltitudeBuffer* altitude, const AttributeComputer& comp, const DependencyMap& available = {}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
+    static ComputedAttributeData computeAttributesByComputer(const MorphologicalTree& tree, const AttributeComputer& comp, const DependencyMap& available = {}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
+    static ComputedAttributeData computeAttributesByComputer(const WeightedMorphologicalTree& tree, const AttributeComputer& comp, const DependencyMap& available = {}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
 
     /**
      * @brief Computes a single scalar attribute or a full attribute group.
@@ -229,9 +229,9 @@ public:
      * that attribute. If the request is a group, the returned layout contains
      * the full group expansion.
      */
-    static ComputedAttributeData computeSingleAttribute(MorphologicalTree& tree, const AltitudeBuffer* altitude, AttributeOrGroup attr, const DependencyMap& availableDeps = {}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
-    static ComputedAttributeData computeSingleAttribute(MorphologicalTree& tree, AttributeOrGroup attr, const DependencyMap& availableDeps = {}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
-    static ComputedAttributeData computeSingleAttribute(WeightedMorphologicalTree& tree, AttributeOrGroup attr, const DependencyMap& availableDeps = {}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
+    static ComputedAttributeData computeSingleAttribute(const MorphologicalTree& tree, const AltitudeBuffer* altitude, AttributeOrGroup attr, const DependencyMap& availableDeps = {}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
+    static ComputedAttributeData computeSingleAttribute(const MorphologicalTree& tree, AttributeOrGroup attr, const DependencyMap& availableDeps = {}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
+    static ComputedAttributeData computeSingleAttribute(const WeightedMorphologicalTree& tree, AttributeOrGroup attr, const DependencyMap& availableDeps = {}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
 
     /**
      * @brief Computes a delta-augmented version of one scalar attribute.
@@ -240,9 +240,9 @@ public:
      * @param padding Strategy used when the requested offset leaves the valid
      * ancestor/descendant chain.
      */
-    static ComputedAttributeDataWithDelta computeSingleAttributeWithDelta(MorphologicalTree& tree, const AltitudeBuffer* altitude, Attribute attribute, int delta, std::string padding="last-padding", const DependencyMap& availableDeps={}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
-    static ComputedAttributeDataWithDelta computeSingleAttributeWithDelta(MorphologicalTree& tree, Attribute attribute, int delta, std::string padding="last-padding", const DependencyMap& availableDeps={}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
-    static ComputedAttributeDataWithDelta computeSingleAttributeWithDelta(WeightedMorphologicalTree& tree, Attribute attribute, int delta, std::string padding="last-padding", const DependencyMap& availableDeps={}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
+    static ComputedAttributeDataWithDelta computeSingleAttributeWithDelta(const MorphologicalTree& tree, const AltitudeBuffer* altitude, Attribute attribute, int delta, std::string padding="last-padding", const DependencyMap& availableDeps={}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
+    static ComputedAttributeDataWithDelta computeSingleAttributeWithDelta(const MorphologicalTree& tree, Attribute attribute, int delta, std::string padding="last-padding", const DependencyMap& availableDeps={}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
+    static ComputedAttributeDataWithDelta computeSingleAttributeWithDelta(const WeightedMorphologicalTree& tree, Attribute attribute, int delta, std::string padding="last-padding", const DependencyMap& availableDeps={}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
 
     /**
      * @brief Computes a heterogeneous set of scalar attributes and attribute
@@ -254,16 +254,16 @@ public:
      * and returns a single layout containing exactly the requested scalar
      * attributes.
      */
-    static ComputedAttributeData computeAttributes(MorphologicalTree& tree, const AltitudeBuffer* altitude, const std::vector<AttributeOrGroup>& attributes,const DependencyMap& providedDependencies={}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
-    static ComputedAttributeData computeAttributes(MorphologicalTree& tree, const std::vector<AttributeOrGroup>& attributes,const DependencyMap& providedDependencies={}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
-    static ComputedAttributeData computeAttributes(WeightedMorphologicalTree& tree, const std::vector<AttributeOrGroup>& attributes,const DependencyMap& providedDependencies={}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
+    static ComputedAttributeData computeAttributes(const MorphologicalTree& tree, const AltitudeBuffer* altitude, const std::vector<AttributeOrGroup>& attributes,const DependencyMap& providedDependencies={}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
+    static ComputedAttributeData computeAttributes(const MorphologicalTree& tree, const std::vector<AttributeOrGroup>& attributes,const DependencyMap& providedDependencies={}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
+    static ComputedAttributeData computeAttributes(const WeightedMorphologicalTree& tree, const std::vector<AttributeOrGroup>& attributes,const DependencyMap& providedDependencies={}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
 
     /**
      * @brief Projects a node attribute to a proper-part image in the original domain.
      */
-    static ImageFloatPtr computeAttributeMapping(MorphologicalTree& tree, const AltitudeBuffer* altitude, Attribute attribute);
-    static ImageFloatPtr computeAttributeMapping(MorphologicalTree& tree, Attribute attribute);
-    static ImageFloatPtr computeAttributeMapping(WeightedMorphologicalTree& tree, Attribute attribute);
+    static ImageFloatPtr computeAttributeMapping(const MorphologicalTree& tree, const AltitudeBuffer* altitude, Attribute attribute);
+    static ImageFloatPtr computeAttributeMapping(const MorphologicalTree& tree, Attribute attribute);
+    static ImageFloatPtr computeAttributeMapping(const WeightedMorphologicalTree& tree, Attribute attribute);
 
 };
 
@@ -374,7 +374,7 @@ namespace mmcfilters {
  * @brief Executes one concrete computer with dependency resolution and optional
  * result projection.
  */
-inline ComputedAttributeData AttributeComputedIncrementally::computeAttributesByComputer(MorphologicalTree& tree, const AltitudeBuffer* altitude, const AttributeComputer& comp, const DependencyMap& availableDeps, NodeIdSpace outputSpace) {
+inline ComputedAttributeData AttributeComputedIncrementally::computeAttributesByComputer(const MorphologicalTree& tree, const AltitudeBuffer* altitude, const AttributeComputer& comp, const DependencyMap& availableDeps, NodeIdSpace outputSpace) {
     DependencyMap available = availableDeps;
     detail::OwnedComputedResults ownedResults;
 
@@ -414,12 +414,12 @@ inline ComputedAttributeData AttributeComputedIncrementally::computeAttributesBy
     return detail::projectComputedDataToNodeIdSpace(tree, {std::move(attrNames), std::move(buffer), NodeIdSpace::MORPHOLOGICAL_TREE}, outputSpace);
 }
 
-inline ComputedAttributeData AttributeComputedIncrementally::computeAttributesByComputer(MorphologicalTree& tree, const AttributeComputer& comp, const DependencyMap& availableDeps, NodeIdSpace outputSpace) {
+inline ComputedAttributeData AttributeComputedIncrementally::computeAttributesByComputer(const MorphologicalTree& tree, const AttributeComputer& comp, const DependencyMap& availableDeps, NodeIdSpace outputSpace) {
     return computeAttributesByComputer(tree, nullptr, comp, availableDeps, outputSpace);
 }
 
-inline ComputedAttributeData AttributeComputedIncrementally::computeAttributesByComputer(WeightedMorphologicalTree& tree, const AttributeComputer& comp, const DependencyMap& availableDeps, NodeIdSpace outputSpace) {
-    return computeAttributesByComputer(tree.tree, &tree.altitude, comp, availableDeps, outputSpace);
+inline ComputedAttributeData AttributeComputedIncrementally::computeAttributesByComputer(const WeightedMorphologicalTree& tree, const AttributeComputer& comp, const DependencyMap& availableDeps, NodeIdSpace outputSpace) {
+    return computeAttributesByComputer(tree.tree_, &tree.altitude_, comp, availableDeps, outputSpace);
 }
 
 /**
@@ -431,7 +431,7 @@ inline ComputedAttributeData AttributeComputedIncrementally::computeAttributesBy
  * as dependency views. The returned buffer contains only the requested scalar
  * attributes.
  */
-inline ComputedAttributeData AttributeComputedIncrementally::computeSingleAttribute(MorphologicalTree& tree, const AltitudeBuffer* altitude, AttributeOrGroup attrOrGroup, const DependencyMap& availableDeps, NodeIdSpace outputSpace) {
+inline ComputedAttributeData AttributeComputedIncrementally::computeSingleAttribute(const MorphologicalTree& tree, const AltitudeBuffer* altitude, AttributeOrGroup attrOrGroup, const DependencyMap& availableDeps, NodeIdSpace outputSpace) {
     const AttributeComputer& comp = AttributeFactory::create(attrOrGroup);
     DependencyMap available = availableDeps;
     detail::OwnedComputedResults ownedResults;
@@ -478,12 +478,12 @@ inline ComputedAttributeData AttributeComputedIncrementally::computeSingleAttrib
     return detail::projectComputedDataToNodeIdSpace(tree, {std::move(attrNames), std::move(buffer), NodeIdSpace::MORPHOLOGICAL_TREE}, outputSpace);
 }
 
-inline ComputedAttributeData AttributeComputedIncrementally::computeSingleAttribute(MorphologicalTree& tree, AttributeOrGroup attrOrGroup, const DependencyMap& availableDeps, NodeIdSpace outputSpace) {
+inline ComputedAttributeData AttributeComputedIncrementally::computeSingleAttribute(const MorphologicalTree& tree, AttributeOrGroup attrOrGroup, const DependencyMap& availableDeps, NodeIdSpace outputSpace) {
     return computeSingleAttribute(tree, nullptr, attrOrGroup, availableDeps, outputSpace);
 }
 
-inline ComputedAttributeData AttributeComputedIncrementally::computeSingleAttribute(WeightedMorphologicalTree& tree, AttributeOrGroup attrOrGroup, const DependencyMap& availableDeps, NodeIdSpace outputSpace) {
-    return computeSingleAttribute(tree.tree, &tree.altitude, attrOrGroup, availableDeps, outputSpace);
+inline ComputedAttributeData AttributeComputedIncrementally::computeSingleAttribute(const WeightedMorphologicalTree& tree, AttributeOrGroup attrOrGroup, const DependencyMap& availableDeps, NodeIdSpace outputSpace) {
+    return computeSingleAttribute(tree.tree_, &tree.altitude_, attrOrGroup, availableDeps, outputSpace);
 }
 
 /**
@@ -499,7 +499,7 @@ inline ComputedAttributeData AttributeComputedIncrementally::computeSingleAttrib
  *
  * Missing samples are handled according to the selected padding strategy.
  */
-inline ComputedAttributeDataWithDelta AttributeComputedIncrementally::computeSingleAttributeWithDelta(MorphologicalTree& tree, const AltitudeBuffer* altitude, Attribute attribute, int delta, std::string padding, const DependencyMap& availableDeps, NodeIdSpace outputSpace) {
+inline ComputedAttributeDataWithDelta AttributeComputedIncrementally::computeSingleAttributeWithDelta(const MorphologicalTree& tree, const AltitudeBuffer* altitude, Attribute attribute, int delta, std::string padding, const DependencyMap& availableDeps, NodeIdSpace outputSpace) {
     if (padding != "last-padding" &&
         padding != "nan-padding" &&
         padding != "null-padding" &&
@@ -598,12 +598,12 @@ inline ComputedAttributeDataWithDelta AttributeComputedIncrementally::computeSin
     return detail::projectComputedDataToNodeIdSpace(tree, {std::move(attributeNamesDelta), std::move(attrsDelta), NodeIdSpace::MORPHOLOGICAL_TREE}, outputSpace);
 }
 
-inline ComputedAttributeDataWithDelta AttributeComputedIncrementally::computeSingleAttributeWithDelta(MorphologicalTree& tree, Attribute attribute, int delta, std::string padding, const DependencyMap& availableDeps, NodeIdSpace outputSpace) {
+inline ComputedAttributeDataWithDelta AttributeComputedIncrementally::computeSingleAttributeWithDelta(const MorphologicalTree& tree, Attribute attribute, int delta, std::string padding, const DependencyMap& availableDeps, NodeIdSpace outputSpace) {
     return computeSingleAttributeWithDelta(tree, nullptr, attribute, delta, std::move(padding), availableDeps, outputSpace);
 }
 
-inline ComputedAttributeDataWithDelta AttributeComputedIncrementally::computeSingleAttributeWithDelta(WeightedMorphologicalTree& tree, Attribute attribute, int delta, std::string padding, const DependencyMap& availableDeps, NodeIdSpace outputSpace) {
-    return computeSingleAttributeWithDelta(tree.tree, &tree.altitude, attribute, delta, std::move(padding), availableDeps, outputSpace);
+inline ComputedAttributeDataWithDelta AttributeComputedIncrementally::computeSingleAttributeWithDelta(const WeightedMorphologicalTree& tree, Attribute attribute, int delta, std::string padding, const DependencyMap& availableDeps, NodeIdSpace outputSpace) {
+    return computeSingleAttributeWithDelta(tree.tree_, &tree.altitude_, attribute, delta, std::move(padding), availableDeps, outputSpace);
 }
 
 /**
@@ -616,7 +616,7 @@ inline ComputedAttributeDataWithDelta AttributeComputedIncrementally::computeSin
  * dependencies when safe, and finally assembles one return buffer containing
  * exactly the requested scalar attributes.
  */
-inline ComputedAttributeData AttributeComputedIncrementally::computeAttributes(MorphologicalTree& tree, const AltitudeBuffer* altitude, const std::vector<AttributeOrGroup>& attributes, const DependencyMap& providedDependencies, NodeIdSpace outputSpace) {
+inline ComputedAttributeData AttributeComputedIncrementally::computeAttributes(const MorphologicalTree& tree, const AltitudeBuffer* altitude, const std::vector<AttributeOrGroup>& attributes, const DependencyMap& providedDependencies, NodeIdSpace outputSpace) {
     DependencyMap available = providedDependencies;
     detail::OwnedComputedResults ownedResults;
 
@@ -689,12 +689,12 @@ inline ComputedAttributeData AttributeComputedIncrementally::computeAttributes(M
     return detail::projectComputedDataToNodeIdSpace(tree, {std::move(attrNames), std::move(buffer), NodeIdSpace::MORPHOLOGICAL_TREE}, outputSpace);
 }
 
-inline ComputedAttributeData AttributeComputedIncrementally::computeAttributes(MorphologicalTree& tree, const std::vector<AttributeOrGroup>& attributes, const DependencyMap& providedDependencies, NodeIdSpace outputSpace) {
+inline ComputedAttributeData AttributeComputedIncrementally::computeAttributes(const MorphologicalTree& tree, const std::vector<AttributeOrGroup>& attributes, const DependencyMap& providedDependencies, NodeIdSpace outputSpace) {
     return computeAttributes(tree, nullptr, attributes, providedDependencies, outputSpace);
 }
 
-inline ComputedAttributeData AttributeComputedIncrementally::computeAttributes(WeightedMorphologicalTree& tree, const std::vector<AttributeOrGroup>& attributes, const DependencyMap& providedDependencies, NodeIdSpace outputSpace) {
-    return computeAttributes(tree.tree, &tree.altitude, attributes, providedDependencies, outputSpace);
+inline ComputedAttributeData AttributeComputedIncrementally::computeAttributes(const WeightedMorphologicalTree& tree, const std::vector<AttributeOrGroup>& attributes, const DependencyMap& providedDependencies, NodeIdSpace outputSpace) {
+    return computeAttributes(tree.tree_, &tree.altitude_, attributes, providedDependencies, outputSpace);
 }
 
 /**
@@ -705,7 +705,7 @@ inline ComputedAttributeData AttributeComputedIncrementally::computeAttributes(W
  * it, producing an image whose pixels are indexed in the original spatial
  * domain rather than in the tree node domain.
  */
-inline ImageFloatPtr AttributeComputedIncrementally::computeAttributeMapping(MorphologicalTree& tree, const AltitudeBuffer* altitude, Attribute attribute) {
+inline ImageFloatPtr AttributeComputedIncrementally::computeAttributeMapping(const MorphologicalTree& tree, const AltitudeBuffer* altitude, Attribute attribute) {
     auto [attrNames, buffer] = AttributeComputedIncrementally::computeSingleAttribute(tree, altitude, attribute);
     ImageFloatPtr imgPtr = std::make_shared<ImageFloat>(tree.getNumRowsOfImage(), tree.getNumColsOfImage());
     float* img = imgPtr->rawData();
@@ -717,12 +717,12 @@ inline ImageFloatPtr AttributeComputedIncrementally::computeAttributeMapping(Mor
     return imgPtr;
 }
 
-inline ImageFloatPtr AttributeComputedIncrementally::computeAttributeMapping(MorphologicalTree& tree, Attribute attribute) {
+inline ImageFloatPtr AttributeComputedIncrementally::computeAttributeMapping(const MorphologicalTree& tree, Attribute attribute) {
     return computeAttributeMapping(tree, nullptr, attribute);
 }
 
-inline ImageFloatPtr AttributeComputedIncrementally::computeAttributeMapping(WeightedMorphologicalTree& tree, Attribute attribute) {
-    return computeAttributeMapping(tree.tree, &tree.altitude, attribute);
+inline ImageFloatPtr AttributeComputedIncrementally::computeAttributeMapping(const WeightedMorphologicalTree& tree, Attribute attribute) {
+    return computeAttributeMapping(tree.tree_, &tree.altitude_, attribute);
 }
 
 } // namespace mmcfilters

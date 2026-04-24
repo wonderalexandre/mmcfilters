@@ -113,6 +113,14 @@ def main() -> int:
         lambda: mmcfilters.UltimateAttributeOpening(weighted, np.array([1.0], dtype=np.float32)),
         "weighted UltimateAttributeOpening must reject short attribute buffer",
     )
+    nonsquare = np.array([[3, 3, 2], [1, 4, 5]], dtype=np.uint8)
+    nonsquare_weighted = mmcfilters.WeightedMorphologicalTree.createComponentTree(nonsquare, True)
+    nonsquare_box_height = mmcfilters.Attribute.computeSingleAttribute(nonsquare_weighted, mmcfilters.Attribute.BOX_HEIGHT)
+    nonsquare_uao = mmcfilters.UltimateAttributeOpening(nonsquare_weighted, nonsquare_box_height)
+    nonsquare_uao.execute(int(nonsquare_weighted.numRows))
+    require(nonsquare_uao.getMaxContrastImage().shape == (2, 3), "non-square UltimateAttributeOpening max contrast shape")
+    require(nonsquare_uao.getAssociatedImage().shape == (2, 3), "non-square UltimateAttributeOpening associated image shape")
+    require(nonsquare_uao.getAssociatedColoredImage().shape == (2, 9), "non-square UltimateAttributeOpening associated color image shape")
 
     weighted_extinction = mmcfilters.ExtinctionValues(weighted, weighted_level_attr)
     require(np.array_equal(weighted_extinction.filtering(1024), weighted_reconstruction), "weighted ExtinctionValues filtering keep-all")

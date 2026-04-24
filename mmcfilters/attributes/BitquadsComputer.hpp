@@ -47,7 +47,7 @@ class BitquadsComputer : public AttributeComputer {
 		/**
 		 * @brief Computes the requested bit-quad descriptors for each live node.
 		 */
-		void compute(MorphologicalTree& tree, const AltitudeBuffer*, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes, std::span<const DependencySource>) const override {
+		void compute(const MorphologicalTree& tree, const AltitudeBuffer*, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes, std::span<const DependencySource>) const override {
 			if(PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing BITQUADS group" << std::endl;
 			auto indexOf = [&](int idx, Attribute attr) {
 				return attrNames.linearIndex(idx, attr);

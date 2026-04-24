@@ -21,7 +21,10 @@ inline void validateAltitudeBufferShape(const MorphologicalTree& tree, const Alt
     validateAltitudeBufferShape(tree, std::span<const AltitudeType>(requireAltitudeBuffer(altitude)));
 }
 
-inline AltitudeType getAltitude(std::span<const AltitudeType> altitude, NodeId nodeId) noexcept {
+inline AltitudeType getAltitude(std::span<const AltitudeType> altitude, NodeId nodeId) {
+    if (nodeId < 0 || static_cast<size_t>(nodeId) >= altitude.size()) {
+        throw std::invalid_argument("Altitude access requires a valid internal NodeId.");
+    }
     return altitude[static_cast<size_t>(nodeId)];
 }
 
@@ -29,7 +32,11 @@ inline AltitudeType getAltitude(const AltitudeBuffer* altitude, NodeId nodeId) {
     return getAltitude(std::span<const AltitudeType>(requireAltitudeBuffer(altitude)), nodeId);
 }
 
-inline AltitudeDiffType getNodeResidue(const MorphologicalTree& tree, std::span<const AltitudeType> altitude, NodeId nodeId) noexcept {
+inline AltitudeDiffType getNodeResidue(const MorphologicalTree& tree, std::span<const AltitudeType> altitude, NodeId nodeId) {
+    validateAltitudeBufferShape(tree, altitude);
+    if (!tree.isAlive(nodeId)) {
+        throw std::invalid_argument("Node residue requires a live internal NodeId.");
+    }
     const NodeId parentNodeId = tree.getNodeParent(nodeId);
     if (parentNodeId == InvalidNode || parentNodeId == nodeId) {
         return getAltitude(altitude, nodeId);
@@ -41,7 +48,11 @@ inline AltitudeDiffType getNodeResidue(const MorphologicalTree& tree, const Alti
     return getNodeResidue(tree, std::span<const AltitudeType>(requireAltitudeBuffer(altitude)), nodeId);
 }
 
-inline NodeId getNodeAscendant(const MorphologicalTree& tree, std::span<const AltitudeType> altitude, NodeId nodeId, int delta) noexcept {
+inline NodeId getNodeAscendant(const MorphologicalTree& tree, std::span<const AltitudeType> altitude, NodeId nodeId, int delta) {
+    validateAltitudeBufferShape(tree, altitude);
+    if (!tree.isAlive(nodeId)) {
+        throw std::invalid_argument("Node ascendant search requires a live internal NodeId.");
+    }
     NodeId currentNodeId = nodeId;
     while (true) {
         if (tree.isMaxtree()) {

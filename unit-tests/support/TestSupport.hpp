@@ -68,6 +68,21 @@ inline void requireNear(const T& actual, const T& expected, const T& tolerance, 
     throw std::runtime_error(oss.str());
 }
 
+template <class Exception = std::exception, class Fn>
+inline void requireThrows(Fn&& fn, const std::string& label) {
+    try {
+        fn();
+    } catch (const Exception&) {
+        return;
+    } catch (const std::exception& ex) {
+        std::ostringstream oss;
+        oss << label << ": expected requested exception type but got `" << ex.what() << "`";
+        throw std::runtime_error(oss.str());
+    }
+
+    throw std::runtime_error(label + ": expected an exception");
+}
+
 inline ImageUInt8Ptr makeImage(int rows, int cols, std::initializer_list<uint8_t> values) {
     requireEqual(static_cast<int>(values.size()), rows * cols, "image buffer size");
     auto image = ImageUInt8::create(rows, cols);
@@ -145,7 +160,7 @@ inline std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportHigraHier
     return tree.exportHigraHierarchy();
 }
 
-inline int computeAreaAttribute(MorphologicalTree& tree, NodeId nodeId) {
+inline int computeAreaAttribute(const MorphologicalTree& tree, NodeId nodeId) {
     auto [attrNames, buffer] = AttributeComputedIncrementally::computeSingleAttribute(tree, AREA);
     return static_cast<int>(buffer[attrNames.linearIndex(nodeId, AREA)]);
 }

@@ -11,7 +11,6 @@ using namespace mmcfilters::unit_tests;
 int main() {
     auto image = makeComponentTreeFixture();
     auto weighted = makeWeightedComponentTree(image, true);
-    auto& tree = weighted->tree;
     auto requireThrows = [](auto&& fn, const std::string& label) {
         bool threw = false;
         try {
@@ -22,7 +21,8 @@ int main() {
         require(threw, label);
     };
 
-    tree.mergeNodeIntoParent(4);
+    weighted->mergeNodeIntoParent(4);
+    const auto& tree = weighted->topology();
 
     std::vector<NodeId> aliveNodeIds;
     for (NodeId nodeId : tree.getAliveNodeIds()) {
@@ -33,7 +33,7 @@ int main() {
     requireEqual(tree.getNumInternalNodeSlots(), 6, "internal slot count after middle-slot merge");
 
     auto [topologyNames, topologyBuffer] = AttributeComputedIncrementally::computeAttributes(
-        tree,
+        *weighted,
         {HEIGHT_NODE, DEPTH_NODE, IS_LEAF_NODE, IS_ROOT_NODE, NUM_CHILDREN_NODE, NUM_DESCENDANTS_NODE}
     );
 
@@ -159,7 +159,7 @@ int main() {
         {AREA, VOLUME},
         providedWrongSpace
     );
-    for (NodeId nodeId : fromHigra.tree.getAliveNodeIds()) {
+    for (NodeId nodeId : fromHigra.topology().getAliveNodeIds()) {
         requireEqual(
             recomputedBuffer[recomputedNames.linearIndex(nodeId, AREA)],
             baselineBuffer[baselineNames.linearIndex(nodeId, AREA)],
@@ -181,8 +181,8 @@ int main() {
         AdjacencyRelation(tree.getNumRowsOfImage(), tree.getNumColsOfImage(), 1.5)
     );
     NodeId firstNonRootNodeId = InvalidNode;
-    for (NodeId nodeId : mutatedFromHigra.tree.getAliveNodeIds()) {
-        if (!mutatedFromHigra.tree.isRoot(nodeId)) {
+    for (NodeId nodeId : mutatedFromHigra.topology().getAliveNodeIds()) {
+        if (!mutatedFromHigra.topology().isRoot(nodeId)) {
             firstNonRootNodeId = nodeId;
             break;
         }
@@ -278,10 +278,10 @@ int main() {
     ComputerMSER mser(*weighted);
     std::vector<uint8_t> isMSER = mser.computeMSER(1);
     const std::vector<float> implicitStabilities = mser.getStabilities();
-    ComputerMSER mserExplicit(tree, &weighted->altitude, areaBuffer);
+    ComputerMSER mserExplicit(tree, &weighted->getAltitudeBuffer(), areaBuffer);
     std::vector<uint8_t> isMSERExplicit = mserExplicit.computeMSER(1);
     const std::vector<float> explicitStabilities = mserExplicit.getStabilities();
-    ComputerMSER mserRaw(tree, &weighted->altitude, areaBuffer.data());
+    ComputerMSER mserRaw(tree, &weighted->getAltitudeBuffer(), areaBuffer.data());
     std::vector<uint8_t> isMSERRaw = mserRaw.computeMSER(1);
     const std::vector<float> rawStabilities = mserRaw.getStabilities();
     requireEqual(static_cast<int>(isMSER.size()), tree.getNumInternalNodeSlots(), "MSER buffer size after middle-slot merge");

@@ -53,7 +53,7 @@ public:
      * @brief Computes the requested grey-level statistics.
      */
     void compute(
-        MorphologicalTree& tree,
+        const MorphologicalTree& tree,
         const AltitudeBuffer* altitude,
         std::span<float> buffer,
         const AttributeNames& attrNames,

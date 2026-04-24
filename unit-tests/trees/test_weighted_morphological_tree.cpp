@@ -48,12 +48,12 @@ int main() {
         weighted->validateMonotoneAltitude();
 
         requireEqual(
-            static_cast<int>(weighted->altitude.size()),
-            weighted->tree.getNumInternalNodeSlots(),
+            static_cast<int>(weighted->getAltitudeBuffer().size()),
+            weighted->topology().getNumInternalNodeSlots(),
             "weighted altitude buffer must match the dense internal-node domain");
         NodeId builtSampleNodeId = InvalidNode;
         AltitudeType builtSampleAltitude = AltitudeType{};
-        for (NodeId nodeId : weighted->tree.getAliveNodeIds()) {
+        for (NodeId nodeId : weighted->topology().getAliveNodeIds()) {
             if (weighted->getAltitude(nodeId) != 0) {
                 builtSampleNodeId = nodeId;
                 builtSampleAltitude = weighted->getAltitude(nodeId);
@@ -62,7 +62,7 @@ int main() {
         }
         require(builtSampleNodeId != InvalidNode, "weighted image build must expose at least one non-zero internal altitude");
         requireEqual(weighted->getAltitude(builtSampleNodeId), builtSampleAltitude, "weighted image build external altitude sample");
-        requireEqual(weighted->getAltitude(weighted->tree.getRoot()), 0, "weighted root altitude");
+        requireEqual(weighted->getAltitude(weighted->topology().getRoot()), 0, "weighted root altitude");
         requireEqual(weighted->getNodeResidue(5), 1, "weighted node residue");
 
         auto reconstruction = weighted->reconstructionImage();
@@ -75,16 +75,16 @@ int main() {
         const auto [higraParent, higraAltitude] = weighted->exportHigraHierarchy();
         requireEqual(
             static_cast<int>(higraParent.size()),
-            weighted->tree.getNumTotalProperParts() + weighted->tree.getNumNodes(),
+            weighted->topology().getNumTotalProperParts() + weighted->topology().getNumNodes(),
             "weighted Higra export parent size");
         requireEqual(
             static_cast<int>(higraAltitude.size()),
-            weighted->tree.getNumTotalProperParts() + weighted->tree.getNumNodes(),
+            weighted->topology().getNumTotalProperParts() + weighted->topology().getNumNodes(),
             "weighted Higra export altitude size");
         requireCompactHigraHierarchy(
             higraParent,
             higraAltitude,
-            weighted->tree.getNumTotalProperParts(),
+            weighted->topology().getNumTotalProperParts(),
             "weighted Higra export");
 
         auto roundtrip = WeightedMorphologicalTree::createFromHigraParent(
@@ -98,7 +98,7 @@ int main() {
         roundtrip.validateMonotoneAltitude();
         NodeId importedSampleNodeId = InvalidNode;
         AltitudeType importedSampleAltitude = AltitudeType{};
-        for (NodeId nodeId : roundtrip.tree.getAliveNodeIds()) {
+        for (NodeId nodeId : roundtrip.topology().getAliveNodeIds()) {
             if (roundtrip.getAltitude(nodeId) != 0) {
                 importedSampleNodeId = nodeId;
                 importedSampleAltitude = roundtrip.getAltitude(nodeId);
@@ -127,13 +127,13 @@ int main() {
 
     {
         auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
-        weighted->setAltitudeBuffer(AltitudeBuffer(static_cast<size_t>(weighted->tree.getNumInternalNodeSlots()), AltitudeType{7}));
+        weighted->setAltitudeBuffer(AltitudeBuffer(static_cast<size_t>(weighted->topology().getNumInternalNodeSlots()), AltitudeType{7}));
 
         const auto [higraParent, higraAltitude] = weighted->exportHigraHierarchy();
         requireCompactHigraHierarchy(
             higraParent,
             higraAltitude,
-            weighted->tree.getNumTotalProperParts(),
+            weighted->topology().getNumTotalProperParts(),
             "equal-altitude Higra export");
 
         auto roundtrip = WeightedMorphologicalTree::createFromHigraParent(
@@ -151,7 +151,7 @@ int main() {
     {
         auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
 
-        const auto [weightedAsc, weightedDesc] = tree_altitude_ops::computeAscendantsAndDescendants(weighted->tree, &weighted->altitude, 2);
+        const auto [weightedAsc, weightedDesc] = tree_altitude_ops::computeAscendantsAndDescendants(weighted->topology(), &weighted->getAltitudeBuffer(), 2);
         requireVectorEqual(weightedAsc, {InvalidNode, 0, 0, 1, 2, 3}, "weighted level-based ascendants must use the external altitude buffer");
         requireVectorEqual(weightedDesc, {1, 3, 4, 5, InvalidNode, InvalidNode}, "weighted level-based descendants must use the external altitude buffer");
     }
@@ -186,10 +186,10 @@ int main() {
 
     {
         auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
-        const auto rootChildren = collectNodeIds(weighted->tree.getChildren(weighted->tree.getRoot()));
+        const auto rootChildren = collectNodeIds(weighted->topology().getChildren(weighted->topology().getRoot()));
         require(!rootChildren.empty(), "fixture must expose at least one root child");
 
-        weighted->altitude[static_cast<size_t>(rootChildren.front())] = weighted->getAltitude(weighted->tree.getRoot()) - 1;
+        weighted->setAltitude(rootChildren.front(), weighted->getAltitude(weighted->topology().getRoot()) - 1);
 
         bool threw = false;
         try {
@@ -211,8 +211,10 @@ int main() {
             });
         auto weighted = makeWeightedTreeOfShapes(tosImage, ToSInterpolation::SelfDual);
         weighted->validateAltitudeBufferShape();
-        if (!weighted->altitude.empty()) {
-            weighted->altitude.front() += 100;
+        auto tosAltitude = weighted->getAltitudeBuffer();
+        if (!tosAltitude.empty()) {
+            tosAltitude.front() += 100;
+            weighted->setAltitudeBuffer(std::move(tosAltitude));
         }
         weighted->validateMonotoneAltitude();
     }
@@ -221,8 +223,10 @@ int main() {
         auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), false);
         auto editor = weighted->edit();
 
+        auto [areaNamesBeforeEdit, areaBeforeEdit] = AttributeComputedIncrementally::computeSingleAttribute(*weighted, AREA);
         const int expectedInsertedArea =
-            computeAreaAttribute(weighted->tree, 3) + computeAreaAttribute(weighted->tree, 4);
+            static_cast<int>(areaBeforeEdit[areaNamesBeforeEdit.linearIndex(3, AREA)]) +
+            static_cast<int>(areaBeforeEdit[areaNamesBeforeEdit.linearIndex(4, AREA)]);
         const AltitudeType insertedAltitude = std::min(
             weighted->getAltitude(2),
             std::max(weighted->getAltitude(3), weighted->getAltitude(4)));
@@ -230,8 +234,8 @@ int main() {
 
         requireEqual(insertedNode, 6, "weighted editor must append a fresh slot when none is free");
         requireEqual(
-            static_cast<int>(weighted->altitude.size()),
-            weighted->tree.getNumInternalNodeSlots(),
+            static_cast<int>(weighted->getAltitudeBuffer().size()),
+            weighted->topology().getNumInternalNodeSlots(),
             "weighted editor must resize the altitude buffer after node creation");
 
         editor.setNodeAltitude(insertedNode, insertedAltitude);
@@ -242,21 +246,22 @@ int main() {
         editor.attach(2, insertedNode);
         editor.commit();
 
-        requireEqual(weighted->tree.getNodeParent(insertedNode), 2, "weighted editor inserted node parent after commit");
+        requireEqual(weighted->topology().getNodeParent(insertedNode), 2, "weighted editor inserted node parent after commit");
         requireEqual(weighted->getAltitude(insertedNode), insertedAltitude, "weighted editor inserted node altitude after commit");
+        auto [areaNamesAfterEdit, areaAfterEdit] = AttributeComputedIncrementally::computeSingleAttribute(*weighted, AREA);
         requireEqual(
-            computeAreaAttribute(weighted->tree, insertedNode),
+            static_cast<int>(areaAfterEdit[areaNamesAfterEdit.linearIndex(insertedNode, AREA)]),
             expectedInsertedArea,
             "weighted editor inserted node area after commit");
 
         const auto [higraParent, higraAltitude] = weighted->exportHigraHierarchy();
         requireEqual(
             static_cast<int>(higraParent.size()),
-            weighted->tree.getNumTotalProperParts() + weighted->tree.getNumNodes(),
+            weighted->topology().getNumTotalProperParts() + weighted->topology().getNumNodes(),
             "weighted editor Higra export parent size after commit");
         requireEqual(
             static_cast<int>(higraAltitude.size()),
-            weighted->tree.getNumTotalProperParts() + weighted->tree.getNumNodes(),
+            weighted->topology().getNumTotalProperParts() + weighted->topology().getNumNodes(),
             "weighted editor Higra export altitude size after commit");
     }
 

@@ -39,7 +39,7 @@ public:
         UltimateAttributeOpening(
             *weighted,
             [&]() {
-                PybindUtils::require1DArray(attr.request(), weighted->tree.getNumInternalNodeSlots(), "attr");
+                PybindUtils::require1DArray(attr.request(), weighted->topology().getNumInternalNodeSlots(), "attr");
                 return PybindUtils::toShared_ptr(attr);
             }()),
         weightedOwner_(std::move(weighted)) {}

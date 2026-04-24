@@ -29,11 +29,11 @@ int main() {
 
     {
         auto weighted = makeWeightedComponentTree(image, true);
-        weighted->tree.mergeNodeIntoParent(4);
+        weighted->mergeNodeIntoParent(4);
 
-        auto expectedAfterMerge = ImageUInt8::create(weighted->tree.getNumRowsOfImage(), weighted->tree.getNumColsOfImage(), 0);
+        auto expectedAfterMerge = ImageUInt8::create(weighted->topology().getNumRowsOfImage(), weighted->topology().getNumColsOfImage(), 0);
         for (int pixel = 0; pixel < expectedAfterMerge->getSize(); ++pixel) {
-            const NodeId nodeId = weighted->tree.getSmallestComponent(pixel);
+            const NodeId nodeId = weighted->topology().getSmallestComponent(pixel);
             (*expectedAfterMerge)[pixel] = static_cast<uint8_t>(weighted->getAltitude(nodeId));
         }
 
@@ -53,7 +53,7 @@ int main() {
             collectImageValues(expectedAfterMerge),
             "weighted reconstruction after middle-slot merge"
         );
-        requireImageShape(saliency, weighted->tree.getNumRowsOfImage(), weighted->tree.getNumColsOfImage());
+        requireImageShape(saliency, weighted->topology().getNumRowsOfImage(), weighted->topology().getNumColsOfImage());
     }
 
     return 0;

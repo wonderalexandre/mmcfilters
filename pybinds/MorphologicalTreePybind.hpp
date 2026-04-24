@@ -83,15 +83,16 @@ class MorphologicalTreePybind : public MorphologicalTree {
     }
 
 
-    static py::list representativeProperPartsByFlood(MorphologicalTree& tree, const AltitudeBuffer& altitude, NodeId nodeId) {
+    static py::list representativeProperPartsByFlood(const MorphologicalTree& tree, const AltitudeBuffer& altitude, NodeId nodeId) {
         if (!tree.isNode(nodeId) || !tree.isAlive(nodeId)) {
             throw std::invalid_argument("invalid NodeId");
         }
 
-        AdjacencyRelation* adjacency = tree.getAdjacencyRelation();
-        if (adjacency == nullptr) {
+        const AdjacencyRelation* adjacencyContext = tree.getAdjacencyRelation();
+        if (adjacencyContext == nullptr) {
             throw std::invalid_argument("adjacency relation is unavailable for this tree type");
         }
+        AdjacencyRelation adjacency = *adjacencyContext;
         const int numPixels = tree.getNumRowsOfImage() * tree.getNumColsOfImage();
         const AltitudeType targetAltitude = tree_altitude_ops::getAltitude(altitude, nodeId);
 
@@ -118,7 +119,7 @@ class MorphologicalTreePybind : public MorphologicalTree {
 
             while (!queue.empty()) {
                 const int properPart = queue.pop();
-                for (int q : adjacency->getAdjPixels(properPart)) {
+                for (int q : adjacency.getAdjPixels(properPart)) {
                     if (!inNode(q) || visited[q]) {
                         continue;
                     }

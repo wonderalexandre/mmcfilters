@@ -476,7 +476,7 @@ public:
      * std::vector<int> pixels(proxy.begin(), proxy.end());
      * @endcode
      */
-    static IncrementalContours extractCompactContours(MorphologicalTree& tree) {
+    static IncrementalContours extractCompactContours(const MorphologicalTree& tree) {
         const int numNodes = tree.getNumInternalNodeSlots();
         const int totalPixels = tree.getNumRowsOfImage() * tree.getNumColsOfImage();
         const AdjacencyRelation* adjacencyContext = tree.getAdjacencyRelation();

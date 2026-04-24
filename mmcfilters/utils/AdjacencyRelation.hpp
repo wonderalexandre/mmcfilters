@@ -186,7 +186,7 @@ public:
     /**
      * @brief Returns the number of offsets in the current stencil.
      */
-    int getSize(){
+    int getSize() const {
         return this->n;
     }
 
@@ -293,12 +293,12 @@ public:
     /**
      * @brief Returns the configured neighbourhood radius.
      */
-    double getRadius(){
+    double getRadius() const {
         return this->radius;
     }
 
-    bool is4connectivity(){ return this->radius == 1;}
-    bool is8connectivity(){return this->radius == 1.5;}
+    bool is4connectivity() const { return this->radius == 1;}
+    bool is8connectivity() const {return this->radius == 1.5;}
         
     bool isBorderDomainImage(int index){
         auto[row, col] = ImageUtils::to2D(index, this->numCols);

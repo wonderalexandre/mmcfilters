@@ -13,6 +13,7 @@ This directory contains the authoritative regression suite for the active `Morph
 The suite covers:
 
 - tree construction, traversal, topology, and mutations;
+- the public editing API contract for safe mutators and staged editors;
 - proper parts, reconstruction, and tree-of-shapes behaviour;
 - incremental attributes and secondary attribute consumers;
 - filters, extinction values, contours, and Python bindings;

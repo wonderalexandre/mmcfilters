@@ -10,7 +10,7 @@ int main() {
     auto image = makeComponentTreeFixture();
     auto maxTree = makeComponentTree(image, true);
     auto minTree = makeComponentTree(image, false);
-    TreeEditor editor(*maxTree);
+    auto editor = maxTree->edit();
 
     auto maxBfsIds = collectNodeIds(maxTree->getIteratorBreadthFirstTraversal());
     auto maxPostOrderIds = collectNodeIds(maxTree->getPostOrderNodes());

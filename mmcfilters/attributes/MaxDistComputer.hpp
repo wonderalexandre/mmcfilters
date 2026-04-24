@@ -32,7 +32,7 @@ namespace mmcfilters{
     /**
      * @brief Computes `MAX_DIST` for each live node of the tree.
      */
-    void compute(MorphologicalTree& tree, const AltitudeBuffer* altitude, std::span<float> buffer, const AttributeNames& attrNames, [[maybe_unused]] std::span<const Attribute> requestedAttributes,std::span<const DependencySource>) const override{
+    void compute(const MorphologicalTree& tree, const AltitudeBuffer* altitude, std::span<float> buffer, const AttributeNames& attrNames, [[maybe_unused]] std::span<const Attribute> requestedAttributes,std::span<const DependencySource>) const override{
       if (!tree.hasAdjacencyRelation()) {
         throw std::invalid_argument("MAX_DIST requires an adjacency relation.");
       }

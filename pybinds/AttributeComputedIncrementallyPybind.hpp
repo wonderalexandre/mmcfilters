@@ -25,8 +25,8 @@ class AttributeComputedIncrementallyPybind : public AttributeComputedIncremental
         return tree;
     }
 
-    static MorphologicalTree& topologyOf(WeightedMorphologicalTree& tree) {
-        return tree.tree;
+    static const MorphologicalTree& topologyOf(const WeightedMorphologicalTree& tree) {
+        return tree.topology();
     }
 
     template <class TreePtr>

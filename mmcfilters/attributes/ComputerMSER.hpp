@@ -43,7 +43,7 @@ namespace mmcfilters {
  */
 class ComputerMSER {
 private:
-	MorphologicalTree& tree;
+	const MorphologicalTree& tree;
 	const AltitudeBuffer* altitude_;
 	const float* attrMserView_;
 	std::vector<float> ownedAttrMser_;
@@ -60,7 +60,7 @@ public:
 	/**
 	 * @brief Creates an MSER detector backed by an owned attribute buffer.
 	 */
-	ComputerMSER(MorphologicalTree& tree, const AltitudeBuffer* altitude, std::vector<float> attr_increasing)
+	ComputerMSER(const MorphologicalTree& tree, const AltitudeBuffer* altitude, std::vector<float> attr_increasing)
 		: tree(tree),
 		  altitude_(&tree_altitude_ops::requireAltitudeBuffer(altitude)),
 		  attrMserView_(nullptr),
@@ -75,7 +75,7 @@ public:
 	/**
 	 * @brief Creates an MSER detector backed by a non-owning attribute view.
 	 */
-	ComputerMSER(MorphologicalTree& tree, const AltitudeBuffer* altitude, const float* attr_increasing)
+	ComputerMSER(const MorphologicalTree& tree, const AltitudeBuffer* altitude, const float* attr_increasing)
 		: tree(tree),
 		  altitude_(&tree_altitude_ops::requireAltitudeBuffer(altitude)),
 		  attrMserView_(attr_increasing),
@@ -86,24 +86,24 @@ public:
 		tree_altitude_ops::validateAltitudeBufferShape(this->tree, this->altitude_);
 	}
 
-	ComputerMSER(WeightedMorphologicalTree& weighted, std::vector<float> attr_increasing)
-		: ComputerMSER(weighted.tree, &weighted.altitude, std::move(attr_increasing)) {}
+	ComputerMSER(const WeightedMorphologicalTree& weighted, std::vector<float> attr_increasing)
+		: ComputerMSER(weighted.tree_, &weighted.altitude_, std::move(attr_increasing)) {}
 
-	ComputerMSER(WeightedMorphologicalTree& weighted, const float* attr_increasing)
-		: ComputerMSER(weighted.tree, &weighted.altitude, attr_increasing) {}
+	ComputerMSER(const WeightedMorphologicalTree& weighted, const float* attr_increasing)
+		: ComputerMSER(weighted.tree_, &weighted.altitude_, attr_increasing) {}
 	
 	/**
 	 * @brief Creates an MSER detector that lazily falls back to `AREA`.
 	 */
-	ComputerMSER(MorphologicalTree& tree, const AltitudeBuffer* altitude)
+	ComputerMSER(const MorphologicalTree& tree, const AltitudeBuffer* altitude)
 		: ComputerMSER(tree, altitude, static_cast<const float*>(nullptr)) { }
 
-	ComputerMSER(WeightedMorphologicalTree& weighted)
-		: ComputerMSER(weighted.tree, &weighted.altitude, static_cast<const float*>(nullptr)) { }
+	ComputerMSER(const WeightedMorphologicalTree& weighted)
+		: ComputerMSER(weighted.tree_, &weighted.altitude_, static_cast<const float*>(nullptr)) { }
 
-	ComputerMSER(MorphologicalTree& tree) = delete;
-	ComputerMSER(MorphologicalTree& tree, std::vector<float> attr_increasing) = delete;
-	ComputerMSER(MorphologicalTree& tree, const float* attr_increasing) = delete;
+	ComputerMSER(const MorphologicalTree& tree) = delete;
+	ComputerMSER(const MorphologicalTree& tree, std::vector<float> attr_increasing) = delete;
+	ComputerMSER(const MorphologicalTree& tree, const float* attr_increasing) = delete;
 
 	~ComputerMSER(){}
 

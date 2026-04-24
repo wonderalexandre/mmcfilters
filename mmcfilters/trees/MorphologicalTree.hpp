@@ -257,6 +257,34 @@ private:
     }
 
     /**
+     * @brief Rejects null or empty image domains before builder code indexes them.
+     */
+    static void requireNonEmptyImageDomain(const ImageUInt8Ptr& img, const char* context) {
+        if (!img) {
+            throw std::invalid_argument(std::string(context) + " requires a non-null image.");
+        }
+        if (img->getNumRows() <= 0 || img->getNumCols() <= 0 || img->getSize() <= 0) {
+            throw std::invalid_argument(std::string(context) + " requires a non-empty 2D image.");
+        }
+    }
+
+    /**
+     * @brief Rejects invalid or released internal-node ids before indexed reads.
+     */
+    inline void requireAliveNode(NodeId nodeId, const char* context) const {
+        if (!isAlive(nodeId)) {
+            throw std::invalid_argument(std::string(context) + " requires a live internal NodeId.");
+        }
+    }
+
+    inline void requireAliveNonRootNode(NodeId nodeId, const char* context) const {
+        requireAliveNode(nodeId, context);
+        if (isRoot(nodeId)) {
+            throw std::invalid_argument(std::string(context) + " cannot target the root node.");
+        }
+    }
+
+    /**
      * @brief Builds a component-tree or tree-of-shapes topology from an image builder.
      */
     inline void build(const ImageUInt8Ptr& imgPtr, IMorphologicalTreeBuilder& builderUF) {
@@ -472,50 +500,6 @@ private:
      */
     inline void checkProperPartIteratorVersion([[maybe_unused]] std::size_t expectedVersion) const {
         assert(expectedVersion == properPartVersion_ && "Proper-parts iterator invalidated by proper-part mutation.");
-    }
-
-    /**
-     * @brief Returns whether linking `candidateParentId` under `forbiddenAncestorId`
-     * would close a parent-chain cycle.
-     *
-     * This helper intentionally walks the current parent chain directly instead
-     * of using ancestry caches so it stays cheap and valid while topology
-     * caches are stale during local mutations.
-     */
-    inline bool wouldCreateParentCycle(NodeId forbiddenAncestorId, NodeId candidateParentId) const noexcept {
-        if (forbiddenAncestorId == InvalidNode || candidateParentId == InvalidNode) {
-            return false;
-        }
-
-        NodeId currentNodeId = candidateParentId;
-        while (currentNodeId != InvalidNode) {
-            if (currentNodeId == forbiddenAncestorId) {
-                return true;
-            }
-
-            if (!isNode(currentNodeId)) {
-                return false;
-            }
-
-            const NodeId parentNodeId = nodeParent_[currentNodeId];
-            if (parentNodeId == InvalidNode || parentNodeId == currentNodeId) {
-                return false;
-            }
-            currentNodeId = parentNodeId;
-        }
-
-        return false;
-    }
-
-    /**
-     * @brief Debug-only precondition guard against creating a cycle while reparenting.
-     *
-     * This helper intentionally checks only the candidate parent chain before
-     * the mutation. Post-mutation structural validation belongs in the unit
-     * tests and debug invariant sweeps, not in the hot path of every mutator.
-     */
-    inline void assertNoCycleFromReparent([[maybe_unused]] NodeId movingNodeId, [[maybe_unused]] NodeId newParentId) const noexcept {
-        assert(!wouldCreateParentCycle(movingNodeId, newParentId) && "MorphologicalTree mutation would create a cycle.");
     }
 
     /**
@@ -788,16 +772,11 @@ private:
 
     /**
      * @brief Attaches `nodeId` as the last child of `parentNodeId`.
-     *
-     * In debug builds we assert only the reparenting precondition that prevents
-     * an immediate cycle. Full post-mutation invariant checking is covered by
-     * the dedicated regression tests.
      */
     inline void attachNode(NodeId parentNodeId, NodeId nodeId) {
         if (!isAlive(parentNodeId) || !isAlive(nodeId) || isRoot(nodeId) || parentNodeId == nodeId) {
             return;
         }
-        assertNoCycleFromReparent(nodeId, parentNodeId);
         const NodeId parentSlotId = parentNodeId;
         const NodeId nodeSlotId = nodeId;
         const NodeId oldParentSlotId = nodeParent_[nodeSlotId];
@@ -826,15 +805,11 @@ private:
 
     /**
      * @brief Moves `nodeId` under `newParentId`.
-     *
-     * The debug assertion is a precondition check only; deeper invariant
-     * validation is intentionally delegated to the test suite.
      */
     inline void moveNode(NodeId nodeId, NodeId newParentId) {
         if (!isAlive(nodeId) || !isAlive(newParentId) || isRoot(nodeId) || nodeId == newParentId) {
             return;
         }
-        assertNoCycleFromReparent(nodeId, newParentId);
         const NodeId nodeSlotId = nodeId;
         const NodeId newParentSlotId = newParentId;
         const NodeId oldParentSlotId = nodeParent_[nodeSlotId];
@@ -850,15 +825,11 @@ private:
 
     /**
      * @brief Transfers every direct child of `sourceId` to `parentNodeId`.
-     *
-     * As with the other low-level mutators, the runtime debug check is limited
-     * to the precondition needed to avoid closing a cycle immediately.
      */
     inline void moveChildren(NodeId parentNodeId, NodeId sourceId) {
         if (!isAlive(parentNodeId) || !isAlive(sourceId) || parentNodeId == sourceId) {
             return;
         }
-        assertNoCycleFromReparent(sourceId, parentNodeId);
         spliceChildrenSlots(parentNodeId, sourceId);
     }
 
@@ -973,6 +944,7 @@ public:
      * @brief Creates a max-tree or min-tree from an image.
      */
     static MorphologicalTree createComponentTree(ImageUInt8Ptr img, bool isMaxtree, double radius = 1.5) {
+        requireNonEmptyImageDomain(img, "MorphologicalTree::createComponentTree");
         MorphologicalTree tree;
         tree.treeType_ = isMaxtree ? MAX_TREE : MIN_TREE;
         tree.numRows_ = img->getNumRows();
@@ -990,6 +962,7 @@ public:
      * @brief Creates a tree of shapes from an image.
      */
     static MorphologicalTree createTreeOfShapes(ImageUInt8Ptr img, ToSInterpolation interpolation = ToSInterpolation::SelfDual) {
+        requireNonEmptyImageDomain(img, "MorphologicalTree::createTreeOfShapes");
         MorphologicalTree tree;
         tree.treeType_ = TREE_OF_SHAPES;
         tree.numRows_ = img->getNumRows();
@@ -1149,6 +1122,7 @@ public:
      * @brief Returns the number of direct children of `nodeId`.
      */
     inline int getNumChildren(NodeId nodeId) const {
+        requireAliveNode(nodeId, "MorphologicalTree::getNumChildren");
         return numChildrenByNode_[nodeId];
     }
 
@@ -1156,6 +1130,7 @@ public:
      * @brief Returns the number of internal descendants of `nodeId`.
      */
     inline int getNodeNumDescendants(NodeId nodeId) const {
+        requireAliveNode(nodeId, "MorphologicalTree::getNodeNumDescendants");
         ensurePrePostOrderCache();
         const NodeId localId = nodeId;
         return (prePostOrderCache_.timePostOrder[localId] - prePostOrderCache_.timePreOrder[localId] - 1) / 2;
@@ -1164,7 +1139,8 @@ public:
     /**
      * @brief Returns the number of siblings of `nodeId`.
      */
-    inline int getNodeNumSiblings(NodeId nodeId) const noexcept {
+    inline int getNodeNumSiblings(NodeId nodeId) const {
+        requireAliveNode(nodeId, "MorphologicalTree::getNodeNumSiblings");
         if (isRoot(nodeId)) {
             return 0;
         }
@@ -1176,6 +1152,7 @@ public:
      * @brief Returns the preorder time of `nodeId` in the cached DFS traversal.
      */
     inline int getNodeTimePreOrder(NodeId nodeId) const {
+        requireAliveNode(nodeId, "MorphologicalTree::getNodeTimePreOrder");
         ensurePrePostOrderCache();
         return prePostOrderCache_.timePreOrder[nodeId];
     }
@@ -1184,6 +1161,7 @@ public:
      * @brief Returns the postorder time of `nodeId` in the cached DFS traversal.
      */
     inline int getNodeTimePostOrder(NodeId nodeId) const {
+        requireAliveNode(nodeId, "MorphologicalTree::getNodeTimePostOrder");
         ensurePrePostOrderCache();
         return prePostOrderCache_.timePostOrder[nodeId];
     }
@@ -1192,6 +1170,7 @@ public:
      * @brief Returns the first direct child of `nodeId`, or `InvalidNode`.
      */
     inline NodeId getFirstChild(NodeId nodeId) const {
+        requireAliveNode(nodeId, "MorphologicalTree::getFirstChild");
         return firstChild_[nodeId];
     }
 
@@ -1199,6 +1178,7 @@ public:
      * @brief Returns the next sibling of `nodeId`, or `InvalidNode`.
      */
     inline NodeId getNextSibling(NodeId nodeId) const {
+        requireAliveNode(nodeId, "MorphologicalTree::getNextSibling");
         return nextSibling_[nodeId];
     }
 
@@ -1211,13 +1191,18 @@ public:
      * @brief Returns the number of direct proper parts owned by `nodeId`.
      */
     inline int getNumProperParts(NodeId nodeId) const {
+        requireAliveNode(nodeId, "MorphologicalTree::getNumProperParts");
         return numProperPartsByNode_[nodeId];
     }
 
     /**
      * @brief Tests whether `childId` is a direct child of `parentNodeId`.
      */
-    inline bool hasChild(NodeId parentNodeId, NodeId childId) const { return getNodeParent(childId) == parentNodeId; }
+    inline bool hasChild(NodeId parentNodeId, NodeId childId) const {
+        requireAliveNode(parentNodeId, "MorphologicalTree::hasChild");
+        requireAliveNode(childId, "MorphologicalTree::hasChild");
+        return getNodeParent(childId) == parentNodeId;
+    }
 
     /**
      * @brief Returns the direct parent of `nodeId`.
@@ -1225,6 +1210,7 @@ public:
      * The root and detached nodes report themselves as parent.
      */
     inline NodeId getNodeParent(NodeId nodeId) const {
+        requireAliveNode(nodeId, "MorphologicalTree::getNodeParent");
         if (isRoot(nodeId)) {
             return nodeId;
         }
@@ -1250,7 +1236,7 @@ public:
     /**
      * @brief Returns all live leaf nodes in the current hierarchy.
      */
-    std::vector<NodeId> getLeaves() {
+    std::vector<NodeId> getLeaves() const {
         std::vector<NodeId> leaves;
         if (rootNodeId_ == InvalidNode) {
             return leaves;
@@ -1614,6 +1600,7 @@ public:
      * @brief Returns a fail-fast range over the direct children of `nodeId`.
      */
     inline ChildrenRange getChildren(NodeId nodeId) const {
+        requireAliveNode(nodeId, "MorphologicalTree::getChildren");
         return ChildrenRange(this, firstChild_[nodeId], topologyVersion_);
     }
 
@@ -1621,6 +1608,7 @@ public:
      * @brief Returns a fail-fast range over the direct proper parts of `nodeId`.
      */
     inline ProperPartsRange getProperParts(NodeId nodeId) const {
+        requireAliveNode(nodeId, "MorphologicalTree::getProperParts");
         return ProperPartsRange(this, properHead_[nodeId], properPartVersion_);
     }
 
@@ -1635,6 +1623,7 @@ public:
      * @brief Returns a post-order traversal range rooted at `rootNodeId`.
      */
     inline PostOrderNodeRange getPostOrderNodes(NodeId rootNodeId) const {
+        requireAliveNode(rootNodeId, "MorphologicalTree::getPostOrderNodes");
         return PostOrderNodeRange(this, rootNodeId, topologyVersion_);
     }
 
@@ -1649,6 +1638,7 @@ public:
      * @brief Returns a breadth-first traversal range rooted at `rootNodeId`.
      */
     inline BreadthFirstNodeRange getIteratorBreadthFirstTraversal(NodeId rootNodeId) const {
+        requireAliveNode(rootNodeId, "MorphologicalTree::getIteratorBreadthFirstTraversal");
         return BreadthFirstNodeRange(this, rootNodeId, topologyVersion_);
     }
 
@@ -1656,6 +1646,7 @@ public:
      * @brief Returns the path from `nodeId` to the connected root.
      */
     inline PathToRootRange getPathToRootNodes(NodeId nodeId) const {
+        requireAliveNode(nodeId, "MorphologicalTree::getPathToRootNodes");
         return PathToRootRange(this, nodeId, topologyVersion_);
     }
 
@@ -1663,6 +1654,8 @@ public:
      * @brief Returns the path that connects `sourceNodeId` and `targetNodeId`.
      */
     inline PathBetweenNodesRange getPathBetweenNodes(NodeId sourceNodeId, NodeId targetNodeId) const {
+        requireAliveNode(sourceNodeId, "MorphologicalTree::getPathBetweenNodes");
+        requireAliveNode(targetNodeId, "MorphologicalTree::getPathBetweenNodes");
         return PathBetweenNodesRange(this, sourceNodeId, targetNodeId, topologyVersion_);
     }
 
@@ -1670,6 +1663,7 @@ public:
      * @brief Returns a pre-order traversal range over the subtree of `nodeId`.
      */
     inline SubtreeNodeRange getNodeSubtree(NodeId nodeId) const {
+        requireAliveNode(nodeId, "MorphologicalTree::getNodeSubtree");
         return SubtreeNodeRange(this, nodeId, topologyVersion_);
     }
 
@@ -1677,16 +1671,27 @@ public:
      * @brief Returns a range over all proper descendants of `nodeId`.
      */
     inline DescendantNodeRange getDescendants(NodeId nodeId) const {
+        requireAliveNode(nodeId, "MorphologicalTree::getDescendants");
         return DescendantNodeRange(this, nodeId, topologyVersion_);
     }
 
     /**
+     * @brief Opens the only public entrypoint for staged structural mutations.
+     *
+     * Use this for multi-step topology rewiring that may temporarily detach
+     * nodes, move children/proper parts, or create intermediate nodes.
+     * `TreeEditor::commit()` runs the strong connected-rooted-tree validation.
+     */
+    TreeEditor edit();
+
+    /**
      * @brief Prunes the subtree of `nodeId`, moving all its support to the parent.
+     *
+     * This is a safe public mutator: it is a complete local operation and does
+     * not intentionally leave the tree in a staged disconnected state.
      */
     inline void pruneNode(NodeId nodeId) {
-        if (!isAlive(nodeId) || isRoot(nodeId)) {
-            return;
-        }
+        requireAliveNonRootNode(nodeId, "MorphologicalTree::pruneNode");
         const NodeId parentNodeId = getNodeParent(nodeId);
         const NodeId parentSlotId = parentNodeId;
 
@@ -1717,11 +1722,12 @@ public:
 
     /**
      * @brief Merges `nodeId` into its parent and releases the emptied slot.
+     *
+     * This is a safe public mutator: children and direct proper parts are
+     * transferred to the parent before the node slot is released.
      */
     inline void mergeNodeIntoParent(NodeId nodeId) {
-        if (!isAlive(nodeId) || isRoot(nodeId)) {
-            return;
-        }
+        requireAliveNonRootNode(nodeId, "MorphologicalTree::mergeNodeIntoParent");
         const NodeId parentNodeId = getNodeParent(nodeId);
         const NodeId parentSlotId = parentNodeId;
         const NodeId nodeSlotId = nodeId;

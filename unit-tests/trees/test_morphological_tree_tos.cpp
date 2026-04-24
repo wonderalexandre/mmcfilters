@@ -36,5 +36,31 @@ int main() {
         "tree of shapes reconstruction values"
     );
 
+    auto singlePixel = makeImage(1, 1, {5});
+    auto singleTree = makeTreeOfShapes(singlePixel);
+    auto singleWeighted = makeWeightedTreeOfShapes(singlePixel);
+    require(static_cast<bool>(singleTree), "single-pixel self-dual tree of shapes instance must be created");
+    requireEqual(singleTree->getNumRowsOfImage(), 1, "single-pixel ToS rows");
+    requireEqual(singleTree->getNumColsOfImage(), 1, "single-pixel ToS cols");
+    require(singleTree->getRoot() != InvalidNode, "single-pixel ToS root must be valid");
+    requireEqual(singleTree->getSmallestComponent(0), singleTree->getRoot(), "single-pixel ToS owner");
+    auto singleReconstruction = singleWeighted->reconstructionImage();
+    requireImageShape(singleReconstruction, 1, 1);
+    requireVectorEqual(collectImageValues(singleReconstruction), std::vector<uint8_t>{5}, "single-pixel ToS reconstruction");
+
+    auto emptyImage = ImageUInt8::create(0, 0);
+    requireThrows<std::invalid_argument>(
+        [&]() { static_cast<void>(MorphologicalTree::createComponentTree(emptyImage, true)); },
+        "empty component tree must throw");
+    requireThrows<std::invalid_argument>(
+        [&]() { static_cast<void>(MorphologicalTree::createTreeOfShapes(emptyImage)); },
+        "empty tree of shapes must throw");
+    requireThrows<std::invalid_argument>(
+        [&]() { static_cast<void>(WeightedMorphologicalTree::createComponentTree(emptyImage, true)); },
+        "empty weighted component tree must throw");
+    requireThrows<std::invalid_argument>(
+        [&]() { static_cast<void>(WeightedMorphologicalTree::createTreeOfShapes(emptyImage)); },
+        "empty weighted tree of shapes must throw");
+
     return 0;
 }

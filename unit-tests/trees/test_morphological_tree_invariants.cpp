@@ -171,7 +171,7 @@ NodeId randomElement(std::vector<NodeId> values, URBG& rng) {
 int main() {
     {
         auto tree = makeComponentTree(makeComponentTreeFixture(), true);
-        TreeEditor editor(*tree);
+        auto editor = tree->edit();
         requireTreeInvariantSnapshot(*tree, "initial max-tree forest invariants");
 
         tree->mergeNodeIntoParent(5);
@@ -197,7 +197,7 @@ int main() {
 
     for (bool isMaxtree : {true, false}) {
         auto tree = makeComponentTree(makeComponentTreeFixture(), isMaxtree);
-        TreeEditor editor(*tree);
+        auto editor = tree->edit();
         std::mt19937 rng(isMaxtree ? 1337u : 4242u);
 
         for (int step = 0; step < 20; ++step) {

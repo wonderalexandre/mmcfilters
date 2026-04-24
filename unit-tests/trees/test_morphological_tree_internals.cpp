@@ -173,7 +173,7 @@ int main() {
         auto image = makeComponentTreeFixture();
         auto maxTree = makeComponentTree(image, true);
         auto minTree = makeComponentTree(image, false);
-        TreeEditor editor(*maxTree);
+        auto editor = maxTree->edit();
 
         requireEqual(maxTree->getLowestCommonAncestor(5, 5), 5, "LCA self");
         requireEqual(maxTree->getLowestCommonAncestor(0, 5), 0, "LCA root and leaf");

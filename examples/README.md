@@ -2,12 +2,18 @@
 
 This directory contains small standalone programs that exercise optional workflows without adding those dependencies to `mmcfilters::core`.
 
-## Current example
+## Current examples
 
 - `edt_dift_example.cpp`
   Runs `maxdist::EdtDIFT` on a simple synthetic shape and writes:
   - `binary.png`
   - `distance_transform.png`
+- `editing_api_example.cpp`
+  Demonstrates the public editing contract:
+  - safe `pruneNode` and `mergeNodeIntoParent` calls;
+  - staged topology edits through `TreeEditor`;
+  - staged weighted edits through `WeightedTreeEditor`;
+  - `commit()` rejecting invalid weighted altitude order.
 
 ## Why this directory exists
 
@@ -27,8 +33,9 @@ cmake -S . -B build -DMMCFILTERS_BUILD_EXAMPLES=ON
 cmake --build build
 ```
 
-The current executable is:
+The current executables are:
 
 ```bash
 ./build/examples/mmcfilters_example_edt_dift
+./build/examples/mmcfilters_example_editing_api
 ```

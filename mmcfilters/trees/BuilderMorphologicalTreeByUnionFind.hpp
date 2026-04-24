@@ -32,6 +32,9 @@ public:
     template <typename PixelType>
     std::vector<int> sort(ImagePtr<PixelType> imgPtr) const {
         const int n = imgPtr->getSize();
+        if (n <= 0) {
+            throw std::invalid_argument("BuilderComponentTree requires a non-empty image.");
+        }
         std::vector<int> orderedPixels(n);
         PixelType* img = imgPtr->rawData();
 
@@ -361,11 +364,17 @@ public:
       * - T. Géraud, E. Carlinet, and S. Crozet, Self-Duality and Digital Topology: Links Between the Morphological Tree of Shapes and Well-Composed Gray-Level Images, ISMM 2015
       * - N.Boutry, T.Géraud, L.Najman, "How to Make nD Functions Digitally Well-Composed in a Self-dual Way", ISMM 2015.
       * - N.Boutry, T.Géraud, L.Najman, "On Making {$n$D} Images Well-Composed by a Self-Dual Local Interpolation", DGCI 2014
-      */
+     */
      std::tuple<std::vector<uint8_t>, std::vector<uint8_t>, AdjacencyUC> interpolateImage(const ImageUInt8Ptr& imgPtr) const{
         auto img = imgPtr->rawData();
         int numRows = imgPtr->getNumRows();
         int numCols = imgPtr->getNumCols();
+        if (numRows <= 0 || numCols <= 0) {
+            throw std::invalid_argument("BuilderTreeOfShape requires a non-empty image.");
+        }
+        if (numRows == 1 && numCols == 1) {
+            return interpolateImage4c8c(imgPtr);
+        }
 
         constexpr int adjCircleCol[] = {-1, +1, -1, +1};
         constexpr int adjCircleRow[] = {-1, -1, +1, +1};
@@ -485,6 +494,9 @@ public:
         auto img = imgPtr->rawData();
         int numRows = imgPtr->getNumRows();
         int numCols = imgPtr->getNumCols();
+        if (numRows <= 0 || numCols <= 0) {
+            throw std::invalid_argument("BuilderTreeOfShape requires a non-empty image.");
+        }
 
         int interpNumCols = numCols * 2 + 1;
         int interpNumRows = numRows * 2 + 1;

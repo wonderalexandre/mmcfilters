@@ -39,7 +39,7 @@ class AttributeOpeningPrimitivesFamilyPybind: public AttributeOpeningPrimitivesF
         : AttributeOpeningPrimitivesFamily(
             *weighted,
             [&]() {
-                PybindUtils::require1DArray(attr.request(), weighted->tree.getNumInternalNodeSlots(), "attr");
+                PybindUtils::require1DArray(attr.request(), weighted->topology().getNumInternalNodeSlots(), "attr");
                 return PybindUtils::toShared_ptr(attr);
             }(),
             maxCriterion),
@@ -62,7 +62,7 @@ class AttributeOpeningPrimitivesFamilyPybind: public AttributeOpeningPrimitivesF
         : AttributeOpeningPrimitivesFamily(
             *weighted,
             [&]() {
-                PybindUtils::require1DArray(attr.request(), weighted->tree.getNumInternalNodeSlots(), "attr");
+                PybindUtils::require1DArray(attr.request(), weighted->topology().getNumInternalNodeSlots(), "attr");
                 return PybindUtils::toShared_ptr(attr);
             }(),
             maxCriterion,

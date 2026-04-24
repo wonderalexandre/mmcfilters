@@ -64,7 +64,7 @@ public:
      * the computer's natural attribute set.
      */
     virtual void compute(
-        MorphologicalTree& tree,
+        const MorphologicalTree& tree,
         const AltitudeBuffer* altitude,
         std::span<float> buffer,
         const AttributeNames& attrNames,
@@ -77,7 +77,7 @@ public:
      * @brief Compatibility wrapper for callers still passing `MorphologicalTree`.
      */
     void compute(
-        MorphologicalTree& tree,
+        const MorphologicalTree& tree,
         std::span<float> buffer,
         const AttributeNames& attrNames,
         std::span<const DependencySource> dependencySources = {}) const
@@ -89,12 +89,12 @@ public:
      * @brief Compatibility wrapper for callers passing `WeightedMorphologicalTree`.
      */
     void compute(
-        WeightedMorphologicalTree& tree,
+        const WeightedMorphologicalTree& tree,
         std::span<float> buffer,
         const AttributeNames& attrNames,
         std::span<const DependencySource> dependencySources = {}) const
     {
-        compute(tree.tree, &tree.altitude, buffer, attrNames, dependencySources);
+        compute(tree.tree_, &tree.altitude_, buffer, attrNames, dependencySources);
     }
 
     /**
@@ -108,7 +108,7 @@ public:
      * attribute name and already validated by the caller.
      */
     virtual void compute(
-        MorphologicalTree& tree,
+        const MorphologicalTree& tree,
         const AltitudeBuffer* altitude,
         std::span<float> buffer,
         const AttributeNames& attrNames,
@@ -119,7 +119,7 @@ public:
      * @brief Compatibility wrapper for callers still passing `MorphologicalTree`.
      */
     void compute(
-        MorphologicalTree& tree,
+        const MorphologicalTree& tree,
         std::span<float> buffer,
         const AttributeNames& attrNames,
         std::span<const Attribute> requestedAttributes,
@@ -132,13 +132,13 @@ public:
      * @brief Compatibility wrapper for callers passing `WeightedMorphologicalTree`.
      */
     void compute(
-        WeightedMorphologicalTree& tree,
+        const WeightedMorphologicalTree& tree,
         std::span<float> buffer,
         const AttributeNames& attrNames,
         std::span<const Attribute> requestedAttributes,
         std::span<const DependencySource> dependencySources = {}) const
     {
-        compute(tree.tree, &tree.altitude, buffer, attrNames, requestedAttributes, dependencySources);
+        compute(tree.tree_, &tree.altitude_, buffer, attrNames, requestedAttributes, dependencySources);
     }
 
     /**

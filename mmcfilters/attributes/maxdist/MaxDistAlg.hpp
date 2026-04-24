@@ -16,7 +16,7 @@ namespace mmcfilters
     class MaxDistAlg
     {
     public:
-      MaxDistAlg(MorphologicalTree& tree, const AltitudeBuffer* altitude)
+      MaxDistAlg(const MorphologicalTree& tree, const AltitudeBuffer* altitude)
         :tree_{tree}, altitude_{altitude}
       {}
 
@@ -132,7 +132,7 @@ namespace mmcfilters
 
 
     private:
-      MorphologicalTree& tree_;
+      const MorphologicalTree& tree_;
       const AltitudeBuffer* altitude_;
     };
   }

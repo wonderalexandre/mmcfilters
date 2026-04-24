@@ -16,7 +16,7 @@ public:
     }
 
     static ContoursComputedIncrementally::IncrementalContours extraction(std::shared_ptr<WeightedMorphologicalTree> weighted) {
-        return ContoursComputedIncrementally::extractCompactContours(weighted->tree);
+        return ContoursComputedIncrementally::extractCompactContours(weighted->topology());
     }
 };
 

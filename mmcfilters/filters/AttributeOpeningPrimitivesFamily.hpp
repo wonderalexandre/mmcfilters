@@ -25,7 +25,7 @@ protected:
     std::vector<float> thresholds;
     std::vector<NodeId> nodesWithMaximumCriterium;
 
-    MorphologicalTree& tree;
+    const MorphologicalTree& tree;
     std::unique_ptr<AttributeFilters> filters_;
     std::vector<uint8_t> selectedForFiltering;
     ImageUInt8Ptr restOfImage;
@@ -41,7 +41,7 @@ protected:
     }
 
     AttributeOpeningPrimitivesFamily(
-        MorphologicalTree& tree,
+        const MorphologicalTree& tree,
         std::unique_ptr<AttributeFilters> filters,
         const AltitudeBuffer* altitude,
         const float* attrs_increasing,
@@ -75,24 +75,24 @@ protected:
     }
 
 public:
-    AttributeOpeningPrimitivesFamily(MorphologicalTree& tree, const std::shared_ptr<float[]>& attr, float maxCriterion)
+    AttributeOpeningPrimitivesFamily(const MorphologicalTree& tree, const std::shared_ptr<float[]>& attr, float maxCriterion)
         : AttributeOpeningPrimitivesFamily(tree, attr, maxCriterion, 0) {}
 
-    AttributeOpeningPrimitivesFamily(MorphologicalTree& tree, const std::vector<float>& attr, float maxCriterion)
+    AttributeOpeningPrimitivesFamily(const MorphologicalTree& tree, const std::vector<float>& attr, float maxCriterion)
         : AttributeOpeningPrimitivesFamily(tree, attr, maxCriterion, 0) {}
 
-    AttributeOpeningPrimitivesFamily(MorphologicalTree& tree, const float* attrs_increasing, float maxCriterion)
+    AttributeOpeningPrimitivesFamily(const MorphologicalTree& tree, const float* attrs_increasing, float maxCriterion)
         : AttributeOpeningPrimitivesFamily(tree, attrs_increasing, maxCriterion, 0) {}
 
-    AttributeOpeningPrimitivesFamily(MorphologicalTree& tree, const std::shared_ptr<float[]>& attrs_increasing, float maxCriterion, int deltaMSER)
+    AttributeOpeningPrimitivesFamily(const MorphologicalTree& tree, const std::shared_ptr<float[]>& attrs_increasing, float maxCriterion, int deltaMSER)
         : AttributeOpeningPrimitivesFamily(tree, attrs_increasing.get(), maxCriterion, deltaMSER) {
         this->ownedAttrsIncreasing_ = attrs_increasing;
     }
 
-    AttributeOpeningPrimitivesFamily(MorphologicalTree& tree, const std::vector<float>& attrs_increasing, float maxCriterion, int deltaMSER)
+    AttributeOpeningPrimitivesFamily(const MorphologicalTree& tree, const std::vector<float>& attrs_increasing, float maxCriterion, int deltaMSER)
         : AttributeOpeningPrimitivesFamily(tree, attrs_increasing.data(), maxCriterion, deltaMSER) {}
 
-    AttributeOpeningPrimitivesFamily(MorphologicalTree& tree, const float* attrs_increasing, float maxCriterion, int deltaMSER)
+    AttributeOpeningPrimitivesFamily(const MorphologicalTree& tree, const float* attrs_increasing, float maxCriterion, int deltaMSER)
         : AttributeOpeningPrimitivesFamily(
             tree,
             std::make_unique<AttributeFilters>(tree),
@@ -101,28 +101,28 @@ public:
             maxCriterion,
             deltaMSER) {}
 
-    AttributeOpeningPrimitivesFamily(WeightedMorphologicalTree& weighted, const std::shared_ptr<float[]>& attr, float maxCriterion)
+    AttributeOpeningPrimitivesFamily(const WeightedMorphologicalTree& weighted, const std::shared_ptr<float[]>& attr, float maxCriterion)
         : AttributeOpeningPrimitivesFamily(weighted, attr, maxCriterion, 0) {}
 
-    AttributeOpeningPrimitivesFamily(WeightedMorphologicalTree& weighted, const std::vector<float>& attr, float maxCriterion)
+    AttributeOpeningPrimitivesFamily(const WeightedMorphologicalTree& weighted, const std::vector<float>& attr, float maxCriterion)
         : AttributeOpeningPrimitivesFamily(weighted, attr, maxCriterion, 0) {}
 
-    AttributeOpeningPrimitivesFamily(WeightedMorphologicalTree& weighted, const float* attrs_increasing, float maxCriterion)
+    AttributeOpeningPrimitivesFamily(const WeightedMorphologicalTree& weighted, const float* attrs_increasing, float maxCriterion)
         : AttributeOpeningPrimitivesFamily(weighted, attrs_increasing, maxCriterion, 0) {}
 
-    AttributeOpeningPrimitivesFamily(WeightedMorphologicalTree& weighted, const std::shared_ptr<float[]>& attrs_increasing, float maxCriterion, int deltaMSER)
+    AttributeOpeningPrimitivesFamily(const WeightedMorphologicalTree& weighted, const std::shared_ptr<float[]>& attrs_increasing, float maxCriterion, int deltaMSER)
         : AttributeOpeningPrimitivesFamily(weighted, attrs_increasing.get(), maxCriterion, deltaMSER) {
         this->ownedAttrsIncreasing_ = attrs_increasing;
     }
 
-    AttributeOpeningPrimitivesFamily(WeightedMorphologicalTree& weighted, const std::vector<float>& attrs_increasing, float maxCriterion, int deltaMSER)
+    AttributeOpeningPrimitivesFamily(const WeightedMorphologicalTree& weighted, const std::vector<float>& attrs_increasing, float maxCriterion, int deltaMSER)
         : AttributeOpeningPrimitivesFamily(weighted, attrs_increasing.data(), maxCriterion, deltaMSER) {}
 
-    AttributeOpeningPrimitivesFamily(WeightedMorphologicalTree& weighted, const float* attrs_increasing, float maxCriterion, int deltaMSER)
+    AttributeOpeningPrimitivesFamily(const WeightedMorphologicalTree& weighted, const float* attrs_increasing, float maxCriterion, int deltaMSER)
         : AttributeOpeningPrimitivesFamily(
-            weighted.tree,
+            weighted.tree_,
             std::make_unique<AttributeFilters>(weighted),
-            &weighted.altitude,
+            &weighted.altitude_,
             attrs_increasing,
             maxCriterion,
             deltaMSER) {}
@@ -183,7 +183,7 @@ public:
         return this->numPrimitives;
     }
 
-    MorphologicalTree& getTree() {
+    const MorphologicalTree& getTree() const {
         return this->tree;
     }
 };

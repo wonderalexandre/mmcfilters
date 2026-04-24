@@ -59,6 +59,10 @@ mmcfilters_add_unit_test(unit_tree_editor
     trees/test_tree_editor.cpp
 )
 
+mmcfilters_add_unit_test(unit_edit_api_contracts
+    trees/test_edit_api_contracts.cpp
+)
+
 mmcfilters_add_unit_test(unit_weighted_morphological_tree
     trees/test_weighted_morphological_tree.cpp
 )

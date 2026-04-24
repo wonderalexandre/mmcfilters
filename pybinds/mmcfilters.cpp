@@ -60,28 +60,24 @@ const MorphologicalTree& topology(const MorphologicalTreePybind& tree) {
     return tree;
 }
 
-MorphologicalTree& topology(WeightedMorphologicalTree& weighted) {
-    return weighted.tree;
-}
-
 const MorphologicalTree& topology(const WeightedMorphologicalTree& weighted) {
-    return weighted.tree;
+    return weighted.topology();
 }
 
-AltitudeType altitudeOf(WeightedMorphologicalTree& weighted, NodeId nodeId) {
-    return tree_altitude_ops::getAltitude(weighted.altitude, nodeId);
+AltitudeType altitudeOf(const WeightedMorphologicalTree& weighted, NodeId nodeId) {
+    return weighted.getAltitude(nodeId);
 }
 
-AltitudeDiffType residueOf(WeightedMorphologicalTree& weighted, NodeId nodeId) {
-    return tree_altitude_ops::getNodeResidue(weighted.tree, weighted.altitude, nodeId);
+AltitudeDiffType residueOf(const WeightedMorphologicalTree& weighted, NodeId nodeId) {
+    return weighted.getNodeResidue(nodeId);
 }
 
-py::array_t<uint8_t> reconstructionImageOf(WeightedMorphologicalTree& weighted) {
-    return PybindUtils::toNumpy(tree_altitude_ops::reconstructImage(weighted.tree, weighted.altitude));
+py::array_t<uint8_t> reconstructionImageOf(const WeightedMorphologicalTree& weighted) {
+    return PybindUtils::toNumpy(weighted.reconstructionImage());
 }
 
-std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportHigraHierarchyOf(WeightedMorphologicalTree& weighted) {
-    return tree_altitude_ops::exportHigraHierarchy(weighted.tree, weighted.altitude);
+std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportHigraHierarchyOf(const WeightedMorphologicalTree& weighted) {
+    return weighted.exportHigraHierarchy();
 }
 
 template <class TreeLike, class PyClass>
@@ -212,7 +208,10 @@ void bindTreeQueryApi(PyClass& cls) {
                 return residueOf(self, nodeId);
             }, "nodeId"_a, "Return the residue between nodeId and its parent.")
             .def("getRepresentativeProperPartsByFlood", [](TreeLike &self, NodeId nodeId) {
-                return MorphologicalTreePybind::representativeProperPartsByFlood(self.tree, self.altitude, nodeId);
+                return MorphologicalTreePybind::representativeProperPartsByFlood(
+                    self.topology(),
+                    self.getAltitudeBuffer(),
+                    nodeId);
             }, "nodeId"_a, "Return one derived representative proper part per flat zone inside the connected component of nodeId.")
             .def("reconstructionImage", [](TreeLike &self) {
                 return reconstructionImageOf(self);
@@ -278,13 +277,13 @@ void init_MorphologicalTree(py::module &m){
                 WeightedMorphologicalTree::createTreeOfShapes(imageFromArray(input), interpolation));
         }, "input"_a, "interpolation"_a = ToSInterpolation::SelfDual)
         .def("setAltitude", [](WeightedMorphologicalTree &tree, NodeId nodeId, AltitudeType altitude) {
-            if (!tree.tree.isNode(nodeId)) {
+            if (!tree.topology().isNode(nodeId)) {
                 throw std::invalid_argument("invalid NodeId for altitude update");
             }
             tree.setAltitude(nodeId, altitude);
         }, "nodeId"_a, "altitude"_a, "Set one node altitude inside the external dense altitude buffer.")
         .def("setAltitudeBuffer", [](WeightedMorphologicalTree &tree, const std::vector<AltitudeType>& altitude) {
-            PybindUtils::requireVectorSize(altitude, static_cast<std::size_t>(tree.tree.getNumInternalNodeSlots()), "altitude");
+            PybindUtils::requireVectorSize(altitude, static_cast<std::size_t>(tree.topology().getNumInternalNodeSlots()), "altitude");
             tree.setAltitudeBuffer(altitude);
         }, "altitude"_a, "Replace the dense altitude buffer indexed by internal NodeId.")
         .def_property(
@@ -293,7 +292,7 @@ void init_MorphologicalTree(py::module &m){
                 return AltitudeBuffer(tree.getAltitudeBuffer());
             },
             [](WeightedMorphologicalTree &tree, const std::vector<AltitudeType>& altitude) {
-                PybindUtils::requireVectorSize(altitude, static_cast<std::size_t>(tree.tree.getNumInternalNodeSlots()), "altitude");
+                PybindUtils::requireVectorSize(altitude, static_cast<std::size_t>(tree.topology().getNumInternalNodeSlots()), "altitude");
                 tree.setAltitudeBuffer(altitude);
             },
             "Dense altitude buffer indexed by internal NodeId.")
@@ -407,7 +406,7 @@ void init_AttributeComputedIncrementally(py::module &m){
                std::function<void(NodeId, NodeId)> mergeProcessing,
                std::function<void(NodeId)> postProcessing,
                std::optional<NodeId> rootNodeIdOpt) {
-                auto& tree = weighted.tree;
+                const auto& tree = weighted.topology();
                 const NodeId rootNodeId = rootNodeIdOpt.value_or(tree.getRoot());
                 if (!tree.isNode(rootNodeId) || !tree.isAlive(rootNodeId)) {
                     throw std::invalid_argument("rootNodeId inválido");

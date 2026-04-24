@@ -10,7 +10,12 @@ int main() {
     {
         auto image = makeComponentTreeFixture();
         auto tree = makeComponentTree(image, true);
-        TreeEditor editor(*tree);
+        auto editor = tree->edit();
+
+        requireThrows<std::invalid_argument>([&]() { tree->mergeNodeIntoParent(InvalidNode); }, "mergeNodeIntoParent must reject invalid NodeId");
+        requireThrows<std::invalid_argument>([&]() { tree->mergeNodeIntoParent(tree->getRoot()); }, "mergeNodeIntoParent must reject root");
+        requireThrows<std::invalid_argument>([&]() { tree->pruneNode(InvalidNode); }, "pruneNode must reject invalid NodeId");
+        requireThrows<std::invalid_argument>([&]() { tree->pruneNode(tree->getRoot()); }, "pruneNode must reject root");
 
         tree->mergeNodeIntoParent(5);
 
@@ -19,6 +24,8 @@ int main() {
         requireEqual(tree->getNumFreeNodeSlots(), 1, "free slots after merge");
         requireVectorEqual(collectNodeIds(tree->getChildren(4)), {}, "node 4 children after merge");
         requireVectorEqual(collectNodeIds(tree->getProperParts(4)), {5, 6, 9, 10, 14}, "node 4 proper parts after merge");
+        requireThrows<std::invalid_argument>([&]() { tree->mergeNodeIntoParent(5); }, "mergeNodeIntoParent must reject dead slot");
+        requireThrows<std::invalid_argument>([&]() { tree->pruneNode(5); }, "pruneNode must reject dead slot");
 
         const NodeId reusedNode = editor.createDetachedNode();
         requireEqual(reusedNode, 5, "createDetachedNode must reuse released slot");
@@ -64,7 +71,7 @@ int main() {
     {
         auto image = makeComponentTreeFixture();
         auto tree = makeComponentTree(image, true);
-        TreeEditor editor(*tree);
+        auto editor = tree->edit();
 
         editor.moveProperPart(5, 4, 5);
         editor.moveProperParts(5, 4);
@@ -87,7 +94,7 @@ int main() {
     {
         auto image = makeComponentTreeFixture();
         auto tree = makeComponentTree(image, false);
-        TreeEditor editor(*tree);
+        auto editor = tree->edit();
 
         editor.moveChildren(4, 3);
         requireVectorEqual(collectNodeIds(tree->getChildren(3)), {}, "source children after moveChildren");

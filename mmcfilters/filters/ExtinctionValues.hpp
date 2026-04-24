@@ -30,7 +30,7 @@ struct RegionalExtremaNode {
 class ExtinctionValues {
 protected:
     std::vector<RegionalExtremaNode> regionalExtremaNodes;
-    MorphologicalTree& tree;
+    const MorphologicalTree& tree;
     const AltitudeBuffer* altitude_ = nullptr;
 
     AltitudeType altitudeOf(NodeId nodeId) const {
@@ -77,25 +77,25 @@ protected:
     }
 
 public:
-    ExtinctionValues(MorphologicalTree& tree, const std::shared_ptr<float[]>& attr)
+    ExtinctionValues(const MorphologicalTree& tree, const std::shared_ptr<float[]>& attr)
         : ExtinctionValues(tree, attr.get()) {}
 
-    ExtinctionValues(MorphologicalTree& tree, const std::vector<float>& attr)
+    ExtinctionValues(const MorphologicalTree& tree, const std::vector<float>& attr)
         : ExtinctionValues(tree, attr.data()) {}
 
-    ExtinctionValues(MorphologicalTree& tree, const float* attr)
+    ExtinctionValues(const MorphologicalTree& tree, const float* attr)
         : tree(tree), altitude_(nullptr) {
         initialize(attr);
     }
 
-    ExtinctionValues(WeightedMorphologicalTree& weighted, const std::shared_ptr<float[]>& attr)
+    ExtinctionValues(const WeightedMorphologicalTree& weighted, const std::shared_ptr<float[]>& attr)
         : ExtinctionValues(weighted, attr.get()) {}
 
-    ExtinctionValues(WeightedMorphologicalTree& weighted, const std::vector<float>& attr)
+    ExtinctionValues(const WeightedMorphologicalTree& weighted, const std::vector<float>& attr)
         : ExtinctionValues(weighted, attr.data()) {}
 
-    ExtinctionValues(WeightedMorphologicalTree& weighted, const float* attr)
-        : tree(weighted.tree), altitude_(&weighted.altitude) {
+    ExtinctionValues(const WeightedMorphologicalTree& weighted, const float* attr)
+        : tree(weighted.tree_), altitude_(&weighted.altitude_) {
         initialize(attr);
     }
 

@@ -18,7 +18,7 @@ protected:
     int maxCriterion;
     const float* attrs_increasing = nullptr;
     std::shared_ptr<float[]> ownedAttrsIncreasing_;
-    MorphologicalTree& tree;
+    const MorphologicalTree& tree;
     const AltitudeBuffer* altitude_ = nullptr;
     std::vector<uint8_t> maxContrastLUT;
     std::vector<int> associatedIndexLUT;
@@ -107,7 +107,7 @@ protected:
     }
 
 public:
-    UltimateAttributeOpening(MorphologicalTree& tree, const AltitudeBuffer* altitude, const float* attrs_increasing)
+    UltimateAttributeOpening(const MorphologicalTree& tree, const AltitudeBuffer* altitude, const float* attrs_increasing)
         : tree(tree),
           altitude_(altitude),
           maxContrastLUT(this->tree.getNumInternalNodeSlots()),
@@ -117,27 +117,27 @@ public:
         this->attrs_increasing = attrs_increasing;
     }
 
-    UltimateAttributeOpening(MorphologicalTree& tree, const std::shared_ptr<float[]>& attrs_increasing)
+    UltimateAttributeOpening(const MorphologicalTree& tree, const std::shared_ptr<float[]>& attrs_increasing)
         : UltimateAttributeOpening(tree, attrs_increasing.get()) {
         this->ownedAttrsIncreasing_ = attrs_increasing;
     }
 
-    UltimateAttributeOpening(MorphologicalTree& tree, const std::vector<float>& attrs_increasing)
+    UltimateAttributeOpening(const MorphologicalTree& tree, const std::vector<float>& attrs_increasing)
         : UltimateAttributeOpening(tree, attrs_increasing.data()) {}
 
-    UltimateAttributeOpening(MorphologicalTree& tree, const float* attrs_increasing)
+    UltimateAttributeOpening(const MorphologicalTree& tree, const float* attrs_increasing)
         : UltimateAttributeOpening(tree, nullptr, attrs_increasing) {}
 
-    UltimateAttributeOpening(WeightedMorphologicalTree& weighted, const std::shared_ptr<float[]>& attrs_increasing)
+    UltimateAttributeOpening(const WeightedMorphologicalTree& weighted, const std::shared_ptr<float[]>& attrs_increasing)
         : UltimateAttributeOpening(weighted, attrs_increasing.get()) {
         this->ownedAttrsIncreasing_ = attrs_increasing;
     }
 
-    UltimateAttributeOpening(WeightedMorphologicalTree& weighted, const std::vector<float>& attrs_increasing)
+    UltimateAttributeOpening(const WeightedMorphologicalTree& weighted, const std::vector<float>& attrs_increasing)
         : UltimateAttributeOpening(weighted, attrs_increasing.data()) {}
 
-    UltimateAttributeOpening(WeightedMorphologicalTree& weighted, const float* attrs_increasing)
-        : UltimateAttributeOpening(weighted.tree, &weighted.altitude, attrs_increasing) {}
+    UltimateAttributeOpening(const WeightedMorphologicalTree& weighted, const float* attrs_increasing)
+        : UltimateAttributeOpening(weighted.tree_, &weighted.altitude_, attrs_increasing) {}
 
     ~UltimateAttributeOpening() = default;
 
@@ -157,7 +157,7 @@ public:
 
     ImageUInt8Ptr getMaxContrastImage() {
         const int size = this->tree.getNumColsOfImage() * this->tree.getNumRowsOfImage();
-        ImageUInt8Ptr imgOut = ImageUInt8::create(this->tree.getNumColsOfImage(), this->tree.getNumRowsOfImage());
+        ImageUInt8Ptr imgOut = ImageUInt8::create(this->tree.getNumRowsOfImage(), this->tree.getNumColsOfImage());
         auto out = imgOut->rawData();
 
         for (int pidx = 0; pidx < size; pidx++) {
@@ -168,7 +168,7 @@ public:
 
     ImageInt32Ptr getAssociatedImage() {
         const int size = this->tree.getNumColsOfImage() * this->tree.getNumRowsOfImage();
-        ImageInt32Ptr imgOut = ImageInt32::create(this->tree.getNumColsOfImage(), this->tree.getNumRowsOfImage());
+        ImageInt32Ptr imgOut = ImageInt32::create(this->tree.getNumRowsOfImage(), this->tree.getNumColsOfImage());
         auto out = imgOut->rawData();
 
         for (int pidx = 0; pidx < size; pidx++) {

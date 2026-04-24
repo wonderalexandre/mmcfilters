@@ -46,7 +46,7 @@ public:
      * @brief Computes the requested volume descriptors.
      */
     void compute(
-        MorphologicalTree& tree,
+        const MorphologicalTree& tree,
         const AltitudeBuffer* altitude,
         std::span<float> buffer,
         const AttributeNames& attrNames,

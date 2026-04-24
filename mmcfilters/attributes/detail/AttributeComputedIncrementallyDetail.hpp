@@ -112,7 +112,7 @@ inline void copyAttributesIntoBuffer(
  * them without recomputation.
  */
 inline std::vector<DependencySource> resolveDependencySources(
-    MorphologicalTree& tree,
+    const MorphologicalTree& tree,
     const AltitudeBuffer* altitude,
     const AttributeComputer& comp,
     DependencyMap& available,

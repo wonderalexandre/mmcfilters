@@ -13,7 +13,7 @@ int main() {
 
     for (bool isMaxtree : {true, false}) {
         auto weighted = makeWeightedComponentTree(image, isMaxtree);
-        auto& tree = weighted->tree;
+        const auto& tree = weighted->topology();
 
         auto levelMapping = AttributeComputedIncrementally::computeAttributeMapping(*weighted, LEVEL);
         std::vector<float> expectedMapping;
@@ -44,7 +44,7 @@ int main() {
             );
         }
 
-        auto [areaNames, areaBuffer] = AttributeComputedIncrementally::computeSingleAttribute(tree, AREA);
+        auto [areaNames, areaBuffer] = AttributeComputedIncrementally::computeSingleAttribute(*weighted, AREA);
         requireEqual(
             areaBuffer[areaNames.linearIndex(tree.getRoot(), AREA)],
             16.0f,
@@ -168,7 +168,7 @@ int main() {
 
     {
         auto weighted = makeWeightedComponentTree(image, true);
-        weighted->altitude[5] = 7;
+        weighted->setAltitude(5, 7);
 
         requireEqual(weighted->getAltitude(5), 7, "weighted wrapper must read the external altitude buffer");
 
@@ -188,10 +188,10 @@ int main() {
         auto weightedRoundtrip = WeightedMorphologicalTree::createFromHigraParent(
             weightedParent,
             weightedAltitude,
-            weighted->tree.getNumRowsOfImage(),
-            weighted->tree.getNumColsOfImage(),
+            weighted->topology().getNumRowsOfImage(),
+            weighted->topology().getNumColsOfImage(),
             MorphologicalTree::MAX_TREE,
-            AdjacencyRelation(weighted->tree.getNumRowsOfImage(), weighted->tree.getNumColsOfImage(), 1.5));
+            AdjacencyRelation(weighted->topology().getNumRowsOfImage(), weighted->topology().getNumColsOfImage(), 1.5));
 
         auto requireMappedAttributeMatch = [&](Attribute attr, const std::string& label) {
             auto weightedMapping = AttributeComputedIncrementally::computeAttributeMapping(*weighted, attr);

@@ -26,17 +26,17 @@ class BitQuadComparator {
 public:
     int rowOffset;
     int colOffset;
-    std::function<bool(int, int, MorphologicalTree*, NonComparablePixels&)> comparator;
+    std::function<bool(int, int, const MorphologicalTree*, NonComparablePixels&)> comparator;
     BitQuadType type;
 
-    bool isValid(int row, int col, MorphologicalTree* tree) const {
+    bool isValid(int row, int col, const MorphologicalTree* tree) const {
         return row + rowOffset >= 0 && row + rowOffset < tree->getNumRowsOfImage() && col + colOffset >= 0 && col + colOffset < tree->getNumColsOfImage();
     }
     BitQuadComparator() = default;
     BitQuadComparator(int rowOffset, int colOffset, BitQuadType type) : rowOffset(rowOffset), colOffset(colOffset), type(type) {
         switch (type) {
             case BitQuadType::StrictAncestor:
-                comparator = [=](int row, int col, MorphologicalTree* tree, [[maybe_unused]] NonComparablePixels& pixelsOfLCA) {
+                comparator = [=](int row, int col, const MorphologicalTree* tree, [[maybe_unused]] NonComparablePixels& pixelsOfLCA) {
                     
                     auto idP = ImageUtils::to1D(row, col, tree->getNumColsOfImage());
                     auto idQ = ImageUtils::to1D(row + rowOffset, col + colOffset, tree->getNumColsOfImage());
@@ -53,7 +53,7 @@ public:
                 };
                 break;
             case BitQuadType::Ancestor:
-                comparator = [=](int row, int col, MorphologicalTree* tree, [[maybe_unused]] NonComparablePixels& pixelsOfLCA) {
+                comparator = [=](int row, int col, const MorphologicalTree* tree, [[maybe_unused]] NonComparablePixels& pixelsOfLCA) {
                     
                     auto idP = ImageUtils::to1D(row, col, tree->getNumColsOfImage());
                     auto idQ = ImageUtils::to1D(row + rowOffset, col + colOffset, tree->getNumColsOfImage());
@@ -68,7 +68,7 @@ public:
                 };
                 break;
             case BitQuadType::StrictDescendant:
-                comparator = [=](int row, int col, MorphologicalTree* tree, [[maybe_unused]] NonComparablePixels& pixelsOfLCA) {
+                comparator = [=](int row, int col, const MorphologicalTree* tree, [[maybe_unused]] NonComparablePixels& pixelsOfLCA) {
                     
                     auto idP = ImageUtils::to1D(row, col, tree->getNumColsOfImage());
                     auto idQ = ImageUtils::to1D(row + rowOffset, col + colOffset, tree->getNumColsOfImage());
@@ -83,7 +83,7 @@ public:
                 };
                 break;
             case BitQuadType::Descendant:
-                comparator = [=](int row, int col, MorphologicalTree* tree, [[maybe_unused]] NonComparablePixels& pixelsOfLCA) {
+                comparator = [=](int row, int col, const MorphologicalTree* tree, [[maybe_unused]] NonComparablePixels& pixelsOfLCA) {
                     
                     auto idP = ImageUtils::to1D(row, col, tree->getNumColsOfImage());
                     auto idQ = ImageUtils::to1D(row + rowOffset, col + colOffset, tree->getNumColsOfImage());
@@ -100,7 +100,7 @@ public:
         }
     }
 
-    bool compare(int row, int col, MorphologicalTree* tree, NonComparablePixels& pixelsOfLCA) const {
+    bool compare(int row, int col, const MorphologicalTree* tree, NonComparablePixels& pixelsOfLCA) const {
         if (!isValid(row, col, tree)){
             if(type == BitQuadType::StrictDescendant || type == BitQuadType::Descendant) {
                 return true;
@@ -171,7 +171,7 @@ public:
         std::cout << "+---+---+---+\n\n";
     }
 
-    bool match(int row, int col, MorphologicalTree* tree, NonComparablePixels& pixelsOfLCA) const {
+    bool match(int row, int col, const MorphologicalTree* tree, NonComparablePixels& pixelsOfLCA) const {
         for (const auto& quad : quads) {
             if (!quad.compare(row, col, tree, pixelsOfLCA))
                 return false;
@@ -200,7 +200,7 @@ public:
         }
     }
 
-    int count(int row, int col, MorphologicalTree* tree, NonComparablePixels& pixelsOfLCA)  {
+    int count(int row, int col, const MorphologicalTree* tree, NonComparablePixels& pixelsOfLCA)  {
         int c = 0;
         for (auto& pattern : patterns)
             if (pattern.match(row, col, tree, pixelsOfLCA)){
@@ -307,8 +307,8 @@ struct AttributeBasedBitQuads {
  */
 class ComputerAttributeBasedBitQuads {
 private:
-    static AdjacencyRelation& requireAdjacency(MorphologicalTree& tree) {
-        AdjacencyRelation* adjacency = tree.getAdjacencyRelation();
+    static const AdjacencyRelation& requireAdjacency(const MorphologicalTree& tree) {
+        const AdjacencyRelation* adjacency = tree.getAdjacencyRelation();
         if (adjacency == nullptr) {
             throw std::invalid_argument("BitQuads attributes require an adjacency relation.");
         }
@@ -328,8 +328,8 @@ private:
     BitQuadPattern QDT;
     BitQuadPattern Q3T;
 
-    MorphologicalTree& tree;
-    AdjacencyRelation& adj;
+    const MorphologicalTree& tree;
+    const AdjacencyRelation& adj;
     std::vector<AttributeBasedBitQuads> attr;
     NonComparablePixels pixelsOfLCA;
 
@@ -783,7 +783,7 @@ public:
 
 
     // Construtor principal
-    explicit ComputerAttributeBasedBitQuads(MorphologicalTree& tree) : tree(tree), adj(requireAdjacency(tree)),
+    explicit ComputerAttributeBasedBitQuads(const MorphologicalTree& tree) : tree(tree), adj(requireAdjacency(tree)),
     attr(tree.getNumInternalNodeSlots(), AttributeBasedBitQuads()) {
         
        // assert(tree.getTreeType() != MorphologicalTree::TREE_OF_SHAPES && "Não está implementado para tree of shapes!");

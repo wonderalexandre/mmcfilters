@@ -422,16 +422,76 @@ private:
     }
 
     /**
-     * @brief Counts direct proper parts owned by one node slot.
+     * @brief Removes one direct proper part from the linked list of its current owner.
      */
-    inline int countOwnedProperPartsBySlot(NodeId slotNodeId) const noexcept {
-        int count = 0;
-        for (NodeId ownerSlotId : properPartOwner_) {
-            if (ownerSlotId == slotNodeId) {
-                ++count;
-            }
+    inline void unlinkProperPartFromOwner(NodeId ownerSlotId, NodeId pixelId) noexcept {
+        const NodeId prev = prevProperPart_[static_cast<size_t>(pixelId)];
+        const NodeId next = nextProperPart_[static_cast<size_t>(pixelId)];
+
+        if (prev == InvalidNode) {
+            properHead_[static_cast<size_t>(ownerSlotId)] = next;
+        } else {
+            nextProperPart_[static_cast<size_t>(prev)] = next;
         }
-        return count;
+
+        if (next == InvalidNode) {
+            properTail_[static_cast<size_t>(ownerSlotId)] = prev;
+        } else {
+            prevProperPart_[static_cast<size_t>(next)] = prev;
+        }
+
+        nextProperPart_[static_cast<size_t>(pixelId)] = InvalidNode;
+        prevProperPart_[static_cast<size_t>(pixelId)] = InvalidNode;
+        --numProperPartsByNode_[static_cast<size_t>(ownerSlotId)];
+    }
+
+    /**
+     * @brief Appends one detached proper part to the target owner's direct list.
+     */
+    inline void appendDetachedProperPart(NodeId targetSlotId, NodeId pixelId) noexcept {
+        properPartOwner_[static_cast<size_t>(pixelId)] = targetSlotId;
+        const NodeId tail = properTail_[static_cast<size_t>(targetSlotId)];
+        if (tail == InvalidNode) {
+            properHead_[static_cast<size_t>(targetSlotId)] = pixelId;
+            properTail_[static_cast<size_t>(targetSlotId)] = pixelId;
+        } else {
+            nextProperPart_[static_cast<size_t>(tail)] = pixelId;
+            prevProperPart_[static_cast<size_t>(pixelId)] = tail;
+            properTail_[static_cast<size_t>(targetSlotId)] = pixelId;
+        }
+        ++numProperPartsByNode_[static_cast<size_t>(targetSlotId)];
+    }
+
+    /**
+     * @brief Splices all direct proper parts from `sourceSlotId` to the tail of `targetSlotId`.
+     */
+    inline void spliceProperPartsSlots(NodeId targetSlotId, NodeId sourceSlotId) noexcept {
+        const NodeId sourceHead = properHead_[static_cast<size_t>(sourceSlotId)];
+        if (sourceHead == InvalidNode) {
+            return;
+        }
+
+        for (NodeId pixelId = sourceHead; pixelId != InvalidNode; pixelId = nextProperPart_[static_cast<size_t>(pixelId)]) {
+            properPartOwner_[static_cast<size_t>(pixelId)] = targetSlotId;
+        }
+
+        const NodeId sourceTail = properTail_[static_cast<size_t>(sourceSlotId)];
+        const int sourceCount = numProperPartsByNode_[static_cast<size_t>(sourceSlotId)];
+        const NodeId targetTail = properTail_[static_cast<size_t>(targetSlotId)];
+
+        if (targetTail == InvalidNode) {
+            properHead_[static_cast<size_t>(targetSlotId)] = sourceHead;
+            properTail_[static_cast<size_t>(targetSlotId)] = sourceTail;
+        } else {
+            nextProperPart_[static_cast<size_t>(targetTail)] = sourceHead;
+            prevProperPart_[static_cast<size_t>(sourceHead)] = targetTail;
+            properTail_[static_cast<size_t>(targetSlotId)] = sourceTail;
+        }
+
+        numProperPartsByNode_[static_cast<size_t>(targetSlotId)] += sourceCount;
+        properHead_[static_cast<size_t>(sourceSlotId)] = InvalidNode;
+        properTail_[static_cast<size_t>(sourceSlotId)] = InvalidNode;
+        numProperPartsByNode_[static_cast<size_t>(sourceSlotId)] = 0;
     }
 
     /**
@@ -724,7 +784,7 @@ private:
         if (nodeParent_[nodeSlot] != nodeSlot) {
             return;
         }
-        if (numChildrenByNode_[nodeSlot] != 0 || countOwnedProperPartsBySlot(nodeSlot) != 0) {
+        if (numChildrenByNode_[nodeSlot] != 0 || numProperPartsByNode_[nodeSlot] != 0) {
             return;
         }
         releaseSlotNode(nodeSlot);
@@ -842,15 +902,15 @@ private:
      * @brief Transfers one direct proper part from `sourceNodeId` to `targetNodeId`.
      */
     inline void moveProperPart(NodeId targetNodeId, NodeId sourceNodeId, NodeId pixelId) {
-        if (!isAlive(targetNodeId) || !isAlive(sourceNodeId) || !isProperPart(pixelId)) {
+        if (!isAlive(targetNodeId) || !isAlive(sourceNodeId) || !isProperPart(pixelId) || targetNodeId == sourceNodeId) {
             return;
         }
         const NodeId sourceSlotId = sourceNodeId;
         if (properPartOwner_[pixelId] != sourceSlotId) {
             return;
         }
-        properPartOwner_[pixelId] = targetNodeId;
-        rebuildProperPartLinksFromOwnership();
+        unlinkProperPartFromOwner(sourceSlotId, pixelId);
+        appendDetachedProperPart(targetNodeId, pixelId);
         bumpProperPartVersion();
     }
 
@@ -861,18 +921,10 @@ private:
         if (!isAlive(targetNodeId) || !isAlive(sourceNodeId) || targetNodeId == sourceNodeId) {
             return;
         }
-        std::vector<NodeId> sourcePixels;
-        for (NodeId pixelId : getProperParts(sourceNodeId)) {
-            sourcePixels.push_back(pixelId);
-        }
-        if (sourcePixels.empty()) {
+        if (properHead_[static_cast<size_t>(sourceNodeId)] == InvalidNode) {
             return;
         }
-        const NodeId targetSlotId = targetNodeId;
-        for (NodeId pixelId : sourcePixels) {
-            properPartOwner_[pixelId] = targetSlotId;
-        }
-        rebuildProperPartLinksFromOwnership();
+        spliceProperPartsSlots(targetNodeId, sourceNodeId);
         bumpProperPartVersion();
     }
 
@@ -1746,28 +1798,30 @@ public:
         const NodeId parentNodeId = getNodeParent(nodeId);
         const NodeId parentSlotId = parentNodeId;
 
-        std::vector<NodeId> subtreeNodes;
-        std::vector<NodeId> movedPixels;
-        for (NodeId subtreeNodeId : getPostOrderNodes(nodeId)) {
-            subtreeNodes.push_back(subtreeNodeId);
-            for (NodeId pixelId : getProperParts(subtreeNodeId)) {
-                movedPixels.push_back(pixelId);
+        const auto descendToDeepestLastChild = [this](NodeId startId) {
+            NodeId currentId = startId;
+            while (firstChild_[currentId] != InvalidNode) {
+                currentId = lastChild_[currentId];
             }
-        }
-        for (NodeId pixelId : movedPixels) {
-            properPartOwner_[pixelId] = parentSlotId;
-        }
-        rebuildProperPartLinksFromOwnership();
-        bumpProperPartVersion();
+            return currentId;
+        };
 
-        for (NodeId subtreeNodeId : subtreeNodes) {
-            const NodeId subtreeSlotId = subtreeNodeId;
-            const NodeId currentParentSlotId = nodeParent_[subtreeSlotId];
-            if (currentParentSlotId != InvalidNode && currentParentSlotId != subtreeSlotId) {
-                unlinkChildSlot(currentParentSlotId, subtreeSlotId, false);
+        NodeId currentId = descendToDeepestLastChild(nodeId);
+        while (true) {
+            const NodeId currentParentSlotId = nodeParent_[currentId];
+            moveProperParts(parentSlotId, currentId);
+            if (currentParentSlotId != InvalidNode && currentParentSlotId != currentId) {
+                unlinkChildSlot(currentParentSlotId, currentId, false);
             }
-            nodeParent_[subtreeSlotId] = subtreeSlotId;
-            releaseNode(subtreeNodeId);
+            nodeParent_[currentId] = currentId;
+            releaseNode(currentId);
+
+            if (currentId == nodeId) {
+                break;
+            }
+            currentId = firstChild_[currentParentSlotId] == InvalidNode
+                ? currentParentSlotId
+                : descendToDeepestLastChild(currentParentSlotId);
         }
     }
 

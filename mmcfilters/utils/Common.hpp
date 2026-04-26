@@ -142,6 +142,13 @@ struct GenerationStampSet {
         return stamp[idx] == cur;
     }
 
+    /// Removes one mark from the current logical generation.
+    inline void unmark(size_t idx) noexcept {
+        if (stamp[idx] == cur) {
+            stamp[idx] = 0;
+        }
+    }
+
     /// Performs an O(1) logical reset by advancing the generation counter.
     void resetAll() {
         if (++cur == 0) {

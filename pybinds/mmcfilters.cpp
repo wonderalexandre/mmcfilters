@@ -2,6 +2,8 @@
 #include "../mmcfilters/utils/Common.hpp"
 #include "../mmcfilters/contours/ContoursComputedIncrementally.hpp"
 #include "../mmcfilters/trees/WeightedMorphologicalTree.hpp"
+#include "../mmcfilters/trees/adjust/CasfComponentTrees.hpp"
+#include "../mmcfilters/trees/adjust/DualMinMaxTreeIncrementalFilter.hpp"
 
 #include "AttributeComputedIncrementallyPybind.hpp"
 #include "ContoursComputedIncrementallyPybind.hpp"
@@ -79,6 +81,51 @@ py::array_t<uint8_t> reconstructionImageOf(const WeightedMorphologicalTree& weig
 std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportHigraHierarchyOf(const WeightedMorphologicalTree& weighted) {
     return weighted.exportHigraHierarchy();
 }
+
+class DualMinMaxTreeIncrementalFilterPybind {
+private:
+    std::shared_ptr<WeightedMorphologicalTree> minTree_;
+    std::shared_ptr<WeightedMorphologicalTree> maxTree_;
+    AdjacencyRelation adjacency_;
+    mmcfilters::adjust::DualMinMaxTreeIncrementalFilter<AltitudeType> adjust_;
+
+    static AdjacencyRelation makeAdjacency(const WeightedMorphologicalTree& minTree, const WeightedMorphologicalTree& maxTree) {
+        const AdjacencyRelation* minAdjacency = minTree.topology().getAdjacencyRelation();
+        const AdjacencyRelation* maxAdjacency = maxTree.topology().getAdjacencyRelation();
+        if (minAdjacency == nullptr || maxAdjacency == nullptr) {
+            throw std::invalid_argument("DualMinMaxTreeIncrementalFilter requires weighted component trees with adjacency information.");
+        }
+        if (minTree.topology().getNumRowsOfImage() != maxTree.topology().getNumRowsOfImage() ||
+            minTree.topology().getNumColsOfImage() != maxTree.topology().getNumColsOfImage() ||
+            minTree.topology().getNumTotalProperParts() != maxTree.topology().getNumTotalProperParts()) {
+            throw std::invalid_argument("DualMinMaxTreeIncrementalFilter requires trees built on the same image domain.");
+        }
+        return *minAdjacency;
+    }
+
+public:
+    DualMinMaxTreeIncrementalFilterPybind(std::shared_ptr<WeightedMorphologicalTree> minTree, std::shared_ptr<WeightedMorphologicalTree> maxTree)
+        : minTree_(std::move(minTree)),
+          maxTree_(std::move(maxTree)),
+          adjacency_(makeAdjacency(*minTree_, *maxTree_)),
+          adjust_(minTree_.get(), maxTree_.get(), adjacency_) {}
+
+    void pruneMaxTreeAndUpdateMinTree(const std::vector<NodeId>& nodesToPrune) {
+        adjust_.pruneMaxTreeAndUpdateMinTree(nodesToPrune);
+    }
+
+    void pruneMinTreeAndUpdateMaxTree(const std::vector<NodeId>& nodesToPrune) {
+        adjust_.pruneMinTreeAndUpdateMaxTree(nodesToPrune);
+    }
+
+    std::shared_ptr<WeightedMorphologicalTree> minTree() const {
+        return minTree_;
+    }
+
+    std::shared_ptr<WeightedMorphologicalTree> maxTree() const {
+        return maxTree_;
+    }
+};
 
 template <class TreeLike, class PyClass>
 void bindTreeQueryApi(PyClass& cls) {
@@ -721,6 +768,63 @@ void init_AttributeOpeningPrimitivesFamily(py::module &m){
 
 }
 
+void init_ComponentTreeAdjust(py::module &m) {
+    namespace adjust = mmcfilters::adjust;
+
+    py::enum_<adjust::CasfComponentTreesAttribute>(m, "CasfComponentTreesAttribute", py::module_local(false))
+        .value("AREA", adjust::CasfComponentTreesAttribute::AREA)
+        .value("BOUNDING_BOX_WIDTH", adjust::CasfComponentTreesAttribute::BOUNDING_BOX_WIDTH)
+        .value("BOUNDING_BOX_HEIGHT", adjust::CasfComponentTreesAttribute::BOUNDING_BOX_HEIGHT)
+        .value("BOUNDING_BOX_DIAGONAL", adjust::CasfComponentTreesAttribute::BOUNDING_BOX_DIAGONAL)
+        .export_values();
+
+    py::class_<DualMinMaxTreeIncrementalFilterPybind, std::shared_ptr<DualMinMaxTreeIncrementalFilterPybind>>(
+        m,
+        "DualMinMaxTreeIncrementalFilter",
+        py::module_local(false),
+        "Incremental updater for paired weighted min-tree/max-tree component trees.")
+        .def(py::init<std::shared_ptr<WeightedMorphologicalTree>, std::shared_ptr<WeightedMorphologicalTree>>(),
+            "minTree"_a,
+            "maxTree"_a)
+        .def("pruneMaxTreeAndUpdateMinTree",
+            &DualMinMaxTreeIncrementalFilterPybind::pruneMaxTreeAndUpdateMinTree,
+            "nodesToPrune"_a,
+            "Update the min-tree incrementally and then prune the requested max-tree subtrees.")
+        .def("pruneMinTreeAndUpdateMaxTree",
+            &DualMinMaxTreeIncrementalFilterPybind::pruneMinTreeAndUpdateMaxTree,
+            "nodesToPrune"_a,
+            "Update the max-tree incrementally and then prune the requested min-tree subtrees.")
+        .def_property_readonly("minTree", &DualMinMaxTreeIncrementalFilterPybind::minTree)
+        .def_property_readonly("maxTree", &DualMinMaxTreeIncrementalFilterPybind::maxTree);
+
+    py::class_<adjust::CasfComponentTrees, std::shared_ptr<adjust::CasfComponentTrees>>(
+        m,
+        "CasfComponentTrees",
+        py::module_local(false),
+        "Connected alternating sequential filter based on paired component-tree adjustment.")
+        .def(py::init([](UInt8InputArray input, adjust::CasfComponentTreesAttribute attribute, double radius) {
+                return std::make_shared<adjust::CasfComponentTrees>(imageFromArray(input), attribute, radius);
+            }),
+            "input"_a,
+            "attribute"_a = adjust::CasfComponentTreesAttribute::AREA,
+            "radius"_a = 1.5)
+        .def("filter", [](adjust::CasfComponentTrees& self, const std::vector<double>& thresholds) {
+            return PybindUtils::toNumpy(self.filter(thresholds));
+        }, "thresholds"_a)
+        .def_property_readonly("minTree", [](adjust::CasfComponentTrees& self) -> const WeightedMorphologicalTree& {
+            return self.minTree();
+        }, py::return_value_policy::reference_internal)
+        .def_property_readonly("maxTree", [](adjust::CasfComponentTrees& self) -> const WeightedMorphologicalTree& {
+            return self.maxTree();
+        }, py::return_value_policy::reference_internal)
+        .def_property_readonly("attribute", &adjust::CasfComponentTrees::attribute)
+        .def("exportMinTree", &adjust::CasfComponentTrees::exportMinTree)
+        .def("exportMaxTree", &adjust::CasfComponentTrees::exportMaxTree);
+
+    m.attr("ComponentTreeCasf") = m.attr("CasfComponentTrees");
+    m.attr("ComponentTreeCasfAttribute") = m.attr("CasfComponentTreesAttribute");
+}
+
 PYBIND11_MODULE(mmcfilters, m) {
     m.doc() = "Morphological tree filters with a NodeId-first Python API.";
     
@@ -733,5 +837,6 @@ PYBIND11_MODULE(mmcfilters, m) {
 
     init_UltimateAttributeOpening(m);
     init_AttributeOpeningPrimitivesFamily(m);
+    init_ComponentTreeAdjust(m);
 
 }

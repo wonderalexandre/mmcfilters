@@ -113,7 +113,7 @@ int main() {
         require(!tree->isAlive(5), "node 5 must be released after prune");
         requireEqual(tree->getNumFreeNodeSlots(), 2, "free slots after prune");
         requireVectorEqual(collectNodeIds(tree->getChildren(3)), {}, "node 3 children after prune");
-        requireVectorEqual(collectNodeIds(tree->getProperParts(3)), {0, 1, 4, 5, 6, 9, 10, 14}, "node 3 proper parts after prune");
+        requireVectorEqual(collectNodeIds(tree->getProperParts(3)), {0, 1, 4, 10, 14, 5, 6, 9}, "node 3 proper parts after prune");
         requireEqual(computeAreaAttribute(*tree, 3), 8, "pruned node area via attribute computer");
     }
 

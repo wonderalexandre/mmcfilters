@@ -305,6 +305,14 @@ public:
         editor_.moveProperParts(targetNodeId, sourceNodeId);
     }
 
+    void removeChild(NodeId parentNodeId, NodeId childId, bool releaseNodeFlag) {
+        editor_.removeChild(parentNodeId, childId, releaseNodeFlag);
+    }
+
+    void releaseNode(NodeId nodeId) {
+        editor_.releaseNode(nodeId);
+    }
+
     void setRoot(NodeId nodeId) {
         editor_.setRoot(nodeId);
     }
@@ -316,6 +324,10 @@ public:
     void commit() {
         editor_.commit();
         weighted_.validateMonotoneAltitude();
+    }
+
+    void commitUnchecked() noexcept {
+        editor_.commitUnchecked();
     }
 };
 

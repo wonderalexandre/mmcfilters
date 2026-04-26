@@ -67,6 +67,10 @@ mmcfilters_add_unit_test(unit_weighted_morphological_tree
     trees/test_weighted_morphological_tree.cpp
 )
 
+mmcfilters_add_unit_test(unit_component_tree_adjust
+    trees/test_component_tree_adjust.cpp
+)
+
 mmcfilters_add_unit_test(unit_morphological_tree_invariants
     trees/test_morphological_tree_invariants.cpp
 )

@@ -138,6 +138,42 @@ def main() -> int:
         "weighted ExtinctionValues must reject short attribute buffer",
     )
 
+    casf = mmcfilters.CasfComponentTrees(image, mmcfilters.CasfComponentTreesAttribute.AREA)
+    require(np.array_equal(casf.filter([]), image), "CASF empty threshold sequence must preserve image")
+    require(np.array_equal(casf.filter([0.0]), image), "CASF zero threshold must preserve image")
+    filtered = casf.filter([2.0])
+    require(filtered.shape == image.shape, "CASF positive threshold image shape")
+    min_parent, min_altitude = casf.exportMinTree()
+    max_parent, max_altitude = casf.exportMaxTree()
+    require(len(min_parent) == len(min_altitude), "CASF exported min-tree shape")
+    require(len(max_parent) == len(max_altitude), "CASF exported max-tree shape")
+    require(casf.minTree.reconstructionImage().shape == image.shape, "CASF minTree property")
+    require(casf.maxTree.reconstructionImage().shape == image.shape, "CASF maxTree property")
+
+    bbox_casf = mmcfilters.ComponentTreeCasf(image, mmcfilters.ComponentTreeCasfAttribute.BOUNDING_BOX_DIAGONAL)
+    require(bbox_casf.filter([2.0]).shape == image.shape, "CASF bounding-box alias path")
+
+    min_for_adjust = mmcfilters.WeightedMorphologicalTree.createMinTree(image)
+    max_for_adjust = mmcfilters.WeightedMorphologicalTree.createMaxTree(image)
+    adjust = mmcfilters.DualMinMaxTreeIncrementalFilter(min_for_adjust, max_for_adjust)
+    max_candidates = [
+        node_id
+        for node_id in max_for_adjust.getAliveNodeIds()
+        if node_id != max_for_adjust.getRoot() and max_for_adjust.getNumProperParts(node_id) <= 1
+    ]
+    adjust.pruneMaxTreeAndUpdateMinTree(max_candidates[:1])
+    require(adjust.minTree.reconstructionImage().shape == image.shape, "adjust minTree property after max prune")
+    require(adjust.maxTree.reconstructionImage().shape == image.shape, "adjust maxTree property after max prune")
+
+    min_candidates = [
+        node_id
+        for node_id in adjust.minTree.getAliveNodeIds()
+        if node_id != adjust.minTree.getRoot() and adjust.minTree.getNumProperParts(node_id) <= 1
+    ]
+    adjust.pruneMinTreeAndUpdateMaxTree(min_candidates[:1])
+    require(adjust.minTree.reconstructionImage().shape == image.shape, "adjust minTree property after min prune")
+    require(adjust.maxTree.reconstructionImage().shape == image.shape, "adjust maxTree property after min prune")
+
     print("python filter wrappers ok")
     return 0
 

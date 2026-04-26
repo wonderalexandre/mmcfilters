@@ -51,6 +51,11 @@ Contours = _native.Contours
 ContourRange = _native.ContourRange
 ContoursIterator = _native.ContoursIterator
 ExtinctionValues = _native.ExtinctionValues
+DualMinMaxTreeIncrementalFilter = _native.DualMinMaxTreeIncrementalFilter
+CasfComponentTrees = _native.CasfComponentTrees
+CasfComponentTreesAttribute = _native.CasfComponentTreesAttribute
+ComponentTreeCasf = _native.ComponentTreeCasf
+ComponentTreeCasfAttribute = _native.ComponentTreeCasfAttribute
 
 __all__ = [
     "__version__",
@@ -68,4 +73,9 @@ __all__ = [
     "ContourRange",
     "ContoursIterator",
     "ExtinctionValues",
+    "DualMinMaxTreeIncrementalFilter",
+    "CasfComponentTrees",
+    "CasfComponentTreesAttribute",
+    "ComponentTreeCasf",
+    "ComponentTreeCasfAttribute",
 ]

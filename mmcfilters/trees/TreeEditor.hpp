@@ -121,6 +121,35 @@ public:
     }
 
     /**
+     * @brief Detaches a direct child from its parent and optionally releases an empty detached slot.
+     */
+    void removeChild(NodeId parentNodeId, NodeId childId, bool releaseNodeFlag) {
+        if (!tree_.isAlive(parentNodeId) || !tree_.isAlive(childId)) {
+            throw std::invalid_argument("TreeEditor::removeChild requires live node ids.");
+        }
+        if (!tree_.hasChild(parentNodeId, childId)) {
+            throw std::invalid_argument("TreeEditor::removeChild requires a direct parent-child relation.");
+        }
+        tree_.removeChild(parentNodeId, childId, releaseNodeFlag);
+    }
+
+    /**
+     * @brief Releases an empty detached non-root node slot.
+     */
+    void releaseNode(NodeId nodeId) {
+        if (!tree_.isAlive(nodeId)) {
+            throw std::invalid_argument("TreeEditor::releaseNode requires a live node.");
+        }
+        if (tree_.isRoot(nodeId)) {
+            throw std::invalid_argument("TreeEditor::releaseNode cannot release the connected root.");
+        }
+        if (tree_.getNodeParent(nodeId) != nodeId) {
+            throw std::invalid_argument("TreeEditor::releaseNode expects a detached self-parented node.");
+        }
+        tree_.releaseNode(nodeId);
+    }
+
+    /**
      * @brief Promotes `nodeId` to become the connected root.
      */
     void setRoot(NodeId nodeId) {
@@ -146,6 +175,15 @@ public:
     void commit() const {
         tree_.validateConnectedRootedTree();
     }
+
+    /**
+     * @brief Finalizes a staged edit without running the linear validation.
+     *
+     * This is intended for internal algorithms that preserve the tree
+     * invariants by construction and may commit inside a hot loop. Public and
+     * test-facing edit sessions should keep using `commit()`.
+     */
+    void commitUnchecked() const noexcept {}
 };
 
 inline TreeEditor MorphologicalTree::edit() {

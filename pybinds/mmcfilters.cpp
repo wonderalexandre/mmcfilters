@@ -94,6 +94,9 @@ void bindTreeQueryApi(PyClass& cls) {
         .def("getRoot", [](TreeLike &self) {
             return topology(self).getRoot();
         }, "Return the current root node id.")
+        .def_property_readonly("root", [](TreeLike &self) {
+            return topology(self).getRoot();
+        }, "Current root node id.")
         .def_property_readonly("numFreeNodeSlots", [](TreeLike &self) {
             return topology(self).getNumFreeNodeSlots();
         })
@@ -103,10 +106,28 @@ void bindTreeQueryApi(PyClass& cls) {
         .def("getAliveNodeIds", [](TreeLike &self) {
             return collectNodeIds(topology(self).getAliveNodeIds());
         }, "Return all alive internal-node ids in the dense node-id domain.")
+        .def_property_readonly("aliveNodeIds", [](TreeLike &self) {
+            return collectNodeIds(topology(self).getAliveNodeIds());
+        }, "Alive internal-node ids in the dense node-id domain.")
+        .def_property_readonly("alive_node_ids", [](TreeLike &self) {
+            return collectNodeIds(topology(self).getAliveNodeIds());
+        }, "Alive internal-node ids in the dense node-id domain.")
         .def("getLeafNodeIds", [](TreeLike &self) {
             return topology(self).getLeaves();
         }, "Return alive leaf node ids in the dense node-id domain.")
+        .def_property_readonly("leafNodeIds", [](TreeLike &self) {
+            return topology(self).getLeaves();
+        }, "Alive leaf node ids in the dense node-id domain.")
+        .def_property_readonly("leaf_node_ids", [](TreeLike &self) {
+            return topology(self).getLeaves();
+        }, "Alive leaf node ids in the dense node-id domain.")
         .def("getChildren", [](TreeLike &self, NodeId nodeId) {
+            return collectNodeIds(topology(self).getChildren(nodeId));
+        }, "nodeId"_a, "Return the direct children of a node in the dense node-id domain.")
+        .def("childrenOf", [](TreeLike &self, NodeId nodeId) {
+            return collectNodeIds(topology(self).getChildren(nodeId));
+        }, "nodeId"_a, "Return the direct children of a node in the dense node-id domain.")
+        .def("children_of", [](TreeLike &self, NodeId nodeId) {
             return collectNodeIds(topology(self).getChildren(nodeId));
         }, "nodeId"_a, "Return the direct children of a node in the dense node-id domain.")
         .def("getNodeNumDescendants", [](TreeLike &self, NodeId nodeId) {
@@ -125,6 +146,12 @@ void bindTreeQueryApi(PyClass& cls) {
             return topology(self).getNodeTimePostOrder(nodeId);
         }, "nodeId"_a, "Return the postorder timestamp of nodeId.")
         .def("getProperParts", [](TreeLike &self, NodeId nodeId) {
+            return collectNodeIds(topology(self).getProperParts(nodeId));
+        }, "nodeId"_a, "Return the proper parts owned directly by a node.")
+        .def("properPartsOf", [](TreeLike &self, NodeId nodeId) {
+            return collectNodeIds(topology(self).getProperParts(nodeId));
+        }, "nodeId"_a, "Return the proper parts owned directly by a node.")
+        .def("proper_parts_of", [](TreeLike &self, NodeId nodeId) {
             return collectNodeIds(topology(self).getProperParts(nodeId));
         }, "nodeId"_a, "Return the proper parts owned directly by a node.")
         .def("reconstructNode", [](TreeLike &self, NodeId nodeId) {
@@ -149,13 +176,37 @@ void bindTreeQueryApi(PyClass& cls) {
         .def("getNodeSubtree", [](TreeLike &self, NodeId nodeId) {
             return collectNodeIds(topology(self).getNodeSubtree(nodeId));
         }, "nodeId"_a)
+        .def("nodeSubtreeOf", [](TreeLike &self, NodeId nodeId) {
+            return collectNodeIds(topology(self).getNodeSubtree(nodeId));
+        }, "nodeId"_a)
+        .def("node_subtree_of", [](TreeLike &self, NodeId nodeId) {
+            return collectNodeIds(topology(self).getNodeSubtree(nodeId));
+        }, "nodeId"_a)
         .def("getDescendants", [](TreeLike &self, NodeId nodeId) {
+            return collectNodeIds(topology(self).getDescendants(nodeId));
+        }, "nodeId"_a)
+        .def("descendantsOf", [](TreeLike &self, NodeId nodeId) {
+            return collectNodeIds(topology(self).getDescendants(nodeId));
+        }, "nodeId"_a)
+        .def("descendants_of", [](TreeLike &self, NodeId nodeId) {
             return collectNodeIds(topology(self).getDescendants(nodeId));
         }, "nodeId"_a)
         .def("getNodeParent", [](TreeLike &self, NodeId nodeId) {
             return topology(self).getNodeParent(nodeId);
         }, "nodeId"_a)
+        .def("parentOf", [](TreeLike &self, NodeId nodeId) {
+            return topology(self).getNodeParent(nodeId);
+        }, "nodeId"_a)
+        .def("parent_of", [](TreeLike &self, NodeId nodeId) {
+            return topology(self).getNodeParent(nodeId);
+        }, "nodeId"_a)
         .def("getSmallestComponent", [](TreeLike &self, int pixelId) {
+            return topology(self).getSmallestComponent(pixelId);
+        }, "pixelId"_a)
+        .def("smallestComponentOf", [](TreeLike &self, int pixelId) {
+            return topology(self).getSmallestComponent(pixelId);
+        }, "pixelId"_a)
+        .def("smallest_component_of", [](TreeLike &self, int pixelId) {
             return topology(self).getSmallestComponent(pixelId);
         }, "pixelId"_a)
         .def("getHigraNodeId", [](TreeLike &self, NodeId nodeId) {
@@ -196,6 +247,27 @@ void bindTreeQueryApi(PyClass& cls) {
         }, "nodeId"_a)
         .def_property_readonly("treeType", [](TreeLike& self) { return topology(self).getTreeType(); })
         .def_property_readonly("hasAdjacencyRelation", [](TreeLike& self) { return topology(self).hasAdjacencyRelation(); })
+        .def_property_readonly("hasTreeOfShapesAdjacencyPolicy", [](TreeLike& self) { return topology(self).hasTreeOfShapesAdjacencyPolicy(); })
+        .def("getTreeOfShapesMinTreeAdjacencyRadius", [](TreeLike& self) {
+            return topology(self).getTreeOfShapesMinTreeAdjacencyRadius();
+        })
+        .def("getTreeOfShapesMaxTreeAdjacencyRadius", [](TreeLike& self) {
+            return topology(self).getTreeOfShapesMaxTreeAdjacencyRadius();
+        })
+        .def("getTreeOfShapesMinTreeAdjacencyRelation", [](TreeLike& self) -> const AdjacencyRelation& {
+            const AdjacencyRelation* adjacency = topology(self).getTreeOfShapesMinTreeAdjacencyRelation();
+            if (!adjacency) {
+                throw std::runtime_error("Tree-of-shapes adjacency policy is not available.");
+            }
+            return *adjacency;
+        }, py::return_value_policy::reference_internal)
+        .def("getTreeOfShapesMaxTreeAdjacencyRelation", [](TreeLike& self) -> const AdjacencyRelation& {
+            const AdjacencyRelation* adjacency = topology(self).getTreeOfShapesMaxTreeAdjacencyRelation();
+            if (!adjacency) {
+                throw std::runtime_error("Tree-of-shapes adjacency policy is not available.");
+            }
+            return *adjacency;
+        }, py::return_value_policy::reference_internal)
         .def_property_readonly("numRows", [](TreeLike& self) { return topology(self).getNumRowsOfImage(); })
         .def_property_readonly("numCols", [](TreeLike& self) { return topology(self).getNumColsOfImage(); })
         .def_property_readonly("numNodes", [](TreeLike& self) { return topology(self).getNumNodes(); });
@@ -204,7 +276,19 @@ void bindTreeQueryApi(PyClass& cls) {
         cls.def("getAltitude", [](TreeLike &self, NodeId nodeId) {
                 return altitudeOf(self, nodeId);
             }, "nodeId"_a, "Return the altitude associated with nodeId.")
+            .def("altitudeOf", [](TreeLike &self, NodeId nodeId) {
+                return altitudeOf(self, nodeId);
+            }, "nodeId"_a, "Return the altitude associated with nodeId.")
+            .def("altitude_of", [](TreeLike &self, NodeId nodeId) {
+                return altitudeOf(self, nodeId);
+            }, "nodeId"_a, "Return the altitude associated with nodeId.")
             .def("getNodeResidue", [](TreeLike &self, NodeId nodeId) {
+                return residueOf(self, nodeId);
+            }, "nodeId"_a, "Return the residue between nodeId and its parent.")
+            .def("residueOf", [](TreeLike &self, NodeId nodeId) {
+                return residueOf(self, nodeId);
+            }, "nodeId"_a, "Return the residue between nodeId and its parent.")
+            .def("residue_of", [](TreeLike &self, NodeId nodeId) {
                 return residueOf(self, nodeId);
             }, "nodeId"_a, "Return the residue between nodeId and its parent.")
             .def("getRepresentativeProperPartsByFlood", [](TreeLike &self, NodeId nodeId) {
@@ -228,6 +312,7 @@ void init_MorphologicalTree(py::module &m){
       py::enum_<ToSInterpolation>(m, "ToSInterpolation", py::module_local(false))
         .value("SelfDual", ToSInterpolation::SelfDual)
         .value("Min4cMax8c", ToSInterpolation::Min4cMax8c)
+        .value("Min8cMax4c", ToSInterpolation::Min8cMax4c)
         .export_values();
 
       py::enum_<NodeIdSpace>(m, "NodeIdSpace", py::module_local(false))
@@ -243,9 +328,19 @@ void init_MorphologicalTree(py::module &m){
         .def_static("createComponentTree", [](UInt8InputArray input, bool isMaxtree, double radius) {
             return std::make_shared<MorphologicalTreePybind>(input, isMaxtree, radius);
         }, "input"_a, "isMaxtree"_a, "radius"_a = 1.5)
-        .def_static("createTreeOfShapes", [](UInt8InputArray input, ToSInterpolation interpolation) {
-            return std::make_shared<MorphologicalTreePybind>(input, interpolation);
-        }, "input"_a, "interpolation"_a = ToSInterpolation::SelfDual)
+        .def_static("createMaxTree", [](UInt8InputArray input, double radius) {
+            return std::make_shared<MorphologicalTreePybind>(input, true, radius);
+        }, "input"_a, "radius"_a = 1.5)
+        .def_static("createMinTree", [](UInt8InputArray input, double radius) {
+            return std::make_shared<MorphologicalTreePybind>(input, false, radius);
+        }, "input"_a, "radius"_a = 1.5)
+        .def_static("createTreeOfShapes", [](UInt8InputArray input, ToSInterpolation interpolation, int infinitySeedRow, int infinitySeedCol) {
+            return std::make_shared<MorphologicalTreePybind>(input, interpolation, infinitySeedRow, infinitySeedCol);
+        },
+            "input"_a,
+            "interpolation"_a = ToSInterpolation::SelfDual,
+            "infinitySeedRow"_a = ToSDefaultInfinityRow,
+            "infinitySeedCol"_a = ToSDefaultInfinityCol)
         .def_static("createFromHigraParent", [](const std::vector<NodeId>& parent, int rows, int cols, int treeType, std::optional<double> radius) {
             return std::make_shared<MorphologicalTreePybind>(
                 MorphologicalTree::createFromHigraParent(
@@ -272,10 +367,22 @@ void init_MorphologicalTree(py::module &m){
             return std::make_shared<WeightedMorphologicalTree>(
                 WeightedMorphologicalTree::createComponentTree(imageFromArray(input), isMaxtree, radius));
         }, "input"_a, "isMaxtree"_a, "radius"_a = 1.5)
-        .def_static("createTreeOfShapes", [](UInt8InputArray input, ToSInterpolation interpolation) {
+        .def_static("createMaxTree", [](UInt8InputArray input, double radius) {
             return std::make_shared<WeightedMorphologicalTree>(
-                WeightedMorphologicalTree::createTreeOfShapes(imageFromArray(input), interpolation));
-        }, "input"_a, "interpolation"_a = ToSInterpolation::SelfDual)
+                WeightedMorphologicalTree::createComponentTree(imageFromArray(input), true, radius));
+        }, "input"_a, "radius"_a = 1.5)
+        .def_static("createMinTree", [](UInt8InputArray input, double radius) {
+            return std::make_shared<WeightedMorphologicalTree>(
+                WeightedMorphologicalTree::createComponentTree(imageFromArray(input), false, radius));
+        }, "input"_a, "radius"_a = 1.5)
+        .def_static("createTreeOfShapes", [](UInt8InputArray input, ToSInterpolation interpolation, int infinitySeedRow, int infinitySeedCol) {
+            return std::make_shared<WeightedMorphologicalTree>(
+                WeightedMorphologicalTree::createTreeOfShapes(imageFromArray(input), interpolation, infinitySeedRow, infinitySeedCol));
+        },
+            "input"_a,
+            "interpolation"_a = ToSInterpolation::SelfDual,
+            "infinitySeedRow"_a = ToSDefaultInfinityRow,
+            "infinitySeedCol"_a = ToSDefaultInfinityCol)
         .def("setAltitude", [](WeightedMorphologicalTree &tree, NodeId nodeId, AltitudeType altitude) {
             if (!tree.topology().isNode(nodeId)) {
                 throw std::invalid_argument("invalid NodeId for altitude update");
@@ -326,24 +433,23 @@ void init_MorphologicalTree(py::module &m){
 void init_ContoursComputedIncrementally(py::module &m){
     // Alias locais
     using Contours     = ContoursComputedIncrementally::IncrementalContours;
-    using ContourProxy = Contours::ContourProxy;
-    using Range = decltype(std::declval<Contours&>().contoursLazy());
+    using ContourRange = Contours::ContourRange;
+    using Range = decltype(std::declval<Contours&>().contoursByNode());
     using Iter  = decltype(std::declval<Range&>().begin());
     
-    // Torna ContourProxy iterável em Python
-    py::class_<ContourProxy>(m, "ContourProxy", py::module_local(false))
-        .def("__iter__", [](const ContourProxy& p) {
-            // usa os iteradores já existentes do proxy
+    // Torna ContourRange iterável em Python
+    py::class_<ContourRange>(m, "ContourRange", py::module_local(false))
+        .def("__iter__", [](const ContourRange& p) {
+            // usa os iteradores já existentes do range
             return py::make_iterator(p.begin(), p.end());
         }, py::keep_alive<0, 1>())
-        .def("empty", &ContourProxy::empty);
+        .def("empty", &ContourRange::empty);
 
     struct ContoursIterator {
-        Contours* owner;
         Range range;
         Iter it, itEnd;
         ContoursIterator(Contours& self)
-            : owner(&self), range(self.contoursLazy()), it(range.begin()), itEnd(range.end()) {}
+            : range(self.contoursByNode()), it(range.begin()), itEnd(range.end()) {}
     };
 
     py::class_<ContoursIterator>(m, "ContoursIterator", py::module_local(false))
@@ -353,16 +459,19 @@ void init_ContoursComputedIncrementally(py::module &m){
             if (self.it == self.itEnd) throw py::stop_iteration();
             auto entry = *self.it++;  // <— cópia do par temporário
             auto nodeId = std::get<0>(entry);
-            auto proxy  = std::get<1>(entry);  // ContourProxy
+            auto proxy  = std::get<1>(entry);  // ContourRange
             return py::make_tuple(nodeId, proxy);
         });
 
 
     py::class_<Contours, std::shared_ptr<Contours>>(m, "Contours", py::module_local(false))
-        .def("contours", [](Contours &self) {
+        .def("contoursByNode", [](Contours &self) {
             return ContoursIterator(self);
         }, py::keep_alive<0, 1>())
-        .def("getContour", &Contours::contour);
+        .def("getContour", &Contours::getContour)
+        .def("materializeAll", &Contours::materializeAll)
+        .def_property_readonly("isMaterialized", &Contours::isMaterialized)
+        .def("isContourMaterialized", &Contours::isContourMaterialized);
 
     py::class_<ContoursComputedIncrementallyPybind>(m, "ContourComputation", py::module_local(false))
         .def_static("extraction", py::overload_cast<MorphologicalTreePybindPtr>(&ContoursComputedIncrementallyPybind::extraction))
@@ -578,6 +687,7 @@ void init_AdjacencyRelation(py::module &m){
     	py::class_<AdjacencyRelation>(m, "AdjacencyRelation", py::module_local(false))
         .def(py::init<int, int, double>())
         .def_property_readonly("size", &AdjacencyRelation::getSize )
+        .def_property_readonly("radius", &AdjacencyRelation::getRadius )
         .def("getAdjPixels", py::overload_cast<int, int>( &AdjacencyRelation::getAdjPixels ));
 }
 

@@ -3,14 +3,25 @@
 /*
  * Overview
  * --------
- * This file implements an arena-based incremental contour computation for
- * morphological trees. The design focuses on memory reuse and locality during
- * the post-order passes used to extract and aggregate contour pixels.
+ * This file implements the arena-based incremental contour computation
+ * described for component trees in:
  *
- * 1. ListArena
- *    A lightweight arena stores many singly linked lists inside one contiguous
- *    buffer (`entries`). Each node owns one list through `head`, which avoids
- *    repeated heap allocation while contour pixels are inserted and removed.
+ *   D. J. Da Silva et al., "Incremental component tree contour computation",
+ *   Pattern Recognition Letters, 2025.
+ *
+ * The paper computes contours in the original image domain by counting exposed
+ * pixel sides; therefore the contour adjacency is always the 4-neighbourhood,
+ * independently from the adjacency used to build the tree. For a tree of
+ * shapes, this implementation applies the same 4-connected side-contour
+ * definition to the node supports projected onto the original image domain.
+ *
+ * The design focuses on memory reuse and locality during the post-order passes
+ * used to extract and aggregate contour pixels.
+ *
+ * 1. PendingPixelLists
+ *    A lightweight transient store keeps per-node pixel lists inside one
+ *    contiguous buffer. It avoids repeated heap allocation while contour pixels
+ *    are inserted, forwarded to ancestors, and removed.
  *
  * 2. recycle() and consumeInto()
  *    Removed contour pixels do not normally reappear during the same pass, yet
@@ -21,24 +32,32 @@
  *    container, and returns the slots to the free list through `recycle()`.
  *
  * 3. extractCompactContours()
- *    The incremental traversal builds an `IncrementalContours` object
- *    (`result`) that stores the exposed contour and removal arenas. A
- *    temporary arena, `contoursToRemoveLCA`, stores pixels that must be
+ *    The incremental traversal first records local contour additions and
+ *    removals in transient pixel lists. These lists are compacted into a CSR-like
+ *    delta store (`ContourDeltaStore`) before the result is returned. A
+ *    temporary list store, `pendingContourRemovals`, stores pixels that must be
  *    removed at some ancestor, typically the lowest common ancestor of two
  *    incomparable nodes.
  *
  * 4. Aggregation phase
- *    `ensureAggregated()` performs a second post-order pass on demand. It
- *    accumulates local contour pixels, applies deferred removals, and removes
- *    duplicates using a compact bitmap. The final result is stored in the
- *    `aggregated` arena, so subsequent reads pay only the already materialised
- *    access cost.
+ *    `ensureSubtreeMaterialized()` performs a second post-order pass on
+ *    demand. It accumulates local contour pixels, applies deferred removals,
+ *    and removes duplicates using generation-marked scratch storage.
+ *    Materialized contours are cached per subtree in contiguous vectors, so
+ *    subsequent reads of an already materialised node pay only the iteration
+ *    cost. Regular `getContour(node)` reads materialize and cache the requested
+ *    subtree when needed, so repeated or broad iteration is incremental.
+ *
+ * See docs/contours-internals.md for invariants, complexity, memory notes, and
+ * benchmark interpretation.
  */
 
 #include "../utils/Common.hpp"
 #include "../trees/MorphologicalTree.hpp"
 #include "../attributes/AttributeComputedIncrementally.hpp"
 #include "../utils/AdjacencyRelation.hpp"
+#include "detail/PendingPixelLists.hpp"
+#include "detail/ContourDeltaStore.hpp"
 
 namespace mmcfilters {
 
@@ -47,256 +66,122 @@ namespace mmcfilters {
  */
 class ContoursComputedIncrementally {
 public:
-    static inline NodeId nodeIdOf(const MorphologicalTree&, NodeId nodeId) noexcept {
-        return nodeId;
-    }
+    static constexpr double ContourSideAdjacencyRadius = 1.0;
 
+private:
+    using PendingPixelLists = detail::PendingPixelLists;
+    using ContourDeltaStore = detail::ContourDeltaStore;
+
+public:
     /**
-     * @brief Arena storing many integer lists inside a single contiguous buffer.
-     */
-    struct ListArena {
-        /**
-         * @brief Single linked-list entry stored in the arena.
-         */
-        struct Entry {
-            int value;
-            int next;
-        };
-
-        /**
-         * @brief Forward iterator over one arena-managed list.
-         */
-        class const_iterator {
-        public:
-            using iterator_category = std::forward_iterator_tag;
-            using value_type = int;
-            using difference_type = std::ptrdiff_t;
-            using pointer = const int*;
-            using reference = const int&;
-
-            const_iterator() = default;
-            const_iterator(const ListArena* arena, int index): arena_(arena), index_(index) {}
-
-            int operator*() const { return arena_->entries[index_].value; }
-
-            const_iterator& operator++() {
-                index_ = (index_ == -1) ? -1 : arena_->entries[index_].next;
-                return *this;
-            }
-
-            const_iterator operator++(int) {
-                const_iterator tmp(*this);
-                ++(*this);
-                return tmp;
-            }
-
-            friend bool operator==(const const_iterator& lhs, const const_iterator& rhs) {
-                return lhs.index_ == rhs.index_;
-            }
-
-            friend bool operator!=(const const_iterator& lhs, const const_iterator& rhs) {
-                return !(lhs == rhs);
-            }
-
-        private:
-            const ListArena* arena_ = nullptr;
-            int index_ = -1;
-        };
-
-        /**
-         * @brief Lightweight range wrapper for one arena-managed list.
-         */
-        class Range {
-        public:
-            Range(const ListArena* arena, int head) : arena_(arena), head_(head) {}
-
-            const_iterator begin() const { return const_iterator(arena_, head_); }
-            const_iterator end() const { return const_iterator(arena_, -1); }
-            bool empty() const { return head_ == -1; }
-
-        private:
-            const ListArena* arena_;
-            int head_;
-        }; 
-
-        /// Builds an empty arena without reserving storage.
-        ListArena() = default;
-
-        std::vector<Entry> entries;
-        std::vector<int> head;
-        std::vector<int> size;
-        int freeHead = -1;
-
-        /// Builds an arena for `numNodes` lists with an optional capacity hint.
-        explicit ListArena(int numNodes, int capacityHint = 0): head(numNodes, -1), size(numNodes, 0){
-            if (capacityHint > 0) {
-                entries.reserve(capacityHint);
-            }
-        }
-
-        /// Removes every element associated with `node` and returns the slots to the free list.
-        void clearNode(int node) {
-            int idx = head[node];
-            while (idx != -1) {
-                const int next = entries[idx].next;
-                recycle(idx);
-                idx = next;
-            }
-            head[node] = -1;
-            size[node] = 0;
-        }
-
-        /// Inserts `value` into the list owned by `node`.
-        void add(int node, int value) {
-            const int slot = allocate();
-            entries[slot] = Entry{value, head[node]};
-            head[node] = slot;
-            ++size[node];
-        }
-
-        Range range(int node) const { return Range(this, head[node]); }
-
-        /**
-         * @brief Moves every element of `node` into `out` while recycling the used slots.
-         *
-         * @tparam OutputContainer container que expõe `push_back(int)`.
-         * @param node índice da lista a ser drenada.
-         * @param out  recipiente para onde os valores serão copiados.
-         */
-        template <typename OutputContainer>
-        void consumeInto(int node, OutputContainer& out) {
-            int idx = head[node];
-            while (idx != -1) {
-                const int next = entries[idx].next;
-                out.push_back(entries[idx].value);
-                recycle(idx);
-                idx = next;
-            }
-            head[node] = -1;
-            size[node] = 0;
-        }
-
-        /// @return Number of elements currently associated with `node`.
-        int sizeOf(int node) const { return size[node]; }
-
-        const_iterator begin(int node) const { return const_iterator(this, head[node]); }
-        const_iterator end() const { return const_iterator(this, -1); }
-
-    private:
-        /// Returns a free slot, either from the free list or via `push_back`.
-        int allocate() {
-            if (freeHead == -1) {
-                entries.push_back(Entry{0, -1});
-                return static_cast<int>(entries.size() - 1);
-            }
-            const int idx = freeHead;
-            freeHead = entries[idx].next;
-            return idx;
-        }
-
-        /// Returns an index to the free list.
-        void recycle(int idx) {
-            entries[idx].next = freeHead;
-            freeHead = idx;
-        }
-    };
-
-    /**
-     * @brief Incremental contour result stored in arenas.
+     * @brief Incremental contour result stored as compact local deltas.
      *
-     * It keeps raw contour lists, deferred removals, and the lazily aggregated
+     * It keeps local contour additions/removals as compact spans and the materialized
      * representation exposed to callers through range-based iteration helpers.
      */
     struct IncrementalContours {
+    private:
+        friend class ContoursComputedIncrementally;
+
+        /// Tree used to interpret node ids and child/parent relations. Not owned.
         const MorphologicalTree& tree;
-        ListArena contours;
-        ListArena removals;
-        mutable ListArena aggregated;
-        mutable bool aggregatedReady_ = false;
+        /// Immutable compact local additions/removals produced by extraction.
+        ContourDeltaStore localDeltas_;
+        /// Concatenated storage for all materialized contour slices.
+        mutable std::vector<int> cachedContourValues_;
+        /// Per-node offset into `cachedContourValues_`; valid only when ready.
+        mutable std::vector<uint32_t> cachedContourOffset_;
+        /// Per-node slice length in `cachedContourValues_`; valid only when ready.
+        mutable std::vector<uint32_t> cachedContourSize_;
+        /// Per-node materialization flag. A ready node has valid offset/size.
+        mutable std::vector<uint8_t> cachedContourReady_;
+        /// Scratch generation marks used while building one materialized contour.
+        mutable std::vector<uint16_t> pixelMark_;
+        /// Current non-zero generation in `pixelMark_`.
+        mutable uint16_t markGeneration_ = 1;
 
         /**
          * @param tree ponteiro para a árvore utilizada na computação.
-         * @param numNodes número de nós (define o tamanho das arenas).
-         * @param capacityHint sugestão para reserva inicial de entradas.
+         * @param localDeltas deltas locais compactados por nó.
+         * @param capacityHint sugestão para reserva inicial dos contornos agregados.
          */
-        IncrementalContours(const MorphologicalTree& tree, int numNodes, int capacityHint)
-            : tree(tree), contours(numNodes, capacityHint), removals(numNodes, capacityHint) {}
+        IncrementalContours(const MorphologicalTree& tree, ContourDeltaStore localDeltas, int capacityHint)
+            : tree(tree),
+              localDeltas_(std::move(localDeltas)),
+              cachedContourOffset_(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0),
+              cachedContourSize_(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0),
+              cachedContourReady_(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0),
+              pixelMark_(tree.getNumRowsOfImage() * tree.getNumColsOfImage(), 0) {
+            if (capacityHint > 0) {
+                cachedContourValues_.reserve(static_cast<size_t>(capacityHint));
+            }
+        }
+
+    public:
+        struct StorageStats {
+            /// Number of compacted local contour-addition pixels.
+            std::size_t addDeltaValues = 0;
+            /// Number of compacted local contour-removal pixels.
+            std::size_t removeDeltaValues = 0;
+            /// Number of pixels already committed to materialized contour cache.
+            std::size_t cachedContourValues = 0;
+            /// Reserved capacity of the materialized contour cache.
+            std::size_t cachedContourCapacity = 0;
+            /// Number of live-node slots with ready materialized contours.
+            std::size_t cachedContourReadyNodes = 0;
+            /// Approximate bytes reserved by the owned vectors in this result.
+            std::size_t approxAllocatedBytes = 0;
+        };
 
         /**
-         * @brief Proxy para iterar o contorno agregado de um nó específico
-         *        usando a arena consolidada.
+         * @brief Range cache-aware para iterar o contorno de um nó específico.
+         *
+         * The range is cheap to copy. Its first `begin()` or `end()` call may
+         * materialize the requested subtree; later reads over ready nodes only
+         * iterate cached contiguous storage.
          */
-        class ContourProxy {
+        class ContourRange {
         public:
-            /**
-             * @brief Iterador forward sobre os pixels do contorno agregado.
-             */
-            class iterator {
-            public:
-                using iterator_category = std::forward_iterator_tag;
-                using value_type = int;
-                using difference_type = std::ptrdiff_t;
-                using pointer = const int*;
-                using reference = const int&;
+            using iterator = std::vector<int>::const_iterator;
 
-                iterator() = default;
-                iterator(const ContourProxy*, ListArena::const_iterator current): current_(current) {}
-
-                int operator*() const { return *current_; }
-
-                iterator& operator++() {
-                    ++current_;
-                    return *this;
-                }
-
-                iterator operator++(int) {
-                    iterator tmp(*this);
-                    ++(*this);
-                    return tmp;
-                }
-
-                friend bool operator==(const iterator& lhs, const iterator& rhs) {
-                    return lhs.current_ == rhs.current_;
-                }
-
-                friend bool operator!=(const iterator& lhs, const iterator& rhs) {
-                    return !(lhs == rhs);
-                }
-
-            private:
-                ListArena::const_iterator current_;
-            };
-
-            ContourProxy(const IncrementalContours* owner, NodeId node): owner_(owner), node_(node) {}
+            ContourRange(const IncrementalContours* owner, NodeId node): owner_(owner), node_(node) {}
 
             iterator begin() const {
-                owner_->ensureAggregated();
-                return iterator(this, owner_->aggregated.begin(node_));
+                ensureReadable_();
+                return owner_->cachedContourBegin(node_);
             }
             iterator end() const {
-                owner_->ensureAggregated();
-                return iterator(this, owner_->aggregated.end());
+                ensureReadable_();
+                return owner_->cachedContourEnd(node_);
             }
 
             bool empty() const { return begin() == end(); }
 
         private:
+            void ensureReadable_() const {
+                owner_->ensureSubtreeMaterialized(node_);
+            }
+
             const IncrementalContours* owner_ = nullptr;
             NodeId node_ = InvalidNode;
         };
 
         /**
-         * @brief Range lazy que percorre todos os nós, devolvendo pares `(nodeId, proxy)`.
+         * @brief Range lazy que percorre todos os nós, devolvendo pares `(nodeId, contourRange)`.
+         *
+         * This is only an all-node traversal adapter. It does not use a second
+         * contour representation; each returned `ContourRange` still materializes
+         * through `getContour`'s cache-aware path.
          */
-        class ContoursLazyRange {
+        class ContoursByNodeRange {
         public:
             /**
-             * @brief Iterador forward que devolve pares `(nodeId, ContourProxy)`.
+             * @brief Iterador forward que devolve pares `(nodeId, ContourRange)`.
              */
             class iterator {
             public:
                 using iterator_category = std::forward_iterator_tag;
-                using value_type = std::pair<NodeId, ContourProxy>;
+                using value_type = std::pair<NodeId, ContourRange>;
                 using difference_type = std::ptrdiff_t;
                 using pointer = void;
                 using reference = value_type;
@@ -306,7 +191,7 @@ public:
                     settle_();
                 }
 
-                value_type operator*() const { return {node_, ContourProxy(owner_, node_)}; }
+                value_type operator*() const { return {node_, ContourRange(owner_, node_)}; }
 
                 iterator& operator++() {
                     ++node_;
@@ -336,7 +221,7 @@ public:
                     }
                     const NodeId numNodeSlots = owner_->tree.getNumInternalNodeSlots();
                     while (node_ >= 0 && node_ < numNodeSlots &&
-                           !owner_->tree.isAlive(nodeIdOf(owner_->tree, node_))) {
+                           !owner_->tree.isAlive(node_)) {
                         ++node_;
                     }
                     if (node_ >= numNodeSlots) {
@@ -348,7 +233,7 @@ public:
                 NodeId node_ = 0;
             };
 
-            explicit ContoursLazyRange(const IncrementalContours* owner)
+            explicit ContoursByNodeRange(const IncrementalContours* owner)
                 : owner_(owner) {}
 
             iterator begin() const { return iterator(owner_, 0); }
@@ -358,143 +243,250 @@ public:
             const IncrementalContours* owner_ = nullptr;
         };
 
-        /// @return Proxy that iterates the aggregated contour of `nodeId`.
-        ContourProxy contour(NodeId node) const { return ContourProxy(this, node); }
-
-        /// @return Lazy range over all live nodes as `(nodeId, contourProxy)` pairs.
-        ContoursLazyRange contoursLazy() const { return ContoursLazyRange(this); }
-
         /**
-         * @brief Executa `visitor(value)` para cada pixel do contorno agregado de `node`.
+         * @brief Returns allocation-oriented diagnostics for benchmarks.
+         *
+         * The byte count is approximate: it reports vector capacities owned by
+         * this object and does not include allocator metadata or referenced tree
+         * storage.
          */
-        template <typename Visitor>
-        void forEachContourPixel(NodeId node, Visitor&& visitor) const {
-            for (int value : contour(node)) {
-                visitor(value);
-            }
+        StorageStats storageStats() const noexcept {
+            StorageStats stats;
+            stats.addDeltaValues = localDeltas_.addValues.size();
+            stats.removeDeltaValues = localDeltas_.removeValues.size();
+            stats.cachedContourValues = cachedContourValues_.size();
+            stats.cachedContourCapacity = cachedContourValues_.capacity();
+            stats.cachedContourReadyNodes = static_cast<std::size_t>(
+                std::count(cachedContourReady_.begin(), cachedContourReady_.end(), uint8_t{1}));
+            stats.approxAllocatedBytes =
+                localDeltas_.addValues.capacity() * sizeof(int) +
+                localDeltas_.removeValues.capacity() * sizeof(int) +
+                localDeltas_.addSpans.capacity() * sizeof(ContourDeltaStore::Span) +
+                localDeltas_.removeSpans.capacity() * sizeof(ContourDeltaStore::Span) +
+                cachedContourValues_.capacity() * sizeof(int) +
+                cachedContourOffset_.capacity() * sizeof(uint32_t) +
+                cachedContourSize_.capacity() * sizeof(uint32_t) +
+                cachedContourReady_.capacity() * sizeof(uint8_t) +
+                pixelMark_.capacity() * sizeof(uint16_t);
+            return stats;
+        }
+
+        /// @return Cache-aware range that iterates the contour of `nodeId`.
+        ContourRange getContour(NodeId node) const {
+            requireLiveContourNode(node, "IncrementalContours::getContour");
+            return ContourRange(this, node);
+        }
+
+        /// @return Lazy range over all live nodes as `(nodeId, contourRange)` pairs.
+        ContoursByNodeRange contoursByNode() const {
+            return ContoursByNodeRange(this);
         }
 
         /**
-         * @brief Constrói um vetor com o contorno agregado do nó.
+         * @brief Materializes and caches every live-node contour.
+         *
+         * This is a prefetch operation for broad workloads. It uses the same
+         * materialization path as `getContour(root)`.
          */
-        std::vector<int> buildContourVector(NodeId node) const {
-            std::vector<int> values;
-            values.reserve(static_cast<std::size_t>(contours.sizeOf(node)));
-            forEachContourPixel(node, [&](int px) { values.push_back(px); });
-            return values;
+        void materializeAll() const {
+            ensureSubtreeMaterialized(tree.getRoot());
         }
 
         /**
-         * @brief Copia o contorno agregado para um iterador de saída (ex.: `back_inserter`).
+         * @brief Tests whether every live-node contour has already been materialized.
          */
-        template <typename OutputIterator>
-        void copyContour(NodeId node, OutputIterator out) const {
-            for (int value : contour(node)) {
-                *out++ = value;
+        bool isMaterialized() const noexcept {
+            for (NodeId node : tree.getAliveNodeIds()) {
+                if (!cachedContourReady_[node]) {
+                    return false;
+                }
             }
+            return true;
+        }
+
+        /**
+         * @brief Tests whether one live node contour is already materialized.
+         */
+        bool isContourMaterialized(NodeId node) const {
+            requireLiveContourNode(node, "IncrementalContours::isContourMaterialized");
+            return static_cast<bool>(cachedContourReady_[node]);
         }
 
     private:
         /**
-         * @brief Constrói, quando necessário, a arena agregada com contornos definitivos.
-         *
-         * A rotina percorre a árvore em pós-ordem, acumula os pixels herdados dos filhos,
-         * adiciona os pixels do próprio nó e remove aqueles marcados em `removals`. Um
-         * bitmap temporário evita duplicidades e permite descartar remoções em O(1).
-         * O resultado final é gravado em `aggregated`, deixando a iteração subsequente
-         * livre de novas alocações.
+         * @brief Rejects invalid or dead nodes before exposing contour ranges.
          */
-        void ensureAggregated() const {
-            if (aggregatedReady_) {
+        void requireLiveContourNode(NodeId node, const char* context) const {
+            if (!tree.isAlive(node)) {
+                throw std::invalid_argument(std::string(context) + " requires a live internal NodeId.");
+            }
+        }
+
+        std::vector<int>::const_iterator cachedContourBegin(NodeId node) const {
+            return cachedContourValues_.begin() + static_cast<std::ptrdiff_t>(cachedContourOffset_[node]);
+        }
+
+        std::vector<int>::const_iterator cachedContourEnd(NodeId node) const {
+            return cachedContourBegin(node) + static_cast<std::ptrdiff_t>(cachedContourSize_[node]);
+        }
+
+        void nextMarkGeneration() const {
+            ++markGeneration_;
+            if (markGeneration_ == 0) {
+                std::fill(pixelMark_.begin(), pixelMark_.end(), 0);
+                markGeneration_ = 1;
+            }
+        }
+
+        void addIfUnmarked(std::vector<int>& values, int pixel) const {
+            if (pixel < 0 || pixel >= static_cast<int>(pixelMark_.size())) {
+                return;
+            }
+            if (pixelMark_[pixel] != markGeneration_) {
+                pixelMark_[pixel] = markGeneration_;
+                values.push_back(pixel);
+            }
+        }
+
+        void removeIfMarked(int pixel) const {
+            if (pixel >= 0 && pixel < static_cast<int>(pixelMark_.size())) {
+                pixelMark_[pixel] = 0;
+            }
+        }
+
+        void commitMaterializedContour(NodeId node, const std::vector<int>& values) const {
+            cachedContourOffset_[node] = checkedU32(cachedContourValues_.size(), "cached contour offset");
+            cachedContourSize_[node] = checkedU32(values.size(), "cached contour size");
+            cachedContourValues_.insert(cachedContourValues_.end(), values.begin(), values.end());
+            cachedContourReady_[node] = 1;
+        }
+
+        static uint32_t checkedU32(std::size_t value, const char* context) {
+            if (value > static_cast<std::size_t>(std::numeric_limits<uint32_t>::max())) {
+                throw std::overflow_error(std::string(context) + " exceeds uint32_t.");
+            }
+            return static_cast<uint32_t>(value);
+        }
+
+        /**
+         * @brief Materializes missing contour caches in the subtree rooted at `root`.
+         *
+         * The traversal is post-order. Each newly materialized node reuses
+         * already materialized child contours, adds its local contour pixels, applies
+         * deferred removals, and commits a contiguous cached slice.
+         *
+         * Already-ready children are not expanded again. This is the mechanism
+         * that makes repeated and broad iteration incremental.
+         */
+        void ensureSubtreeMaterialized(NodeId root) const {
+            requireLiveContourNode(root, "IncrementalContours::ensureSubtreeMaterialized");
+            if (cachedContourReady_[root]) {
                 return;
             }
 
-            aggregated = ListArena(tree.getNumInternalNodeSlots(), static_cast<int>(contours.entries.size()));
-            std::vector<std::vector<int>> accumulator(tree.getNumInternalNodeSlots());
-            // bitmap linear (1 byte por pixel) utilizado para deduplicar/remover em O(1)
-            std::vector<uint8_t> bitmap(tree.getNumRowsOfImage() * tree.getNumColsOfImage(), 0);
+            std::vector<std::pair<NodeId, bool>> stack;
+            stack.emplace_back(root, false);
+            std::vector<int> values;
 
-            // percorre em pós-ordem para propagar primeiro os filhos
-            auto traversal = tree.getPostOrderNodes();
-            for (NodeId nodeId : traversal) {
-                const NodeId node = nodeId;
-                auto& values = accumulator[node];
-
-                //acumula contornos dos filhos
-                for (NodeId childNodeId : tree.getChildren(nodeId)) {
-                    const NodeId child = childNodeId;
-                    auto& childValues = accumulator[child];
-                    values.insert(values.end(), childValues.begin(), childValues.end());
-                    childValues.clear();
+            while (!stack.empty()) {
+                const auto [node, expanded] = stack.back();
+                stack.pop_back();
+                if (cachedContourReady_[node]) {
+                    continue;
                 }
-                //adiciona contornos do próprio nó
-                for (int value : contours.range(node)) {
-                    values.push_back(value);
+                if (!expanded) {
+                    stack.emplace_back(node, true);
+                    for (NodeId child : tree.getChildren(node)) {
+                        if (!cachedContourReady_[child]) {
+                            stack.emplace_back(child, false);
+                        }
+                    }
+                    continue;
                 }
 
-                //remove duplicatas locais de values: “compactar” o vetor no próprio lugar
+                values.clear();
+                const auto additions = localDeltas_.additions(node);
+                std::size_t reserveSize = additions.size();
+                for (NodeId child : tree.getChildren(node)) {
+                    reserveSize += static_cast<std::size_t>(cachedContourSize_[child]);
+                }
+                values.reserve(reserveSize);
+                nextMarkGeneration();
+
+                for (NodeId child : tree.getChildren(node)) {
+                    for (auto it = cachedContourBegin(child); it != cachedContourEnd(child); ++it) {
+                        addIfUnmarked(values, *it);
+                    }
+                }
+
+                for (int value : additions) {
+                    addIfUnmarked(values, value);
+                }
+
+                for (int rem : localDeltas_.removals(node)) {
+                    removeIfMarked(rem);
+                }
+
                 std::size_t writeIndex = 0;
                 for (int value : values) {
-                    if (!bitmap[value]) {
-                        bitmap[value] = 1;
-                        values[writeIndex++] = value; 
-                    }
-                }
-                values.resize(writeIndex);
-
-                for (int rem : removals.range(node)) {
-                    if (rem >= 0 && rem < static_cast<int>(bitmap.size())) {
-                        bitmap[rem] = 0;
-                    }
-                }
-
-                writeIndex = 0;
-                for (int value : values) {
-                    if (bitmap[value]) {
-                        aggregated.add(node, value);
+                    if (pixelMark_[static_cast<std::size_t>(value)] == markGeneration_) {
                         values[writeIndex++] = value;
-                        bitmap[value] = 0;
                     }
                 }
                 values.resize(writeIndex);
+                commitMaterializedContour(node, values);
             }
-
-            aggregatedReady_ = true;
         }
     };
 
     /**
      * @brief Executa a computação incremental e devolve contornos compactados.
      *
+     * @details
+     * This is the component-tree contour algorithm from Da Silva et al. (PRL
+     * 2025). For max-trees and min-trees it follows the paper directly. For
+     * tree-of-shapes inputs, it computes 4-connected side contours of each
+     * projected node support in the original image domain; this ToS use is an
+     * implementation extension rather than a claim from the paper.
+     *
+     * The contour neighbourhood is intentionally fixed to 4-connectivity
+     * because the contour is defined through exposed pixel sides, not through
+     * the adjacency relation used to construct the input tree.
+     *
      * @param tree árvore morfológica (máx-tree, mín-tree ou ToS) sobre a qual o cálculo será realizado.
-     * @return Estrutura `IncrementalContours` contendo arenas para acesso aos contornos.
+     * @return Estrutura `IncrementalContours` contendo deltas compactos para acesso aos contornos.
      *
      * Exemplo:
      * @code
      * auto contours = ContoursComputedIncrementally::extractCompactContours(tree);
-     * auto proxy = contours.contour(nodeId);
-     * std::vector<int> pixels(proxy.begin(), proxy.end());
+     * auto contour = contours.getContour(nodeId);
+     * std::vector<int> pixels(contour.begin(), contour.end());
      * @endcode
      */
     static IncrementalContours extractCompactContours(const MorphologicalTree& tree) {
-        const int numNodes = tree.getNumInternalNodeSlots();
-        const int totalPixels = tree.getNumRowsOfImage() * tree.getNumColsOfImage();
-        const AdjacencyRelation* adjacencyContext = tree.getAdjacencyRelation();
-        if (adjacencyContext == nullptr) {
-            throw std::invalid_argument("Contour extraction requires an adjacency relation.");
+        if (tree.getNumRowsOfImage() <= 0 || tree.getNumColsOfImage() <= 0) {
+            throw std::invalid_argument("Contour extraction requires a non-empty image domain.");
+        }
+        if (!tree.isAlive(tree.getRoot())) {
+            throw std::invalid_argument("Contour extraction requires a live tree root.");
         }
 
-        // estrutura final que será exposta ao chamador (contornos + remoções)
-        IncrementalContours result(tree, numNodes, std::max(totalPixels / 4, 1));
-        // arena temporária que carrega pixels até o LCA correto antes da remoção
-        ListArena contoursToRemoveLCA(numNodes, std::max(totalPixels / 4, 1));
+        const int numNodes = tree.getNumInternalNodeSlots();
+        const int totalPixels = tree.getNumRowsOfImage() * tree.getNumColsOfImage();
+
+        const int capacityHint = std::max(totalPixels / 4, 1);
+        // listas temporárias para deltas locais antes da compactação final
+        PendingPixelLists localContourPixels(numNodes, capacityHint);
+        PendingPixelLists localRemovalPixels(numNodes, capacityHint);
+        // lista temporária que carrega pixels até o ancestral correto antes da remoção
+        PendingPixelLists pendingContourRemovals(numNodes, capacityHint);
 
         // contador auxiliar para saber quando um pixel deixa de ser contorno (cf. artigo original)
         std::vector<int> ncount(totalPixels, 0);
         // reuso de armazenamento para pixels que devem ser removidos neste nó
         std::vector<int> removalBuffer;
         removalBuffer.reserve(64);
-        AdjacencyRelation adj4(tree.getNumRowsOfImage(), tree.getNumColsOfImage(), 1);
+        AdjacencyRelation adj4(tree.getNumRowsOfImage(), tree.getNumColsOfImage(), ContourSideAdjacencyRadius);
         AttributeComputedIncrementally::traversePostOrder(
             tree,
             tree.getRoot(),
@@ -504,22 +496,22 @@ public:
                 const NodeId nodeP = nodePId;
                 // remove e processa todas as remoções pendentes deste nó
                 removalBuffer.clear();
-                contoursToRemoveLCA.consumeInto(nodeP, removalBuffer);
+                pendingContourRemovals.consumeInto(nodeP, removalBuffer);
                 for (int p : removalBuffer) {
                     bool isPixelToBeRemoved = true;
                     for (int r : adj4.getNeighborPixels(p)) {
                         NodeId nodeRId = tree.getSmallestComponent(r);
                         if (tree.isStrictAncestor(nodeRId, nodePId)) {
-                            contoursToRemoveLCA.add(nodeRId, p);
+                            pendingContourRemovals.add(nodeRId, p);
                             isPixelToBeRemoved = false;
                         } else if (!tree.isComparable(nodePId, nodeRId)) {
                             NodeId otherNodeLCA = tree.getLowestCommonAncestor(nodePId, nodeRId);
-                            contoursToRemoveLCA.add(otherNodeLCA, p);
+                            pendingContourRemovals.add(otherNodeLCA, p);
                             isPixelToBeRemoved = false;
                         }
                     }
                     if (!adj4.isBorderDomainImage(p) && isPixelToBeRemoved) {
-                        result.removals.add(nodeP, p);
+                        localRemovalPixels.add(nodeP, p);
                     }
                 }
 
@@ -533,25 +525,28 @@ public:
                         NodeId nodeQId = tree.getSmallestComponent(q);
                         if (!tree.isComparable(nodePId, nodeQId)) { // contorno será tratado pelo LCA
                             NodeId nodeLCA = tree.getLowestCommonAncestor(nodePId, nodeQId);
-                            contoursToRemoveLCA.add(nodeLCA, p);
+                            pendingContourRemovals.add(nodeLCA, p);
                             ncount[p]++;
                         } else if (tree.isStrictDescendant(nodePId, nodeQId)) { // pixel ainda é fronteira
                             ncount[p]++;
                         } else if (tree.isStrictAncestor(nodePId, nodeQId)) {
                             ncount[q]--;
                             if (ncount[q] == 0) {
-                                result.removals.add(nodeP, q);
+                                localRemovalPixels.add(nodeP, q);
                             }
                         }
                     }
 
                     if (ncount[p] > 0) {
-                        result.contours.add(nodeP, p);
+                        localContourPixels.add(nodeP, p);
                     }
                 }
             });
 
-        return result;
+        return IncrementalContours(
+            tree,
+            ContourDeltaStore::fromPendingPixelLists(localContourPixels, localRemovalPixels, totalPixels),
+            capacityHint);
     }
 };
 

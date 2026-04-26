@@ -17,6 +17,14 @@ def load_native_module(build_dir: pathlib.Path):
         if name == "mmcfilters" or name.startswith("mmcfilters."):
             sys.modules.pop(name, None)
 
+    def handles_mmcfilters(finder):
+        known_modules = {}
+        known_modules.update(getattr(finder, "known_source_files", {}))
+        known_modules.update(getattr(finder, "known_wheel_files", {}))
+        return any(name == "mmcfilters" or name.startswith("mmcfilters.") for name in known_modules)
+
+    sys.meta_path = [finder for finder in sys.meta_path if not handles_mmcfilters(finder)]
+
     spec = importlib.util.spec_from_file_location(
         "mmcfilters",
         package_init,

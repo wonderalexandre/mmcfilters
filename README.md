@@ -139,3 +139,8 @@ auto combined = AttributeComputedIncrementally::computeAttributes(
   Standalone examples, including the `EdtDIFT` PNG export example.
 - [docs/editing-api.md](docs/editing-api.md)
   Contract for safe mutators, staged editors, and weighted topology ownership.
+- [docs/contours-api.md](docs/contours-api.md)
+  Incremental contour access API and benchmark commands.
+- [docs/contours-internals.md](docs/contours-internals.md)
+  Internal design notes for incremental contour extraction, materialization,
+  complexity, and memory behavior.

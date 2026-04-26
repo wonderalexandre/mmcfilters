@@ -25,8 +25,27 @@ int main() {
     require(tree->getRoot() != InvalidNode, "tree of shapes root must be valid");
     require(!tree->hasAdjacencyRelation(), "tree of shapes must not expose adjacency relation by default");
     require(tree->getAdjacencyRelation() == nullptr, "tree of shapes adjacency pointer must be null");
+    require(tree->hasTreeOfShapesAdjacencyPolicy(), "tree of shapes must expose auxiliary min/max adjacency policy");
+    requireNear(tree->getTreeOfShapesMinTreeAdjacencyRadius(), 1.0, 0.0, "Min4cMax8c min-tree radius");
+    requireNear(tree->getTreeOfShapesMaxTreeAdjacencyRadius(), 1.5, 0.0, "Min4cMax8c max-tree radius");
+    require(tree->getTreeOfShapesMinTreeAdjacencyRelation() != nullptr, "Min4cMax8c min-tree adjacency relation");
+    require(tree->getTreeOfShapesMaxTreeAdjacencyRelation() != nullptr, "Min4cMax8c max-tree adjacency relation");
+    requireEqual(tree->getTreeOfShapesMinTreeAdjacencyRelation()->getSize(), 5, "Min4cMax8c min-tree adjacency relation size");
+    requireEqual(tree->getTreeOfShapesMaxTreeAdjacencyRelation()->getSize(), 9, "Min4cMax8c max-tree adjacency relation size");
     requireEqual(tree->getNumRowsOfImage(), 3, "tree of shapes image rows");
     requireEqual(tree->getNumColsOfImage(), 3, "tree of shapes image cols");
+
+    auto dualTree = makeTreeOfShapes(image, ToSInterpolation::SelfDual);
+    require(dualTree->hasTreeOfShapesAdjacencyPolicy(), "self-dual tree of shapes must expose auxiliary adjacency policy");
+    requireNear(dualTree->getTreeOfShapesMinTreeAdjacencyRadius(), 1.0, 0.0, "SelfDual min-tree radius");
+    requireNear(dualTree->getTreeOfShapesMaxTreeAdjacencyRadius(), 1.0, 0.0, "SelfDual max-tree radius");
+
+    auto min8Max4Tree = makeTreeOfShapes(image, ToSInterpolation::Min8cMax4c);
+    require(min8Max4Tree->hasTreeOfShapesAdjacencyPolicy(), "Min8cMax4c tree of shapes must expose auxiliary adjacency policy");
+    requireNear(min8Max4Tree->getTreeOfShapesMinTreeAdjacencyRadius(), 1.5, 0.0, "Min8cMax4c min-tree radius");
+    requireNear(min8Max4Tree->getTreeOfShapesMaxTreeAdjacencyRadius(), 1.0, 0.0, "Min8cMax4c max-tree radius");
+    requireEqual(min8Max4Tree->getTreeOfShapesMinTreeAdjacencyRelation()->getSize(), 9, "Min8cMax4c min-tree adjacency relation size");
+    requireEqual(min8Max4Tree->getTreeOfShapesMaxTreeAdjacencyRelation()->getSize(), 5, "Min8cMax4c max-tree adjacency relation size");
 
     auto reconstruction = weighted->reconstructionImage();
     requireImageShape(reconstruction, 3, 3);

@@ -14,6 +14,9 @@ This directory contains small standalone programs that exercise optional workflo
   - staged topology edits through `TreeEditor`;
   - staged weighted edits through `WeightedTreeEditor`;
   - `commit()` rejecting invalid weighted altitude order.
+- `contour_benchmark.cpp`
+  Benchmarks incremental contour extraction/materialization for Component Tree
+  and Tree of Shapes. It accepts either synthetic dimensions or an image path.
 
 ## Why this directory exists
 
@@ -38,4 +41,6 @@ The current executables are:
 ```bash
 ./build/examples/mmcfilters_example_edt_dift
 ./build/examples/mmcfilters_example_editing_api
+./build/examples/mmcfilters_contour_benchmark 1024 1024 3
+./build/examples/mmcfilters_contour_benchmark path/to/image.png 3
 ```

@@ -17,6 +17,14 @@ def load_native_module(build_dir: pathlib.Path):
         if name == "mmcfilters" or name.startswith("mmcfilters."):
             sys.modules.pop(name, None)
 
+    def handles_mmcfilters(finder):
+        known_modules = {}
+        known_modules.update(getattr(finder, "known_source_files", {}))
+        known_modules.update(getattr(finder, "known_wheel_files", {}))
+        return any(name == "mmcfilters" or name.startswith("mmcfilters.") for name in known_modules)
+
+    sys.meta_path = [finder for finder in sys.meta_path if not handles_mmcfilters(finder)]
+
     spec = importlib.util.spec_from_file_location(
         "mmcfilters",
         package_init,
@@ -81,19 +89,57 @@ def main() -> int:
 
     tree = mmcfilters.MorphologicalTree.createComponentTree(image, True)
     weighted = mmcfilters.WeightedMorphologicalTree.createComponentTree(image, True)
+    max_tree = mmcfilters.MorphologicalTree.createMaxTree(image)
+    min_tree = mmcfilters.MorphologicalTree.createMinTree(image)
+    weighted_max_tree = mmcfilters.WeightedMorphologicalTree.createMaxTree(image)
+    weighted_min_tree = mmcfilters.WeightedMorphologicalTree.createMinTree(image)
+
+    require(max_tree.getAliveNodeIds() == tree.getAliveNodeIds(), "createMaxTree must match createComponentTree(..., True)")
+    require(max_tree.treeType == tree.treeType, "createMaxTree tree type")
+    require(min_tree.treeType != max_tree.treeType, "createMinTree tree type")
+    require(weighted_max_tree.reconstructionImage().tolist() == weighted.reconstructionImage().tolist(), "weighted createMaxTree reconstruction")
+    require(weighted_min_tree.treeType == min_tree.treeType, "weighted createMinTree tree type")
 
     require(tree.getRoot() == 0, "getRoot")
+    require(tree.root == tree.getRoot(), "root property")
     require(tree.hasAdjacencyRelation is True, "max-tree should expose adjacency relation context")
     require(tree.getNodeParent(0) == 0, "root parent must point to itself")
     require(tree.getAliveNodeIds() == [0, 1, 2, 3, 4, 5], "alive NodeIds")
+    require(tree.aliveNodeIds == tree.getAliveNodeIds(), "aliveNodeIds property")
+    require(tree.alive_node_ids == tree.getAliveNodeIds(), "alive_node_ids property")
+    contours = mmcfilters.ContourComputation.extraction(tree)
+    require(contours.isMaterialized is False, "contours must start without global materialization in Python")
+    leaf_id = tree.getLeafNodeIds()[0]
+    leaf_contour_before_root_materialization = list(contours.getContour(leaf_id))
+    require(contours.isContourMaterialized(leaf_id) is True, "getContour iteration must cache the requested leaf in Python")
+    require(contours.isMaterialized is False, "getContour iteration must not materialize all contours in Python")
+    list(contours.getContour(tree.getRoot()))
+    require(contours.isMaterialized is True, "root getContour iteration must materialize all contours in Python")
+    contours.materializeAll()
+    require(contours.isMaterialized is True, "materializeAll must materialize all contours in Python")
+    require(sorted(leaf_contour_before_root_materialization) == sorted(list(contours.getContour(leaf_id))), "Python incremental contour read must match materialized contour")
     require(tree.getLeafNodeIds() == [5], "leaf NodeIds")
+    require(tree.leafNodeIds == tree.getLeafNodeIds(), "leafNodeIds property")
+    require(tree.leaf_node_ids == tree.getLeafNodeIds(), "leaf_node_ids property")
     require(tree.getChildren(3) == [4], "children by NodeId")
+    require(tree.childrenOf(3) == tree.getChildren(3), "childrenOf alias")
+    require(tree.children_of(3) == tree.getChildren(3), "children_of alias")
     require(int(mmcfilters.Attribute.computeSingleAttribute(tree, mmcfilters.Attribute.AREA)[3]) == 8, "node area by attribute computer")
     require(mmcfilters.Attribute.describe(mmcfilters.Attribute.AREA).startswith("Area:"), "attribute description by pybind")
     require(tree.getNodeNumDescendants(2) == 3, "descendants count by NodeId")
     require(tree.getNodeNumSiblings(4) == 0, "siblings count by NodeId")
     require(tree.getNumProperParts(3) == 3, "direct proper-part count by NodeId")
     require(tree.getProperParts(3) == [0, 1, 4], "direct proper parts by NodeId")
+    require(tree.properPartsOf(3) == tree.getProperParts(3), "properPartsOf alias")
+    require(tree.proper_parts_of(3) == tree.getProperParts(3), "proper_parts_of alias")
+    require(tree.parentOf(3) == tree.getNodeParent(3), "parentOf alias")
+    require(tree.parent_of(3) == tree.getNodeParent(3), "parent_of alias")
+    require(tree.smallestComponentOf(0) == tree.getSmallestComponent(0), "smallestComponentOf alias")
+    require(tree.smallest_component_of(0) == tree.getSmallestComponent(0), "smallest_component_of alias")
+    require(tree.nodeSubtreeOf(3) == tree.getNodeSubtree(3), "nodeSubtreeOf alias")
+    require(tree.node_subtree_of(3) == tree.getNodeSubtree(3), "node_subtree_of alias")
+    require(tree.descendantsOf(2) == tree.getDescendants(2), "descendantsOf alias")
+    require(tree.descendants_of(2) == tree.getDescendants(2), "descendants_of alias")
     require(tree.reconstructNode(3).shape == (4, 4), "node reconstruction shape by NodeId")
     require(
         tree.reconstructNode(3).tolist()
@@ -107,16 +153,24 @@ def main() -> int:
     )
     require(int(tree.reconstructNode(3).sum()) == 255 * 8, "node reconstruction by NodeId")
     require(weighted.getRoot() == tree.getRoot(), "weighted getRoot")
+    require(weighted.root == weighted.getRoot(), "weighted root property")
     require(weighted.getAliveNodeIds() == tree.getAliveNodeIds(), "weighted alive NodeIds")
+    require(weighted.alive_node_ids == weighted.getAliveNodeIds(), "weighted alive_node_ids property")
     require(weighted.getAltitude(0) == 0, "weighted root altitude")
     require(weighted.getAltitude(5) == 5, "weighted getAltitude")
+    require(weighted.altitudeOf(5) == weighted.getAltitude(5), "weighted altitudeOf alias")
+    require(weighted.altitude_of(5) == weighted.getAltitude(5), "weighted altitude_of alias")
     require(weighted.getNodeResidue(5) == 1, "weighted node residue")
+    require(weighted.residueOf(5) == weighted.getNodeResidue(5), "weighted residueOf alias")
+    require(weighted.residue_of(5) == weighted.getNodeResidue(5), "weighted residue_of alias")
     require_raises(lambda: tree.getNodeParent(-1), "invalid getNodeParent must throw")
     require_raises(lambda: tree.getChildren(-1), "invalid getChildren must throw")
+    require_raises(lambda: tree.children_of(-1), "invalid children_of must throw")
     require_raises(lambda: tree.getNumChildren(999), "invalid getNumChildren must throw")
     require_raises(lambda: tree.getNodeTimePreOrder(999), "invalid getNodeTimePreOrder must throw")
     require_raises(lambda: tree.getProperParts(999), "invalid getProperParts must throw")
     require_raises(lambda: weighted.getAltitude(-1), "invalid weighted getAltitude must throw")
+    require_raises(lambda: weighted.altitude_of(-1), "invalid weighted altitude_of must throw")
     require_raises(lambda: weighted.getNodeResidue(999), "invalid weighted getNodeResidue must throw")
     require_raises(lambda: tree.mergeNodeIntoParent(-1), "mergeNodeIntoParent must reject invalid NodeId")
     require_raises(lambda: tree.mergeNodeIntoParent(tree.getRoot()), "mergeNodeIntoParent must reject root")
@@ -368,7 +422,14 @@ def main() -> int:
 
     require(hasattr(mmcfilters.Attribute, "traversePostOrder"), "post-order traversal callback API should exist")
     require(not hasattr(mmcfilters, "NodeMT"), "NodeMT should be removed from Python API")
-    require(not hasattr(tree, "root"), "legacy root handle API should be removed")
+    require(hasattr(mmcfilters, "ContourRange"), "ContourRange should be exported")
+    require(not hasattr(mmcfilters, "ContourProxy"), "legacy ContourProxy alias should be removed")
+    require(hasattr(contours, "contoursByNode"), "contoursByNode should be the contour iteration API")
+    require(not hasattr(contours, "contours"), "legacy contours() alias should be removed")
+    require(not hasattr(contours, "isFullyMaterialized"), "isFullyMaterialized alias should be removed")
+    require(tree.root == tree.getRoot(), "root property should expose a NodeId, not a legacy node handle")
+    require(not hasattr(tree, "listNodes"), "legacy listNodes handle API should be removed")
+    require(not hasattr(tree, "leaves"), "legacy leaves handle API should be removed")
     require(not hasattr(tree, "getAltitude"), "altitude access should move to WeightedMorphologicalTree")
     require(not hasattr(tree, "getNodeResidue"), "node residue access should move to WeightedMorphologicalTree")
     require(not hasattr(tree, "getRepresentativeProperPartsByFlood"), "representative-by-flood should move to WeightedMorphologicalTree")
@@ -420,9 +481,47 @@ def main() -> int:
         mmcfilters.ToSInterpolation.Min4cMax8c,
     )
     require(tos.hasAdjacencyRelation is False, "ToS should expose adjacency relation as optional/absent")
+    require(tos.hasTreeOfShapesAdjacencyPolicy is True, "ToS should expose auxiliary min/max adjacency policy")
+    require(tos.getTreeOfShapesMinTreeAdjacencyRadius() == 1.0, "Min4cMax8c min-tree radius")
+    require(tos.getTreeOfShapesMaxTreeAdjacencyRadius() == 1.5, "Min4cMax8c max-tree radius")
+    require(tos.getTreeOfShapesMinTreeAdjacencyRelation().radius == 1.0, "Min4cMax8c min-tree adjacency relation radius")
+    require(tos.getTreeOfShapesMaxTreeAdjacencyRelation().radius == 1.5, "Min4cMax8c max-tree adjacency relation radius")
+    require(tos.getTreeOfShapesMinTreeAdjacencyRelation().size == 5, "Min4cMax8c min-tree adjacency relation size")
+    require(tos.getTreeOfShapesMaxTreeAdjacencyRelation().size == 9, "Min4cMax8c max-tree adjacency relation size")
     require(tos.numRows == 3, "ToS must expose image rows")
     require(tos.numCols == 3, "ToS must expose image cols")
     require(weighted_tos.reconstructionImage().shape == (3, 3), "weighted ToS reconstructionImage shape")
+    tos_min8_max4 = mmcfilters.MorphologicalTree.createTreeOfShapes(
+        np.array([[1, 2], [3, 0]], dtype=np.uint8),
+        mmcfilters.ToSInterpolation.Min8cMax4c,
+    )
+    require(tos_min8_max4.getTreeOfShapesMinTreeAdjacencyRadius() == 1.5, "Min8cMax4c min-tree radius")
+    require(tos_min8_max4.getTreeOfShapesMaxTreeAdjacencyRadius() == 1.0, "Min8cMax4c max-tree radius")
+    require(tos_min8_max4.getTreeOfShapesMinTreeAdjacencyRelation().size == 9, "Min8cMax4c min-tree adjacency relation size")
+    require(tos_min8_max4.getTreeOfShapesMaxTreeAdjacencyRelation().size == 5, "Min8cMax4c max-tree adjacency relation size")
+    custom_seed_tos = mmcfilters.MorphologicalTree.createTreeOfShapes(
+        np.array([[0, 1]], dtype=np.uint8),
+        mmcfilters.ToSInterpolation.SelfDual,
+        infinitySeedRow=2,
+        infinitySeedCol=4,
+    )
+    require(custom_seed_tos.getRoot() != -1, "SelfDual ToS must accept a custom infinity seed on the outer boundary")
+    internal_seed_tos = mmcfilters.MorphologicalTree.createTreeOfShapes(
+        np.array([[0, 1]], dtype=np.uint8),
+        mmcfilters.ToSInterpolation.SelfDual,
+        infinitySeedRow=1,
+        infinitySeedCol=1,
+    )
+    require(internal_seed_tos.getRoot() != -1, "SelfDual ToS must accept an internal custom infinity seed")
+    require_raises(
+        lambda: mmcfilters.MorphologicalTree.createTreeOfShapes(
+            np.array([[0, 1]], dtype=np.uint8),
+            mmcfilters.ToSInterpolation.SelfDual,
+            infinitySeedRow=3,
+            infinitySeedCol=5,
+        ),
+        "SelfDual ToS must reject an infinity seed outside the interpolated domain",
+    )
     single_tos = mmcfilters.MorphologicalTree.createTreeOfShapes(np.array([[5]], dtype=np.uint8))
     single_weighted_tos = mmcfilters.WeightedMorphologicalTree.createTreeOfShapes(np.array([[5]], dtype=np.uint8))
     require(single_tos.numRows == 1 and single_tos.numCols == 1, "single-pixel default ToS dimensions")

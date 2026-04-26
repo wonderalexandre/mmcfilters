@@ -18,14 +18,6 @@ enum class NodeIdSpace {
     HIGRA
 };
 
-/**
- * @brief Selects the interpolation mode used to build a tree of shapes.
- */
-enum class ToSInterpolation {
-    SelfDual,
-    Min4cMax8c
-};
-
 // Forward declarations for helper wrappers.
 class MorphologicalTree;
 class MorphologicalTreePybind;
@@ -90,6 +82,7 @@ private:
     int numRows_ = 0;
     int numCols_ = 0;
     std::optional<AdjacencyRelation> adj_; // optional adjacency context; not part of the structural tree contract
+    std::optional<std::pair<AdjacencyRelation, AdjacencyRelation>> tosAdjacencyPolicy_; // min-tree adjacency, max-tree adjacency
     int numNodes_ = 0;
     bool preservesHigraNodeIdSpace_ = false;
 
@@ -266,6 +259,18 @@ private:
         if (img->getNumRows() <= 0 || img->getNumCols() <= 0 || img->getSize() <= 0) {
             throw std::invalid_argument(std::string(context) + " requires a non-empty 2D image.");
         }
+    }
+
+    static std::pair<AdjacencyRelation, AdjacencyRelation> treeOfShapesAdjacencyPolicy(ToSInterpolation interpolation, int rows, int cols) {
+        switch (interpolation) {
+            case ToSInterpolation::SelfDual:
+                return {AdjacencyRelation(rows, cols, 1.0), AdjacencyRelation(rows, cols, 1.0)};
+            case ToSInterpolation::Min4cMax8c:
+                return {AdjacencyRelation(rows, cols, 1.0), AdjacencyRelation(rows, cols, 1.5)};
+            case ToSInterpolation::Min8cMax4c:
+                return {AdjacencyRelation(rows, cols, 1.5), AdjacencyRelation(rows, cols, 1.0)};
+        }
+        throw std::invalid_argument("Unsupported tree-of-shapes interpolation.");
     }
 
     /**
@@ -950,6 +955,7 @@ public:
         tree.numRows_ = img->getNumRows();
         tree.numCols_ = img->getNumCols();
         tree.adj_.emplace(tree.numRows_, tree.numCols_, radius);
+        tree.tosAdjacencyPolicy_ = std::nullopt;
         tree.numNodes_ = 0;
         tree.properPartOwner_.resize(img->getSize(), InvalidNode);
 
@@ -961,17 +967,22 @@ public:
     /**
      * @brief Creates a tree of shapes from an image.
      */
-    static MorphologicalTree createTreeOfShapes(ImageUInt8Ptr img, ToSInterpolation interpolation = ToSInterpolation::SelfDual) {
+    static MorphologicalTree createTreeOfShapes(
+        ImageUInt8Ptr img,
+        ToSInterpolation interpolation = ToSInterpolation::SelfDual,
+        int infinitySeedRow = ToSDefaultInfinityRow,
+        int infinitySeedCol = ToSDefaultInfinityCol) {
         requireNonEmptyImageDomain(img, "MorphologicalTree::createTreeOfShapes");
         MorphologicalTree tree;
         tree.treeType_ = TREE_OF_SHAPES;
         tree.numRows_ = img->getNumRows();
         tree.numCols_ = img->getNumCols();
         tree.adj_ = std::nullopt;
+        tree.tosAdjacencyPolicy_ = treeOfShapesAdjacencyPolicy(interpolation, tree.numRows_, tree.numCols_);
         tree.numNodes_ = 0;
         tree.properPartOwner_.resize(img->getSize(), InvalidNode);
 
-        BuilderTreeOfShape builderUF(interpolation == ToSInterpolation::Min4cMax8c);
+        BuilderTreeOfShape builderUF(interpolation, infinitySeedRow, infinitySeedCol);
         tree.build(img, builderUF);
         return tree;
     }
@@ -1008,6 +1019,7 @@ public:
         } else {
             throw std::invalid_argument("Higra import of max/min trees requires an explicit adjacency relation.");
         }
+        tree.tosAdjacencyPolicy_ = std::nullopt;
         tree.resetFromHigraTopology(parent, static_cast<NodeId>(rows * cols));
         return tree;
     }
@@ -1302,6 +1314,45 @@ public:
      * @brief Tests whether an adjacency relation is attached to the tree.
      */
     inline bool hasAdjacencyRelation() const noexcept { return static_cast<bool>(adj_); }
+
+    /**
+     * @brief Tests whether this image-built tree of shapes carries min/max auxiliary adjacency metadata.
+     */
+    inline bool hasTreeOfShapesAdjacencyPolicy() const noexcept { return static_cast<bool>(tosAdjacencyPolicy_); }
+
+    /**
+     * @brief Returns the auxiliary min-tree adjacency radius used by the ToS interpolation policy.
+     */
+    inline double getTreeOfShapesMinTreeAdjacencyRadius() const {
+        if (!tosAdjacencyPolicy_) {
+            throw std::runtime_error("Tree-of-shapes adjacency policy is not available.");
+        }
+        return tosAdjacencyPolicy_->first.getRadius();
+    }
+
+    /**
+     * @brief Returns the auxiliary max-tree adjacency radius used by the ToS interpolation policy.
+     */
+    inline double getTreeOfShapesMaxTreeAdjacencyRadius() const {
+        if (!tosAdjacencyPolicy_) {
+            throw std::runtime_error("Tree-of-shapes adjacency policy is not available.");
+        }
+        return tosAdjacencyPolicy_->second.getRadius();
+    }
+
+    /**
+     * @brief Returns the auxiliary min-tree adjacency relation used by the ToS interpolation policy.
+     */
+    inline const AdjacencyRelation* getTreeOfShapesMinTreeAdjacencyRelation() const noexcept {
+        return tosAdjacencyPolicy_ ? &tosAdjacencyPolicy_->first : nullptr;
+    }
+
+    /**
+     * @brief Returns the auxiliary max-tree adjacency relation used by the ToS interpolation policy.
+     */
+    inline const AdjacencyRelation* getTreeOfShapesMaxTreeAdjacencyRelation() const noexcept {
+        return tosAdjacencyPolicy_ ? &tosAdjacencyPolicy_->second : nullptr;
+    }
 
     /**
      * @brief Returns the number of image rows in the attached 2D domain.
@@ -1793,7 +1844,9 @@ private:
         std::vector<NodeId> euler_;
         std::vector<int> depth_;
         std::vector<int> firstOccurrence_;
-        std::vector<std::vector<int>> sparseTable_;
+        std::vector<int> log2_;
+        std::vector<int> sparseTable_;
+        int sparseTableStride_ = 0;
         const MorphologicalTree* tree_ = nullptr;
 
         /**
@@ -1821,31 +1874,43 @@ private:
         void buildSparseTable() {
             const int n = static_cast<int>(depth_.size());
             if (n == 0) {
+                log2_.clear();
                 sparseTable_.clear();
+                sparseTableStride_ = 0;
                 return;
             }
 
-            int maxLog = 1;
-            while ((1 << maxLog) <= n) {
-                ++maxLog;
+            log2_.assign(static_cast<size_t>(n + 1), 0);
+            for (int i = 2; i <= n; ++i) {
+                log2_[static_cast<size_t>(i)] = log2_[static_cast<size_t>(i / 2)] + 1;
             }
 
-            sparseTable_.assign(static_cast<size_t>(n), std::vector<int>(static_cast<size_t>(maxLog), 0));
+            sparseTableStride_ = 1;
+            while ((1 << sparseTableStride_) <= n) {
+                ++sparseTableStride_;
+            }
+
+            sparseTable_.assign(static_cast<size_t>(n) * static_cast<size_t>(sparseTableStride_), 0);
 
             for (int i = 0; i < n; ++i) {
-                sparseTable_[static_cast<size_t>(i)][0] = i;
+                sparseTable_[sparseTableIndex(i, 0)] = i;
             }
 
-            for (int j = 1; j < maxLog; ++j) {
+            for (int j = 1; j < sparseTableStride_; ++j) {
                 const int blockSize = 1 << j;
                 const int halfBlock = blockSize >> 1;
                 for (int i = 0; i + blockSize <= n; ++i) {
-                    const int leftIndex = sparseTable_[static_cast<size_t>(i)][static_cast<size_t>(j - 1)];
-                    const int rightIndex = sparseTable_[static_cast<size_t>(i + halfBlock)][static_cast<size_t>(j - 1)];
-                    sparseTable_[static_cast<size_t>(i)][static_cast<size_t>(j)] =
+                    const int leftIndex = sparseTable_[sparseTableIndex(i, j - 1)];
+                    const int rightIndex = sparseTable_[sparseTableIndex(i + halfBlock, j - 1)];
+                    sparseTable_[sparseTableIndex(i, j)] =
                         depth_[static_cast<size_t>(leftIndex)] <= depth_[static_cast<size_t>(rightIndex)] ? leftIndex : rightIndex;
                 }
             }
+        }
+
+        std::size_t sparseTableIndex(int row, int col) const {
+            return static_cast<std::size_t>(row) * static_cast<std::size_t>(sparseTableStride_) +
+                   static_cast<std::size_t>(col);
         }
 
         /**
@@ -1853,13 +1918,9 @@ private:
          */
         int rmq(int left, int right) const {
             const int length = right - left + 1;
-            int logLength = 0;
-            while ((1 << (logLength + 1)) <= length) {
-                ++logLength;
-            }
-
-            const int leftIndex = sparseTable_[static_cast<size_t>(left)][static_cast<size_t>(logLength)];
-            const int rightIndex = sparseTable_[static_cast<size_t>(right - (1 << logLength) + 1)][static_cast<size_t>(logLength)];
+            const int logLength = log2_[static_cast<size_t>(length)];
+            const int leftIndex = sparseTable_[sparseTableIndex(left, logLength)];
+            const int rightIndex = sparseTable_[sparseTableIndex(right - (1 << logLength) + 1, logLength)];
             return depth_[static_cast<size_t>(leftIndex)] <= depth_[static_cast<size_t>(rightIndex)] ? leftIndex : rightIndex;
         }
 

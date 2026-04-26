@@ -51,6 +51,7 @@ private:
         tree_.numRows_ = rows;
         tree_.numCols_ = cols;
         tree_.adj_ = std::move(adjacency);
+        tree_.tosAdjacencyPolicy_ = std::nullopt;
         tree_.initializeEmptyStorage(static_cast<size_t>(numProperParts));
         altitude_.clear();
     }
@@ -92,7 +93,11 @@ private:
         validateAltitudeBufferShape();
     }
 
-    WeightedMorphologicalTree(ImageUInt8Ptr img, ToSInterpolation interpolation = ToSInterpolation::SelfDual) {
+    WeightedMorphologicalTree(
+        ImageUInt8Ptr img,
+        ToSInterpolation interpolation = ToSInterpolation::SelfDual,
+        int infinitySeedRow = ToSDefaultInfinityRow,
+        int infinitySeedCol = ToSDefaultInfinityCol) {
         MorphologicalTree::requireNonEmptyImageDomain(img, "WeightedMorphologicalTree::createTreeOfShapes");
         configureEmptyTopology(
             img->getNumRows(),
@@ -100,7 +105,8 @@ private:
             MorphologicalTree::TREE_OF_SHAPES,
             std::nullopt,
             static_cast<NodeId>(img->getSize()));
-        BuilderTreeOfShape builderUF(interpolation == ToSInterpolation::Min4cMax8c);
+        tree_.tosAdjacencyPolicy_ = MorphologicalTree::treeOfShapesAdjacencyPolicy(interpolation, tree_.numRows_, tree_.numCols_);
+        BuilderTreeOfShape builderUF(interpolation, infinitySeedRow, infinitySeedCol);
         tree_.build(img, builderUF);
         assignAltitudeFromDirectProperParts(img);
         validateAltitudeBufferShape();
@@ -130,8 +136,12 @@ public:
         return WeightedMorphologicalTree(img, isMaxtree, radius);
     }
 
-    static WeightedMorphologicalTree createTreeOfShapes(ImageUInt8Ptr img, ToSInterpolation interpolation = ToSInterpolation::SelfDual) {
-        return WeightedMorphologicalTree(img, interpolation);
+    static WeightedMorphologicalTree createTreeOfShapes(
+        ImageUInt8Ptr img,
+        ToSInterpolation interpolation = ToSInterpolation::SelfDual,
+        int infinitySeedRow = ToSDefaultInfinityRow,
+        int infinitySeedCol = ToSDefaultInfinityCol) {
+        return WeightedMorphologicalTree(img, interpolation, infinitySeedRow, infinitySeedCol);
     }
 
     /**

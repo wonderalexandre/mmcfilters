@@ -102,9 +102,13 @@ public:
     ImageFloatPtr saliencyMap(int extremaToKeep, bool unweighted = true) {
         std::vector<uint8_t> keep(tree.getNumInternalNodeSlots(), false);
         std::vector<float> extinctionByNode(tree.getNumInternalNodeSlots(), 0.0f);
+        std::vector<NodeId> keptNodes;
         const int leafToKeep = std::min(extremaToKeep, static_cast<int>(regionalExtremaNodes.size()));
         for (int i = 0; i < leafToKeep; ++i) {
             const NodeId cutoffNode = this->regionalExtremaNodes[i].cutoffNode;
+            if (!keep[cutoffNode]) {
+                keptNodes.push_back(cutoffNode);
+            }
             keep[cutoffNode] = true;
             extinctionByNode[cutoffNode] = unweighted ? static_cast<float>(leafToKeep - i) : this->regionalExtremaNodes[i].extinction;
         }
@@ -113,11 +117,9 @@ public:
         auto saliencyOutput = imgOutputPtr->rawData();
 
         auto contours = ContoursComputedIncrementally::extractCompactContours(tree);
-        for (auto&& [node, contour] : contours.contoursLazy()) {
-            if (keep[node]) {
-                for (int p : contour) {
-                    saliencyOutput[p] = extinctionByNode[node];
-                }
+        for (NodeId node : keptNodes) {
+            for (int p : contours.getContour(node)) {
+                saliencyOutput[p] = extinctionByNode[node];
             }
         }
 

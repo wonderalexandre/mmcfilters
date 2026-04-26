@@ -39,7 +39,9 @@ class MorphologicalTreePybind : public MorphologicalTree {
 
     MorphologicalTreePybind(
         py::array_t<uint8_t, py::array::c_style | py::array::forcecast> input,
-        ToSInterpolation interpolation = ToSInterpolation::SelfDual)
+        ToSInterpolation interpolation = ToSInterpolation::SelfDual,
+        int infinitySeedRow = ToSDefaultInfinityRow,
+        int infinitySeedCol = ToSDefaultInfinityCol)
         : MorphologicalTree(MorphologicalTree::createTreeOfShapes(
               [&]() {
                   auto buf = input.request();
@@ -50,7 +52,9 @@ class MorphologicalTreePybind : public MorphologicalTree {
                   int cols = static_cast<int>(buf.shape[1]);
                   return ImageUInt8::fromExternal(static_cast<uint8_t*>(buf.ptr), rows, cols);
               }(),
-              interpolation)) { }
+              interpolation,
+              infinitySeedRow,
+              infinitySeedCol)) { }
 
     MorphologicalTreePybind(py::array_t<uint8_t, py::array::c_style | py::array::forcecast> input, bool isMaxtree, double radiusOfAdjacencyRelation = 1.5)
         : MorphologicalTree(MorphologicalTree::createComponentTree(

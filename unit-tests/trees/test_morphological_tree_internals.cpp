@@ -111,10 +111,10 @@ int main() {
         queue.priorityPush(30, 7, 9);
         requireEqual(queue.priorityPop(), 10, "PriorityQueueToS first pop");
         requireEqual(queue.getCurrentPriority(), 5, "PriorityQueueToS first priority");
-        requireEqual(queue.priorityPop(), 20, "PriorityQueueToS second pop");
-        requireEqual(queue.getCurrentPriority(), 4, "PriorityQueueToS second priority");
-        requireEqual(queue.priorityPop(), 30, "PriorityQueueToS third pop");
-        requireEqual(queue.getCurrentPriority(), 7, "PriorityQueueToS third priority");
+        requireEqual(queue.priorityPop(), 30, "PriorityQueueToS second pop");
+        requireEqual(queue.getCurrentPriority(), 7, "PriorityQueueToS second priority");
+        requireEqual(queue.priorityPop(), 20, "PriorityQueueToS third pop");
+        requireEqual(queue.getCurrentPriority(), 4, "PriorityQueueToS third priority");
         require(queue.isEmpty(), "PriorityQueueToS must be empty after pops");
     }
 
@@ -129,7 +129,7 @@ int main() {
             }
         );
 
-        BuilderTreeOfShape tosBuilder(true);
+        BuilderTreeOfShape tosBuilder(ToSInterpolation::Min4cMax8c);
         auto [interpolationMin, interpolationMax, adjacency] = tosBuilder.interpolateImage4c8c(image);
         requireEqual(static_cast<int>(interpolationMin.size()), 49, "BuilderTreeOfShape interpolate min size");
         requireEqual(static_cast<int>(interpolationMax.size()), 49, "BuilderTreeOfShape interpolate max size");
@@ -137,20 +137,113 @@ int main() {
         requireEqual(interpolationMax[ImageUtils::to1D(3, 3, 7)], 3, "BuilderTreeOfShape interpolated center max");
         requireVectorEqual(
             collectNodeIds(adjacency.getNeighborPixels(ImageUtils::to1D(3, 3, 7))),
-            std::vector<NodeId>{17, 23, 31, 25, 32, 16},
+            std::vector<NodeId>{17, 23, 31, 25},
             "BuilderTreeOfShape interpolated center adjacency"
         );
 
         auto [imgU, orderInterpolated, _] = tosBuilder.sort(image);
         requireEqual(static_cast<int>(imgU.size()), 49, "BuilderTreeOfShape sorted interpolation size");
         requireEqual(static_cast<int>(orderInterpolated.size()), 49, "BuilderTreeOfShape sorted order size");
-        requireEqual(orderInterpolated.front(), 8, "BuilderTreeOfShape sorted first interpolated pixel");
-        requireEqual(orderInterpolated.back(), 24, "BuilderTreeOfShape sorted last interpolated pixel");
+        requireEqual(orderInterpolated.front(), 0, "BuilderTreeOfShape sorted first interpolated pixel");
+        requireEqual(orderInterpolated.back(), 48, "BuilderTreeOfShape sorted last interpolated pixel");
 
         auto [parent, orderedPixels, numNodes] = tosBuilder.createTreeByUnionFind(image);
         requireEqual(numNodes, 6, "BuilderTreeOfShape numNodes");
-        requireVectorEqual(orderedPixels, std::vector<int>{0, 3, 1, 7, 5, 6, 2, 8, 4}, "BuilderTreeOfShape ordered original pixels");
+        requireVectorEqual(orderedPixels, std::vector<int>{0, 3, 1, 7, 5, 4, 6, 2, 8}, "BuilderTreeOfShape ordered original pixels");
         requireVectorEqual(parent, std::vector<int>{0, 3, 3, 0, 3, 3, 3, 3, 3}, "BuilderTreeOfShape parent array");
+    }
+
+    {
+        auto saddle = makeImage(
+            2,
+            2,
+            {
+                0, 8,
+                9, 4,
+            }
+        );
+
+        BuilderTreeOfShape min4max8(ToSInterpolation::Min4cMax8c);
+        auto [min4max8Min, min4max8Max, min4max8Adj] = min4max8.interpolateImage4c8c(saddle);
+        const NodeId center = ImageUtils::to1D(2, 2, 5);
+        requireEqual(min4max8Min[center], static_cast<uint8_t>(8), "Min4cMax8c saddle center min");
+        requireEqual(min4max8Max[center], static_cast<uint8_t>(9), "Min4cMax8c saddle center max");
+        requireVectorEqual(
+            collectNodeIds(min4max8Adj.getNeighborPixels(center)),
+            std::vector<NodeId>{7, 11, 17, 13, 16, 8},
+            "Min4cMax8c saddle center adjacency"
+        );
+
+        BuilderTreeOfShape min8max4(ToSInterpolation::Min8cMax4c);
+        auto [min8max4Min, min8max4Max, min8max4Adj] = min8max4.interpolateImage4c8c(saddle);
+        requireEqual(min8max4Min[center], static_cast<uint8_t>(0), "Min8cMax4c saddle center min");
+        requireEqual(min8max4Max[center], static_cast<uint8_t>(4), "Min8cMax4c saddle center max");
+        requireVectorEqual(
+            collectNodeIds(min8max4Adj.getNeighborPixels(center)),
+            std::vector<NodeId>{7, 11, 17, 13, 18, 6},
+            "Min8cMax4c saddle center adjacency"
+        );
+    }
+
+    {
+        auto halfLevelBoundary = makeImage(1, 2, {0, 1});
+        BuilderTreeOfShape selfDual(ToSInterpolation::SelfDual);
+        auto [interpolationMin, interpolationMax, adjacency] = selfDual.interpolateImage(halfLevelBoundary);
+        const NodeId outerCorner = ImageUtils::to1D(0, 0, 5);
+        const NodeId firstOriginal = ImageUtils::to1D(1, 1, 5);
+        const NodeId secondOriginal = ImageUtils::to1D(1, 3, 5);
+        requireEqual(interpolationMin[outerCorner], 1, "SelfDual outer boundary median must preserve half levels in Z/2");
+        requireEqual(interpolationMax[outerCorner], 1, "SelfDual outer boundary median max must preserve half levels in Z/2");
+        requireEqual(interpolationMin[firstOriginal], 0, "SelfDual first original pixel must be scaled by 2");
+        requireEqual(interpolationMax[secondOriginal], 2, "SelfDual second original pixel must be scaled by 2");
+
+        auto [imgU, orderInterpolated, _] = selfDual.sort(halfLevelBoundary);
+        requireEqual(orderInterpolated.front(), outerCorner, "SelfDual propagation must start from the outer boundary");
+        requireEqual(imgU[outerCorner], 1, "SelfDual propagated boundary level must preserve Z/2 half level");
+
+        BuilderTreeOfShape lowerRightInfinity(ToSInterpolation::SelfDual, 2, 4);
+        auto [customImgU, customOrderInterpolated, __] = lowerRightInfinity.sort(halfLevelBoundary);
+        const NodeId lowerRightCorner = ImageUtils::to1D(2, 4, 5);
+        requireEqual(customOrderInterpolated.front(), lowerRightCorner, "SelfDual propagation must honor a custom infinity seed");
+        requireEqual(customImgU[lowerRightCorner], 1, "SelfDual custom infinity seed must preserve Z/2 half level");
+        BuilderTreeOfShape internalInfinity(ToSInterpolation::SelfDual, 1, 1);
+        auto [internalImgU, internalOrderInterpolated, ___] = internalInfinity.sort(halfLevelBoundary);
+        const NodeId firstOriginalSeed = ImageUtils::to1D(1, 1, 5);
+        requireEqual(internalOrderInterpolated.front(), firstOriginalSeed, "SelfDual propagation must honor an internal custom infinity seed");
+        requireThrows(
+            [&]() { static_cast<void>(BuilderTreeOfShape(ToSInterpolation::SelfDual, 3, 5).sort(halfLevelBoundary)); },
+            "SelfDual infinity seed must stay inside the interpolated domain");
+    }
+
+    {
+        auto plateau = makeImage(
+            2,
+            2,
+            {
+                0, 0,
+                2, 2,
+            }
+        );
+
+        for (ToSInterpolation interpolation : {
+                ToSInterpolation::SelfDual,
+                ToSInterpolation::Min4cMax8c,
+                ToSInterpolation::Min8cMax4c}) {
+            BuilderTreeOfShape builder(interpolation);
+            auto [parent, orderedPixels, numNodes] = builder.createTreeByUnionFind(plateau);
+            int numRoots = 0;
+            for (int pixelId = 0; pixelId < static_cast<int>(parent.size()); ++pixelId) {
+                require(parent[pixelId] != InvalidNode, "BuilderTreeOfShape projected parent through interpolated plateau must be valid");
+                if (parent[pixelId] == pixelId) {
+                    ++numRoots;
+                }
+            }
+            requireEqual(numRoots, 1, "BuilderTreeOfShape projected parent through interpolated plateau root count");
+            auto sortedProjectedOrder = orderedPixels;
+            std::sort(sortedProjectedOrder.begin(), sortedProjectedOrder.end());
+            requireVectorEqual(sortedProjectedOrder, std::vector<int>{0, 1, 2, 3}, "BuilderTreeOfShape projected order through interpolated plateau");
+            require(numNodes >= 2, "BuilderTreeOfShape plateau projection node count");
+        }
     }
 
     {

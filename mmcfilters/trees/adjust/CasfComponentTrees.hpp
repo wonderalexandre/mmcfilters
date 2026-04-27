@@ -11,6 +11,11 @@ namespace mmcfilters::adjust {
 
 /**
  * @brief Increasing attribute used to select CASF pruning candidates.
+ *
+ * The CASF only requires the selected attribute to be increasing on the
+ * component-tree order. Area is available for every image domain. Bounding-box
+ * attributes are computed from the image grid coordinates and expose three
+ * scalar projections of the same cached box state.
  */
 enum class CasfComponentTreesAttribute {
     AREA,
@@ -22,8 +27,23 @@ enum class CasfComponentTreesAttribute {
 /**
  * @brief Connected alternating sequential filter on paired component trees.
  *
- * `CasfComponentTrees` owns a mutable min-tree/max-tree pair built from the
- * same input image. For each threshold, it performs the standard two half-steps:
+ * This class implements a connected alternating sequential filter (CASF) on a
+ * fixed image-domain adjacency. Instead of rebuilding both component trees
+ * after every threshold, it owns a mutable min-tree / max-tree pair and updates
+ * one tree incrementally whenever rooted subtrees are pruned from the dual one.
+ *
+ * Supported workflow:
+ *
+ * - build the initial min-tree and max-tree from the same input image;
+ * - choose one increasing attribute used to select pruning candidates
+ *   (`AREA`, `BOUNDING_BOX_WIDTH`, `BOUNDING_BOX_HEIGHT`, or
+ *   `BOUNDING_BOX_DIAGONAL`);
+ * - run `filter(thresholds)` on one or more threshold sequences applied
+ *   successively to the current state;
+ * - inspect or export the current dynamic tree state through `minTree`,
+ *   `maxTree`, `exportMinTree`, and `exportMaxTree`.
+ *
+ * For each threshold, the standard two CASF half-steps are performed:
  *
  * - select maximal max-tree nodes whose increasing attribute is below the
  *   threshold, update the min-tree incrementally, then prune those max-tree
@@ -31,10 +51,26 @@ enum class CasfComponentTreesAttribute {
  * - select maximal min-tree nodes under the same rule, update the max-tree
  *   incrementally, then prune those min-tree subtrees.
  *
- * The object is stateful: consecutive calls to `filter(...)` continue from the
- * current filtered trees. Attribute buffers are initialized once and then kept
- * synchronized through `DualMinMaxTreeIncrementalFilter`; they are not globally
- * recomputed at every threshold.
+ * Internal state owned by this class:
+ *
+ * - the adjacency relation of the image domain;
+ * - the mutable weighted min-tree and max-tree;
+ * - one incremental attribute computer per tree and their output buffers;
+ * - the dual-tree adjustment helper used to propagate pruning from one tree to
+ *   the other;
+ * - temporary buffers reused for breadth-first maximal candidate selection.
+ *
+ * Update semantics:
+ *
+ * - calling `filter(...)` with a non-empty threshold sequence mutates the
+ *   internal trees;
+ * - later `filter(...)` calls continue from the current filtered state;
+ * - an empty threshold sequence leaves the state unchanged and simply
+ *   reconstructs the current image from the min-tree.
+ *
+ * Attribute buffers are initialized once and then kept synchronized through
+ * `DualMinMaxTreeIncrementalFilter`; they are not globally recomputed at every
+ * threshold.
  */
 class CasfComponentTrees {
 private:
@@ -50,6 +86,11 @@ private:
     std::vector<NodeId> selectedPruneCandidates_;
     CasfComponentTreesAttribute attribute_ = CasfComponentTreesAttribute::AREA;
 
+    /**
+     * @brief Creates the incremental attribute computer matching the selected CASF attribute.
+     * @details Area uses a scalar area computer. Bounding-box attributes reuse
+     * the row-major image embedding already stored by `WeightedMorphologicalTree`.
+     */
     static std::unique_ptr<DynamicTreeAttributeComputer> makeAttributeComputer(CasfComponentTreesAttribute attribute) {
         switch (attribute) {
             case CasfComponentTreesAttribute::AREA:
@@ -65,11 +106,13 @@ private:
     }
 
     /**
-     * @brief Selects maximal non-root nodes satisfying the threshold.
+     * @brief Selects maximal non-root pruning candidates whose attribute is below or equal to a threshold.
      *
-     * The traversal descends while the current node does not satisfy the
-     * criterion. Once a non-root node is selected, its descendants are skipped,
-     * preserving the maximal-candidate semantics used by the Higra CASF.
+     * The traversal follows the same semantics used by the Higra CASF: descend
+     * while `attribute(node) > threshold`; otherwise select the current non-root
+     * node and stop descending below it. The root is never returned because
+     * pruning the root would not define a valid half-step. Internal queue/output
+     * buffers are reused across calls to avoid allocation in the threshold loop.
      */
     const std::vector<NodeId>& selectPruneCandidates(const WeightedMorphologicalTree& tree, const std::vector<double>& attribute, double threshold) {
         pruneCandidateQueue_.clear();
@@ -107,7 +150,12 @@ private:
     }
 
     /**
-     * @brief Applies one extensive and one anti-extensive half-step.
+     * @brief Applies one threshold step of the CASF on the current dynamic state.
+     *
+     * The step first applies the extensive half-step (max-tree pruning with
+     * min-tree update) and then the anti-extensive half-step (min-tree pruning
+     * with max-tree update). This order matches the original component-tree CASF
+     * schedule.
      */
     void applyFilterStep(double threshold) {
         const std::vector<NodeId> maxCandidates = selectPruneCandidates(maxTree_, maxAttributeBuffer_, threshold);
@@ -119,7 +167,10 @@ private:
 
 public:
     /**
-     * @brief Builds the initial min-tree/max-tree pair and bootstraps attributes.
+     * @brief Initializes the CASF state from the input image and the chosen attribute.
+     * @param image Input gray-level image.
+     * @param attribute Increasing attribute used to select pruning candidates.
+     * @param radius Radius used to build the image-domain adjacency relation.
      */
     CasfComponentTrees(ImageUInt8Ptr image, CasfComponentTreesAttribute attribute = CasfComponentTreesAttribute::AREA, double radius = 1.5)
         : adjacency_(image ? image->getNumRows() : 0, image ? image->getNumCols() : 0, radius),
@@ -144,7 +195,11 @@ public:
     }
 
     /**
-     * @brief Applies all thresholds to the current state and returns the reconstructed image.
+     * @brief Runs the CASF on the threshold sequence and returns the filtered image.
+     *
+     * Thresholds are applied to the current internal state. The object is
+     * therefore stateful: successive non-empty calls continue filtering the
+     * result of the previous ones.
      */
     ImageUInt8Ptr filter(const std::vector<double>& thresholds) {
         for (double threshold : thresholds) {
@@ -153,27 +208,42 @@ public:
         return minTree_.reconstructionImage();
     }
 
+    /**
+     * @brief Returns the current min-tree state.
+     */
     const WeightedMorphologicalTree& minTree() const noexcept {
         return minTree_;
     }
 
+    /**
+     * @brief Returns the current max-tree state.
+     */
     const WeightedMorphologicalTree& maxTree() const noexcept {
         return maxTree_;
     }
 
+    /**
+     * @brief Returns the increasing attribute configured for this CASF instance.
+     */
     CasfComponentTreesAttribute attribute() const noexcept {
         return attribute_;
     }
 
     /**
-     * @brief Exports the current min-tree as a compact Higra-style parent/altitude pair.
+     * @brief Exports the current min-tree as a compact static parent/altitude pair.
+     * @details The pair follows the local `WeightedMorphologicalTree`
+     * export convention and can be compared with Higra-style static hierarchy
+     * outputs in tests and benchmarks.
      */
     std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportMinTree() const {
         return minTree_.exportHigraHierarchy();
     }
 
     /**
-     * @brief Exports the current max-tree as a compact Higra-style parent/altitude pair.
+     * @brief Exports the current max-tree as a compact static parent/altitude pair.
+     * @details The pair follows the local `WeightedMorphologicalTree`
+     * export convention and can be compared with Higra-style static hierarchy
+     * outputs in tests and benchmarks.
      */
     std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportMaxTree() const {
         return maxTree_.exportHigraHierarchy();

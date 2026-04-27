@@ -2,6 +2,7 @@
 
 #include "DynamicTreeAttributeComputer.hpp"
 #include "../WeightedMorphologicalTree.hpp"
+#include "../../utils/GenerationStampSet.hpp"
 
 #include <algorithm>
 #include <array>
@@ -23,15 +24,46 @@ namespace mmcfilters::adjust {
  * @brief Incremental updater for a paired min-tree / max-tree state.
  *
  * This class ports the Higra dual component-tree adjustment algorithm to this
- * repository's `WeightedMorphologicalTree` representation. The algorithmic
- * structure is intentionally kept the same:
+ * repository's `WeightedMorphologicalTree` representation. It implements the
+ * update-rather-than-rebuild strategy used for efficient connected alternating
+ * sequential filters: when a rooted subtree is removed from one component tree,
+ * the dual tree is updated in place so both trees remain consistent with the
+ * same filtered image.
+ *
+ * The algorithmic structure is intentionally kept the same:
  *
  * - a rooted subtree is selected for pruning in the primal tree;
  * - its full support defines the proper-part set `C`;
- * - graph-adjacent components around `C` are collected in the dual tree;
+ * - valid graph-adjacent components around `C` are collected in the dual tree;
+ * - each relevant ancestor chain is climbed once;
  * - collected nodes are bucketed by altitude and swept in tree order;
  * - local unions, frontier reattachments, and empty-node contractions update
  *   the dual tree without rebuilding it globally.
+ *
+ * Public usage model:
+ *
+ * - construct the helper from an externally owned min-tree / max-tree pair and
+ *   their shared adjacency relation;
+ * - optionally register incremental attribute computers and attribute buffers
+ *   to refresh after local edits;
+ * - call either `pruneMaxTreeAndUpdateMinTree(...)` or
+ *   `pruneMinTreeAndUpdateMaxTree(...)`.
+ *
+ * State managed by this class:
+ *
+ * - two mutable weighted component trees (`mintree_`, `maxtree_`);
+ * - one adjacency relation shared by both trees;
+ * - optional incremental attribute computers and two external attribute
+ *   buffers;
+ * - transient merge buckets, frontier roots, proper-part sets, and mark sets
+ *   reused across update steps.
+ *
+ * Ownership and lifetime:
+ *
+ * - this class does not own the trees, adjacency relation, attribute computers,
+ *   or attribute buffers;
+ * - callers must keep these objects alive for the whole lifetime of the filter;
+ * - external buffers must be indexed on this project's internal node-id space.
  *
  * Representation notes:
  *
@@ -42,16 +74,39 @@ namespace mmcfilters::adjust {
  * - optional attribute buffers are kept in sync through
  *   `DynamicTreeAttributeComputer`.
  *
+ * Internal notation follows the original adjustment routine:
+ *
+ * - `nodeCa`: implementation-side representative of the extremal node in the
+ *   dual tree that contains the set `C` at level `a`;
+ * - `b`: altitude of the parent of the subtree removed in the primal tree;
+ * - `frontierNodesAboveB`: roots that leave the merge interval and are
+ *   reattached when the sweep reaches the boundary level;
+ * - `properPartSetC_`: pixels directly removed or relocated in the dual tree.
+ *
+ * Backend selection for `mergeNodesByLevel`:
+ *
+ * - dense array-based buckets for small integral altitude domains, up to
+ *   `MMCFILTERS_COMPONENT_TREE_ADJUSTMENT_DENSE_MAX_BITS` bits;
+ * - sparse ordered-map buckets for larger integral domains and floating-point
+ *   altitudes.
+ *
  * The expected cost remains local to the affected region. The dominant terms
  * are the same as in the Higra implementation: collecting `C`, visiting
  * adjacent seeds, climbing relevant ancestor chains once, sweeping the active
  * altitude buckets, and contracting the nodes actually emptied by the step.
+ * The class never rebuilds the dual tree globally as part of an adjustment.
  */
 template<typename altitude_t = AltitudeType>
 class DualMinMaxTreeIncrementalFilter {
 private:
     using tree_t = WeightedMorphologicalTree;
 
+    /**
+     * @brief Returns `true` iff the altitude type should use dense buckets.
+     * @details Dense buckets are enabled only for small integral altitude
+     * domains. Larger integral domains and floating-point types use the sparse
+     * backend to avoid allocating a bucket for every possible value.
+     */
     static constexpr bool usesDenseLevels() {
         if constexpr (std::is_integral_v<altitude_t>) {
             using unsigned_altitude_t = std::make_unsigned_t<altitude_t>;
@@ -61,6 +116,9 @@ private:
         }
     }
 
+    /**
+     * @brief True iff `mergeNodesByLevel` uses the dense bucket backend.
+     */
     static constexpr bool use_dense_levels = usesDenseLevels();
 
     /**
@@ -77,6 +135,9 @@ private:
         template<bool dense, typename altitude_type>
         struct StorageSelector;
 
+        /**
+         * @brief Dense bucket storage for small integral altitude domains.
+         */
         template<typename altitude_type>
         struct StorageSelector<true, altitude_type> {
             static constexpr std::size_t domain_size =
@@ -86,6 +147,9 @@ private:
             using type = std::array<std::vector<NodeId>, domain_size>;
         };
 
+        /**
+         * @brief Sparse ordered storage for large or non-integral altitude domains.
+         */
         template<typename altitude_type>
         struct StorageSelector<false, altitude_type> {
             using type = std::map<altitude_type, std::vector<NodeId>>;
@@ -104,6 +168,11 @@ private:
         bool isMaxtree_ = false;
 
     public:
+        /**
+         * @brief Maps an altitude value to an order-preserving dense bucket index.
+         * @details Signed integral domains are shifted by their lowest value so
+         * negative altitudes still map to non-negative array indices.
+         */
         static std::size_t denseBucketIndex(altitude_t level) {
             if constexpr (std::is_signed_v<altitude_t>) {
                 return static_cast<std::size_t>(
@@ -114,6 +183,9 @@ private:
             }
         }
 
+        /**
+         * @brief Converts a dense bucket index back to its altitude value.
+         */
         static altitude_t levelFromDenseBucketIndex(std::size_t index) {
             if constexpr (std::is_signed_v<altitude_t>) {
                 return static_cast<altitude_t>(
@@ -125,7 +197,8 @@ private:
         }
 
         /**
-         * @brief Creates temporary marks sized for the dense node-id domain.
+         * @brief Creates a merged-node collection sized for `maxNodes`.
+         * @param maxNodes Size of the internal node-id space used by mark sets.
          */
         explicit MergedNodesCollection(int maxNodes = 0)
             : collectedNodeMarks_(static_cast<size_t>(std::max(maxNodes, 0))),
@@ -133,14 +206,19 @@ private:
               adjacentSeedMarks_(static_cast<size_t>(std::max(maxNodes, 0))) {}
 
         /**
-         * @brief Clears transient state before one adjustment step.
+         * @brief Resets the transient state of one adjustment step.
+         * @param isMaxtree `true` for max-tree updates, `false` for min-tree updates.
          */
         void resetCollection(bool isMaxtree) {
             isMaxtree_ = isMaxtree;
             for (altitude_t level : mergeLevels_) {
                 if constexpr (use_dense_levels) {
+                    // Dense backend reuses one bucket per altitude value and
+                    // clears only levels that were active in the previous step.
                     mergeNodesByLevelStorage_[denseBucketIndex(level)].clear();
                 } else {
+                    // Sparse backend stores only touched levels, so only those
+                    // buckets need to be cleared here.
                     auto it = mergeNodesByLevelStorage_.find(level);
                     if (it != mergeNodesByLevelStorage_.end()) {
                         it->second.clear();
@@ -156,6 +234,9 @@ private:
             currentMergeLevelIndex_ = 0;
         }
 
+        /**
+         * @brief Returns the bucket associated with one altitude value.
+         */
         std::vector<NodeId>& getMergedNodes(const altitude_t& level) {
             if constexpr (use_dense_levels) {
                 return mergeNodesByLevelStorage_[denseBucketIndex(level)];
@@ -164,9 +245,23 @@ private:
             }
         }
 
+        /**
+         * @brief Returns the frontier roots collected above `b`.
+         * @details Each stored node is the root of the first branch that leaves
+         * the merge interval while climbing from a valid adjacent seed.
+         */
         std::vector<NodeId>& getFrontierNodesAboveB() { return frontierNodesAboveB_; }
+
+        /**
+         * @brief Returns the largest bucket observed in the current build.
+         * @details This value is used to reserve the sweep worklist.
+         */
         std::size_t getMaxBucketSize() const { return maxBucketSize_; }
 
+        /**
+         * @brief Marks one adjacent seed at most once in the current step.
+         * @return `true` if the seed was accepted now; `false` if it had already been seen.
+         */
         bool markAdjacentSeed(NodeId nodeId) {
             if (adjacentSeedMarks_.isMarked(static_cast<size_t>(nodeId))) {
                 return false;
@@ -175,6 +270,9 @@ private:
             return true;
         }
 
+        /**
+         * @brief Registers one frontier root above `b` only once.
+         */
         void addFrontierNodeAboveB(NodeId nodeId) {
             if (!collectedNodeMarks_.isMarked(static_cast<size_t>(nodeId))) {
                 frontierNodesAboveB_.push_back(nodeId);
@@ -183,7 +281,9 @@ private:
         }
 
         /**
-         * @brief Adds a node to the bucket corresponding to its own altitude.
+         * @brief Inserts one node into the bucket of its own altitude.
+         * @details Each visited node is registered only in the bucket of its own
+         * level, without materializing the full ancestor path in advance.
          */
         void addMergeNode(const tree_t& tree, NodeId nodeId) {
             if (collectedNodeMarks_.isMarked(static_cast<size_t>(nodeId))) {
@@ -196,22 +296,31 @@ private:
             mergeBucketNodeMarks_.mark(static_cast<size_t>(nodeId));
         }
 
+        /**
+         * @brief Tests whether a node was inserted in a merge bucket.
+         */
         bool isMergeNode(NodeId nodeId) const {
             return mergeBucketNodeMarks_.isMarked(static_cast<size_t>(nodeId));
         }
 
         /**
-         * @brief Materializes the ordered list of active levels and returns the first one.
+         * @brief Builds the ordered list of active levels and returns the first one.
+         * @details The order matches the sweep direction of the current tree:
+         * descending levels for max-tree updates and ascending levels for
+         * min-tree updates.
          */
         altitude_t firstMergeLevel() {
             mergeLevels_.clear();
             if constexpr (use_dense_levels) {
+                // Dense backend scans the discrete altitude domain and keeps
+                // only non-empty levels of the current step.
                 for (std::size_t i = 0; i < mergeNodesByLevelStorage_.size(); ++i) {
                     if (!mergeNodesByLevelStorage_[i].empty()) {
                         mergeLevels_.push_back(levelFromDenseBucketIndex(i));
                     }
                 }
             } else {
+                // Sparse backend iterates only over levels that were instantiated.
                 mergeLevels_.reserve(mergeNodesByLevelStorage_.size());
                 for (const auto& entry : mergeNodesByLevelStorage_) {
                     if (!entry.second.empty()) {
@@ -226,12 +335,18 @@ private:
             return mergeLevels_[static_cast<size_t>(currentMergeLevelIndex_)];
         }
 
+        /**
+         * @brief Returns `true` while the current level iterator is valid.
+         */
         bool hasMergeLevel() const {
             return !mergeLevels_.empty() &&
                    currentMergeLevelIndex_ >= 0 &&
                    currentMergeLevelIndex_ < static_cast<int>(mergeLevels_.size());
         }
 
+        /**
+         * @brief Advances the ordered level iterator and returns the next level.
+         */
         altitude_t nextMergeLevel() {
             currentMergeLevelIndex_ = isMaxtree_ ? currentMergeLevelIndex_ - 1 : currentMergeLevelIndex_ + 1;
             if (!hasMergeLevel()) {
@@ -241,10 +356,12 @@ private:
         }
     };
 
+    // Dynamic primal/dual trees and shared domain adjacency.
     tree_t* mintree_ = nullptr;
     tree_t* maxtree_ = nullptr;
     AdjacencyRelation* graph_ = nullptr;
 
+    // Transient state of the current adjustment step.
     MergedNodesCollection mergeNodesByLevel_;
     GenerationStampSet removedMarks_;
     GenerationStampSet pixelsInCMarks_;
@@ -255,16 +372,24 @@ private:
     std::vector<NodeId> removedNodesPendingAbsorption_;
     altitude_t altitudeCa_ = altitude_t{};
 
+    // Incremental attribute computation and external attribute buffers.
     const DynamicTreeAttributeComputer* attributeComputerMin_ = nullptr;
     const DynamicTreeAttributeComputer* attributeComputerMax_ = nullptr;
     std::vector<double>* attributeBufferMin_ = nullptr;
     std::vector<double>* attributeBufferMax_ = nullptr;
 
+    /**
+     * @brief Returns the topology view of one weighted tree.
+     */
     static const MorphologicalTree& topologyOf(const tree_t* tree) {
         assert(tree != nullptr);
         return tree->topology();
     }
 
+    /**
+     * @brief Returns the attribute buffer associated with one tree.
+     * @return `nullptr` when no incremental attribute computer is configured.
+     */
     DynamicTreeAttributeComputer::buffer_type* getAttributeBuffer(tree_t* tree) const {
         const auto* computer = tree == maxtree_ ? attributeComputerMax_ : attributeComputerMin_;
         if (computer == nullptr) {
@@ -273,6 +398,9 @@ private:
         return tree == maxtree_ ? attributeBufferMax_ : attributeBufferMin_;
     }
 
+    /**
+     * @brief Returns the attribute computer associated with one tree.
+     */
     const DynamicTreeAttributeComputer* getAttributeComputer(tree_t* tree) const {
         if (tree == nullptr) {
             return nullptr;
@@ -280,6 +408,11 @@ private:
         return tree == maxtree_ ? attributeComputerMax_ : attributeComputerMin_;
     }
 
+    /**
+     * @brief Forwards a node-removal event to the incremental attribute computer of `tree`.
+     * @details The notification is skipped when no computer is configured or
+     * when the removed node id is invalid.
+     */
     void notifyNodeRemoved(tree_t* tree, NodeId nodeId) const {
         const auto* computer = getAttributeComputer(tree);
         if (computer != nullptr && tree != nullptr && nodeId != InvalidNode) {
@@ -287,6 +420,9 @@ private:
         }
     }
 
+    /**
+     * @brief Forwards a bulk proper-part transfer to the incremental attribute computer of `tree`.
+     */
     void notifyMoveProperParts(tree_t* tree, NodeId targetNodeId, NodeId sourceNodeId) const {
         const auto* computer = getAttributeComputer(tree);
         if (computer != nullptr && tree != nullptr) {
@@ -294,6 +430,9 @@ private:
         }
     }
 
+    /**
+     * @brief Forwards a single proper-part transfer to the incremental attribute computer of `tree`.
+     */
     void notifyMoveProperPart(tree_t* tree, NodeId targetNodeId, NodeId sourceNodeId, NodeId pixelId) const {
         const auto* computer = getAttributeComputer(tree);
         if (computer != nullptr && tree != nullptr) {
@@ -301,6 +440,9 @@ private:
         }
     }
 
+    /**
+     * @brief Returns the current altitude of one tree node.
+     */
     altitude_t nodeAltitude(const tree_t* tree, NodeId nodeId) const {
         assert(tree != nullptr);
         return static_cast<altitude_t>(tree->getAltitude(nodeId));
@@ -308,6 +450,11 @@ private:
 
     /**
      * @brief Refreshes one marked node attribute after local topology stabilization.
+     *
+     * Nodes outside the active altitude interval are unmarked without
+     * recomputation. This mirrors the original implementation: attributes are
+     * recomputed only on nodes whose local child/proper-part state can have
+     * changed in the active sweep.
      */
     void computeAttributeOnTreeNode(tree_t* tree, NodeId nodeId) {
         const auto* computer = getAttributeComputer(tree);
@@ -332,11 +479,17 @@ private:
         attributeUpdateMarks_.unmark(static_cast<size_t>(nodeId));
     }
 
+    /**
+     * @brief Clears the per-step attribute refresh marks and active reference level.
+     */
     void resetAttributeUpdateMarks() {
         attributeUpdateMarks_.resetAll();
         altitudeCa_ = altitude_t{};
     }
 
+    /**
+     * @brief Marks one alive node for later attribute recomputation.
+     */
     void markAttributeUpdate(tree_t* tree, NodeId nodeId) {
         if (getAttributeComputer(tree) == nullptr || tree == nullptr || nodeId == InvalidNode) {
             return;
@@ -347,6 +500,11 @@ private:
         attributeUpdateMarks_.mark(static_cast<size_t>(nodeId));
     }
 
+    /**
+     * @brief Detaches a node from its parent, optionally releasing it.
+     * @details Delegates to `WeightedTreeEditor::removeChild`, preserving the
+     * root case and ignoring nodes with invalid parents.
+     */
     void disconnect(tree_t* tree, WeightedTreeEditor& editor, NodeId nodeId, bool releaseNode) {
         assert(tree != nullptr);
         const MorphologicalTree& topology = topologyOf(tree);
@@ -390,6 +548,9 @@ private:
         }
     }
 
+    /**
+     * @brief Tests whether a marked empty node is still absorbable.
+     */
     bool canAbsorbRemovedNode(tree_t* dualTree, NodeId nodeId) const {
         return dualTree != nullptr &&
                nodeId != InvalidNode &&
@@ -522,6 +683,13 @@ private:
         }
     }
 
+    /**
+     * @brief Collapses a chain of empty marked nodes immediately below the root.
+     *
+     * Root contraction is special because the surviving child must become the
+     * root candidate. This helper repeatedly promotes the altitude-compatible
+     * child while preserving all other grandchildren under the promoted node.
+     */
     NodeId collapseRemovedRootBranch(tree_t* dualTree, WeightedTreeEditor& editor, NodeId rootId, NodeId childId) {
         assert(dualTree != nullptr);
         const bool isMaxtree = dualTree == maxtree_;
@@ -570,6 +738,14 @@ private:
         return current;
     }
 
+    /**
+     * @brief Finishes one dual-tree update after the level sweep.
+     *
+     * If `nodeCa` was emptied by the move of `C`, the final union node is
+     * promoted into its place; otherwise the final union node is reattached
+     * below `nodeCa`. The method then contracts every empty node accumulated
+     * during the step.
+     */
     void finalizeUpdateTreeAndContractRemovedNodes(tree_t* dualTree, WeightedTreeEditor& editor, NodeId nodeCa, NodeId finalUnionNode) {
         if (dualTree == nullptr) {
             return;
@@ -668,10 +844,22 @@ private:
         absorbRemovedNodes(dualTree, editor, removedNodesPendingAbsorption_);
     }
 
+    /**
+     * @brief Returns the primal tree corresponding to an update of the given dual tree.
+     * @details Updating the max-tree means the primal operation was performed
+     * on the min-tree, and conversely.
+     */
     tree_t* getPrimalTree(bool isMaxtree) {
         return isMaxtree ? mintree_ : maxtree_;
     }
 
+    /**
+     * @brief Moves children that are outside the active merge interval.
+     *
+     * Merge-bucket children are detached because they will be processed by their
+     * own level in the sweep. The remaining children are moved to the current
+     * union node to preserve the hierarchy around the local edit.
+     */
     void reattachOutsideIntervalChildren(tree_t* tree, WeightedTreeEditor& editor, NodeId targetNodeId, NodeId sourceNodeId) {
         assert(tree != nullptr);
         if (sourceNodeId == targetNodeId) {
@@ -702,6 +890,11 @@ private:
      * seeds are climbed toward the root while they remain inside the altitude
      * interval induced by `C`. A generation-stamped mark prevents revisiting
      * the same ancestor chain more than once in the step.
+     *
+     * Nodes whose altitude lies inside the interval are inserted into
+     * `mergeNodesByLevel_`. Nodes that leave the interval through the `b`
+     * boundary are stored as frontier roots and reattached when the sweep
+     * reaches `b`.
      */
     void buildMergedAndNestedCollections(const tree_t& tree, const std::vector<NodeId>& properPartSetC, NodeId nodeCa, altitude_t b, bool isMaxtree) {
         mergeNodesByLevel_.resetCollection(isMaxtree);
@@ -765,6 +958,22 @@ private:
 
     /**
      * @brief Updates the dual tree after a rooted subtree is removed in the primal tree.
+     *
+     * Detailed step sequence:
+     *
+     * - collect all proper parts of the primal subtree into `properPartSetC_`;
+     * - find `nodeCa`, the extremal dual node currently owning pixels of `C`;
+     * - collect adjacent seeds and level buckets around `C`;
+     * - sweep active levels from the outside toward `altitudeCa_`, merging each
+     *   non-empty bucket into a single current union node;
+     * - at level `b`, move the selected proper parts and attach frontier roots;
+     * - reattach the previous level union node under the current one;
+     * - finalize by promoting/reattaching the final union node and contracting
+     *   nodes emptied by the update.
+     *
+     * All tree mutations are performed through `WeightedTreeEditor`. The
+     * unchecked commit at the end is used because this routine maintains the
+     * same invariants internally and avoids validation in the hot loop.
      */
     void updateTree(tree_t* dualTree, NodeId subtreeRoot) {
         assert(dualTree != nullptr);
@@ -914,6 +1123,14 @@ public:
 
     /**
      * @brief Creates an adjuster for externally owned min/max-tree states.
+     * @param mintree Mutable min-tree state.
+     * @param maxtree Mutable max-tree state.
+     * @param graph Shared image-domain adjacency relation.
+     *
+     * The constructor sizes all generation-stamped mark sets from the current
+     * node/proper-part spaces of the two trees. The tree topology is expected to
+     * keep these slot spaces stable under local releases performed by the
+     * adjuster.
      */
     DualMinMaxTreeIncrementalFilter(tree_t* mintree, tree_t* maxtree, AdjacencyRelation& graph)
         : mintree_(mintree),
@@ -936,6 +1153,9 @@ public:
 
     /**
      * @brief Registers incremental attribute computers and their external buffers.
+     *
+     * The buffers are not owned by the adjuster. They must remain alive and
+     * indexed by internal `NodeId` while pruning/update calls are executed.
      */
     void setAttributeComputer(const DynamicTreeAttributeComputer& computerMin,
                               const DynamicTreeAttributeComputer& computerMax,
@@ -947,6 +1167,9 @@ public:
         attributeBufferMax_ = &bufferMax;
     }
 
+    /**
+     * @brief Registers one shared incremental attribute computer for both trees.
+     */
     void setAttributeComputer(const DynamicTreeAttributeComputer& computer,
                               std::vector<double>& bufferMin,
                               std::vector<double>& bufferMax) {
@@ -955,6 +1178,10 @@ public:
 
     /**
      * @brief Prunes max-tree subtrees and updates the min-tree before each prune.
+     *
+     * Invalid, dead, and root nodes are ignored. For each valid max-tree root,
+     * the min-tree is updated first against the subtree that is about to be
+     * removed; then the max-tree subtree is pruned.
      */
     void pruneMaxTreeAndUpdateMinTree(const std::vector<NodeId>& nodesToPrune) {
         assert(mintree_ != nullptr);
@@ -973,6 +1200,10 @@ public:
 
     /**
      * @brief Prunes min-tree subtrees and updates the max-tree before each prune.
+     *
+     * Invalid, dead, and root nodes are ignored. For each valid min-tree root,
+     * the max-tree is updated first against the subtree that is about to be
+     * removed; then the min-tree subtree is pruned.
      */
     void pruneMinTreeAndUpdateMaxTree(const std::vector<NodeId>& nodesToPrune) {
         assert(mintree_ != nullptr);

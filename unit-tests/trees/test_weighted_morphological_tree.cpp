@@ -1,5 +1,4 @@
 #include "support/TestSupport.hpp"
-#include "../../mmcfilters/trees/TreeAltitudeOps.hpp"
 
 #include <memory>
 #include <stdexcept>
@@ -151,7 +150,7 @@ int main() {
     {
         auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
 
-        const auto [weightedAsc, weightedDesc] = tree_altitude_ops::computeAscendantsAndDescendants(weighted->topology(), &weighted->getAltitudeBuffer(), 2);
+        const auto [weightedAsc, weightedDesc] = WeightedMorphologicalTree::computeAscendantsAndDescendants(weighted->topology(), &weighted->getAltitudeBuffer(), 2);
         requireVectorEqual(weightedAsc, {InvalidNode, 0, 0, 1, 2, 3}, "weighted level-based ascendants must use the external altitude buffer");
         requireVectorEqual(weightedDesc, {1, 3, 4, 5, InvalidNode, InvalidNode}, "weighted level-based descendants must use the external altitude buffer");
     }

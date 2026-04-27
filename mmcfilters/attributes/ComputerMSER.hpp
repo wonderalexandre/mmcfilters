@@ -2,7 +2,6 @@
 
 #include "../attributes/AttributeComputedIncrementally.hpp"
 #include "../trees/MorphologicalTree.hpp"
-#include "../trees/TreeAltitudeOps.hpp"
 #include "../trees/WeightedMorphologicalTree.hpp"
 #include "../utils/Common.hpp"
 
@@ -62,13 +61,13 @@ public:
 	 */
 	ComputerMSER(const MorphologicalTree& tree, const AltitudeBuffer* altitude, std::vector<float> attr_increasing)
 		: tree(tree),
-		  altitude_(&tree_altitude_ops::requireAltitudeBuffer(altitude)),
+		  altitude_(&WeightedMorphologicalTree::requireAltitudeBuffer(altitude)),
 		  attrMserView_(nullptr),
 		  ownedAttrMser_(std::move(attr_increasing)),
 		  maxVariation(10.0),
 		  minAttr(0),
 		  maxAttr(this->tree.getNumColsOfImage() * this->tree.getNumRowsOfImage()) {
-		tree_altitude_ops::validateAltitudeBufferShape(this->tree, this->altitude_);
+		WeightedMorphologicalTree::validateAltitudeBufferShape(this->tree, this->altitude_);
 		this->attrMserView_ = this->ownedAttrMser_.data();
 	}
 
@@ -77,13 +76,13 @@ public:
 	 */
 	ComputerMSER(const MorphologicalTree& tree, const AltitudeBuffer* altitude, const float* attr_increasing)
 		: tree(tree),
-		  altitude_(&tree_altitude_ops::requireAltitudeBuffer(altitude)),
+		  altitude_(&WeightedMorphologicalTree::requireAltitudeBuffer(altitude)),
 		  attrMserView_(attr_increasing),
 		  ownedAttrMser_(),
 		  maxVariation(10.0),
 		  minAttr(0),
 		  maxAttr(this->tree.getNumColsOfImage() * this->tree.getNumRowsOfImage()) {
-		tree_altitude_ops::validateAltitudeBufferShape(this->tree, this->altitude_);
+		WeightedMorphologicalTree::validateAltitudeBufferShape(this->tree, this->altitude_);
 	}
 
 	ComputerMSER(const WeightedMorphologicalTree& weighted, std::vector<float> attr_increasing)
@@ -115,7 +114,7 @@ public:
 	 */
 	std::vector<uint8_t> computeMSER(int delta){
 		std::pair<std::vector<NodeId>, std::vector<NodeId>> ascDesc =
-			tree_altitude_ops::computeAscendantsAndDescendants(tree, altitude_, delta);
+			WeightedMorphologicalTree::computeAscendantsAndDescendants(tree, altitude_, delta);
 		this->ascendants = std::move(ascDesc.first);
 		this->descendants = std::move(ascDesc.second);
 		this->stability.assign(tree.getNumInternalNodeSlots(), std::numeric_limits<float>::quiet_NaN());

@@ -4,7 +4,7 @@
 #include "../attributes/AttributeComputer.hpp"
 #include "../attributes/AttributeNames.hpp"
 #include "../trees/MorphologicalTree.hpp"
-#include "../trees/TreeAltitudeOps.hpp"
+#include "../trees/WeightedMorphologicalTree.hpp"
 
 
 namespace mmcfilters {
@@ -528,7 +528,7 @@ inline ComputedAttributeDataWithDelta AttributeComputedIncrementally::computeSin
     }
 
     for (int d = 1; d <= delta; ++d) {
-        auto [ascendants, descendants] = tree_altitude_ops::computeAscendantsAndDescendants(tree, altitude, d);
+        auto [ascendants, descendants] = WeightedMorphologicalTree::computeAscendantsAndDescendants(tree, altitude, d);
 
         for (NodeId nodeId : tree.getAliveNodeIds()) {
             const NodeId nodeIndex = nodeId;

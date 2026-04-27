@@ -2,7 +2,7 @@
 
 #include "AttributeComputer.hpp"
 #include "AttributeComputedIncrementally.hpp"
-#include "../trees/TreeAltitudeOps.hpp"
+#include "../trees/WeightedMorphologicalTree.hpp"
 namespace mmcfilters {
 
 namespace detail {
@@ -67,7 +67,7 @@ public:
             tree.getRoot(),
             [&](NodeId nodeId) {
                 const NodeId node = detail::volumeSlotOf(tree, nodeId);
-                const AltitudeType nodeAltitude = tree_altitude_ops::getAltitude(altitude, nodeId);
+                const AltitudeType nodeAltitude = WeightedMorphologicalTree::getAltitude(altitude, nodeId);
                 if (computeVolume)
                     buffer[indexOfVol(node)] = static_cast<float>(tree.getNumProperParts(nodeId) * nodeAltitude);
                 if (computeRelative)
@@ -84,8 +84,8 @@ public:
                         static_cast<float>(
                             dependencyArea.buffer[indexOfArea(child)] *
                             std::abs(
-                                static_cast<float>(tree_altitude_ops::getAltitude(altitude, childNodeId)) -
-                                static_cast<float>(tree_altitude_ops::getAltitude(altitude, parentNodeId))));
+                                static_cast<float>(WeightedMorphologicalTree::getAltitude(altitude, childNodeId)) -
+                                static_cast<float>(WeightedMorphologicalTree::getAltitude(altitude, parentNodeId))));
             },
             [&](NodeId nodeId) {
                 const NodeId node = detail::volumeSlotOf(tree, nodeId);

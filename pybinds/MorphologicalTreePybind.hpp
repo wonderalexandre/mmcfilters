@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../mmcfilters/trees/MorphologicalTree.hpp"
-#include "../mmcfilters/trees/TreeAltitudeOps.hpp"
+#include "../mmcfilters/trees/WeightedMorphologicalTree.hpp"
 #include "../mmcfilters/utils/Common.hpp"
 
 #include "PybindUtils.hpp"
@@ -98,11 +98,11 @@ class MorphologicalTreePybind : public MorphologicalTree {
         }
         AdjacencyRelation adjacency = *adjacencyContext;
         const int numPixels = tree.getNumRowsOfImage() * tree.getNumColsOfImage();
-        const AltitudeType targetAltitude = tree_altitude_ops::getAltitude(altitude, nodeId);
+        const AltitudeType targetAltitude = WeightedMorphologicalTree::getAltitude(altitude, nodeId);
 
         auto levelOf = [&](int p) -> int {
             const NodeId smallestComponent = tree.getSmallestComponent(p);
-            return tree_altitude_ops::getAltitude(altitude, smallestComponent);
+            return WeightedMorphologicalTree::getAltitude(altitude, smallestComponent);
         };
         auto inNode = [&](int p) -> bool {
             return tree.getSmallestComponent(p) == nodeId;

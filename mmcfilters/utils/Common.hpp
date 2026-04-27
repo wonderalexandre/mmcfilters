@@ -92,7 +92,7 @@ using AltitudeDiffType = decltype(std::declval<AltitudeType>() - std::declval<Al
 // MorphologicalTree during the transition to the split between topology/
 // ownership and external altitude buffers.
 #if defined(MMCFILTERS_ENABLE_LEGACY_WEIGHTED_TREE_API_DEPRECATION)
-#define MMCFILTERS_LEGACY_WEIGHTED_TREE_API [[deprecated("Use WeightedMorphologicalTree or tree_altitude_ops with an explicit altitude buffer.")]]
+#define MMCFILTERS_LEGACY_WEIGHTED_TREE_API [[deprecated("Use WeightedMorphologicalTree with an explicit altitude buffer.")]]
 #else
 #define MMCFILTERS_LEGACY_WEIGHTED_TREE_API
 #endif

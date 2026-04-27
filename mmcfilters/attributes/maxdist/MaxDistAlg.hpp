@@ -4,7 +4,7 @@
 
 #include "../../utils/Common.hpp"
 #include "../../trees/MorphologicalTree.hpp"
-#include "../../trees/TreeAltitudeOps.hpp"
+#include "../../trees/WeightedMorphologicalTree.hpp"
 
 #include "EdtDIFT.hpp"
 #include "Geometry.hpp"
@@ -25,7 +25,7 @@ namespace mmcfilters
         std::vector<float> maxDist(tree_.getNumInternalNodeSlots(), 0.0f);
         std::array<std::vector<NodeId>, 256> levelToNodes = extractLevelMap();
 
-        ImageUInt8Ptr f = tree_altitude_ops::reconstructImage(tree_, altitude_);
+        ImageUInt8Ptr f = WeightedMorphologicalTree::reconstructImage(tree_, altitude_);
         Box2D domain(f->getNumCols(), f->getNumRows());
         EdtDIFT edtDIFT(f->getNumRows(), f->getNumCols());
 
@@ -46,7 +46,7 @@ namespace mmcfilters
 
             for (NodeId childNodeId : tree_.getChildren(nodeId)) {
               for (int pidx : contours[childNodeId]) {
-                if (feroded[pidx] < static_cast<int>(tree_altitude_ops::getAltitude(altitude_, nodeId)))
+                if (feroded[pidx] < static_cast<int>(WeightedMorphologicalTree::getAltitude(altitude_, nodeId)))
                   Ncontour.push_back(pidx);
                 else
                   toRemove.push_back(pidx);
@@ -60,7 +60,7 @@ namespace mmcfilters
             for (int pidx : tree_.getProperParts(nodeId)) {
               edtDIFT.addPixelToBinaryImage(pidx);
 
-              if (feroded[pidx] < static_cast<int>(tree_altitude_ops::getAltitude(altitude_, nodeId))) {
+              if (feroded[pidx] < static_cast<int>(WeightedMorphologicalTree::getAltitude(altitude_, nodeId))) {
                 Ncontour.push_back(pidx);
                 edtDIFT.seed(pidx);
               }
@@ -91,7 +91,7 @@ namespace mmcfilters
 
         while (!stack.empty()) {
           const NodeId nodeId = stack.pop();
-          levelToNodes[static_cast<size_t>(tree_altitude_ops::getAltitude(altitude_, nodeId))].push_back(nodeId);
+          levelToNodes[static_cast<size_t>(WeightedMorphologicalTree::getAltitude(altitude_, nodeId))].push_back(nodeId);
 
           for (NodeId childNodeId : tree_.getChildren(nodeId)) {
             stack.push(childNodeId);

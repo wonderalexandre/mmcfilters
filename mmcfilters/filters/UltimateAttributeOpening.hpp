@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../utils/Common.hpp"
-#include "../trees/TreeAltitudeOps.hpp"
 #include "../trees/WeightedMorphologicalTree.hpp"
 #include "../attributes/ComputerMSER.hpp"
 #include "../attributes/AttributeComputedIncrementally.hpp"
@@ -25,7 +24,7 @@ protected:
     std::vector<uint8_t> selectedForFiltering;
 
     AltitudeType altitudeOf(NodeId nodeId) const {
-        return tree_altitude_ops::getAltitude(altitude_, nodeId);
+        return WeightedMorphologicalTree::getAltitude(altitude_, nodeId);
     }
 
     void computeUAO(NodeId currentNodeId, AltitudeType altitudeNodeNotInNR, bool qPropag, bool isCalculateResidue) {

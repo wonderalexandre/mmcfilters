@@ -12,7 +12,6 @@
 #include "mmcfilters/attributes/AttributeComputedIncrementally.hpp"
 #include "mmcfilters/utils/Common.hpp"
 #include "mmcfilters/trees/MorphologicalTree.hpp"
-#include "mmcfilters/trees/TreeAltitudeOps.hpp"
 #include "mmcfilters/trees/WeightedMorphologicalTree.hpp"
 
 namespace mmcfilters::unit_tests {
@@ -153,7 +152,7 @@ inline std::vector<NodeId> collectNodeIds(auto range) {
 
 inline std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportFlatHigraHierarchy(const MorphologicalTree& tree) {
     AltitudeBuffer altitude(static_cast<size_t>(tree.getNumInternalNodeSlots()), AltitudeType{});
-    return tree_altitude_ops::exportHigraHierarchy(tree, std::span<const AltitudeType>(altitude));
+    return WeightedMorphologicalTree::exportHigraHierarchy(tree, std::span<const AltitudeType>(altitude));
 }
 
 inline std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportHigraHierarchy(const WeightedMorphologicalTree& tree) {

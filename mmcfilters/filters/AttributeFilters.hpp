@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../utils/Common.hpp"
-#include "../trees/TreeAltitudeOps.hpp"
 #include "../trees/WeightedMorphologicalTree.hpp"
 #include "../attributes/AttributeComputedIncrementally.hpp"
 #include "../attributes/ComputerMSER.hpp"
@@ -25,11 +24,11 @@ protected:
     const AltitudeBuffer* altitude_ = nullptr;
 
     static AltitudeType altitudeOf(const AltitudeBuffer* altitude, NodeId nodeId) {
-        return tree_altitude_ops::getAltitude(altitude, nodeId);
+        return WeightedMorphologicalTree::getAltitude(altitude, nodeId);
     }
 
     static AltitudeDiffType residueOf(const MorphologicalTree& tree, const AltitudeBuffer* altitude, NodeId nodeId) {
-        return tree_altitude_ops::getNodeResidue(tree, altitude, nodeId);
+        return WeightedMorphologicalTree::getNodeResidue(tree, altitude, nodeId);
     }
 
     template <typename TValue>

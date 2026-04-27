@@ -2,7 +2,7 @@
 
 #include "AttributeComputer.hpp"
 #include "AttributeComputedIncrementally.hpp"
-#include "../trees/TreeAltitudeOps.hpp"
+#include "../trees/WeightedMorphologicalTree.hpp"
 namespace mmcfilters {
 
 namespace detail {
@@ -87,7 +87,7 @@ public:
             tree.getRoot(),
             [&](NodeId nodeId) {
                 const NodeId node = detail::grayStatsSlotOf(tree, nodeId);
-                const AltitudeType nodeAltitude = tree_altitude_ops::getAltitude(altitude, nodeId);
+                const AltitudeType nodeAltitude = WeightedMorphologicalTree::getAltitude(altitude, nodeId);
                 if (computeVarianceLevel)
                     sumGrayLevelSquare[node] = static_cast<long>(tree.getNumProperParts(nodeId) * std::pow(nodeAltitude, 2));
                 if (computeLevel)
@@ -128,7 +128,7 @@ public:
                 if (tree.isLeaf(nodeId))
                     buffer[indexOfGrayHeight(node)] = 0.0f;
                 else
-                    buffer[indexOfGrayHeight(node)] = std::abs(static_cast<float>(tree_altitude_ops::getAltitude(altitude, nodeId)) - buffer[indexOfGrayHeight(node)]) + 1.0f;
+                    buffer[indexOfGrayHeight(node)] = std::abs(static_cast<float>(WeightedMorphologicalTree::getAltitude(altitude, nodeId)) - buffer[indexOfGrayHeight(node)]) + 1.0f;
             }
         }
     }

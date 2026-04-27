@@ -1,6 +1,5 @@
 #pragma once
 
-#include "../trees/TreeAltitudeOps.hpp"
 #include "../trees/WeightedMorphologicalTree.hpp"
 #include "../utils/AdjacencyRelation.hpp"
 #include "../utils/Common.hpp"
@@ -34,7 +33,7 @@ protected:
     const AltitudeBuffer* altitude_ = nullptr;
 
     AltitudeType altitudeOf(NodeId nodeId) const {
-        return tree_altitude_ops::getAltitude(altitude_, nodeId);
+        return WeightedMorphologicalTree::getAltitude(altitude_, nodeId);
     }
 
     void initialize(const float* attr) {

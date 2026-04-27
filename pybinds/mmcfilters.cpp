@@ -450,8 +450,8 @@ void init_MorphologicalTree(py::module &m){
                 tree.setAltitudeBuffer(altitude);
             },
             "Dense altitude buffer indexed by internal NodeId.")
-        .def("validateAltitudeBufferShape", &WeightedMorphologicalTree::validateAltitudeBufferShape)
-        .def("validateMonotoneAltitude", &WeightedMorphologicalTree::validateMonotoneAltitude)
+        .def("validateAltitudeBufferShape", static_cast<void (WeightedMorphologicalTree::*)() const>(&WeightedMorphologicalTree::validateAltitudeBufferShape))
+        .def("validateMonotoneAltitude", static_cast<void (WeightedMorphologicalTree::*)() const>(&WeightedMorphologicalTree::validateMonotoneAltitude))
         .def_static("createFromHigraParent", [](const std::vector<NodeId>& parent, const std::vector<AltitudeType>& altitude, int rows, int cols, int treeType, std::optional<double> radius) {
             if (parent.size() != altitude.size()) {
                 throw std::invalid_argument("parent and altitude must have the same size");

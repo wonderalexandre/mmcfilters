@@ -13,6 +13,9 @@
 cmake_minimum_required(VERSION 3.20)
 project(mmcfilters LANGUAGES CXX)
 
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -112,3 +115,11 @@ endif()
 if(MMCFILTERS_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
+
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/mmcfiltersConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/mmcfiltersConfig.cmake"
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/mmcfilters")
+
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/mmcfiltersConfig.cmake"
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/mmcfilters")

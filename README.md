@@ -27,6 +27,13 @@ cmake -S . -B build -DMMCFILTERS_BUILD_PYTHON=ON
 cmake --build build
 ```
 
+Installed C++ package:
+
+```cmake
+find_package(mmcfilters CONFIG REQUIRED)
+target_link_libraries(my_target PRIVATE mmcfilters::core)
+```
+
 To enable the regression suite or examples:
 
 ```bash

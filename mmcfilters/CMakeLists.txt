@@ -13,14 +13,17 @@
 # criação de módulos Python deve ocorrer em nível superior reutilizando este
 # alvo para evitar recompilações e dependências desnecessárias.
 
+include(GNUInstallDirs)
+
 set(MMCFILTERS_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+get_filename_component(MMCFILTERS_INCLUDE_ROOT "${MMCFILTERS_ROOT}" DIRECTORY)
 set(MMCFILTERS_COMPONENT_DIRS
     ${MMCFILTERS_ROOT}/trees
     ${MMCFILTERS_ROOT}/filters
     ${MMCFILTERS_ROOT}/attributes
     ${MMCFILTERS_ROOT}/contours
+    ${MMCFILTERS_ROOT}/dataStructure
     ${MMCFILTERS_ROOT}/utils
-    ${MMCFILTERS_ROOT}/attributes/maxdist
 )
 
 # Agrupa headers e fontes do núcleo. Usamos GLOB para manter listas atualizadas
@@ -31,6 +34,7 @@ file(GLOB_RECURSE MMCFILTERS_HEADER_FILES CONFIGURE_DEPENDS
     "${MMCFILTERS_ROOT}/filters/*.hpp"
     "${MMCFILTERS_ROOT}/attributes/*.hpp"
     "${MMCFILTERS_ROOT}/contours/*.hpp"
+    "${MMCFILTERS_ROOT}/dataStructure/*.hpp"
     "${MMCFILTERS_ROOT}/utils/*.hpp"
     "${MMCFILTERS_ROOT}/attributes/maxdist/*.hpp"
 )
@@ -40,6 +44,7 @@ file(GLOB_RECURSE MMCFILTERS_SOURCE_FILES CONFIGURE_DEPENDS
     "${MMCFILTERS_ROOT}/filters/*.cpp"
     "${MMCFILTERS_ROOT}/attributes/*.cpp"
     "${MMCFILTERS_ROOT}/contours/*.cpp"
+    "${MMCFILTERS_ROOT}/dataStructure/*.cpp"
     "${MMCFILTERS_ROOT}/utils/*.cpp"
     "${MMCFILTERS_ROOT}/attributes/maxdist/*.cpp"
 )
@@ -47,12 +52,15 @@ file(GLOB_RECURSE MMCFILTERS_SOURCE_FILES CONFIGURE_DEPENDS
 if(NOT TARGET mmcfilters_lib)
     add_library(mmcfilters_lib INTERFACE)
 endif()
+set_target_properties(mmcfilters_lib PROPERTIES EXPORT_NAME core)
 
 # Exponha os diretórios de include para consumidores externos.
 target_include_directories(mmcfilters_lib
     INTERFACE
+        $<BUILD_INTERFACE:${MMCFILTERS_INCLUDE_ROOT}>
         $<BUILD_INTERFACE:${MMCFILTERS_ROOT}>
-        $<INSTALL_INTERFACE:include/mmcfilters>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/mmcfilters>
 )
 
 # Garante C++20 para tudo que linkar nesta biblioteca.
@@ -77,17 +85,17 @@ source_group(TREE ${MMCFILTERS_ROOT} FILES
 # Regras de instalação padrão: lib + headers.
 install(TARGETS mmcfilters_lib
         EXPORT mmcfiltersTargets
-        RUNTIME DESTINATION bin
-        LIBRARY DESTINATION lib
-        ARCHIVE DESTINATION lib)
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 foreach(dir IN LISTS MMCFILTERS_COMPONENT_DIRS)
     get_filename_component(dir_name ${dir} NAME)
     install(DIRECTORY ${dir}/
-            DESTINATION include/mmcfilters/${dir_name}
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mmcfilters/${dir_name}
             FILES_MATCHING PATTERN "*.hpp" PATTERN "*.tpp")
 endforeach()
 
 install(EXPORT mmcfiltersTargets
         NAMESPACE mmcfilters::
-        DESTINATION lib/cmake/mmcfilters)
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/mmcfilters)

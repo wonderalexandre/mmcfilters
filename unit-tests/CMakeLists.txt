@@ -103,6 +103,14 @@ mmcfilters_add_unit_test(unit_attribute_filters_and_uao
     filters/test_attribute_filters_and_uao.cpp
 )
 
+add_test(
+    NAME unit_installed_consumer
+    COMMAND
+        ${CMAKE_COMMAND}
+            -DMMCFILTERS_BUILD_DIR=${CMAKE_BINARY_DIR}
+            -DMMCFILTERS_CTEST_CONFIG=$<CONFIG>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/installed_consumer_test.cmake)
+
 if(TARGET mmcfilters)
     find_package(Python3 COMPONENTS Interpreter REQUIRED)
     set(MMCFILTERS_PYTHON_TEST_EXECUTABLE "${Python3_EXECUTABLE}")

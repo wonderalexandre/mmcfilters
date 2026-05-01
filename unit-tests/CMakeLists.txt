@@ -21,7 +21,13 @@ function(mmcfilters_add_unit_test target)
     add_executable(${target} ${ARGN})
     target_link_libraries(${target} PRIVATE mmcfilters::core)
     target_compile_features(${target} PRIVATE cxx_std_20)
-    target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(${target}
+        PRIVATE
+            $<$<CXX_COMPILER_ID:MSVC>:/W4>
+            $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall>
+            $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wextra>
+            $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wpedantic>
+    )
     target_include_directories(${target}
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}
@@ -124,8 +130,12 @@ add_test(
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/installed_consumer_test.cmake)
 
 if(TARGET mmcfilters)
-    find_package(Python3 COMPONENTS Interpreter REQUIRED)
-    set(MMCFILTERS_PYTHON_TEST_EXECUTABLE "${Python3_EXECUTABLE}")
+    if(DEFINED Python_EXECUTABLE)
+        set(MMCFILTERS_PYTHON_TEST_EXECUTABLE "${Python_EXECUTABLE}")
+    else()
+        find_package(Python3 COMPONENTS Interpreter REQUIRED)
+        set(MMCFILTERS_PYTHON_TEST_EXECUTABLE "${Python3_EXECUTABLE}")
+    endif()
 
     execute_process(
         COMMAND "${MMCFILTERS_PYTHON_TEST_EXECUTABLE}" -c "import numpy"

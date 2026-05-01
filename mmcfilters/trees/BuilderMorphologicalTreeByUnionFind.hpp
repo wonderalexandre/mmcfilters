@@ -7,7 +7,25 @@
 namespace mmcfilters {
 
 /**
- * @brief Interface para construtores de árvores morfológicas baseados em union-find.
+ * @brief Selects the interpolation/connectivity convention used to build a tree of shapes.
+ */
+enum class ToSInterpolation {
+    SelfDual,
+    Min4cMax8c,
+    Min8cMax4c
+};
+
+using ToSLevel = uint16_t;
+
+inline constexpr int ToSInterpolationScale = 2;
+inline constexpr int ToSInterpolationPadding = 1;
+inline constexpr int ToSUInt8Depth = 8;
+inline constexpr int ToSSelfDualDepth = 9;
+inline constexpr int ToSDefaultInfinityRow = 0;
+inline constexpr int ToSDefaultInfinityCol = 0;
+
+/**
+ * @brief Common interface for union-find builders of morphological trees.
  */
 class IMorphologicalTreeBuilder {
 public:
@@ -18,7 +36,7 @@ public:
 
 
 /**
- * @brief Implementa construção de component trees via algoritmo union-find.
+ * @brief Union-find builder for max-trees and min-trees.
  */
 class BuilderComponentTree : public IMorphologicalTreeBuilder{
 private:
@@ -32,6 +50,9 @@ public:
     template <typename PixelType>
     std::vector<int> sort(ImagePtr<PixelType> imgPtr) const {
         const int n = imgPtr->getSize();
+        if (n <= 0) {
+            throw std::invalid_argument("BuilderComponentTree requires a non-empty image.");
+        }
         std::vector<int> orderedPixels(n);
         PixelType* img = imgPtr->rawData();
 
@@ -55,18 +76,16 @@ public:
             if(isMaxtree){
                 for (int i = 0; i < n; i++)
                     counter[img[i]]++;
-                for (int i = 1; i < maxvalue; i++) 
+                for (int i = 1; i <= maxvalue; i++)
                     counter[i] += counter[i - 1];
-                counter[maxvalue] += counter[maxvalue-1];
                 for (int i = n - 1; i >= 0; --i)
                     orderedPixels[--counter[img[i]]] = i;	
 
             }else{
                 for (int i = 0; i < n; i++)
                     counter[maxvalue - img[i]]++;
-                for (int i = 1; i < maxvalue; i++) 
+                for (int i = 1; i <= maxvalue; i++)
                     counter[i] += counter[i - 1];
-                counter[maxvalue] += counter[maxvalue-1];
                 for (int i = n - 1; i >= 0; --i)
                     orderedPixels[--counter[maxvalue - img[i]]] = i;
             }
@@ -117,15 +136,15 @@ public:
 
 
 
-/************************ToS******************* */
+/************************ Tree of Shapes support ************************/
 
 /*
-Adjacência adaptativa para construção da ToS com 4 e 8-conectividade.
-As conexões diagonais são ativadas conforme necessário durante a construção da ToS para garantir a conectividade adequada dos componentes.
-As conexões diagonais são representadas usando flags de bits em um vetor. Cada pixel pode ter até quatro conexões diagonais: SW, NE, SE, NW
-Essas conexões são armazenadas em um vetor de uint8_t, onde cada bit representa uma conexão diagonal específica.
-Por exemplo, se o bit 0 estiver definido, significa que há uma conexão diagonal SW do pixel atual para o pixel ao sul-oeste.
-*/
+ * Adaptive adjacency backend used by the tree-of-shapes construction.
+ *
+ * Diagonal links are activated on demand so that the interpolated grid can
+ * emulate the required 4/8-connectivity behaviour during the union-find pass.
+ * Each pixel may carry four diagonal flags: SW, NE, SE, and NW.
+ */
 enum class DiagonalConnection : uint8_t {
     None = 0,
     SW = 1 << 0,
@@ -149,8 +168,7 @@ inline bool operator&(DiagonalConnection a, DiagonalConnection b) {
 }
 
 /**
- * @brief Representa adjacência adaptativa para construção da ToS de 4/8-conectividade.
- *
+ * @brief Adaptive adjacency used during 4/8-connected tree-of-shapes construction.
  */
 class AdjacencyUC {
 private:
@@ -279,7 +297,7 @@ private:
     
 
 public:
-    PriorityQueueToS(int depthOfImage=8) : currentPriority(0), numElements(0), maxPriorityLevels(1 << depthOfImage){
+    PriorityQueueToS(int depthOfImage=ToSUInt8Depth) : currentPriority(0), numElements(0), maxPriorityLevels(1 << depthOfImage){
         buckets.resize(maxPriorityLevels);
     }
 
@@ -305,30 +323,28 @@ public:
     }
 
     int priorityPop() {
-        // Se o bucket atual estiver vazio, precisamos ajustar a prioridade
         if (buckets[currentPriority].empty()) {
-            int i = currentPriority;
-            int j = currentPriority;
-            while (true) {
-
-                // Tentar diminuir a prioridade
-                if (j > 0 && buckets[j].empty()) {
-                    j--;
-                }
-                if (!buckets[j].empty()) { // Encontrou o próximo bucket não vazio diminuindo a prioridade
-                    currentPriority = j;
-                    break;
-                }
-
-                // Tentar aumentar a prioridade
-                if (i < maxPriorityLevels && buckets[i].empty()) {
-                    i++;
-                }
-                if (i < maxPriorityLevels && !buckets[i].empty()) { // Encontrou o próximo bucket não vazio aumentando a prioridade
-                    currentPriority = i;
+            int nextPriority = -1;
+            for (int priority = currentPriority + 1; priority < maxPriorityLevels; ++priority) {
+                if (!buckets[priority].empty()) {
+                    nextPriority = priority;
                     break;
                 }
             }
+
+            if (nextPriority == -1) {
+                for (int priority = currentPriority - 1; priority >= 0; --priority) {
+                    if (!buckets[priority].empty()) {
+                        nextPriority = priority;
+                        break;
+                    }
+                }
+            }
+
+            if (nextPriority == -1) {
+                throw std::runtime_error("PriorityQueueToS is empty.");
+            }
+            currentPriority = nextPriority;
         }
 
         int element = buckets[currentPriority].front(); 
@@ -347,28 +363,101 @@ public:
  */
 class BuilderTreeOfShape: public IMorphologicalTreeBuilder {
 private:
-    bool is4c8cConnectivity;
+    ToSInterpolation interpolation;
+    int infinitySeedRow;
+    int infinitySeedCol;
+
+    inline bool usesConnectivityMap() const noexcept {
+        return interpolation == ToSInterpolation::Min4cMax8c
+            || interpolation == ToSInterpolation::Min8cMax4c;
+    }
+
+    inline bool usesHighDiagonalAtSaddle() const noexcept {
+        return interpolation == ToSInterpolation::Min4cMax8c;
+    }
+
+    inline int interpolatedNumRows(int numRows) const noexcept {
+        return ToSInterpolationScale * numRows + ToSInterpolationPadding;
+    }
+
+    inline int interpolatedNumCols(int numCols) const noexcept {
+        return ToSInterpolationScale * numCols + ToSInterpolationPadding;
+    }
+
+    inline int originalPointRow(int row) const noexcept {
+        return ToSInterpolationScale * row + ToSInterpolationPadding;
+    }
+
+    inline int originalPointCol(int col) const noexcept {
+        return ToSInterpolationScale * col + ToSInterpolationPadding;
+    }
+
+    inline ToSLevel scaledOriginalLevel(uint8_t value) const noexcept {
+        return static_cast<ToSLevel>(ToSInterpolationScale * static_cast<int>(value));
+    }
+
+    inline int infinitySeedIndex(int interpNumRows, int interpNumCols) const {
+        if (infinitySeedRow < 0 || infinitySeedCol < 0 || infinitySeedRow >= interpNumRows || infinitySeedCol >= interpNumCols) {
+            throw std::invalid_argument("Tree-of-shapes infinity seed must be inside the interpolated domain.");
+        }
+        return ImageUtils::to1D(infinitySeedRow, infinitySeedCol, interpNumCols);
+    }
+
+    inline void setDiagonal0Connection(AdjacencyUC& adj, int row, int col) const {
+        adj.setDiagonalConnection(row, col-1, DiagonalConnection::SE);
+        adj.setDiagonalConnection(row+1, col, DiagonalConnection::NW);
+
+        adj.setDiagonalConnection(row - 1, col - 1, DiagonalConnection::SE);
+        adj.setDiagonalConnection(row, col, DiagonalConnection::SE | DiagonalConnection::NW);
+        adj.setDiagonalConnection(row + 1, col + 1, DiagonalConnection::NW);
+
+        adj.setDiagonalConnection(row-1, col, DiagonalConnection::SE);
+        adj.setDiagonalConnection(row, col+1, DiagonalConnection::NW);
+    }
+
+    inline void setDiagonal1Connection(AdjacencyUC& adj, int row, int col) const {
+        adj.setDiagonalConnection(row, col-1, DiagonalConnection::NE);
+        adj.setDiagonalConnection(row-1, col, DiagonalConnection::SW);
+
+        adj.setDiagonalConnection(row-1, col+1, DiagonalConnection::SW);
+        adj.setDiagonalConnection(row, col, DiagonalConnection::SW | DiagonalConnection::NE);
+        adj.setDiagonalConnection(row + 1, col - 1, DiagonalConnection::NE);
+
+        adj.setDiagonalConnection(row+1, col, DiagonalConnection::NE);
+        adj.setDiagonalConnection(row, col+1, DiagonalConnection::SW);
+    }
 
 
 
 
 public:
 
-    explicit BuilderTreeOfShape(): BuilderTreeOfShape(true) {}
-    explicit BuilderTreeOfShape(bool is4c8cConnectivity): is4c8cConnectivity(is4c8cConnectivity) {}
+    explicit BuilderTreeOfShape(
+        ToSInterpolation interpolation,
+        int infinitySeedRow = ToSDefaultInfinityRow,
+        int infinitySeedCol = ToSDefaultInfinityCol)
+        : interpolation(interpolation), infinitySeedRow(infinitySeedRow), infinitySeedCol(infinitySeedCol) {}
     ~BuilderTreeOfShape() { }
 
-     /**
-      * Implementation based on the paper: 
-      *  - Thesi of the N.Boutry
-      * - T. Géraud, E. Carlinet, and S. Crozet, Self-Duality and Digital Topology: Links Between the Morphological Tree of Shapes and Well-Composed Gray-Level Images, ISMM 2015
-      * - N.Boutry, T.Géraud, L.Najman, "How to Make nD Functions Digitally Well-Composed in a Self-dual Way", ISMM 2015.
-      * - N.Boutry, T.Géraud, L.Najman, "On Making {$n$D} Images Well-Composed by a Self-Dual Local Interpolation", DGCI 2014
-      */
-     std::tuple<std::vector<uint8_t>, std::vector<uint8_t>, AdjacencyUC> interpolateImage(const ImageUInt8Ptr& imgPtr) const{
+     std::tuple<std::vector<ToSLevel>, std::vector<ToSLevel>, AdjacencyUC> interpolateImage(const ImageUInt8Ptr& imgPtr) const{
+        // Implements the self-dual span-based immersion used by Boutry's PhD
+        // thesis: ISpan(u) followed by front propagation from a median-valued
+        // outer boundary. Internal levels are stored in Z/2 by scaling values
+        // by 2, so odd integers represent half gray levels.
         auto img = imgPtr->rawData();
         int numRows = imgPtr->getNumRows();
         int numCols = imgPtr->getNumCols();
+        if (numRows <= 0 || numCols <= 0) {
+            throw std::invalid_argument("BuilderTreeOfShape requires a non-empty image.");
+        }
+        if (numRows == 1 && numCols == 1) {
+            const int interpNumRows = interpolatedNumRows(numRows);
+            const int interpNumCols = interpolatedNumCols(numCols);
+            std::vector<ToSLevel> interpolationMin(interpNumRows * interpNumCols, scaledOriginalLevel(img[0]));
+            std::vector<ToSLevel> interpolationMax(interpNumRows * interpNumCols, scaledOriginalLevel(img[0]));
+            AdjacencyUC adj(interpNumRows, interpNumCols, false);
+            return std::make_tuple(std::move(interpolationMin), std::move(interpolationMax), std::move(adj));
+        }
 
         constexpr int adjCircleCol[] = {-1, +1, -1, +1};
         constexpr int adjCircleRow[] = {-1, -1, +1, +1};
@@ -379,20 +468,20 @@ public:
         constexpr int adjRetVerCol[] = {+1, -1};
         constexpr int adjRetVerRow[] = {0, 0};
 
-        int interpNumCols = numCols * 2 + 1;
-        int interpNumRows = numRows * 2 + 1;
+        int interpNumCols = interpolatedNumCols(numCols);
+        int interpNumRows = interpolatedNumRows(numRows);
         int size = interpNumCols * interpNumRows;
 
         // Aloca memória para os resultados de interpolação (mínimo e máximo)
-        std::vector<uint8_t> interpolationMin(size);
-        std::vector<uint8_t> interpolationMax(size);
+        std::vector<ToSLevel> interpolationMin(size);
+        std::vector<ToSLevel> interpolationMax(size);
         //this->imgU = std::make_unique<uint8_t[]>(size);
         //this->interpolationMax = std::make_unique<uint8_t[]>(size);
 
         int numBoundary = 2 * (numRows + numCols) - 4;
         
         //std::unique_ptr<uint8_t[]> pixelsPtr(new uint8_t[numBoundary]);// Para calcular a mediana
-        std::vector<uint8_t> pixels(numBoundary);
+        std::vector<int> pixels(numBoundary);
         //uint8_t* pixels = pixelsPtr.get();
 
         int pT, i = 0; // i é um contador para o array pixels
@@ -402,23 +491,23 @@ public:
 
             // Verifica se o pixel está na borda
             if (row == 0 || row == numRows - 1 || col == 0 || col == numCols - 1) {
-                pixels[i++] = img[p]; // Adiciona o pixel ao array pixels
+                pixels[i++] = static_cast<int>(img[p]); // Adiciona o pixel ao array pixels
             }
 
             // Calcula o índice para imagem interpolada
-            pT = ImageUtils::to1D(2 * row + 1, 2 * col + 1, interpNumCols);
+            pT = ImageUtils::to1D(originalPointRow(row), originalPointCol(col), interpNumCols);
 
             // Define os valores de interpolação
-            interpolationMin[pT] = interpolationMax[pT] = img[p];
+            interpolationMin[pT] = interpolationMax[pT] = scaledOriginalLevel(img[p]);
         }
 
         //std::sort(pixels, pixels + numBoundary);
         std::sort(pixels.begin(), pixels.end());
         int median;
         if (numBoundary % 2 == 0) {
-            median = (pixels[numBoundary / 2 - 1] + pixels[numBoundary / 2]) / 2;
+            median = pixels[numBoundary / 2 - 1] + pixels[numBoundary / 2];
         } else {
-            median = pixels[numBoundary / 2];
+            median = ToSInterpolationScale * pixels[numBoundary / 2];
         }
         //std::cout << "Interpolation (Median): " << median << std::endl;
 
@@ -476,28 +565,34 @@ public:
                         }
                     }
                 }
-                interpolationMin[pT] = min;
-                interpolationMax[pT] = max;
+                interpolationMin[pT] = static_cast<ToSLevel>(min);
+                interpolationMax[pT] = static_cast<ToSLevel>(max);
             }
         }
         return std::make_tuple(std::move(interpolationMin), std::move(interpolationMax), std::move(adj));
        
     }
 
-    std::tuple<std::vector<uint8_t>, std::vector<uint8_t>, AdjacencyUC> interpolateImage4c8c(const ImageUInt8Ptr& imgPtr) const{
+    std::tuple<std::vector<ToSLevel>, std::vector<ToSLevel>, AdjacencyUC> interpolateImage4c8c(const ImageUInt8Ptr& imgPtr) const{
+        // Implements the optimized 2D immersion/connectivity-map rules from
+        // Carlinet, Crozet, and Geraud, "The Tree of Shapes Turned into a
+        // Max-Tree: A Simple and Efficient Linear Algorithm", ICIP 2018.
         auto img = imgPtr->rawData();
         int numRows = imgPtr->getNumRows();
         int numCols = imgPtr->getNumCols();
+        if (numRows <= 0 || numCols <= 0) {
+            throw std::invalid_argument("BuilderTreeOfShape requires a non-empty image.");
+        }
 
-        int interpNumCols = numCols * 2 + 1;
-        int interpNumRows = numRows * 2 + 1;
+        int interpNumCols = interpolatedNumCols(numCols);
+        int interpNumRows = interpolatedNumRows(numRows);
         int size = interpNumCols * interpNumRows;
         AdjacencyUC adj(interpNumRows, interpNumCols, true);
 
 
         // Aloca memória para os resultados de interpolação (mínimo e máximo)
-        std::vector<uint8_t> interpolationMin(size);
-        std::vector<uint8_t> interpolationMax(size);
+        std::vector<ToSLevel> interpolationMin(size);
+        std::vector<ToSLevel> interpolationMax(size);
 
         int pT;
          // Compute interval from 2-faces.
@@ -505,7 +600,7 @@ public:
             auto [row, col] = ImageUtils::to2D(p, numCols);
 
             // Calcula o índice para imagem interpolada
-            pT = ImageUtils::to1D(2 * row + 1, 2 * col + 1, interpNumCols);
+            pT = ImageUtils::to1D(originalPointRow(row), originalPointCol(col), interpNumCols);
 
             // Define os valores de interpolação
             interpolationMin[pT] = interpolationMax[pT] = img[p];
@@ -628,44 +723,28 @@ public:
                     int v3 = getValue(row + 1, col + 1);
 
 
-                    int min_v0v3 = std::min(v0, v3);
-                    int max_v0v3 = std::max(v0, v3);
-                    int min_v1v2 = std::min(v1, v2);
-                    int max_v1v2 = std::max(v1, v2);
-                    if (max_v1v2 > min_v0v3) {
-                        
-                        // Saddle point configuration 1
-                        adj.setDiagonalConnection(row, col-1, DiagonalConnection::SE);
-                        adj.setDiagonalConnection(row+1, col, DiagonalConnection::NW);
-                        
-                        adj.setDiagonalConnection(row - 1, col - 1, DiagonalConnection::SE);
-                        adj.setDiagonalConnection(row, col, DiagonalConnection::SE | DiagonalConnection::NW);
-                        adj.setDiagonalConnection(row + 1, col + 1, DiagonalConnection::NW);
+                    const int min_v0v3 = std::min(v0, v3);
+                    const int max_v0v3 = std::max(v0, v3);
+                    const int min_v1v2 = std::min(v1, v2);
+                    const int max_v1v2 = std::max(v1, v2);
+                    const bool diagonal0IsHigh = min_v0v3 > max_v1v2;
+                    const bool diagonal1IsHigh = min_v1v2 > max_v0v3;
 
-                        adj.setDiagonalConnection(row-1, col, DiagonalConnection::SE);
-                        adj.setDiagonalConnection(row, col+1, DiagonalConnection::NW);
-
-                        interpolationMin[pT] = min_v0v3;
-                        interpolationMax[pT] = max_v0v3;
-                    }
-                    else if (max_v0v3 > min_v1v2) {
-                        // Saddle point configuration 2
-                        adj.setDiagonalConnection(row, col-1, DiagonalConnection::NE);
-                        adj.setDiagonalConnection(row-1, col, DiagonalConnection::SW);
-
-                        adj.setDiagonalConnection(row-1, col+1, DiagonalConnection::SW);
-                        adj.setDiagonalConnection(row, col, DiagonalConnection::SW | DiagonalConnection::NE);
-                        adj.setDiagonalConnection(row + 1, col - 1, DiagonalConnection::NE);
-
-                        adj.setDiagonalConnection(row+1, col, DiagonalConnection::NE);
-                        adj.setDiagonalConnection(row, col+1, DiagonalConnection::SW);
-
-                        interpolationMin[pT] = min_v1v2;
-                        interpolationMax[pT] = max_v1v2;
+                    if (diagonal0IsHigh || diagonal1IsHigh) {
+                        const bool chooseDiagonal0 = usesHighDiagonalAtSaddle() ? diagonal0IsHigh : !diagonal0IsHigh;
+                        if (chooseDiagonal0) {
+                            setDiagonal0Connection(adj, row, col);
+                            interpolationMin[pT] = min_v0v3;
+                            interpolationMax[pT] = max_v0v3;
+                        } else {
+                            setDiagonal1Connection(adj, row, col);
+                            interpolationMin[pT] = min_v1v2;
+                            interpolationMax[pT] = max_v1v2;
+                        }
                     }else{
                         // Non-critical configuration.
-                        interpolationMin[pT] = std::min(min_v0v3, min_v1v2);
-                        interpolationMax[pT] = std::min(max_v0v3, max_v1v2);
+                        interpolationMin[pT] = std::min({v0, v1, v2, v3});
+                        interpolationMax[pT] = std::max({v0, v1, v2, v3});
                     }
                 }
 
@@ -676,22 +755,22 @@ public:
        
     }
 
-    std::tuple<std::vector<uint8_t>, std::vector<int>, AdjacencyUC> sort(const ImageUInt8Ptr& imgPtr) const{
+    std::tuple<std::vector<ToSLevel>, std::vector<int>, AdjacencyUC> sort(const ImageUInt8Ptr& imgPtr) const{
 
         int numRows = imgPtr->getNumRows();
         int numCols = imgPtr->getNumCols();
 
-        int interpNumCols = numCols * 2 + 1;
-        int interpNumRows = numRows * 2 + 1;
+        int interpNumCols = interpolatedNumCols(numCols);
+        int interpNumRows = interpolatedNumRows(numRows);
         int size = interpNumCols * interpNumRows;
-        auto [interpolationMin, interpolationMax, adj] = is4c8cConnectivity? interpolateImage4c8c(imgPtr): interpolateImage(imgPtr);
+        auto [interpolationMin, interpolationMax, adj] = usesConnectivityMap()? interpolateImage4c8c(imgPtr): interpolateImage(imgPtr);
         
         std::vector<uint8_t> dejavu(size, 0);  
         std::vector<int> imgR(size);  // Pixels ordenados
-        std::vector<uint8_t> imgU(size);        // Níveis de cinza da imagem
+        std::vector<ToSLevel> imgU(size);        // Níveis de cinza da imagem
         
-        PriorityQueueToS queue;  // Fila de prioridade
-        int pInfinito = ImageUtils::to1D(1, 1, interpNumCols);
+        PriorityQueueToS queue(usesConnectivityMap() ? ToSUInt8Depth : ToSSelfDualDepth);  // Fila de prioridade
+        int pInfinito = infinitySeedIndex(interpNumRows, interpNumCols);
         int priorityQueueOld = interpolationMin[pInfinito];
         queue.initial(pInfinito, priorityQueueOld);  
         dejavu[pInfinito] = true;
@@ -701,7 +780,7 @@ public:
         while (!queue.isEmpty()) {
             int h = queue.priorityPop();  // Retirar o elemento com maior prioridade
             int priorityQueue = queue.getCurrentPriority(); // Prioridade corrente
-            if(is4c8cConnectivity){
+            if(usesConnectivityMap()){
                 if(priorityQueue != priorityQueueOld) depth++;
                 imgU[h] = depth;
             }else{
@@ -752,8 +831,8 @@ public:
         int numCols = imgPtr->getNumCols();
         int numPixels = numRows * numCols;
 
-        int interpNumCols = numCols * 2 + 1;
-        int interpNumRows = numRows * 2 + 1;
+        int interpNumCols = interpolatedNumCols(numCols);
+        int interpNumRows = interpolatedNumRows(numRows);
         int numPixelsInterp = interpNumCols * interpNumRows;
         auto [imgInterpolate, orderedPixelsInterpolete, adj] = sort(imgPtr);
 
@@ -805,9 +884,25 @@ public:
             }
         }
 
+        auto representativeOriginalAbove = [&](int repStar) {
+            int currentRep = repStar;
+            while (currentRep != InvalidNode) {
+                if (repPixelsOriginais[currentRep] != InvalidNode) {
+                    return repPixelsOriginais[currentRep];
+                }
+                int parentStar = parentInterpolate[currentRep];
+                if (parentStar == currentRep) {
+                    break;
+                }
+                currentRep = repOf(parentStar);
+            }
+            return InvalidNode;
+        };
+
 
         std::vector<int> parent(numPixels, InvalidNode);
         std::vector<int> orderedPixels; orderedPixels.reserve(numPixels);
+        int projectedRootOriginal = InvalidNode;
         for (int i = 0; i < numPixelsInterp; ++i) { // raiz -> folhas
             int pStar = orderedPixelsInterpolete[i];
             if (!isOriginal1D(pStar, interpNumCols)) continue;
@@ -822,7 +917,7 @@ public:
                 if (repPixelsOriginais[repP] == pStar) {
                     // pStar é o representante ORIGINAL do seu platô. Seu pai vem do platô ACIMA
                     int repAbove = repOf(parentInterpolate[repP]);
-                    qStar = repPixelsOriginais[repAbove];
+                    qStar = representativeOriginalAbove(repAbove);
                 } else {
                     // mesmo platô. Seu pai é o representante ORIGINAL do mesmo platô
                     qStar = repPixelsOriginais[repP];
@@ -831,7 +926,14 @@ public:
             else {
                 // nível diferente. Seu pai é o representante ORIGINAL do platô do pai
                 int repPar = repOf(parStar);
-                qStar = repPixelsOriginais[repPar];
+                qStar = representativeOriginalAbove(repPar);
+            }
+
+            if (qStar == InvalidNode) {
+                if (projectedRootOriginal == InvalidNode) {
+                    projectedRootOriginal = pStar;
+                }
+                qStar = projectedRootOriginal;
             }
 
             //projeção para o parent e orderedPixels originais
@@ -848,4 +950,3 @@ public:
 };
 
 } // namespace mmcfilters
-

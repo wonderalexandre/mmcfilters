@@ -4,11 +4,27 @@
 
 namespace mmcfilters {
 
+/**
+ * @brief Enumeration of scalar node attributes supported by the library.
+ *
+ * @details
+ * Each enumerator identifies a descriptor that can be materialised per live
+ * node of a `MorphologicalTree`. The values are used in three roles:
+ * - as the public request space exposed by the API;
+ * - as keys in dependency maps and attribute layouts;
+ * - as dispatch keys for `AttributeFactory`.
+ *
+ * The enumeration is intentionally flat: grouped requests are expressed
+ * separately through `AttributeGroup`.
+ *
+ * See `AttributeComputedIncrementally.hpp` for the architectural overview of
+ * how attribute requests, computers, layouts, and caching interact.
+ */
 enum class Attribute {
-    // Geométricos básicos
+    // Basic geometric measures
     AREA,
 
-    // Textura / intensidade agregada
+    // Aggregated grey-level / intensity attributes
     VOLUME,
 	RELATIVE_VOLUME,
     LEVEL,
@@ -16,7 +32,7 @@ enum class Attribute {
     MEAN_LEVEL,
     VARIANCE_LEVEL,
 
-    // Bounding box
+    // Bounding-box attributes
     BOX_WIDTH,
     BOX_HEIGHT,
 	DIAGONAL_LENGTH,
@@ -27,7 +43,7 @@ enum class Attribute {
 	BOX_ROW_MIN,
 	BOX_ROW_MAX,
 
-    // Momentos Centrais
+    // Central moments
     CENTRAL_MOMENT_20,
     CENTRAL_MOMENT_02,
     CENTRAL_MOMENT_11,
@@ -36,7 +52,7 @@ enum class Attribute {
     CENTRAL_MOMENT_21,
     CENTRAL_MOMENT_12,
 
-    // Momentos de Hu
+    // Hu moments
     HU_MOMENT_1,
     HU_MOMENT_2,
     HU_MOMENT_3,
@@ -45,7 +61,7 @@ enum class Attribute {
     HU_MOMENT_6,
     HU_MOMENT_7,
 
-    // Atributos derivados de momentos
+    // Moment-based descriptors
     INERTIA,
     COMPACTNESS,
     ECCENTRICITY,
@@ -54,7 +70,7 @@ enum class Attribute {
     AXIS_ORIENTATION,
 	CIRCULARITY,
 
-	//BitQuads
+	// Bit-quads
 	BITQUADS_AREA,
 	BITQUADS_NUMBER_EULER,
 	BITQUADS_NUMBER_HOLES,
@@ -65,7 +81,7 @@ enum class Attribute {
 	BITQUADS_LENGTH_AVERAGE,
 	BITQUADS_WIDTH_AVERAGE,
 
-    // Estruturais (topologia da árvore)
+    // Tree-topology attributes
     HEIGHT_NODE,
     DEPTH_NODE,
     IS_LEAF_NODE,
@@ -79,21 +95,29 @@ enum class Attribute {
 
     MAX_DIST,
 
-    AVG_CHILD_HEIGHT_NODE //Manter como o ultimo atributo do enum
+    AVG_CHILD_HEIGHT_NODE
 
 };
 
-
+/**
+ * @brief Enumeration of attribute groups used for bulk requests.
+ *
+ * @details
+ * Groups provide a convenient way to request coherent families of attributes
+ * without enumerating every scalar descriptor individually. They are also used
+ * internally to declare dependencies between computers that naturally consume
+ * a whole family, such as central moments or the topology descriptors.
+ */
 enum class AttributeGroup {
-    ALL,               // Todos os atributos
-    GEOMETRIC,         // Forma e proporção
+    ALL,
+    GEOMETRIC,
 	MOMENT_BASED,
-    BOUNDING_BOX,      // Box width/height
-    CENTRAL_MOMENTS,    // Momentos centrais
-    HU_MOMENTS,         // Momentos de Hu
-    TEXTURE,           // Atributos baseados em níveis de cinza
-    TREE_TOPOLOGY,         // Topologia da árvore
-	BITQUADS          // BitQuads
+    BOUNDING_BOX,
+    CENTRAL_MOMENTS,
+    HU_MOMENTS,
+    TEXTURE,
+    TREE_TOPOLOGY,
+	BITQUADS
 	
 };
 
@@ -101,7 +125,13 @@ using AttributeOrGroup = std::variant<Attribute, AttributeGroup>;
 using enum Attribute;
 
 /**
- * @brief Chave composta usada para indexar atributos associados a deslocamentos.
+ * @brief Composite key used to index delta-augmented attribute layouts.
+ *
+ * @details
+ * Some APIs, such as `computeSingleAttributeWithDelta(...)`, materialise the
+ * same scalar attribute at several relative ancestor/descendant offsets.
+ * `AttributeKey` combines the base attribute and the signed delta used to
+ * distinguish those slots in `AttributeNamesWithDelta`.
  */
 struct AttributeKey {
     Attribute attr;
@@ -149,6 +179,14 @@ namespace std {
 }
 
 namespace mmcfilters {
+/**
+ * @brief Canonical expansion of each public attribute group.
+ *
+ * @details
+ * The map is used both by public convenience APIs and by the internal
+ * dependency resolver. Its contents therefore define the library-wide meaning
+ * of each `AttributeGroup`.
+ */
 static const std::unordered_map<AttributeGroup, std::vector<Attribute>> ATTRIBUTE_GROUPS = {
     {AttributeGroup::GEOMETRIC, {
         AREA,
@@ -246,7 +284,18 @@ static const std::unordered_map<AttributeGroup, std::vector<Attribute>> ATTRIBUT
 
 
 /**
- * @brief Mapeia atributos e variações de delta para índices lineares em buffers.
+ * @brief Layout object for buffers that store several `(attribute, delta)`
+ * combinations per node.
+ *
+ * @details
+ * The layout is node-major: for a given node, all requested delta variants are
+ * stored contiguously. `NUM_ATTRIBUTES` therefore counts the number of
+ * `(attribute, delta)` entries associated with each node, not the number of
+ * live nodes.
+ *
+ * The class is primarily used by delta-based APIs such as MSER-like stability
+ * descriptors, where each node needs access to values sampled at ancestor and
+ * descendant offsets around the current position.
  */
 class AttributeNamesWithDelta {
 public:
@@ -257,6 +306,9 @@ public:
         : indexMap(std::move(map)), NUM_ATTRIBUTES(static_cast<int>(indexMap.size())) {}
 
 
+	/**
+	 * @brief Builds the canonical dense layout for all deltas in `[-delta, delta]`.
+	 */
 	static AttributeNamesWithDelta create(int delta, const std::vector<Attribute>& attributes) {
 		std::unordered_map<AttributeKey, int> map;
 		int offset = 0;
@@ -268,26 +320,45 @@ public:
 		return AttributeNamesWithDelta(std::move(map));
 	}
 
+    /**
+     * @brief Returns the per-node offset associated with `(attr, delta)`.
+     */
     int getIndex(Attribute attr, int delta) const {
         return getIndex(AttributeKey{attr, delta});
     }
 
+	/**
+	 * @brief Returns the per-node offset associated with a composite delta key.
+	 */
 	int getIndex(AttributeKey attrKey) const {
 		return indexMap.at(attrKey);
 	}
 
+    /**
+     * @brief Returns the linear index in the flat buffer for a given node and
+     * delta-augmented attribute.
+     */
     int linearIndex(int nodeIndex, Attribute attr, int delta) const {
         return nodeIndex * NUM_ATTRIBUTES + getIndex(attr, delta);
     }
 
+	/**
+	 * @brief Convenience overload taking an `AttributeKey`.
+	 */
 	int linearIndex(int nodeIndex, AttributeKey attrKey) const {
 		return linearIndex(nodeIndex, attrKey.attr, attrKey.delta);
 	}
 
+	/**
+	 * @brief Returns a human-readable label for a composite key.
+	 */
 	static std::string toString(AttributeKey attrKey) {
 		return toString(attrKey.attr, attrKey.delta);
 	}
 
+	/**
+	 * @brief Returns a human-readable label for an attribute at a given delta.
+	 */
 	static std::string toString(Attribute attr, int delta) {
 		std::string name;
 		switch (attr) {
@@ -365,7 +436,21 @@ public:
 
 
 /**
- * @brief Resolve nomes de atributos em índices lineares usados pelos buffers.
+ * @brief Layout object that maps scalar attributes to flat-buffer offsets.
+ *
+ * @details
+ * `AttributeNames` describes the in-memory arrangement of a node-attribute
+ * buffer. The layout is node-major:
+ * - all requested attributes for node `0` come first;
+ * - then all requested attributes for node `1`;
+ * - and so on.
+ *
+ * `NUM_ATTRIBUTES` is therefore the per-node stride needed to jump from the
+ * attributes of one node to the next. The actual number of floats in a buffer
+ * is `numNodes * NUM_ATTRIBUTES`.
+ *
+ * The class is deliberately lightweight because it is shared across most of
+ * the incremental attribute pipeline, dependency maps, and Python bindings.
  */
 class AttributeNames {
 public:
@@ -375,6 +460,12 @@ public:
     AttributeNames(std::unordered_map<Attribute, int>&& map)
         : indexMap(std::move(map)), NUM_ATTRIBUTES(static_cast<int>(indexMap.size())) {}
 
+    /**
+     * @brief Builds a layout from an explicit attribute list.
+     *
+     * @param n Historical parameter retained for compatibility. The current
+     * implementation stores attributes densely and therefore ignores it.
+     */
     static AttributeNames fromList(int n, const std::vector<Attribute>& attributes) {
         std::unordered_map<Attribute, int> map;
         int i = 0;
@@ -384,19 +475,31 @@ public:
         return AttributeNames(std::move(map));
     }
 
+    /**
+     * @brief Builds a layout from a public attribute group.
+     */
     static AttributeNames fromGroup(AttributeGroup group, int n) {
         auto it = ATTRIBUTE_GROUPS.find(group);
         return fromList(n, it->second);
     }
 
+    /**
+     * @brief Returns the per-node offset associated with `attr`.
+     */
     int getIndex(Attribute attr) const {
         return indexMap.at(attr);
     }
 
+    /**
+     * @brief Returns the linear index in the flat buffer for `(node, attr)`.
+     */
     int linearIndex(int nodeIndex, Attribute attr) const {
         return nodeIndex * NUM_ATTRIBUTES + getIndex(attr);
     }
 
+    /**
+     * @brief Returns the stable symbolic name associated with `attr`.
+     */
     static std::string toString(Attribute attr) {
         switch (attr) {
             case AREA: return "AREA";
@@ -461,7 +564,14 @@ public:
         }
     }
 
- 	static std::string describe(Attribute attr) {
+    /**
+     * @brief Returns a user-facing description of an attribute.
+     *
+     * @details
+     * The descriptions are intentionally richer than `toString(...)` and are
+     * meant for documentation, notebooks, and Python introspection helpers.
+     */
+    static std::string describe(Attribute attr) {
         switch (attr) {
             // Basic geometric attributes
             case Attribute::AREA: return "Area: Number of pixels in the connected component.";
@@ -559,4 +669,3 @@ public:
 };
 
 } // namespace mmcfilters
-

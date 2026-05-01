@@ -1,45 +1,29 @@
 #pragma once
 
-#include <memory> // Ponteiros inteligentes
-#include <cstdint> // Tipos fixos
-#include <algorithm> // Algoritmos STL
-#include <utility> // Utilidades diversas
-#include <cstdlib>  // para rand()
+#include <memory>
+#include <cstdint>
+#include <algorithm>
+#include <utility>
+#include <cstdlib>
 
 namespace mmcfilters {
 
 /**
- * @brief Classe de imagem genérica 2D com armazenamento contíguo e controle de vida via std::shared_ptr.
+ * @brief Generic row-major 2D image with contiguous storage and shared ownership.
  *
- * A `Image<PixelType>` representa uma imagem 2D em ordem row-major, encapsulando
- * largura, altura e um buffer contíguo gerenciado por `std::shared_ptr<PixelType[]>`.
- * Fornece utilitários para criação/copiar/preencher e acesso indexado em 1D.
+ * `Image<PixelType>` stores a rectangular image in a single contiguous
+ * row-major buffer. The class exposes simple factory helpers for owned and
+ * non-owned memory, deep copy support, linear access, and a few convenience
+ * operations used throughout the library.
  *
- * ## Semântica de propriedade do buffer
- * - `create(rows, cols)`: aloca um novo buffer e o gerencia (deleter padrão).
- * - `create(rows, cols, initValue)`: idem, preenchendo com o valor inicial.
- * - `fromExternal(rawPtr, rows, cols)`: **não** assume a propriedade
- *   (o deleter é vazio). Útil quando o ciclo de vida do ponteiro bruto é externo.
- * - `fromRaw(rawPtr, rows, cols)`: **assume** a propriedade do array
- *   (deleter padrão de array). Use quando a instância deve gerenciar a memória.
+ * Ownership semantics:
  *
- * ## Layout de memória
- * - Acesso linear (row-major): índice `i = row * numCols + col`.
- * - Operador `operator[](int)` fornece acesso por índice linear.
+ * - `create(rows, cols)` allocates and owns a fresh buffer;
+ * - `create(rows, cols, initValue)` allocates, owns, and fills the buffer;
+ * - `fromExternal(rawPtr, rows, cols)` wraps external memory without taking ownership;
+ * - `fromRaw(rawPtr, rows, cols)` wraps external memory and assumes ownership.
  *
- *
- * ## Exemplo de uso
- * @code
- * using ImgU8 = Image<uint8_t>;
- * auto img = ImgU8::create(480, 640, 0);     // aloca e zera
- * img->fill(255);                            // preenche com 255
- * int idx = ImageUtils::to1D(10, 20, img->getNumCols());
- * (*img)[idx] = 128;                         // acesso linear
- * auto clone = img->clone();                  // deep copy
- * bool eq = img->isEqual(clone);              // true
- * @endcode
- *
- * @tparam PixelType tipo do pixel armazenado (ex.: uint8_t, int32_t, float).
+ * @tparam PixelType Pixel scalar type, such as `uint8_t`, `int32_t`, or `float`.
  */
 template <typename PixelType>
 class Image {
@@ -133,19 +117,25 @@ using ImagePtr = std::shared_ptr<Image<PixelType>>;
  */
 class ImageUtils{
 public:
-    // Converte (row, col) para índice 1D (row-major)
+    /**
+     * @brief Converts `(row, col)` to a row-major linear index.
+     */
     inline static int to1D(int row, int col, int numCols) noexcept{
         return row * numCols + col;
     }
 
-    // Converte índice 1D para (row, col) (row-major)
+    /**
+     * @brief Converts a row-major linear index to `(row, col)`.
+     */
     inline static std::pair<int, int> to2D(int index, int numCols) noexcept {
         int row = index / numCols;
-        int col = index - row * numCols;  // evita operador % => int col = index % numCols;
+        int col = index - row * numCols;
         return {row, col};
     }
 
-    // Cria uma imagem colorida aleatória a partir de uma imagem em escala de cinza: [(R,G,B), (R,G,B), ...]
+    /**
+     * @brief Creates a random-colour visualisation from an integer-labelled image.
+     */
     static ImageUInt8Ptr createRandomColor(int* img, int numRowsOfImage, int numColsOfImage){
         int max = 0;
         int sizeImage = numColsOfImage * numRowsOfImage;

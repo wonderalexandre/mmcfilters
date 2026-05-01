@@ -13,25 +13,29 @@
 cmake_minimum_required(VERSION 3.20)
 project(mmcfilters LANGUAGES CXX)
 
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(MMCFILTERS_BUILD_PYTHON "Build the pybind11 extension module" ON)
 option(MMCFILTERS_BUILD_TESTS "Build C++ test executables" OFF)
+option(MMCFILTERS_BUILD_EXAMPLES "Build example executables" OFF)
 option(MMCFILTERS_ENABLE_ASSERTS "Keep runtime asserts enabled even in Release" OFF)
 
 # Núcleo C++ compartilhado entre as saídas (biblioteca + bindings Python).
 add_subdirectory(mmcfilters)
 
 if(MMCFILTERS_ENABLE_ASSERTS)
-    target_compile_definitions(mmcfilters_lib PUBLIC MMCFILTERS_ENABLE_ASSERTS)
+    target_compile_definitions(mmcfilters_lib INTERFACE MMCFILTERS_ENABLE_ASSERTS)
     target_compile_options(mmcfilters_lib
-        PUBLIC
+        INTERFACE
             $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>
             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>
     )
 else()
-    target_compile_definitions(mmcfilters_lib PUBLIC NDEBUG)
+    target_compile_definitions(mmcfilters_lib INTERFACE NDEBUG)
 endif()
 
 if(MMCFILTERS_BUILD_PYTHON)
@@ -46,6 +50,8 @@ if(MMCFILTERS_BUILD_PYTHON)
     endif()
 
     set(MMCFILTERS_PYBIND_CPP "${MMC_PYBINDS_DIR}/mmcfilters.cpp")
+    set(MMCFILTERS_PYTHON_PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/python/mmcfilters")
+    set(MMCFILTERS_PYTHON_BUILD_PACKAGE_DIR "${CMAKE_BINARY_DIR}/python/mmcfilters")
 
     if(NOT EXISTS "${MMCFILTERS_PYBIND_CPP}")
         message(FATAL_ERROR
@@ -54,6 +60,18 @@ if(MMCFILTERS_BUILD_PYTHON)
     endif()
 
     file(GLOB_RECURSE MMCFILTERS_PYBIND_HEADERS "${MMC_PYBINDS_DIR}/*.hpp")
+    file(GLOB MMCFILTERS_PYTHON_PACKAGE_FILES CONFIGURE_DEPENDS
+        "${MMCFILTERS_PYTHON_PACKAGE_DIR}/*.py")
+
+    file(MAKE_DIRECTORY "${MMCFILTERS_PYTHON_BUILD_PACKAGE_DIR}")
+    foreach(_package_file IN LISTS MMCFILTERS_PYTHON_PACKAGE_FILES)
+        get_filename_component(_package_name "${_package_file}" NAME)
+        configure_file(
+            "${_package_file}"
+            "${MMCFILTERS_PYTHON_BUILD_PACKAGE_DIR}/${_package_name}"
+            COPYONLY
+        )
+    endforeach()
 
     pybind11_add_module(mmcfilters MODULE
         ${MMCFILTERS_PYBIND_CPP}
@@ -63,6 +81,10 @@ if(MMCFILTERS_BUILD_PYTHON)
     target_link_libraries(mmcfilters PRIVATE mmcfilters::core)
     target_include_directories(mmcfilters PRIVATE ${MMC_PYBINDS_DIR})
     target_compile_features(mmcfilters PRIVATE cxx_std_20)
+    set_target_properties(mmcfilters PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY "${MMCFILTERS_PYTHON_BUILD_PACKAGE_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY "${MMCFILTERS_PYTHON_BUILD_PACKAGE_DIR}"
+        ARCHIVE_OUTPUT_DIRECTORY "${MMCFILTERS_PYTHON_BUILD_PACKAGE_DIR}")
 
     source_group(TREE ${MMC_PYBINDS_DIR} PREFIX "Pybind" FILES
         ${MMCFILTERS_PYBIND_CPP}
@@ -80,12 +102,24 @@ if(MMCFILTERS_BUILD_PYTHON)
     endif()
 
     install(TARGETS mmcfilters
-        LIBRARY DESTINATION "${_PY_INSTALL_DIR}"
-        RUNTIME DESTINATION "${_PY_INSTALL_DIR}"
-        ARCHIVE DESTINATION "${_PY_INSTALL_DIR}")
+        LIBRARY DESTINATION "${_PY_INSTALL_DIR}/mmcfilters"
+        RUNTIME DESTINATION "${_PY_INSTALL_DIR}/mmcfilters"
+        ARCHIVE DESTINATION "${_PY_INSTALL_DIR}/mmcfilters")
 endif()
 
 if(MMCFILTERS_BUILD_TESTS)
     enable_testing()
-    add_subdirectory(tests)
+    add_subdirectory(unit-tests)
 endif()
+
+if(MMCFILTERS_BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif()
+
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/mmcfiltersConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/mmcfiltersConfig.cmake"
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/mmcfilters")
+
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/mmcfiltersConfig.cmake"
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/mmcfilters")

@@ -1,10 +1,8 @@
 #pragma once
 
 #include "../mmcfilters/filters/ExtinctionValues.hpp"
-#include "../mmcfilters/trees/NodeMT.hpp"
-
-
 #include "MorphologicalTreePybind.hpp"
+#include "PybindUtils.hpp"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -16,20 +14,35 @@ namespace mmcfilters {
 
 namespace py = pybind11;
 
-
-class ExtinctionValuesPybind;
-using ExtinctionValuesPybindPtr = std::shared_ptr<ExtinctionValuesPybind>;
-
 /**
  * @brief *Wrapper* Pybind11 para cálculo e uso de valores de extinção.
  */
 class ExtinctionValuesPybind : public ExtinctionValues{
+    using FloatArray = py::array_t<float, py::array::c_style | py::array::forcecast>;
+
+    MorphologicalTreePybindPtr treeOwner_;
+    std::shared_ptr<WeightedMorphologicalTree> weightedOwner_;
 
     public:
     using ExtinctionValues::ExtinctionValues;
     
-    ExtinctionValuesPybind(MorphologicalTreePybindPtr tree, py::array_t<float>& attribute)
-        : ExtinctionValues(tree, PybindUtils::toShared_ptr(attribute)) { }
+    ExtinctionValuesPybind(MorphologicalTreePybindPtr tree, FloatArray attribute)
+        : ExtinctionValues(
+            *tree,
+            [&]() {
+                PybindUtils::require1DArray(attribute.request(), tree->getNumInternalNodeSlots(), "attribute");
+                return PybindUtils::toShared_ptr(attribute);
+            }()),
+          treeOwner_(std::move(tree)) { }
+
+    ExtinctionValuesPybind(std::shared_ptr<WeightedMorphologicalTree> weighted, FloatArray attribute)
+        : ExtinctionValues(
+            *weighted,
+            [&]() {
+                PybindUtils::require1DArray(attribute.request(), weighted->topology().getNumInternalNodeSlots(), "attribute");
+                return PybindUtils::toShared_ptr(attribute);
+            }()),
+          weightedOwner_(std::move(weighted)) { }
 
     py::array_t<float> saliencyMap(int leafToKeep, bool unweighted=true) {
 
@@ -37,13 +50,16 @@ class ExtinctionValuesPybind : public ExtinctionValues{
         return PybindUtils::toNumpy(saliencyMapPtr);
     }
 
-    // Return a Python list of (leaf, cutoffNode, extinction) tuples for easy unpacking
     std::vector<py::tuple> getExtinctionValuesPy()  {
         auto &vec = ExtinctionValues::getExtinctionValues();
         std::vector<py::tuple> out;
         out.reserve(vec.size());
         for (const auto &item : vec) {
-            out.push_back(py::make_tuple(this->tree->proxy(item.leaf), tree->proxy(item.cutoffNode), item.extinction));
+            out.push_back(py::make_tuple(
+                item.leaf,
+                item.cutoffNode,
+                item.extinction
+            ));
         }
         return out;
     }

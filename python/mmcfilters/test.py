@@ -24,16 +24,14 @@ img = np.array([
 ])
 
 num_rows, num_cols = img.shape
-img_vector = img.ravel()
 
-tree = mmcfilters.ComponentTree(img_vector, num_rows, num_cols, True, 1.5)
+tree = mmcfilters.MorphologicalTree(img.astype(np.uint8), True, 1.5)
 
-
-dic, attrs = mmcfilters.Attribute.computerBasicAttributes(tree)
+dic, attrs = mmcfilters.Attribute.computeAttributes(tree, [mmcfilters.Attribute.AREA])
 import pandas as pd
 df = pd.DataFrame(data=attrs, columns=[key for key in dic.keys()])
 
-attr_area = attrs[:,0]
+attr_area = attrs[:, dic["AREA"]]
 filter = mmcfilters.AttributeFilters(tree)
 print( filter.filteringMax(attr_area < 10).reshape(num_rows, num_cols))
 img_vector_filtered_min = filter.filteringMin(attr_area, 10)
@@ -45,4 +43,3 @@ img_vector_filtered_max = filter.filteringMax(attr_area, 10)
 img_filtered_max = img_vector_filtered_max.reshape(num_rows, num_cols)
 print("Filtered image (max):")
 print( img_filtered_max )
-

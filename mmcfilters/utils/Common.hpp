@@ -2,7 +2,7 @@
 
 
 // ---------------------------------------------------------------------------
-// Controle de assertivas
+// Assertion control
 // ---------------------------------------------------------------------------
 #if defined(MMCFILTERS_ENABLE_ASSERTS)
 #  ifdef NDEBUG
@@ -12,54 +12,54 @@
 #include <cassert>      // assert()
 
 // ---------------------------------------------------------------------------
-// Estruturas de dados (STL containers e algoritmos)
+// Standard containers and algorithms
 // ---------------------------------------------------------------------------
-#include <list>          // Lista duplamente ligada
-#include <vector>        // Vetor dinâmico redimensionável
-#include <array>         // Array de tamanho fixo em tempo de compilação
-#include <deque>         // Deque (fila dupla)
-#include <stack>         // Pilha adaptada (baseada em deque por padrão)
-#include <unordered_set> // Conjunto hash (não ordenado, busca O(1) médio)
-#include <unordered_map> // Mapa hash (não ordenado, busca O(1) médio)
-#include <typeindex>     // std::type_index, permite comparar/hashear typeid para usar em containers
-#include <set>           // std::set, std::multiset (conjunto ordenado, árvore balanceada)
-#include <map>           // std::map, std::multimap (dicionário ordenado, árvore balanceada)
-#include <span>          // Visão não-dona de sequência contígua (C++20+)
-#include <tuple>         // Estruturas heterogêneas fixas
-#include <algorithm>     // Funções genéricas: sort, copy, fill, etc.
-#include <iterator> //funções e utilitários para trabalhar com iteradores.
-#include <utility>   // std::pair, std::move, std::swap
+#include <list>          // Doubly-linked list
+#include <vector>        // Resizable contiguous container
+#include <array>         // Fixed-size array
+#include <deque>         // Double-ended queue
+#include <stack>         // Stack adaptor
+#include <unordered_set> // Hash set
+#include <unordered_map> // Hash map
+#include <typeindex>     // std::type_index for type-aware maps and sets
+#include <set>           // Ordered set / multiset
+#include <map>           // Ordered map / multimap
+#include <span>          // Non-owning contiguous view
+#include <tuple>         // Fixed heterogeneous tuples
+#include <algorithm>     // Generic algorithms
+#include <iterator>      // Iterator utilities
+#include <utility>       // std::pair, std::move, std::swap
 
 // ---------------------------------------------------------------------------
-// Utilitários gerais
+// General utilities
 // ---------------------------------------------------------------------------
-#include <cstdint>   // Tipos inteiros fixos (uint8_t, int32_t, etc.)
-#include <limits>    // Limites numéricos: std::numeric_limits<T>
+#include <cstdint>   // Fixed-width integer types
+#include <limits>    // Numeric limits
 
 #ifndef _USE_MATH_DEFINES
 #define _USE_MATH_DEFINES
 #endif
-#include <cmath>     // Funções matemáticas em std:: (sqrt, sin, cos, pow, etc.)
-#include <iostream>  // Entrada/saída padrão: std::cout, std::cin
+#include <cmath>     // Standard maths functions
+#include <iostream>  // Standard streams
 #include <string>    // std::string
-#include <iomanip>   // Manipuladores de IO (std::setw, std::setprecision, etc.)
-#include <numeric>   // Algoritmos numéricos (std::accumulate, std::inner_product)
-#include <stdexcept> // Exceções padrão (std::runtime_error, std::invalid_argument)
-#include <sstream>  // std::istringstream, std::ostringstream, std::stringstream (streams baseados em string)
-#include <numbers>  // Constantes matemáticas (C++20+): std::numbers::pi, e, phi, sqrt2, etc.
+#include <iomanip>   // Stream manipulators
+#include <numeric>   // Numeric algorithms
+#include <stdexcept> // Standard exceptions
+#include <sstream>   // String-based streams
+#include <numbers>   // C++20 mathematical constants
 
 
 // ---------------------------------------------------------------------------
-// Memória, funções e metaprogramação
+// Memory management, callables, and metaprogramming
 // ---------------------------------------------------------------------------
-#include <memory>       // Ponteiros inteligentes (shared_ptr, unique_ptr, weak_ptr)
-#include <variant>      // std::variant (union segura com tipo discriminado)
-#include <optional>     // std::optional (valor opcional)
+#include <memory>       // Smart pointers
+#include <variant>      // Type-safe tagged union
+#include <optional>     // Optional values
 #include <functional>   // std::function, std::bind, std::hash
-#include <type_traits>  // Traits e SFINAE (std::is_same, std::enable_if, etc.)
+#include <type_traits>  // Traits and compile-time utilities
 
 // ---------------------------------------------------------------------------
-// mmcfilters: includes comuns a todo o projeto
+// mmcfilters common project-wide includes
 // ---------------------------------------------------------------------------
 #include "Image.hpp"
 #include "../dataStructure/FastStack.hpp"
@@ -68,79 +68,34 @@
 
 namespace mmcfilters {
 
-//habilitar ou desabilitar logs/debugs.
+/// Compile-time switches for optional logging and debug traces.
 constexpr bool PRINT_LOG   = false;
 constexpr bool PRINT_DEBUG = false;
 
-//tipo de dado NodeId
-using NodeId = int; //não usar unsigned int
-constexpr NodeId InvalidNode = -1; //-1 indica nó inválido
+/// Node identifier type used throughout the project.
+using NodeId = int; // keep signed to preserve InvalidNode semantics
+/// Sentinel value used to denote an invalid node identifier.
+constexpr NodeId InvalidNode = -1;
 inline bool isValidNode(NodeId id) noexcept { return id != InvalidNode;}
 inline bool isInvalid(NodeId id) noexcept { return id == InvalidNode; }
 
+/// Canonical value type stored for node altitudes / gray levels in component trees.
+using AltitudeType = int;
 
-/**
- * @brief Estrutura de dados para marcação eficiente (visited flags) usando carimbos de geração.
- *
- * A `GenerationStampSet` mantém um array de inteiros (stamps), cada posição
- * associada a um índice de elemento (ex.: nó de grafo). Em vez de limpar o
- * array inteiro a cada iteração, um contador de geração (`cur`) é incrementado
- * e usado como "marca lógica". 
- *
- *
- * @code
- * GenerationStampSet visited(numNodes);
- *
- * visited.mark(nodeIdx);
- *
- * if (!visited.isMarked(otherIdx)) {
- *     // processa nó não visitado
- * }
- *
- * visited.resetAll();  // O(1) para preparar nova iteração
- * @endcode
- */
-struct GenerationStampSet {
-    using gen_t = uint32_t;
+/// Dense altitude buffer indexed by internal node id.
+using AltitudeBuffer = std::vector<AltitudeType>;
 
-    std::unique_ptr<gen_t[]> stamp; // array de carimbos
-    size_t n{0};                    // tamanho
-    gen_t cur{1};                   // geração atual (0 = “limpo”)
+/// Signed/arithmetic type used for altitude differences such as residues.
+using AltitudeDiffType = decltype(std::declval<AltitudeType>() - std::declval<AltitudeType>());
 
-    GenerationStampSet() = default;
-    explicit GenerationStampSet(size_t n) { resize(n); }
-
-    void resize(size_t newN) {
-        n = newN;
-        stamp = std::make_unique<gen_t[]>(n);
-        std::fill_n(stamp.get(), n, 0);
-        cur = 1;
-    }
-
-    inline void mark(size_t idx) noexcept {
-        stamp[idx] = cur;
-    }
-
-    inline bool isMarked(size_t idx) const noexcept {
-        return stamp[idx] == cur;
-    }
-
-    // reset lógico em O(1)
-    void resetAll() {
-        if (++cur == 0) {
-            std::fill_n(stamp.get(), n, 0);
-            cur = 1;
-        }
-    }
-
-    // limpeza forçada em O(N)
-    void clearAll() {
-        std::fill_n(stamp.get(), n, 0);
-        cur = 1;
-    }
-
-    gen_t generation() const noexcept { return cur; }
-};
+// Optional deprecation hook for the legacy weighted API that still lives on
+// MorphologicalTree during the transition to the split between topology/
+// ownership and external altitude buffers.
+#if defined(MMCFILTERS_ENABLE_LEGACY_WEIGHTED_TREE_API_DEPRECATION)
+#define MMCFILTERS_LEGACY_WEIGHTED_TREE_API [[deprecated("Use WeightedMorphologicalTree with an explicit altitude buffer.")]]
+#else
+#define MMCFILTERS_LEGACY_WEIGHTED_TREE_API
+#endif
 
 
 } // namespace mmcfilters

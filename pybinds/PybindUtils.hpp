@@ -4,16 +4,43 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <array>
+#include <sstream>
+#include <string_view>
+#include <vector>
 
 namespace mmcfilters {
 
 namespace py = pybind11;
 
 /**
- * @brief Funções auxiliares para converter entre estruturas C++ e NumPy.
+ * @brief Helper functions for converting between C++ buffers/images and NumPy arrays.
  */
 class PybindUtils{
     public:
+
+        static void require1DArray(const py::buffer_info& bufferInfo, py::ssize_t expectedSize, std::string_view argumentName) {
+            if (bufferInfo.ndim != 1) {
+                std::ostringstream oss;
+                oss << argumentName << " must be a 1D array";
+                throw std::invalid_argument(oss.str());
+            }
+            if (bufferInfo.shape[0] != expectedSize) {
+                std::ostringstream oss;
+                oss << argumentName << " must have length " << expectedSize
+                    << ", got " << bufferInfo.shape[0];
+                throw std::invalid_argument(oss.str());
+            }
+        }
+
+        template <class T>
+        static void requireVectorSize(const std::vector<T>& values, std::size_t expectedSize, std::string_view argumentName) {
+            if (values.size() != expectedSize) {
+                std::ostringstream oss;
+                oss << argumentName << " must have length " << expectedSize
+                    << ", got " << values.size();
+                throw std::invalid_argument(oss.str());
+            }
+        }
    
         template <typename PixelType>
         static py::array_t<PixelType> toNumpy(ImagePtr<PixelType> image) {
@@ -92,8 +119,37 @@ class PybindUtils{
             
             return numpy;
         }
+
+        static py::array_t<float> toNumpyOwned(std::vector<float>&& buffer, int n) {
+            auto* owned = new std::vector<float>(std::move(buffer));
+            py::capsule free_when_done(owned, [](void* ptr) {
+                delete reinterpret_cast<std::vector<float>*>(ptr);
+            });
+
+            return py::array_t<float>(
+                {n},
+                {static_cast<py::ssize_t>(sizeof(float))},
+                owned->data(),
+                free_when_done
+            );
+        }
+
+        static py::array_t<float> toNumpyOwned2D(std::vector<float>&& buffer, int rows, int cols) {
+            auto* owned = new std::vector<float>(std::move(buffer));
+            py::capsule free_when_done(owned, [](void* ptr) {
+                delete reinterpret_cast<std::vector<float>*>(ptr);
+            });
+
+            return py::array_t<float>(
+                {rows, cols},
+                {static_cast<py::ssize_t>(sizeof(float) * cols), static_cast<py::ssize_t>(sizeof(float))},
+                owned->data(),
+                free_when_done
+            );
+        }
         
-        static std::shared_ptr<float[]> toShared_ptr(py::array_t<float>& arr) {
+        template <typename Array>
+        static std::shared_ptr<float[]> toShared_ptr(const Array& arr) {
             // Captura o objeto Python no deleter — isso garante que o buffer não será liberado prematuramente
             return std::shared_ptr<float[]>(
                 static_cast<float*>(arr.request().ptr),

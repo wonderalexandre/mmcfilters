@@ -1,35 +1,16 @@
 #pragma once
 
-#include <vector>   // usado como armazenamento dinâmico
-#include <cstddef>  // para size_t (tamanho de container)
-#include <utility>  // para std::move nas operações push/pop
+#include <vector>
+#include <cstddef>
+#include <utility>
 
 namespace mmcfilters {
 /**
- * @brief Pilha (stack) simples e performática baseada em `std::vector`.
+ * @brief Lightweight LIFO stack backed by a contiguous `std::vector`.
  *
- * `FastStack<T>` provê a interface essencial de uma pilha LIFO com
- * operações de custo amortizado O(1) e controle de capacidade via
- * `reserve`. É útil em rotinas de DFS, processamento de componentes,
- * e estruturas auxiliares onde o overhead de `std::stack` e alocações
- * frequentes deve ser evitado.
- *
- * ## Operações
- * - `push(const T&)`, `push(T&&)` — insere no topo (amortizado O(1)).
- * - `pop()` — remove e retorna o topo (amortizado O(1)).
- * - `top()` — acesso ao elemento do topo (O(1)).
- * - `empty()`, `size()` — consultas O(1).
- * - `reserve(n)`, `clear()` — gestão de capacidade e limpeza.
- *
- * ## Exemplo de uso
- * @code
- * FastStack<int> st;
- * st.reserve(1024);
- * st.push(3);
- * st.push(7);
- * int x = st.top();   // 7
- * x = st.pop();       // 7; agora o topo é 3
- * @endcode
+ * `FastStack<T>` provides the core stack operations needed by DFS-like
+ * traversals while keeping memory layout simple and allocation behaviour
+ * predictable.
  */
 template <typename T>
 struct FastStack {
@@ -43,31 +24,31 @@ public:
         data_.reserve(n);
     }
 
-    /// Reserva espaço inicial (opcional)
+    /// Reserves storage to avoid future reallocations.
     void reserve(size_t n) { data_.reserve(n); }
 
-    /// Remove todos os elementos
+    /// Clears the stack.
     void clear() { data_.clear(); }
 
-    /// Retorna se a pilha está vazia
+    /// Returns whether the stack is empty.
     bool empty() const { return data_.empty(); }
 
-    /// Retorna o tamanho atual da pilha
+    /// Returns the number of stored elements.
     size_t size() const { return data_.size(); }
 
-    /// Adiciona um elemento ao topo
+    /// Pushes an element on top of the stack.
     void push(const T& value) { data_.push_back(value); }
 
     void push(T&& value) { data_.push_back(std::move(value)); }
 
-    /// Remove e retorna o elemento do topo
+    /// Removes and returns the top element.
     T pop() {
         T value = std::move(data_.back());
         data_.pop_back();
         return value;
     }
 
-    /// Acesso ao topo sem remover
+    /// Returns the top element without removing it.
     T& top() { return data_.back(); }
     const T& top() const { return data_.back(); }
 };

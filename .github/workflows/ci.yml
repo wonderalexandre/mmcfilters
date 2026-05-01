@@ -9,13 +9,27 @@ permissions:
   contents: read
 
 jobs:
-  ubuntu-cmake:
-    name: Ubuntu CMake
-    runs-on: ubuntu-latest
+  cmake:
+    name: CMake (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Set up MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -29,12 +43,12 @@ jobs:
           python -m pip install "cmake>=3.20" ninja numpy
 
       - name: Configure
-        run: |
-          cmake -S . -B build -G Ninja \
-            -DMMCFILTERS_BUILD_PYTHON=ON \
-            -DMMCFILTERS_BUILD_TESTS=ON \
-            -DMMCFILTERS_BUILD_EXAMPLES=ON \
-            -DCMAKE_BUILD_TYPE=Release
+        run: >
+          cmake -S . -B build -G Ninja
+          -DMMCFILTERS_BUILD_PYTHON=ON
+          -DMMCFILTERS_BUILD_TESTS=ON
+          -DMMCFILTERS_BUILD_EXAMPLES=ON
+          -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build --parallel

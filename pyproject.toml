@@ -1,22 +1,8 @@
-###############################################################
-#Comando para publicacao
-#0. Apague tudo não comitado (limpeza): git clean -xdf
-#1. Criar um nova tag: git tag v0.1.x
-#2. Publique a nova tag: git push origin v0.1.x
-#3. Ative a tag: git checkout v0.1.x
-#4. Gere wheels: MACOSX_DEPLOYMENT_TARGET=11.0 python -m build
-#5. Publique no pypi: twine upload dist/*
-###############################################################
-
-
-
 [build-system]
 requires = [
   "scikit-build-core>=0.9",
   "setuptools-scm>=8",
   "pybind11>=3.0.1",
-#  "cmake>=3.20",
-#  "ninja"
 ]
 build-backend = "scikit_build_core.build"
 
@@ -28,6 +14,9 @@ readme = "README.md"
 authors = [{ name = "Wonder Alexandre Luz Alves", email = "worderalexandre@gmail.com" }]
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
+dependencies = [
+  "numpy>=1.23",
+]
 keywords = ["morphological trees", "mathematical morphology", "image processing", "computer vision"]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -76,3 +65,10 @@ include = [
   "LICENSE",
   "README.md",
 ]
+
+[tool.cibuildwheel]
+build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
+skip = "*-win32 *-manylinux_i686 *-musllinux_* pp*"
+test-requires = ["numpy"]
+test-command = "python -c \"import mmcfilters, numpy as np; image = np.array([[1, 2], [3, 4]], dtype=np.uint8); tree = mmcfilters.WeightedMorphologicalTree.createMaxTree(image); assert tree.reconstructionImage().shape == image.shape\""
+build-verbosity = 1

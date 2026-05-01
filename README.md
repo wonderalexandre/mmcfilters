@@ -1,5 +1,8 @@
 # MorphologicalAttributeFilters
 
+[![CI](https://github.com/wonderalexandre/MorphologicalAttributeFilters/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/wonderalexandre/MorphologicalAttributeFilters/actions/workflows/ci.yml)
+[![Release](https://github.com/wonderalexandre/MorphologicalAttributeFilters/actions/workflows/release.yml/badge.svg)](https://github.com/wonderalexandre/MorphologicalAttributeFilters/actions/workflows/release.yml)
+
 > Project status: transitional research library.
 >
 > This repository exists to support experiments around dynamic morphological
@@ -218,3 +221,24 @@ Use this map to find the right entry point quickly:
   [docs/contours.md](docs/contours.md)
 - Build and packaging: [CMakeLists.txt](CMakeLists.txt) and
   [pyproject.toml](pyproject.toml)
+
+## Release process
+
+Releases are automated by GitHub Actions. For a production release:
+
+1. Make sure the `CI` workflow is green on `main`.
+2. Create and push a semantic version tag, for example `v0.1.26`.
+3. The `Release` workflow builds the source distribution and platform wheels,
+   validates the package metadata, and attaches the artifacts to a GitHub
+   Release.
+
+PyPI publication is intentionally manual. Download the release artifacts from
+the GitHub Release or from the `Release` workflow run, then upload them with:
+
+```bash
+python -m pip install --upgrade twine
+python -m twine upload dist/*
+```
+
+Manual runs of the `Release` workflow also build downloadable artifacts without
+creating a GitHub Release.

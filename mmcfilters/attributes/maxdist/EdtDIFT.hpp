@@ -252,6 +252,9 @@ namespace mmcfilters
           const AdaptiveAdj &AA = AAB_[adjMap_[pidx]];
           for (const auto &[q, ai] : AA.neighborsPropogation(p)) {
             int qidx = domain_.index(q);
+            if (qidx == NIL)
+              continue;
+
             int dx = q.x() - r.x();
             int dy = q.y() - r.y();
             int tmp = detail::square(dx) + detail::square(dy);
@@ -316,6 +319,8 @@ namespace mmcfilters
           const AdaptiveAdj &AA = AAB_[adjMap_[pidx]];
           for (const auto& [q, ai] : AA.neighbors(p)) {
             int qidx = domain_.index(q);
+            if (qidx == NIL)
+              continue;
 
             if (Q_.cost(root_[qidx]) == PQueue::PINF) {
               if (O_[qidx] == 0) {

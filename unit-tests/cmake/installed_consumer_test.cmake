@@ -8,6 +8,7 @@ set(work_dir "${MMCFILTERS_BUILD_DIR}/installed-consumer-test")
 set(prefix "${work_dir}/prefix")
 set(consumer_source_dir "${work_dir}/consumer")
 set(consumer_build_dir "${work_dir}/consumer-build")
+set(consumer_config "Release")
 
 file(REMOVE_RECURSE "${work_dir}")
 file(MAKE_DIRECTORY "${consumer_source_dir}")
@@ -66,6 +67,7 @@ execute_process(
         -S "${consumer_source_dir}"
         -B "${consumer_build_dir}"
         "-DCMAKE_PREFIX_PATH=${prefix}"
+        "-DCMAKE_BUILD_TYPE=${consumer_config}"
     RESULT_VARIABLE configure_result
     OUTPUT_VARIABLE configure_output
     ERROR_VARIABLE configure_error)
@@ -77,11 +79,9 @@ if(NOT configure_result EQUAL 0)
         "stderr:\n${configure_error}")
 endif()
 
-set(consumer_build_command "${CMAKE_COMMAND}" --build "${consumer_build_dir}" --parallel)
-
-if(DEFINED MMCFILTERS_CTEST_CONFIG AND NOT "${MMCFILTERS_CTEST_CONFIG}" STREQUAL "")
-    list(APPEND consumer_build_command --config "${MMCFILTERS_CTEST_CONFIG}")
-endif()
+set(consumer_build_command
+    "${CMAKE_COMMAND}" --build "${consumer_build_dir}" --parallel
+    --config "${consumer_config}")
 
 execute_process(
     COMMAND ${consumer_build_command}
@@ -96,14 +96,28 @@ if(NOT build_result EQUAL 0)
         "stderr:\n${build_error}")
 endif()
 
-set(consumer_executable "${consumer_build_dir}/consumer")
-
-if(DEFINED MMCFILTERS_CTEST_CONFIG AND NOT "${MMCFILTERS_CTEST_CONFIG}" STREQUAL "")
-    set(consumer_executable "${consumer_build_dir}/${MMCFILTERS_CTEST_CONFIG}/consumer")
+if(WIN32)
+    set(consumer_executable_candidates
+        "${consumer_build_dir}/${consumer_config}/consumer.exe"
+        "${consumer_build_dir}/consumer.exe")
+else()
+    set(consumer_executable_candidates
+        "${consumer_build_dir}/consumer"
+        "${consumer_build_dir}/${consumer_config}/consumer")
 endif()
 
-if(WIN32)
-    set(consumer_executable "${consumer_executable}.exe")
+set(consumer_executable "")
+foreach(candidate IN LISTS consumer_executable_candidates)
+    if(EXISTS "${candidate}")
+        set(consumer_executable "${candidate}")
+        break()
+    endif()
+endforeach()
+
+if("${consumer_executable}" STREQUAL "")
+    message(FATAL_ERROR
+        "Installed mmcfilters consumer executable was not found.\n"
+        "Checked:\n${consumer_executable_candidates}")
 endif()
 
 execute_process(

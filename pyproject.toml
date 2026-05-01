@@ -68,7 +68,7 @@ include = [
 
 [tool.cibuildwheel]
 build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
-skip = "*-win32 *-manylinux_i686 *-musllinux_* pp*"
+skip = "*-win32 *-manylinux_i686 *-musllinux_*"
 test-requires = ["numpy"]
 test-command = "python -c \"import mmcfilters, numpy as np; image = np.array([[1, 2], [3, 4]], dtype=np.uint8); tree = mmcfilters.WeightedMorphologicalTree.createMaxTree(image); assert tree.reconstructionImage().shape == image.shape\""
 build-verbosity = 1

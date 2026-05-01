@@ -7,6 +7,7 @@ anaconda_projects/
 .vscode/
 .eggs/*
 dist/*
+tmp/
 build_setup_py/*
 .DS_Store
 .virtual_documents/*

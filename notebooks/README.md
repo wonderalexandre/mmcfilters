@@ -63,10 +63,10 @@ hierarchies:
 
 The maintained notebooks in this directory are:
 
-- `Filter.ipynb`
 - `Attribute_Filters.ipynb`
-- `UAO_Exemplos.ipynb`
-
-Other notebooks may remain useful as exploratory references, but new notebooks
-should follow the API above and should not depend on removed legacy interfaces
-such as `NodeMT`, `ResidualTree`, or old parent-array helper layers.
+- `Filter.ipynb`
+- `Higra_MaxDist_Filtering.ipynb`
+- `MaxDistExample.ipynb`
+- `SimpleExamples.ipynb`
+- `ToS_Contour_Example.ipynb`
+- `UAO_Examples.ipynb`

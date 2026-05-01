@@ -46,6 +46,75 @@ private:
     MorphologicalTree tree_;
     AltitudeBuffer altitude_;
 
+    struct ExportedHigraLayout {
+        std::vector<NodeId> sortedNodes;
+        std::vector<NodeId> nodeToHigra;
+        std::vector<NodeId> properParts;
+        NodeId numLeaves = 0;
+        NodeId numVertices = 0;
+    };
+
+    static ExportedHigraLayout computeExportedHigraLayout(const MorphologicalTree& tree, std::span<const AltitudeType> altitude) {
+        validateAltitudeBufferShape(tree, altitude);
+
+        if (tree.getRoot() == InvalidNode || !tree.isAlive(tree.getRoot())) {
+            throw std::runtime_error("Cannot export a tree without a valid rooted component.");
+        }
+
+        std::vector<NodeId> exportedNodes;
+        exportedNodes.reserve(static_cast<size_t>(tree.getNumNodes()));
+        for (NodeId nodeId : tree.getNodeSubtree(tree.getRoot())) {
+            exportedNodes.push_back(nodeId);
+        }
+
+        if (static_cast<int>(exportedNodes.size()) != tree.getNumNodes()) {
+            throw std::runtime_error("Cannot export a forest or a tree with detached alive nodes to a compact Higra representation.");
+        }
+
+        const NodeId numLeaves = tree.getNumTotalProperParts();
+        const NodeId numAliveNodes = static_cast<NodeId>(exportedNodes.size());
+        const NodeId numVertices = numLeaves + numAliveNodes;
+        auto sortedNodes = exportedNodes;
+
+        bool sortAscendingAltitude = true;
+        for (NodeId nodeId : sortedNodes) {
+            if (tree.isRoot(nodeId)) {
+                continue;
+            }
+
+            const NodeId parentNodeId = tree.getNodeParent(nodeId);
+            if (parentNodeId == InvalidNode || !tree.isAlive(parentNodeId)) {
+                throw std::runtime_error("Cannot export a node whose parent is not part of the rooted alive component.");
+            }
+            if (getAltitude(altitude, nodeId) > getAltitude(altitude, parentNodeId)) {
+                sortAscendingAltitude = false;
+            }
+        }
+
+        std::stable_sort(
+            sortedNodes.begin(),
+            sortedNodes.end(),
+            [&](NodeId lhs, NodeId rhs) {
+                const AltitudeType altL = getAltitude(altitude, lhs);
+                const AltitudeType altR = getAltitude(altitude, rhs);
+                if (altL != altR) {
+                    return sortAscendingAltitude ? altL < altR : altL > altR;
+                }
+                return tree.getNodeTimePostOrder(lhs) < tree.getNodeTimePostOrder(rhs);
+            });
+
+        std::vector<NodeId> nodeToHigra(static_cast<size_t>(tree.getNumInternalNodeSlots()), InvalidNode);
+        for (NodeId i = 0; i < numAliveNodes; ++i) {
+            const NodeId oldNodeId = sortedNodes[static_cast<size_t>(i)];
+            nodeToHigra[static_cast<size_t>(oldNodeId)] = numLeaves + i;
+        }
+
+        std::vector<NodeId> properParts(static_cast<size_t>(numLeaves), InvalidNode);
+        std::iota(properParts.begin(), properParts.end(), NodeId{0});
+
+        return {std::move(sortedNodes), std::move(nodeToHigra), std::move(properParts), numLeaves, numVertices};
+    }
+
     void configureEmptyTopology(int rows, int cols, int treeType, std::optional<AdjacencyRelation> adjacency, NodeId numProperParts) {
         tree_.treeType_ = treeType;
         tree_.numRows_ = rows;
@@ -142,6 +211,30 @@ public:
         int infinitySeedRow = ToSDefaultInfinityRow,
         int infinitySeedCol = ToSDefaultInfinityCol) {
         return WeightedMorphologicalTree(img, interpolation, infinitySeedRow, infinitySeedCol);
+    }
+
+    /**
+     * @brief Reuses an existing topology and infers node altitudes from an image.
+     *
+     * The topology is cloned, so the returned weighted tree can be edited
+     * independently from the caller-owned `topology`.
+     */
+    static WeightedMorphologicalTree createFromTopology(const MorphologicalTree& topology, ImageUInt8Ptr img) {
+        MorphologicalTree::requireNonEmptyImageDomain(img, "WeightedMorphologicalTree::createFromTopology");
+        topology.validateConnectedRootedTree();
+
+        if (img->getNumRows() != topology.getNumRowsOfImage() ||
+            img->getNumCols() != topology.getNumColsOfImage() ||
+            img->getSize() != topology.getNumTotalProperParts()) {
+            throw std::invalid_argument("WeightedMorphologicalTree::createFromTopology requires an image domain matching the topology.");
+        }
+
+        WeightedMorphologicalTree weighted;
+        weighted.tree_ = topology.clone();
+        weighted.assignAltitudeFromDirectProperParts(img);
+        weighted.validateAltitudeBufferShape();
+        weighted.validateMonotoneAltitude();
+        return weighted;
     }
 
     /**
@@ -298,79 +391,33 @@ public:
     static std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportHigraHierarchy(
         const MorphologicalTree& tree,
         std::span<const AltitudeType> altitude) {
-        validateAltitudeBufferShape(tree, altitude);
-
-        if (tree.getRoot() == InvalidNode || !tree.isAlive(tree.getRoot())) {
-            throw std::runtime_error("Cannot export a tree without a valid rooted component.");
-        }
-
-        std::vector<NodeId> exportedNodes;
-        exportedNodes.reserve(static_cast<size_t>(tree.getNumNodes()));
-        for (NodeId nodeId : tree.getNodeSubtree(tree.getRoot())) {
-            exportedNodes.push_back(nodeId);
-        }
-
-        if (static_cast<int>(exportedNodes.size()) != tree.getNumNodes()) {
-            throw std::runtime_error("Cannot export a forest or a tree with detached alive nodes to a compact Higra representation.");
-        }
-
-        const NodeId numLeaves = tree.getNumTotalProperParts();
-        const NodeId numAliveNodes = static_cast<NodeId>(exportedNodes.size());
-        const NodeId numVertices = numLeaves + numAliveNodes;
+        const ExportedHigraLayout layout = computeExportedHigraLayout(tree, altitude);
+        const NodeId numLeaves = layout.numLeaves;
+        const NodeId numVertices = layout.numVertices;
 
         std::vector<NodeId> parent(static_cast<size_t>(numVertices), InvalidNode);
         std::vector<AltitudeType> exportedAltitude(static_cast<size_t>(numVertices), AltitudeType{});
-        std::vector<NodeId> oldToNew(static_cast<size_t>(tree.getNumInternalNodeSlots()), InvalidNode);
-        auto sortedNodes = exportedNodes;
 
-        bool sortAscendingAltitude = true;
-        for (NodeId nodeId : sortedNodes) {
-            if (tree.isRoot(nodeId)) {
-                continue;
-            }
-
-            const NodeId parentNodeId = tree.getNodeParent(nodeId);
-            if (parentNodeId == InvalidNode || !tree.isAlive(parentNodeId)) {
-                throw std::runtime_error("Cannot export a node whose parent is not part of the rooted alive component.");
-            }
-            if (getAltitude(altitude, nodeId) > getAltitude(altitude, parentNodeId)) {
-                sortAscendingAltitude = false;
-            }
-        }
-
-        std::stable_sort(
-            sortedNodes.begin(),
-            sortedNodes.end(),
-            [&](NodeId lhs, NodeId rhs) {
-                const AltitudeType altL = getAltitude(altitude, lhs);
-                const AltitudeType altR = getAltitude(altitude, rhs);
-                if (altL != altR) {
-                    return sortAscendingAltitude ? altL < altR : altL > altR;
-                }
-                return tree.getNodeTimePostOrder(lhs) < tree.getNodeTimePostOrder(rhs);
-            });
-
-        for (NodeId i = 0; i < numAliveNodes; ++i) {
-            const NodeId oldNodeId = sortedNodes[static_cast<size_t>(i)];
-            const NodeId newNodeId = numLeaves + i;
-            oldToNew[static_cast<size_t>(oldNodeId)] = newNodeId;
+        for (NodeId oldNodeId : layout.sortedNodes) {
+            const NodeId newNodeId = layout.nodeToHigra[static_cast<size_t>(oldNodeId)];
             exportedAltitude[static_cast<size_t>(newNodeId)] = getAltitude(altitude, oldNodeId);
         }
 
-        for (NodeId properPart = 0; properPart < numLeaves; ++properPart) {
+        for (NodeId leafIndex = 0; leafIndex < numLeaves; ++leafIndex) {
+            const NodeId properPart = layout.properParts[static_cast<size_t>(leafIndex)];
             const NodeId ownerNodeId = tree.getSmallestComponent(properPart);
             if (ownerNodeId == InvalidNode || !tree.isAlive(ownerNodeId)) {
                 throw std::runtime_error("Each proper part must belong to one alive node when exporting a compact Higra hierarchy.");
             }
-            parent[static_cast<size_t>(properPart)] = oldToNew[static_cast<size_t>(ownerNodeId)];
-            exportedAltitude[static_cast<size_t>(properPart)] = getAltitude(altitude, ownerNodeId);
+            parent[static_cast<size_t>(leafIndex)] = layout.nodeToHigra[static_cast<size_t>(ownerNodeId)];
+            exportedAltitude[static_cast<size_t>(leafIndex)] = getAltitude(altitude, ownerNodeId);
         }
 
-        for (NodeId oldNodeId : sortedNodes) {
-            const NodeId newNodeId = oldToNew[static_cast<size_t>(oldNodeId)];
+        for (NodeId oldNodeId : layout.sortedNodes) {
+            const NodeId newNodeId = layout.nodeToHigra[static_cast<size_t>(oldNodeId)];
             const NodeId oldParentNodeId = tree.getNodeParent(oldNodeId);
             parent[static_cast<size_t>(newNodeId)] =
-                oldParentNodeId == oldNodeId ? newNodeId : oldToNew[static_cast<size_t>(oldParentNodeId)];
+                oldParentNodeId == oldNodeId ? newNodeId : layout.nodeToHigra[static_cast<size_t>(oldParentNodeId)];
         }
 
         return {std::move(parent), std::move(exportedAltitude)};
@@ -382,6 +429,76 @@ public:
         return exportHigraHierarchy(tree, std::span<const AltitudeType>(requireAltitudeBuffer(altitude)));
     }
 
+private:
+    /**
+     * @brief Projects dense node-indexed values to the compact Higra layout
+     * produced by `exportHigraHierarchy()`.
+     *
+     * The node-value input is row-major by internal `NodeId`: a scalar buffer
+     * has `valuesPerNode == 1`, while a multi-attribute buffer has
+     * `valuesPerNode` columns per node. `leafValues` can either contain one
+     * row of `valuesPerNode` unit values to broadcast to every exported leaf,
+     * or one row per exported leaf in `ExportedHigraLayout::properParts` order.
+     */
+    static std::vector<float> projectNodeValuesToExportedHigra(
+        const MorphologicalTree& tree,
+        std::span<const AltitudeType> altitude,
+        std::span<const float> nodeValues,
+        std::span<const float> leafValues,
+        int valuesPerNode = 1) {
+        if (valuesPerNode <= 0) {
+            throw std::invalid_argument("valuesPerNode must be positive.");
+        }
+
+        const size_t expectedSize = static_cast<size_t>(tree.getNumInternalNodeSlots()) * static_cast<size_t>(valuesPerNode);
+        if (nodeValues.size() != expectedSize) {
+            throw std::invalid_argument("Node-value buffer size must match the dense internal-node domain.");
+        }
+
+        const ExportedHigraLayout layout = computeExportedHigraLayout(tree, altitude);
+        const size_t numColumns = static_cast<size_t>(valuesPerNode);
+        const size_t broadcastLeafSize = numColumns;
+        const size_t perLeafSize = static_cast<size_t>(layout.numLeaves) * numColumns;
+        if (leafValues.size() != broadcastLeafSize && leafValues.size() != perLeafSize) {
+            throw std::invalid_argument("Leaf-value buffer must contain either one row of unit values or one row per proper part.");
+        }
+
+        const bool perLeafValues = leafValues.size() == perLeafSize;
+        std::vector<float> projected(static_cast<size_t>(layout.numVertices) * numColumns, 0.0f);
+
+        for (NodeId leafIndex = 0; leafIndex < layout.numLeaves; ++leafIndex) {
+            for (int column = 0; column < valuesPerNode; ++column) {
+                const size_t columnIndex = static_cast<size_t>(column);
+                projected[static_cast<size_t>(leafIndex) * numColumns + columnIndex] =
+                    perLeafValues
+                        ? leafValues[static_cast<size_t>(leafIndex) * numColumns + columnIndex]
+                        : leafValues[columnIndex];
+            }
+        }
+
+        for (NodeId nodeId : layout.sortedNodes) {
+            const NodeId higraNodeId = layout.nodeToHigra[static_cast<size_t>(nodeId)];
+            for (int column = 0; column < valuesPerNode; ++column) {
+                projected[
+                    static_cast<size_t>(higraNodeId) * numColumns + static_cast<size_t>(column)] =
+                    nodeValues[
+                        static_cast<size_t>(nodeId) * numColumns + static_cast<size_t>(column)];
+            }
+        }
+
+        return projected;
+    }
+
+    static std::vector<float> projectNodeValuesToExportedHigra(
+        const MorphologicalTree& tree,
+        const AltitudeBuffer* altitude,
+        std::span<const float> nodeValues,
+        std::span<const float> leafValues,
+        int valuesPerNode = 1) {
+        return projectNodeValuesToExportedHigra(tree, std::span<const AltitudeType>(requireAltitudeBuffer(altitude)), nodeValues, leafValues, valuesPerNode);
+    }
+
+public:
     /**
      * @brief Validates altitude monotonicity for max-trees and min-trees.
      */
@@ -494,6 +611,19 @@ public:
         return exportHigraHierarchy(tree_, altitude_);
     }
 
+private:
+    /**
+     * @brief Projects node-indexed values to the compact Higra layout that
+     * `exportHigraHierarchy()` would return for the current tree state.
+     */
+    std::vector<float> projectNodeValuesToExportedHigra(
+        std::span<const float> nodeValues,
+        std::span<const float> leafValues,
+        int valuesPerNode = 1) const {
+        return projectNodeValuesToExportedHigra(tree_, altitude_, nodeValues, leafValues, valuesPerNode);
+    }
+
+public:
     /**
      * @brief Opens the only public entrypoint for staged weighted edits.
      */

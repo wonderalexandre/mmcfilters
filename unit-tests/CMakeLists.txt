@@ -87,6 +87,10 @@ mmcfilters_add_unit_test(unit_attribute_plumbing
     attributes/test_attribute_plumbing.cpp
 )
 
+mmcfilters_add_unit_test(unit_attribute_unit_values
+    attributes/test_attribute_unit_values.cpp
+)
+
 mmcfilters_add_unit_test(unit_secondary_attribute_consumers
     attributes/test_secondary_attribute_consumers.cpp
 )
@@ -103,12 +107,20 @@ mmcfilters_add_unit_test(unit_attribute_filters_and_uao
     filters/test_attribute_filters_and_uao.cpp
 )
 
+set(MMCFILTERS_INSTALLED_CONSUMER_TEST_ARGS
+    -DMMCFILTERS_BUILD_DIR=${CMAKE_BINARY_DIR}
+)
+if(CMAKE_CONFIGURATION_TYPES)
+    list(APPEND MMCFILTERS_INSTALLED_CONSUMER_TEST_ARGS
+        -DMMCFILTERS_CTEST_CONFIG=$<CONFIG>
+    )
+endif()
+
 add_test(
     NAME unit_installed_consumer
     COMMAND
         ${CMAKE_COMMAND}
-            -DMMCFILTERS_BUILD_DIR=${CMAKE_BINARY_DIR}
-            -DMMCFILTERS_CTEST_CONFIG=$<CONFIG>
+            ${MMCFILTERS_INSTALLED_CONSUMER_TEST_ARGS}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/installed_consumer_test.cmake)
 
 if(TARGET mmcfilters)

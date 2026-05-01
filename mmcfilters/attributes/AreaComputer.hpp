@@ -50,6 +50,23 @@ public:
             [](NodeId) {}
         );
     }
+
+    void computeUnitAttributes(
+        const MorphologicalTree& tree,
+        const AltitudeBuffer*,
+        std::span<const NodeId> unitProperParts,
+        std::span<float> buffer,
+        const AttributeNames& attrNames,
+        std::span<const Attribute> requestedAttributes) const override
+    {
+        requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
+        if (!requestsAttribute(requestedAttributes, AREA)) {
+            return;
+        }
+        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
+            buffer[attrNames.linearIndex(leafIndex, AREA)] = 1.0f;
+        }
+    }
 };
 
 } // namespace mmcfilters

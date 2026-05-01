@@ -88,6 +88,66 @@ class BitquadsComputer : public AttributeComputer {
 			}
 			
 		}
+
+		void computeUnitAttributes(
+			const MorphologicalTree& tree,
+			const AltitudeBuffer*,
+			std::span<const NodeId> unitProperParts,
+			std::span<float> buffer,
+			const AttributeNames& attrNames,
+			std::span<const Attribute> requestedAttributes) const override
+		{
+			requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
+			const AdjacencyRelation* adjacency = tree.getAdjacencyRelation();
+			if (adjacency == nullptr) {
+				throw std::invalid_argument("BitQuads attributes require an adjacency relation.");
+			}
+
+			const bool is4Connectivity = adjacency->is4connectivity();
+			const float nan = std::numeric_limits<float>::quiet_NaN();
+			const float inf = std::numeric_limits<float>::infinity();
+
+			auto unitValue = [&](Attribute attribute) -> float {
+				if (is4Connectivity) {
+					switch (attribute) {
+						case BITQUADS_AREA: return 0.0f;
+						case BITQUADS_NUMBER_EULER: return 1.0f;
+						case BITQUADS_NUMBER_HOLES: return 0.0f;
+						case BITQUADS_PERIMETER: return 0.0f;
+						case BITQUADS_PERIMETER_CONTINUOUS: return 0.0f;
+						case BITQUADS_CIRCULARITY: return nan;
+						case BITQUADS_PERIMETER_AVERAGE: return 0.0f;
+						case BITQUADS_LENGTH_AVERAGE: return 0.0f;
+						case BITQUADS_WIDTH_AVERAGE: return nan;
+						default: break;
+					}
+				}
+
+				switch (attribute) {
+					case BITQUADS_AREA: return 1.0f;
+					case BITQUADS_NUMBER_EULER: return 0.0f;
+					case BITQUADS_NUMBER_HOLES: return 1.0f;
+					case BITQUADS_PERIMETER: return 4.0f;
+					case BITQUADS_PERIMETER_CONTINUOUS: return 8.0f / 3.0f;
+					case BITQUADS_CIRCULARITY: return 9.0f * std::numbers::pi_v<float> / 16.0f;
+					case BITQUADS_PERIMETER_AVERAGE: return inf;
+					case BITQUADS_LENGTH_AVERAGE: return inf;
+					case BITQUADS_WIDTH_AVERAGE: return nan;
+					default: break;
+				}
+				throw std::runtime_error("Unsupported BitQuads unit attribute.");
+			};
+
+			for (Attribute attribute : attributes()) {
+				if (!requestsAttribute(requestedAttributes, attribute)) {
+					continue;
+				}
+				const float value = unitValue(attribute);
+				for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
+					buffer[attrNames.linearIndex(leafIndex, attribute)] = value;
+				}
+			}
+		}
 };
 
 } // namespace mmcfilters

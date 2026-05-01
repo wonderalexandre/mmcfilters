@@ -48,8 +48,8 @@
  *    cost. Regular `getContour(node)` reads materialize and cache the requested
  *    subtree when needed, so repeated or broad iteration is incremental.
  *
- * See docs/contours-internals.md for invariants, complexity, memory notes, and
- * benchmark interpretation.
+ * See docs/contours.md for the public API, invariants, complexity, memory
+ * notes, and benchmark interpretation.
  */
 
 #include "../utils/Common.hpp"

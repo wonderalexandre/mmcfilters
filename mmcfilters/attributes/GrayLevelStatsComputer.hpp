@@ -132,6 +132,46 @@ public:
             }
         }
     }
+
+    void computeUnitAttributes(
+        const MorphologicalTree& tree,
+        const AltitudeBuffer* altitude,
+        std::span<const NodeId> unitProperParts,
+        std::span<float> buffer,
+        const AttributeNames& attrNames,
+        std::span<const Attribute> requestedAttributes) const override
+    {
+        requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
+
+        const bool computeLevel = requestsAttribute(requestedAttributes, LEVEL);
+        const bool computeMeanLevel = requestsAttribute(requestedAttributes, MEAN_LEVEL);
+        const bool computeVarianceLevel = requestsAttribute(requestedAttributes, VARIANCE_LEVEL);
+        const bool computeGrayHeight = requestsAttribute(requestedAttributes, GRAY_HEIGHT);
+        if (!computeLevel && !computeMeanLevel && !computeVarianceLevel && !computeGrayHeight) {
+            return;
+        }
+
+        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
+            const NodeId properPart = unitProperParts[static_cast<size_t>(leafIndex)];
+            const float altitudeValue =
+                (computeLevel || computeMeanLevel)
+                    ? static_cast<float>(unitAltitude(tree, altitude, properPart))
+                    : 0.0f;
+
+            if (computeLevel) {
+                buffer[attrNames.linearIndex(leafIndex, LEVEL)] = altitudeValue;
+            }
+            if (computeMeanLevel) {
+                buffer[attrNames.linearIndex(leafIndex, MEAN_LEVEL)] = altitudeValue;
+            }
+            if (computeVarianceLevel) {
+                buffer[attrNames.linearIndex(leafIndex, VARIANCE_LEVEL)] = 0.0f;
+            }
+            if (computeGrayHeight) {
+                buffer[attrNames.linearIndex(leafIndex, GRAY_HEIGHT)] = 0.0f;
+            }
+        }
+    }
 };
 
 } // namespace mmcfilters

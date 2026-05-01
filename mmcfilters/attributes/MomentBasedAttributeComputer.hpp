@@ -143,6 +143,26 @@ public:
             [](NodeId) {}
         );
     }
+
+    void computeUnitAttributes(
+        const MorphologicalTree& tree,
+        const AltitudeBuffer*,
+        std::span<const NodeId> unitProperParts,
+        std::span<float> buffer,
+        const AttributeNames& attrNames,
+        std::span<const Attribute> requested) const override
+    {
+        requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
+        const std::vector<Attribute> zeroAttributes = attributes();
+        for (const Attribute attribute : zeroAttributes) {
+            if (!requestsAttribute(requested, attribute)) {
+                continue;
+            }
+            for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
+                buffer[attrNames.linearIndex(leafIndex, attribute)] = 0.0f;
+            }
+        }
+    }
 };
 
 
@@ -246,6 +266,26 @@ public:
                                                     (eta30 - 3 * eta12) * (eta21 + eta03) * (3 * std::pow(eta30 + eta12, 2) - std::pow(eta21 + eta03, 2));
             }
         );
+    }
+
+    void computeUnitAttributes(
+        const MorphologicalTree& tree,
+        const AltitudeBuffer*,
+        std::span<const NodeId> unitProperParts,
+        std::span<float> buffer,
+        const AttributeNames& attrNames,
+        std::span<const Attribute> requested) const override
+    {
+        requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
+        const std::vector<Attribute> zeroAttributes = attributes();
+        for (const Attribute attribute : zeroAttributes) {
+            if (!requestsAttribute(requested, attribute)) {
+                continue;
+            }
+            for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
+                buffer[attrNames.linearIndex(leafIndex, attribute)] = 0.0f;
+            }
+        }
     }
 };
 
@@ -393,6 +433,26 @@ public:
                 
             }
         );
+    }
+
+    void computeUnitAttributes(
+        const MorphologicalTree& tree,
+        const AltitudeBuffer*,
+        std::span<const NodeId> unitProperParts,
+        std::span<float> buffer,
+        const AttributeNames& attrNames,
+        std::span<const Attribute> requestedAttributes) const override
+    {
+        requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
+        const std::vector<Attribute> zeroAttributes = attributes();
+        for (const Attribute attribute : zeroAttributes) {
+            if (!requestsAttribute(requestedAttributes, attribute)) {
+                continue;
+            }
+            for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
+                buffer[attrNames.linearIndex(leafIndex, attribute)] = 0.0f;
+            }
+        }
     }
 };
 

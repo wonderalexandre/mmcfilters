@@ -64,6 +64,24 @@ int main() {
             requireEqual(areaBuffer[areaNames.linearIndex(4, AREA)], 5.0f, "max-tree exact area node 4");
             requireEqual(areaBuffer[areaNames.linearIndex(5, AREA)], 2.0f, "max-tree exact area node 5");
         }
+
+        auto [maxDistNames, maxDistBuffer] = AttributeComputedIncrementally::computeSingleAttribute(*weighted, MAX_DIST);
+        const std::vector<float> expectedMaxDist = isMaxtree
+            ? std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f}
+            : std::vector<float>{1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+        for (NodeId nodeId : tree.getAliveNodeIds()) {
+            requireEqual(
+                maxDistBuffer[maxDistNames.linearIndex(nodeId, MAX_DIST)],
+                expectedMaxDist[static_cast<std::size_t>(nodeId)],
+                isMaxtree ? "max-tree MAX_DIST regression" : "min-tree MAX_DIST regression"
+            );
+        }
+
+        auto unweighted = makeComponentTree(image, isMaxtree);
+        requireThrows<std::invalid_argument>(
+            [&]() { (void)AttributeComputedIncrementally::computeSingleAttribute(*unweighted, MAX_DIST); },
+            isMaxtree ? "max-tree MAX_DIST requires explicit altitude" : "min-tree MAX_DIST requires explicit altitude"
+        );
     }
 
     {

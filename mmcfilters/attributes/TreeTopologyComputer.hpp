@@ -181,6 +181,72 @@ public:
             }
         );
     }
+
+    void computeUnitAttributes(
+        const MorphologicalTree& tree,
+        const AltitudeBuffer*,
+        std::span<const NodeId> unitProperParts,
+        std::span<float> buffer,
+        const AttributeNames& attrNames,
+        std::span<const Attribute> requestedAttributes) const override
+    {
+        requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
+
+        const bool computeHeight = requestsAttribute(requestedAttributes, HEIGHT_NODE);
+        const bool computeDepth = requestsAttribute(requestedAttributes, DEPTH_NODE);
+        const bool computeIsLeaf = requestsAttribute(requestedAttributes, IS_LEAF_NODE);
+        const bool computeIsRoot = requestsAttribute(requestedAttributes, IS_ROOT_NODE);
+        const bool computeNumChildren = requestsAttribute(requestedAttributes, NUM_CHILDREN_NODE);
+        const bool computeNumSiblings = requestsAttribute(requestedAttributes, NUM_SIBLINGS_NODE);
+        const bool computeNumDescendants = requestsAttribute(requestedAttributes, NUM_DESCENDANTS_NODE);
+        const bool computeNumLeafDescendants = requestsAttribute(requestedAttributes, NUM_LEAF_DESCENDANTS_NODE);
+        const bool computeLeafRatio = requestsAttribute(requestedAttributes, LEAF_RATIO_NODE);
+        const bool computeBalance = requestsAttribute(requestedAttributes, BALANCE_NODE);
+        const bool computeAvgChildHeight = requestsAttribute(requestedAttributes, AVG_CHILD_HEIGHT_NODE);
+
+        if (!computeHeight && !computeDepth && !computeIsLeaf && !computeIsRoot &&
+            !computeNumChildren && !computeNumSiblings && !computeNumDescendants &&
+            !computeNumLeafDescendants && !computeLeafRatio && !computeBalance &&
+            !computeAvgChildHeight) {
+            return;
+        }
+
+        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
+            if (computeHeight) {
+                buffer[attrNames.linearIndex(leafIndex, HEIGHT_NODE)] = 0.0f;
+            }
+            if (computeDepth) {
+                buffer[attrNames.linearIndex(leafIndex, DEPTH_NODE)] = 0.0f;
+            }
+            if (computeIsLeaf) {
+                buffer[attrNames.linearIndex(leafIndex, IS_LEAF_NODE)] = 1.0f;
+            }
+            if (computeIsRoot) {
+                buffer[attrNames.linearIndex(leafIndex, IS_ROOT_NODE)] = 1.0f;
+            }
+            if (computeNumChildren) {
+                buffer[attrNames.linearIndex(leafIndex, NUM_CHILDREN_NODE)] = 0.0f;
+            }
+            if (computeNumSiblings) {
+                buffer[attrNames.linearIndex(leafIndex, NUM_SIBLINGS_NODE)] = 0.0f;
+            }
+            if (computeNumDescendants) {
+                buffer[attrNames.linearIndex(leafIndex, NUM_DESCENDANTS_NODE)] = 0.0f;
+            }
+            if (computeNumLeafDescendants) {
+                buffer[attrNames.linearIndex(leafIndex, NUM_LEAF_DESCENDANTS_NODE)] = 1.0f;
+            }
+            if (computeLeafRatio) {
+                buffer[attrNames.linearIndex(leafIndex, LEAF_RATIO_NODE)] = 1.0f;
+            }
+            if (computeBalance) {
+                buffer[attrNames.linearIndex(leafIndex, BALANCE_NODE)] = 0.0f;
+            }
+            if (computeAvgChildHeight) {
+                buffer[attrNames.linearIndex(leafIndex, AVG_CHILD_HEIGHT_NODE)] = 0.0f;
+            }
+        }
+    }
 };
 
 } // namespace mmcfilters

@@ -30,9 +30,15 @@ namespace mmcfilters
         EdtDIFT edtDIFT(f->getNumRows(), f->getNumCols());
 
         std::unordered_map<NodeId, std::vector<int>> contours;
-        ImageInt32 feroded = erode(domain, f);
+        ImageInt32 boundaryLevel = tree_.isMaxtree()
+          ? erode(domain, f)
+          : dilate(domain, f);
 
-        for (int level = 255; level >= 0; --level) {
+        const int firstLevel = tree_.isMaxtree() ? 255 : 0;
+        const int lastLevel = tree_.isMaxtree() ? -1 : 256;
+        const int step = tree_.isMaxtree() ? -1 : 1;
+
+        for (int level = firstLevel; level != lastLevel; level += step) {
           const std::vector<NodeId> &nodes = levelToNodes[level];
 
           if (nodes.empty())
@@ -46,7 +52,7 @@ namespace mmcfilters
 
             for (NodeId childNodeId : tree_.getChildren(nodeId)) {
               for (int pidx : contours[childNodeId]) {
-                if (feroded[pidx] < static_cast<int>(WeightedMorphologicalTree::getAltitude(altitude_, nodeId)))
+                if (isContourPixel(boundaryLevel[pidx], WeightedMorphologicalTree::getAltitude(altitude_, nodeId)))
                   Ncontour.push_back(pidx);
                 else
                   toRemove.push_back(pidx);
@@ -60,7 +66,7 @@ namespace mmcfilters
             for (int pidx : tree_.getProperParts(nodeId)) {
               edtDIFT.addPixelToBinaryImage(pidx);
 
-              if (feroded[pidx] < static_cast<int>(WeightedMorphologicalTree::getAltitude(altitude_, nodeId))) {
+              if (isContourPixel(boundaryLevel[pidx], WeightedMorphologicalTree::getAltitude(altitude_, nodeId))) {
                 Ncontour.push_back(pidx);
                 edtDIFT.seed(pidx);
               }
@@ -82,6 +88,14 @@ namespace mmcfilters
       }
 
     private:
+      bool isContourPixel(int boundaryLevel, AltitudeType nodeAltitude) const noexcept
+      {
+        if (tree_.isMaxtree()) {
+          return boundaryLevel < static_cast<int>(nodeAltitude);
+        }
+        return boundaryLevel > static_cast<int>(nodeAltitude);
+      }
+
       std::array<std::vector<NodeId>, 256> extractLevelMap() const
       {
         std::array<std::vector<NodeId>, 256> levelToNodes;
@@ -128,6 +142,35 @@ namespace mmcfilters
         }
 
         return feroded;
+      }
+
+      ImageInt32 dilate(const Box2D& domain, ImageUInt8Ptr f) const
+      {
+        const Point2D cross[] = { Point2D(-1, 0), Point2D(0, -1), Point2D(1 ,0), Point2D(0, 1) };
+        const int OUT_OF_DOMAIN_VAL = 256;
+
+        ImageInt32 fdilated(domain.width(), domain.height());
+
+        for (int pidx = 0; pidx < fdilated.getSize(); ++pidx) {
+          int maxVal = static_cast<int>((*f)[pidx]);
+          Point2D p = domain.point(pidx);
+
+          for (const Point2D& q : cross) {
+            Point2D n = p + q;
+            if (domain.contains(n)) {
+              int nval = (*f)[domain.index(n)];
+              if (nval > maxVal)
+                maxVal = nval;
+            }
+            else {
+              maxVal = OUT_OF_DOMAIN_VAL;
+              break;
+            }
+          }
+          fdilated[pidx] = maxVal;
+        }
+
+        return fdilated;
       }
 
 

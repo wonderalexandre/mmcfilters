@@ -259,6 +259,18 @@ public:
     static ComputedAttributeData computeAttributes(const WeightedMorphologicalTree& tree, const std::vector<AttributeOrGroup>& attributes,const DependencyMap& providedDependencies={}, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE);
 
     /**
+     * @brief Projects an already computed internal-node attribute buffer to the
+     * compact Higra layout produced by `WeightedMorphologicalTree::exportHigraHierarchy()`.
+     *
+     * Leaf/proper-part values are supplied by the concrete `AttributeComputer`
+     * responsible for each requested attribute.
+     */
+    static std::vector<float> projectNodeValuesToExportedHigra(
+        const WeightedMorphologicalTree& tree,
+        const AttributeNames& attrNames,
+        std::span<const float> nodeValues);
+
+    /**
      * @brief Projects a node attribute to a proper-part image in the original domain.
      */
     static ImageFloatPtr computeAttributeMapping(const MorphologicalTree& tree, const AltitudeBuffer* altitude, Attribute attribute);
@@ -695,6 +707,39 @@ inline ComputedAttributeData AttributeComputedIncrementally::computeAttributes(c
 
 inline ComputedAttributeData AttributeComputedIncrementally::computeAttributes(const WeightedMorphologicalTree& tree, const std::vector<AttributeOrGroup>& attributes, const DependencyMap& providedDependencies, NodeIdSpace outputSpace) {
     return computeAttributes(tree.tree_, &tree.altitude_, attributes, providedDependencies, outputSpace);
+}
+
+inline std::vector<float> AttributeComputedIncrementally::projectNodeValuesToExportedHigra(
+    const WeightedMorphologicalTree& tree,
+    const AttributeNames& attrNames,
+    std::span<const float> nodeValues) {
+    const MorphologicalTree& topology = tree.topology();
+    const int numColumns = attrNames.NUM_ATTRIBUTES;
+    const size_t expectedSize = static_cast<size_t>(topology.getNumInternalNodeSlots()) * static_cast<size_t>(numColumns);
+    if (nodeValues.size() != expectedSize) {
+        throw std::invalid_argument("Node-value buffer size must match the dense internal-node domain and requested attributes.");
+    }
+
+    const auto layout = WeightedMorphologicalTree::computeExportedHigraLayout(
+        topology,
+        std::span<const AltitudeType>(tree.getAltitudeBuffer()));
+    std::vector<float> unitValues(
+        layout.properParts.size() * static_cast<size_t>(numColumns),
+        std::numeric_limits<float>::quiet_NaN());
+
+    for (const auto& [attribute, _] : attrNames.indexMap) {
+        const AttributeComputer& comp = AttributeFactory::create(attribute);
+        std::array<Attribute, 1> requested{attribute};
+        comp.computeUnitAttributes(
+            topology,
+            &tree.getAltitudeBuffer(),
+            layout.properParts,
+            unitValues,
+            attrNames,
+            std::span<const Attribute>(requested));
+    }
+
+    return tree.projectNodeValuesToExportedHigra(nodeValues, unitValues, numColumns);
 }
 
 /**

@@ -1,16 +1,65 @@
 # MorphologicalAttributeFilters
 
-MorphologicalAttributeFilters is a C++/Python library for connected image filtering based on morphological trees, including component trees and trees of shapes.
+> Project status: transitional research library.
+>
+> This repository exists to support experiments around dynamic morphological
+> trees, including component trees, trees of shapes, mutable tree topologies,
+> converters, and incremental attribute computation. It is not intended to be a
+> long-term general-purpose replacement for Higra, and this package may change
+> substantially or stop existing in the future.
 
-The current codebase is organised around a dense `NodeId` API, direct proper-part ownership, incremental attribute computation, and Python bindings for interactive work.
+For general-purpose hierarchical image analysis, production workflows, and
+stable APIs, prefer [Higra](https://github.com/higra/Higra). Use this library
+when you specifically need dynamic tree operations, topology/proper-part
+experiments, interoperability with Higra-style hierarchies, or the incremental
+attribute framework provided here.
 
-## Main capabilities
+The current codebase is organised around a dense `NodeId` API, direct
+proper-part ownership, incremental attribute computation, and Python bindings
+for interactive work.
 
-- construction of max-trees, min-trees, and trees of shapes;
-- dynamic `MorphologicalTree` operations on dense internal-node ids;
-- incremental computation of geometric, statistical, topological, moment-based, bit-quads, and max-distance attributes;
-- attribute filters, extinction values, contours, and Ultimate Attribute Opening;
-- a C++ core that is effectively header-only, plus a pybind11 module for Python.
+## Relationship with Higra
+
+Higra should be preferred for stable, general-purpose component-tree and
+hierarchical image-analysis workflows. This repository is mainly useful as an
+experimental bridge for cases where the current Higra model is not the most
+convenient fit, especially dynamic tree topology changes and project-specific
+incremental attribute machinery.
+
+## Current scope
+
+This library currently concentrates code for:
+
+- building max-trees, min-trees, and trees of shapes from images;
+- representing trees with dense internal `NodeId` values;
+- direct proper-part ownership and image-domain topology queries;
+- dynamic `MorphologicalTree` operations and staged structural edits;
+- incremental computation of geometric, statistical, topological, moment-based,
+  bit-quads, and max-distance attributes;
+- attribute filters, extinction values, contours, and Ultimate Attribute
+  Opening;
+- a C++ core that is effectively header-only, plus a pybind11 module for
+  Python.
+
+## Interoperability and converters
+
+Although this project is not intended to replace Higra, it provides converters
+that make it useful as an experimental interoperability layer.
+
+The library can:
+
+- build max-trees, min-trees, and trees of shapes directly from images;
+- import static Higra-style hierarchies through `(parent, altitude)` arrays;
+- preserve imported Higra node ids while the topology remains unedited;
+- export the current live tree back to a compact Higra-style representation;
+- move between topology-only `MorphologicalTree` use cases and
+  `WeightedMorphologicalTree` workflows when explicit node altitudes are
+  required;
+- prototype dynamic tree edits and incremental attributes here, then export the
+  resulting hierarchy for use elsewhere.
+
+Imported Higra node ids are preserved only while the topology is not edited.
+After edits, `exportHigraHierarchy()` creates a new compact hierarchy.
 
 ## Installation
 
@@ -51,26 +100,65 @@ ctest --test-dir build --output-on-failure
 import numpy as np
 import mmcfilters
 
-img = np.random.randint(0, 255, size=(128, 128), dtype=np.uint8)
+img = np.array(
+    [
+        [3, 3, 2, 2],
+        [3, 4, 4, 2],
+        [1, 4, 5, 2],
+        [1, 1, 5, 0],
+    ],
+    dtype=np.uint8,
+)
 
-tree = mmcfilters.MorphologicalTree.createComponentTree(img, True, 1.5)
-weighted = mmcfilters.WeightedMorphologicalTree.createComponentTree(img, True, 1.5)
-root_id = tree.getRoot()
-alive_ids = tree.getAliveNodeIds()
-children_of_root = tree.getChildren(root_id)
-proper_parts_of_root = tree.getProperParts(root_id)
+# radius=1.5 selects the 8-neighbourhood on a 2D square grid.
+# Use radius=1.0 for 4-connectivity.
+adjacency_radius = 1.5
 
-component_id = tree.getSmallestComponent(0)
-component_mask = tree.reconstructNode(component_id)
-reconstructed_image = weighted.reconstructionImage()
-area = mmcfilters.Attribute.computeSingleAttribute(tree, mmcfilters.Attribute.AREA)
+# Case 1: build a topology-only max-tree for structural queries.
+topology_tree = mmcfilters.MorphologicalTree.createMaxTree(
+    img,
+    radius=adjacency_radius,
+)
+root_node_id = topology_tree.getRoot()
+root_children = topology_tree.getChildren(root_node_id)
+root_direct_proper_parts = topology_tree.getProperParts(root_node_id)
 
-visited = []
-mmcfilters.Attribute.traversePostOrder(
-    tree,
-    lambda node_id: visited.append(("pre", node_id)),
-    lambda parent_id, child_id: visited.append(("merge", parent_id, child_id)),
-    lambda node_id: visited.append(("post", node_id)),
+# Case 2: inspect the component that owns one image pixel.
+pixel_index = 10
+pixel_component_id = topology_tree.getSmallestComponent(pixel_index)
+pixel_component_pixels = list(topology_tree.connected_component_of(pixel_component_id))
+pixel_component_mask = topology_tree.reconstructNode(pixel_component_id)
+
+# Case 3: compute attributes that depend only on tree topology/support.
+area_by_node = mmcfilters.Attribute.computeSingleAttribute(
+    topology_tree,
+    mmcfilters.Attribute.Type.AREA,
+)
+
+# Case 4: reuse the same topology as a weighted tree when node altitudes are required.
+weighted_tree = mmcfilters.WeightedMorphologicalTree.createFromTopology(
+    topology_tree,
+    img,
+)
+max_dist_by_node = mmcfilters.Attribute.computeSingleAttribute(
+    weighted_tree,
+    mmcfilters.Attribute.Type.MAX_DIST,
+)
+reconstructed_image = weighted_tree.reconstructionImage()
+
+# Case 5: export/import a Higra-style hierarchy for interoperability.
+higra_parent, higra_altitude = weighted_tree.exportHigraHierarchy()
+max_dist_by_higra = weighted_tree.project_node_values_to_exported_higra(
+    max_dist_by_node,
+    mmcfilters.Attribute.Type.MAX_DIST,
+)
+roundtrip_weighted_tree = mmcfilters.WeightedMorphologicalTree.createFromHigraParent(
+    higra_parent,
+    higra_altitude,
+    img.shape[0],
+    img.shape[1],
+    mmcfilters.WeightedMorphologicalTree.MAX_TREE,
+    radius=adjacency_radius,
 )
 ```
 
@@ -87,6 +175,7 @@ Weighted quantities are intentionally outside the topology-only tree:
 
 - `WeightedMorphologicalTree` owns the dense node-altitude buffer;
 - `WeightedMorphologicalTree` encapsulates its topology and exposes it only as `const MorphologicalTree&`;
+- `WeightedMorphologicalTree.createFromTopology(...)` clones an existing topology and infers altitudes from an image, avoiding a second tree reconstruction;
 - image reconstruction, node residues, and Higra `(parent, altitude)` export live on `WeightedMorphologicalTree`;
 - attribute computation still runs first in the internal `MorphologicalTree` node-id space and is projected only at API boundaries when requested.
 
@@ -100,7 +189,7 @@ Low-level topology rewiring is not public API. Full connected-tree validation
 and weighted monotone-altitude validation run at editor `commit()` time. See
 [docs/editing-api.md](docs/editing-api.md) for the detailed contract.
 
-`NodeIdSpace::HIGRA`, `getNumHigraNodes()`, and `getHigraNodeId()` refer only to the original Higra node-id domain preserved by `createFromHigraParent`. Image-built trees and trees edited after import do not expose that domain. `exportHigraHierarchy()` always creates a new compact Higra representation of the current live rooted tree.
+`NodeIdSpace::HIGRA`, `getNumHigraNodes()`, and `getHigraNodeId()` refer only to the original Higra node-id domain preserved by `createFromHigraParent`. Image-built trees and trees edited after import do not expose that domain. `exportHigraHierarchy()` always creates a new compact Higra representation of the current live rooted tree. Use `projectNodeValuesToExportedHigra()` / `project_node_values_to_exported_higra()` to project node-indexed attribute buffers to that exported compact layout without reimporting the tree; each `AttributeComputer` supplies the unit-component values for the exported leaves.
 
 The main public C++/Python surface is centred on:
 
@@ -111,43 +200,21 @@ The main public C++/Python surface is centred on:
 - `getNodeParent`
 - `getPathBetweenNodes`
 - `getSmallestComponent`
+- `getConnectedComponent`
 - `getIteratorBreadthFirstTraversal`
 - `getNodeSubtree`
 
-## Breaking Changes
-
-Recent refactors changed the ownership model of incremental attribute results:
-
-- `AttributeComputedIncrementally::{computeSingleAttribute, computeAttributes, computeSingleAttributeWithDelta}` now return move-only results whose buffers are owned by `std::vector<float>`.
-- `DependencyMap` no longer owns cached buffers. It stores non-owning views, so caller-provided dependencies must be seeded with `computed.view()` and the owning result must stay alive during the computation.
-- Python still returns mutable `numpy.ndarray` objects, but the NumPy capsule now owns the transferred C++ buffer instead of sharing a `std::shared_ptr<float[]>`.
-
-Typical C++ migration pattern:
-
-```cpp
-auto computed = AttributeComputedIncrementally::computeSingleAttribute(tree, AREA);
-DependencyMap deps;
-deps[AREA] = computed.view();
-
-auto combined = AttributeComputedIncrementally::computeAttributes(
-    tree,
-    {AREA, VOLUME},
-    deps
-);
-```
-
 ## Repository guide
 
-- [unit-tests/README.md](unit-tests/README.md)
-  Official regression suite for the active API.
-- [notebooks/README.md](notebooks/README.md)
-  Notes for the maintained notebooks.
-- [examples/README.md](examples/README.md)
-  Standalone examples, including the `EdtDIFT` PNG export example.
-- [docs/editing-api.md](docs/editing-api.md)
-  Contract for safe mutators, staged editors, and weighted topology ownership.
-- [docs/contours-api.md](docs/contours-api.md)
-  Incremental contour access API and benchmark commands.
-- [docs/contours-internals.md](docs/contours-internals.md)
-  Internal design notes for incremental contour extraction, materialization,
-  complexity, and memory behavior.
+Use this map to find the right entry point quickly:
+
+- Core C++: [mmcfilters/](mmcfilters/)
+- Python interface: [pybinds/mmcfilters.cpp](pybinds/mmcfilters.cpp) and
+  [python/](python/)
+- Tests: [unit-tests/](unit-tests/)
+- Examples and notebooks: [examples/](examples/) and
+  [notebooks/README.md](notebooks/README.md)
+- Design notes: [docs/editing-api.md](docs/editing-api.md) and
+  [docs/contours.md](docs/contours.md)
+- Build and packaging: [CMakeLists.txt](CMakeLists.txt) and
+  [pyproject.toml](pyproject.toml)

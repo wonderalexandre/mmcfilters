@@ -36,6 +36,9 @@ namespace mmcfilters{
       if (!tree.hasAdjacencyRelation()) {
         throw std::invalid_argument("MAX_DIST requires an adjacency relation.");
       }
+      if (altitude == nullptr) {
+        throw std::invalid_argument("MAX_DIST requires an explicit altitude buffer. Use WeightedMorphologicalTree or provide an explicit altitude buffer.");
+      }
 
       if (PRINT_LOG)
         std::cout << "\n===== AttributeComputer: Computing MaxDist" << std::endl;
@@ -46,6 +49,23 @@ namespace mmcfilters{
       auto indexOf = [&](NodeId idx) { return attrNames.linearIndex(idx, MAX_DIST); };
       for (NodeId nodeId : tree.getAliveNodeIds()) {
         buffer[indexOf(nodeId)] = maxDist[nodeId];
+      }
+    }
+
+    void computeUnitAttributes(
+        const MorphologicalTree& tree,
+        const AltitudeBuffer*,
+        std::span<const NodeId> unitProperParts,
+        std::span<float> buffer,
+        const AttributeNames& attrNames,
+        std::span<const Attribute> requestedAttributes) const override
+    {
+      requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
+      if (!requestsAttribute(requestedAttributes, MAX_DIST)) {
+        return;
+      }
+      for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
+        buffer[attrNames.linearIndex(leafIndex, MAX_DIST)] = 0.0f;
       }
     }
 

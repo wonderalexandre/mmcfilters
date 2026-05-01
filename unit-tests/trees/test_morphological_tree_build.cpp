@@ -25,6 +25,8 @@ int main() {
     auto maxTree = makeWeightedComponentTree(image, true);
     auto minTree = makeWeightedComponentTree(image, false);
     auto [higraParent, higraAltitude] = exportHigraHierarchy(*maxTree);
+    auto maxTreeShortcut = MorphologicalTree::createMaxTree(image);
+    auto minTreeShortcut = MorphologicalTree::createMinTree(image);
 
     require(static_cast<bool>(maxTree), "max-tree instance must be created");
     require(static_cast<bool>(minTree), "min-tree instance must be created");
@@ -48,10 +50,16 @@ int main() {
     requireEqual(maxTree->topology().getRoot(), 0, "max-tree root dense node id");
     requireEqual(maxTree->getAltitude(maxTree->topology().getRoot()), 0, "max-tree root altitude");
     requireEqual(computeArea(maxTree->topology(), maxTree->topology().getRoot()), 16, "max-tree root area");
+    require(maxTreeShortcut.isMaxtree(), "createMaxTree shortcut must create a max-tree");
+    requireEqual(maxTreeShortcut.getRoot(), maxTree->topology().getRoot(), "createMaxTree shortcut root");
+    requireEqual(computeArea(maxTreeShortcut, maxTreeShortcut.getRoot()), 16, "createMaxTree shortcut root area");
 
     requireEqual(minTree->topology().getRoot(), 0, "min-tree root dense node id");
     requireEqual(minTree->getAltitude(minTree->topology().getRoot()), 5, "min-tree root altitude");
     requireEqual(computeArea(minTree->topology(), minTree->topology().getRoot()), 16, "min-tree root area");
+    require(!minTreeShortcut.isMaxtree(), "createMinTree shortcut must create a min-tree");
+    requireEqual(minTreeShortcut.getRoot(), minTree->topology().getRoot(), "createMinTree shortcut root");
+    requireEqual(computeArea(minTreeShortcut, minTreeShortcut.getRoot()), 16, "createMinTree shortcut root area");
 
     auto maxReconstruction = maxTree->reconstructionImage();
     auto minReconstruction = minTree->reconstructionImage();

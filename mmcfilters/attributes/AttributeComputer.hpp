@@ -116,6 +116,25 @@ public:
         std::span<const DependencySource> dependencySources = {}) const = 0;
 
     /**
+     * @brief Computes attribute values for unit components represented by
+     * individual proper parts.
+     *
+     * @details
+     * Compact Higra exports contain leaves/proper parts before internal nodes.
+     * This hook lets each concrete computer define the value of its attributes
+     * on a one-pixel component instead of relying on a generic placeholder.
+     * The output buffer is indexed by the position of each proper part in
+     * `unitProperParts`, not by the global proper-part id.
+     */
+    virtual void computeUnitAttributes(
+        const MorphologicalTree& tree,
+        const AltitudeBuffer* altitude,
+        std::span<const NodeId> unitProperParts,
+        std::span<float> buffer,
+        const AttributeNames& attrNames,
+        std::span<const Attribute> requestedAttributes) const = 0;
+
+    /**
      * @brief Compatibility wrapper for callers still passing `MorphologicalTree`.
      */
     void compute(
@@ -155,6 +174,55 @@ public:
      * materialised together.
      */
     virtual std::vector<AttributeOrGroup> requiredAttributes() const { return {}; }
+
+protected:
+    /**
+     * @brief Tests whether `requestedAttributes` asks the computer to fill
+     * `attribute`.
+     */
+    static bool requestsAttribute(std::span<const Attribute> requestedAttributes, Attribute attribute) {
+        return std::find(requestedAttributes.begin(), requestedAttributes.end(), attribute) != requestedAttributes.end();
+    }
+
+    /**
+     * @brief Validates a proper-part-indexed unit-attribute output buffer.
+     */
+    static void requireUnitAttributeBufferShape(
+        const MorphologicalTree& tree,
+        std::span<const NodeId> unitProperParts,
+        std::span<float> buffer,
+        const AttributeNames& attrNames) {
+        const size_t expectedSize =
+            unitProperParts.size() *
+            static_cast<size_t>(attrNames.NUM_ATTRIBUTES);
+        if (buffer.size() != expectedSize) {
+            throw std::invalid_argument("Unit-attribute buffer size must match the exported leaf domain and requested attributes.");
+        }
+        for (const NodeId properPart : unitProperParts) {
+            if (!tree.isProperPart(properPart)) {
+                throw std::invalid_argument("Unit-attribute computation requires valid proper-part ids.");
+            }
+        }
+    }
+
+    /**
+     * @brief Reads the altitude assigned to the one-pixel component represented
+     * by `properPart`.
+     */
+    static AltitudeType unitAltitude(
+        const MorphologicalTree& tree,
+        const AltitudeBuffer* altitude,
+        NodeId properPart) {
+        WeightedMorphologicalTree::validateAltitudeBufferShape(tree, altitude);
+        if (!tree.isProperPart(properPart)) {
+            throw std::invalid_argument("Unit altitude computation requires a valid proper-part id.");
+        }
+        const NodeId ownerNodeId = tree.getSmallestComponent(properPart);
+        if (ownerNodeId == InvalidNode || !tree.isAlive(ownerNodeId)) {
+            throw std::runtime_error("Unit-attribute computation requires every proper part to have an alive owner.");
+        }
+        return WeightedMorphologicalTree::getAltitude(altitude, ownerNodeId);
+    }
 };
 
 } // namespace mmcfilters

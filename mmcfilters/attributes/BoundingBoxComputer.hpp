@@ -154,6 +154,66 @@ public:
             }
         );
     }
+
+    void computeUnitAttributes(
+        const MorphologicalTree& tree,
+        const AltitudeBuffer*,
+        std::span<const NodeId> unitProperParts,
+        std::span<float> buffer,
+        const AttributeNames& attrNames,
+        std::span<const Attribute> requestedAttributes) const override
+    {
+        requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
+
+        const bool computeWidth = requestsAttribute(requestedAttributes, BOX_WIDTH);
+        const bool computeHeight = requestsAttribute(requestedAttributes, BOX_HEIGHT);
+        const bool computeRectangularity = requestsAttribute(requestedAttributes, RECTANGULARITY);
+        const bool computeRatioWH = requestsAttribute(requestedAttributes, RATIO_WH);
+        const bool computeColMin = requestsAttribute(requestedAttributes, BOX_COL_MIN);
+        const bool computeColMax = requestsAttribute(requestedAttributes, BOX_COL_MAX);
+        const bool computeRowMin = requestsAttribute(requestedAttributes, BOX_ROW_MIN);
+        const bool computeRowMax = requestsAttribute(requestedAttributes, BOX_ROW_MAX);
+        const bool computeDiagonalLength = requestsAttribute(requestedAttributes, DIAGONAL_LENGTH);
+
+        if (!computeWidth && !computeHeight && !computeRectangularity && !computeRatioWH &&
+            !computeColMin && !computeColMax && !computeRowMin && !computeRowMax &&
+            !computeDiagonalLength) {
+            return;
+        }
+
+        const int numCols = tree.getNumColsOfImage();
+        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
+            const NodeId properPart = unitProperParts[static_cast<size_t>(leafIndex)];
+            const auto [row, col] = ImageUtils::to2D(properPart, numCols);
+            if (computeWidth) {
+                buffer[attrNames.linearIndex(leafIndex, BOX_WIDTH)] = 1.0f;
+            }
+            if (computeHeight) {
+                buffer[attrNames.linearIndex(leafIndex, BOX_HEIGHT)] = 1.0f;
+            }
+            if (computeRectangularity) {
+                buffer[attrNames.linearIndex(leafIndex, RECTANGULARITY)] = 1.0f;
+            }
+            if (computeRatioWH) {
+                buffer[attrNames.linearIndex(leafIndex, RATIO_WH)] = 1.0f;
+            }
+            if (computeColMin) {
+                buffer[attrNames.linearIndex(leafIndex, BOX_COL_MIN)] = static_cast<float>(col);
+            }
+            if (computeColMax) {
+                buffer[attrNames.linearIndex(leafIndex, BOX_COL_MAX)] = static_cast<float>(col);
+            }
+            if (computeRowMin) {
+                buffer[attrNames.linearIndex(leafIndex, BOX_ROW_MIN)] = static_cast<float>(row);
+            }
+            if (computeRowMax) {
+                buffer[attrNames.linearIndex(leafIndex, BOX_ROW_MAX)] = static_cast<float>(row);
+            }
+            if (computeDiagonalLength) {
+                buffer[attrNames.linearIndex(leafIndex, DIAGONAL_LENGTH)] = std::sqrt(2.0f);
+            }
+        }
+    }
 };
 
 } // namespace mmcfilters

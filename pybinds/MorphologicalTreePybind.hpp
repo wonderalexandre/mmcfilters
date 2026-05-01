@@ -25,10 +25,8 @@ using MorphologicalTreePybindPtr = std::shared_ptr<MorphologicalTreePybind>;
 class MorphologicalTreePybind : public MorphologicalTree {
     static std::vector<int> collectPixelsOfConnectedComponent(const MorphologicalTree& tree, NodeId nodeId) {
         std::vector<int> pixels;
-        for (NodeId subtreeNodeId : tree.getNodeSubtree(nodeId)) {
-            for (int properPart : tree.getProperParts(subtreeNodeId)) {
-                pixels.push_back(properPart);
-            }
+        for (int properPart : tree.getConnectedComponent(nodeId)) {
+            pixels.push_back(properPart);
         }
         return pixels;
     }

@@ -93,6 +93,34 @@ public:
                     buffer[indexOfRel(node)] += dependencyArea.buffer[indexOfArea(node)];
             });
     }
+
+    void computeUnitAttributes(
+        const MorphologicalTree& tree,
+        const AltitudeBuffer* altitude,
+        std::span<const NodeId> unitProperParts,
+        std::span<float> buffer,
+        const AttributeNames& attrNames,
+        std::span<const Attribute> requestedAttributes) const override
+    {
+        requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
+
+        const bool computeVolume = requestsAttribute(requestedAttributes, VOLUME);
+        const bool computeRelative = requestsAttribute(requestedAttributes, RELATIVE_VOLUME);
+        if (!computeVolume && !computeRelative) {
+            return;
+        }
+
+        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
+            const NodeId properPart = unitProperParts[static_cast<size_t>(leafIndex)];
+            if (computeVolume) {
+                buffer[attrNames.linearIndex(leafIndex, VOLUME)] =
+                    static_cast<float>(unitAltitude(tree, altitude, properPart));
+            }
+            if (computeRelative) {
+                buffer[attrNames.linearIndex(leafIndex, RELATIVE_VOLUME)] = 1.0f;
+            }
+        }
+    }
 };
 
 } // namespace mmcfilters

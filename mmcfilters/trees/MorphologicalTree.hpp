@@ -976,6 +976,45 @@ public:
 
     virtual ~MorphologicalTree() = default;
 
+    /**
+     * @brief Creates an independent copy of the structural tree state.
+     *
+     * The public copy constructor stays deleted so ownership remains explicit at
+     * API boundaries. This method is used by wrappers that need to preserve a
+     * caller-owned topology while creating a new tree-backed object.
+     */
+    MorphologicalTree clone() const {
+        MorphologicalTree cloned;
+        cloned.rootNodeId_ = rootNodeId_;
+        cloned.treeType_ = treeType_;
+        cloned.numRows_ = numRows_;
+        cloned.numCols_ = numCols_;
+        cloned.adj_ = adj_;
+        cloned.tosAdjacencyPolicy_ = tosAdjacencyPolicy_;
+        cloned.numNodes_ = numNodes_;
+        cloned.preservesHigraNodeIdSpace_ = preservesHigraNodeIdSpace_;
+        cloned.properPartOwner_ = properPartOwner_;
+        cloned.nodeParent_ = nodeParent_;
+        cloned.firstChild_ = firstChild_;
+        cloned.nextSibling_ = nextSibling_;
+        cloned.prevSibling_ = prevSibling_;
+        cloned.lastChild_ = lastChild_;
+        cloned.numChildrenByNode_ = numChildrenByNode_;
+        cloned.alive_ = alive_;
+        cloned.freeNodeIds_ = freeNodeIds_;
+        cloned.properHead_ = properHead_;
+        cloned.properTail_ = properTail_;
+        cloned.numProperPartsByNode_ = numProperPartsByNode_;
+        cloned.nextProperPart_ = nextProperPart_;
+        cloned.prevProperPart_ = prevProperPart_;
+        cloned.prePostOrderCache_ = prePostOrderCache_;
+        cloned.lcaCache_.reset();
+        cloned.nodeStructureVersion_ = nodeStructureVersion_;
+        cloned.topologyVersion_ = topologyVersion_;
+        cloned.properPartVersion_ = properPartVersion_;
+        return cloned;
+    }
+
     // Forward declarations for nested iterator/range types whose definitions stay at the end of the class.
     class AliveNodeIterator;
     class AliveNodeRange;
@@ -983,6 +1022,8 @@ public:
     class ChildrenRange;
     class ProperPartsIterator;
     class ProperPartsRange;
+    class ConnectedComponentIterator;
+    class ConnectedComponentRange;
     class PostOrderNodeIterator;
     class PostOrderNodeRange;
     class BreadthFirstNodeIterator;
@@ -1014,6 +1055,20 @@ public:
         BuilderComponentTree builderUF(&*tree.adj_, isMaxtree);
         tree.build(img, builderUF);
         return tree;
+    }
+
+    /**
+     * @brief Convenience wrapper that creates a max-tree from an image.
+     */
+    static MorphologicalTree createMaxTree(ImageUInt8Ptr img, double radius = 1.5) {
+        return createComponentTree(std::move(img), true, radius);
+    }
+
+    /**
+     * @brief Convenience wrapper that creates a min-tree from an image.
+     */
+    static MorphologicalTree createMinTree(ImageUInt8Ptr img, double radius = 1.5) {
+        return createComponentTree(std::move(img), false, radius);
     }
 
     /**
@@ -1716,6 +1771,18 @@ public:
     }
 
     /**
+     * @brief Returns a fail-fast range over all proper parts in the connected
+     * component represented by `nodeId`.
+     *
+     * The range walks the subtree rooted at `nodeId` and yields every direct
+     * proper part owned by those nodes, without materialising a vector.
+     */
+    inline ConnectedComponentRange getConnectedComponent(NodeId nodeId) const {
+        requireAliveNode(nodeId, "MorphologicalTree::getConnectedComponent");
+        return ConnectedComponentRange(this, nodeId, topologyVersion_, properPartVersion_);
+    }
+
+    /**
      * @brief Returns a post-order traversal range rooted at the connected root.
      */
     inline PostOrderNodeRange getPostOrderNodes() const {
@@ -2199,6 +2266,111 @@ public:
 
         ProperPartsIterator begin() const { return ProperPartsIterator(T_, firstPixel_, expectedVersion_); }
         ProperPartsIterator end() const { return ProperPartsIterator(T_, InvalidNode, expectedVersion_); }
+    };
+
+    /**
+     * @brief Iterator over all proper parts in one connected component.
+     */
+    class ConnectedComponentIterator {
+    private:
+        const MorphologicalTree* T_ = nullptr;
+        std::vector<NodeId> nodeStack_;
+        NodeId currentPixel_ = InvalidNode;
+        std::size_t expectedTopologyVersion_ = 0;
+        std::size_t expectedProperPartVersion_ = 0;
+
+        void checkVersions() const {
+            T_->checkTopologyIteratorVersion(expectedTopologyVersion_);
+            T_->checkProperPartIteratorVersion(expectedProperPartVersion_);
+        }
+
+        void pushChildren(NodeId nodeId) {
+            std::vector<NodeId> children;
+            for (NodeId childId : T_->getChildren(nodeId)) {
+                children.push_back(childId);
+            }
+            for (auto it = children.rbegin(); it != children.rend(); ++it) {
+                nodeStack_.push_back(*it);
+            }
+        }
+
+        void settle() {
+            checkVersions();
+            while (currentPixel_ == InvalidNode && !nodeStack_.empty()) {
+                const NodeId nodeId = nodeStack_.back();
+                nodeStack_.pop_back();
+                pushChildren(nodeId);
+                currentPixel_ = T_->properHead_[static_cast<size_t>(nodeId)];
+            }
+        }
+
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = NodeId;
+        using difference_type = std::ptrdiff_t;
+        using pointer = const NodeId*;
+        using reference = const NodeId&;
+
+        ConnectedComponentIterator() = default;
+        ConnectedComponentIterator(
+            const MorphologicalTree* tree,
+            NodeId rootNodeId,
+            std::size_t expectedTopologyVersion,
+            std::size_t expectedProperPartVersion)
+            : T_(tree),
+              expectedTopologyVersion_(expectedTopologyVersion),
+              expectedProperPartVersion_(expectedProperPartVersion)
+        {
+            if (T_ && rootNodeId != InvalidNode) {
+                nodeStack_.push_back(rootNodeId);
+                settle();
+            }
+        }
+
+        ConnectedComponentIterator& operator++() {
+            checkVersions();
+            if (currentPixel_ != InvalidNode) {
+                currentPixel_ = T_->nextProperPart_[static_cast<size_t>(currentPixel_)];
+            }
+            settle();
+            return *this;
+        }
+
+        NodeId operator*() const {
+            checkVersions();
+            return currentPixel_;
+        }
+
+        bool operator==(const ConnectedComponentIterator& other) const { return currentPixel_ == other.currentPixel_; }
+        bool operator!=(const ConnectedComponentIterator& other) const { return !(*this == other); }
+    };
+
+    /**
+     * @brief Range wrapper for connected-component proper-part iteration.
+     */
+    class ConnectedComponentRange {
+    private:
+        const MorphologicalTree* T_ = nullptr;
+        NodeId rootNodeId_ = InvalidNode;
+        std::size_t expectedTopologyVersion_ = 0;
+        std::size_t expectedProperPartVersion_ = 0;
+
+    public:
+        ConnectedComponentRange() = default;
+        ConnectedComponentRange(
+            const MorphologicalTree* tree,
+            NodeId rootNodeId,
+            std::size_t expectedTopologyVersion,
+            std::size_t expectedProperPartVersion)
+            : T_(tree),
+              rootNodeId_(rootNodeId),
+              expectedTopologyVersion_(expectedTopologyVersion),
+              expectedProperPartVersion_(expectedProperPartVersion) {}
+
+        ConnectedComponentIterator begin() const {
+            return ConnectedComponentIterator(T_, rootNodeId_, expectedTopologyVersion_, expectedProperPartVersion_);
+        }
+        ConnectedComponentIterator end() const { return ConnectedComponentIterator(); }
     };
 
     /**

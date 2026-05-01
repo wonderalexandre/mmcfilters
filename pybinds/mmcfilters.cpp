@@ -32,6 +32,7 @@ namespace py = pybind11;
 using namespace pybind11::literals;
 
 using UInt8InputArray = py::array_t<uint8_t, py::array::c_style | py::array::forcecast>;
+using FloatInputArray = py::array_t<float, py::array::c_style | py::array::forcecast>;
 
 template <class Range>
 std::vector<NodeId> collectNodeIds(const Range &range) {
@@ -80,6 +81,94 @@ py::array_t<uint8_t> reconstructionImageOf(const WeightedMorphologicalTree& weig
 
 std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportHigraHierarchyOf(const WeightedMorphologicalTree& weighted) {
     return weighted.exportHigraHierarchy();
+}
+
+std::vector<Attribute> parseProjectionAttributes(py::handle attributes, int valuesPerNode) {
+    std::vector<Attribute> parsed;
+
+    try {
+        parsed.push_back(py::cast<Attribute>(attributes));
+    } catch (const py::cast_error&) {
+        if (!py::isinstance<py::sequence>(attributes)) {
+            throw std::invalid_argument("attributes must be an Attribute or a sequence of Attribute values");
+        }
+        py::sequence seq = py::reinterpret_borrow<py::sequence>(attributes);
+        parsed.reserve(static_cast<size_t>(py::len(seq)));
+        for (py::handle item : seq) {
+            parsed.push_back(py::cast<Attribute>(item));
+        }
+    }
+
+    if (static_cast<int>(parsed.size()) != valuesPerNode) {
+        std::ostringstream oss;
+        oss << "attributes must contain " << valuesPerNode << " item(s), got " << parsed.size();
+        throw std::invalid_argument(oss.str());
+    }
+    if (std::set<Attribute>(parsed.begin(), parsed.end()).size() != parsed.size()) {
+        throw std::invalid_argument("attributes must not contain duplicates");
+    }
+    return parsed;
+}
+
+AttributeNames makeProjectionAttributeNames(const std::vector<Attribute>& attributes) {
+    std::unordered_map<Attribute, int> offsets;
+    for (int i = 0; i < static_cast<int>(attributes.size()); ++i) {
+        offsets[attributes[static_cast<size_t>(i)]] = i;
+    }
+    return AttributeNames(std::move(offsets));
+}
+
+py::array_t<float> projectNodeValuesToExportedHigraOf(
+    const WeightedMorphologicalTree& weighted,
+    const FloatInputArray& nodeValues,
+    py::object attributes) {
+    const auto buffer = nodeValues.request();
+    const int numNodeSlots = weighted.topology().getNumInternalNodeSlots();
+    const int numHigraVertices = weighted.topology().getNumTotalProperParts() + weighted.topology().getNumNodes();
+
+    if (buffer.ndim == 1) {
+        PybindUtils::require1DArray(buffer, numNodeSlots, "nodeValues");
+        const auto parsedAttributes = parseProjectionAttributes(attributes, 1);
+        const AttributeNames attrNames = makeProjectionAttributeNames(parsedAttributes);
+        auto projected = AttributeComputedIncrementally::projectNodeValuesToExportedHigra(
+            weighted,
+            attrNames,
+            std::span<const float>(static_cast<const float*>(buffer.ptr), static_cast<size_t>(numNodeSlots)));
+        return PybindUtils::toNumpyOwned(std::move(projected), numHigraVertices);
+    }
+
+    if (buffer.ndim == 2) {
+        if (buffer.shape[0] != numNodeSlots) {
+            std::ostringstream oss;
+            oss << "nodeValues must have " << numNodeSlots << " rows, got " << buffer.shape[0];
+            throw std::invalid_argument(oss.str());
+        }
+        const int valuesPerNode = static_cast<int>(buffer.shape[1]);
+        const auto parsedAttributes = parseProjectionAttributes(attributes, valuesPerNode);
+        const AttributeNames attrNames = makeProjectionAttributeNames(parsedAttributes);
+        auto projected = AttributeComputedIncrementally::projectNodeValuesToExportedHigra(
+            weighted,
+            attrNames,
+            std::span<const float>(
+                static_cast<const float*>(buffer.ptr),
+                static_cast<size_t>(numNodeSlots) * static_cast<size_t>(valuesPerNode)));
+        return PybindUtils::toNumpyOwned2D(
+            std::move(projected),
+            numHigraVertices,
+            valuesPerNode);
+    }
+
+    throw std::invalid_argument("nodeValues must be a 1D or 2D float array");
+}
+
+std::shared_ptr<WeightedMorphologicalTree> createWeightedTreeFromTopology(
+    MorphologicalTreePybindPtr topologyTree,
+    const UInt8InputArray& input) {
+    if (!topologyTree) {
+        throw std::invalid_argument("topology must not be null");
+    }
+    return std::make_shared<WeightedMorphologicalTree>(
+        WeightedMorphologicalTree::createFromTopology(*topologyTree, imageFromArray(input)));
 }
 
 class DualMinMaxTreeIncrementalFilterPybind {
@@ -201,6 +290,18 @@ void bindTreeQueryApi(PyClass& cls) {
         .def("proper_parts_of", [](TreeLike &self, NodeId nodeId) {
             return collectNodeIds(topology(self).getProperParts(nodeId));
         }, "nodeId"_a, "Return the proper parts owned directly by a node.")
+        .def("getConnectedComponent", [](TreeLike &self, NodeId nodeId) {
+            auto range = topology(self).getConnectedComponent(nodeId);
+            return py::make_iterator(range.begin(), range.end());
+        }, py::keep_alive<0, 1>(), "nodeId"_a, "Iterate over all proper parts in the connected component represented by nodeId.")
+        .def("connectedComponentOf", [](TreeLike &self, NodeId nodeId) {
+            auto range = topology(self).getConnectedComponent(nodeId);
+            return py::make_iterator(range.begin(), range.end());
+        }, py::keep_alive<0, 1>(), "nodeId"_a, "Iterate over all proper parts in the connected component represented by nodeId.")
+        .def("connected_component_of", [](TreeLike &self, NodeId nodeId) {
+            auto range = topology(self).getConnectedComponent(nodeId);
+            return py::make_iterator(range.begin(), range.end());
+        }, py::keep_alive<0, 1>(), "nodeId"_a, "Iterate over all proper parts in the connected component represented by nodeId.")
         .def("reconstructNode", [](TreeLike &self, NodeId nodeId) {
             return MorphologicalTreePybind::reconstructNode(topology(self), nodeId);
         }, "nodeId"_a, "Reconstruct a binary mask for the connected component represented by nodeId.")
@@ -371,6 +472,9 @@ void init_MorphologicalTree(py::module &m){
       auto treeCls = py::class_<MorphologicalTreePybind, std::shared_ptr<MorphologicalTreePybind>>(m, "MorphologicalTree", py::module_local(false),
         "Morphological tree with a NodeId-first public API. Prefer getRoot/getAliveNodeIds/getChildren/getProperParts and related NodeId-based operations for new code. "
         "Weighted quantities such as altitude, image reconstruction, and compact Higra parent/altitude export live on WeightedMorphologicalTree.");
+      treeCls.attr("MAX_TREE") = py::int_(MorphologicalTree::MAX_TREE);
+      treeCls.attr("MIN_TREE") = py::int_(MorphologicalTree::MIN_TREE);
+      treeCls.attr("TREE_OF_SHAPES") = py::int_(MorphologicalTree::TREE_OF_SHAPES);
       treeCls
         .def_static("createComponentTree", [](UInt8InputArray input, bool isMaxtree, double radius) {
             return std::make_shared<MorphologicalTreePybind>(input, isMaxtree, radius);
@@ -409,6 +513,9 @@ void init_MorphologicalTree(py::module &m){
       auto weightedCls = py::class_<WeightedMorphologicalTree, std::shared_ptr<WeightedMorphologicalTree>>(m, "WeightedMorphologicalTree", py::module_local(false),
         "Wrapper pairing MorphologicalTree topology with an external dense altitude buffer. "
         "Imports can preserve an original Higra node-id domain; exports always create a new compact Higra domain.");
+      weightedCls.attr("MAX_TREE") = py::int_(MorphologicalTree::MAX_TREE);
+      weightedCls.attr("MIN_TREE") = py::int_(MorphologicalTree::MIN_TREE);
+      weightedCls.attr("TREE_OF_SHAPES") = py::int_(MorphologicalTree::TREE_OF_SHAPES);
       weightedCls
         .def_static("createComponentTree", [](UInt8InputArray input, bool isMaxtree, double radius) {
             return std::make_shared<WeightedMorphologicalTree>(
@@ -430,6 +537,14 @@ void init_MorphologicalTree(py::module &m){
             "interpolation"_a = ToSInterpolation::SelfDual,
             "infinitySeedRow"_a = ToSDefaultInfinityRow,
             "infinitySeedCol"_a = ToSDefaultInfinityCol)
+        .def_static("createFromTopology", &createWeightedTreeFromTopology,
+            "topology"_a,
+            "input"_a,
+            "Create a weighted tree by cloning an existing MorphologicalTree topology and inferring node altitudes from input.")
+        .def_static("create_from_topology", &createWeightedTreeFromTopology,
+            "topology"_a,
+            "input"_a,
+            "Create a weighted tree by cloning an existing MorphologicalTree topology and inferring node altitudes from input.")
         .def("setAltitude", [](WeightedMorphologicalTree &tree, NodeId nodeId, AltitudeType altitude) {
             if (!tree.topology().isNode(nodeId)) {
                 throw std::invalid_argument("invalid NodeId for altitude update");
@@ -452,6 +567,14 @@ void init_MorphologicalTree(py::module &m){
             "Dense altitude buffer indexed by internal NodeId.")
         .def("validateAltitudeBufferShape", static_cast<void (WeightedMorphologicalTree::*)() const>(&WeightedMorphologicalTree::validateAltitudeBufferShape))
         .def("validateMonotoneAltitude", static_cast<void (WeightedMorphologicalTree::*)() const>(&WeightedMorphologicalTree::validateMonotoneAltitude))
+        .def("projectNodeValuesToExportedHigra", &projectNodeValuesToExportedHigraOf,
+            "nodeValues"_a,
+            "attributes"_a,
+            "Project a node-indexed scalar or 2D attribute buffer to the compact Higra layout produced by exportHigraHierarchy().")
+        .def("project_node_values_to_exported_higra", &projectNodeValuesToExportedHigraOf,
+            "nodeValues"_a,
+            "attributes"_a,
+            "Project a node-indexed scalar or 2D attribute buffer to the compact Higra layout produced by exportHigraHierarchy().")
         .def_static("createFromHigraParent", [](const std::vector<NodeId>& parent, const std::vector<AltitudeType>& altitude, int rows, int cols, int treeType, std::optional<double> radius) {
             if (parent.size() != altitude.size()) {
                 throw std::invalid_argument("parent and altitude must have the same size");

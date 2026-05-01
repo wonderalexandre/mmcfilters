@@ -1,5 +1,6 @@
 #include "support/TestSupport.hpp"
 
+#include <cmath>
 #include <memory>
 #include <stdexcept>
 
@@ -36,6 +37,27 @@ void requireCompactHigraHierarchy(
     }
 
     requireEqual(numRoots, 1, label + " must encode exactly one self-parented root");
+}
+
+void requireFloatVectorEqualAllowingNaN(
+    const std::vector<float>& actual,
+    const std::vector<float>& expected,
+    const std::string& label) {
+    requireEqual(actual.size(), expected.size(), label + " size");
+    for (size_t i = 0; i < actual.size(); ++i) {
+        if (std::isnan(actual[i]) && std::isnan(expected[i])) {
+            continue;
+        }
+        requireNear(actual[i], expected[i], 1.0e-6f, label + " value");
+    }
+}
+
+AttributeNames makeDenseAttributeNames(const std::vector<Attribute>& attributes) {
+    std::unordered_map<Attribute, int> offsets;
+    for (int index = 0; index < static_cast<int>(attributes.size()); ++index) {
+        offsets[attributes[static_cast<size_t>(index)]] = index;
+    }
+    return AttributeNames(std::move(offsets));
 }
 
 int main() {
@@ -113,6 +135,84 @@ int main() {
         requireVectorEqual(reexportedParent, higraParent, "weighted Higra parent round-trip");
         requireVectorEqual(reexportedAltitude, higraAltitude, "weighted Higra altitude round-trip");
 
+        auto [maxDistNames, maxDistByNode] = AttributeComputedIncrementally::computeSingleAttribute(*weighted, MAX_DIST);
+        auto maxDistByExportedHigra = AttributeComputedIncrementally::projectNodeValuesToExportedHigra(
+            *weighted,
+            maxDistNames,
+            maxDistByNode);
+        auto [maxDistHigraNames, maxDistByImportedHigra] = AttributeComputedIncrementally::computeSingleAttribute(
+            roundtrip,
+            MAX_DIST,
+            {},
+            NodeIdSpace::HIGRA);
+        for (NodeId properPart = 0; properPart < weighted->topology().getNumTotalProperParts(); ++properPart) {
+            maxDistByImportedHigra[static_cast<size_t>(properPart)] = 0.0f;
+        }
+        requireFloatVectorEqualAllowingNaN(
+            maxDistByExportedHigra,
+            maxDistByImportedHigra,
+            "weighted exported-Higra MAX_DIST projection");
+
+        auto [areaNames, areaByNode] = AttributeComputedIncrementally::computeSingleAttribute(*weighted, AREA);
+        std::vector<float> areaAndMaxDist(static_cast<size_t>(weighted->topology().getNumInternalNodeSlots()) * 2, 0.0f);
+        for (NodeId nodeId = 0; nodeId < weighted->topology().getNumInternalNodeSlots(); ++nodeId) {
+            areaAndMaxDist[static_cast<size_t>(nodeId) * 2] = areaByNode[areaNames.linearIndex(nodeId, AREA)];
+            areaAndMaxDist[static_cast<size_t>(nodeId) * 2 + 1] = maxDistByNode[maxDistNames.linearIndex(nodeId, MAX_DIST)];
+        }
+        AttributeNames areaAndMaxDistNames = makeDenseAttributeNames({AREA, MAX_DIST});
+        const auto projectedPair = AttributeComputedIncrementally::projectNodeValuesToExportedHigra(
+            *weighted,
+            areaAndMaxDistNames,
+            areaAndMaxDist);
+        requireEqual(projectedPair.size(), maxDistByExportedHigra.size() * 2, "2D exported-Higra projection size");
+        requireEqual(projectedPair[0], 1.0f, "2D exported-Higra unit AREA value");
+        requireEqual(projectedPair[1], 0.0f, "2D exported-Higra unit MAX_DIST value");
+
+        const std::vector<Attribute> unitProjectionAttributes{LEVEL, VOLUME, BOX_COL_MIN, BOX_ROW_MIN};
+        const AttributeNames unitProjectionNames = makeDenseAttributeNames(unitProjectionAttributes);
+        std::vector<float> unitProjectionNodeValues(
+            static_cast<size_t>(weighted->topology().getNumInternalNodeSlots()) *
+            static_cast<size_t>(unitProjectionNames.NUM_ATTRIBUTES),
+            0.0f);
+        for (Attribute attribute : unitProjectionAttributes) {
+            auto [singleNames, singleValues] = AttributeComputedIncrementally::computeSingleAttribute(*weighted, attribute);
+            for (NodeId nodeId = 0; nodeId < weighted->topology().getNumInternalNodeSlots(); ++nodeId) {
+                unitProjectionNodeValues[unitProjectionNames.linearIndex(nodeId, attribute)] =
+                    singleValues[singleNames.linearIndex(nodeId, attribute)];
+            }
+        }
+
+        const auto projectedUnitValues = AttributeComputedIncrementally::projectNodeValuesToExportedHigra(
+            *weighted,
+            unitProjectionNames,
+            unitProjectionNodeValues);
+        const NodeId sampleProperPart = 10;
+        const NodeId sampleOwner = weighted->topology().getSmallestComponent(sampleProperPart);
+        const auto [sampleRow, sampleCol] = ImageUtils::to2D(sampleProperPart, weighted->topology().getNumColsOfImage());
+        requireEqual(
+            projectedUnitValues[unitProjectionNames.linearIndex(sampleProperPart, LEVEL)],
+            static_cast<float>(weighted->getAltitude(sampleOwner)),
+            "exported-Higra unit LEVEL must use the proper-part altitude");
+        requireEqual(
+            projectedUnitValues[unitProjectionNames.linearIndex(sampleProperPart, VOLUME)],
+            static_cast<float>(weighted->getAltitude(sampleOwner)),
+            "exported-Higra unit VOLUME must use one pixel at the proper-part altitude");
+        requireEqual(
+            projectedUnitValues[unitProjectionNames.linearIndex(sampleProperPart, BOX_COL_MIN)],
+            static_cast<float>(sampleCol),
+            "exported-Higra unit BOX_COL_MIN must use the proper-part column");
+        requireEqual(
+            projectedUnitValues[unitProjectionNames.linearIndex(sampleProperPart, BOX_ROW_MIN)],
+            static_cast<float>(sampleRow),
+            "exported-Higra unit BOX_ROW_MIN must use the proper-part row");
+
+        requireThrows<std::invalid_argument>(
+            [&]() {
+                const std::vector<float> invalidValues{1.0f};
+                static_cast<void>(AttributeComputedIncrementally::projectNodeValuesToExportedHigra(*weighted, maxDistNames, invalidValues));
+            },
+            "exported-Higra projection must reject invalid node-value size");
+
         roundtrip.setAltitude(importedSampleNodeId, static_cast<AltitudeType>(importedSampleAltitude + 4));
         auto reimported = WeightedMorphologicalTree::createFromHigraParent(
             higraParent,
@@ -122,6 +222,58 @@ int main() {
             MorphologicalTree::MAX_TREE,
             AdjacencyRelation(4, 4, 1.5));
         requireEqual(reimported.getAltitude(importedSampleNodeId), importedSampleAltitude, "weighted Higra import must repopulate the external altitude buffer");
+    }
+
+    {
+        auto image = makeComponentTreeFixture();
+        auto topology = MorphologicalTree::createMaxTree(image);
+        const auto originalAliveNodeIds = collectNodeIds(topology.getAliveNodeIds());
+
+        auto weightedFromTopology = WeightedMorphologicalTree::createFromTopology(topology, image);
+        auto rebuiltWeighted = WeightedMorphologicalTree::createComponentTree(image, true);
+
+        weightedFromTopology.validateAltitudeBufferShape();
+        weightedFromTopology.validateMonotoneAltitude();
+        requireEqual(weightedFromTopology.topology().getRoot(), topology.getRoot(), "weighted-from-topology root");
+        require(weightedFromTopology.topology().isMaxtree(), "weighted-from-topology tree type");
+        requireVectorEqual(weightedFromTopology.getAltitudeBuffer(), rebuiltWeighted.getAltitudeBuffer(), "weighted-from-topology altitude buffer");
+        requireVectorEqual(
+            collectImageValues(weightedFromTopology.reconstructionImage()),
+            collectImageValues(image),
+            "weighted-from-topology reconstruction");
+
+        weightedFromTopology.mergeNodeIntoParent(5);
+        requireVectorEqual(
+            collectNodeIds(topology.getAliveNodeIds()),
+            originalAliveNodeIds,
+            "weighted-from-topology must clone the caller topology");
+    }
+
+    {
+        auto image = makeComponentTreeFixture();
+        auto topology = MorphologicalTree::createMinTree(image);
+        auto weightedFromTopology = WeightedMorphologicalTree::createFromTopology(topology, image);
+        auto rebuiltWeighted = WeightedMorphologicalTree::createComponentTree(image, false);
+
+        weightedFromTopology.validateAltitudeBufferShape();
+        weightedFromTopology.validateMonotoneAltitude();
+        require(!weightedFromTopology.topology().isMaxtree(), "min weighted-from-topology tree type");
+        requireVectorEqual(weightedFromTopology.getAltitudeBuffer(), rebuiltWeighted.getAltitudeBuffer(), "min weighted-from-topology altitude buffer");
+    }
+
+    {
+        auto topology = MorphologicalTree::createMaxTree(makeComponentTreeFixture());
+        auto mismatchedImage = makeImage(
+            2,
+            2,
+            {
+                1, 2,
+                3, 4,
+            });
+
+        requireThrows<std::invalid_argument>(
+            [&]() { static_cast<void>(WeightedMorphologicalTree::createFromTopology(topology, mismatchedImage)); },
+            "weighted-from-topology must reject mismatched image domains");
     }
 
     {
@@ -210,6 +362,19 @@ int main() {
             });
         auto weighted = makeWeightedTreeOfShapes(tosImage, ToSInterpolation::SelfDual);
         weighted->validateAltitudeBufferShape();
+
+        auto topology = MorphologicalTree::createTreeOfShapes(tosImage, ToSInterpolation::SelfDual);
+        auto weightedFromTopology = WeightedMorphologicalTree::createFromTopology(topology, tosImage);
+        weightedFromTopology.validateAltitudeBufferShape();
+        requireVectorEqual(
+            weightedFromTopology.getAltitudeBuffer(),
+            weighted->getAltitudeBuffer(),
+            "tree-of-shapes weighted-from-topology altitude buffer");
+        requireVectorEqual(
+            collectImageValues(weightedFromTopology.reconstructionImage()),
+            collectImageValues(tosImage),
+            "tree-of-shapes weighted-from-topology reconstruction");
+
         auto tosAltitude = weighted->getAltitudeBuffer();
         if (!tosAltitude.empty()) {
             tosAltitude.front() += 100;

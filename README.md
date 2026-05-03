@@ -226,11 +226,18 @@ Use this map to find the right entry point quickly:
 
 Releases are automated by GitHub Actions. For a production release:
 
-1. Make sure the `CI` workflow is green on `main`.
-2. Create and push a semantic version tag, for example `v0.1.26`.
-3. The `Release` workflow builds the source distribution and platform wheels,
-   validates the package metadata, and attaches the artifacts to a GitHub
-   Release.
+1. Make sure the `CI` and `Package` workflows are green on `main`.
+2. Create and push a semantic version tag, for example `v1.0.1`.
+3. The `Release` workflow validates that the tag matches the resolved package
+   version, builds the source distribution and platform wheels, validates the
+   package metadata, and attaches the artifacts to a GitHub Release.
+
+The release wheel matrix targets Python 3.9 through 3.14 on:
+
+- Linux manylinux x86_64;
+- Windows x86_64;
+- macOS arm64;
+- macOS Intel x86_64.
 
 PyPI publication is intentionally manual. Download the release artifacts from
 the GitHub Release or from the `Release` workflow run, then upload them with:

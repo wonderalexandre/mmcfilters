@@ -1,0 +1,125 @@
+name: Package
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-distributions:
+    name: Build Python distributions
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+
+      - name: Build sdist and wheel
+        run: python -m build --sdist --wheel --outdir dist
+
+      - name: Inspect sdist contents
+        run: |
+          python - <<'PY'
+          import tarfile
+          from pathlib import Path
+          from pathlib import PurePosixPath
+
+          archives = sorted(Path("dist").glob("mmcfilters-*.tar.gz"))
+          if len(archives) != 1:
+              raise SystemExit(f"expected one sdist, found {archives}")
+
+          forbidden_top_level = {"notebooks", "dat", ".github", "build", "dist"}
+          with tarfile.open(archives[0]) as tf:
+              names = sorted(tf.getnames())
+
+          leaked = {}
+          for name in names:
+              parts = PurePosixPath(name).parts
+              payload = parts[1:] if len(parts) > 1 else ()
+              if not payload:
+                  continue
+              if payload[0] in forbidden_top_level:
+                  leaked.setdefault(payload[0], []).append(name)
+              if "__pycache__" in payload:
+                  leaked.setdefault("__pycache__", []).append(name)
+              if ".ipynb_checkpoints" in payload:
+                  leaked.setdefault(".ipynb_checkpoints", []).append(name)
+              if name.endswith((".pyc", ".pyo", ".pyd")):
+                  leaked.setdefault("bytecode", []).append(name)
+          if leaked:
+              raise SystemExit(f"sdist contains forbidden files: {leaked}")
+          print(f"checked {archives[0]} with {len(names)} entries")
+          PY
+
+      - name: Inspect wheel metadata
+        run: |
+          python - <<'PY'
+          from email.parser import Parser
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          wheels = sorted(Path("dist").glob("mmcfilters-*.whl"))
+          if len(wheels) != 1:
+              raise SystemExit(f"expected one wheel, found {wheels}")
+
+          with ZipFile(wheels[0]) as zf:
+              metadata_name = next(
+                  name
+                  for name in zf.namelist()
+                  if name.endswith(".dist-info/METADATA")
+              )
+              metadata = zf.read(metadata_name).decode()
+
+          requirements = Parser().parsestr(metadata).get_all("Requires-Dist") or []
+          if not any(value.startswith("numpy") for value in requirements):
+              raise SystemExit("missing NumPy dependency")
+          if "numpy<2" in metadata or "numpy>=1.23,<2" in metadata:
+              raise SystemExit("wheel metadata must not force NumPy below 2")
+          PY
+
+      - name: Install wheel and run smoke test
+        run: |
+          python -m venv --system-site-packages .venv-install
+          .venv-install/bin/python -m pip install --upgrade pip
+          .venv-install/bin/python -m pip install numpy
+          .venv-install/bin/python -m pip install --no-deps --force-reinstall dist/mmcfilters-*.whl
+          .venv-install/bin/python - <<'PY'
+          import numpy as np
+          import mmcfilters
+
+          image = np.array([[1, 2], [3, 4]], dtype=np.uint8)
+          tree = mmcfilters.WeightedMorphologicalTree.createMaxTree(image)
+          assert tree.reconstructionImage().shape == image.shape
+          PY
+
+      - name: Check package metadata
+        run: python -m twine check dist/*
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v7
+        with:
+          name: mmcfilters-dist
+          path: dist/*
+          if-no-files-found: error

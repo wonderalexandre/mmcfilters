@@ -14,19 +14,69 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-sdist:
-    name: Source distribution
+  validate-version:
+    name: Validate release version
     runs-on: ubuntu-latest
+    outputs:
+      package-version: ${{ steps.version.outputs.package-version }}
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Validate tag and package version
+        id: version
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "setuptools-scm>=8"
+          package_version="$(python - <<'PY'
+          from setuptools_scm import get_version
+
+          print(
+              get_version(
+                  root=".",
+                  version_scheme="post-release",
+                  local_scheme="no-local-version",
+                  tag_regex=r"^v?(?P<version>\d+\.\d+\.\d+(?:[.-].*)?)$",
+              )
+          )
+          PY
+          )"
+          echo "package-version=${package_version}" >> "${GITHUB_OUTPUT}"
+
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            tag_version="${GITHUB_REF_NAME#v}"
+            if [[ "${tag_version}" != "${package_version}" ]]; then
+              echo "::error::Tag ${GITHUB_REF_NAME} does not match resolved package version ${package_version}."
+              exit 1
+            fi
+          fi
+
+  build-sdist:
+    name: Source distribution
+    needs: validate-version
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -40,7 +90,7 @@ jobs:
         run: python -m build --sdist --outdir dist
 
       - name: Upload sdist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-sdist
           path: dist/*.tar.gz
@@ -48,7 +98,9 @@ jobs:
 
   build-wheels:
     name: Wheels (${{ matrix.os }})
+    needs: validate-version
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
 
     strategy:
       fail-fast: false
@@ -56,11 +108,12 @@ jobs:
         os:
           - ubuntu-latest
           - macos-latest
+          - macos-15-intel
           - windows-latest
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -72,7 +125,7 @@ jobs:
           arch: x64
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -80,7 +133,7 @@ jobs:
       - name: Install cibuildwheel
         run: |
           python -m pip install --upgrade pip
-          python -m pip install cibuildwheel==3.4.1
+          python -m pip install "cibuildwheel==3.4.1"
 
       - name: Build wheels
         env:
@@ -88,18 +141,122 @@ jobs:
         run: python -m cibuildwheel --output-dir wheelhouse
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-wheels-${{ matrix.os }}
           path: wheelhouse/*.whl
           if-no-files-found: error
 
+  check-distributions:
+    name: Check distributions
+    needs:
+      - validate-version
+      - build-sdist
+      - build-wheels
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Inspect distributions
+        env:
+          PACKAGE_VERSION: ${{ needs.validate-version.outputs.package-version }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import tarfile
+          from email.parser import Parser
+          from pathlib import Path
+          from pathlib import PurePosixPath
+          from zipfile import ZipFile
+
+          dist = Path("dist")
+          expected_version = os.environ["PACKAGE_VERSION"]
+          archives = sorted(dist.glob("mmcfilters-*.tar.gz"))
+          wheels = sorted(dist.glob("mmcfilters-*.whl"))
+
+          if len(archives) != 1:
+              raise SystemExit(f"expected one sdist, found {archives}")
+          if not wheels:
+              raise SystemExit("expected at least one wheel")
+
+          expected_sdist = f"mmcfilters-{expected_version}.tar.gz"
+          if archives[0].name != expected_sdist:
+              raise SystemExit(
+                  f"sdist version mismatch: expected {expected_sdist}, found {archives[0].name}"
+              )
+
+          forbidden_top_level = {"notebooks", "dat", ".github", "build", "dist"}
+          with tarfile.open(archives[0]) as tf:
+              names = sorted(tf.getnames())
+
+          leaked = {}
+          for name in names:
+              parts = PurePosixPath(name).parts
+              payload = parts[1:] if len(parts) > 1 else ()
+              if not payload:
+                  continue
+              if payload[0] in forbidden_top_level:
+                  leaked.setdefault(payload[0], []).append(name)
+              if "__pycache__" in payload:
+                  leaked.setdefault("__pycache__", []).append(name)
+              if ".ipynb_checkpoints" in payload:
+                  leaked.setdefault(".ipynb_checkpoints", []).append(name)
+              if name.endswith((".pyc", ".pyo", ".pyd")):
+                  leaked.setdefault("bytecode", []).append(name)
+          if leaked:
+              raise SystemExit(f"sdist contains forbidden files: {leaked}")
+
+          for wheel in wheels:
+              if not wheel.name.startswith(f"mmcfilters-{expected_version}-"):
+                  raise SystemExit(
+                      f"wheel version mismatch: expected {expected_version}, found {wheel.name}"
+                  )
+              platform_tag = wheel.stem.rsplit("-", 1)[-1]
+              if platform_tag.startswith("linux_"):
+                  raise SystemExit(
+                      f"Linux wheel must use manylinux or musllinux platform tag: {wheel.name}"
+                  )
+              with ZipFile(wheel) as zf:
+                  metadata_name = next(
+                      name
+                      for name in zf.namelist()
+                      if name.endswith(".dist-info/METADATA")
+                  )
+                  metadata = zf.read(metadata_name).decode()
+
+              requirements = Parser().parsestr(metadata).get_all("Requires-Dist") or []
+              if not any(value.startswith("numpy") for value in requirements):
+                  raise SystemExit(f"{wheel.name} is missing NumPy dependency")
+              if "numpy<2" in metadata or "numpy>=1.23,<2" in metadata:
+                  raise SystemExit(f"{wheel.name} forces NumPy below 2")
+
+          print(f"checked {archives[0]} and {len(wheels)} wheels")
+          PY
+
+      - name: Check package metadata
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install twine
+          python -m twine check dist/*
+
   github-release:
     name: GitHub Release
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs:
-      - build-sdist
-      - build-wheels
+      - validate-version
       - check-distributions
     runs-on: ubuntu-latest
     permissions:
@@ -107,13 +264,13 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Download release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: release-*
           path: dist
@@ -123,35 +280,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ github.ref_name }}
+        shell: bash
         run: |
-          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            gh release upload "$TAG_NAME" dist/* --clobber
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release view "${TAG_NAME}" --json assets --jq '.assets[].name' |
+              while IFS= read -r asset_name; do
+                gh release delete-asset "${TAG_NAME}" "${asset_name}" --yes
+              done
+            gh release upload "${TAG_NAME}" dist/*
           else
-            gh release create "$TAG_NAME" dist/* --verify-tag --title "$TAG_NAME" --generate-notes
+            gh release create "${TAG_NAME}" dist/* --verify-tag --title "${TAG_NAME}" --generate-notes
           fi
-
-  check-distributions:
-    name: Check distributions
-    needs:
-      - build-sdist
-      - build-wheels
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download release artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: release-*
-          path: dist
-          merge-multiple: true
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Check package metadata
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install twine
-          python -m twine check dist/*

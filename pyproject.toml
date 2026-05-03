@@ -23,7 +23,16 @@ classifiers = [
   "Intended Audience :: Science/Research",
   "Topic :: Scientific/Engineering :: Image Processing",
   "Programming Language :: Python",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Programming Language :: C++",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
 ]
 
 [tool.setuptools_scm]
@@ -57,17 +66,41 @@ version = { provider = "scikit_build_core.metadata.setuptools_scm" }
 
 [tool.scikit-build.sdist]
 include = [
-  "python/**",
-  "pybinds/**",
-  "mmcfilters/**",
-  "cmake/**",
-  "CMakeLists.txt",
-  "LICENSE",
-  "README.md",
+  "/python/**",
+  "/pybinds/**",
+  "/mmcfilters/**",
+  "/cmake/**",
+  "/CMakeLists.txt",
+  "/LICENSE",
+  "/README.md",
+]
+exclude = [
+  "/.github/**",
+  "/.gitignore",
+  "/.pytest_cache/**",
+  "/.vscode/**",
+  "/build/**",
+  "/dat/**",
+  "/dist/**",
+  "/notebooks/**",
+  "/notebooks/README.md",
+  "/python/mmcfilters/__pycache__/**",
+  "/python/mmcfilters/**/*.py[cod]",
+  ".github/**",
+  ".gitignore",
+  ".pytest_cache/**",
+  ".vscode/**",
+  "build/**",
+  "dat/**",
+  "dist/**",
+  "notebooks/**",
+  "**/.ipynb_checkpoints/**",
+  "**/__pycache__/**",
+  "**/*.py[cod]",
 ]
 
 [tool.cibuildwheel]
-build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
+build = "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
 skip = "*-win32 *-manylinux_i686 *-musllinux_*"
 test-requires = ["numpy"]
 test-command = "python -c \"import mmcfilters, numpy as np; image = np.array([[1, 2], [3, 4]], dtype=np.uint8); tree = mmcfilters.WeightedMorphologicalTree.createMaxTree(image); assert tree.reconstructionImage().shape == image.shape\""

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <deque>
 #include <iostream>
 #include <numeric>
 #include <stdexcept>

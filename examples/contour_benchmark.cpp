@@ -1,5 +1,17 @@
+/**
+ * Benchmark compact contour extraction and lazy contour materialization.
+ *
+ * Build with `-DMMCFILTERS_BUILD_EXAMPLES=ON` and run either
+ * `./build/examples/mmcfilters_contour_benchmark 512 512 5` for a synthetic
+ * image or `./build/examples/mmcfilters_contour_benchmark path/to/image.png 5`
+ * for a grayscale image file.
+ *
+ * Timings separate extraction, `getContour(node)`, `contoursByNode()`,
+ * random-order access, and explicit `materializeAll()` prefetch.
+ */
 #include "mmcfilters/contours/ContoursComputedIncrementally.hpp"
 #include "mmcfilters/trees/MorphologicalTree.hpp"
+#include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
 #include "stb_image.h"
 
 #include <algorithm>
@@ -306,14 +318,14 @@ int main(int argc, char** argv) {
     printBenchmarkMethods();
 
     auto [componentTree, componentBuildMs] = timed([&]() {
-        return MorphologicalTree::createComponentTree(image, true, 1.5);
+        return MorphologicalTreeFactory::createMaxTree(image, 1.5);
     });
-    runCase("component-tree max-tree radius=1.5", componentTree, componentBuildMs, repeats);
+    runCase("component-tree max-tree radius=1.5", componentTree.topology(), componentBuildMs, repeats);
 
     auto [tosTree, tosBuildMs] = timed([&]() {
-        return MorphologicalTree::createTreeOfShapes(image, ToSInterpolation::SelfDual);
+        return MorphologicalTreeFactory::createTreeOfShapes(image, ToSInterpolation::SelfDual);
     });
-    runCase("tree-of-shapes SelfDual", tosTree, tosBuildMs, repeats);
+    runCase("tree-of-shapes SelfDual", tosTree.topology(), tosBuildMs, repeats);
 
     return 0;
 }

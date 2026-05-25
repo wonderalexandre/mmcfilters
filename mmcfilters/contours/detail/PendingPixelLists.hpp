@@ -2,6 +2,10 @@
 
 #include "../../utils/Common.hpp"
 
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
 namespace mmcfilters::detail {
 
 /**

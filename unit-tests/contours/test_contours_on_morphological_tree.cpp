@@ -3,7 +3,10 @@
 #include "mmcfilters/contours/ContoursComputedIncrementally.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <memory>
+#include <span>
+#include <string>
 
 using namespace mmcfilters;
 using namespace mmcfilters::unit_tests;
@@ -30,6 +33,116 @@ std::vector<int> contourVector(
     return values;
 }
 
+void appendContourFromDeltas(
+    const MorphologicalTree& tree,
+    const ContoursComputedIncrementally::LocalContourDeltas& deltas,
+    NodeId nodeId,
+    std::vector<int>& values,
+    std::vector<uint8_t>& pixelMark) {
+    for (NodeId child : tree.getChildren(nodeId)) {
+        appendContourFromDeltas(tree, deltas, child, values, pixelMark);
+    }
+
+    for (int pixel : deltas.additions(nodeId)) {
+        if (!pixelMark[static_cast<std::size_t>(pixel)]) {
+            pixelMark[static_cast<std::size_t>(pixel)] = 1;
+            values.push_back(pixel);
+        }
+    }
+
+    for (int pixel : deltas.removals(nodeId)) {
+        pixelMark[static_cast<std::size_t>(pixel)] = 0;
+    }
+
+    std::size_t writeIndex = 0;
+    for (int pixel : values) {
+        if (pixelMark[static_cast<std::size_t>(pixel)]) {
+            values[writeIndex++] = pixel;
+        }
+    }
+    values.resize(writeIndex);
+}
+
+std::vector<int> contourVectorFromDeltas(
+    const MorphologicalTree& tree,
+    const ContoursComputedIncrementally::LocalContourDeltas& deltas,
+    NodeId nodeId) {
+    std::vector<int> values;
+    std::vector<uint8_t> pixelMark(
+        static_cast<std::size_t>(tree.getNumRowsOfImage() * tree.getNumColsOfImage()),
+        0);
+    appendContourFromDeltas(tree, deltas, nodeId, values, pixelMark);
+    return values;
+}
+
+std::vector<int> expectedContourForNode(const MorphologicalTree& tree, NodeId nodeId) {
+    AdjacencyRelation adj4(
+        tree.getNumRowsOfImage(),
+        tree.getNumColsOfImage(),
+        ContoursComputedIncrementally::ContourSideAdjacencyRadius);
+    std::vector<uint8_t> mask(static_cast<std::size_t>(tree.getNumRowsOfImage() * tree.getNumColsOfImage()), 0);
+    std::vector<int> ccPixels = pixelsOfConnectedComponent(tree, nodeId);
+    for (int pixel : ccPixels) {
+        mask[static_cast<std::size_t>(pixel)] = 1;
+    }
+
+    std::vector<int> expectedContour;
+    for (int pixel : ccPixels) {
+        auto [row, col] = ImageUtils::to2D(pixel, tree.getNumColsOfImage());
+        bool isContour = row == 0 || col == 0 || row == tree.getNumRowsOfImage() - 1 || col == tree.getNumColsOfImage() - 1;
+        if (!isContour) {
+            for (int q : adj4.getAdjPixels(pixel)) {
+                if (!mask[static_cast<std::size_t>(q)]) {
+                    isContour = true;
+                    break;
+                }
+            }
+        }
+        if (isContour) {
+            expectedContour.push_back(pixel);
+        }
+    }
+
+    std::sort(expectedContour.begin(), expectedContour.end());
+    return expectedContour;
+}
+
+void verifyContoursAgainstSupportMasks(const MorphologicalTree& tree, const std::string& label) {
+    auto contours = ContoursComputedIncrementally::extractCompactContours(tree);
+    auto deltas = ContoursComputedIncrementally::extractContourDeltas(tree);
+    require(!contours.isMaterialized(), label + " contours must start without global materialization");
+
+    for (NodeId nodeId : tree.getAliveNodeIds()) {
+        std::vector<int> expectedContour = expectedContourForNode(tree, nodeId);
+        std::vector<int> actualContour = contourVector(contours, nodeId);
+        std::vector<int> rangeContour = contourVector(contours, nodeId);
+        std::vector<int> deltaContour = contourVectorFromDeltas(tree, deltas, nodeId);
+        std::sort(actualContour.begin(), actualContour.end());
+        std::sort(rangeContour.begin(), rangeContour.end());
+        std::sort(deltaContour.begin(), deltaContour.end());
+        requireVectorEqual(actualContour, expectedContour, label + " contour regression node " + std::to_string(nodeId));
+        requireVectorEqual(rangeContour, actualContour, label + " range contour regression node " + std::to_string(nodeId));
+        requireVectorEqual(deltaContour, actualContour, label + " contour deltas regression node " + std::to_string(nodeId));
+    }
+}
+
+MorphologicalTree makeTwoBranchInteriorTreeOfShapes() {
+    std::vector<NodeId> parent = {
+        9, 11, 10,
+        9, 9, 10,
+        11, 11, 10,
+        11, 11, 11,
+    };
+    std::vector<std::uint8_t> altitude(parent.size(), std::uint8_t{});
+    auto weighted = MorphologicalTreeFactory::createFromHigraParent(
+        std::span<const NodeId>(parent),
+        std::span<const std::uint8_t>(altitude),
+        3,
+        3,
+        MorphologicalTreeKind::TREE_OF_SHAPES);
+    return weighted.topology().clone();
+}
+
 }
 
 int main() {
@@ -37,50 +150,71 @@ int main() {
 
     for (bool isMaxtree : {true, false}) {
         auto tree = makeComponentTree(image, isMaxtree);
-        auto contours = ContoursComputedIncrementally::extractCompactContours(*tree);
-        require(!contours.isMaterialized(), "contours must start without global materialization");
-        AdjacencyRelation adj4(
-            tree->getNumRowsOfImage(),
-            tree->getNumColsOfImage(),
-            ContoursComputedIncrementally::ContourSideAdjacencyRadius);
-        std::vector<uint8_t> mask(static_cast<std::size_t>(image->getSize()), 0);
+        verifyContoursAgainstSupportMasks(*tree, isMaxtree ? "max-tree" : "min-tree");
 
-        for (NodeId nodeId : tree->getAliveNodeIds()) {
-            std::vector<int> ccPixels;
-            for (int pixel : pixelsOfConnectedComponent(*tree, nodeId)) {
-                ccPixels.push_back(pixel);
-                mask[static_cast<std::size_t>(pixel)] = 1;
-            }
-
-            std::vector<int> expectedContour;
-            for (int pixel : ccPixels) {
-                auto [row, col] = ImageUtils::to2D(pixel, tree->getNumColsOfImage());
-                bool isContour = row == 0 || col == 0 || row == tree->getNumRowsOfImage() - 1 || col == tree->getNumColsOfImage() - 1;
-                if (!isContour) {
-                    for (int q : adj4.getAdjPixels(pixel)) {
-                        if (!mask[static_cast<std::size_t>(q)]) {
-                            isContour = true;
-                            break;
-                        }
-                    }
-                }
-                if (isContour) {
-                    expectedContour.push_back(pixel);
-                }
-            }
-
-            std::vector<int> actualContour = contourVector(contours, nodeId);
-            std::vector<int> rangeContour = contourVector(contours, nodeId);
-            std::sort(expectedContour.begin(), expectedContour.end());
-            std::sort(actualContour.begin(), actualContour.end());
-            std::sort(rangeContour.begin(), rangeContour.end());
-            requireVectorEqual(actualContour, expectedContour, isMaxtree ? "max-tree contour regression" : "min-tree contour regression");
-            requireVectorEqual(rangeContour, actualContour, isMaxtree ? "max-tree range contour regression" : "min-tree range contour regression");
-
-            for (int pixel : ccPixels) {
-                mask[static_cast<std::size_t>(pixel)] = 0;
-            }
+        if (isMaxtree) {
+            auto staleContours = ContoursComputedIncrementally::extractCompactContours(*tree);
+            tree->mergeNodeIntoParent(4);
+            requireThrows<std::logic_error>(
+                [&]() { static_cast<void>(staleContours.isMaterialized()); },
+                "contours must reject materialization status after topology mutation");
+            requireThrows<std::logic_error>(
+                [&]() { static_cast<void>(staleContours.getContour(tree->getRoot())); },
+                "contours must reject contour access after topology mutation");
+            requireThrows<std::logic_error>(
+                [&]() { staleContours.materializeAll(); },
+                "contours must reject materializeAll after topology mutation");
         }
+
+        auto weighted = makeWeightedComponentTree(image, isMaxtree);
+        std::vector<std::int16_t> int16Altitude;
+        int16Altitude.reserve(weighted->getAltitudeBuffer().size());
+        for (std::uint8_t level : weighted->getAltitudeBuffer()) {
+            int16Altitude.push_back(static_cast<std::int16_t>(level));
+        }
+        const WeightedTreeView<std::int16_t> int16View(
+            weighted->topology(),
+            std::span<const std::int16_t>(int16Altitude.data(), int16Altitude.size()));
+        auto topologyContours = ContoursComputedIncrementally::extractCompactContours(weighted->topology());
+        auto viewContours = ContoursComputedIncrementally::extractCompactContours(weighted->asView());
+        auto int16ViewContours = ContoursComputedIncrementally::extractCompactContours(int16View);
+        if (isMaxtree) {
+            auto staleWeighted = makeWeightedComponentTree(image, true);
+            const auto staleView = staleWeighted->asView();
+            staleWeighted->mergeNodeIntoParent(4);
+            requireThrows<std::logic_error>(
+                [&]() { static_cast<void>(ContoursComputedIncrementally::extractCompactContours(staleView)); },
+                "contour extraction must reject stale WeightedTreeView");
+            requireThrows<std::logic_error>(
+                [&]() { static_cast<void>(ContoursComputedIncrementally::extractContourDeltas(staleView)); },
+                "contour delta extraction must reject stale WeightedTreeView");
+        }
+        for (NodeId nodeId : weighted->topology().getAliveNodeIds()) {
+            auto topologyContour = contourVector(topologyContours, nodeId);
+            auto viewContour = contourVector(viewContours, nodeId);
+            auto int16ViewContour = contourVector(int16ViewContours, nodeId);
+            std::sort(topologyContour.begin(), topologyContour.end());
+            std::sort(viewContour.begin(), viewContour.end());
+            std::sort(int16ViewContour.begin(), int16ViewContour.end());
+            requireVectorEqual(
+                viewContour,
+                topologyContour,
+                isMaxtree ? "max-tree contours via view" : "min-tree contours via view");
+            requireVectorEqual(
+                int16ViewContour,
+                topologyContour,
+                isMaxtree ? "max-tree contours via int16 view" : "min-tree contours via int16 view");
+        }
+    }
+
+    {
+        auto tree = makeTreeOfShapes(image, ToSInterpolation::SelfDual);
+        verifyContoursAgainstSupportMasks(*tree, "tree of shapes");
+    }
+
+    {
+        auto tree = makeTwoBranchInteriorTreeOfShapes();
+        verifyContoursAgainstSupportMasks(tree, "two-branch interior tree of shapes");
     }
 
     {

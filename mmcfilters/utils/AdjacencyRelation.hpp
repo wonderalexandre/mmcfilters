@@ -1,6 +1,13 @@
 #pragma once
 
-#include "../utils/Common.hpp"
+#include "Image.hpp"
+
+#include <cmath>
+#include <cstdint>
+#include <iterator>
+#include <numbers>
+#include <stdexcept>
+#include <vector>
 
 
 namespace mmcfilters {
@@ -12,6 +19,11 @@ namespace mmcfilters {
  * grid. The stencil can be traversed either fully or in forward-only mode,
  * which exposes only one directed half of the neighbourhood and is therefore
  * convenient when unique undirected edges are needed.
+ *
+ * Coordinates use `(row, col)` order for row-major image domains. Linear pixel
+ * ids use `row * numCols + col`. Iteration methods mutate an internal cursor,
+ * so one `AdjacencyRelation` object should not be traversed by multiple active
+ * ranges at the same time.
  */
 class AdjacencyRelation {
 private:
@@ -34,9 +46,11 @@ private:
 public:
     /**
      * @brief Builds an adjacency relation for a `numRows` by `numCols` image.
+     *
      * @param numRows Number of image rows.
      * @param numCols Number of image columns.
-     * @param radius Radius of the neighbourhood stencil.
+     * @param radius Radius of the neighbourhood stencil. `1.0` gives 4-connectivity
+     * and `1.5` gives 8-connectivity on the integer grid.
      */    
     AdjacencyRelation(int numRows, int numCols, double radius){
         this->numRows = numRows;
@@ -185,6 +199,8 @@ public:
 
     /**
      * @brief Returns the number of offsets in the current stencil.
+     *
+     * The count includes the central origin offset at stencil position `0`.
      */
     int getSize() const {
         return this->n;
@@ -206,10 +222,15 @@ public:
 
     /**
      * @brief Prepares iteration over adjacent pixels, including the origin.
+     *
+     * @param row Zero-based row coordinate inside the image domain.
+     * @param col Zero-based column coordinate inside the image domain.
+     * @return This adjacency relation configured as a range.
+     * @throws std::out_of_range If `(row, col)` is outside the image domain.
      */
     AdjacencyRelation& getAdjPixels(int row, int col){
         if (row < 0 || row >= this->numRows || col < 0 || col >= this->numCols) {
-            throw std::out_of_range("Índice fora dos limites.");
+            throw std::out_of_range("Index out of bounds.");
         }
         this->row = row;
         this->col = col;
@@ -221,6 +242,10 @@ public:
 
     /**
      * @brief Prepares iteration over adjacent pixels from a linear index, including the origin.
+     *
+     * @param indexVector Row-major linear pixel index.
+     * @return This adjacency relation configured as a range.
+     * @throws std::out_of_range If `indexVector` maps outside the image domain.
      */
     AdjacencyRelation& getAdjPixels(int indexVector){
         return getAdjPixels(indexVector / this->numCols, indexVector % this->numCols);
@@ -229,10 +254,15 @@ public:
 
     /**
      * @brief Prepares iteration over valid neighbouring pixels, excluding the origin.
+     *
+     * @param row Zero-based row coordinate inside the image domain.
+     * @param col Zero-based column coordinate inside the image domain.
+     * @return This adjacency relation configured as a range.
+     * @throws std::out_of_range If `(row, col)` is outside the image domain.
      */
-        AdjacencyRelation& getNeighborPixels(int row, int col){
+    AdjacencyRelation& getNeighborPixels(int row, int col){
         if (row < 0 || row >= this->numRows || col < 0 || col >= this->numCols) {
-            throw std::out_of_range("Índice fora dos limites.");
+            throw std::out_of_range("Index out of bounds.");
         }
         this->row = row;
         this->col = col;
@@ -243,6 +273,10 @@ public:
 
     /**
      * @brief Prepares iteration over valid neighbouring pixels from a linear index, excluding the origin.
+     *
+     * @param indexVector Row-major linear pixel index.
+     * @return This adjacency relation configured as a range.
+     * @throws std::out_of_range If `indexVector` maps outside the image domain.
      */
     AdjacencyRelation& getNeighborPixels(int indexVector){
         return getNeighborPixels(indexVector / this->numCols, indexVector % this->numCols);
@@ -250,11 +284,18 @@ public:
 
     /**
      * @brief Prepares forward-only neighbour iteration at `(row, col)`.
-     * @details Only one directed half of the neighbourhood is emitted.
+     *
+     * @details Only one directed half of the neighbourhood is emitted:
+     * neighbours whose offset has `dy > 0`, or `dy == 0 && dx > 0`.
+     *
+     * @param row Zero-based row coordinate inside the image domain.
+     * @param col Zero-based column coordinate inside the image domain.
+     * @return This adjacency relation configured as a range.
+     * @throws std::out_of_range If `(row, col)` is outside the image domain.
      */
     AdjacencyRelation& getNeighborPixelsForward(int row, int col){
         if (row < 0 || row >= this->numRows || col < 0 || col >= this->numCols) {
-            throw std::out_of_range("Índice fora dos limites.");
+            throw std::out_of_range("Index out of bounds.");
         }
         this->row = row;
         this->col = col;
@@ -265,6 +306,10 @@ public:
     
     /**
      * @brief Prepares forward-only neighbour iteration from a linear index.
+     *
+     * @param indexVector Row-major linear pixel index.
+     * @return This adjacency relation configured as a range.
+     * @throws std::out_of_range If `indexVector` maps outside the image domain.
      */
     AdjacencyRelation& getNeighborPixelsForward(int indexVector){
         return getNeighborPixelsForward(indexVector / this->numCols, indexVector % this->numCols);
@@ -273,6 +318,9 @@ public:
 
     /**
      * @brief Tests adjacency between two linear pixel indices.
+     *
+     * The central pixel is adjacent to itself because the radius test includes a
+     * zero-length offset.
      */
     inline bool isAdjacent(int p, int q) const noexcept {
         int py = p / numCols, px = p % numCols;
@@ -283,6 +331,10 @@ public:
 
     /**
      * @brief Tests adjacency between two pixel coordinates.
+     *
+     * Coordinates are given as `(x, y)` pairs, where `x` is the column and `y`
+     * is the row. The method only applies the radius test; it does not check
+     * whether either coordinate lies inside the configured image domain.
      */
     inline bool isAdjacent(int px, int py, int qx, int qy) const noexcept {
         int dx = px - qx;
@@ -297,20 +349,50 @@ public:
         return this->radius;
     }
 
+    /**
+     * @brief Returns true when the stencil represents 4-connectivity.
+     */
     bool is4connectivity() const { return this->radius == 1;}
+
+    /**
+     * @brief Returns true when the stencil represents 8-connectivity.
+     */
     bool is8connectivity() const {return this->radius == 1.5;}
-        
+
+    /**
+     * @brief Returns whether a linear pixel index lies on the image border.
+     *
+     * The index is interpreted in row-major order. No explicit bounds check is
+     * performed before converting the index to `(row, col)`.
+     */
     bool isBorderDomainImage(int index){
         auto[row, col] = ImageUtils::to2D(index, this->numCols);
         return isBorderDomainImage(row, col);
     }
+
+    /**
+     * @brief Returns whether `(row, col)` lies on the image border.
+     *
+     * The method assumes coordinates are inside the image domain.
+     */
     bool isBorderDomainImage(int row, int col){
         return row == 0 || col == 0 || row == this->numRows - 1 || col == this->numCols - 1;
     }
 
+    /**
+     * @brief Returns the row offset stored at stencil position `index`.
+     *
+     * The method does not perform bounds checking.
+     */
     int getOffsetRow(int index){
         return offsetRow[index];
     }
+
+    /**
+     * @brief Returns the column offset stored at stencil position `index`.
+     *
+     * The method does not perform bounds checking.
+     */
     int getOffsetCol(int index){
         return offsetCol[index];
     }
@@ -321,6 +403,9 @@ public:
      *
      * The iterator yields linear pixel indices and respects both image bounds
      * and the optional forward-only mask.
+     *
+     * Iterators hold a pointer to the parent `AdjacencyRelation`; incrementing
+     * any iterator advances the parent's mutable traversal cursor.
      */
     class IteratorAdjacency { 
     private:
@@ -328,31 +413,55 @@ public:
         AdjacencyRelation* instance; 
 
     public:
+        /// Input-iterator category for range-based traversal.
         using iterator_category = std::input_iterator_tag;
+
+        /// Linear pixel index yielded by the iterator.
         using value_type = int;
 
+        /**
+         * @brief Creates an iterator over `obj` at stencil position `id`.
+         */
         IteratorAdjacency(AdjacencyRelation* obj, int id) :  index(id), instance(obj) { }
 
+        /**
+         * @brief Returns the adjacency relation currently being traversed.
+         */
         AdjacencyRelation* getInstance() { return instance; } 
 
+        /**
+         * @brief Advances to the next valid neighbour in the current traversal.
+         */
         IteratorAdjacency& operator++() { 
             this->index = instance->nextValid();  
             return *this; 
         }
 
+        /**
+         * @brief Returns true when both iterators point to the same stencil position.
+         */
         bool operator==(const IteratorAdjacency& other) const { 
             return index == other.index; 
         }
+
+        /**
+         * @brief Returns true when the iterators point to different stencil positions.
+         */
         bool operator!=(const IteratorAdjacency& other) const { 
             return !(*this == other);
         }
 
+        /**
+         * @brief Returns the current neighbour as a linear pixel index.
+         */
         int operator*() const { 
             return (instance->row + instance->offsetRow[index]) * instance->numCols + (instance->col + instance->offsetCol[index]); 
         }
     };
     /**
      * @brief Returns the beginning of the current traversal.
+     *
+     * Call one of the `get*Pixels` methods before requesting `begin()`.
      */
     IteratorAdjacency begin() { 
         return IteratorAdjacency(this, nextValid()); 

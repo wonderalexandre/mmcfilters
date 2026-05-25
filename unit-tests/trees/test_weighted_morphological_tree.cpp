@@ -1,7 +1,9 @@
 #include "support/TestSupport.hpp"
+#include "mmcfilters/trees/detail/TreeAltitudeDeltaNeighborhood.hpp"
 
 #include <cmath>
 #include <memory>
+#include <span>
 #include <stdexcept>
 
 using namespace mmcfilters;
@@ -9,7 +11,7 @@ using namespace mmcfilters::unit_tests;
 
 void requireCompactHigraHierarchy(
     const std::vector<NodeId>& parent,
-    const std::vector<AltitudeType>& altitude,
+    const std::vector<std::uint8_t>& altitude,
     int numProperParts,
     const std::string& label) {
     requireEqual(parent.size(), altitude.size(), label + " parent/altitude size agreement");
@@ -73,7 +75,7 @@ int main() {
             weighted->topology().getNumInternalNodeSlots(),
             "weighted altitude buffer must match the dense internal-node domain");
         NodeId builtSampleNodeId = InvalidNode;
-        AltitudeType builtSampleAltitude = AltitudeType{};
+        std::uint8_t builtSampleAltitude = std::uint8_t{};
         for (NodeId nodeId : weighted->topology().getAliveNodeIds()) {
             if (weighted->getAltitude(nodeId) != 0) {
                 builtSampleNodeId = nodeId;
@@ -108,17 +110,17 @@ int main() {
             weighted->topology().getNumTotalProperParts(),
             "weighted Higra export");
 
-        auto roundtrip = WeightedMorphologicalTree::createFromHigraParent(
-            higraParent,
-            higraAltitude,
+        auto roundtrip = MorphologicalTreeFactory::createFromHigraParent(
+            std::span<const NodeId>(higraParent),
+            std::span<const std::uint8_t>(higraAltitude),
             4,
             4,
-            MorphologicalTree::MAX_TREE,
+            MorphologicalTreeKind::MAX_TREE,
             AdjacencyRelation(4, 4, 1.5));
         roundtrip.validateAltitudeBufferShape();
         roundtrip.validateMonotoneAltitude();
         NodeId importedSampleNodeId = InvalidNode;
-        AltitudeType importedSampleAltitude = AltitudeType{};
+        std::uint8_t importedSampleAltitude = std::uint8_t{};
         for (NodeId nodeId : roundtrip.topology().getAliveNodeIds()) {
             if (roundtrip.getAltitude(nodeId) != 0) {
                 importedSampleNodeId = nodeId;
@@ -135,32 +137,32 @@ int main() {
         requireVectorEqual(reexportedParent, higraParent, "weighted Higra parent round-trip");
         requireVectorEqual(reexportedAltitude, higraAltitude, "weighted Higra altitude round-trip");
 
-        auto [maxDistNames, maxDistByNode] = AttributeComputedIncrementally::computeSingleAttribute(*weighted, MAX_DIST);
-        auto maxDistByExportedHigra = AttributeComputedIncrementally::projectNodeValuesToExportedHigra(
+        auto [maxDistNames, maxDistByNode] = AttributeComputation::computeSingleAttribute(*weighted, MAX_DIST);
+        auto maxDistByExportedHigra = AttributeComputation::projectNodeValuesToExportedHigra(
             *weighted,
             maxDistNames,
             maxDistByNode);
-        auto [maxDistHigraNames, maxDistByImportedHigra] = AttributeComputedIncrementally::computeSingleAttribute(
+        requireEqual(
+            maxDistByExportedHigra.size(),
+            higraParent.size(),
+            "weighted exported-Higra MAX_DIST projection size");
+        auto [maxDistHigraNames, maxDistByImportedHigra] = AttributeComputation::computeSingleAttribute(
             roundtrip,
             MAX_DIST,
-            {},
             NodeIdSpace::HIGRA);
-        for (NodeId properPart = 0; properPart < weighted->topology().getNumTotalProperParts(); ++properPart) {
-            maxDistByImportedHigra[static_cast<size_t>(properPart)] = 0.0f;
-        }
         requireFloatVectorEqualAllowingNaN(
             maxDistByExportedHigra,
             maxDistByImportedHigra,
-            "weighted exported-Higra MAX_DIST projection");
+            "weighted imported/exported Higra MAX_DIST projection");
 
-        auto [areaNames, areaByNode] = AttributeComputedIncrementally::computeSingleAttribute(*weighted, AREA);
+        auto [areaNames, areaByNode] = AttributeComputation::computeSingleAttribute(*weighted, AREA);
         std::vector<float> areaAndMaxDist(static_cast<size_t>(weighted->topology().getNumInternalNodeSlots()) * 2, 0.0f);
         for (NodeId nodeId = 0; nodeId < weighted->topology().getNumInternalNodeSlots(); ++nodeId) {
             areaAndMaxDist[static_cast<size_t>(nodeId) * 2] = areaByNode[areaNames.linearIndex(nodeId, AREA)];
             areaAndMaxDist[static_cast<size_t>(nodeId) * 2 + 1] = maxDistByNode[maxDistNames.linearIndex(nodeId, MAX_DIST)];
         }
         AttributeNames areaAndMaxDistNames = makeDenseAttributeNames({AREA, MAX_DIST});
-        const auto projectedPair = AttributeComputedIncrementally::projectNodeValuesToExportedHigra(
+        const auto projectedPair = AttributeComputation::projectNodeValuesToExportedHigra(
             *weighted,
             areaAndMaxDistNames,
             areaAndMaxDist);
@@ -175,19 +177,19 @@ int main() {
             static_cast<size_t>(unitProjectionNames.NUM_ATTRIBUTES),
             0.0f);
         for (Attribute attribute : unitProjectionAttributes) {
-            auto [singleNames, singleValues] = AttributeComputedIncrementally::computeSingleAttribute(*weighted, attribute);
+            auto [singleNames, singleValues] = AttributeComputation::computeSingleAttribute(*weighted, attribute);
             for (NodeId nodeId = 0; nodeId < weighted->topology().getNumInternalNodeSlots(); ++nodeId) {
                 unitProjectionNodeValues[unitProjectionNames.linearIndex(nodeId, attribute)] =
                     singleValues[singleNames.linearIndex(nodeId, attribute)];
             }
         }
 
-        const auto projectedUnitValues = AttributeComputedIncrementally::projectNodeValuesToExportedHigra(
+        const auto projectedUnitValues = AttributeComputation::projectNodeValuesToExportedHigra(
             *weighted,
             unitProjectionNames,
             unitProjectionNodeValues);
         const NodeId sampleProperPart = 10;
-        const NodeId sampleOwner = weighted->topology().getSmallestComponent(sampleProperPart);
+        const NodeId sampleOwner = weighted->topology().getProperPartOwner(sampleProperPart);
         const auto [sampleRow, sampleCol] = ImageUtils::to2D(sampleProperPart, weighted->topology().getNumColsOfImage());
         requireEqual(
             projectedUnitValues[unitProjectionNames.linearIndex(sampleProperPart, LEVEL)],
@@ -209,76 +211,24 @@ int main() {
         requireThrows<std::invalid_argument>(
             [&]() {
                 const std::vector<float> invalidValues{1.0f};
-                static_cast<void>(AttributeComputedIncrementally::projectNodeValuesToExportedHigra(*weighted, maxDistNames, invalidValues));
+                static_cast<void>(AttributeComputation::projectNodeValuesToExportedHigra(*weighted, maxDistNames, invalidValues));
             },
             "exported-Higra projection must reject invalid node-value size");
 
-        roundtrip.setAltitude(importedSampleNodeId, static_cast<AltitudeType>(importedSampleAltitude + 4));
-        auto reimported = WeightedMorphologicalTree::createFromHigraParent(
-            higraParent,
-            higraAltitude,
+        roundtrip.setAltitude(importedSampleNodeId, static_cast<std::uint8_t>(importedSampleAltitude + 4));
+        auto reimported = MorphologicalTreeFactory::createFromHigraParent(
+            std::span<const NodeId>(higraParent),
+            std::span<const std::uint8_t>(higraAltitude),
             4,
             4,
-            MorphologicalTree::MAX_TREE,
+            MorphologicalTreeKind::MAX_TREE,
             AdjacencyRelation(4, 4, 1.5));
         requireEqual(reimported.getAltitude(importedSampleNodeId), importedSampleAltitude, "weighted Higra import must repopulate the external altitude buffer");
     }
 
     {
-        auto image = makeComponentTreeFixture();
-        auto topology = MorphologicalTree::createMaxTree(image);
-        const auto originalAliveNodeIds = collectNodeIds(topology.getAliveNodeIds());
-
-        auto weightedFromTopology = WeightedMorphologicalTree::createFromTopology(topology, image);
-        auto rebuiltWeighted = WeightedMorphologicalTree::createComponentTree(image, true);
-
-        weightedFromTopology.validateAltitudeBufferShape();
-        weightedFromTopology.validateMonotoneAltitude();
-        requireEqual(weightedFromTopology.topology().getRoot(), topology.getRoot(), "weighted-from-topology root");
-        require(weightedFromTopology.topology().isMaxtree(), "weighted-from-topology tree type");
-        requireVectorEqual(weightedFromTopology.getAltitudeBuffer(), rebuiltWeighted.getAltitudeBuffer(), "weighted-from-topology altitude buffer");
-        requireVectorEqual(
-            collectImageValues(weightedFromTopology.reconstructionImage()),
-            collectImageValues(image),
-            "weighted-from-topology reconstruction");
-
-        weightedFromTopology.mergeNodeIntoParent(5);
-        requireVectorEqual(
-            collectNodeIds(topology.getAliveNodeIds()),
-            originalAliveNodeIds,
-            "weighted-from-topology must clone the caller topology");
-    }
-
-    {
-        auto image = makeComponentTreeFixture();
-        auto topology = MorphologicalTree::createMinTree(image);
-        auto weightedFromTopology = WeightedMorphologicalTree::createFromTopology(topology, image);
-        auto rebuiltWeighted = WeightedMorphologicalTree::createComponentTree(image, false);
-
-        weightedFromTopology.validateAltitudeBufferShape();
-        weightedFromTopology.validateMonotoneAltitude();
-        require(!weightedFromTopology.topology().isMaxtree(), "min weighted-from-topology tree type");
-        requireVectorEqual(weightedFromTopology.getAltitudeBuffer(), rebuiltWeighted.getAltitudeBuffer(), "min weighted-from-topology altitude buffer");
-    }
-
-    {
-        auto topology = MorphologicalTree::createMaxTree(makeComponentTreeFixture());
-        auto mismatchedImage = makeImage(
-            2,
-            2,
-            {
-                1, 2,
-                3, 4,
-            });
-
-        requireThrows<std::invalid_argument>(
-            [&]() { static_cast<void>(WeightedMorphologicalTree::createFromTopology(topology, mismatchedImage)); },
-            "weighted-from-topology must reject mismatched image domains");
-    }
-
-    {
         auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
-        weighted->setAltitudeBuffer(AltitudeBuffer(static_cast<size_t>(weighted->topology().getNumInternalNodeSlots()), AltitudeType{7}));
+        weighted->setAltitudeBuffer(AltitudeBuffer<std::uint8_t>(static_cast<size_t>(weighted->topology().getNumInternalNodeSlots()), std::uint8_t{7}));
 
         const auto [higraParent, higraAltitude] = weighted->exportHigraHierarchy();
         requireCompactHigraHierarchy(
@@ -287,12 +237,12 @@ int main() {
             weighted->topology().getNumTotalProperParts(),
             "equal-altitude Higra export");
 
-        auto roundtrip = WeightedMorphologicalTree::createFromHigraParent(
-            higraParent,
-            higraAltitude,
+        auto roundtrip = MorphologicalTreeFactory::createFromHigraParent(
+            std::span<const NodeId>(higraParent),
+            std::span<const std::uint8_t>(higraAltitude),
             4,
             4,
-            MorphologicalTree::MAX_TREE,
+            MorphologicalTreeKind::MAX_TREE,
             AdjacencyRelation(4, 4, 1.5));
         const auto [reexportedParent, reexportedAltitude] = roundtrip.exportHigraHierarchy();
         requireVectorEqual(reexportedParent, higraParent, "equal-altitude Higra parent round-trip");
@@ -302,7 +252,10 @@ int main() {
     {
         auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
 
-        const auto [weightedAsc, weightedDesc] = WeightedMorphologicalTree::computeAscendantsAndDescendants(weighted->topology(), &weighted->getAltitudeBuffer(), 2);
+        const auto [weightedAsc, weightedDesc] = detail::computeAscendantsAndDescendantsByAltitude(
+            weighted->topology(),
+            std::span<const std::uint8_t>(weighted->getAltitudeBuffer()),
+            static_cast<AltitudeDiff<std::uint8_t>>(2));
         requireVectorEqual(weightedAsc, {InvalidNode, 0, 0, 1, 2, 3}, "weighted level-based ascendants must use the external altitude buffer");
         requireVectorEqual(weightedDesc, {1, 3, 4, 5, InvalidNode, InvalidNode}, "weighted level-based descendants must use the external altitude buffer");
     }
@@ -314,25 +267,49 @@ int main() {
         requireEqual(weighted->getAltitude(5), 9, "weighted setAltitude must update the external buffer");
 
         auto altitude = weighted->getAltitudeBuffer();
-        altitude[4] = 11;
+        altitude.assign(altitude.size(), std::uint8_t{11});
         weighted->setAltitudeBuffer(altitude);
-        requireEqual(weighted->getAltitude(4), 11, "weighted setAltitudeBuffer must replace the external buffer");
+        requireEqual(weighted->getAltitude(weighted->topology().getRoot()), 11, "weighted setAltitudeBuffer must replace the external buffer");
     }
 
     {
         auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
-        weighted->setAltitude(4, 10);
+        weighted->setAltitude(4, 5);
 
         weighted->mergeNodeIntoParent(5);
-        requireEqual(weighted->getAltitude(4), 10, "weighted merge must preserve external altitude values");
+        requireEqual(weighted->getAltitude(4), 5, "weighted merge must preserve external altitude values");
     }
 
     {
         auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
-        weighted->setAltitude(3, 12);
+        weighted->setAltitude(4, 5);
 
         weighted->pruneNode(5);
-        requireEqual(weighted->getAltitude(3), 12, "weighted prune must preserve external altitude values");
+        requireEqual(weighted->getAltitude(4), 5, "weighted prune must preserve external altitude values");
+    }
+
+    {
+        auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
+        weighted->setAltitude(4, 5);
+        auto editor = weighted->edit();
+
+        editor.mergeNodeIntoParent(5);
+        editor.commit();
+
+        require(!weighted->topology().isAlive(5), "weighted editor merge must release the merged node");
+        requireEqual(weighted->getAltitude(4), 5, "weighted editor merge must preserve external altitude values");
+    }
+
+    {
+        auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
+        weighted->setAltitude(4, 5);
+        auto editor = weighted->edit();
+
+        editor.pruneNode(5);
+        editor.commit();
+
+        require(!weighted->topology().isAlive(5), "weighted editor prune must release the pruned node");
+        requireEqual(weighted->getAltitude(4), 5, "weighted editor prune must preserve external altitude values");
     }
 
     {
@@ -340,15 +317,27 @@ int main() {
         const auto rootChildren = collectNodeIds(weighted->topology().getChildren(weighted->topology().getRoot()));
         require(!rootChildren.empty(), "fixture must expose at least one root child");
 
-        weighted->setAltitude(rootChildren.front(), weighted->getAltitude(weighted->topology().getRoot()) - 1);
+        const std::uint8_t invalidChildAltitude = weighted->getAltitude(weighted->topology().getRoot()) - 1;
+        requireThrows<std::runtime_error>(
+            [&]() {
+                weighted->setAltitude(rootChildren.front(), invalidChildAltitude);
+            },
+            "weighted setAltitude must reject a max-tree child below its parent");
 
-        bool threw = false;
-        try {
-            weighted->validateMonotoneAltitude();
-        } catch (const std::runtime_error&) {
-            threw = true;
-        }
-        require(threw, "weighted monotone validation must reject a max-tree child below its parent");
+        auto invalidAltitude = weighted->getAltitudeBuffer();
+        invalidAltitude[static_cast<size_t>(rootChildren.front())] = invalidChildAltitude;
+        requireThrows<std::runtime_error>(
+            [&]() {
+                weighted->setAltitudeBuffer(invalidAltitude);
+            },
+            "weighted setAltitudeBuffer must reject a max-tree child below its parent");
+
+        weighted->setAltitudeUnchecked(rootChildren.front(), invalidChildAltitude);
+        requireThrows<std::runtime_error>(
+            [&]() {
+                weighted->validateMonotoneAltitude();
+            },
+            "weighted monotone validation must reject unchecked max-tree altitude edits");
     }
 
     {
@@ -363,18 +352,6 @@ int main() {
         auto weighted = makeWeightedTreeOfShapes(tosImage, ToSInterpolation::SelfDual);
         weighted->validateAltitudeBufferShape();
 
-        auto topology = MorphologicalTree::createTreeOfShapes(tosImage, ToSInterpolation::SelfDual);
-        auto weightedFromTopology = WeightedMorphologicalTree::createFromTopology(topology, tosImage);
-        weightedFromTopology.validateAltitudeBufferShape();
-        requireVectorEqual(
-            weightedFromTopology.getAltitudeBuffer(),
-            weighted->getAltitudeBuffer(),
-            "tree-of-shapes weighted-from-topology altitude buffer");
-        requireVectorEqual(
-            collectImageValues(weightedFromTopology.reconstructionImage()),
-            collectImageValues(tosImage),
-            "tree-of-shapes weighted-from-topology reconstruction");
-
         auto tosAltitude = weighted->getAltitudeBuffer();
         if (!tosAltitude.empty()) {
             tosAltitude.front() += 100;
@@ -385,15 +362,14 @@ int main() {
 
     {
         auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), false);
-        auto editor = weighted->edit();
-
-        auto [areaNamesBeforeEdit, areaBeforeEdit] = AttributeComputedIncrementally::computeSingleAttribute(*weighted, AREA);
+        auto [areaNamesBeforeEdit, areaBeforeEdit] = AttributeComputation::computeSingleAttribute(*weighted, AREA);
         const int expectedInsertedArea =
             static_cast<int>(areaBeforeEdit[areaNamesBeforeEdit.linearIndex(3, AREA)]) +
             static_cast<int>(areaBeforeEdit[areaNamesBeforeEdit.linearIndex(4, AREA)]);
-        const AltitudeType insertedAltitude = std::min(
+        const std::uint8_t insertedAltitude = std::min(
             weighted->getAltitude(2),
             std::max(weighted->getAltitude(3), weighted->getAltitude(4)));
+        auto editor = weighted->edit();
         const NodeId insertedNode = editor.createDetachedNode();
 
         requireEqual(insertedNode, 6, "weighted editor must append a fresh slot when none is free");
@@ -412,7 +388,7 @@ int main() {
 
         requireEqual(weighted->topology().getNodeParent(insertedNode), 2, "weighted editor inserted node parent after commit");
         requireEqual(weighted->getAltitude(insertedNode), insertedAltitude, "weighted editor inserted node altitude after commit");
-        auto [areaNamesAfterEdit, areaAfterEdit] = AttributeComputedIncrementally::computeSingleAttribute(*weighted, AREA);
+        auto [areaNamesAfterEdit, areaAfterEdit] = AttributeComputation::computeSingleAttribute(*weighted, AREA);
         requireEqual(
             static_cast<int>(areaAfterEdit[areaNamesAfterEdit.linearIndex(insertedNode, AREA)]),
             expectedInsertedArea,

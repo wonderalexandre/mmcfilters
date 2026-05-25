@@ -17,8 +17,11 @@ namespace mmcfilters::adjust {
  * diagonal length.
  */
 enum class BoundingBoxMeasure {
+    /// Width of the subtree support bounding box.
     WIDTH,
+    /// Height of the subtree support bounding box.
     HEIGHT,
+    /// Euclidean diagonal length of the subtree support bounding box.
     DIAGONAL_LENGTH
 };
 
@@ -41,12 +44,17 @@ enum class BoundingBoxMeasure {
  * Buffers are indexed in this project's dense internal `NodeId` space, not in
  * Higra's global leaf+node id space. This is the main representation
  * difference relative to the source algorithm and keeps the implementation
- * compatible with `WeightedMorphologicalTree`.
+ * compatible with `WeightedMorphologicalTree<T>`.
  */
+template<AltitudeValue T>
 class DynamicTreeAttributeComputer {
 public:
+    /// Dense per-node attribute buffer used by dynamic adjustment computers.
     using buffer_type = std::vector<double>;
 
+    /**
+     * @brief Destroys a dynamic attribute computer through the protocol base.
+     */
     virtual ~DynamicTreeAttributeComputer() = default;
 
     /**
@@ -55,46 +63,74 @@ public:
      * Released slots remain addressable while the dynamic adjustment is running,
      * so buffers are sized by the number of allocated internal node slots rather
      * than by the number of currently alive nodes.
+     *
+     * @param tree Weighted tree whose internal node-slot domain defines the
+     * buffer size.
+     * @param buffer Output buffer resized to the full internal node-slot count.
      */
-    virtual void resize(const WeightedMorphologicalTree& tree, buffer_type& buffer) const {
+    virtual void resize(const WeightedMorphologicalTree<T>& tree, buffer_type& buffer) const {
         buffer.resize(static_cast<size_t>(tree.topology().getNumInternalNodeSlots()), 0.0);
     }
 
     /**
      * @brief Initializes the direct contribution of one node before child merges.
+     *
+     * @param nodeId Live dense internal node id being recomputed.
+     * @param tree Current mutable weighted tree state.
+     * @param buffer Dense per-node output buffer.
      */
-    virtual void preProcessing(NodeId nodeId, const WeightedMorphologicalTree& tree, buffer_type& buffer) const = 0;
+    virtual void preProcessing(NodeId nodeId, const WeightedMorphologicalTree<T>& tree, buffer_type& buffer) const = 0;
 
     /**
      * @brief Accumulates an already-current child contribution into its parent.
+     *
+     * @param parentId Live dense internal parent node id.
+     * @param childId Live dense internal child node id whose buffer entry is
+     * already current.
+     * @param tree Current mutable weighted tree state.
+     * @param buffer Dense per-node output buffer.
      */
-    virtual void mergeProcessing(NodeId parentId, NodeId childId, const WeightedMorphologicalTree& tree, buffer_type& buffer) const = 0;
+    virtual void mergeProcessing(NodeId parentId, NodeId childId, const WeightedMorphologicalTree<T>& tree, buffer_type& buffer) const = 0;
 
     /**
      * @brief Materializes the final scalar value for one node after all child merges.
+     *
+     * @param nodeId Live dense internal node id being finalized.
+     * @param tree Current mutable weighted tree state.
+     * @param buffer Dense per-node output buffer.
      */
-    virtual void postProcessing(NodeId nodeId, const WeightedMorphologicalTree& tree, buffer_type& buffer) const = 0;
+    virtual void postProcessing(NodeId nodeId, const WeightedMorphologicalTree<T>& tree, buffer_type& buffer) const = 0;
 
     /**
      * @brief Incremental hook called after all direct proper parts move from one node to another.
      * @details Default implementation is a no-op so concrete computers override
      * only the structural events they need.
+     *
+     * The parameters are source node id, destination node id, and current tree
+     * state. Implementations that maintain direct-proper-part caches can use
+     * this event to move or invalidate cached summaries without a full rebuild.
      */
-    virtual void onMoveProperParts(NodeId, NodeId, const WeightedMorphologicalTree&) const {}
+    virtual void onMoveProperParts(NodeId, NodeId, const WeightedMorphologicalTree<T>&) const {}
 
     /**
      * @brief Incremental hook called after one proper part moves between nodes.
      * @details Default implementation is a no-op so concrete computers override
      * only the structural events they need.
+     *
+     * The parameters are proper-part id, source node id, destination node id,
+     * and current tree state.
      */
-    virtual void onMoveProperPart(NodeId, NodeId, NodeId, const WeightedMorphologicalTree&) const {}
+    virtual void onMoveProperPart(NodeId, NodeId, NodeId, const WeightedMorphologicalTree<T>&) const {}
 
     /**
      * @brief Incremental hook called when one node slot is released from the live tree.
      * @details Default implementation is a no-op so concrete computers override
      * only the structural events they need.
+     *
+     * Implementations should clear or invalidate any auxiliary state indexed by
+     * the released dense internal node id.
      */
-    virtual void onNodeRemoved(NodeId, const WeightedMorphologicalTree&) const {}
+    virtual void onNodeRemoved(NodeId, const WeightedMorphologicalTree<T>&) const {}
 
     /**
      * @brief Computes the attribute for the full current tree in post-order.
@@ -102,8 +138,11 @@ public:
      * This is used to bootstrap the buffers before the first adjustment step
      * and as a reference-compatible full computation. Adjustment steps later
      * refresh only the nodes marked by local structural changes.
+     *
+     * @param tree Current mutable weighted tree state.
+     * @param buffer Dense output buffer. It is resized before computation.
      */
-    void computeAttribute(const WeightedMorphologicalTree& tree, buffer_type& buffer) const {
+    void computeAttribute(const WeightedMorphologicalTree<T>& tree, buffer_type& buffer) const {
         resize(tree, buffer);
         const MorphologicalTree& topology = tree.topology();
         for (NodeId nodeId : topology.getPostOrderNodes()) {
@@ -117,8 +156,12 @@ public:
 
     /**
      * @brief Recomputes one node assuming all direct children are already up to date.
+     *
+     * @param tree Current mutable weighted tree state.
+     * @param nodeId Live dense internal node id to refresh.
+     * @param buffer Dense output buffer already sized for the tree.
      */
-    void computeAttributeOnNode(const WeightedMorphologicalTree& tree, NodeId nodeId, buffer_type& buffer) const {
+    void computeAttributeOnNode(const WeightedMorphologicalTree<T>& tree, NodeId nodeId, buffer_type& buffer) const {
         preProcessing(nodeId, tree, buffer);
         for (NodeId childId : tree.topology().getChildren(nodeId)) {
             mergeProcessing(nodeId, childId, tree, buffer);
@@ -137,17 +180,34 @@ public:
  * parent requires only its direct proper-part count and the cached values of
  * its direct children.
  */
-class DynamicAreaAttributeComputer : public DynamicTreeAttributeComputer {
+template<AltitudeValue T>
+class DynamicAreaAttributeComputer : public DynamicTreeAttributeComputer<T> {
+private:
+    using base_t = DynamicTreeAttributeComputer<T>;
+
 public:
-    void preProcessing(NodeId nodeId, const WeightedMorphologicalTree& tree, buffer_type& buffer) const override {
+    /// Dense per-node area buffer inherited from the dynamic attribute protocol.
+    using buffer_type = typename base_t::buffer_type;
+
+public:
+    /**
+     * @brief Initializes one node area from its direct proper-part count.
+     */
+    void preProcessing(NodeId nodeId, const WeightedMorphologicalTree<T>& tree, buffer_type& buffer) const override {
         buffer[static_cast<size_t>(nodeId)] = static_cast<double>(tree.topology().getNumProperParts(nodeId));
     }
 
-    void mergeProcessing(NodeId parentId, NodeId childId, const WeightedMorphologicalTree&, buffer_type& buffer) const override {
+    /**
+     * @brief Adds an already-current child area to its parent.
+     */
+    void mergeProcessing(NodeId parentId, NodeId childId, const WeightedMorphologicalTree<T>&, buffer_type& buffer) const override {
         buffer[static_cast<size_t>(parentId)] += buffer[static_cast<size_t>(childId)];
     }
 
-    void postProcessing(NodeId, const WeightedMorphologicalTree&, buffer_type&) const override {}
+    /**
+     * @brief Area has no finalization step beyond child accumulation.
+     */
+    void postProcessing(NodeId, const WeightedMorphologicalTree<T>&, buffer_type&) const override {}
 };
 
 /**
@@ -167,7 +227,15 @@ public:
  * local-update structure of the Higra version while adapting coordinates to
  * this project's row-major image domain.
  */
-class DynamicBoundingBoxAttributeComputer : public DynamicTreeAttributeComputer {
+template<AltitudeValue T>
+class DynamicBoundingBoxAttributeComputer : public DynamicTreeAttributeComputer<T> {
+private:
+    using base_t = DynamicTreeAttributeComputer<T>;
+
+public:
+    /// Dense per-node bounding-box attribute buffer inherited from the dynamic protocol.
+    using buffer_type = typename base_t::buffer_type;
+
 private:
     /**
      * @brief Cached subtree box produced during the current bottom-up reduction.
@@ -293,7 +361,7 @@ private:
     /**
      * @brief Rebuilds the local summary from the current proper parts of the node.
      */
-    void rebuildLocalBox(NodeId nodeId, const WeightedMorphologicalTree& tree) const {
+    void rebuildLocalBox(NodeId nodeId, const WeightedMorphologicalTree<T>& tree) const {
         auto& local = local_[static_cast<size_t>(nodeId)];
         resetLocalBox(local);
         const int numCols = tree.topology().getNumColsOfImage();
@@ -310,7 +378,7 @@ private:
      * rebuilt if their cached direct proper-part count no longer matches the
      * tree, which covers bulk moves.
      */
-    void ensureLocalSummary(NodeId nodeId, const WeightedMorphologicalTree& tree) const {
+    void ensureLocalSummary(NodeId nodeId, const WeightedMorphologicalTree<T>& tree) const {
         auto& local = local_[static_cast<size_t>(nodeId)];
         const int properPartCount = tree.topology().getNumProperParts(nodeId);
         if (!local.dirty && local.properPartCount == properPartCount) {
@@ -398,15 +466,21 @@ private:
 public:
     /**
      * @brief Creates a bounding-box computer returning the requested scalar measure.
+     *
+     * @param measure Scalar projection materialized from the accumulated
+     * bounding-box state.
      */
     explicit DynamicBoundingBoxAttributeComputer(BoundingBoxMeasure measure = BoundingBoxMeasure::DIAGONAL_LENGTH)
         : measure_(measure) {}
 
     /**
      * @brief Resizes public and auxiliary buffers to the current tree slot space.
+     *
+     * Auxiliary direct/local and subtree summaries are indexed by the same
+     * dense internal node-id space as the public output buffer.
      */
-    void resize(const WeightedMorphologicalTree& tree, buffer_type& buffer) const override {
-        DynamicTreeAttributeComputer::resize(tree, buffer);
+    void resize(const WeightedMorphologicalTree<T>& tree, buffer_type& buffer) const override {
+        base_t::resize(tree, buffer);
         const size_t size = static_cast<size_t>(tree.topology().getNumInternalNodeSlots());
         local_.resize(size);
         subtree_.resize(size);
@@ -415,7 +489,7 @@ public:
     /**
      * @brief Initializes the subtree box of one node from its direct proper parts.
      */
-    void preProcessing(NodeId nodeId, const WeightedMorphologicalTree& tree, buffer_type&) const override {
+    void preProcessing(NodeId nodeId, const WeightedMorphologicalTree<T>& tree, buffer_type&) const override {
         ensureLocalSummary(nodeId, tree);
         copyLocalToSubtree(nodeId);
     }
@@ -423,14 +497,14 @@ public:
     /**
      * @brief Accumulates a child subtree box into its parent subtree box.
      */
-    void mergeProcessing(NodeId parentId, NodeId childId, const WeightedMorphologicalTree&, buffer_type&) const override {
+    void mergeProcessing(NodeId parentId, NodeId childId, const WeightedMorphologicalTree<T>&, buffer_type&) const override {
         mergeSubtreeStates(subtree_[static_cast<size_t>(parentId)], subtree_[static_cast<size_t>(childId)]);
     }
 
     /**
      * @brief Converts the accumulated subtree box into the configured scalar measure.
      */
-    void postProcessing(NodeId nodeId, const WeightedMorphologicalTree&, buffer_type& buffer) const override {
+    void postProcessing(NodeId nodeId, const WeightedMorphologicalTree<T>&, buffer_type& buffer) const override {
         const auto& subtree = subtree_[static_cast<size_t>(nodeId)];
         if (subtree.empty) {
             buffer[static_cast<size_t>(nodeId)] = 0.0;
@@ -455,7 +529,7 @@ public:
     /**
      * @brief Updates local boxes after all proper parts move from `sourceId` to `targetId`.
      */
-    void onMoveProperParts(NodeId targetId, NodeId sourceId, const WeightedMorphologicalTree& tree) const override {
+    void onMoveProperParts(NodeId targetId, NodeId sourceId, const WeightedMorphologicalTree<T>& tree) const override {
         ensureLocalSummary(targetId, tree);
         ensureLocalSummary(sourceId, tree);
         mergeLocalBoxes(local_[static_cast<size_t>(targetId)], local_[static_cast<size_t>(sourceId)]);
@@ -468,7 +542,7 @@ public:
      * unless the removed pixel exhausts one extremum; in that case the source
      * summary is marked dirty and rebuilt lazily.
      */
-    void onMoveProperPart(NodeId targetId, NodeId sourceId, NodeId pixelId, const WeightedMorphologicalTree& tree) const override {
+    void onMoveProperPart(NodeId targetId, NodeId sourceId, NodeId pixelId, const WeightedMorphologicalTree<T>& tree) const override {
         ensureLocalSummary(targetId, tree);
         if (sourceId != InvalidNode) {
             ensureLocalSummary(sourceId, tree);
@@ -534,10 +608,11 @@ public:
     /**
      * @brief Clears auxiliary summaries associated with a released node slot.
      */
-    void onNodeRemoved(NodeId nodeId, const WeightedMorphologicalTree&) const override {
+    void onNodeRemoved(NodeId nodeId, const WeightedMorphologicalTree<T>&) const override {
         resetLocalSummary(nodeId);
         resetSubtreeSummary(nodeId);
     }
 };
+
 
 } // namespace mmcfilters::adjust

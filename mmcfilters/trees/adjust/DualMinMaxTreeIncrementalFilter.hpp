@@ -24,7 +24,7 @@ namespace mmcfilters::adjust {
  * @brief Incremental updater for a paired min-tree / max-tree state.
  *
  * This class ports the Higra dual component-tree adjustment algorithm to this
- * repository's `WeightedMorphologicalTree` representation. It implements the
+ * repository's `WeightedMorphologicalTree<T>` representation. It implements the
  * update-rather-than-rebuild strategy used for efficient connected alternating
  * sequential filters: when a rooted subtree is removed from one component tree,
  * the dual tree is updated in place so both trees remain consistent with the
@@ -68,11 +68,16 @@ namespace mmcfilters::adjust {
  * Representation notes:
  *
  * - node ids are this project's dense internal node ids, not Higra global ids;
- * - altitudes are read from `WeightedMorphologicalTree::getAltitude`;
- * - low-level edits go through `WeightedTreeEditor` so the topology remains
+ * - altitudes are read from `WeightedMorphologicalTree<T>::getAltitude`;
+ * - this is a mutable weighted-tree boundary, not a `WeightedTreeView`
+ *   boundary: topology, proper-part ownership, owned altitude, and
+ *   optional dynamic attributes are updated in lockstep;
+ * - the `altitude_t` template parameter is the owned tree altitude type and
+ *   also controls merge-bucket keys/backends;
+ * - low-level edits go through `WeightedTreeEditor<T>` so the topology remains
  *   validated at the end of each update step;
  * - optional attribute buffers are kept in sync through
- *   `DynamicTreeAttributeComputer`.
+ *   `DynamicTreeAttributeComputer<std::uint8_t>`.
  *
  * Internal notation follows the original adjustment routine:
  *
@@ -96,10 +101,12 @@ namespace mmcfilters::adjust {
  * altitude buckets, and contracting the nodes actually emptied by the step.
  * The class never rebuilds the dual tree globally as part of an adjustment.
  */
-template<typename altitude_t = AltitudeType>
+template<AltitudeValue altitude_t>
 class DualMinMaxTreeIncrementalFilter {
 private:
-    using tree_t = WeightedMorphologicalTree;
+    using tree_t = WeightedMorphologicalTree<altitude_t>;
+    using editor_t = WeightedTreeEditor<altitude_t>;
+    using attribute_computer_t = DynamicTreeAttributeComputer<altitude_t>;
 
     /**
      * @brief Returns `true` iff the altitude type should use dense buckets.
@@ -128,7 +135,7 @@ private:
      * Small integral altitude domains use a dense bucket array; larger integral
      * domains and floating-point instantiations use a sparse ordered map. This
      * matches the Higra backend choice and avoids imposing an 8-bit altitude
-     * domain on this project, where `AltitudeType` is currently `int`.
+     * domain on this project.
      */
     class MergedNodesCollection {
     private:
@@ -289,7 +296,7 @@ private:
             if (collectedNodeMarks_.isMarked(static_cast<size_t>(nodeId))) {
                 return;
             }
-            auto& bucket = getMergedNodes(static_cast<altitude_t>(tree.getAltitude(nodeId)));
+            auto& bucket = getMergedNodes(tree.getAltitude(nodeId));
             bucket.push_back(nodeId);
             maxBucketSize_ = std::max(maxBucketSize_, bucket.size());
             collectedNodeMarks_.mark(static_cast<size_t>(nodeId));
@@ -373,8 +380,8 @@ private:
     altitude_t altitudeCa_ = altitude_t{};
 
     // Incremental attribute computation and external attribute buffers.
-    const DynamicTreeAttributeComputer* attributeComputerMin_ = nullptr;
-    const DynamicTreeAttributeComputer* attributeComputerMax_ = nullptr;
+    const attribute_computer_t* attributeComputerMin_ = nullptr;
+    const attribute_computer_t* attributeComputerMax_ = nullptr;
     std::vector<double>* attributeBufferMin_ = nullptr;
     std::vector<double>* attributeBufferMax_ = nullptr;
 
@@ -390,7 +397,7 @@ private:
      * @brief Returns the attribute buffer associated with one tree.
      * @return `nullptr` when no incremental attribute computer is configured.
      */
-    DynamicTreeAttributeComputer::buffer_type* getAttributeBuffer(tree_t* tree) const {
+    typename attribute_computer_t::buffer_type* getAttributeBuffer(tree_t* tree) const {
         const auto* computer = tree == maxtree_ ? attributeComputerMax_ : attributeComputerMin_;
         if (computer == nullptr) {
             return nullptr;
@@ -401,7 +408,7 @@ private:
     /**
      * @brief Returns the attribute computer associated with one tree.
      */
-    const DynamicTreeAttributeComputer* getAttributeComputer(tree_t* tree) const {
+    const attribute_computer_t* getAttributeComputer(tree_t* tree) const {
         if (tree == nullptr) {
             return nullptr;
         }
@@ -445,7 +452,7 @@ private:
      */
     altitude_t nodeAltitude(const tree_t* tree, NodeId nodeId) const {
         assert(tree != nullptr);
-        return static_cast<altitude_t>(tree->getAltitude(nodeId));
+        return tree->getAltitude(nodeId);
     }
 
     /**
@@ -502,10 +509,10 @@ private:
 
     /**
      * @brief Detaches a node from its parent, optionally releasing it.
-     * @details Delegates to `WeightedTreeEditor::removeChild`, preserving the
+     * @details Delegates to `WeightedTreeEditor<std::uint8_t>::removeChild`, preserving the
      * root case and ignoring nodes with invalid parents.
      */
-    void disconnect(tree_t* tree, WeightedTreeEditor& editor, NodeId nodeId, bool releaseNode) {
+    void disconnect(tree_t* tree, editor_t& editor, NodeId nodeId, bool releaseNode) {
         assert(tree != nullptr);
         const MorphologicalTree& topology = topologyOf(tree);
         if (topology.isRoot(nodeId)) {
@@ -528,9 +535,9 @@ private:
      * and later contracted in post-order after the sweep has finished reconnecting
      * the local hierarchy.
      */
-    void moveSelectedProperPartsToNode(tree_t* dualTree, WeightedTreeEditor& editor, NodeId unionNode, const std::vector<NodeId>& properPartSetC) {
+    void moveSelectedProperPartsToNode(tree_t* dualTree, editor_t& editor, NodeId unionNode, const std::vector<NodeId>& properPartSetC) {
         for (NodeId pixelId : properPartSetC) {
-            const NodeId ownerId = topologyOf(dualTree).getSmallestComponent(pixelId);
+            const NodeId ownerId = topologyOf(dualTree).getProperPartOwner(pixelId);
             if (ownerId == InvalidNode || ownerId == unionNode) {
                 continue;
             }
@@ -563,7 +570,7 @@ private:
     /**
      * @brief Contracts one empty non-root node into its current parent.
      */
-    NodeId absorbRemovedNonRootNode(tree_t* dualTree, WeightedTreeEditor& editor, NodeId removedNodeId) {
+    NodeId absorbRemovedNonRootNode(tree_t* dualTree, editor_t& editor, NodeId removedNodeId) {
         const MorphologicalTree& topology = topologyOf(dualTree);
         const NodeId parentId = topology.getNodeParent(removedNodeId);
         if (parentId == InvalidNode || parentId == removedNodeId || !topology.isAlive(parentId)) {
@@ -590,7 +597,7 @@ private:
     /**
      * @brief Contracts an empty root by promoting the altitude-compatible child.
      */
-    void absorbRemovedRootNode(tree_t* dualTree, WeightedTreeEditor& editor, NodeId removedNodeId) {
+    void absorbRemovedRootNode(tree_t* dualTree, editor_t& editor, NodeId removedNodeId) {
         const bool isMaxtree = dualTree == maxtree_;
         const MorphologicalTree& topology = topologyOf(dualTree);
         const NodeId firstChild = topology.getFirstChild(removedNodeId);
@@ -629,7 +636,7 @@ private:
     /**
      * @brief Contracts all still-empty marked nodes in post-order.
      */
-    void absorbRemovedNodes(tree_t* dualTree, WeightedTreeEditor& editor, const std::vector<NodeId>& removedNodeIds) {
+    void absorbRemovedNodes(tree_t* dualTree, editor_t& editor, const std::vector<NodeId>& removedNodeIds) {
         struct Frame {
             NodeId nodeId = InvalidNode;
             NodeId nextChildId = InvalidNode;
@@ -690,7 +697,7 @@ private:
      * root candidate. This helper repeatedly promotes the altitude-compatible
      * child while preserving all other grandchildren under the promoted node.
      */
-    NodeId collapseRemovedRootBranch(tree_t* dualTree, WeightedTreeEditor& editor, NodeId rootId, NodeId childId) {
+    NodeId collapseRemovedRootBranch(tree_t* dualTree, editor_t& editor, NodeId rootId, NodeId childId) {
         assert(dualTree != nullptr);
         const bool isMaxtree = dualTree == maxtree_;
 
@@ -746,7 +753,7 @@ private:
      * below `nodeCa`. The method then contracts every empty node accumulated
      * during the step.
      */
-    void finalizeUpdateTreeAndContractRemovedNodes(tree_t* dualTree, WeightedTreeEditor& editor, NodeId nodeCa, NodeId finalUnionNode) {
+    void finalizeUpdateTreeAndContractRemovedNodes(tree_t* dualTree, editor_t& editor, NodeId nodeCa, NodeId finalUnionNode) {
         if (dualTree == nullptr) {
             return;
         }
@@ -860,7 +867,7 @@ private:
      * own level in the sweep. The remaining children are moved to the current
      * union node to preserve the hierarchy around the local edit.
      */
-    void reattachOutsideIntervalChildren(tree_t* tree, WeightedTreeEditor& editor, NodeId targetNodeId, NodeId sourceNodeId) {
+    void reattachOutsideIntervalChildren(tree_t* tree, editor_t& editor, NodeId targetNodeId, NodeId sourceNodeId) {
         assert(tree != nullptr);
         if (sourceNodeId == targetNodeId) {
             for (NodeId childId = topologyOf(tree).getFirstChild(sourceNodeId); childId != InvalidNode;) {
@@ -908,7 +915,7 @@ private:
                     continue;
                 }
 
-                const NodeId nodeQ = tree.topology().getSmallestComponent(q);
+                const NodeId nodeQ = tree.topology().getProperPartOwner(q);
                 if (nodeQ == InvalidNode) {
                     continue;
                 }
@@ -971,7 +978,7 @@ private:
      * - finalize by promoting/reattaching the final union node and contracting
      *   nodes emptied by the update.
      *
-     * All tree mutations are performed through `WeightedTreeEditor`. The
+     * All tree mutations are performed through `WeightedTreeEditor<T>`. The
      * unchecked commit at the end is used because this routine maintains the
      * same invariants internally and avoids validation in the hot loop.
      */
@@ -1001,7 +1008,7 @@ private:
                 properPartSetC_.push_back(p);
                 pixelsInCMarks_.mark(static_cast<size_t>(p));
 
-                const NodeId nodeP = dualTree->topology().getSmallestComponent(p);
+                const NodeId nodeP = dualTree->topology().getProperPartOwner(p);
                 if (nodeP == InvalidNode) {
                     continue;
                 }
@@ -1019,7 +1026,7 @@ private:
 
         buildMergedAndNestedCollections(*dualTree, properPartSetC_, nodeCa, b, isMaxtree);
 
-        WeightedTreeEditor editor = dualTree->edit();
+        editor_t editor = dualTree->edit();
         altitude_t currentMergeLevel = mergeNodesByLevel_.firstMergeLevel();
         NodeId currentUnionNode = InvalidNode;
         NodeId previousLevelUnionNode = InvalidNode;
@@ -1157,8 +1164,8 @@ public:
      * The buffers are not owned by the adjuster. They must remain alive and
      * indexed by internal `NodeId` while pruning/update calls are executed.
      */
-    void setAttributeComputer(const DynamicTreeAttributeComputer& computerMin,
-                              const DynamicTreeAttributeComputer& computerMax,
+    void setAttributeComputer(const attribute_computer_t& computerMin,
+                              const attribute_computer_t& computerMax,
                               std::vector<double>& bufferMin,
                               std::vector<double>& bufferMax) {
         attributeComputerMin_ = &computerMin;
@@ -1170,7 +1177,7 @@ public:
     /**
      * @brief Registers one shared incremental attribute computer for both trees.
      */
-    void setAttributeComputer(const DynamicTreeAttributeComputer& computer,
+    void setAttributeComputer(const attribute_computer_t& computer,
                               std::vector<double>& bufferMin,
                               std::vector<double>& bufferMax) {
         setAttributeComputer(computer, computer, bufferMin, bufferMax);

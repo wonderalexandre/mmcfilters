@@ -1,12 +1,31 @@
 #pragma once
 
 #include "../utils/AdjacencyRelation.hpp"
+#include "../utils/Assert.hpp"
+#include "../utils/Altitude.hpp"
+#include "../utils/Image.hpp"
 #include "../utils/Common.hpp"
+#include "../dataStructure/FastQueue.hpp"
 #include "BuilderMorphologicalTreeByUnionFind.hpp"
+#include "detail/MorphologicalTreeConstructionTag.hpp"
+#include <algorithm>
 #include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <limits>
+#include <list>
 #include <memory>
+#include <optional>
+#include <set>
+#include <span>
 #include <stdexcept>
+#include <string>
+#include <tuple>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
+#include <vector>
 
 namespace mmcfilters {
 
@@ -18,11 +37,55 @@ enum class NodeIdSpace {
     HIGRA
 };
 
-// Forward declarations for helper wrappers.
-class MorphologicalTree;
-class MorphologicalTreePybind;
+/**
+ * @brief Component-tree polarity used by image-based max/min construction.
+ *
+ * This enum is intentionally limited to component-tree builders. Use
+ * `MorphologicalTreeKind` for generic factory APIs that may also import trees
+ * of shapes.
+ */
+enum class ComponentTreeKind {
+    MAX_TREE,
+    MIN_TREE
+};
+
+/**
+ * @brief Semantic kind of a morphological hierarchy accepted by the factory.
+ *
+ * Construction APIs use this strongly typed value instead of public integer
+ * tree-type parameters.
+ */
+enum class MorphologicalTreeKind {
+    MAX_TREE,
+    MIN_TREE,
+    TREE_OF_SHAPES,
+    SELF_DUAL_RESIDUAL_TREE
+};
+
+/**
+ * @brief Non-throwing validation result returned by edit-session checks.
+ *
+ * `ok` carries the success flag and `message` carries a diagnostic when
+ * validation fails. The explicit boolean conversion mirrors `ok` so callers can
+ * write compact checks while still preserving the detailed message.
+ */
+struct [[nodiscard]] TreeValidationResult {
+    /// True when the checked tree topology satisfies the validation contract.
+    bool ok = false;
+
+    /// Human-readable diagnostic, especially useful when `ok` is false.
+    std::string message;
+
+    /**
+     * @brief Allows validation results to be tested directly in boolean contexts.
+     */
+    explicit operator bool() const noexcept {
+        return ok;
+    }
+};
+
+// Forward declaration for the edit-session wrapper.
 class TreeEditor;
-class WeightedMorphologicalTree;
 
 /**
  * @brief Mutable morphological tree built directly on proper parts and dense node ids.
@@ -48,7 +111,7 @@ class WeightedMorphologicalTree;
  * - expose mutable topology operations used by filters and adjusters;
  * - provide structural traversals over live nodes, children, proper parts, and subtrees;
  * - serve as the topology/ownership core used by weighted wrappers such as
- *   `WeightedMorphologicalTree`.
+ *   `WeightedMorphologicalTree<std::uint8_t>`.
  *
  * The class intentionally keeps only the canonical structural state and a small
  * number of derived caches. Higher-level attribute computation is delegated to
@@ -56,35 +119,20 @@ class WeightedMorphologicalTree;
  */
 class MorphologicalTree {
 private:
-    // ========================= Private attributes ========================= //
-    friend class MorphologicalTreePybind;
-    friend class MorphologicalTreeContext;
     friend class TreeEditor;
-    friend class WeightedMorphologicalTree;
 
-    struct PrePostOrderCache {
-        std::vector<int> timePreOrder;
-        std::vector<int> timePostOrder;
-        bool valid = false;
+    class LCAEulerRMQ; // Forward declaration for the LCA cache implementation.
 
-        /**
-         * @brief Marks the cached traversal timestamps as stale.
-         */
-        void invalidate() noexcept {
-            valid = false;
-        }
-    };
-
-    class LCAEulerRMQ;
-
+    // ========================= Private attributes ========================= //
     NodeId rootNodeId_ = InvalidNode;
-    int treeType_ = 0; //0-mintree, 1-maxtree, 2-tree of shapes
+    MorphologicalTreeKind treeType_ = MorphologicalTreeKind::MAX_TREE;
     int numRows_ = 0;
     int numCols_ = 0;
     std::optional<AdjacencyRelation> adj_; // optional adjacency context; not part of the structural tree contract
     std::optional<std::pair<AdjacencyRelation, AdjacencyRelation>> tosAdjacencyPolicy_; // min-tree adjacency, max-tree adjacency
     int numNodes_ = 0;
     bool preservesHigraNodeIdSpace_ = false;
+    bool editSessionOpen_ = false;
 
     // Proper-part ownership, indexed by proper-part global id [0, getNumTotalProperParts()).
     std::vector<NodeId> properPartOwner_;
@@ -111,6 +159,16 @@ private:
     std::vector<NodeId> prevProperPart_;
 
     // Structural caches for traversal-based queries, indexed by local node-slot id [0, getNumInternalNodeSlots()).
+    struct PrePostOrderCache {
+        std::vector<int> timePreOrder;
+        std::vector<int> timePostOrder;
+        bool valid = false;
+
+        /**
+         * @brief Marks the cached traversal timestamps as stale.
+         */
+        void invalidate() noexcept { valid = false; }
+    };
     mutable PrePostOrderCache prePostOrderCache_;
     mutable std::unique_ptr<LCAEulerRMQ> lcaCache_;
 
@@ -119,6 +177,12 @@ private:
     std::size_t nodeStructureVersion_ = 0;
     std::size_t topologyVersion_ = 0;
     std::size_t properPartVersion_ = 0;
+    std::size_t mutationVersion_ = 0;
+
+    enum class ChildSplicePolicy {
+        AppendToTargetTail,
+        ReplaceSourceSlotWhenDirectChild
+    };
 
     // ========================= Private methods ========================= //
     /**
@@ -195,7 +259,27 @@ private:
         prevProperPart_.assign(numProperParts, InvalidNode);
     }
 
+    /**
+     * @brief Drops the preserved imported Higra id-domain marker after topology changes.
+     */
     inline void invalidateHigraNodeIdSpace() noexcept { preservesHigraNodeIdSpace_ = false; }
+
+    /**
+     * @brief Opens a staged edit session and rejects nested sessions.
+     */
+    inline void beginEditSession() {
+        if (editSessionOpen_) {
+            throw std::logic_error("A MorphologicalTree edit session is already open.");
+        }
+        editSessionOpen_ = true;
+    }
+
+    /**
+     * @brief Closes the current staged edit session flag.
+     */
+    inline void endEditSession() noexcept {
+        editSessionOpen_ = false;
+    }
 
     /**
      * @brief Clears the current topology and keeps only an empty proper-part domain.
@@ -252,7 +336,8 @@ private:
     /**
      * @brief Rejects null or empty image domains before builder code indexes them.
      */
-    static void requireNonEmptyImageDomain(const ImageUInt8Ptr& img, const char* context) {
+    template<class PixelType>
+    static void requireNonEmptyImageDomain(const ImagePtr<PixelType>& img, const char* context) {
         if (!img) {
             throw std::invalid_argument(std::string(context) + " requires a non-null image.");
         }
@@ -261,6 +346,9 @@ private:
         }
     }
 
+    /**
+     * @brief Returns the auxiliary min/max component-tree adjacencies implied by a ToS interpolation policy.
+     */
     static std::pair<AdjacencyRelation, AdjacencyRelation> treeOfShapesAdjacencyPolicy(ToSInterpolation interpolation, int rows, int cols) {
         switch (interpolation) {
             case ToSInterpolation::SelfDual:
@@ -282,115 +370,14 @@ private:
         }
     }
 
+    /**
+     * @brief Rejects invalid, released, or root node ids for non-root-only edits.
+     */
     inline void requireAliveNonRootNode(NodeId nodeId, const char* context) const {
         requireAliveNode(nodeId, context);
         if (isRoot(nodeId)) {
             throw std::invalid_argument(std::string(context) + " cannot target the root node.");
         }
-    }
-
-    /**
-     * @brief Builds a component-tree or tree-of-shapes topology from an image builder.
-     */
-    inline void build(const ImageUInt8Ptr& imgPtr, IMorphologicalTreeBuilder& builderUF) {
-        auto [parent, orderedPixels, numBuiltNodes] = builderUF.createTreeByUnionFind(imgPtr);
-
-        const int numPixels = imgPtr->getSize();
-        auto img = imgPtr->rawData();
-
-        this->reserveNodes(numBuiltNodes);
-        for (int i = 0; i < numPixels; i++) {
-            const int p = orderedPixels[i];
-
-            if (p == parent[p]) {
-                properPartOwner_[p] = this->rootNodeId_ = this->makeNode(InvalidNode);
-            } else if (img[p] != img[parent[p]]) {
-                properPartOwner_[p] = this->makeNode(properPartOwner_[parent[p]]);
-            } else {
-                properPartOwner_[p] = properPartOwner_[parent[p]];
-            }
-        }
-
-        properHead_.assign(nodeParent_.size(), InvalidNode);
-        properTail_.assign(nodeParent_.size(), InvalidNode);
-        numProperPartsByNode_.assign(nodeParent_.size(), 0);
-        initializeProperPartStorage(numPixels);
-        rebuildProperPartLinksFromOwnership();
-        invalidateAllIterators();
-    }
-
-    /**
-     * @brief Rebuilds the tree topology from an imported static Higra hierarchy.
-     *
-     * The input follows the Higra convention where leaves occupy
-     * `[0, numProperParts)` and internal nodes occupy
-     * `[numProperParts, parent.size())`. On success, the imported Higra
-     * node-id domain is preserved until the tree topology or proper-part
-     * ownership is edited.
-     */
-    inline void resetFromHigraTopology(std::span<const NodeId> parent, NodeId numProperParts) {
-        if (adj_) {
-            if (adj_->getNumRows() * adj_->getNumCols() != numProperParts) {
-                throw std::invalid_argument("Higra leaf count must match image domain size.");
-            }
-        }
-
-        const NodeId numHigraNodes = static_cast<NodeId>(parent.size());
-        if (numProperParts <= 0 || numProperParts >= numHigraNodes) {
-            throw std::invalid_argument("Higra parent array must contain leaves followed by at least one internal node.");
-        }
-        const NodeId numNodeSlots = numHigraNodes - numProperParts;
-
-        initializeEmptyStorage(static_cast<size_t>(numProperParts));
-        nodeParent_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
-        firstChild_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
-        nextSibling_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
-        prevSibling_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
-        lastChild_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
-        numChildrenByNode_.assign(static_cast<size_t>(numNodeSlots), 0);
-        alive_.assign(static_cast<size_t>(numNodeSlots), 1);
-        properHead_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
-        properTail_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
-        numProperPartsByNode_.assign(static_cast<size_t>(numNodeSlots), 0);
-        initializeProperPartStorage(static_cast<size_t>(numProperParts));
-
-        numNodes_ = static_cast<int>(numNodeSlots);
-        rootNodeId_ = InvalidNode;
-
-        for (NodeId properPartId = 0; properPartId < numProperParts; ++properPartId) {
-            const NodeId ownerHigraNodeId = parent[static_cast<size_t>(properPartId)];
-            if (ownerHigraNodeId < numProperParts || ownerHigraNodeId >= numHigraNodes) {
-                throw std::invalid_argument("Each Higra leaf must point to an internal node.");
-            }
-            properPartOwner_[static_cast<size_t>(properPartId)] = ownerHigraNodeId - numProperParts;
-        }
-
-        for (NodeId slotId = 0; slotId < numNodeSlots; ++slotId) {
-            const NodeId higraNodeId = numProperParts + slotId;
-            const NodeId parentHigraNodeId = parent[static_cast<size_t>(higraNodeId)];
-            if (parentHigraNodeId == higraNodeId) {
-                if (rootNodeId_ != InvalidNode) {
-                    throw std::invalid_argument("A Higra hierarchy must encode exactly one root.");
-                }
-                nodeParent_[static_cast<size_t>(slotId)] = slotId;
-                rootNodeId_ = slotId;
-                continue;
-            }
-
-            if (parentHigraNodeId < numProperParts || parentHigraNodeId >= numHigraNodes) {
-                throw std::invalid_argument("Each Higra internal node must point to another internal node or to itself.");
-            }
-            const NodeId parentSlotId = parentHigraNodeId - numProperParts;
-            linkChildSlot(parentSlotId, slotId);
-        }
-
-        if (rootNodeId_ == InvalidNode) {
-            throw std::invalid_argument("A Higra hierarchy must encode exactly one root.");
-        }
-        rebuildProperPartLinksFromOwnership();
-        invalidatePrePostOrderCache();
-        invalidateAllIterators();
-        preservesHigraNodeIdSpace_ = true;
     }
 
     /**
@@ -511,6 +498,7 @@ private:
         nodeStructureVersion_ = 0;
         topologyVersion_ = 0;
         properPartVersion_ = 0;
+        ++mutationVersion_;
         lcaCache_.reset();
     }
 
@@ -524,6 +512,7 @@ private:
      */
     inline void bumpNodeStructureVersion() noexcept {
         ++nodeStructureVersion_;
+        ++mutationVersion_;
         invalidateLcaCache();
         invalidateHigraNodeIdSpace();
     }
@@ -533,6 +522,7 @@ private:
      */
     inline void bumpTopologyVersion() noexcept {
         ++topologyVersion_;
+        ++mutationVersion_;
         invalidateLcaCache();
         invalidatePrePostOrderCache();
         invalidateHigraNodeIdSpace();
@@ -543,6 +533,7 @@ private:
      */
     inline void bumpProperPartVersion() noexcept {
         ++properPartVersion_;
+        ++mutationVersion_;
         invalidateHigraNodeIdSpace();
     }
 
@@ -601,31 +592,6 @@ private:
     }
 
     /**
-     * @brief Computes subtree areas bottom-up from direct proper-part counts.
-     */
-    inline std::vector<int32_t> computeAreasIncrementally() const {
-        std::vector<int32_t> areaByNode(nodeParent_.size(), 0);
-
-        if (rootNodeId_ == InvalidNode) {
-            return areaByNode;
-        }
-
-        computeIncrementalAttributes(
-            const_cast<MorphologicalTree*>(this),
-            getRoot(),
-            [&](NodeId nodeId) -> void {
-                areaByNode[nodeId] = getNumProperParts(nodeId);
-            },
-            [&](NodeId parentNodeId, NodeId childNodeId) -> void {
-                areaByNode[parentNodeId] += areaByNode[childNodeId];
-            },
-            [&](NodeId) -> void {}
-        );
-
-        return areaByNode;
-    }
-
-    /**
      * @brief Ensures that preorder/postorder timestamps are available.
      */
     inline void ensurePrePostOrderCache() const {
@@ -642,20 +608,6 @@ private:
             lcaCache_ = std::make_unique<LCAEulerRMQ>(this);
         }
         return *lcaCache_;
-    }
-
-    /**
-     * @brief Keeps the largest-area descendant associated with one ascendant slot.
-     */
-    void maxAreaDescendants(const std::vector<int32_t>& areaByNode, std::vector<NodeId>& descendants, NodeId ascendantNodeId, NodeId descendantNodeId) {
-        const NodeId nodeAscSlot = ascendantNodeId;
-        if (descendants[nodeAscSlot] == InvalidNode) {
-            descendants[nodeAscSlot] = descendantNodeId;
-        }
-
-        if (areaByNode[descendants[nodeAscSlot]] < areaByNode[descendantNodeId]) {
-            descendants[nodeAscSlot] = descendantNodeId;
-        }
     }
 
     /**
@@ -679,7 +631,7 @@ private:
     void linkChildSlot(NodeId parentSlotId, NodeId childId) {
         if (parentSlotId < 0 || childId < 0) return;
 
-        // Se o filho já tem pai, desconecta antes de ler P/C
+        // If the child already has a parent, detach it before reading sibling links.
         if (nodeParent_[childId] != InvalidNode) {
             unlinkChildSlot(nodeParent_[childId], childId, false);
         }
@@ -734,41 +686,77 @@ private:
 
 
     /**
-     * @brief Moves all children of `fromId` to the tail of the child list of `toId`.
+     * @brief Moves all children of `fromId` into the child list of `toId`.
      */
-    inline void spliceChildrenSlots(NodeId toId, NodeId fromId) {
+    inline void spliceChildrenSlots(NodeId toId, NodeId fromId, ChildSplicePolicy policy = ChildSplicePolicy::AppendToTargetTail) {
         if (toId < 0 || fromId < 0 || toId == fromId) return;
 
-        NodeId firstFrom = firstChild_[fromId];
-        if (firstFrom == InvalidNode) return; // nada para mover
+        const NodeId firstFrom = firstChild_[fromId];
+        const NodeId lastFrom = lastChild_[fromId];
+        const int movedCount = numChildrenByNode_[fromId];
+        const bool replaceSourceSlot = policy == ChildSplicePolicy::ReplaceSourceSlotWhenDirectChild && nodeParent_[fromId] == toId;
 
-        // 1) todos os filhos de 'fromId' passam a ter pai 'toId'
-        for (NodeId c = firstChild_[fromId]; c != InvalidNode; c = nextSibling_[c]) {
-            nodeParent_[c] = toId;
+        for (NodeId childId = firstFrom; childId != InvalidNode; childId = nextSibling_[childId]) {
+            nodeParent_[childId] = toId;
         }
 
-        // 2) concatena a lista de filhos de 'fromId' no fim da lista de 'toId'
-        if (firstChild_[toId] == InvalidNode) {
-            // 'toId' não tinha filhos — vira exatamente a lista de 'fromId'
-            firstChild_[toId] = firstChild_[fromId];
-            lastChild_[toId]  = lastChild_[fromId];
-            // o primeiro filho já tem prevSibling_ == InvalidNode porque era o primeiro de 'fromId'
+        if (replaceSourceSlot) {
+            const NodeId prev = prevSibling_[fromId];
+            const NodeId next = nextSibling_[fromId];
+
+            if (firstFrom == InvalidNode) {
+                if (prev == InvalidNode) {
+                    firstChild_[toId] = next;
+                } else {
+                    nextSibling_[prev] = next;
+                }
+
+                if (next == InvalidNode) {
+                    lastChild_[toId] = prev;
+                } else {
+                    prevSibling_[next] = prev;
+                }
+            } else {
+                if (prev == InvalidNode) {
+                    firstChild_[toId] = firstFrom;
+                    prevSibling_[firstFrom] = InvalidNode;
+                } else {
+                    nextSibling_[prev] = firstFrom;
+                    prevSibling_[firstFrom] = prev;
+                }
+
+                if (next == InvalidNode) {
+                    lastChild_[toId] = lastFrom;
+                    nextSibling_[lastFrom] = InvalidNode;
+                } else {
+                    prevSibling_[next] = lastFrom;
+                    nextSibling_[lastFrom] = next;
+                }
+            }
+
+            nodeParent_[fromId] = InvalidNode;
+            prevSibling_[fromId] = InvalidNode;
+            nextSibling_[fromId] = InvalidNode;
+            numChildrenByNode_[toId] += movedCount - 1;
         } else {
-            // 'toId' já tinha filhos — encadeia no final
-            nextSibling_[ lastChild_[toId] ] = firstChild_[fromId];
-            prevSibling_[ firstChild_[fromId] ] = lastChild_[toId];
-            lastChild_[toId] = lastChild_[fromId];
+            if (firstFrom == InvalidNode) return;
+
+            if (firstChild_[toId] == InvalidNode) {
+                firstChild_[toId] = firstFrom;
+                lastChild_[toId] = lastFrom;
+            } else {
+                nextSibling_[lastChild_[toId]] = firstFrom;
+                prevSibling_[firstFrom] = lastChild_[toId];
+                lastChild_[toId] = lastFrom;
+            }
+
+            numChildrenByNode_[toId] += movedCount;
         }
 
-        // 3) atualiza contadores
-        numChildrenByNode_[toId] += numChildrenByNode_[fromId];
-
-        // 4) zera a lista de 'fromId'
         firstChild_[fromId] = InvalidNode;
-        lastChild_[fromId]  = InvalidNode;
-        numChildrenByNode_[fromId]   = 0;
+        lastChild_[fromId] = InvalidNode;
+        numChildrenByNode_[fromId] = 0;
         bumpTopologyVersion();
-
     }
 
 
@@ -790,6 +778,9 @@ private:
         releaseSlotNode(nodeSlot);
     }
 
+    /**
+     * @brief Reuses one free slot as a live detached node without growing storage.
+     */
     inline NodeId allocateNode() {
         if (freeNodeIds_.empty()) {
             return InvalidNode;
@@ -955,26 +946,304 @@ private:
         bumpTopologyVersion();
     }
 
-
-public:
-    // ========================= Public attributes ========================= //
-
-    static const int MAX_TREE = 0;
-    static const int MIN_TREE = 1;
-    static const int TREE_OF_SHAPES = 2;
-
-    // ========================= Public constructors ========================= //
     /**
-     * @brief Constructs an empty tree shell.
+     * @brief Private default constructor used by `clone()`.
      */
     MorphologicalTree() = default;
 
+
+public:
+    /**
+     * @brief Copying is disabled to keep topology ownership explicit.
+     */
     MorphologicalTree(const MorphologicalTree&) = delete;
+
+    /**
+     * @brief Copy assignment is disabled to keep topology ownership explicit.
+     */
     MorphologicalTree& operator=(const MorphologicalTree&) = delete;
+
+    /**
+     * @brief Moving transfers the complete topology state.
+     */
     MorphologicalTree(MorphologicalTree&&) noexcept = default;
+
+    /**
+     * @brief Move assignment transfers the complete topology state.
+     */
     MorphologicalTree& operator=(MorphologicalTree&&) noexcept = default;
 
+    /**
+     * @brief Destroys the topology storage and cached traversal state.
+     */
     virtual ~MorphologicalTree() = default;
+
+    /**
+     * @brief Tag-protected constructor for image-based max/min component trees.
+     *
+     * The factory owns this path. The resulting topology uses the image pixels
+     * as proper parts, stores the selected component-tree type internally, and
+     * keeps the adjacency relation used by later topology-aware operations.
+     */
+    template<AltitudeValue PixelType>
+    MorphologicalTree(detail::MorphologicalTreeConstructionTag, ImagePtr<PixelType> imgPtr, ComponentTreeKind kind, double radius) {
+        requireNonEmptyImageDomain(imgPtr, "MorphologicalTree component-tree construction");
+
+        const bool isMaxtree = kind == ComponentTreeKind::MAX_TREE;
+        treeType_ = isMaxtree ? MorphologicalTreeKind::MAX_TREE : MorphologicalTreeKind::MIN_TREE;
+        numRows_ = imgPtr->getNumRows();
+        numCols_ = imgPtr->getNumCols();
+        adj_.emplace(numRows_, numCols_, radius);
+        tosAdjacencyPolicy_ = std::nullopt;
+        initializeEmptyStorage(static_cast<size_t>(imgPtr->getSize()));
+
+        BuilderComponentTree builderUF(&*adj_, isMaxtree);
+        auto [parent, orderedPixels, numBuiltNodes] = builderUF.createTreeByUnionFind<PixelType>(imgPtr);
+
+        const int numPixels = imgPtr->getSize();
+        auto img = imgPtr->rawData();
+        this->reserveNodes(numBuiltNodes);
+        for (int i = 0; i < numPixels; i++) {
+            const int p = orderedPixels[i];
+
+            if (p == parent[p]) {
+                properPartOwner_[p] = this->rootNodeId_ = this->makeNode(InvalidNode);
+            } else if (img[p] != img[parent[p]]) {
+                properPartOwner_[p] = this->makeNode(properPartOwner_[parent[p]]);
+            } else {
+                properPartOwner_[p] = properPartOwner_[parent[p]];
+            }
+        }
+
+        properHead_.assign(nodeParent_.size(), InvalidNode);
+        properTail_.assign(nodeParent_.size(), InvalidNode);
+        numProperPartsByNode_.assign(nodeParent_.size(), 0);
+        initializeProperPartStorage(numPixels);
+        rebuildProperPartLinksFromOwnership();
+        invalidateAllIterators();
+
+    }
+
+    /**
+     * @brief Tag-protected constructor for image-based tree-of-shapes topology.
+     *
+     * The factory owns this path. The topology uses the image pixels as proper
+     * parts and stores the ToS interpolation policy as adjacency metadata for
+     * operations that need to preserve the same interpretation.
+     */
+    MorphologicalTree(detail::MorphologicalTreeConstructionTag, ImageUInt8Ptr imgPtr, ToSInterpolation interpolation, int infinitySeedRow, int infinitySeedCol) {
+        requireNonEmptyImageDomain(imgPtr, "MorphologicalTree tree-of-shapes construction");
+
+        treeType_ = MorphologicalTreeKind::TREE_OF_SHAPES;
+        numRows_ = imgPtr->getNumRows();
+        numCols_ = imgPtr->getNumCols();
+        adj_ = std::nullopt;
+        tosAdjacencyPolicy_ = treeOfShapesAdjacencyPolicy(interpolation, numRows_, numCols_);
+        initializeEmptyStorage(static_cast<size_t>(imgPtr->getSize()));
+
+        BuilderTreeOfShape builderUF(interpolation, infinitySeedRow, infinitySeedCol);
+        auto [parent, orderedPixels, numBuiltNodes] = builderUF.createTreeByUnionFind(imgPtr);
+
+        const int numPixels = imgPtr->getSize();
+        auto img = imgPtr->rawData();
+
+        this->reserveNodes(numBuiltNodes);
+        for (int i = 0; i < numPixels; i++) {
+            const int p = orderedPixels[i];
+
+            if (p == parent[p]) {
+                properPartOwner_[p] = this->rootNodeId_ = this->makeNode(InvalidNode);
+            } else if (img[p] != img[parent[p]]) {
+                properPartOwner_[p] = this->makeNode(properPartOwner_[parent[p]]);
+            } else {
+                properPartOwner_[p] = properPartOwner_[parent[p]];
+            }
+        }
+
+        properHead_.assign(nodeParent_.size(), InvalidNode);
+        properTail_.assign(nodeParent_.size(), InvalidNode);
+        numProperPartsByNode_.assign(nodeParent_.size(), 0);
+        initializeProperPartStorage(numPixels);
+        rebuildProperPartLinksFromOwnership();
+        invalidateAllIterators();
+    }
+
+    /**
+     * @brief Tag-protected import from compact Higra parent representation.
+     *
+     * Higra ids are leaves first and internal nodes after the image-domain
+     * leaves. The constructor converts internal Higra ids to dense internal
+     * `NodeId` slots while preserving enough mapping metadata for weighted
+     * altitude import. Max/min imports require an adjacency relation; tree of
+     * shapes imports can omit it.
+     */
+    MorphologicalTree(detail::MorphologicalTreeConstructionTag, std::span<const NodeId> parent, int rows, int cols, MorphologicalTreeKind kind, std::optional<AdjacencyRelation> adjacency) {
+        if (kind == MorphologicalTreeKind::SELF_DUAL_RESIDUAL_TREE) {
+            throw std::invalid_argument("Higra import does not accept SELF_DUAL_RESIDUAL_TREE.");
+        }
+        if (!adjacency && kind != MorphologicalTreeKind::TREE_OF_SHAPES) {
+            throw std::invalid_argument("Higra import of max/min trees requires an explicit adjacency relation.");
+        }
+
+        treeType_ = kind;
+        numRows_ = rows;
+        numCols_ = cols;
+        adj_ = std::move(adjacency);
+        tosAdjacencyPolicy_ = std::nullopt;
+
+        const NodeId numProperParts = static_cast<NodeId>(rows * cols);
+        if (adj_) {
+            if (adj_->getNumRows() * adj_->getNumCols() != numProperParts) {
+                throw std::invalid_argument("Higra leaf count must match image domain size.");
+            }
+        }
+
+        const NodeId numHigraNodes = static_cast<NodeId>(parent.size());
+        if (numProperParts <= 0 || numProperParts >= numHigraNodes) {
+            throw std::invalid_argument("Higra parent array must contain leaves followed by at least one internal node.");
+        }
+        const NodeId numNodeSlots = numHigraNodes - numProperParts;
+
+        initializeEmptyStorage(static_cast<size_t>(numProperParts));
+        nodeParent_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
+        firstChild_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
+        nextSibling_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
+        prevSibling_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
+        lastChild_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
+        numChildrenByNode_.assign(static_cast<size_t>(numNodeSlots), 0);
+        alive_.assign(static_cast<size_t>(numNodeSlots), 1);
+        properHead_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
+        properTail_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
+        numProperPartsByNode_.assign(static_cast<size_t>(numNodeSlots), 0);
+        initializeProperPartStorage(static_cast<size_t>(numProperParts));
+
+        numNodes_ = static_cast<int>(numNodeSlots);
+        rootNodeId_ = InvalidNode;
+
+        for (NodeId properPartId = 0; properPartId < numProperParts; ++properPartId) {
+            const NodeId ownerHigraNodeId = parent[static_cast<size_t>(properPartId)];
+            if (ownerHigraNodeId < numProperParts || ownerHigraNodeId >= numHigraNodes) {
+                throw std::invalid_argument("Each Higra leaf must point to an internal node.");
+            }
+            properPartOwner_[static_cast<size_t>(properPartId)] = ownerHigraNodeId - numProperParts;
+        }
+
+        for (NodeId slotId = 0; slotId < numNodeSlots; ++slotId) {
+            const NodeId higraNodeId = numProperParts + slotId;
+            const NodeId parentHigraNodeId = parent[static_cast<size_t>(higraNodeId)];
+            if (parentHigraNodeId == higraNodeId) {
+                if (rootNodeId_ != InvalidNode) {
+                    throw std::invalid_argument("A Higra hierarchy must encode exactly one root.");
+                }
+                nodeParent_[static_cast<size_t>(slotId)] = slotId;
+                rootNodeId_ = slotId;
+                continue;
+            }
+
+            if (parentHigraNodeId < numProperParts || parentHigraNodeId >= numHigraNodes) {
+                throw std::invalid_argument("Each Higra internal node must point to another internal node or to itself.");
+            }
+            const NodeId parentSlotId = parentHigraNodeId - numProperParts;
+            linkChildSlot(parentSlotId, slotId);
+        }
+
+        if (rootNodeId_ == InvalidNode) {
+            throw std::invalid_argument("A Higra hierarchy must encode exactly one root.");
+        }
+        rebuildProperPartLinksFromOwnership();
+        invalidatePrePostOrderCache();
+        invalidateAllIterators();
+        preservesHigraNodeIdSpace_ = true;
+    }
+
+    /**
+     * @brief Tag-protected import from native MAF topology buffers.
+     *
+     * This path is used by builders that already materialize internal-node
+     * parent links and row-major proper-part owners, such as the SDRT builder.
+     * The buffers are copied into canonical tree storage and validated as one
+     * connected rooted hierarchy.
+     */
+    MorphologicalTree(detail::MorphologicalTreeConstructionTag, std::span<const NodeId> nodeParent, std::span<const NodeId> properPartOwner, NodeId root, int rows, int cols) {
+        if (properPartOwner.size() != static_cast<size_t>(rows * cols)) {
+            throw std::invalid_argument("Self-dual residual tree proper-part domain must match rows * cols.");
+        }
+
+        const NodeId numNodeSlots = static_cast<NodeId>(nodeParent.size());
+        const NodeId numProperParts = static_cast<NodeId>(properPartOwner.size());
+        if (numNodeSlots <= 0) {
+            throw std::invalid_argument("Native topology import requires at least one internal node.");
+        }
+        if (numProperParts <= 0) {
+            throw std::invalid_argument("Native topology import requires at least one proper part.");
+        }
+        if (root < 0 || root >= numNodeSlots) {
+            throw std::invalid_argument("Native topology import requires a valid root node id.");
+        }
+
+        treeType_ = MorphologicalTreeKind::SELF_DUAL_RESIDUAL_TREE;
+        numRows_ = rows;
+        numCols_ = cols;
+        adj_ = std::nullopt;
+        tosAdjacencyPolicy_ = std::nullopt;
+
+        initializeEmptyStorage(static_cast<size_t>(numProperParts));
+        nodeParent_.assign(nodeParent.begin(), nodeParent.end());
+        firstChild_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
+        nextSibling_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
+        prevSibling_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
+        lastChild_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
+        numChildrenByNode_.assign(static_cast<size_t>(numNodeSlots), 0);
+        alive_.assign(static_cast<size_t>(numNodeSlots), 1);
+        freeNodeIds_.clear();
+        properHead_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
+        properTail_.assign(static_cast<size_t>(numNodeSlots), InvalidNode);
+        numProperPartsByNode_.assign(static_cast<size_t>(numNodeSlots), 0);
+        properPartOwner_.assign(properPartOwner.begin(), properPartOwner.end());
+        initializeProperPartStorage(static_cast<size_t>(numProperParts));
+
+        rootNodeId_ = root;
+        numNodes_ = static_cast<int>(numNodeSlots);
+
+        int selfParentedRoots = 0;
+        for (NodeId nodeId = 0; nodeId < numNodeSlots; ++nodeId) {
+            const NodeId parentId = nodeParent_[static_cast<size_t>(nodeId)];
+            if (parentId == nodeId) {
+                if (nodeId != root) {
+                    throw std::invalid_argument("Native topology import found a detached self-parented non-root node.");
+                }
+                ++selfParentedRoots;
+                continue;
+            }
+            if (parentId < 0 || parentId >= numNodeSlots) {
+                throw std::invalid_argument("Native topology import found a parent outside the internal-node domain.");
+            }
+
+            prevSibling_[static_cast<size_t>(nodeId)] = lastChild_[static_cast<size_t>(parentId)];
+            if (lastChild_[static_cast<size_t>(parentId)] == InvalidNode) {
+                firstChild_[static_cast<size_t>(parentId)] = nodeId;
+            } else {
+                nextSibling_[static_cast<size_t>(lastChild_[static_cast<size_t>(parentId)])] = nodeId;
+            }
+            lastChild_[static_cast<size_t>(parentId)] = nodeId;
+            ++numChildrenByNode_[static_cast<size_t>(parentId)];
+        }
+        if (selfParentedRoots != 1) {
+            throw std::invalid_argument("Native topology import must encode exactly one self-parented root.");
+        }
+
+        for (NodeId properPartId = 0; properPartId < numProperParts; ++properPartId) {
+            const NodeId ownerId = properPartOwner_[static_cast<size_t>(properPartId)];
+            if (ownerId < 0 || ownerId >= numNodeSlots) {
+                throw std::invalid_argument("Native topology import found a proper-part owner outside the internal-node domain.");
+            }
+        }
+
+        rebuildProperPartLinksFromOwnership();
+        invalidatePrePostOrderCache();
+        invalidateAllIterators();
+        preservesHigraNodeIdSpace_ = false;
+    }
 
     /**
      * @brief Creates an independent copy of the structural tree state.
@@ -993,6 +1262,7 @@ public:
         cloned.tosAdjacencyPolicy_ = tosAdjacencyPolicy_;
         cloned.numNodes_ = numNodes_;
         cloned.preservesHigraNodeIdSpace_ = preservesHigraNodeIdSpace_;
+        cloned.editSessionOpen_ = false;
         cloned.properPartOwner_ = properPartOwner_;
         cloned.nodeParent_ = nodeParent_;
         cloned.firstChild_ = firstChild_;
@@ -1012,6 +1282,7 @@ public:
         cloned.nodeStructureVersion_ = nodeStructureVersion_;
         cloned.topologyVersion_ = topologyVersion_;
         cloned.properPartVersion_ = properPartVersion_;
+        cloned.mutationVersion_ = mutationVersion_;
         return cloned;
     }
 
@@ -1036,99 +1307,21 @@ public:
     class SubtreeNodeRange;
     class DescendantNodeRange;
 
+public:
     // ========================= Public methods ========================= //
 
     /**
-     * @brief Creates a max-tree or min-tree from an image.
+     * @brief Returns the monotonic mutation counter used by read-only views.
      */
-    static MorphologicalTree createComponentTree(ImageUInt8Ptr img, bool isMaxtree, double radius = 1.5) {
-        requireNonEmptyImageDomain(img, "MorphologicalTree::createComponentTree");
-        MorphologicalTree tree;
-        tree.treeType_ = isMaxtree ? MAX_TREE : MIN_TREE;
-        tree.numRows_ = img->getNumRows();
-        tree.numCols_ = img->getNumCols();
-        tree.adj_.emplace(tree.numRows_, tree.numCols_, radius);
-        tree.tosAdjacencyPolicy_ = std::nullopt;
-        tree.numNodes_ = 0;
-        tree.properPartOwner_.resize(img->getSize(), InvalidNode);
-
-        BuilderComponentTree builderUF(&*tree.adj_, isMaxtree);
-        tree.build(img, builderUF);
-        return tree;
-    }
+    std::size_t getMutationVersion() const noexcept { return mutationVersion_;}
 
     /**
-     * @brief Convenience wrapper that creates a max-tree from an image.
+     * @brief Rejects stale read-only views that captured an older mutation version.
      */
-    static MorphologicalTree createMaxTree(ImageUInt8Ptr img, double radius = 1.5) {
-        return createComponentTree(std::move(img), true, radius);
-    }
-
-    /**
-     * @brief Convenience wrapper that creates a min-tree from an image.
-     */
-    static MorphologicalTree createMinTree(ImageUInt8Ptr img, double radius = 1.5) {
-        return createComponentTree(std::move(img), false, radius);
-    }
-
-    /**
-     * @brief Creates a tree of shapes from an image.
-     */
-    static MorphologicalTree createTreeOfShapes(
-        ImageUInt8Ptr img,
-        ToSInterpolation interpolation = ToSInterpolation::SelfDual,
-        int infinitySeedRow = ToSDefaultInfinityRow,
-        int infinitySeedCol = ToSDefaultInfinityCol) {
-        requireNonEmptyImageDomain(img, "MorphologicalTree::createTreeOfShapes");
-        MorphologicalTree tree;
-        tree.treeType_ = TREE_OF_SHAPES;
-        tree.numRows_ = img->getNumRows();
-        tree.numCols_ = img->getNumCols();
-        tree.adj_ = std::nullopt;
-        tree.tosAdjacencyPolicy_ = treeOfShapesAdjacencyPolicy(interpolation, tree.numRows_, tree.numCols_);
-        tree.numNodes_ = 0;
-        tree.properPartOwner_.resize(img->getSize(), InvalidNode);
-
-        BuilderTreeOfShape builderUF(interpolation, infinitySeedRow, infinitySeedCol);
-        tree.build(img, builderUF);
-        return tree;
-    }
-
-    /**
-     * @brief Creates a tree from an imported static Higra parent representation.
-     *
-     * Leaves/proper parts occupy `[0, rows * cols)` and internal nodes occupy
-     * `[rows * cols, parent.size())`.
-     *
-     * The imported Higra node-id space is preserved only while the topology
-     * and proper-part ownership remain unmodified. After any edit,
-     * `exportHigraHierarchy()` should be used to create a new compact Higra
-     * representation.
-     */
-    static MorphologicalTree createFromHigraParent(
-        std::span<const NodeId> parent,
-        int rows,
-        int cols,
-        int treeType,
-        std::optional<AdjacencyRelation> adjacency = std::nullopt) {
-        if (treeType != MAX_TREE && treeType != MIN_TREE && treeType != TREE_OF_SHAPES) {
-            throw std::invalid_argument("Unsupported morphological tree type.");
+    void requireMutationVersion(std::size_t expectedVersion, const char* context) const {
+        if (mutationVersion_ != expectedVersion) {
+            throw std::logic_error(std::string(context) + " cannot be used after the referenced tree topology has changed.");
         }
-
-        MorphologicalTree tree;
-        tree.treeType_ = treeType;
-        tree.numRows_ = rows;
-        tree.numCols_ = cols;
-        if (adjacency) {
-            tree.adj_ = std::move(adjacency);
-        } else if (treeType == TREE_OF_SHAPES) {
-            tree.adj_ = std::nullopt;
-        } else {
-            throw std::invalid_argument("Higra import of max/min trees requires an explicit adjacency relation.");
-        }
-        tree.tosAdjacencyPolicy_ = std::nullopt;
-        tree.resetFromHigraTopology(parent, static_cast<NodeId>(rows * cols));
-        return tree;
     }
 
     /**
@@ -1344,11 +1537,11 @@ public:
     }
 
     /**
-     * @brief Returns the live node that directly owns `pixelId`.
+     * @brief Returns the live node that directly owns `properPartId`.
      */
-    inline NodeId getSmallestComponent(int pixelId) const {
-        return (pixelId >= 0 && pixelId < static_cast<int>(properPartOwner_.size()))
-            ? properPartOwner_[pixelId]
+    inline NodeId getProperPartOwner(NodeId properPartId) const {
+        return isProperPart(properPartId)
+            ? properPartOwner_[static_cast<size_t>(properPartId)]
             : InvalidNode;
     }
 
@@ -1377,19 +1570,28 @@ public:
     }
 
     /**
-     * @brief Returns the current tree type (`MAX_TREE`, `MIN_TREE`, or `TREE_OF_SHAPES`).
+     * @brief Returns the current tree type.
      */
-    inline int getTreeType() const noexcept{return treeType_;}
-
-    /**
-     * @brief Tests whether the instance represents a max-tree.
-     */
-    inline bool isMaxtree()const noexcept{ return treeType_ == MAX_TREE;}
+    inline MorphologicalTreeKind getTreeType() const noexcept{return treeType_;}
 
     /**
      * @brief Returns the number of currently live nodes.
      */
     inline int getNumNodes()const noexcept{ return numNodes_; }
+
+    /**
+     * @brief Tests whether a staged edit session is currently open.
+     */
+    inline bool isEditing() const noexcept { return editSessionOpen_; }
+
+    /**
+     * @brief Rejects operations that require a committed connected topology.
+     */
+    inline void requireNotEditing(const char* context) const {
+        if (isEditing()) {
+            throw std::logic_error(std::string(context) + " requires a committed MorphologicalTree; an edit session is still open.");
+        }
+    }
 
     /**
      * @brief Returns whether the tree currently contains alive detached nodes.
@@ -1685,9 +1887,25 @@ public:
     }
 
     /**
+     * @brief Runs strong validation and returns the result instead of throwing.
+     */
+    [[nodiscard]] TreeValidationResult validateConnectedRootedTreeResult() const noexcept {
+        try {
+            validateConnectedRootedTree();
+            return {true, ""};
+        } catch (const std::exception& ex) {
+            return {false, ex.what()};
+        } catch (...) {
+            return {false, "Connected-tree validation failed with an unknown error."};
+        }
+    }
+
+    /**
      * @brief Tests whether `u` is an ancestor of `v`.
      */
     inline bool isAncestor(NodeId u, NodeId v) const {
+        requireAliveNode(u, "MorphologicalTree::isAncestor");
+        requireAliveNode(v, "MorphologicalTree::isAncestor");
         ensurePrePostOrderCache();
         const NodeId slotU = u;
         const NodeId slotV = v;
@@ -1699,6 +1917,8 @@ public:
      * @brief Tests whether `u` is a descendant of `v`.
      */
     inline bool isDescendant(NodeId u, NodeId v) const {
+        requireAliveNode(u, "MorphologicalTree::isDescendant");
+        requireAliveNode(v, "MorphologicalTree::isDescendant");
         ensurePrePostOrderCache();
         const NodeId slotU = u;
         const NodeId slotV = v;
@@ -1851,18 +2071,26 @@ public:
      * Use this for multi-step topology rewiring that may temporarily detach
      * nodes, move children/proper parts, or create intermediate nodes.
      * `TreeEditor::commit()` runs the strong connected-rooted-tree validation.
+     *
+     * Defined in `TreeEditor.hpp` after `TreeEditor` is complete; at this point
+     * only the forward declaration is available.
      */
-    TreeEditor edit();
+    [[nodiscard("Discarding the editor leaves the tree edit session open")]] TreeEditor edit();
 
     /**
      * @brief Prunes the subtree of `nodeId`, moving all its support to the parent.
      *
-     * This is a safe public mutator: it is a complete local operation and does
-     * not intentionally leave the tree in a staged disconnected state.
+     * This is a safe committed edit: it is a complete local operation and does
+     * not intentionally leave the tree in a staged disconnected state, but it
+     * still advances the tree mutation version and invalidates derived state.
      */
     inline void pruneNode(NodeId nodeId) {
+        requireNotEditing("MorphologicalTree::pruneNode");
         requireAliveNonRootNode(nodeId, "MorphologicalTree::pruneNode");
         const NodeId parentNodeId = getNodeParent(nodeId);
+        if (parentNodeId == InvalidNode || parentNodeId == nodeId) {
+            throw std::invalid_argument("MorphologicalTree::pruneNode requires an attached non-root node.");
+        }
         const NodeId parentSlotId = parentNodeId;
 
         const auto descendToDeepestLastChild = [this](NodeId startId) {
@@ -1886,35 +2114,30 @@ public:
             if (currentId == nodeId) {
                 break;
             }
-            currentId = firstChild_[currentParentSlotId] == InvalidNode
-                ? currentParentSlotId
-                : descendToDeepestLastChild(currentParentSlotId);
+            currentId = firstChild_[currentParentSlotId] == InvalidNode ? currentParentSlotId : descendToDeepestLastChild(currentParentSlotId);
         }
     }
 
     /**
      * @brief Merges `nodeId` into its parent and releases the emptied slot.
      *
-     * This is a safe public mutator: children and direct proper parts are
-     * transferred to the parent before the node slot is released.
+     * This is a safe committed edit: children and direct proper parts are
+     * transferred to the parent before the node slot is released. The operation
+     * advances the tree mutation version and invalidates derived state.
      */
     inline void mergeNodeIntoParent(NodeId nodeId) {
+        requireNotEditing("MorphologicalTree::mergeNodeIntoParent");
         requireAliveNonRootNode(nodeId, "MorphologicalTree::mergeNodeIntoParent");
         const NodeId parentNodeId = getNodeParent(nodeId);
+        if (parentNodeId == InvalidNode || parentNodeId == nodeId) {
+            throw std::invalid_argument("MorphologicalTree::mergeNodeIntoParent requires an attached non-root node.");
+        }
         const NodeId parentSlotId = parentNodeId;
         const NodeId nodeSlotId = nodeId;
 
-        std::vector<NodeId> movedPixels;
-        for (NodeId pixelId : getProperParts(nodeId)) {
-            movedPixels.push_back(pixelId);
-        }
-        for (NodeId pixelId : movedPixels) {
-            properPartOwner_[pixelId] = parentSlotId;
-        }
-        unlinkChildSlot(parentSlotId, nodeSlotId, false);
-        spliceChildrenSlots(parentSlotId, nodeSlotId);
+        spliceProperPartsSlots(parentSlotId, nodeSlotId);
+        spliceChildrenSlots(parentSlotId, nodeSlotId, ChildSplicePolicy::ReplaceSourceSlotWhenDirectChild);
         nodeParent_[nodeSlotId] = nodeSlotId;
-        rebuildProperPartLinksFromOwnership();
         bumpProperPartVersion();
         releaseNode(nodeId);
     }
@@ -2029,6 +2252,9 @@ private:
             }
         }
 
+        /**
+         * @brief Maps a sparse-table row/column pair to the flat storage index.
+         */
         std::size_t sparseTableIndex(int row, int col) const {
             return static_cast<std::size_t>(row) * static_cast<std::size_t>(sparseTableStride_) +
                    static_cast<std::size_t>(col);
@@ -2112,18 +2338,33 @@ public:
         }
 
     public:
+        /// Standard iterator category exposed for STL compatibility.
         using iterator_category = std::input_iterator_tag;
+        /// Node id yielded by the iterator.
         using value_type = NodeId;
+        /// Signed distance type exposed for STL compatibility.
         using difference_type = std::ptrdiff_t;
+        /// Pointer type exposed for STL compatibility.
         using pointer = const NodeId*;
+        /// Reference type exposed for STL compatibility.
         using reference = const NodeId&;
 
+        /**
+         * @brief Creates the end/sentinel iterator.
+         */
         AliveNodeIterator() = default;
+
+        /**
+         * @brief Creates an iterator over `[current, end)` with fail-fast version checking.
+         */
         AliveNodeIterator(const MorphologicalTree* tree, NodeId current, NodeId end, std::size_t expectedVersion)
             : T_(tree), current_(current), end_(end), expectedVersion_(expectedVersion) {
             settle_();
         }
 
+        /**
+         * @brief Advances to the next live node slot.
+         */
         AliveNodeIterator& operator++() {
             T_->checkNodeIteratorVersion(expectedVersion_);
             if (current_ != InvalidNode) {
@@ -2133,11 +2374,22 @@ public:
             return *this;
         }
 
+        /**
+         * @brief Returns the current live node id.
+         */
         NodeId operator*() const {
             T_->checkNodeIteratorVersion(expectedVersion_);
             return current_;
         }
+
+        /**
+         * @brief Compares iterator positions.
+         */
         bool operator==(const AliveNodeIterator& other) const { return current_ == other.current_; }
+
+        /**
+         * @brief Compares iterator positions for inequality.
+         */
         bool operator!=(const AliveNodeIterator& other) const { return !(*this == other); }
     };
 
@@ -2152,11 +2404,25 @@ public:
         std::size_t expectedVersion_ = 0;
 
     public:
+        /**
+         * @brief Creates an empty live-node range.
+         */
         AliveNodeRange() = default;
+
+        /**
+         * @brief Creates a fail-fast live-node range over dense slots.
+         */
         AliveNodeRange(const MorphologicalTree* tree, NodeId begin, NodeId end, std::size_t expectedVersion)
             : T_(tree), begin_(begin), end_(end), expectedVersion_(expectedVersion) {}
 
+        /**
+         * @brief Returns an iterator positioned at the first live slot.
+         */
         AliveNodeIterator begin() const { return AliveNodeIterator(T_, begin_, end_, expectedVersion_); }
+
+        /**
+         * @brief Returns the sentinel iterator for the live-node range.
+         */
         AliveNodeIterator end() const { return AliveNodeIterator(T_, InvalidNode, end_, expectedVersion_); }
     };
 
@@ -2170,16 +2436,31 @@ public:
         std::size_t expectedVersion_ = 0;
 
     public:
+        /// Standard iterator category exposed for STL compatibility.
         using iterator_category = std::forward_iterator_tag;
+        /// Node id yielded by the iterator.
         using value_type = NodeId;
+        /// Signed distance type exposed for STL compatibility.
         using difference_type = std::ptrdiff_t;
+        /// Pointer type exposed for STL compatibility.
         using pointer = const NodeId*;
+        /// Reference type exposed for STL compatibility.
         using reference = const NodeId&;
 
+        /**
+         * @brief Creates the end/sentinel child iterator.
+         */
         ChildrenIterator() = default;
+
+        /**
+         * @brief Creates a child iterator starting from a linked-list slot.
+         */
         ChildrenIterator(const MorphologicalTree* tree, NodeId currentLocal, std::size_t expectedVersion)
             : T_(tree), currentLocal_(currentLocal), expectedVersion_(expectedVersion) {}
 
+        /**
+         * @brief Advances to the next sibling in the child list.
+         */
         ChildrenIterator& operator++() {
             T_->checkTopologyIteratorVersion(expectedVersion_);
             if (T_ && currentLocal_ != InvalidNode) {
@@ -2188,11 +2469,22 @@ public:
             return *this;
         }
 
+        /**
+         * @brief Returns the current child node id.
+         */
         NodeId operator*() const {
             T_->checkTopologyIteratorVersion(expectedVersion_);
             return currentLocal_;
         }
+
+        /**
+         * @brief Compares child iterator positions.
+         */
         bool operator==(const ChildrenIterator& other) const { return currentLocal_ == other.currentLocal_; }
+
+        /**
+         * @brief Compares child iterator positions for inequality.
+         */
         bool operator!=(const ChildrenIterator& other) const { return !(*this == other); }
     };
 
@@ -2206,11 +2498,25 @@ public:
         std::size_t expectedVersion_ = 0;
 
     public:
+        /**
+         * @brief Creates an empty child range.
+         */
         ChildrenRange() = default;
+
+        /**
+         * @brief Creates a range over a linked list of direct children.
+         */
         ChildrenRange(const MorphologicalTree* tree, NodeId firstLocal, std::size_t expectedVersion)
             : T_(tree), firstLocal_(firstLocal), expectedVersion_(expectedVersion) {}
 
+        /**
+         * @brief Returns an iterator at the first child.
+         */
         ChildrenIterator begin() const { return ChildrenIterator(T_, firstLocal_, expectedVersion_); }
+
+        /**
+         * @brief Returns the child-range sentinel iterator.
+         */
         ChildrenIterator end() const { return ChildrenIterator(T_, InvalidNode, expectedVersion_); }
     };
 
@@ -2224,16 +2530,31 @@ public:
         std::size_t expectedVersion_ = 0;
 
     public:
+        /// Standard iterator category exposed for STL compatibility.
         using iterator_category = std::forward_iterator_tag;
+        /// Proper-part id yielded by the iterator.
         using value_type = NodeId;
+        /// Signed distance type exposed for STL compatibility.
         using difference_type = std::ptrdiff_t;
+        /// Pointer type exposed for STL compatibility.
         using pointer = const NodeId*;
+        /// Reference type exposed for STL compatibility.
         using reference = const NodeId&;
 
+        /**
+         * @brief Creates the end/sentinel proper-part iterator.
+         */
         ProperPartsIterator() = default;
+
+        /**
+         * @brief Creates a proper-part iterator starting from a linked-list entry.
+         */
         ProperPartsIterator(const MorphologicalTree* tree, NodeId currentPixel, std::size_t expectedVersion)
             : T_(tree), currentPixel_(currentPixel), expectedVersion_(expectedVersion) {}
 
+        /**
+         * @brief Advances to the next proper part in the owner list.
+         */
         ProperPartsIterator& operator++() {
             T_->checkProperPartIteratorVersion(expectedVersion_);
             if (T_ && currentPixel_ != InvalidNode) {
@@ -2242,11 +2563,22 @@ public:
             return *this;
         }
 
+        /**
+         * @brief Returns the current proper-part id.
+         */
         NodeId operator*() const {
             T_->checkProperPartIteratorVersion(expectedVersion_);
             return currentPixel_;
         }
+
+        /**
+         * @brief Compares proper-part iterator positions.
+         */
         bool operator==(const ProperPartsIterator& other) const { return currentPixel_ == other.currentPixel_; }
+
+        /**
+         * @brief Compares proper-part iterator positions for inequality.
+         */
         bool operator!=(const ProperPartsIterator& other) const { return !(*this == other); }
     };
 
@@ -2260,11 +2592,25 @@ public:
         std::size_t expectedVersion_ = 0;
 
     public:
+        /**
+         * @brief Creates an empty direct proper-part range.
+         */
         ProperPartsRange() = default;
+
+        /**
+         * @brief Creates a range over one node's direct proper-part list.
+         */
         ProperPartsRange(const MorphologicalTree* tree, NodeId firstPixel, std::size_t expectedVersion)
             : T_(tree), firstPixel_(firstPixel), expectedVersion_(expectedVersion) {}
 
+        /**
+         * @brief Returns an iterator at the first direct proper part.
+         */
         ProperPartsIterator begin() const { return ProperPartsIterator(T_, firstPixel_, expectedVersion_); }
+
+        /**
+         * @brief Returns the direct proper-part range sentinel.
+         */
         ProperPartsIterator end() const { return ProperPartsIterator(T_, InvalidNode, expectedVersion_); }
     };
 
@@ -2279,11 +2625,17 @@ public:
         std::size_t expectedTopologyVersion_ = 0;
         std::size_t expectedProperPartVersion_ = 0;
 
+        /**
+         * @brief Checks that topology and proper-part storage have not changed.
+         */
         void checkVersions() const {
             T_->checkTopologyIteratorVersion(expectedTopologyVersion_);
             T_->checkProperPartIteratorVersion(expectedProperPartVersion_);
         }
 
+        /**
+         * @brief Pushes direct children in reverse order so traversal remains left-to-right.
+         */
         void pushChildren(NodeId nodeId) {
             std::vector<NodeId> children;
             for (NodeId childId : T_->getChildren(nodeId)) {
@@ -2294,6 +2646,9 @@ public:
             }
         }
 
+        /**
+         * @brief Advances to the next available proper part in DFS subtree order.
+         */
         void settle() {
             checkVersions();
             while (currentPixel_ == InvalidNode && !nodeStack_.empty()) {
@@ -2305,13 +2660,25 @@ public:
         }
 
     public:
+        /// Standard iterator category exposed for STL compatibility.
         using iterator_category = std::forward_iterator_tag;
+        /// Proper-part id yielded by the iterator.
         using value_type = NodeId;
+        /// Signed distance type exposed for STL compatibility.
         using difference_type = std::ptrdiff_t;
+        /// Pointer type exposed for STL compatibility.
         using pointer = const NodeId*;
+        /// Reference type exposed for STL compatibility.
         using reference = const NodeId&;
 
+        /**
+         * @brief Creates the end/sentinel connected-component iterator.
+         */
         ConnectedComponentIterator() = default;
+
+        /**
+         * @brief Creates an iterator over every proper part in a rooted subtree.
+         */
         ConnectedComponentIterator(
             const MorphologicalTree* tree,
             NodeId rootNodeId,
@@ -2327,6 +2694,9 @@ public:
             }
         }
 
+        /**
+         * @brief Advances to the next proper part in the connected component.
+         */
         ConnectedComponentIterator& operator++() {
             checkVersions();
             if (currentPixel_ != InvalidNode) {
@@ -2336,12 +2706,22 @@ public:
             return *this;
         }
 
+        /**
+         * @brief Returns the current proper-part id.
+         */
         NodeId operator*() const {
             checkVersions();
             return currentPixel_;
         }
 
+        /**
+         * @brief Compares connected-component iterator positions.
+         */
         bool operator==(const ConnectedComponentIterator& other) const { return currentPixel_ == other.currentPixel_; }
+
+        /**
+         * @brief Compares connected-component iterator positions for inequality.
+         */
         bool operator!=(const ConnectedComponentIterator& other) const { return !(*this == other); }
     };
 
@@ -2356,7 +2736,14 @@ public:
         std::size_t expectedProperPartVersion_ = 0;
 
     public:
+        /**
+         * @brief Creates an empty connected-component range.
+         */
         ConnectedComponentRange() = default;
+
+        /**
+         * @brief Creates a range over all proper parts in the subtree of `rootNodeId`.
+         */
         ConnectedComponentRange(
             const MorphologicalTree* tree,
             NodeId rootNodeId,
@@ -2367,9 +2754,16 @@ public:
               expectedTopologyVersion_(expectedTopologyVersion),
               expectedProperPartVersion_(expectedProperPartVersion) {}
 
+        /**
+         * @brief Returns an iterator at the first proper part in the component.
+         */
         ConnectedComponentIterator begin() const {
             return ConnectedComponentIterator(T_, rootNodeId_, expectedTopologyVersion_, expectedProperPartVersion_);
         }
+
+        /**
+         * @brief Returns the connected-component range sentinel.
+         */
         ConnectedComponentIterator end() const { return ConnectedComponentIterator(); }
     };
 
@@ -2409,13 +2803,25 @@ public:
         }
 
     public:
+        /// Standard iterator category exposed for STL compatibility.
         using iterator_category = std::input_iterator_tag;
+        /// Node id yielded by the iterator.
         using value_type = NodeId;
+        /// Signed distance type exposed for STL compatibility.
         using difference_type = std::ptrdiff_t;
+        /// Pointer type exposed for STL compatibility.
         using pointer = const NodeId*;
+        /// Reference type exposed for STL compatibility.
         using reference = const NodeId&;
 
+        /**
+         * @brief Creates the end/sentinel post-order iterator.
+         */
         PostOrderNodeIterator() = default;
+
+        /**
+         * @brief Creates a post-order iterator rooted at `rootNodeId`.
+         */
         PostOrderNodeIterator(const MorphologicalTree* tree, NodeId rootNodeId, std::size_t expectedVersion) : T_(tree), expectedVersion_(expectedVersion) {
             if (T_ && rootNodeId != InvalidNode) {
                 stack_.push_back({rootNodeId, false});
@@ -2423,6 +2829,9 @@ public:
             }
         }
 
+        /**
+         * @brief Advances to the next node in post-order.
+         */
         PostOrderNodeIterator& operator++() {
             T_->checkTopologyIteratorVersion(expectedVersion_);
             if (!stack_.empty()) {
@@ -2432,11 +2841,22 @@ public:
             return *this;
         }
 
+        /**
+         * @brief Returns the current post-order node id.
+         */
         NodeId operator*() const {
             T_->checkTopologyIteratorVersion(expectedVersion_);
             return current_;
         }
+
+        /**
+         * @brief Compares post-order iterator positions.
+         */
         bool operator==(const PostOrderNodeIterator& other) const { return current_ == other.current_; }
+
+        /**
+         * @brief Compares post-order iterator positions for inequality.
+         */
         bool operator!=(const PostOrderNodeIterator& other) const { return !(*this == other); }
     };
 
@@ -2450,11 +2870,25 @@ public:
         std::size_t expectedVersion_ = 0;
 
     public:
+        /**
+         * @brief Creates an empty post-order range.
+         */
         PostOrderNodeRange() = default;
+
+        /**
+         * @brief Creates a post-order range rooted at `rootNodeId`.
+         */
         PostOrderNodeRange(const MorphologicalTree* tree, NodeId rootNodeId, std::size_t expectedVersion)
             : T_(tree), rootNodeId_(rootNodeId), expectedVersion_(expectedVersion) {}
 
+        /**
+         * @brief Returns an iterator at the first post-order node.
+         */
         PostOrderNodeIterator begin() const { return PostOrderNodeIterator(T_, rootNodeId_, expectedVersion_); }
+
+        /**
+         * @brief Returns the post-order range sentinel.
+         */
         PostOrderNodeIterator end() const { return PostOrderNodeIterator(); }
     };
 
@@ -2468,19 +2902,34 @@ public:
         std::size_t expectedVersion_ = 0;
 
     public:
+        /// Standard iterator category exposed for STL compatibility.
         using iterator_category = std::input_iterator_tag;
+        /// Node id yielded by the iterator.
         using value_type = NodeId;
+        /// Signed distance type exposed for STL compatibility.
         using difference_type = std::ptrdiff_t;
+        /// Pointer type exposed for STL compatibility.
         using pointer = const NodeId*;
+        /// Reference type exposed for STL compatibility.
         using reference = const NodeId&;
 
+        /**
+         * @brief Creates the end/sentinel breadth-first iterator.
+         */
         BreadthFirstNodeIterator() = default;
+
+        /**
+         * @brief Creates a breadth-first iterator rooted at `rootNodeId`.
+         */
         BreadthFirstNodeIterator(const MorphologicalTree* tree, NodeId rootNodeId, std::size_t expectedVersion) : T_(tree), expectedVersion_(expectedVersion) {
             if (T_ && rootNodeId != InvalidNode) {
                 queue_.push(rootNodeId);
             }
         }
 
+        /**
+         * @brief Advances to the next node in breadth-first order.
+         */
         BreadthFirstNodeIterator& operator++() {
             T_->checkTopologyIteratorVersion(expectedVersion_);
             if (!queue_.empty()) {
@@ -2492,11 +2941,22 @@ public:
             return *this;
         }
 
+        /**
+         * @brief Returns the current breadth-first node id.
+         */
         NodeId operator*() const {
             T_->checkTopologyIteratorVersion(expectedVersion_);
             return queue_.front();
         }
+
+        /**
+         * @brief Compares breadth-first iterator exhaustion state.
+         */
         bool operator==(const BreadthFirstNodeIterator& other) const { return queue_.empty() == other.queue_.empty(); }
+
+        /**
+         * @brief Compares breadth-first iterator exhaustion state for inequality.
+         */
         bool operator!=(const BreadthFirstNodeIterator& other) const { return !(*this == other); }
     };
 
@@ -2510,11 +2970,25 @@ public:
         std::size_t expectedVersion_ = 0;
 
     public:
+        /**
+         * @brief Creates an empty breadth-first range.
+         */
         BreadthFirstNodeRange() = default;
+
+        /**
+         * @brief Creates a breadth-first range rooted at `rootNodeId`.
+         */
         BreadthFirstNodeRange(const MorphologicalTree* tree, NodeId rootNodeId, std::size_t expectedVersion)
             : T_(tree), rootNodeId_(rootNodeId), expectedVersion_(expectedVersion) {}
 
+        /**
+         * @brief Returns an iterator at the first breadth-first node.
+         */
         BreadthFirstNodeIterator begin() const { return BreadthFirstNodeIterator(T_, rootNodeId_, expectedVersion_); }
+
+        /**
+         * @brief Returns the breadth-first range sentinel.
+         */
         BreadthFirstNodeIterator end() const { return BreadthFirstNodeIterator(); }
     };
 
@@ -2528,16 +3002,31 @@ public:
         std::size_t expectedVersion_ = 0;
 
     public:
+        /// Standard iterator category exposed for STL compatibility.
         using iterator_category = std::input_iterator_tag;
+        /// Node id yielded by the iterator.
         using value_type = NodeId;
+        /// Signed distance type exposed for STL compatibility.
         using difference_type = std::ptrdiff_t;
+        /// Pointer type exposed for STL compatibility.
         using pointer = const NodeId*;
+        /// Reference type exposed for STL compatibility.
         using reference = const NodeId&;
 
+        /**
+         * @brief Creates the end/sentinel rootward-path iterator.
+         */
         PathToRootIterator() = default;
+
+        /**
+         * @brief Creates an iterator starting at one node and walking to the root.
+         */
         PathToRootIterator(const MorphologicalTree* tree, NodeId current, std::size_t expectedVersion)
             : T_(tree), current_(current), expectedVersion_(expectedVersion) {}
 
+        /**
+         * @brief Advances one step toward the root.
+         */
         PathToRootIterator& operator++() {
             T_->checkTopologyIteratorVersion(expectedVersion_);
             if (T_ && current_ != InvalidNode) {
@@ -2550,11 +3039,22 @@ public:
             return *this;
         }
 
+        /**
+         * @brief Returns the current node on the rootward path.
+         */
         NodeId operator*() const {
             T_->checkTopologyIteratorVersion(expectedVersion_);
             return current_;
         }
+
+        /**
+         * @brief Compares path-to-root iterator positions.
+         */
         bool operator==(const PathToRootIterator& other) const { return current_ == other.current_; }
+
+        /**
+         * @brief Compares path-to-root iterator positions for inequality.
+         */
         bool operator!=(const PathToRootIterator& other) const { return !(*this == other); }
     };
 
@@ -2568,11 +3068,25 @@ public:
         std::size_t expectedVersion_ = 0;
 
     public:
+        /**
+         * @brief Creates an empty rootward-path range.
+         */
         PathToRootRange() = default;
+
+        /**
+         * @brief Creates a range from `start` to the connected root.
+         */
         PathToRootRange(const MorphologicalTree* tree, NodeId start, std::size_t expectedVersion)
             : T_(tree), start_(start), expectedVersion_(expectedVersion) {}
 
+        /**
+         * @brief Returns an iterator at the path start node.
+         */
         PathToRootIterator begin() const { return PathToRootIterator(T_, start_, expectedVersion_); }
+
+        /**
+         * @brief Returns the rootward-path range sentinel.
+         */
         PathToRootIterator end() const { return PathToRootIterator(); }
     };
 
@@ -2587,13 +3101,25 @@ public:
         std::size_t expectedVersion_ = 0;
 
     public:
+        /// Standard iterator category exposed for STL compatibility.
         using iterator_category = std::input_iterator_tag;
+        /// Node id yielded by the iterator.
         using value_type = NodeId;
+        /// Signed distance type exposed for STL compatibility.
         using difference_type = std::ptrdiff_t;
+        /// Pointer type exposed for STL compatibility.
         using pointer = const NodeId*;
+        /// Reference type exposed for STL compatibility.
         using reference = const NodeId&;
 
+        /**
+         * @brief Creates the end/sentinel path-between-nodes iterator.
+         */
         PathBetweenNodesIterator() = default;
+
+        /**
+         * @brief Creates an iterator over a materialised node path.
+         */
         PathBetweenNodesIterator(
             const MorphologicalTree* tree,
             const std::vector<NodeId>* path,
@@ -2601,6 +3127,9 @@ public:
             std::size_t expectedVersion)
             : T_(tree), path_(path), index_(index), expectedVersion_(expectedVersion) {}
 
+        /**
+         * @brief Advances to the next node in the materialised path.
+         */
         PathBetweenNodesIterator& operator++() {
             T_->checkTopologyIteratorVersion(expectedVersion_);
             if (path_ && index_ < path_->size()) {
@@ -2609,14 +3138,24 @@ public:
             return *this;
         }
 
+        /**
+         * @brief Returns the current node id in the materialised path.
+         */
         NodeId operator*() const {
             T_->checkTopologyIteratorVersion(expectedVersion_);
             return (*path_)[index_];
         }
 
+        /**
+         * @brief Compares path iterator positions.
+         */
         bool operator==(const PathBetweenNodesIterator& other) const {
             return path_ == other.path_ && index_ == other.index_;
         }
+
+        /**
+         * @brief Compares path iterator positions for inequality.
+         */
         bool operator!=(const PathBetweenNodesIterator& other) const { return !(*this == other); }
     };
 
@@ -2685,7 +3224,14 @@ public:
         }
 
     public:
+        /**
+         * @brief Creates an empty path-between-nodes range.
+         */
         PathBetweenNodesRange() = default;
+
+        /**
+         * @brief Materialises and owns the path between two nodes.
+         */
         PathBetweenNodesRange(
             const MorphologicalTree* tree,
             NodeId sourceNodeId,
@@ -2695,9 +3241,16 @@ public:
               path_(buildPath(tree, sourceNodeId, targetNodeId)),
               expectedVersion_(expectedVersion) {}
 
+        /**
+         * @brief Returns an iterator at the first node in the materialised path.
+         */
         PathBetweenNodesIterator begin() const {
             return PathBetweenNodesIterator(T_, &path_, 0, expectedVersion_);
         }
+
+        /**
+         * @brief Returns the materialised path range sentinel.
+         */
         PathBetweenNodesIterator end() const {
             return PathBetweenNodesIterator(T_, &path_, path_.size(), expectedVersion_);
         }
@@ -2713,19 +3266,34 @@ public:
         std::size_t expectedVersion_ = 0;
 
     public:
+        /// Standard iterator category exposed for STL compatibility.
         using iterator_category = std::input_iterator_tag;
+        /// Node id yielded by the iterator.
         using value_type = NodeId;
+        /// Signed distance type exposed for STL compatibility.
         using difference_type = std::ptrdiff_t;
+        /// Pointer type exposed for STL compatibility.
         using pointer = const NodeId*;
+        /// Reference type exposed for STL compatibility.
         using reference = const NodeId&;
 
+        /**
+         * @brief Creates the end/sentinel subtree iterator.
+         */
         SubtreeNodeIterator() = default;
+
+        /**
+         * @brief Creates a pre-order subtree iterator rooted at `rootNodeId`.
+         */
         SubtreeNodeIterator(const MorphologicalTree* tree, NodeId rootNodeId, std::size_t expectedVersion) : T_(tree), expectedVersion_(expectedVersion) {
             if (T_ && rootNodeId != InvalidNode) {
                 stack_.push_back(rootNodeId);
             }
         }
 
+        /**
+         * @brief Advances to the next node in pre-order subtree traversal.
+         */
         SubtreeNodeIterator& operator++() {
             T_->checkTopologyIteratorVersion(expectedVersion_);
             if (!stack_.empty()) {
@@ -2742,11 +3310,22 @@ public:
             return *this;
         }
 
+        /**
+         * @brief Returns the current pre-order subtree node id.
+         */
         NodeId operator*() const {
             T_->checkTopologyIteratorVersion(expectedVersion_);
             return stack_.back();
         }
+
+        /**
+         * @brief Compares subtree iterator exhaustion state.
+         */
         bool operator==(const SubtreeNodeIterator& other) const { return stack_.empty() == other.stack_.empty(); }
+
+        /**
+         * @brief Compares subtree iterator exhaustion state for inequality.
+         */
         bool operator!=(const SubtreeNodeIterator& other) const { return !(*this == other); }
     };
 
@@ -2760,11 +3339,25 @@ public:
         std::size_t expectedVersion_ = 0;
 
     public:
+        /**
+         * @brief Creates an empty subtree range.
+         */
         SubtreeNodeRange() = default;
+
+        /**
+         * @brief Creates a pre-order range over the subtree rooted at `rootNodeId`.
+         */
         SubtreeNodeRange(const MorphologicalTree* tree, NodeId rootNodeId, std::size_t expectedVersion)
             : T_(tree), rootNodeId_(rootNodeId), expectedVersion_(expectedVersion) {}
 
+        /**
+         * @brief Returns an iterator at the subtree root.
+         */
         SubtreeNodeIterator begin() const { return SubtreeNodeIterator(T_, rootNodeId_, expectedVersion_); }
+
+        /**
+         * @brief Returns the subtree range sentinel.
+         */
         SubtreeNodeIterator end() const { return SubtreeNodeIterator(); }
     };
 
@@ -2778,15 +3371,29 @@ public:
         std::size_t expectedVersion_ = 0;
 
     public:
+        /**
+         * @brief Creates an empty descendant range.
+         */
         DescendantNodeRange() = default;
+
+        /**
+         * @brief Creates a range over proper descendants of `rootNodeId`.
+         */
         DescendantNodeRange(const MorphologicalTree* tree, NodeId rootNodeId, std::size_t expectedVersion)
             : T_(tree), rootNodeId_(rootNodeId), expectedVersion_(expectedVersion) {}
 
+        /**
+         * @brief Returns an iterator at the first proper descendant.
+         */
         SubtreeNodeIterator begin() const {
             auto it = SubtreeNodeIterator(T_, rootNodeId_, expectedVersion_);
             ++it;
             return it;
         }
+
+        /**
+         * @brief Returns the descendant range sentinel.
+         */
         SubtreeNodeIterator end() const { return SubtreeNodeIterator(); }
     };
 

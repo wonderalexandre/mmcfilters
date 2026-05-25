@@ -93,7 +93,7 @@ void requireTreeInvariantSnapshot(const MorphologicalTree& tree, const std::stri
             }
             std::vector<int> actualPixelsOfCC;
             for (int pixelId = 0; pixelId < tree.getNumTotalProperParts(); ++pixelId) {
-                const NodeId ownerNodeId = tree.getSmallestComponent(pixelId);
+                const NodeId ownerNodeId = tree.getProperPartOwner(pixelId);
                 if (ownerNodeId == InvalidNode) {
                     continue;
                 }
@@ -126,7 +126,7 @@ void requireTreeInvariantSnapshot(const MorphologicalTree& tree, const std::stri
     std::vector<int> properPartOwners(tree.getNumTotalProperParts(), 0);
     for (NodeId nodeId : aliveNodes) {
         for (int properPart : tree.getProperParts(nodeId)) {
-            requireEqual(tree.getSmallestComponent(properPart), nodeId, label + ": smallest component ownership");
+            requireEqual(tree.getProperPartOwner(properPart), nodeId, label + ": proper-part ownership");
             properPartOwners[static_cast<size_t>(properPart)] += 1;
         }
     }
@@ -171,12 +171,12 @@ NodeId randomElement(std::vector<NodeId> values, URBG& rng) {
 int main() {
     {
         auto tree = makeComponentTree(makeComponentTreeFixture(), true);
-        auto editor = tree->edit();
         requireTreeInvariantSnapshot(*tree, "initial max-tree forest invariants");
 
         tree->mergeNodeIntoParent(5);
         requireTreeInvariantSnapshot(*tree, "after merge forest invariants");
 
+        auto editor = tree->edit();
         const NodeId reused = editor.createDetachedNode();
         requireEqual(reused, 5, "reused node id");
         editor.attach(4, reused);
@@ -197,7 +197,6 @@ int main() {
 
     for (bool isMaxtree : {true, false}) {
         auto tree = makeComponentTree(makeComponentTreeFixture(), isMaxtree);
-        auto editor = tree->edit();
         std::mt19937 rng(isMaxtree ? 1337u : 4242u);
 
         for (int step = 0; step < 20; ++step) {
@@ -275,6 +274,7 @@ int main() {
             require(!opCodes.empty(), "connected mutation round must always have an available operation");
             const int op = opCodes[std::uniform_int_distribution<size_t>(0, opCodes.size() - 1)(rng)];
 
+            auto editor = tree->edit();
             switch (op) {
                 case 0: {
                     const NodeId newNodeId = editor.createDetachedNode();
@@ -359,7 +359,7 @@ int main() {
                             mergeableLeaves.push_back(nodeId);
                         }
                     }
-                    tree->mergeNodeIntoParent(randomElement(mergeableLeaves, rng));
+                    editor.mergeNodeIntoParent(randomElement(mergeableLeaves, rng));
                     break;
                 }
                 case 6: {
@@ -369,12 +369,13 @@ int main() {
                             prunableNodes.push_back(nodeId);
                         }
                     }
-                    tree->pruneNode(randomElement(prunableNodes, rng));
+                    editor.pruneNode(randomElement(prunableNodes, rng));
                     break;
                 }
                 default:
                     require(false, "unexpected invariant-test operation");
             }
+            editor.commitUnchecked();
 
             requireTreeInvariantSnapshot(*tree, (isMaxtree ? "max-tree" : "min-tree") + std::string(" connected mutation step ") + std::to_string(step));
 

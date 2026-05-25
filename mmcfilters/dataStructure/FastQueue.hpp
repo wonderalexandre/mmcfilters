@@ -21,6 +21,9 @@ private:
 public:
     FastQueue() = default;
 
+    /**
+     * @brief Creates an empty queue and reserves capacity for `n` elements.
+     */
     FastQueue(size_t n){
         data_.reserve(n); 
     } 
@@ -40,6 +43,7 @@ public:
     /// Appends an element to the tail.
     void push(const T& value) { data_.push_back(value); }
 
+    /// Appends an element to the tail by moving it into storage.
     void push(T&& value) { data_.push_back(std::move(value)); }
 
     /// Removes and returns the next element.
@@ -47,6 +51,8 @@ public:
 
     /// Returns the next element without removing it.
     T& front() { return data_[head_]; }
+
+    /// Returns the next element without removing it.
     const T& front() const { return data_[head_]; }
 };
 }

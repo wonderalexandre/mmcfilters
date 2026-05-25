@@ -72,21 +72,23 @@ concept WeightedTopologyAllowsPrune = requires(T& weighted, NodeId nodeId) {
 };
 
 static_assert(!std::is_constructible_v<TreeEditor, MorphologicalTree&>);
-static_assert(!std::is_constructible_v<WeightedTreeEditor, WeightedMorphologicalTree&>);
+static_assert(!std::is_constructible_v<WeightedTreeEditor<std::uint8_t>, WeightedMorphologicalTree<std::uint8_t>&>);
 
 static_assert(std::is_same_v<decltype(std::declval<MorphologicalTree&>().edit()), TreeEditor>);
-static_assert(std::is_same_v<decltype(std::declval<WeightedMorphologicalTree&>().edit()), WeightedTreeEditor>);
+static_assert(std::is_same_v<decltype(std::declval<WeightedMorphologicalTree<std::uint8_t>&>().edit()), WeightedTreeEditor<std::uint8_t>>);
 
-static_assert(!std::is_base_of_v<MorphologicalTree, WeightedMorphologicalTree>);
-static_assert(!std::is_convertible_v<WeightedMorphologicalTree&, MorphologicalTree&>);
-static_assert(std::is_same_v<decltype(std::declval<WeightedMorphologicalTree&>().topology()), const MorphologicalTree&>);
-static_assert(std::is_same_v<decltype(std::declval<const WeightedMorphologicalTree&>().topology()), const MorphologicalTree&>);
-static_assert(std::is_same_v<decltype(std::declval<const WeightedMorphologicalTree&>().getAltitudeBuffer()), const AltitudeBuffer&>);
+static_assert(!std::is_base_of_v<MorphologicalTree, WeightedMorphologicalTree<std::uint8_t>>);
+static_assert(!std::is_convertible_v<WeightedMorphologicalTree<std::uint8_t>&, MorphologicalTree&>);
+static_assert(std::is_same_v<decltype(std::declval<WeightedMorphologicalTree<std::uint8_t>&>().topology()), const MorphologicalTree&>);
+static_assert(std::is_same_v<decltype(std::declval<const WeightedMorphologicalTree<std::uint8_t>&>().topology()), const MorphologicalTree&>);
+static_assert(std::is_same_v<decltype(std::declval<const WeightedMorphologicalTree<std::uint8_t>&>().getAltitudeBuffer()), const AltitudeBuffer<std::uint8_t>&>);
 
 static_assert(std::is_invocable_r_v<void, decltype(&MorphologicalTree::pruneNode), MorphologicalTree&, NodeId>);
 static_assert(std::is_invocable_r_v<void, decltype(&MorphologicalTree::mergeNodeIntoParent), MorphologicalTree&, NodeId>);
-static_assert(std::is_invocable_r_v<void, decltype(&WeightedMorphologicalTree::pruneNode), WeightedMorphologicalTree&, NodeId>);
-static_assert(std::is_invocable_r_v<void, decltype(&WeightedMorphologicalTree::mergeNodeIntoParent), WeightedMorphologicalTree&, NodeId>);
+static_assert(std::is_invocable_r_v<void, decltype(&WeightedMorphologicalTree<std::uint8_t>::pruneNode), WeightedMorphologicalTree<std::uint8_t>&, NodeId>);
+static_assert(std::is_invocable_r_v<void, decltype(&WeightedMorphologicalTree<std::uint8_t>::mergeNodeIntoParent), WeightedMorphologicalTree<std::uint8_t>&, NodeId>);
+static_assert(std::is_invocable_r_v<void, decltype(&WeightedTreeEditor<std::uint8_t>::pruneNode), WeightedTreeEditor<std::uint8_t>&, NodeId>);
+static_assert(std::is_invocable_r_v<void, decltype(&WeightedTreeEditor<std::uint8_t>::mergeNodeIntoParent), WeightedTreeEditor<std::uint8_t>&, NodeId>);
 
 static_assert(!HasPublicCreateDetachedNode<MorphologicalTree>);
 static_assert(!HasPublicAttachNode<MorphologicalTree>);
@@ -96,17 +98,17 @@ static_assert(!HasPublicMoveChildren<MorphologicalTree>);
 static_assert(!HasPublicMoveProperPart<MorphologicalTree>);
 static_assert(!HasPublicMoveProperParts<MorphologicalTree>);
 
-static_assert(!HasPublicTree<WeightedMorphologicalTree>);
-static_assert(!HasPublicTreeUnderscore<WeightedMorphologicalTree>);
-static_assert(!HasPublicAltitudeUnderscore<WeightedMorphologicalTree>);
-static_assert(!HasPublicAttachNode<WeightedMorphologicalTree>);
-static_assert(!HasPublicDetachNode<WeightedMorphologicalTree>);
-static_assert(!HasPublicMoveNode<WeightedMorphologicalTree>);
-static_assert(!HasPublicMoveChildren<WeightedMorphologicalTree>);
-static_assert(!HasPublicMoveProperPart<WeightedMorphologicalTree>);
-static_assert(!HasPublicMoveProperParts<WeightedMorphologicalTree>);
-static_assert(!WeightedTopologyAllowsEdit<WeightedMorphologicalTree>);
-static_assert(!WeightedTopologyAllowsPrune<WeightedMorphologicalTree>);
+static_assert(!HasPublicTree<WeightedMorphologicalTree<std::uint8_t>>);
+static_assert(!HasPublicTreeUnderscore<WeightedMorphologicalTree<std::uint8_t>>);
+static_assert(!HasPublicAltitudeUnderscore<WeightedMorphologicalTree<std::uint8_t>>);
+static_assert(!HasPublicAttachNode<WeightedMorphologicalTree<std::uint8_t>>);
+static_assert(!HasPublicDetachNode<WeightedMorphologicalTree<std::uint8_t>>);
+static_assert(!HasPublicMoveNode<WeightedMorphologicalTree<std::uint8_t>>);
+static_assert(!HasPublicMoveChildren<WeightedMorphologicalTree<std::uint8_t>>);
+static_assert(!HasPublicMoveProperPart<WeightedMorphologicalTree<std::uint8_t>>);
+static_assert(!HasPublicMoveProperParts<WeightedMorphologicalTree<std::uint8_t>>);
+static_assert(!WeightedTopologyAllowsEdit<WeightedMorphologicalTree<std::uint8_t>>);
+static_assert(!WeightedTopologyAllowsPrune<WeightedMorphologicalTree<std::uint8_t>>);
 
 } // namespace
 
@@ -123,16 +125,22 @@ int main() {
     }
 
     {
-        auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
+        auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), false);
         auto editor = weighted->edit();
 
         const NodeId root = weighted->topology().getRoot();
-        const NodeId insertedNode = editor.createDetachedNode(weighted->getAltitude(root) - 1);
+        const NodeId insertedNode = editor.createDetachedNode(static_cast<std::uint8_t>(weighted->getAltitude(root) + 1));
         editor.attach(root, insertedNode);
 
         requireThrows<std::runtime_error>(
             [&]() { editor.commit(); },
-            "WeightedTreeEditor commit must reject non-monotone altitude after topology validation");
+            "WeightedTreeEditor<std::uint8_t> commit must reject non-monotone altitude after topology validation");
+        require(weighted->topology().isEditing(), "failed weighted commit must leave the edit session open");
+
+        editor.setNodeAltitude(insertedNode, weighted->getAltitude(root));
+        const TreeValidationResult repaired = editor.validateAndCommit();
+        require(repaired.ok, "WeightedTreeEditor<std::uint8_t> validateAndCommit must accept repaired altitude monotonicity");
+        require(!weighted->topology().isEditing(), "successful weighted validateAndCommit must close the edit session");
     }
 
     return 0;

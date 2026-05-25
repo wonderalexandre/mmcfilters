@@ -9,9 +9,12 @@
 #include <string>
 #include <vector>
 
-#include "mmcfilters/attributes/AttributeComputedIncrementally.hpp"
+#include "mmcfilters/attributes/AttributeComputation.hpp"
+#include "mmcfilters/utils/Image.hpp"
 #include "mmcfilters/utils/Common.hpp"
 #include "mmcfilters/trees/MorphologicalTree.hpp"
+#include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
+#include "mmcfilters/trees/TreeAltitudeAlgorithms.hpp"
 #include "mmcfilters/trees/WeightedMorphologicalTree.hpp"
 
 namespace mmcfilters::unit_tests {
@@ -82,6 +85,29 @@ inline void requireThrows(Fn&& fn, const std::string& label) {
     throw std::runtime_error(label + ": expected an exception");
 }
 
+template <class Exception = std::exception, class Fn>
+inline void requireThrowsContaining(Fn&& fn, const std::string& expectedMessageFragment, const std::string& label) {
+    try {
+        fn();
+    } catch (const Exception& ex) {
+        const std::string message = ex.what();
+        if (message.find(expectedMessageFragment) != std::string::npos) {
+            return;
+        }
+
+        std::ostringstream oss;
+        oss << label << ": expected exception message containing `" << expectedMessageFragment
+            << "` but got `" << message << "`";
+        throw std::runtime_error(oss.str());
+    } catch (const std::exception& ex) {
+        std::ostringstream oss;
+        oss << label << ": expected requested exception type but got `" << ex.what() << "`";
+        throw std::runtime_error(oss.str());
+    }
+
+    throw std::runtime_error(label + ": expected an exception");
+}
+
 inline ImageUInt8Ptr makeImage(int rows, int cols, std::initializer_list<uint8_t> values) {
     requireEqual(static_cast<int>(values.size()), rows * cols, "image buffer size");
     auto image = ImageUInt8::create(rows, cols);
@@ -106,13 +132,17 @@ inline ImageUInt8Ptr makeComponentTreeFixture() {
 }
 
 inline std::shared_ptr<MorphologicalTree> makeComponentTree(ImageUInt8Ptr image, bool isMaxtree, double radius = 1.5) {
-    return std::make_shared<MorphologicalTree>(MorphologicalTree::createComponentTree(image, isMaxtree, radius));
+    auto weighted = isMaxtree
+        ? MorphologicalTreeFactory::createMaxTree(image, radius)
+        : MorphologicalTreeFactory::createMinTree(image, radius);
+    return std::make_shared<MorphologicalTree>(weighted.topology().clone());
 }
 
 inline std::shared_ptr<MorphologicalTree> makeTreeOfShapes(
     ImageUInt8Ptr image,
     ToSInterpolation interpolation = ToSInterpolation::SelfDual) {
-    return std::make_shared<MorphologicalTree>(MorphologicalTree::createTreeOfShapes(image, interpolation));
+    auto weighted = MorphologicalTreeFactory::createTreeOfShapes(image, interpolation);
+    return std::make_shared<MorphologicalTree>(weighted.topology().clone());
 }
 
 inline std::shared_ptr<MorphologicalTree> makeTreeFromHigraParent(
@@ -121,25 +151,30 @@ inline std::shared_ptr<MorphologicalTree> makeTreeFromHigraParent(
     int cols,
     bool isMaxtree,
     double radius = 1.5) {
+    std::vector<std::uint8_t> altitude(parent.size(), std::uint8_t{});
+    auto weighted = MorphologicalTreeFactory::createFromHigraParent(
+        std::span<const NodeId>(parent),
+        std::span<const std::uint8_t>(altitude),
+        rows,
+        cols,
+        isMaxtree ? MorphologicalTreeKind::MAX_TREE : MorphologicalTreeKind::MIN_TREE,
+        AdjacencyRelation(rows, cols, radius));
     return std::make_shared<MorphologicalTree>(
-        MorphologicalTree::createFromHigraParent(
-            parent,
-            rows,
-            cols,
-            isMaxtree ? MorphologicalTree::MAX_TREE : MorphologicalTree::MIN_TREE,
-            AdjacencyRelation(rows, cols, radius)));
+        weighted.topology().clone());
 }
 
-inline std::shared_ptr<WeightedMorphologicalTree> makeWeightedComponentTree(ImageUInt8Ptr image, bool isMaxtree, double radius = 1.5) {
-    return std::make_shared<WeightedMorphologicalTree>(
-        WeightedMorphologicalTree::createComponentTree(image, isMaxtree, radius));
+inline std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> makeWeightedComponentTree(ImageUInt8Ptr image, bool isMaxtree, double radius = 1.5) {
+    return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(
+        isMaxtree
+            ? MorphologicalTreeFactory::createMaxTree(image, radius)
+            : MorphologicalTreeFactory::createMinTree(image, radius));
 }
 
-inline std::shared_ptr<WeightedMorphologicalTree> makeWeightedTreeOfShapes(
+inline std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> makeWeightedTreeOfShapes(
     ImageUInt8Ptr image,
     ToSInterpolation interpolation = ToSInterpolation::SelfDual) {
-    return std::make_shared<WeightedMorphologicalTree>(
-        WeightedMorphologicalTree::createTreeOfShapes(image, interpolation));
+    return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(
+        MorphologicalTreeFactory::createTreeOfShapes(image, interpolation));
 }
 
 inline std::vector<NodeId> collectNodeIds(auto range) {
@@ -150,17 +185,17 @@ inline std::vector<NodeId> collectNodeIds(auto range) {
     return ids;
 }
 
-inline std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportFlatHigraHierarchy(const MorphologicalTree& tree) {
-    AltitudeBuffer altitude(static_cast<size_t>(tree.getNumInternalNodeSlots()), AltitudeType{});
-    return WeightedMorphologicalTree::exportHigraHierarchy(tree, std::span<const AltitudeType>(altitude));
+inline std::pair<std::vector<NodeId>, std::vector<std::uint8_t>> exportFlatHigraHierarchy(const MorphologicalTree& tree) {
+    AltitudeBuffer<std::uint8_t> altitude(static_cast<size_t>(tree.getNumInternalNodeSlots()), std::uint8_t{});
+    return TreeAltitudeAlgorithms::exportHigraHierarchy(tree, std::span<const std::uint8_t>(altitude));
 }
 
-inline std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportHigraHierarchy(const WeightedMorphologicalTree& tree) {
+inline std::pair<std::vector<NodeId>, std::vector<std::uint8_t>> exportHigraHierarchy(const WeightedMorphologicalTree<std::uint8_t>& tree) {
     return tree.exportHigraHierarchy();
 }
 
-inline int computeAreaAttribute(const MorphologicalTree& tree, NodeId nodeId) {
-    auto [attrNames, buffer] = AttributeComputedIncrementally::computeSingleAttribute(tree, AREA);
+inline int computeAreaViaAttributeFacade(const MorphologicalTree& tree, NodeId nodeId) {
+    auto [attrNames, buffer] = AttributeComputation::computeSingleTopologyAttribute(tree, AREA);
     return static_cast<int>(buffer[attrNames.linearIndex(nodeId, AREA)]);
 }
 

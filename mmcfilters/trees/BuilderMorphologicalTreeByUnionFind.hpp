@@ -1,8 +1,17 @@
 #pragma once
 
 #include "../utils/AdjacencyRelation.hpp"
+#include "../utils/Image.hpp"
 #include "../utils/Common.hpp"
 
+#include <algorithm>
+#include <cstdint>
+#include <iostream>
+#include <numeric>
+#include <stdexcept>
+#include <tuple>
+#include <type_traits>
+#include <vector>
 
 namespace mmcfilters {
 
@@ -30,7 +39,13 @@ inline constexpr int ToSDefaultInfinityCol = 0;
 class IMorphologicalTreeBuilder {
 public:
     virtual ~IMorphologicalTreeBuilder() = default;
-    
+
+    /**
+     * @brief Builds the union-find parent representation for an 8-bit image.
+     *
+     * @return Tuple containing the parent image, the processed pixel order, and
+     * the number of created tree nodes.
+     */
     virtual std::tuple<std::vector<int>, std::vector<int>, int> createTreeByUnionFind(const ImageUInt8Ptr& imgPtr) const = 0;
 };
 
@@ -44,9 +59,16 @@ private:
     bool isMaxtree;
 
 public:
+    /**
+     * @brief Creates a component-tree builder using `adj` as image adjacency.
+     *
+     * `isMaxtree` selects max-tree ordering when true and min-tree ordering when
+     * false. The adjacency object is borrowed and must outlive the builder.
+     */
     explicit BuilderComponentTree(AdjacencyRelation* adj, bool isMaxtree) : adj(adj), isMaxtree(isMaxtree) { }
     ~BuilderComponentTree() { }
 
+    /// @cond INTERNAL
     template <typename PixelType>
     std::vector<int> sort(ImagePtr<PixelType> imgPtr) const {
         const int n = imgPtr->getSize();
@@ -56,8 +78,8 @@ public:
         std::vector<int> orderedPixels(n);
         PixelType* img = imgPtr->rawData();
 
-        if constexpr (std::is_floating_point_v<PixelType>) {
-            if (PRINT_LOG) std::cout << "Sorting floating point image with size: " << n << std::endl;
+        if constexpr (!std::is_same_v<PixelType, std::uint8_t>) {
+            if (PRINT_LOG) std::cout << "Sorting image with comparison sort, size: " << n << std::endl;
             std::iota(orderedPixels.begin(), orderedPixels.end(), 0);
             if (isMaxtree) {
                 std::stable_sort(orderedPixels.begin(), orderedPixels.end(),
@@ -67,7 +89,7 @@ public:
                                  [&](int a, int b) { return img[a] > img[b]; });
             }
         } else {
-            if (PRINT_LOG) std::cout << "Sorting integer image with size: " << n << std::endl;
+            if (PRINT_LOG) std::cout << "Sorting uint8 image with counting sort, size: " << n << std::endl;
         
             // counting sort com faixa [0..maxvalue]; 
             int maxvalue =  static_cast<int>(img[0]);
@@ -92,12 +114,19 @@ public:
         }
         return orderedPixels;
     }
+    /// @endcond
 
+    /**
+     * @brief Builds the parent image of a uint8 max-tree or min-tree.
+     */
     std::tuple<std::vector<int>, std::vector<int>, int> createTreeByUnionFind(const ImageUInt8Ptr& imgPtr) const override {
         return createTreeByUnionFind<uint8_t>(imgPtr);
     }
 
-    
+
+    /**
+     * @brief Builds the parent image of a typed max-tree or min-tree.
+     */
     template <typename PixelType>
     std::tuple<std::vector<int>, std::vector<int>, int> createTreeByUnionFind(const ImagePtr<PixelType>& imgPtr) const {
         std::vector<int> orderedPixels = sort(imgPtr);
@@ -136,10 +165,11 @@ public:
 
 
 
-/************************ Tree of Shapes support ************************/
+	/************************ Tree of Shapes support ************************/
 
-/*
- * Adaptive adjacency backend used by the tree-of-shapes construction.
+    /// @cond INTERNAL
+	/*
+	 * Adaptive adjacency backend used by the tree-of-shapes construction.
  *
  * Diagonal links are activated on demand so that the interpolated grid can
  * emulate the required 4/8-connectivity behaviour during the union-find pass.
@@ -153,8 +183,8 @@ enum class DiagonalConnection : uint8_t {
     NW = 1 << 3
 };
 
-// Operadores auxiliares
-inline DiagonalConnection operator|(DiagonalConnection a, DiagonalConnection b) {
+	// Helper operators for diagonal-connection flags.
+	inline DiagonalConnection operator|(DiagonalConnection a, DiagonalConnection b) {
     return static_cast<DiagonalConnection>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
 }
 
@@ -209,10 +239,10 @@ public:
         return dconnFlags[ImageUtils::to1D(row, col, numCols)];
     }
 
-    /**
-     * @brief Iterador sobre os vizinhos válidos considerando conexões diagonais.
-     */
-    class NeighborIterator {
+	/**
+	 * @brief Iterator over valid neighbours including enabled diagonal links.
+	 */
+	class NeighborIterator {
     private:
         AdjacencyUC &instance;
         int row, col;
@@ -257,10 +287,10 @@ public:
         }
     };
 
-    /**
-     * @brief Range helper que produz iteradores de vizinhança válidos.
-     */
-    class NeighborRange {
+	/**
+	 * @brief Range helper that produces valid-neighbour iterators.
+	 */
+	class NeighborRange {
     private:
         AdjacencyUC &instance;
         int row, col;
@@ -285,10 +315,10 @@ public:
 };
 
 
-/**
- * @brief Fila de prioridades discreta utilizada durante a construção da ToS.
- */
-class PriorityQueueToS {
+	/**
+	 * @brief Discrete priority queue used during tree-of-shapes construction.
+	 */
+	class PriorityQueueToS {
 private:
     std::vector<std::deque<int>> buckets;
     int currentPriority;
@@ -352,16 +382,21 @@ public:
 
         numElements--;  
         return element;
-    }
-};
+	    }
+	};
+    /// @endcond
 
 
 
 
-/**
- * @brief Constrói árvores de formas (ToS) usando o algoritmo de Thierry Géraud et al.
- */
-class BuilderTreeOfShape: public IMorphologicalTreeBuilder {
+	/**
+	 * @brief Builds trees of shapes (ToS) using a union-find construction.
+	 *
+	 * The builder interpolates the input image according to `ToSInterpolation`,
+	 * constructs a max-tree on the interpolated domain, and projects the resulting
+	 * hierarchy back to the original image domain.
+	 */
+	class BuilderTreeOfShape: public IMorphologicalTreeBuilder {
 private:
     ToSInterpolation interpolation;
     int infinitySeedRow;
@@ -430,16 +465,24 @@ private:
 
 
 
-public:
+	public:
 
-    explicit BuilderTreeOfShape(
-        ToSInterpolation interpolation,
+	    /**
+	     * @brief Creates a tree-of-shapes builder.
+	     *
+	     * @param interpolation Interpolation/connectivity convention.
+	     * @param infinitySeedRow Row of the propagation seed in the interpolated domain.
+	     * @param infinitySeedCol Column of the propagation seed in the interpolated domain.
+	     */
+	    explicit BuilderTreeOfShape(
+	        ToSInterpolation interpolation,
         int infinitySeedRow = ToSDefaultInfinityRow,
         int infinitySeedCol = ToSDefaultInfinityCol)
-        : interpolation(interpolation), infinitySeedRow(infinitySeedRow), infinitySeedCol(infinitySeedCol) {}
-    ~BuilderTreeOfShape() { }
+	        : interpolation(interpolation), infinitySeedRow(infinitySeedRow), infinitySeedCol(infinitySeedCol) {}
+	    ~BuilderTreeOfShape() { }
 
-     std::tuple<std::vector<ToSLevel>, std::vector<ToSLevel>, AdjacencyUC> interpolateImage(const ImageUInt8Ptr& imgPtr) const{
+        /// @cond INTERNAL
+	     std::tuple<std::vector<ToSLevel>, std::vector<ToSLevel>, AdjacencyUC> interpolateImage(const ImageUInt8Ptr& imgPtr) const{
         // Implements the self-dual span-based immersion used by Boutry's PhD
         // thesis: ISpan(u) followed by front propagation from a median-valued
         // outer boundary. Internal levels are stored in Z/2 by scaling values
@@ -472,36 +515,31 @@ public:
         int interpNumRows = interpolatedNumRows(numRows);
         int size = interpNumCols * interpNumRows;
 
-        // Aloca memória para os resultados de interpolação (mínimo e máximo)
+        // Allocate interpolation result buffers for minimum and maximum levels.
         std::vector<ToSLevel> interpolationMin(size);
         std::vector<ToSLevel> interpolationMax(size);
-        //this->imgU = std::make_unique<uint8_t[]>(size);
-        //this->interpolationMax = std::make_unique<uint8_t[]>(size);
 
         int numBoundary = 2 * (numRows + numCols) - 4;
-        
-        //std::unique_ptr<uint8_t[]> pixelsPtr(new uint8_t[numBoundary]);// Para calcular a mediana
-        std::vector<int> pixels(numBoundary);
-        //uint8_t* pixels = pixelsPtr.get();
 
-        int pT, i = 0; // i é um contador para o array pixels
+        std::vector<int> pixels(numBoundary);
+
+        int pT, i = 0; // Boundary-pixel counter for the median buffer.
         
         for (int p = 0; p < numCols * numRows; p++) {
             auto [row, col] = ImageUtils::to2D(p, numCols);
 
-            // Verifica se o pixel está na borda
+            // Check whether the pixel lies on the image border.
             if (row == 0 || row == numRows - 1 || col == 0 || col == numCols - 1) {
-                pixels[i++] = static_cast<int>(img[p]); // Adiciona o pixel ao array pixels
+                pixels[i++] = static_cast<int>(img[p]); // Add the pixel to the median buffer.
             }
 
-            // Calcula o índice para imagem interpolada
+            // Compute the interpolated-image index.
             pT = ImageUtils::to1D(originalPointRow(row), originalPointCol(col), interpNumCols);
 
-            // Define os valores de interpolação
+            // Assign interpolation values.
             interpolationMin[pT] = interpolationMax[pT] = scaledOriginalLevel(img[p]);
         }
 
-        //std::sort(pixels, pixels + numBoundary);
         std::sort(pixels.begin(), pixels.end());
         int median;
         if (numBoundary % 2 == 0) {
@@ -590,7 +628,7 @@ public:
         AdjacencyUC adj(interpNumRows, interpNumCols, true);
 
 
-        // Aloca memória para os resultados de interpolação (mínimo e máximo)
+        // Allocate interpolation result buffers for minimum and maximum levels.
         std::vector<ToSLevel> interpolationMin(size);
         std::vector<ToSLevel> interpolationMax(size);
 
@@ -599,10 +637,10 @@ public:
         for (int p = 0; p < numCols * numRows; p++) {
             auto [row, col] = ImageUtils::to2D(p, numCols);
 
-            // Calcula o índice para imagem interpolada
+            // Compute the interpolated-image index.
             pT = ImageUtils::to1D(originalPointRow(row), originalPointCol(col), interpNumCols);
 
-            // Define os valores de interpolação
+            // Assign interpolation values.
             interpolationMin[pT] = interpolationMax[pT] = img[p];
         }
 
@@ -612,7 +650,7 @@ public:
             return img[ImageUtils::to1D(origRow, origCol, numCols)];
         };
 
-        // Bordas
+        // Borders.
         for (int row=0; row < interpNumRows; row++){
             int col;
             if(row % 2 == 1){ //horizontal e vertical
@@ -693,7 +731,7 @@ public:
         // Compute interval from 1-faces 
         for (int row=1; row < interpNumRows-1; row++){
             for (int col=1; col < interpNumCols-1; col++){
-                if (row % 2 == 1 && col % 2 == 1) continue;  // já definido
+                if (row % 2 == 1 && col % 2 == 1) continue;  // Already defined.
 
                 pT = ImageUtils::to1D(row, col, interpNumCols);
                 if (col % 2 == 0 && row % 2 == 1) {
@@ -712,7 +750,7 @@ public:
          // Compute interval from 0-faces 
          for (int row=1; row < interpNumRows-1; row++){
             for (int col=1; col < interpNumCols-1; col++){
-                if (row % 2 == 1 && col % 2 == 1) continue;  // já definido
+                if (row % 2 == 1 && col % 2 == 1) continue;  // Already defined.
                 pT = ImageUtils::to1D(row, col, interpNumCols);
                 if (row % 2 == 0 && col % 2 == 0) {
                     // | v0 | v1 |
@@ -766,20 +804,20 @@ public:
         auto [interpolationMin, interpolationMax, adj] = usesConnectivityMap()? interpolateImage4c8c(imgPtr): interpolateImage(imgPtr);
         
         std::vector<uint8_t> dejavu(size, 0);  
-        std::vector<int> imgR(size);  // Pixels ordenados
-        std::vector<ToSLevel> imgU(size);        // Níveis de cinza da imagem
+        std::vector<int> imgR(size);  // Ordered pixels.
+        std::vector<ToSLevel> imgU(size);        // Interpolated image levels.
         
-        PriorityQueueToS queue(usesConnectivityMap() ? ToSUInt8Depth : ToSSelfDualDepth);  // Fila de prioridade
-        int pInfinito = infinitySeedIndex(interpNumRows, interpNumCols);
-        int priorityQueueOld = interpolationMin[pInfinito];
-        queue.initial(pInfinito, priorityQueueOld);  
-        dejavu[pInfinito] = true;
+        PriorityQueueToS queue(usesConnectivityMap() ? ToSUInt8Depth : ToSSelfDualDepth);  // Priority queue.
+        int infinityPixel = infinitySeedIndex(interpNumRows, interpNumCols);
+        int priorityQueueOld = interpolationMin[infinityPixel];
+        queue.initial(infinityPixel, priorityQueueOld);
+        dejavu[infinityPixel] = true;
 
         int order = 0; 
         int depth = 0;
         while (!queue.isEmpty()) {
-            int h = queue.priorityPop();  // Retirar o elemento com maior prioridade
-            int priorityQueue = queue.getCurrentPriority(); // Prioridade corrente
+            int h = queue.priorityPop();  // Pop the element with highest priority.
+            int priorityQueue = queue.getCurrentPriority(); // Current priority.
             if(usesConnectivityMap()){
                 if(priorityQueue != priorityQueueOld) depth++;
                 imgU[h] = depth;
@@ -787,14 +825,14 @@ public:
                 imgU[h] = priorityQueue;
             }
             
-            // Armazenar o índice h em imgR na ordem correta
+            // Store h in the correct output order.
             imgR[order++] = h;
             
-            // Adjacências
+            // Adjacencies.
             for(int n: adj.getNeighborPixels(h)){
                 if (!dejavu[n]) {
                     queue.priorityPush(n, interpolationMin[n], interpolationMax[n]);
-                    dejavu[n] = true;  // Marcar como processado
+                    dejavu[n] = true;  // Mark as processed.
                 }
             }
             priorityQueueOld = priorityQueue;
@@ -803,29 +841,34 @@ public:
     }
 
 
-    //Testa se é um pixel é original 
+    // Tests whether an interpolated pixel corresponds to an original pixel.
     inline bool isOriginal1D(int p, int interpNumCols) const{
         /*
         p = row x  numCols + col
-        Sabemos que numCols é ímpar. 
-        - Testaremos se row e col são ímpares assim:
-        Se row é ímpar, então row x numCols é ímpar. 
-        Logo, row e col são ímpares sse p é par E col é ímpar
+        numCols is odd. If row is odd, row * numCols is odd.
+        Therefore row and col are odd iff p is even and row is odd.
         */
         int row = p / interpNumCols;
         
-        // original <=> (p é par) ∧ (row é ímpar)
+        // original <=> p is even and row is odd.
         return ((p & 1) == 0) && ((row & 1) == 1);
     }
 
-    // mapeia pixel interpolado para pixel original
+    // Maps an interpolated pixel to the original image domain.
     inline int toOriginal1D(int pStar, int interNumCols, int numCols) const{
         int r = pStar / interNumCols;
-        int c = pStar - r * interNumCols;         // evita operador %
+        int c = pStar - r * interNumCols;         // Avoid the modulo operator.
         return ((r - 1) >> 1) * numCols + ((c - 1) >> 1);
     }
+        /// @endcond
 
-    std::tuple<std::vector<int>, std::vector<int>, int> createTreeByUnionFind(const ImageUInt8Ptr& imgPtr) const override {
+	    /**
+	     * @brief Builds the projected tree-of-shapes parent representation.
+	     *
+	     * @return Tuple containing the parent image on the original domain, the
+	     * projected pixel order, and the number of created tree nodes.
+	     */
+	    std::tuple<std::vector<int>, std::vector<int>, int> createTreeByUnionFind(const ImageUInt8Ptr& imgPtr) const override {
 
         int numRows = imgPtr->getNumRows();
         int numCols = imgPtr->getNumCols();
@@ -836,7 +879,7 @@ public:
         int numPixelsInterp = interpNumCols * interpNumRows;
         auto [imgInterpolate, orderedPixelsInterpolete, adj] = sort(imgPtr);
 
-        // ---------- UF em imagem interpolada ----------
+        // Union-find over the interpolated image.
         std::vector<int> zPar(numPixelsInterp, InvalidNode);
         std::vector<int> parentInterpolate(numPixelsInterp, InvalidNode);
         auto findRoot = [&](int pStar) {
@@ -844,7 +887,7 @@ public:
             return pStar;
         };
 
-        for (int i = numPixelsInterp - 1; i >= 0; --i) { // folhas -> raiz
+        for (int i = numPixelsInterp - 1; i >= 0; --i) { // Leaves to root.
             int pStar = orderedPixelsInterpolete[i];
             parentInterpolate[pStar] = pStar;
             zPar[pStar] = pStar;
@@ -859,19 +902,19 @@ public:
         auto sameLevel = [&](int aStar, int bStar){ 
             return imgInterpolate[aStar] == imgInterpolate[bStar]; 
         };
-        auto repOf = [&](int pStar) { // Representante do platô de s: se o pai está no mesmo nível, o rep é o pai; senão, é ele próprio.
+        auto repOf = [&](int pStar) { // Plateau representative: parent at same level, otherwise the point itself.
             int parStar = parentInterpolate[pStar];
             return (parStar == pStar || imgInterpolate[parStar] == imgInterpolate[pStar]) ? parStar : pStar;
         };
         
-        // Passo 1 — canonização + marcar apenas representantes
+        // Step 1 - canonicalization and representative marking.
         int numNodes=0;
-        std::vector<int> repPixelsOriginais(numPixelsInterp, InvalidNode); // válido só quando o índice é representante de platô
-        for (int i = 0; i < numPixelsInterp; ++i) {  // raiz -> folhas
+        std::vector<int> representativeOriginalPixels(numPixelsInterp, InvalidNode); // Valid only for plateau representatives.
+        for (int i = 0; i < numPixelsInterp; ++i) {  // Root to leaves.
             int pStar = orderedPixelsInterpolete[i];
             int qStar = parentInterpolate[pStar];
             
-            // canoniza 1 passo dentro do platô
+            // Canonicalize one step inside the plateau.
             if (sameLevel(parentInterpolate[qStar], qStar))
                 parentInterpolate[pStar] = parentInterpolate[qStar];
             
@@ -879,16 +922,16 @@ public:
                 ++numNodes;
 
             if (isOriginal1D(pStar, interpNumCols)) {
-                int rep = repOf(pStar);              // calculado na hora
-                if (repPixelsOriginais[rep] == InvalidNode) repPixelsOriginais[rep] = pStar;  // elege o o primeiro original do platô
+                int rep = repOf(pStar);              // Computed on demand.
+                if (representativeOriginalPixels[rep] == InvalidNode) representativeOriginalPixels[rep] = pStar;  // Select the first original point in the plateau.
             }
         }
 
         auto representativeOriginalAbove = [&](int repStar) {
             int currentRep = repStar;
             while (currentRep != InvalidNode) {
-                if (repPixelsOriginais[currentRep] != InvalidNode) {
-                    return repPixelsOriginais[currentRep];
+                if (representativeOriginalPixels[currentRep] != InvalidNode) {
+                    return representativeOriginalPixels[currentRep];
                 }
                 int parentStar = parentInterpolate[currentRep];
                 if (parentStar == currentRep) {
@@ -903,28 +946,28 @@ public:
         std::vector<int> parent(numPixels, InvalidNode);
         std::vector<int> orderedPixels; orderedPixels.reserve(numPixels);
         int projectedRootOriginal = InvalidNode;
-        for (int i = 0; i < numPixelsInterp; ++i) { // raiz -> folhas
+        for (int i = 0; i < numPixelsInterp; ++i) { // Root to leaves.
             int pStar = orderedPixelsInterpolete[i];
             if (!isOriginal1D(pStar, interpNumCols)) continue;
 
             int parStar   = parentInterpolate[pStar];
             int qStar;
-            if (parStar == pStar) { // raiz da arvore
+            if (parStar == pStar) { // Tree root.
                 qStar = pStar;
             }
             else if (sameLevel(parStar, pStar)) {
                 int repP = repOf(pStar);
-                if (repPixelsOriginais[repP] == pStar) {
-                    // pStar é o representante ORIGINAL do seu platô. Seu pai vem do platô ACIMA
+                if (representativeOriginalPixels[repP] == pStar) {
+                    // pStar is the original representative of its plateau; its parent comes from the plateau above.
                     int repAbove = repOf(parentInterpolate[repP]);
                     qStar = representativeOriginalAbove(repAbove);
                 } else {
-                    // mesmo platô. Seu pai é o representante ORIGINAL do mesmo platô
-                    qStar = repPixelsOriginais[repP];
+                    // Same plateau: parent is the original representative of that plateau.
+                    qStar = representativeOriginalPixels[repP];
                 }
             }
             else {
-                // nível diferente. Seu pai é o representante ORIGINAL do platô do pai
+                // Different level: parent is the original representative of the parent's plateau.
                 int repPar = repOf(parStar);
                 qStar = representativeOriginalAbove(repPar);
             }
@@ -936,7 +979,7 @@ public:
                 qStar = projectedRootOriginal;
             }
 
-            //projeção para o parent e orderedPixels originais
+            // Projection to the original parent and ordered-pixel buffers.
             int p = toOriginal1D(pStar, interpNumCols, numCols);
             int q = toOriginal1D(qStar,  interpNumCols, numCols);
             parent[p] = q;

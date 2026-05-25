@@ -1,23 +1,60 @@
 #pragma once
 
 #include "MorphologicalTree.hpp"
+#include "TreeAltitudeAlgorithms.hpp"
 #include "TreeEditor.hpp"
-#include "detail/TreeAltitudeOpsDetail.hpp"
+#include "WeightedTreeView.hpp"
 
-#include <algorithm>
+#include <span>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 namespace mmcfilters {
 
-class AttributeComputer;
-class AttributeComputedIncrementally;
-class AttributeFilters;
-class AttributeOpeningPrimitivesFamily;
-class ComputerMSER;
-class ExtinctionValues;
-class UltimateAttributeOpening;
+template<AltitudeValue T>
 class WeightedTreeEditor;
+
+template<AltitudeValue T>
+class WeightedMorphologicalTree;
+
+
+namespace detail {
+
+/**
+ * @brief Declares how constructor-provided altitude values are indexed.
+ *
+ * `WeightedMorphologicalTree` stores altitudes in the dense internal `NodeId`
+ * domain. Some builders already produce values in that domain, while static
+ * imports from Higra provide values in the original compact Higra domain. This
+ * enum makes the required remapping explicit at the constructor boundary.
+ */
+enum class AltitudeDomain {
+    /**
+     * @brief Values are indexed directly by internal `NodeId` slots.
+     */
+    InternalNodeSlots,
+
+    /**
+     * @brief Values are indexed by preserved Higra node ids and must be remapped.
+     */
+    HigraNodeIds
+};
+
+/**
+ * @brief Lightweight altitude view passed by factory-owned construction paths.
+ *
+ * The view is consumed synchronously by the tagged constructor and copied into
+ * the weighted tree's owned altitude buffer. It does not extend the lifetime of
+ * the referenced values.
+ */
+template<AltitudeValue T>
+struct AltitudeInput {
+    std::span<const T> values;
+    AltitudeDomain domain;
+};
+
+} // namespace detail
 
 /**
  * @brief Wrapper pairing `MorphologicalTree` topology with an external altitude buffer.
@@ -28,513 +65,181 @@ class WeightedTreeEditor;
  * Staged structural edits must go through `edit()`, which returns a
  * `WeightedTreeEditor`.
  *
- * `createFromHigraParent()` imports a static Higra hierarchy and preserves its
- * original node-id domain until the topology is edited. `exportHigraHierarchy()`
- * creates a new compact Higra domain for the current live rooted tree.
+ * Static Higra imports preserve their original node-id domain until the
+ * topology is edited. `exportHigraHierarchy()` creates a new compact Higra
+ * domain for the current live rooted tree.
  */
+template<AltitudeValue T>
 class WeightedMorphologicalTree {
-    friend class WeightedTreeEditor;
-    friend class AttributeComputer;
-    friend class AttributeComputedIncrementally;
-    friend class AttributeFilters;
-    friend class AttributeOpeningPrimitivesFamily;
-    friend class ComputerMSER;
-    friend class ExtinctionValues;
-    friend class UltimateAttributeOpening;
+    friend class WeightedTreeEditor<T>;
+
+public:
+    /// Altitude scalar type stored by this weighted tree.
+    using altitude_type = T;
+
+    /// Dense altitude buffer indexed by internal `NodeId`.
+    using altitude_buffer = std::vector<T>;
 
 private:
     MorphologicalTree tree_;
-    AltitudeBuffer altitude_;
+    altitude_buffer altitude_;
 
-    struct ExportedHigraLayout {
-        std::vector<NodeId> sortedNodes;
-        std::vector<NodeId> nodeToHigra;
-        std::vector<NodeId> properParts;
-        NodeId numLeaves = 0;
-        NodeId numVertices = 0;
-    };
-
-    static ExportedHigraLayout computeExportedHigraLayout(const MorphologicalTree& tree, std::span<const AltitudeType> altitude) {
-        validateAltitudeBufferShape(tree, altitude);
-
-        if (tree.getRoot() == InvalidNode || !tree.isAlive(tree.getRoot())) {
-            throw std::runtime_error("Cannot export a tree without a valid rooted component.");
-        }
-
-        std::vector<NodeId> exportedNodes;
-        exportedNodes.reserve(static_cast<size_t>(tree.getNumNodes()));
-        for (NodeId nodeId : tree.getNodeSubtree(tree.getRoot())) {
-            exportedNodes.push_back(nodeId);
-        }
-
-        if (static_cast<int>(exportedNodes.size()) != tree.getNumNodes()) {
-            throw std::runtime_error("Cannot export a forest or a tree with detached alive nodes to a compact Higra representation.");
-        }
-
-        const NodeId numLeaves = tree.getNumTotalProperParts();
-        const NodeId numAliveNodes = static_cast<NodeId>(exportedNodes.size());
-        const NodeId numVertices = numLeaves + numAliveNodes;
-        auto sortedNodes = exportedNodes;
-
-        bool sortAscendingAltitude = true;
-        for (NodeId nodeId : sortedNodes) {
-            if (tree.isRoot(nodeId)) {
-                continue;
-            }
-
-            const NodeId parentNodeId = tree.getNodeParent(nodeId);
-            if (parentNodeId == InvalidNode || !tree.isAlive(parentNodeId)) {
-                throw std::runtime_error("Cannot export a node whose parent is not part of the rooted alive component.");
-            }
-            if (getAltitude(altitude, nodeId) > getAltitude(altitude, parentNodeId)) {
-                sortAscendingAltitude = false;
-            }
-        }
-
-        std::stable_sort(
-            sortedNodes.begin(),
-            sortedNodes.end(),
-            [&](NodeId lhs, NodeId rhs) {
-                const AltitudeType altL = getAltitude(altitude, lhs);
-                const AltitudeType altR = getAltitude(altitude, rhs);
-                if (altL != altR) {
-                    return sortAscendingAltitude ? altL < altR : altL > altR;
-                }
-                return tree.getNodeTimePostOrder(lhs) < tree.getNodeTimePostOrder(rhs);
-            });
-
-        std::vector<NodeId> nodeToHigra(static_cast<size_t>(tree.getNumInternalNodeSlots()), InvalidNode);
-        for (NodeId i = 0; i < numAliveNodes; ++i) {
-            const NodeId oldNodeId = sortedNodes[static_cast<size_t>(i)];
-            nodeToHigra[static_cast<size_t>(oldNodeId)] = numLeaves + i;
-        }
-
-        std::vector<NodeId> properParts(static_cast<size_t>(numLeaves), InvalidNode);
-        std::iota(properParts.begin(), properParts.end(), NodeId{0});
-
-        return {std::move(sortedNodes), std::move(nodeToHigra), std::move(properParts), numLeaves, numVertices};
-    }
-
-    void configureEmptyTopology(int rows, int cols, int treeType, std::optional<AdjacencyRelation> adjacency, NodeId numProperParts) {
-        tree_.treeType_ = treeType;
-        tree_.numRows_ = rows;
-        tree_.numCols_ = cols;
-        tree_.adj_ = std::move(adjacency);
-        tree_.tosAdjacencyPolicy_ = std::nullopt;
-        tree_.initializeEmptyStorage(static_cast<size_t>(numProperParts));
-        altitude_.clear();
-    }
-
-    void assignAltitudeFromDirectProperParts(const ImageUInt8Ptr& img) {
-        altitude_.assign(static_cast<size_t>(tree_.getNumInternalNodeSlots()), AltitudeType{});
+    /**
+     * @brief Initializes node altitudes from one direct proper part per node.
+     *
+     * Image-built component trees create each internal node at an image level,
+     * so any direct proper part owned by that node carries the node altitude.
+     */
+    void assignAltitudeFromDirectProperParts(const ImagePtr<T>& img) {
+        altitude_.assign(static_cast<size_t>(tree_.getNumInternalNodeSlots()), T{});
         for (NodeId nodeId : tree_.getAliveNodeIds()) {
             const auto properParts = tree_.getProperParts(nodeId);
             auto it = properParts.begin();
             if (it == properParts.end()) {
                 throw std::runtime_error("Cannot infer node altitude from a topology node without direct proper parts.");
             }
-            altitude_[static_cast<size_t>(nodeId)] = static_cast<AltitudeType>((*img)[*it]);
+            altitude_[static_cast<size_t>(nodeId)] = static_cast<T>((*img)[*it]);
         }
     }
 
-    void assignInternalAltitude(std::span<const AltitudeType> altitudeValues) {
+    /**
+     * @brief Copies an altitude buffer already indexed by internal node slots.
+     */
+    void assignInternalAltitude(std::span<const T> altitudeValues) {
         if (altitudeValues.size() != static_cast<size_t>(tree_.getNumInternalNodeSlots())) {
             throw std::invalid_argument("Internal altitude buffer size must match the dense internal-node domain.");
         }
+        TreeAltitudeAlgorithms::validateFiniteAltitudeValues(altitudeValues, "WeightedMorphologicalTree internal altitude input");
         altitude_.assign(altitudeValues.begin(), altitudeValues.end());
     }
 
-    void importAltitudeFromHigra(std::span<const AltitudeType> higraAltitude) {
+    /**
+     * @brief Remaps imported Higra-node altitudes to internal node slots.
+     */
+    void importAltitudeFromHigra(std::span<const T> higraAltitude) {
         if (static_cast<size_t>(tree_.getNumHigraNodes()) != higraAltitude.size()) {
             throw std::invalid_argument("Higra altitude buffer size must match the preserved imported Higra hierarchy.");
         }
-        altitude_.assign(static_cast<size_t>(tree_.getNumInternalNodeSlots()), AltitudeType{});
+        TreeAltitudeAlgorithms::validateFiniteAltitudeValues(higraAltitude, "WeightedMorphologicalTree Higra altitude input");
+        altitude_.assign(static_cast<size_t>(tree_.getNumInternalNodeSlots()), T{});
         for (NodeId slotId = 0; slotId < tree_.getNumInternalNodeSlots(); ++slotId) {
             const NodeId higraNodeId = tree_.getHigraNodeId(slotId);
-            altitude_[static_cast<size_t>(slotId)] = static_cast<AltitudeType>(higraAltitude[static_cast<size_t>(higraNodeId)]);
+            altitude_[static_cast<size_t>(slotId)] = static_cast<T>(higraAltitude[static_cast<size_t>(higraNodeId)]);
+        }
+    }
+
+    /**
+     * @brief Returns whether this tree kind has no global monotone altitude order.
+     */
+    static bool skipsMonotoneValidation(const MorphologicalTree& tree) noexcept {
+        const MorphologicalTreeKind treeType = tree.getTreeType();
+        return treeType == MorphologicalTreeKind::TREE_OF_SHAPES || treeType == MorphologicalTreeKind::SELF_DUAL_RESIDUAL_TREE;
+    }
+
+    /**
+     * @brief Checks the local parent/children altitude constraints for one edit.
+     *
+     * This keeps `setAltitude()` proportional to the node degree instead of
+     * scanning the full tree.
+     */
+    void validateLocalMonotoneAltitudeUpdate(NodeId nodeId, T value) const {
+        if (skipsMonotoneValidation(tree_)) {
+            return;
+        }
+
+        const bool increasingTowardLeaves = tree_.getTreeType() == MorphologicalTreeKind::MAX_TREE;
+        if (!tree_.isRoot(nodeId)) {
+            const NodeId parentNodeId = tree_.getNodeParent(nodeId);
+            if (parentNodeId == InvalidNode || !tree_.isAlive(parentNodeId)) {
+                throw std::runtime_error("Monotone altitude update requires an alive non-root node to have an alive parent.");
+            }
+            const T parentAltitude = altitude_[static_cast<size_t>(parentNodeId)];
+            if (increasingTowardLeaves && parentAltitude > value) {
+                throw std::runtime_error("Max-tree altitude update must keep altitude non-decreasing from parent to child.");
+            }
+            if (!increasingTowardLeaves && parentAltitude < value) {
+                throw std::runtime_error("Min-tree altitude update must keep altitude non-increasing from parent to child.");
+            }
+        }
+
+        for (NodeId childId : tree_.getChildren(nodeId)) {
+            const T childAltitude = altitude_[static_cast<size_t>(childId)];
+            if (increasingTowardLeaves && value > childAltitude) {
+                throw std::runtime_error("Max-tree altitude update must keep altitude non-decreasing from parent to child.");
+            }
+            if (!increasingTowardLeaves && value < childAltitude) {
+                throw std::runtime_error("Min-tree altitude update must keep altitude non-increasing from parent to child.");
+            }
         }
     }
 
 private:
-    WeightedMorphologicalTree() = default;
-
-    WeightedMorphologicalTree(MorphologicalTree&& topology, AltitudeBuffer altitudeBuffer) : tree_(std::move(topology)), altitude_(std::move(altitudeBuffer)) {
-        validateAltitudeBufferShape();
-    }
-
-    WeightedMorphologicalTree(
-        ImageUInt8Ptr img,
-        ToSInterpolation interpolation = ToSInterpolation::SelfDual,
-        int infinitySeedRow = ToSDefaultInfinityRow,
-        int infinitySeedCol = ToSDefaultInfinityCol) {
-        MorphologicalTree::requireNonEmptyImageDomain(img, "WeightedMorphologicalTree::createTreeOfShapes");
-        configureEmptyTopology(
-            img->getNumRows(),
-            img->getNumCols(),
-            MorphologicalTree::TREE_OF_SHAPES,
-            std::nullopt,
-            static_cast<NodeId>(img->getSize()));
-        tree_.tosAdjacencyPolicy_ = MorphologicalTree::treeOfShapesAdjacencyPolicy(interpolation, tree_.numRows_, tree_.numCols_);
-        BuilderTreeOfShape builderUF(interpolation, infinitySeedRow, infinitySeedCol);
-        tree_.build(img, builderUF);
-        assignAltitudeFromDirectProperParts(img);
-        validateAltitudeBufferShape();
-    }
-
-    explicit WeightedMorphologicalTree(ImageUInt8Ptr img, bool isMaxtree, double radius = 1.5) {
-        MorphologicalTree::requireNonEmptyImageDomain(img, "WeightedMorphologicalTree::createComponentTree");
-        configureEmptyTopology(
-            img->getNumRows(),
-            img->getNumCols(),
-            isMaxtree ? MorphologicalTree::MAX_TREE : MorphologicalTree::MIN_TREE,
-            std::optional<AdjacencyRelation>(std::in_place, img->getNumRows(), img->getNumCols(), radius),
-            static_cast<NodeId>(img->getSize()));
-        BuilderComponentTree builderUF(&*tree_.adj_, isMaxtree);
-        tree_.build(img, builderUF);
-        assignAltitudeFromDirectProperParts(img);
-        validateAltitudeBufferShape();
-    }
+    WeightedMorphologicalTree() = delete;
 
 public:
     WeightedMorphologicalTree(const WeightedMorphologicalTree&) = delete;
     WeightedMorphologicalTree& operator=(const WeightedMorphologicalTree&) = delete;
+
+    /// Transfers topology and altitude ownership from another weighted tree.
     WeightedMorphologicalTree(WeightedMorphologicalTree&&) noexcept = default;
+
+    /// Move-assigns topology and altitude ownership from another weighted tree.
     WeightedMorphologicalTree& operator=(WeightedMorphologicalTree&&) noexcept = default;
 
-    static WeightedMorphologicalTree createComponentTree(ImageUInt8Ptr img, bool isMaxtree, double radius = 1.5) {
-        return WeightedMorphologicalTree(img, isMaxtree, radius);
-    }
-
-    static WeightedMorphologicalTree createTreeOfShapes(
-        ImageUInt8Ptr img,
-        ToSInterpolation interpolation = ToSInterpolation::SelfDual,
-        int infinitySeedRow = ToSDefaultInfinityRow,
-        int infinitySeedCol = ToSDefaultInfinityCol) {
-        return WeightedMorphologicalTree(img, interpolation, infinitySeedRow, infinitySeedCol);
-    }
-
     /**
-     * @brief Reuses an existing topology and infers node altitudes from an image.
+     * @brief Creates a weighted tree by inferring node altitudes from an image.
      *
-     * The topology is cloned, so the returned weighted tree can be edited
-     * independently from the caller-owned `topology`.
-     */
-    static WeightedMorphologicalTree createFromTopology(const MorphologicalTree& topology, ImageUInt8Ptr img) {
-        MorphologicalTree::requireNonEmptyImageDomain(img, "WeightedMorphologicalTree::createFromTopology");
-        topology.validateConnectedRootedTree();
-
-        if (img->getNumRows() != topology.getNumRowsOfImage() ||
-            img->getNumCols() != topology.getNumColsOfImage() ||
-            img->getSize() != topology.getNumTotalProperParts()) {
-            throw std::invalid_argument("WeightedMorphologicalTree::createFromTopology requires an image domain matching the topology.");
-        }
-
-        WeightedMorphologicalTree weighted;
-        weighted.tree_ = topology.clone();
-        weighted.assignAltitudeFromDirectProperParts(img);
-        weighted.validateAltitudeBufferShape();
-        weighted.validateMonotoneAltitude();
-        return weighted;
-    }
-
-    /**
-     * @brief Imports topology and altitude from a static Higra parent/altitude representation.
-     */
-    static WeightedMorphologicalTree createFromHigraParent(
-        std::span<const NodeId> higraParent,
-        std::span<const AltitudeType> higraAltitude,
-        int rows,
-        int cols,
-        int treeType,
-        std::optional<AdjacencyRelation> adjacency = std::nullopt) {
-        WeightedMorphologicalTree weighted;
-        weighted.tree_ = MorphologicalTree::createFromHigraParent(
-            higraParent,
-            rows,
-            cols,
-            treeType,
-            std::move(adjacency));
-        weighted.importAltitudeFromHigra(higraAltitude);
-        return weighted;
-    }
-
-    /**
-     * @brief Returns the explicit altitude buffer required by static weighted operations.
-     */
-    static const AltitudeBuffer& requireAltitudeBuffer(const AltitudeBuffer* altitude) {
-        if (altitude == nullptr) {
-            throw std::logic_error("This operation requires an explicit altitude buffer. Use WeightedMorphologicalTree or provide an explicit altitude buffer.");
-        }
-        return *altitude;
-    }
-
-    /**
-     * @brief Validates that an altitude buffer covers the dense internal-node domain.
-     */
-    static void validateAltitudeBufferShape(const MorphologicalTree& tree, std::span<const AltitudeType> altitude) {
-        if (altitude.size() != static_cast<size_t>(tree.getNumInternalNodeSlots())) {
-            throw std::runtime_error("Altitude buffer size must match the dense internal-node domain.");
-        }
-    }
-
-    static void validateAltitudeBufferShape(const MorphologicalTree& tree, const AltitudeBuffer* altitude) {
-        validateAltitudeBufferShape(tree, std::span<const AltitudeType>(requireAltitudeBuffer(altitude)));
-    }
-
-    /**
-     * @brief Reads one node altitude from an explicit altitude buffer.
-     */
-    static AltitudeType getAltitude(std::span<const AltitudeType> altitude, NodeId nodeId) {
-        if (nodeId < 0 || static_cast<size_t>(nodeId) >= altitude.size()) {
-            throw std::invalid_argument("Altitude access requires a valid internal NodeId.");
-        }
-        return altitude[static_cast<size_t>(nodeId)];
-    }
-
-    static AltitudeType getAltitude(const AltitudeBuffer* altitude, NodeId nodeId) {
-        return getAltitude(std::span<const AltitudeType>(requireAltitudeBuffer(altitude)), nodeId);
-    }
-
-    /**
-     * @brief Computes the altitude difference between one node and its parent.
-     */
-    static AltitudeDiffType getNodeResidue(const MorphologicalTree& tree, std::span<const AltitudeType> altitude, NodeId nodeId) {
-        validateAltitudeBufferShape(tree, altitude);
-        if (!tree.isAlive(nodeId)) {
-            throw std::invalid_argument("Node residue requires a live internal NodeId.");
-        }
-        const NodeId parentNodeId = tree.getNodeParent(nodeId);
-        if (parentNodeId == InvalidNode || parentNodeId == nodeId) {
-            return getAltitude(altitude, nodeId);
-        }
-        return getAltitude(altitude, nodeId) - getAltitude(altitude, parentNodeId);
-    }
-
-    static AltitudeDiffType getNodeResidue(const MorphologicalTree& tree, const AltitudeBuffer* altitude, NodeId nodeId) {
-        return getNodeResidue(tree, std::span<const AltitudeType>(requireAltitudeBuffer(altitude)), nodeId);
-    }
-
-    /**
-     * @brief Finds the first ascendant at distance `delta` in altitude space.
-     */
-    static NodeId getNodeAscendant(const MorphologicalTree& tree, std::span<const AltitudeType> altitude, NodeId nodeId, int delta) {
-        validateAltitudeBufferShape(tree, altitude);
-        if (!tree.isAlive(nodeId)) {
-            throw std::invalid_argument("Node ascendant search requires a live internal NodeId.");
-        }
-        NodeId currentNodeId = nodeId;
-        while (true) {
-            if (tree.isMaxtree()) {
-                if (getAltitude(altitude, nodeId) >= getAltitude(altitude, currentNodeId) + delta) {
-                    return currentNodeId;
-                }
-            } else {
-                if (getAltitude(altitude, nodeId) <= getAltitude(altitude, currentNodeId) - delta) {
-                    return currentNodeId;
-                }
-            }
-            if (tree.isRoot(currentNodeId)) {
-                return currentNodeId;
-            }
-            currentNodeId = tree.getNodeParent(currentNodeId);
-        }
-    }
-
-    /**
-     * @brief Computes delta ascendants and the largest-area descendant attached to each ascendant.
-     */
-    static std::pair<std::vector<NodeId>, std::vector<NodeId>> computeAscendantsAndDescendants(
-        const MorphologicalTree& tree,
-        const AltitudeBuffer* altitude,
-        int delta) {
-        std::vector<NodeId> ascendants(static_cast<size_t>(tree.getNumInternalNodeSlots()), InvalidNode);
-        std::vector<NodeId> descendants(static_cast<size_t>(tree.getNumInternalNodeSlots()), InvalidNode);
-        validateAltitudeBufferShape(tree, altitude);
-        const std::vector<int32_t> areaByNode = detail::tree_altitude_ops::computeAreasIncrementally(tree);
-        const AltitudeBuffer& altitudeBuffer = requireAltitudeBuffer(altitude);
-
-        for (NodeId nodeId : tree.getAliveNodeIds()) {
-            const NodeId ascendantNodeId = getNodeAscendant(tree, std::span<const AltitudeType>(altitudeBuffer), nodeId, delta);
-            if (ascendantNodeId == InvalidNode) {
-                continue;
-            }
-            detail::tree_altitude_ops::maxAreaDescendants(tree, areaByNode, descendants, ascendantNodeId, nodeId);
-            if (descendants[static_cast<size_t>(ascendantNodeId)] != InvalidNode) {
-                ascendants[static_cast<size_t>(nodeId)] = ascendantNodeId;
-            }
-        }
-
-        return {std::move(ascendants), std::move(descendants)};
-    }
-
-    /**
-     * @brief Reconstructs an image from topology ownership and explicit node altitudes.
-     */
-    static ImageUInt8Ptr reconstructImage(const MorphologicalTree& tree, std::span<const AltitudeType> altitude) {
-        validateAltitudeBufferShape(tree, altitude);
-        ImageUInt8Ptr image = ImageUInt8::create(tree.getNumRowsOfImage(), tree.getNumColsOfImage());
-        auto imgBuffer = image->rawData();
-        for (int pixelId = 0; pixelId < tree.getNumTotalProperParts(); ++pixelId) {
-            const NodeId nodeId = tree.getSmallestComponent(pixelId);
-            imgBuffer[static_cast<size_t>(pixelId)] = static_cast<uint8_t>(getAltitude(altitude, nodeId));
-        }
-        return image;
-    }
-
-    static ImageUInt8Ptr reconstructImage(const MorphologicalTree& tree, const AltitudeBuffer* altitude) {
-        return reconstructImage(tree, std::span<const AltitudeType>(requireAltitudeBuffer(altitude)));
-    }
-
-    /**
-     * @brief Exports a live rooted topology and explicit altitudes to a compact parent/altitude representation.
-     */
-    static std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportHigraHierarchy(
-        const MorphologicalTree& tree,
-        std::span<const AltitudeType> altitude) {
-        const ExportedHigraLayout layout = computeExportedHigraLayout(tree, altitude);
-        const NodeId numLeaves = layout.numLeaves;
-        const NodeId numVertices = layout.numVertices;
-
-        std::vector<NodeId> parent(static_cast<size_t>(numVertices), InvalidNode);
-        std::vector<AltitudeType> exportedAltitude(static_cast<size_t>(numVertices), AltitudeType{});
-
-        for (NodeId oldNodeId : layout.sortedNodes) {
-            const NodeId newNodeId = layout.nodeToHigra[static_cast<size_t>(oldNodeId)];
-            exportedAltitude[static_cast<size_t>(newNodeId)] = getAltitude(altitude, oldNodeId);
-        }
-
-        for (NodeId leafIndex = 0; leafIndex < numLeaves; ++leafIndex) {
-            const NodeId properPart = layout.properParts[static_cast<size_t>(leafIndex)];
-            const NodeId ownerNodeId = tree.getSmallestComponent(properPart);
-            if (ownerNodeId == InvalidNode || !tree.isAlive(ownerNodeId)) {
-                throw std::runtime_error("Each proper part must belong to one alive node when exporting a compact Higra hierarchy.");
-            }
-            parent[static_cast<size_t>(leafIndex)] = layout.nodeToHigra[static_cast<size_t>(ownerNodeId)];
-            exportedAltitude[static_cast<size_t>(leafIndex)] = getAltitude(altitude, ownerNodeId);
-        }
-
-        for (NodeId oldNodeId : layout.sortedNodes) {
-            const NodeId newNodeId = layout.nodeToHigra[static_cast<size_t>(oldNodeId)];
-            const NodeId oldParentNodeId = tree.getNodeParent(oldNodeId);
-            parent[static_cast<size_t>(newNodeId)] =
-                oldParentNodeId == oldNodeId ? newNodeId : layout.nodeToHigra[static_cast<size_t>(oldParentNodeId)];
-        }
-
-        return {std::move(parent), std::move(exportedAltitude)};
-    }
-
-    static std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportHigraHierarchy(
-        const MorphologicalTree& tree,
-        const AltitudeBuffer* altitude) {
-        return exportHigraHierarchy(tree, std::span<const AltitudeType>(requireAltitudeBuffer(altitude)));
-    }
-
-private:
-    /**
-     * @brief Projects dense node-indexed values to the compact Higra layout
-     * produced by `exportHigraHierarchy()`.
+     * The topology must already be built over the same image domain. For each
+     * live internal node, the constructor reads one direct proper part owned by
+     * that node and copies the corresponding image gray level into the dense
+     * altitude buffer.
      *
-     * The node-value input is row-major by internal `NodeId`: a scalar buffer
-     * has `valuesPerNode == 1`, while a multi-attribute buffer has
-     * `valuesPerNode` columns per node. `leafValues` can either contain one
-     * row of `valuesPerNode` unit values to broadcast to every exported leaf,
-     * or one row per exported leaf in `ExportedHigraLayout::properParts` order.
+     * This constructor is tag-protected because image-to-altitude inference is a
+     * construction detail owned by the factory.
      */
-    static std::vector<float> projectNodeValuesToExportedHigra(
-        const MorphologicalTree& tree,
-        std::span<const AltitudeType> altitude,
-        std::span<const float> nodeValues,
-        std::span<const float> leafValues,
-        int valuesPerNode = 1) {
-        if (valuesPerNode <= 0) {
-            throw std::invalid_argument("valuesPerNode must be positive.");
+    WeightedMorphologicalTree(detail::MorphologicalTreeConstructionTag, MorphologicalTree&& topology, ImagePtr<T> img) : tree_(std::move(topology)) {
+        if (!img) {
+            throw std::invalid_argument("WeightedMorphologicalTree construction requires a non-null image.");
+        }
+        if (img->getNumRows() <= 0 || img->getNumCols() <= 0 || img->getSize() <= 0) {
+            throw std::invalid_argument("WeightedMorphologicalTree construction requires a non-empty 2D image.");
         }
 
-        const size_t expectedSize = static_cast<size_t>(tree.getNumInternalNodeSlots()) * static_cast<size_t>(valuesPerNode);
-        if (nodeValues.size() != expectedSize) {
-            throw std::invalid_argument("Node-value buffer size must match the dense internal-node domain.");
+        if (img->getNumRows() != tree_.getNumRowsOfImage() || img->getNumCols() != tree_.getNumColsOfImage() || img->getSize() != tree_.getNumTotalProperParts()) {
+            throw std::invalid_argument("WeightedMorphologicalTree construction requires an image domain matching the topology.");
         }
 
-        const ExportedHigraLayout layout = computeExportedHigraLayout(tree, altitude);
-        const size_t numColumns = static_cast<size_t>(valuesPerNode);
-        const size_t broadcastLeafSize = numColumns;
-        const size_t perLeafSize = static_cast<size_t>(layout.numLeaves) * numColumns;
-        if (leafValues.size() != broadcastLeafSize && leafValues.size() != perLeafSize) {
-            throw std::invalid_argument("Leaf-value buffer must contain either one row of unit values or one row per proper part.");
-        }
-
-        const bool perLeafValues = leafValues.size() == perLeafSize;
-        std::vector<float> projected(static_cast<size_t>(layout.numVertices) * numColumns, 0.0f);
-
-        for (NodeId leafIndex = 0; leafIndex < layout.numLeaves; ++leafIndex) {
-            for (int column = 0; column < valuesPerNode; ++column) {
-                const size_t columnIndex = static_cast<size_t>(column);
-                projected[static_cast<size_t>(leafIndex) * numColumns + columnIndex] =
-                    perLeafValues
-                        ? leafValues[static_cast<size_t>(leafIndex) * numColumns + columnIndex]
-                        : leafValues[columnIndex];
-            }
-        }
-
-        for (NodeId nodeId : layout.sortedNodes) {
-            const NodeId higraNodeId = layout.nodeToHigra[static_cast<size_t>(nodeId)];
-            for (int column = 0; column < valuesPerNode; ++column) {
-                projected[
-                    static_cast<size_t>(higraNodeId) * numColumns + static_cast<size_t>(column)] =
-                    nodeValues[
-                        static_cast<size_t>(nodeId) * numColumns + static_cast<size_t>(column)];
-            }
-        }
-
-        return projected;
+        assignAltitudeFromDirectProperParts(img);
+        validateAltitudeBufferShape();
     }
 
-    static std::vector<float> projectNodeValuesToExportedHigra(
-        const MorphologicalTree& tree,
-        const AltitudeBuffer* altitude,
-        std::span<const float> nodeValues,
-        std::span<const float> leafValues,
-        int valuesPerNode = 1) {
-        return projectNodeValuesToExportedHigra(tree, std::span<const AltitudeType>(requireAltitudeBuffer(altitude)), nodeValues, leafValues, valuesPerNode);
-    }
-
-public:
     /**
-     * @brief Validates altitude monotonicity for max-trees and min-trees.
+     * @brief Creates a weighted tree from an explicit altitude input view.
+     *
+     * The `AltitudeInput::domain` field determines whether values are copied
+     * directly as internal-node altitudes or remapped from a preserved Higra
+     * hierarchy. This is used by Higra import and SDRT materialization paths.
+     *
+     * This constructor is tag-protected so callers cannot accidentally bypass
+     * the public factory contracts for altitude shape and domain.
      */
-    static void validateMonotoneAltitude(const MorphologicalTree& tree, std::span<const AltitudeType> altitude) {
-        validateAltitudeBufferShape(tree, altitude);
-        if (tree.getTreeType() == MorphologicalTree::TREE_OF_SHAPES) {
-            return;
+    WeightedMorphologicalTree(detail::MorphologicalTreeConstructionTag, MorphologicalTree&& topology, detail::AltitudeInput<T> altitude) : tree_(std::move(topology)) {
+        switch (altitude.domain) {
+            case detail::AltitudeDomain::InternalNodeSlots:
+                assignInternalAltitude(altitude.values);
+                break;
+            case detail::AltitudeDomain::HigraNodeIds:
+                importAltitudeFromHigra(altitude.values);
+                break;
         }
-
-        const bool increasingTowardLeaves = tree.isMaxtree();
-        for (NodeId nodeId : tree.getAliveNodeIds()) {
-            if (tree.isRoot(nodeId)) {
-                continue;
-            }
-
-            const NodeId parentNodeId = tree.getNodeParent(nodeId);
-            if (parentNodeId == InvalidNode || !tree.isAlive(parentNodeId)) {
-                throw std::runtime_error("Monotonic validation requires every alive non-root node to have an alive parent.");
-            }
-
-            if (increasingTowardLeaves) {
-                if (getAltitude(altitude, parentNodeId) > getAltitude(altitude, nodeId)) {
-                    throw std::runtime_error("Max-tree altitude buffer must be non-decreasing from parent to child.");
-                }
-            } else if (getAltitude(altitude, parentNodeId) < getAltitude(altitude, nodeId)) {
-                throw std::runtime_error("Min-tree altitude buffer must be non-increasing from parent to child.");
-            }
-        }
+        validateAltitudeBufferShape();
     }
 
-    static void validateMonotoneAltitude(const MorphologicalTree& tree, const AltitudeBuffer* altitude) {
-        validateMonotoneAltitude(tree, std::span<const AltitudeType>(requireAltitudeBuffer(altitude)));
-    }
-
+    /**
+     * @brief Checks that the altitude buffer covers the dense internal-node domain.
+     */
     void validateAltitudeBufferShape() const {
-        validateAltitudeBufferShape(tree_, altitude_);
+        TreeAltitudeAlgorithms::validateAltitudeBufferShape(tree_, altitudeSpan());
     }
 
     /**
@@ -544,36 +249,106 @@ public:
      * handle. Use `edit()` for staged topology edits or the safe public
      * mutators for complete local changes.
      */
-    const MorphologicalTree& topology() const noexcept {
+    [[nodiscard]] const MorphologicalTree& topology() const noexcept {
         return tree_;
     }
 
-    const AltitudeBuffer& getAltitudeBuffer() const noexcept {
+    /**
+     * @brief Returns the dense altitude buffer indexed by internal `NodeId`.
+     */
+    [[nodiscard]] const altitude_buffer& getAltitudeBuffer() const noexcept {
         return altitude_;
     }
 
-    void setAltitudeBuffer(AltitudeBuffer altitudeBuffer) {
+    /**
+     * @brief Returns a read-only span over the dense altitude buffer.
+     */
+    [[nodiscard]] AltitudeSpan<T> altitudeSpan() const noexcept {
+        return std::span<const T>(altitude_);
+    }
+
+    /**
+     * @brief Creates a non-owning weighted view over this owner.
+     */
+    [[nodiscard]] WeightedTreeView<T> asView() const {
+        return WeightedTreeView<T>(tree_, altitudeSpan());
+    }
+
+    /**
+     * @brief Replaces the owned altitude buffer after full validation.
+     *
+     * Shape and finite-value checks are followed by global monotone validation
+     * for max/min component trees.
+     */
+    void setAltitudeBuffer(altitude_buffer altitudeBuffer) {
+        tree_.requireNotEditing("WeightedMorphologicalTree::setAltitudeBuffer");
         if (altitudeBuffer.size() != static_cast<size_t>(tree_.getNumInternalNodeSlots())) {
             throw std::runtime_error("Altitude buffer size must match the dense internal-node domain.");
         }
+        TreeAltitudeAlgorithms::validateFiniteAltitudeValues(std::span<const T>(altitudeBuffer), "WeightedMorphologicalTree::setAltitudeBuffer");
+        TreeAltitudeAlgorithms::validateMonotoneAltitude(tree_, std::span<const T>(altitudeBuffer));
         altitude_ = std::move(altitudeBuffer);
     }
 
-    void validateMonotoneAltitude() const {
-        validateMonotoneAltitude(tree_, altitude_);
+    /**
+     * @brief Replaces the owned altitude buffer without checking tree-order monotonicity.
+     *
+     * This still validates the committed-edit boundary, dense buffer shape, and
+     * finite floating-point values. It exists for callers that already maintain
+     * the max-tree/min-tree altitude invariant by construction.
+     */
+    void setAltitudeBufferUnchecked(altitude_buffer altitudeBuffer) {
+        tree_.requireNotEditing("WeightedMorphologicalTree::setAltitudeBufferUnchecked");
+        if (altitudeBuffer.size() != static_cast<size_t>(tree_.getNumInternalNodeSlots())) {
+            throw std::runtime_error("Altitude buffer size must match the dense internal-node domain.");
+        }
+        TreeAltitudeAlgorithms::validateFiniteAltitudeValues(std::span<const T>(altitudeBuffer), "WeightedMorphologicalTree::setAltitudeBufferUnchecked");
+        altitude_ = std::move(altitudeBuffer);
     }
 
-    AltitudeType getAltitude(NodeId nodeId) const {
+    /**
+     * @brief Validates the current altitude buffer against the topology order.
+     */
+    void validateMonotoneAltitude() const {
+        TreeAltitudeAlgorithms::validateMonotoneAltitude(tree_, altitudeSpan());
+    }
+
+    /**
+     * @brief Returns one live node altitude from the dense buffer.
+     */
+    [[nodiscard]] T getAltitude(NodeId nodeId) const {
         if (!tree_.isAlive(nodeId) || static_cast<size_t>(nodeId) >= altitude_.size()) {
             throw std::invalid_argument("WeightedMorphologicalTree::getAltitude requires a live internal NodeId.");
         }
         return altitude_[static_cast<size_t>(nodeId)];
     }
 
-    void setAltitude(NodeId nodeId, AltitudeType value) {
+    /**
+     * @brief Updates one live node altitude with local monotonicity validation.
+     */
+    void setAltitude(NodeId nodeId, T value) {
+        tree_.requireNotEditing("WeightedMorphologicalTree::setAltitude");
         if (!tree_.isAlive(nodeId) || static_cast<size_t>(nodeId) >= altitude_.size()) {
             throw std::invalid_argument("WeightedMorphologicalTree::setAltitude requires a live internal NodeId.");
         }
+        TreeAltitudeAlgorithms::validateFiniteAltitudeValue(value, static_cast<std::size_t>(nodeId), "WeightedMorphologicalTree::setAltitude");
+        validateLocalMonotoneAltitudeUpdate(nodeId, value);
+        altitude_[static_cast<size_t>(nodeId)] = value;
+    }
+
+    /**
+     * @brief Updates one node altitude without checking tree-order monotonicity.
+     *
+     * This still validates the committed-edit boundary, live-node access, and
+     * finite floating-point values. Staged topology edits should continue to use
+     * `WeightedTreeEditor::setNodeAltitude`.
+     */
+    void setAltitudeUnchecked(NodeId nodeId, T value) {
+        tree_.requireNotEditing("WeightedMorphologicalTree::setAltitudeUnchecked");
+        if (!tree_.isAlive(nodeId) || static_cast<size_t>(nodeId) >= altitude_.size()) {
+            throw std::invalid_argument("WeightedMorphologicalTree::setAltitudeUnchecked requires a live internal NodeId.");
+        }
+        TreeAltitudeAlgorithms::validateFiniteAltitudeValue(value, static_cast<std::size_t>(nodeId), "WeightedMorphologicalTree::setAltitudeUnchecked");
         altitude_[static_cast<size_t>(nodeId)] = value;
     }
 
@@ -584,50 +359,53 @@ public:
      * slots may retain their old values until a compact export is requested.
      */
     void pruneNode(NodeId nodeId) {
+        tree_.requireNotEditing("WeightedMorphologicalTree::pruneNode");
         tree_.pruneNode(nodeId);
     }
 
     /**
      * @brief Merges one node into its parent through the owned topology.
      *
-     * This is the weighted counterpart of the safe public topology mutator.
+     * This is the weighted counterpart of the safe public topology mutator. Dead
+     * slots keep stale altitude values until a compact export is requested.
      */
     void mergeNodeIntoParent(NodeId nodeId) {
+        tree_.requireNotEditing("WeightedMorphologicalTree::mergeNodeIntoParent");
         tree_.mergeNodeIntoParent(nodeId);
     }
 
-    AltitudeDiffType getNodeResidue(NodeId nodeId) const {
-        return getNodeResidue(tree_, altitude_, nodeId);
+    /**
+     * @brief Returns the altitude difference between a node and its parent.
+     */
+    [[nodiscard]] AltitudeDiff<T> getNodeResidue(NodeId nodeId) const {
+        return TreeAltitudeAlgorithms::getNodeResidue(tree_, altitudeSpan(), nodeId);
     }
 
-    ImageUInt8Ptr reconstructionImage() const {
-        return reconstructImage(tree_, altitude_);
+    /**
+     * @brief Reconstructs an image by assigning each proper part its owner altitude.
+     */
+    [[nodiscard]] ImagePtr<T> reconstructionImage() const {
+        return TreeAltitudeAlgorithms::reconstructImage(tree_, altitudeSpan(), "WeightedMorphologicalTree::reconstructImage");
     }
 
     /**
      * @brief Exports the current live rooted tree to a new compact Higra parent/altitude representation.
+     *
+     * @details
+     * Attribute buffers are projected through
+     * `AttributeComputation::projectNodeValuesToExportedHigra()` so
+     * weighted-tree export remains limited to topology and altitudes.
      */
-    std::pair<std::vector<NodeId>, std::vector<AltitudeType>> exportHigraHierarchy() const {
-        return exportHigraHierarchy(tree_, altitude_);
+    [[nodiscard]] std::pair<std::vector<NodeId>, std::vector<T>> exportHigraHierarchy() const {
+        return TreeAltitudeAlgorithms::exportHigraHierarchy(tree_, altitudeSpan());
     }
 
-private:
-    /**
-     * @brief Projects node-indexed values to the compact Higra layout that
-     * `exportHigraHierarchy()` would return for the current tree state.
-     */
-    std::vector<float> projectNodeValuesToExportedHigra(
-        std::span<const float> nodeValues,
-        std::span<const float> leafValues,
-        int valuesPerNode = 1) const {
-        return projectNodeValuesToExportedHigra(tree_, altitude_, nodeValues, leafValues, valuesPerNode);
-    }
-
-public:
     /**
      * @brief Opens the only public entrypoint for staged weighted edits.
      */
-    WeightedTreeEditor edit();
+    [[nodiscard("Discarding the editor leaves the weighted tree edit session open")]] WeightedTreeEditor<T> edit() {
+        return WeightedTreeEditor<T>(*this);
+    }
 };
 
 /**
@@ -637,83 +415,180 @@ public:
  * keeping the external altitude buffer as the canonical weighted state.
  * `commit()` first validates the topology and then validates monotone altitude.
  */
+template<AltitudeValue T>
 class WeightedTreeEditor {
-    friend class WeightedMorphologicalTree;
+    friend class WeightedMorphologicalTree<T>;
 
 private:
-    WeightedMorphologicalTree& weighted_;
+    WeightedMorphologicalTree<T>& weighted_;
     TreeEditor editor_;
 
-    explicit WeightedTreeEditor(WeightedMorphologicalTree& weighted)
-        : weighted_(weighted), editor_(weighted.tree_.edit()) {}
+    /**
+     * @brief Opens the underlying topology edit session.
+     */
+    explicit WeightedTreeEditor(WeightedMorphologicalTree<T>& weighted) : weighted_(weighted), editor_(weighted.tree_.edit()) {}
 
 public:
-    NodeId createDetachedNode(AltitudeType altitude = AltitudeType{}) {
+
+    /**
+     * @brief Creates a detached topology node and initializes its altitude.
+     *
+     * The altitude buffer is reserved before mutating the topology so allocation
+     * failure cannot leave a new node without a matching altitude slot.
+     */
+    [[nodiscard("Discarding a detached node id makes the staged edit impossible to complete safely")]] NodeId createDetachedNode(T altitude = T{}) {
+        TreeAltitudeAlgorithms::validateFiniteAltitudeValue(altitude, 0, "WeightedTreeEditor::createDetachedNode");
+        const std::size_t requiredAltitudeSize = static_cast<std::size_t>(weighted_.tree_.getNumInternalNodeSlots()) + (weighted_.tree_.getNumFreeNodeSlots() == 0 ? 1u : 0u);
+        weighted_.altitude_.reserve(requiredAltitudeSize);
         const NodeId nodeId = editor_.createDetachedNode();
-        weighted_.altitude_.resize(static_cast<size_t>(weighted_.tree_.getNumInternalNodeSlots()), AltitudeType{});
+        weighted_.altitude_.resize(static_cast<size_t>(weighted_.tree_.getNumInternalNodeSlots()), T{});
         weighted_.altitude_[static_cast<size_t>(nodeId)] = altitude;
         return nodeId;
     }
 
-    void setNodeAltitude(NodeId nodeId, AltitudeType altitude) {
+    /**
+     * @brief Sets a live node altitude during a staged topology edit.
+     *
+     * Monotone order is intentionally checked at weighted commit time because
+     * intermediate staged topologies may not yet have final parent/child
+     * relations.
+     */
+    void setNodeAltitude(NodeId nodeId, T altitude) {
         if (!weighted_.tree_.isAlive(nodeId)) {
             throw std::invalid_argument("WeightedTreeEditor::setNodeAltitude requires a live node.");
         }
+        TreeAltitudeAlgorithms::validateFiniteAltitudeValue(altitude, static_cast<std::size_t>(nodeId), "WeightedTreeEditor::setNodeAltitude");
         weighted_.altitude_[static_cast<size_t>(nodeId)] = altitude;
     }
 
+    /**
+     * @brief Detaches one non-root node through the structural editor.
+     */
     void detach(NodeId nodeId) {
         editor_.detach(nodeId);
     }
 
+    /**
+     * @brief Reparents one node through the structural editor.
+     */
     void reparent(NodeId nodeId, NodeId newParentId) {
         editor_.reparent(nodeId, newParentId);
     }
 
+    /**
+     * @brief Attaches one detached node through the structural editor.
+     */
     void attach(NodeId parentId, NodeId detachedNodeId) {
         editor_.attach(parentId, detachedNodeId);
     }
 
+    /**
+     * @brief Moves all direct children from `sourceId` under `parentId`.
+     */
     void moveChildren(NodeId parentId, NodeId sourceId) {
         editor_.moveChildren(parentId, sourceId);
     }
 
+    /**
+     * @brief Moves one direct proper part between nodes.
+     */
     void moveProperPart(NodeId targetNodeId, NodeId sourceNodeId, NodeId properPartId) {
         editor_.moveProperPart(targetNodeId, sourceNodeId, properPartId);
     }
 
+    /**
+     * @brief Moves all direct proper parts between nodes.
+     */
     void moveProperParts(NodeId targetNodeId, NodeId sourceNodeId) {
         editor_.moveProperParts(targetNodeId, sourceNodeId);
     }
 
+    /**
+     * @brief Detaches a direct child and optionally releases an empty node slot.
+     */
     void removeChild(NodeId parentNodeId, NodeId childId, bool releaseNodeFlag) {
         editor_.removeChild(parentNodeId, childId, releaseNodeFlag);
     }
 
+    /**
+     * @brief Releases an empty detached node slot.
+     */
     void releaseNode(NodeId nodeId) {
         editor_.releaseNode(nodeId);
     }
 
+    /**
+     * @brief Promotes one node to the topology root.
+     */
     void setRoot(NodeId nodeId) {
         editor_.setRoot(nodeId);
     }
 
-    bool hasDetachedAliveNodes() const noexcept {
+    /**
+     * @brief Applies the topology prune helper inside the weighted edit session.
+     */
+    void pruneNode(NodeId nodeId) {
+        editor_.pruneNode(nodeId);
+    }
+
+    /**
+     * @brief Applies the topology merge helper inside the weighted edit session.
+     */
+    void mergeNodeIntoParent(NodeId nodeId) {
+        editor_.mergeNodeIntoParent(nodeId);
+    }
+
+    /**
+     * @brief Returns whether the structural edit still has detached live nodes.
+     */
+    [[nodiscard]] bool hasDetachedAliveNodes() const noexcept {
         return editor_.hasDetachedAliveNodes();
     }
 
-    void commit() {
-        editor_.commit();
-        weighted_.validateMonotoneAltitude();
+    /**
+     * @brief Validates only the staged topology.
+     *
+     * Altitude monotonicity is checked by `validateAndCommit()` / `commit()`.
+     */
+    [[nodiscard]] TreeValidationResult validate() const noexcept {
+        return editor_.validate();
     }
 
+    /**
+     * @brief Validates topology, validates altitude order, then closes the edit.
+     */
+    [[nodiscard("Inspect the validation result or use commit() for exception-based failure handling")]] TreeValidationResult validateAndCommit() noexcept {
+        TreeValidationResult result = editor_.validate();
+        if (!result.ok) {
+            return result;
+        }
+        try {
+            weighted_.validateMonotoneAltitude();
+        } catch (const std::exception& ex) {
+            return {false, ex.what()};
+        } catch (...) {
+            return {false, "WeightedTreeEditor monotone-altitude validation failed with an unknown error."};
+        }
+        editor_.commitUnchecked();
+        return result;
+    }
+
+    /**
+     * @brief Exception-based wrapper around `validateAndCommit()`.
+     */
+    void commit() {
+        TreeValidationResult result = validateAndCommit();
+        if (!result.ok) {
+            throw std::runtime_error(result.message);
+        }
+    }
+
+    /**
+     * @brief Closes the weighted edit without topology or altitude validation.
+     */
     void commitUnchecked() noexcept {
         editor_.commitUnchecked();
     }
 };
-
-inline WeightedTreeEditor WeightedMorphologicalTree::edit() {
-    return WeightedTreeEditor(*this);
-}
 
 } // namespace mmcfilters

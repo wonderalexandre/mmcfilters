@@ -27,15 +27,28 @@ namespace mmcfilters {
  * @endcode
  */
 struct GenerationStampSet {
+    /// Integer type used for individual generation stamps.
     using gen_t = uint32_t;
 
-    std::unique_ptr<gen_t[]> stamp; // stamp buffer
-    size_t n{0};                    // logical size
-    gen_t cur{1};                   // current generation (0 means cleared)
+    /// Stamp buffer with one entry per logical index.
+    std::unique_ptr<gen_t[]> stamp;
+
+    /// Number of logical entries in `stamp`.
+    size_t n{0};
+
+    /// Current generation; zero is reserved for physically cleared slots.
+    gen_t cur{1};
 
     GenerationStampSet() = default;
+
+    /**
+     * @brief Creates a stamp set with `n` logical entries.
+     */
     explicit GenerationStampSet(size_t n) { resize(n); }
 
+    /**
+     * @brief Resizes the stamp buffer and physically clears all marks.
+     */
     void resize(size_t newN) {
         n = newN;
         stamp = std::make_unique<gen_t[]>(n);
@@ -43,10 +56,16 @@ struct GenerationStampSet {
         cur = 1;
     }
 
+    /**
+     * @brief Marks `idx` in the current generation.
+     */
     inline void mark(size_t idx) noexcept {
         stamp[idx] = cur;
     }
 
+    /**
+     * @brief Returns true when `idx` is marked in the current generation.
+     */
     inline bool isMarked(size_t idx) const noexcept {
         return stamp[idx] == cur;
     }
@@ -72,6 +91,7 @@ struct GenerationStampSet {
         cur = 1;
     }
 
+    /// Returns the current generation counter.
     gen_t generation() const noexcept { return cur; }
 };
 

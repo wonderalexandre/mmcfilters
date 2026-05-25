@@ -1,5 +1,5 @@
 #include "support/TestSupport.hpp"
-#include "mmcfilters/attributes/AttributeComputedIncrementally.hpp"
+#include "mmcfilters/attributes/AttributeComputation.hpp"
 
 #include <memory>
 
@@ -8,7 +8,7 @@ using namespace mmcfilters::unit_tests;
 
 int main() {
     auto computeArea = [](const MorphologicalTree& tree, NodeId nodeId) {
-        auto [attrNames, buffer] = AttributeComputedIncrementally::computeSingleAttribute(tree, AREA);
+        auto [attrNames, buffer] = AttributeComputation::computeSingleTopologyAttribute(tree, AREA);
         return static_cast<int>(buffer[attrNames.linearIndex(nodeId, AREA)]);
     };
 
@@ -58,6 +58,10 @@ int main() {
     requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->getNumChildren(999)); }, "invalid getNumChildren must throw");
     requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->getNodeTimePreOrder(999)); }, "invalid getNodeTimePreOrder must throw");
     requireThrows<std::invalid_argument>([&]() { static_cast<void>(collectNodeIds(maxTree->getProperParts(999))); }, "invalid getProperParts must throw");
+    requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->isAncestor(999, 0)); }, "invalid isAncestor source must throw");
+    requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->isAncestor(0, 999)); }, "invalid isAncestor target must throw");
+    requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->isDescendant(999, 0)); }, "invalid isDescendant source must throw");
+    requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->isDescendant(0, 999)); }, "invalid isDescendant target must throw");
     requireThrows<std::invalid_argument>([&]() { static_cast<void>(weightedMaxTree->getAltitude(InvalidNode)); }, "invalid weighted getAltitude must throw");
     requireThrows<std::invalid_argument>([&]() { static_cast<void>(weightedMaxTree->getNodeResidue(999)); }, "invalid weighted getNodeResidue must throw");
 
@@ -82,8 +86,8 @@ int main() {
     auto rebuiltLeafPath = collectNodeIds(rebuiltFromHigra->getPathToRootNodes(rebuiltLeaves.front()));
     requireEqual(static_cast<int>(rebuiltLeafPath.size()), 6, "Higra import path to root length");
     requireEqual(rebuiltLeafPath.back(), rebuiltRoot, "Higra import path must end at root");
-    const NodeId rebuiltOwnerOfPixel10 = rebuiltFromHigra->getSmallestComponent(10);
-    require(rebuiltFromHigra->isAlive(rebuiltOwnerOfPixel10), "Higra import smallest component must be alive");
+    const NodeId rebuiltOwnerOfPixel10 = rebuiltFromHigra->getProperPartOwner(10);
+    require(rebuiltFromHigra->isAlive(rebuiltOwnerOfPixel10), "Higra import proper-part owner must be alive");
 
     requireEqual(minTree->getNumTotalProperParts(), 16, "min-tree num proper parts");
     requireEqual(minTree->getNumInternalNodeSlots(), 6, "min-tree internal slots");

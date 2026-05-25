@@ -20,6 +20,9 @@ private:
 public:
     FastStack() = default;
 
+    /**
+     * @brief Creates an empty stack and reserves capacity for `n` elements.
+     */
     explicit FastStack(size_t n) {
         data_.reserve(n);
     }
@@ -39,6 +42,7 @@ public:
     /// Pushes an element on top of the stack.
     void push(const T& value) { data_.push_back(value); }
 
+    /// Pushes an element on top of the stack by moving it into storage.
     void push(T&& value) { data_.push_back(std::move(value)); }
 
     /// Removes and returns the top element.
@@ -50,6 +54,8 @@ public:
 
     /// Returns the top element without removing it.
     T& top() { return data_.back(); }
+
+    /// Returns the top element without removing it.
     const T& top() const { return data_.back(); }
 };
 }

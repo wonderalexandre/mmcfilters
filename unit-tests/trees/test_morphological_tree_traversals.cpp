@@ -10,7 +10,6 @@ int main() {
     auto image = makeComponentTreeFixture();
     auto maxTree = makeComponentTree(image, true);
     auto minTree = makeComponentTree(image, false);
-    auto editor = maxTree->edit();
 
     auto maxBfsIds = collectNodeIds(maxTree->getIteratorBreadthFirstTraversal());
     auto maxPostOrderIds = collectNodeIds(maxTree->getPostOrderNodes());
@@ -54,6 +53,7 @@ int main() {
     maxTree->mergeNodeIntoParent(5);
     requireVectorEqual(collectNodeIds(maxTree->getAliveNodeIds()), {0, 1, 2, 3, 4}, "max-tree valid node ids iterator after merge");
     require(maxTree->getLowestCommonAncestor(4, 2) == 2, "max-tree lazy cached LCA after topology change");
+    auto editor = maxTree->edit();
     auto detachedNodeId = editor.createDetachedNode();
     require(detachedNodeId != InvalidNode, "detached node allocation for path traversal");
     requireVectorEqual(collectNodeIds(maxTree->getPathBetweenNodes(detachedNodeId, detachedNodeId)), {detachedNodeId}, "detached node path to itself");

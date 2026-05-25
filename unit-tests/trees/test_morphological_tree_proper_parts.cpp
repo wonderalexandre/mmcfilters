@@ -37,12 +37,12 @@ int main() {
     requireVectorEqual(collectNodeIds(tree->getProperParts(4)), {5, 6, 9}, "node 4 proper parts");
     requireVectorEqual(collectNodeIds(tree->getProperParts(5)), {10, 14}, "node 5 proper parts");
 
-    requireEqual(tree->getSmallestComponent(15), 0, "pixel 15 smallest component");
-    requireEqual(tree->getSmallestComponent(8), 1, "pixel 8 smallest component");
-    requireEqual(tree->getSmallestComponent(2), 2, "pixel 2 smallest component");
-    requireEqual(tree->getSmallestComponent(0), 3, "pixel 0 smallest component");
-    requireEqual(tree->getSmallestComponent(5), 4, "pixel 5 smallest component");
-    requireEqual(tree->getSmallestComponent(10), 5, "pixel 10 smallest component");
+    requireEqual(tree->getProperPartOwner(15), 0, "pixel 15 proper-part owner");
+    requireEqual(tree->getProperPartOwner(8), 1, "pixel 8 proper-part owner");
+    requireEqual(tree->getProperPartOwner(2), 2, "pixel 2 proper-part owner");
+    requireEqual(tree->getProperPartOwner(0), 3, "pixel 0 proper-part owner");
+    requireEqual(tree->getProperPartOwner(5), 4, "pixel 5 proper-part owner");
+    requireEqual(tree->getProperPartOwner(10), 5, "pixel 10 proper-part owner");
 
     requireVectorEqual(collectNodeIds(tree->getProperParts(3)), {0, 1, 4}, "node 3 direct proper parts");
     requireVectorEqual(collectNodeIds(tree->getProperParts(4)), {5, 6, 9}, "node 4 direct proper parts");

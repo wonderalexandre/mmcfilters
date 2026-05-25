@@ -4,60 +4,40 @@ This directory contains exploratory notebooks that are expected to follow the
 current public Python API. Treat them as examples for experiments, not as a
 stable product surface.
 
+For the full Python contract and short runnable examples, see
+[`docs/python-api.md`](../docs/python-api.md).
+
 ## Preferred tree model
 
-For new notebook work, keep the topology-only and weighted use cases separate:
-
-- use `mmcfilters.MorphologicalTree` for topology, traversal, proper-part
-  ownership, and structural edits;
-- use `mmcfilters.WeightedMorphologicalTree` when the workflow needs node
-  altitudes, image reconstruction, node residues, Higra `(parent, altitude)`
-  export, or attributes that require intensity values;
-- use `WeightedMorphologicalTree.createFromTopology(topology_tree, image)` when
-  a notebook already has a topology tree and needs the weighted view without
-  rebuilding the hierarchy.
-
-Preferred topology-only calls:
-
-- `tree.getRoot()`
-- `tree.getAliveNodeIds()`
-- `tree.getChildren(node_id)`
-- `tree.getProperParts(node_id)`
-- `tree.getConnectedComponent(node_id)`
-- `tree.getSmallestComponent(pixel_id)`
-- `tree.reconstructNode(node_id)`
-
-Preferred weighted calls:
-
-- `weighted.getAltitude(node_id)`
-- `weighted.reconstructionImage()`
-- `weighted.exportHigraHierarchy()`
-- `weighted.project_node_values_to_exported_higra(node_values, attribute)`
+For new notebook work, build trees through `mmcfilters.MorphologicalTreeFactory`.
+Python currently accepts C-contiguous `np.uint8` images and returns the canonical
+`WeightedMorphologicalTree` binding for image, Higra, and tree-of-shapes
+construction. Use that object for topology queries, altitude access,
+reconstruction, Higra export, and exported-Higra attribute projection.
 
 Preferred builders:
 
-- `mmcfilters.MorphologicalTree.createMaxTree(image, radius=1.5)`
-- `mmcfilters.MorphologicalTree.createMinTree(image, radius=1.5)`
-- `mmcfilters.MorphologicalTree.createTreeOfShapes(image)`
-- `mmcfilters.WeightedMorphologicalTree.createMaxTree(image, radius=1.5)`
-- `mmcfilters.WeightedMorphologicalTree.createMinTree(image, radius=1.5)`
-- `mmcfilters.WeightedMorphologicalTree.createTreeOfShapes(image)`
+- `mmcfilters.MorphologicalTreeFactory.createMaxTree(image, radius=1.5)`
+- `mmcfilters.MorphologicalTreeFactory.createMinTree(image, radius=1.5)`
+- `mmcfilters.MorphologicalTreeFactory.createTreeOfShapes(image)`
 
 Preferred attribute calls:
 
-- `mmcfilters.Attribute.computeSingleAttribute(tree, mmcfilters.Attribute.AREA)`
-- `mmcfilters.Attribute.computeAttributes(tree, [mmcfilters.Attribute.AREA, ...])`
-- `mmcfilters.Attribute.computeSingleAttribute(weighted, mmcfilters.Attribute.MAX_DIST)`
+- `mmcfilters.Attribute.computeTopologyAttributes(tree, [...])` for
+  topology/support-only descriptors such as `AREA` and bounding boxes;
+- `mmcfilters.Attribute.computeSingleAttribute(weighted, attr)` and
+  `mmcfilters.Attribute.computeAttributes(weighted, [...])` for ordinary
+  weighted descriptors.
 
-Use tree-type constants instead of numeric literals when importing Higra-style
-hierarchies:
+Use `MorphologicalTreeKind` instead of numeric literals when importing
+Higra-style hierarchies:
 
-- `mmcfilters.MorphologicalTree.MAX_TREE`
-- `mmcfilters.MorphologicalTree.MIN_TREE`
-- `mmcfilters.MorphologicalTree.TREE_OF_SHAPES`
-- `mmcfilters.WeightedMorphologicalTree.MAX_TREE`
-- `mmcfilters.WeightedMorphologicalTree.MIN_TREE`
-- `mmcfilters.WeightedMorphologicalTree.TREE_OF_SHAPES`
+- `mmcfilters.MorphologicalTreeKind.MAX_TREE`
+- `mmcfilters.MorphologicalTreeKind.MIN_TREE`
+- `mmcfilters.MorphologicalTreeKind.TREE_OF_SHAPES`
+
+Descriptor semantics and supported tree kinds are documented in
+[`docs/attributes.md`](../docs/attributes.md).
 
 ## Current notebooks
 

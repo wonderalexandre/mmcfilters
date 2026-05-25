@@ -5,17 +5,20 @@
 
 > Project status: research library for dynamic morphological-tree experiments.
 >
-> This package focuses on tree editing, typed altitude contracts, incremental
-> attributes, contours, and project-specific morphology research. It is not
-> intended to be a general-purpose replacement for Higra.
+> This package focuses on a proper-part tree model for image-domain partial
+> partitions, tree editing, typed altitude contracts, incremental attributes,
+> contours, and project-specific morphology research. It is not intended to be a
+> general-purpose replacement for Higra.
 
 ## Scope
 
 This repository is a research implementation for morphological-tree workflows
 that need direct topology ownership, staged edits, typed altitude buffers, and
-project-specific attribute machinery. The implemented models share the
-`MorphologicalTree` topology abstraction: rooted inclusion topology, dense
-internal `NodeId` values, and explicit proper-part ownership.
+project-specific attribute machinery. Its central model is a tree over
+image-domain partial partitions: image pixels are explicit proper parts, and
+internal morphological nodes own those proper parts directly. The implemented
+models share the `MorphologicalTree` topology abstraction: rooted inclusion
+topology, dense internal `NodeId` values, and explicit proper-part ownership.
 
 Current functionality includes:
 

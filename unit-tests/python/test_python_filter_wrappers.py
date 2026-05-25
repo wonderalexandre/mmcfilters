@@ -67,20 +67,19 @@ def main() -> int:
         dtype=np.uint8,
     )
 
-    weighted = mmcfilters.WeightedMorphologicalTree.createComponentTree(image, True)
+    weighted = mmcfilters.MorphologicalTreeFactory.createMaxTree(image)
     weighted_reconstruction = weighted.reconstructionImage()
 
     adjacency = mmcfilters.AdjacencyRelation(4, 4, 1.5)
     require(adjacency.size == 9, "AdjacencyRelation stencil size")
     require(type(adjacency.getAdjPixels(1, 1)).__name__ == "AdjacencyRelation", "AdjacencyRelation getAdjPixels return type")
 
-    tree = mmcfilters.MorphologicalTree.createComponentTree(image, True)
-    keep_all = [True] * weighted.numInternalNodeSlots
     require_raises(
-        lambda: mmcfilters.AttributeFilters(tree).filteringDirectRule(keep_all),
-        "topology-only MorphologicalTree must reject weighted filtering operations",
+        lambda: mmcfilters.MorphologicalTree(image, True),
+        "direct MorphologicalTree construction should not be public",
     )
 
+    keep_all = [True] * weighted.numInternalNodeSlots
     weighted_filters = mmcfilters.AttributeFilters(weighted)
     require(np.array_equal(weighted_filters.filteringDirectRule(keep_all), weighted_reconstruction), "weighted AttributeFilters direct rule keep-all")
     require(np.array_equal(weighted_filters.filteringSubtractiveRule(keep_all), weighted_reconstruction), "weighted AttributeFilters subtractive rule keep-all")
@@ -98,16 +97,9 @@ def main() -> int:
     require(weighted_filters.saliencyMapByExtinction(weighted_level_attr, 1024).shape == (4, 4), "weighted AttributeFilters extinction saliency shape")
     require_raises(lambda: weighted_filters.filteringByExtinction(np.array([1.0], dtype=np.float32), 1), "weighted filteringByExtinction must reject short attribute buffer")
     require_raises(lambda: weighted_filters.saliencyMapByExtinction(np.array([1.0], dtype=np.float32), 1), "weighted saliencyMapByExtinction must reject short attribute buffer")
-
-    weighted_primitives = mmcfilters.AttributeOpeningPrimitivesFamily(weighted, weighted_box_height, float(weighted.numRows))
-    require(weighted_primitives.numPrimitives >= 1, "weighted AttributeOpeningPrimitivesFamily numPrimitives")
-    require(len(weighted_primitives.getThresholdsPrimitive()) == weighted_primitives.numPrimitives, "weighted AttributeOpeningPrimitivesFamily threshold count")
-    require(weighted_primitives.getNodesWithMaximumCriterium() == [4], "weighted AttributeOpeningPrimitivesFamily nodes with maximum criterion")
-    require(weighted_primitives.getPrimitive(float(weighted.numRows)).shape == (4, 4), "weighted AttributeOpeningPrimitivesFamily primitive image shape")
-    require(weighted_primitives.restOfImage.shape == (4, 4), "weighted AttributeOpeningPrimitivesFamily rest image shape")
-    require_raises(
-        lambda: mmcfilters.AttributeOpeningPrimitivesFamily(weighted, np.array([1.0], dtype=np.float32), float(weighted.numRows)),
-        "weighted AttributeOpeningPrimitivesFamily must reject short attribute buffer",
+    require(
+        not hasattr(mmcfilters, "AttributeOpeningPrimitivesFamily"),
+        "AttributeOpeningPrimitivesFamily must not be exported in the Python API",
     )
 
     weighted_uao = mmcfilters.UltimateAttributeOpening(weighted, weighted_box_height)
@@ -122,7 +114,7 @@ def main() -> int:
         "weighted UltimateAttributeOpening must reject short attribute buffer",
     )
     nonsquare = np.array([[3, 3, 2], [1, 4, 5]], dtype=np.uint8)
-    nonsquare_weighted = mmcfilters.WeightedMorphologicalTree.createComponentTree(nonsquare, True)
+    nonsquare_weighted = mmcfilters.MorphologicalTreeFactory.createMaxTree(nonsquare)
     nonsquare_box_height = mmcfilters.Attribute.computeSingleAttribute(nonsquare_weighted, mmcfilters.Attribute.BOX_HEIGHT)
     nonsquare_uao = mmcfilters.UltimateAttributeOpening(nonsquare_weighted, nonsquare_box_height)
     nonsquare_uao.execute(int(nonsquare_weighted.numRows))
@@ -138,7 +130,47 @@ def main() -> int:
         "weighted ExtinctionValues must reject short attribute buffer",
     )
 
+    stale_weighted = mmcfilters.MorphologicalTreeFactory.createMaxTree(image)
+    stale_keep_all = [True] * stale_weighted.numInternalNodeSlots
+    stale_level_attr = mmcfilters.Attribute.computeSingleAttribute(stale_weighted, mmcfilters.Attribute.LEVEL)
+    stale_filters = mmcfilters.AttributeFilters(stale_weighted)
+    stale_extinction = mmcfilters.ExtinctionValues(stale_weighted, stale_level_attr)
+    stale_uao = mmcfilters.UltimateAttributeOpening(stale_weighted, stale_level_attr)
+    stale_weighted.mergeNodeIntoParent(4)
+    require_raises(lambda: stale_filters.filteringDirectRule(stale_keep_all), "AttributeFilters must reject use after topology mutation")
+    require_raises(lambda: stale_extinction.filtering(1024), "ExtinctionValues must reject filtering after topology mutation")
+    require_raises(lambda: stale_extinction.saliencyMap(1024), "ExtinctionValues must reject saliency after topology mutation")
+    require_raises(lambda: stale_uao.execute(4), "UltimateAttributeOpening must reject execute after topology mutation")
+
     casf = mmcfilters.CasfComponentTrees(image, mmcfilters.CasfComponentTreesAttribute.AREA)
+    require_raises(
+        lambda: mmcfilters.CasfComponentTrees(image.astype(np.int32), mmcfilters.CasfComponentTreesAttribute.AREA),
+        "CASF must reject non-uint8 integer arrays",
+    )
+    require_raises(
+        lambda: mmcfilters.CasfComponentTrees(image.astype(np.int64), mmcfilters.CasfComponentTreesAttribute.AREA),
+        "CASF must reject int64 arrays",
+    )
+    require_raises(
+        lambda: mmcfilters.CasfComponentTrees(image.astype(np.float32), mmcfilters.CasfComponentTreesAttribute.AREA),
+        "CASF must reject float arrays",
+    )
+    require_raises(
+        lambda: mmcfilters.CasfComponentTrees(image.astype(np.float64), mmcfilters.CasfComponentTreesAttribute.AREA),
+        "CASF must reject float64 arrays",
+    )
+    require_raises(
+        lambda: mmcfilters.CasfComponentTrees(image.astype(bool), mmcfilters.CasfComponentTreesAttribute.AREA),
+        "CASF must reject bool arrays",
+    )
+    require_raises(
+        lambda: mmcfilters.CasfComponentTrees(image.astype(object), mmcfilters.CasfComponentTreesAttribute.AREA),
+        "CASF must reject object arrays",
+    )
+    require_raises(
+        lambda: mmcfilters.CasfComponentTrees(image[:, ::-1], mmcfilters.CasfComponentTreesAttribute.AREA),
+        "CASF must reject non-contiguous uint8 arrays",
+    )
     require(np.array_equal(casf.filter([]), image), "CASF empty threshold sequence must preserve image")
     require(np.array_equal(casf.filter([0.0]), image), "CASF zero threshold must preserve image")
     filtered = casf.filter([2.0])
@@ -150,11 +182,11 @@ def main() -> int:
     require(casf.minTree.reconstructionImage().shape == image.shape, "CASF minTree property")
     require(casf.maxTree.reconstructionImage().shape == image.shape, "CASF maxTree property")
 
-    bbox_casf = mmcfilters.ComponentTreeCasf(image, mmcfilters.ComponentTreeCasfAttribute.BOUNDING_BOX_DIAGONAL)
-    require(bbox_casf.filter([2.0]).shape == image.shape, "CASF bounding-box alias path")
+    bbox_casf = mmcfilters.CasfComponentTrees(image, mmcfilters.CasfComponentTreesAttribute.BOUNDING_BOX_DIAGONAL)
+    require(bbox_casf.filter([2.0]).shape == image.shape, "CASF bounding-box path")
 
-    min_for_adjust = mmcfilters.WeightedMorphologicalTree.createMinTree(image)
-    max_for_adjust = mmcfilters.WeightedMorphologicalTree.createMaxTree(image)
+    min_for_adjust = mmcfilters.MorphologicalTreeFactory.createMinTree(image)
+    max_for_adjust = mmcfilters.MorphologicalTreeFactory.createMaxTree(image)
     adjust = mmcfilters.DualMinMaxTreeIncrementalFilter(min_for_adjust, max_for_adjust)
     max_candidates = [
         node_id

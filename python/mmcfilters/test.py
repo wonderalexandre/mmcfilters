@@ -21,17 +21,16 @@ img = np.array([
 [ 54, 54, 94,181,222,214,141, 67, 40, 72, 99,105,106,109,123],
 [ 54, 48, 59, 95,145,158, 84, 52, 60, 96,110,115,116,110,113],
 [ 49, 45, 44, 48, 71, 89, 49, 47, 71, 95,162,156,119,122,111]
-])
+], dtype=np.uint8)
 
 num_rows, num_cols = img.shape
 
-tree = mmcfilters.MorphologicalTree(img.astype(np.uint8), True, 1.5)
+tree = mmcfilters.MorphologicalTreeFactory.createMaxTree(img, 1.5)
 
-dic, attrs = mmcfilters.Attribute.computeAttributes(tree, [mmcfilters.Attribute.AREA])
-import pandas as pd
-df = pd.DataFrame(data=attrs, columns=[key for key in dic.keys()])
-
-attr_area = attrs[:, dic["AREA"]]
+attr_area = mmcfilters.Attribute.computeSingleTopologyAttribute(
+    tree,
+    mmcfilters.Attribute.AREA,
+)
 filter = mmcfilters.AttributeFilters(tree)
 print( filter.filteringMax(attr_area < 10).reshape(num_rows, num_cols))
 img_vector_filtered_min = filter.filteringMin(attr_area, 10)

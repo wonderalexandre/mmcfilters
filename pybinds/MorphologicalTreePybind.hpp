@@ -1,26 +1,27 @@
 #pragma once
 
 #include "../mmcfilters/trees/MorphologicalTree.hpp"
-#include "../mmcfilters/trees/WeightedMorphologicalTree.hpp"
-#include "../mmcfilters/utils/Common.hpp"
+#include "../mmcfilters/utils/Image.hpp"
 
 #include "PybindUtils.hpp"
 
+#include <cstdint>
 #include <stdexcept>
+#include <vector>
+
 #include <pybind11/numpy.h>
+
 namespace mmcfilters {
 
 namespace py = pybind11;
 
-class MorphologicalTreePybind;
-using MorphologicalTreePybindPtr = std::shared_ptr<MorphologicalTreePybind>;
-
 /**
  * @brief Pybind-facing wrapper for `MorphologicalTree`.
  *
- * This subclass exposes Python-friendly constructors and a few helper methods
- * that return NumPy arrays or Python lists while preserving the ownership
- * model of the underlying C++ tree.
+ * This subclass exposes helper methods that return NumPy arrays while
+ * preserving the ownership model of the underlying C++ tree. Public Python
+ * construction is centralized in `MorphologicalTreeFactory`; this wrapper
+ * remains as the Python topology type returned by factory/import paths.
  */
 class MorphologicalTreePybind : public MorphologicalTree {
     static std::vector<int> collectPixelsOfConnectedComponent(const MorphologicalTree& tree, NodeId nodeId) {
@@ -35,40 +36,6 @@ class MorphologicalTreePybind : public MorphologicalTree {
     explicit MorphologicalTreePybind(MorphologicalTree&& tree)
         : MorphologicalTree(std::move(tree)) {}
 
-    MorphologicalTreePybind(
-        py::array_t<uint8_t, py::array::c_style | py::array::forcecast> input,
-        ToSInterpolation interpolation = ToSInterpolation::SelfDual,
-        int infinitySeedRow = ToSDefaultInfinityRow,
-        int infinitySeedCol = ToSDefaultInfinityCol)
-        : MorphologicalTree(MorphologicalTree::createTreeOfShapes(
-              [&]() {
-                  auto buf = input.request();
-                  if (buf.ndim != 2) {
-                      throw std::invalid_argument("input must be a 2D uint8 array");
-                  }
-                  int rows = static_cast<int>(buf.shape[0]);
-                  int cols = static_cast<int>(buf.shape[1]);
-                  return ImageUInt8::fromExternal(static_cast<uint8_t*>(buf.ptr), rows, cols);
-              }(),
-              interpolation,
-              infinitySeedRow,
-              infinitySeedCol)) { }
-
-    MorphologicalTreePybind(py::array_t<uint8_t, py::array::c_style | py::array::forcecast> input, bool isMaxtree, double radiusOfAdjacencyRelation = 1.5)
-        : MorphologicalTree(MorphologicalTree::createComponentTree(
-              [&]() {
-                  auto buf = input.request();
-                  if (buf.ndim != 2) {
-                      throw std::invalid_argument("input must be a 2D uint8 array");
-                  }
-                  int rows = static_cast<int>(buf.shape[0]);
-                  int cols = static_cast<int>(buf.shape[1]);
-                  return ImageUInt8::fromExternal(static_cast<uint8_t*>(buf.ptr), rows, cols);
-              }(),
-              isMaxtree,
-              radiusOfAdjacencyRelation)) { }
-
-              
     MorphologicalTreePybind() = delete;
 
     static py::array_t<uint8_t> reconstructNode(const MorphologicalTree& tree, NodeId nodeId) {
@@ -83,60 +50,8 @@ class MorphologicalTreePybind : public MorphologicalTree {
         }
         return PybindUtils::toNumpy(imgOut);
     }
-
-
-    static py::list representativeProperPartsByFlood(const MorphologicalTree& tree, const AltitudeBuffer& altitude, NodeId nodeId) {
-        if (!tree.isNode(nodeId) || !tree.isAlive(nodeId)) {
-            throw std::invalid_argument("invalid NodeId");
-        }
-
-        const AdjacencyRelation* adjacencyContext = tree.getAdjacencyRelation();
-        if (adjacencyContext == nullptr) {
-            throw std::invalid_argument("adjacency relation is unavailable for this tree type");
-        }
-        AdjacencyRelation adjacency = *adjacencyContext;
-        const int numPixels = tree.getNumRowsOfImage() * tree.getNumColsOfImage();
-        const AltitudeType targetAltitude = WeightedMorphologicalTree::getAltitude(altitude, nodeId);
-
-        auto levelOf = [&](int p) -> int {
-            const NodeId smallestComponent = tree.getSmallestComponent(p);
-            return WeightedMorphologicalTree::getAltitude(altitude, smallestComponent);
-        };
-        auto inNode = [&](int p) -> bool {
-            return tree.getSmallestComponent(p) == nodeId;
-        };
-
-        py::list reps;
-        FastQueue<int> queue(1024);
-        std::vector<uint8_t> visited(numPixels, 0);
-
-        for (int p : collectPixelsOfConnectedComponent(tree, nodeId)) {
-            if (!inNode(p) || visited[p]) {
-                continue;
-            }
-
-            reps.append(p);
-            visited[p] = true;
-            queue.push(p);
-
-            while (!queue.empty()) {
-                const int properPart = queue.pop();
-                for (int q : adjacency.getAdjPixels(properPart)) {
-                    if (!inNode(q) || visited[q]) {
-                        continue;
-                    }
-                    if (levelOf(q) != targetAltitude) {
-                        continue;
-                    }
-                    visited[q] = true;
-                    queue.push(q);
-                }
-            }
-        }
-
-        return reps;
-    }
-
 };
+
+using MorphologicalTreePybindPtr = std::shared_ptr<MorphologicalTreePybind>;
 
 } // namespace mmcfilters

@@ -15,28 +15,18 @@ namespace mmcfilters {
 namespace py = pybind11;
 
 /**
- * @brief *Wrapper* Pybind11 para cálculo e uso de valores de extinção.
+ * @brief Pybind11 wrapper exposing extinction-value computation to Python.
  */
-class ExtinctionValuesPybind : public ExtinctionValues{
+class ExtinctionValuesPybind : public ExtinctionValues<std::uint8_t> {
     using FloatArray = py::array_t<float, py::array::c_style | py::array::forcecast>;
 
-    MorphologicalTreePybindPtr treeOwner_;
-    std::shared_ptr<WeightedMorphologicalTree> weightedOwner_;
+    std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weightedOwner_;
 
     public:
-    using ExtinctionValues::ExtinctionValues;
-    
-    ExtinctionValuesPybind(MorphologicalTreePybindPtr tree, FloatArray attribute)
-        : ExtinctionValues(
-            *tree,
-            [&]() {
-                PybindUtils::require1DArray(attribute.request(), tree->getNumInternalNodeSlots(), "attribute");
-                return PybindUtils::toShared_ptr(attribute);
-            }()),
-          treeOwner_(std::move(tree)) { }
+    using ExtinctionValues<std::uint8_t>::ExtinctionValues;
 
-    ExtinctionValuesPybind(std::shared_ptr<WeightedMorphologicalTree> weighted, FloatArray attribute)
-        : ExtinctionValues(
+    ExtinctionValuesPybind(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, FloatArray attribute)
+        : ExtinctionValues<std::uint8_t>(
             *weighted,
             [&]() {
                 PybindUtils::require1DArray(attribute.request(), weighted->topology().getNumInternalNodeSlots(), "attribute");
@@ -46,12 +36,12 @@ class ExtinctionValuesPybind : public ExtinctionValues{
 
     py::array_t<float> saliencyMap(int leafToKeep, bool unweighted=true) {
 
-        auto saliencyMapPtr = ExtinctionValues::saliencyMap(leafToKeep, unweighted);
+        auto saliencyMapPtr = ExtinctionValues<std::uint8_t>::saliencyMap(leafToKeep, unweighted);
         return PybindUtils::toNumpy(saliencyMapPtr);
     }
 
     std::vector<py::tuple> getExtinctionValuesPy()  {
-        auto &vec = ExtinctionValues::getExtinctionValues();
+        auto &vec = ExtinctionValues<std::uint8_t>::getExtinctionValues();
         std::vector<py::tuple> out;
         out.reserve(vec.size());
         for (const auto &item : vec) {
@@ -66,7 +56,7 @@ class ExtinctionValuesPybind : public ExtinctionValues{
 
     py::array_t<uint8_t> filtering(int leafToKeep) {
 
-        ImageUInt8Ptr filteredImagePtr =  ExtinctionValues::filtering(leafToKeep);
+        ImageUInt8Ptr filteredImagePtr =  ExtinctionValues<std::uint8_t>::filtering(leafToKeep);
         return PybindUtils::toNumpy(filteredImagePtr);
     }
 

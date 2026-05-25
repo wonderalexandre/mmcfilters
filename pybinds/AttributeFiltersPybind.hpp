@@ -1,10 +1,9 @@
 #pragma once
 
 #include "../mmcfilters/filters/AttributeFilters.hpp"
-#include "../mmcfilters/utils/Common.hpp"
+#include "../mmcfilters/filters/ExtinctionValues.hpp"
 
 #include "MorphologicalTreePybind.hpp"
-#include "AttributeComputedIncrementallyPybind.hpp"
 #include "PybindUtils.hpp"
 
 #include <stack>
@@ -18,13 +17,12 @@ namespace mmcfilters {
 #define UNDEF -999999999999
 
 /**
- * @brief *Wrapper* Pybind11 para expor filtragens por atributos ao Python.
+ * @brief Pybind11 wrapper exposing attribute filtering operators to Python.
  */
-class AttributeFiltersPybind : public AttributeFilters{
+class AttributeFiltersPybind : public AttributeFilters<std::uint8_t> {
     using FloatArray = py::array_t<float, py::array::c_style | py::array::forcecast>;
 
-    MorphologicalTreePybindPtr treeOwner_;
-    std::shared_ptr<WeightedMorphologicalTree> weightedOwner_;
+    std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weightedOwner_;
 
     const MorphologicalTree& topology() const noexcept {
         return this->tree;
@@ -43,81 +41,70 @@ class AttributeFiltersPybind : public AttributeFilters{
     }
 
     public:
-    using AttributeFilters::AttributeFilters;
+    using AttributeFilters<std::uint8_t>::AttributeFilters;
 
-    explicit AttributeFiltersPybind(MorphologicalTreePybindPtr tree)
-        : AttributeFilters(*tree), treeOwner_(std::move(tree)) {}
-
-    explicit AttributeFiltersPybind(std::shared_ptr<WeightedMorphologicalTree> weighted)
-        : AttributeFilters(*weighted), weightedOwner_(std::move(weighted)) {}
+    explicit AttributeFiltersPybind(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted)
+        : AttributeFilters<std::uint8_t>(*weighted), weightedOwner_(std::move(weighted)) {}
 
     py::array_t<uint8_t> filteringByPruningMin(FloatArray attr, float threshold){
         requireNodeAttributeArray(attr, topology());
 
         std::shared_ptr<float[]> attribute = PybindUtils::toShared_ptr(attr);
-        return PybindUtils::toNumpy(AttributeFilters::filteringByPruningMin(attribute, threshold));
+        return PybindUtils::toNumpy(AttributeFilters<std::uint8_t>::filteringByPruningMin(attribute, threshold));
     }
 
     py::array_t<uint8_t> filteringByPruningMax(FloatArray attr, float threshold){
         requireNodeAttributeArray(attr, topology());
 
         std::shared_ptr<float[]> attribute = PybindUtils::toShared_ptr(attr);
-        return PybindUtils::toNumpy(AttributeFilters::filteringByPruningMax(attribute, threshold));
+        return PybindUtils::toNumpy(AttributeFilters<std::uint8_t>::filteringByPruningMax(attribute, threshold));
 
     }
 
     py::array_t<uint8_t> filteringByPruningMin(std::vector<bool>& criterion){
         requireNodeCriterion(criterion, topology());
-        return PybindUtils::toNumpy(AttributeFilters::filteringByPruningMin(criterion));
+        return PybindUtils::toNumpy(AttributeFilters<std::uint8_t>::filteringByPruningMin(criterion));
     }
 
     py::array_t<uint8_t> filteringByDirectRule(std::vector<bool>& criterion){
         requireNodeCriterion(criterion, topology());
-        return PybindUtils::toNumpy(AttributeFilters::filteringByDirectRule(criterion));
+        return PybindUtils::toNumpy(AttributeFilters<std::uint8_t>::filteringByDirectRule(criterion));
     }
 
     py::array_t<uint8_t> filteringByPruningMax(std::vector<bool>& criterion){
         requireNodeCriterion(criterion, topology());
-        return PybindUtils::toNumpy(AttributeFilters::filteringByPruningMax(criterion));
+        return PybindUtils::toNumpy(AttributeFilters<std::uint8_t>::filteringByPruningMax(criterion));
 
     }
 
     std::vector<bool> getAdaptiveCriterion(std::vector<bool>& criterion, int delta){
         requireNodeCriterion(criterion, topology());
-        return AttributeFilters::getAdaptiveCriterion(criterion, delta);
+        return AttributeFilters<std::uint8_t>::getAdaptiveCriterion(criterion, delta);
     }
 
 
 
     py::array_t<uint8_t> filteringBySubtractiveRule(std::vector<bool>& criterion){
         requireNodeCriterion(criterion, topology());
-        return PybindUtils::toNumpy(AttributeFilters::filteringBySubtractiveRule(criterion));
+        return PybindUtils::toNumpy(AttributeFilters<std::uint8_t>::filteringBySubtractiveRule(criterion));
 
     }
 
     py::array_t<float> filteringBySubtractiveScoreRule(std::vector<float>& prob){
         requireNodeScores(prob, topology());
-        return PybindUtils::toNumpy(AttributeFilters::filteringBySubtractiveScoreRule(prob));
+        return PybindUtils::toNumpy(AttributeFilters<std::uint8_t>::filteringBySubtractiveScoreRule(prob));
 
     }
 
     py::array_t<uint8_t> filteringByExtinctionValue(FloatArray attr, int leafToKeep){
         requireNodeAttributeArray(attr, topology());
-        if (this->weightedOwner_ != nullptr) {
-            ExtinctionValues ev(*this->weightedOwner_, PybindUtils::toShared_ptr(attr));
-            return PybindUtils::toNumpy(ev.filtering(leafToKeep));
-        }
-        ExtinctionValues ev(this->tree, PybindUtils::toShared_ptr(attr));
+        ExtinctionValues<std::uint8_t> ev(*this->weightedOwner_, PybindUtils::toShared_ptr(attr));
         return PybindUtils::toNumpy(ev.filtering(leafToKeep));
     }
 
     py::array_t<float> saliencyMapByExtinctionValue(FloatArray attr, int leafToKeep, bool unweighted=false){
         requireNodeAttributeArray(attr, topology());
-        if (this->weightedOwner_ != nullptr) {
-            ExtinctionValues ev(*this->weightedOwner_, PybindUtils::toShared_ptr(attr));
-            return PybindUtils::toNumpy(ev.saliencyMap(leafToKeep, unweighted));
-        }
-        ExtinctionValues ev(this->tree, PybindUtils::toShared_ptr(attr));
+        ExtinctionValues<std::uint8_t> ev(*this->weightedOwner_, PybindUtils::toShared_ptr(attr));
         return PybindUtils::toNumpy(ev.saliencyMap(leafToKeep, unweighted));
     }
 

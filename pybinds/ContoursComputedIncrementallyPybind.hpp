@@ -7,7 +7,7 @@
 namespace mmcfilters {
 
 /**
- * @brief Funções auxiliares expostas ao Python para contornos incrementais.
+ * @brief Helper functions exposed to Python for incremental contours.
  */
 class ContoursComputedIncrementallyPybind {
 public:
@@ -15,8 +15,8 @@ public:
         return ContoursComputedIncrementally::extractCompactContours(*tree);
     }
 
-    static ContoursComputedIncrementally::IncrementalContours extraction(std::shared_ptr<WeightedMorphologicalTree> weighted) {
-        return ContoursComputedIncrementally::extractCompactContours(weighted->topology());
+    static ContoursComputedIncrementally::IncrementalContours extraction(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted) {
+        return ContoursComputedIncrementally::extractCompactContours(weighted->asView());
     }
 };
 

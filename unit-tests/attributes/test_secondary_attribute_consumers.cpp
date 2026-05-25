@@ -1,7 +1,7 @@
 #include "support/TestSupport.hpp"
 
-#include "mmcfilters/attributes/AttributeComputedIncrementally.hpp"
-#include "mmcfilters/attributes/ComputerMSER.hpp"
+#include "mmcfilters/attributes/AttributeComputation.hpp"
+#include "mmcfilters/filters/ComputerMSER.hpp"
 
 #include <cmath>
 
@@ -32,7 +32,7 @@ int main() {
     requireEqual(tree.getNumNodes(), 5, "active node count after middle-slot merge");
     requireEqual(tree.getNumInternalNodeSlots(), 6, "internal slot count after middle-slot merge");
 
-    auto [topologyNames, topologyBuffer] = AttributeComputedIncrementally::computeAttributes(
+    auto [topologyNames, topologyBuffer] = AttributeComputation::computeAttributes(
         *weighted,
         {HEIGHT_NODE, DEPTH_NODE, IS_LEAF_NODE, IS_ROOT_NODE, NUM_CHILDREN_NODE, NUM_DESCENDANTS_NODE}
     );
@@ -47,28 +47,28 @@ int main() {
 
     auto areaComputed = [&]() {
         try {
-            return AttributeComputedIncrementally::computeSingleAttribute(*weighted, AREA);
+            return AttributeComputation::computeSingleAttribute(*weighted, AREA);
         } catch (const std::exception &e) {
             throw std::runtime_error(std::string("area computation failed: ") + e.what());
         }
     }();
     auto bitquadsComputed = [&]() {
         try {
-            return AttributeComputedIncrementally::computeSingleAttribute(*weighted, BITQUADS_AREA);
+            return AttributeComputation::computeSingleAttribute(*weighted, BITQUADS_AREA);
         } catch (const std::exception &e) {
             throw std::runtime_error(std::string("bitquads computation failed: ") + e.what());
         }
     }();
     auto maxDistComputed = [&]() {
         try {
-            return AttributeComputedIncrementally::computeSingleAttribute(*weighted, MAX_DIST);
+            return AttributeComputation::computeSingleAttribute(*weighted, MAX_DIST);
         } catch (const std::exception &e) {
             throw std::runtime_error(std::string("max-dist computation failed: ") + e.what());
         }
     }();
     auto boxComputed = [&]() {
         try {
-            return AttributeComputedIncrementally::computeAttributes(
+            return AttributeComputation::computeAttributes(
                 *weighted,
                 {BOX_WIDTH, BOX_HEIGHT, RECTANGULARITY, DIAGONAL_LENGTH}
             );
@@ -78,7 +78,7 @@ int main() {
     }();
     auto momentComputed = [&]() {
         try {
-            return AttributeComputedIncrementally::computeAttributes(
+            return AttributeComputation::computeAttributes(
                 *weighted,
                 {CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, INERTIA, CIRCULARITY}
             );
@@ -88,7 +88,7 @@ int main() {
     }();
     auto grayComputed = [&]() {
         try {
-            return AttributeComputedIncrementally::computeAttributes(
+            return AttributeComputation::computeAttributes(
                 *weighted,
                 {LEVEL, MEAN_LEVEL, VARIANCE_LEVEL, GRAY_HEIGHT, VOLUME, RELATIVE_VOLUME}
             );
@@ -110,74 +110,62 @@ int main() {
     const auto& grayNames = grayComputed.first;
     const auto& grayBuffer = grayComputed.second;
 
-    auto pairCompatibleArea = AttributeComputedIncrementally::computeSingleAttribute(*weighted, AREA);
+    auto pairCompatibleArea = AttributeComputation::computeSingleAttribute(*weighted, AREA);
     requireEqual(pairCompatibleArea.first.linearIndex(0, AREA), 0, "pair-like first field still exposes AttributeNames");
     requireEqual(pairCompatibleArea.second[pairCompatibleArea.first.linearIndex(0, AREA)], 16.0f, "pair-like second field still exposes buffer");
 
-    DependencyMap providedInternal;
-    providedInternal[AREA] = areaComputed.view();
-    auto [reusedNames, reusedBuffer] = AttributeComputedIncrementally::computeAttributes(
-        *weighted,
-        {AREA, VOLUME},
-        providedInternal
+    auto [explicitTopologyNames, explicitTopologyBuffer] = AttributeComputation::computeTopologyAttributes(
+        tree,
+        {AREA, BOX_WIDTH}
     );
-    requireEqual(reusedBuffer[reusedNames.linearIndex(0, AREA)], 16.0f, "provided dependency AREA must be copied into final buffer");
-    requireEqual(reusedBuffer[reusedNames.linearIndex(3, VOLUME)], 28.0f, "provided dependency AREA must remain usable by downstream computers");
+    requireEqual(
+        explicitTopologyBuffer[explicitTopologyNames.linearIndex(0, AREA)],
+        16.0f,
+        "explicit topology attribute facade must compute AREA without altitude"
+    );
+    requireThrows([&]() {
+        (void)AttributeComputation::computeSingleTopologyAttribute(tree, LEVEL);
+    }, "explicit topology attribute facade must reject altitude-dependent attributes");
 
     requireThrows([&]() {
-        (void)AttributeComputedIncrementally::computeSingleAttribute(
+        (void)AttributeComputation::computeSingleAttribute(
             *weighted,
             AREA,
-            DependencyMap{},
             NodeIdSpace::HIGRA
         );
     }, "image-built or edited tree must reject Higra-space attribute projection");
 
     auto [higraParent, higraAltitude] = weighted->exportHigraHierarchy();
-    auto fromHigra = WeightedMorphologicalTree::createFromHigraParent(
-        higraParent,
-        higraAltitude,
+    auto fromHigra = MorphologicalTreeFactory::createFromHigraParent(
+        std::span<const NodeId>(higraParent),
+        std::span<const std::uint8_t>(higraAltitude),
         tree.getNumRowsOfImage(),
         tree.getNumColsOfImage(),
-        MorphologicalTree::MAX_TREE,
+        MorphologicalTreeKind::MAX_TREE,
         AdjacencyRelation(tree.getNumRowsOfImage(), tree.getNumColsOfImage(), 1.5)
     );
-    auto areaInHigraSpace = AttributeComputedIncrementally::computeSingleAttribute(
-        fromHigra,
-        AREA,
-        {},
-        NodeIdSpace::HIGRA
-    );
-    auto [baselineNames, baselineBuffer] = AttributeComputedIncrementally::computeAttributes(
-        fromHigra,
-        {AREA, VOLUME}
-    );
-    DependencyMap providedWrongSpace;
-    providedWrongSpace[AREA] = areaInHigraSpace.view();
-    auto [recomputedNames, recomputedBuffer] = AttributeComputedIncrementally::computeAttributes(
+    auto higraComputed = AttributeComputation::computeAttributes(
         fromHigra,
         {AREA, VOLUME},
-        providedWrongSpace
+        NodeIdSpace::HIGRA
     );
-    for (NodeId nodeId : fromHigra.topology().getAliveNodeIds()) {
-        requireEqual(
-            recomputedBuffer[recomputedNames.linearIndex(nodeId, AREA)],
-            baselineBuffer[baselineNames.linearIndex(nodeId, AREA)],
-            "Higra-space dependency must not poison internal AREA reuse"
-        );
-        requireEqual(
-            recomputedBuffer[recomputedNames.linearIndex(nodeId, VOLUME)],
-            baselineBuffer[baselineNames.linearIndex(nodeId, VOLUME)],
-            "Higra-space dependency must be recomputed internally before reuse"
-        );
-    }
+    require(
+        higraComputed.nodeIdSpace == NodeIdSpace::HIGRA,
+        "Higra-space multi-attribute projection must preserve output node-id space");
+    require(
+        higraComputed.attributeNames().NUM_ATTRIBUTES == 2,
+        "Higra-space multi-attribute projection must preserve requested attribute count");
+    require(
+        higraComputed.values().size() ==
+            static_cast<std::size_t>(fromHigra.topology().getNodeIdSpaceSize(NodeIdSpace::HIGRA)) * 2,
+        "Higra-space multi-attribute projection must materialise the exported node-id space");
 
-    auto mutatedFromHigra = WeightedMorphologicalTree::createFromHigraParent(
-        higraParent,
-        higraAltitude,
+    auto mutatedFromHigra = MorphologicalTreeFactory::createFromHigraParent(
+        std::span<const NodeId>(higraParent),
+        std::span<const std::uint8_t>(higraAltitude),
         tree.getNumRowsOfImage(),
         tree.getNumColsOfImage(),
-        MorphologicalTree::MAX_TREE,
+        MorphologicalTreeKind::MAX_TREE,
         AdjacencyRelation(tree.getNumRowsOfImage(), tree.getNumColsOfImage(), 1.5)
     );
     NodeId firstNonRootNodeId = InvalidNode;
@@ -190,34 +178,32 @@ int main() {
     require(firstNonRootNodeId != InvalidNode, "Higra projection mutation test needs one non-root node");
     mutatedFromHigra.mergeNodeIntoParent(firstNonRootNodeId);
     requireThrows([&]() {
-        (void)AttributeComputedIncrementally::computeSingleAttribute(
+        (void)AttributeComputation::computeSingleAttribute(
             mutatedFromHigra,
             AREA,
-            DependencyMap{},
             NodeIdSpace::HIGRA
         );
     }, "mutated Higra import must reject scalar Higra-space projection");
     requireThrows([&]() {
-        (void)AttributeComputedIncrementally::computeSingleAttributeWithDelta(
+        (void)AttributeComputation::computeSingleAttributeWithDelta(
             mutatedFromHigra,
             AREA,
+            AltitudeDiff<std::uint8_t>{1},
             1,
             "null-padding",
-            DependencyMap{},
             NodeIdSpace::HIGRA
         );
     }, "mutated Higra import must reject delta Higra-space projection");
     requireThrows([&]() {
-        (void)AttributeComputedIncrementally::computeAttributes(
+        (void)AttributeComputation::computeAttributes(
             mutatedFromHigra,
             {AREA, VOLUME},
-            DependencyMap{},
             NodeIdSpace::HIGRA
         );
     }, "mutated Higra import must reject multi-attribute Higra-space projection");
 
     auto [deltaLevelNames, deltaLevelBuffer] =
-        AttributeComputedIncrementally::computeSingleAttributeWithDelta(*weighted, LEVEL, 1, "last-padding");
+        AttributeComputation::computeSingleAttributeWithDelta(*weighted, LEVEL, AltitudeDiff<std::uint8_t>{1}, 1, "last-padding");
     requireEqual(
         deltaLevelBuffer[deltaLevelNames.linearIndex(1, LEVEL, -1)],
         0.0f,
@@ -275,13 +261,13 @@ int main() {
     requireEqual(grayBuffer[grayNames.linearIndex(3, VOLUME)], 28.0f, "node 3 volume after middle-slot merge");
     requireEqual(grayBuffer[grayNames.linearIndex(3, RELATIVE_VOLUME)], 14.0f, "node 3 relative volume after middle-slot merge");
 
-    ComputerMSER mser(*weighted);
+    ComputerMSER<std::uint8_t> mser(*weighted);
     std::vector<uint8_t> isMSER = mser.computeMSER(1);
     const std::vector<float> implicitStabilities = mser.getStabilities();
-    ComputerMSER mserExplicit(tree, &weighted->getAltitudeBuffer(), areaBuffer);
+    ComputerMSER<std::uint8_t> mserExplicit(*weighted, areaBuffer);
     std::vector<uint8_t> isMSERExplicit = mserExplicit.computeMSER(1);
     const std::vector<float> explicitStabilities = mserExplicit.getStabilities();
-    ComputerMSER mserRaw(tree, &weighted->getAltitudeBuffer(), areaBuffer.data());
+    ComputerMSER<std::uint8_t> mserRaw(*weighted, areaBuffer.data());
     std::vector<uint8_t> isMSERRaw = mserRaw.computeMSER(1);
     const std::vector<float> rawStabilities = mserRaw.getStabilities();
     requireEqual(static_cast<int>(isMSER.size()), tree.getNumInternalNodeSlots(), "MSER buffer size after middle-slot merge");

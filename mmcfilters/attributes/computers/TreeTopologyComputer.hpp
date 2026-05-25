@@ -1,11 +1,14 @@
 #pragma once
 
-#include "AttributeComputer.hpp"
-#include "AttributeComputedIncrementally.hpp"
-#include "../trees/MorphologicalTree.hpp"
+#include "../AttributeComputer.hpp"
+#include "../../trees/detail/TreeTraversalDetail.hpp"
+#include "../../trees/MorphologicalTree.hpp"
+
+#include <algorithm>
+#include <limits>
 
 
-namespace mmcfilters {
+namespace mmcfilters::attributes::computers {
 
 namespace detail {
 inline NodeId topologySlotOf(const MorphologicalTree&, NodeId nodeId) noexcept {
@@ -41,18 +44,24 @@ inline NodeId topologySlotOf(const MorphologicalTree&, NodeId nodeId) noexcept {
  */
 class TreeTopologyComputer : public AttributeComputer {
 public:
+    using AttributeComputer::compute;
+    using AttributeComputer::computeUnitAttributes;
+
     /**
      * @brief Returns the full family of topology-derived descriptors.
      */
-    std::vector<Attribute> attributes() const override {
+    [[nodiscard]] std::vector<Attribute> attributes() const override {
         return {HEIGHT_NODE, DEPTH_NODE, IS_LEAF_NODE, IS_ROOT_NODE, NUM_CHILDREN_NODE, NUM_SIBLINGS_NODE, NUM_DESCENDANTS_NODE, NUM_LEAF_DESCENDANTS_NODE, LEAF_RATIO_NODE, BALANCE_NODE, AVG_CHILD_HEIGHT_NODE};
     }
 
     /**
      * @brief Computes the requested topology descriptors.
+     *
+     * The computation is topology-only and ignores altitude/dependencies. All
+     * output rows are indexed by dense internal node id.
      */
-    void compute(const MorphologicalTree& tree, const AltitudeBuffer*, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes, std::span<const DependencySource>) const override {
-        if (PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing STRUCTURE_TREE group" << std::endl;
+    void compute(const MorphologicalTree& tree, AttributeAltitudeView, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes, std::span<const DependencySource>) const override {
+        requireAttributeBufferShape(tree, buffer, attrNames);
 
         bool computeHeight = std::find(requestedAttributes.begin(), requestedAttributes.end(), HEIGHT_NODE) != requestedAttributes.end();
         bool computeDepth = std::find(requestedAttributes.begin(), requestedAttributes.end(), DEPTH_NODE) != requestedAttributes.end();
@@ -95,7 +104,9 @@ public:
             return computeDepth ? attrNames.linearIndex(idx, DEPTH_NODE) : idx;
         };
 
-        AttributeComputedIncrementally::traversePostOrder(tree,
+        std::vector<float> minChildHeightStorage(computeBalance ? numNodeSlots : 0, 0.0f);
+
+        ::mmcfilters::detail::traversePostOrder(tree,
             tree.getRoot(),
             [&](NodeId nodeId) {
                 const NodeId node = detail::topologySlotOf(tree, nodeId);
@@ -107,7 +118,7 @@ public:
 
                 float parentDepth = (parent != InvalidNode) ? bufferDepth[indexOfDepth(parent)] : InvalidNode;
                 bufferDepth[indexOfDepth(node)] = parent != InvalidNode ? parentDepth + 1.0f : 0.0f;
-                
+
                 bufferHeight[indexOfHeight(node)] = 0.0f;
                 bufferNumDesc[indexOfNumDescendants(node)] = 0.0f;
                 bufferNumLeafDesc[indexOfNumLeafDescendants(node)] = isLeaf ? 1.0f : 0.0f;
@@ -124,15 +135,17 @@ public:
                     buffer[attrNames.linearIndex(node, NUM_SIBLINGS_NODE)] = isRoot ? 0.0f : static_cast<float>(tree.getNumChildren(parentNodeId) - 1);
                 if (computeLeafRatio)
                     buffer[attrNames.linearIndex(node, LEAF_RATIO_NODE)] = 0.0f;
-                if (computeBalance)
+                if (computeBalance) {
+                    minChildHeightStorage[static_cast<std::size_t>(node)] = std::numeric_limits<float>::infinity();
                     buffer[attrNames.linearIndex(node, BALANCE_NODE)] = 0.0f;
+                }
                 if (computeAvgChildHeight)
                     buffer[attrNames.linearIndex(node, AVG_CHILD_HEIGHT_NODE)] = 0.0f;
             },
             [&](NodeId parentNodeId, NodeId childNodeId) {
                 const NodeId parent = detail::topologySlotOf(tree, parentNodeId);
                 const NodeId child = detail::topologySlotOf(tree, childNodeId);
-                
+
                 bufferNumDesc[indexOfNumDescendants(parent)] += bufferNumDesc[indexOfNumDescendants(child)] + 1.0f;
                 bufferNumLeafDesc[indexOfNumLeafDescendants(parent)] += bufferNumLeafDesc[indexOfNumLeafDescendants(child)];
 
@@ -142,11 +155,8 @@ public:
                 const int numChildren = tree.getNumChildren(parentNodeId);
 
                 if (computeBalance) {
-                    float& minH = buffer[attrNames.linearIndex(parent, BALANCE_NODE)];
-                    if (numChildren == 1)
-                        minH = childHeight;
-                    else
-                        minH = std::min(minH, childHeight);
+                    float& minChildHeight = minChildHeightStorage[static_cast<std::size_t>(parent)];
+                    minChildHeight = std::min(minChildHeight, childHeight);
                 }
 
                 if (computeAvgChildHeight) {
@@ -159,18 +169,18 @@ public:
             },
             [&](NodeId idxGlobalId) {
                 const NodeId idx = detail::topologySlotOf(tree, idxGlobalId);
-                
+
                 if (computeLeafRatio) {
                     float desc = bufferNumDesc[indexOfNumDescendants(idx)];
-                    float folhas = bufferNumLeafDesc[indexOfNumLeafDescendants(idx)];
-                    buffer[attrNames.linearIndex(idx, LEAF_RATIO_NODE)] = desc > 0.0f ? folhas / (desc + 1.0f) : 1.0f;
+                    float leafCount = bufferNumLeafDesc[indexOfNumLeafDescendants(idx)];
+                    buffer[attrNames.linearIndex(idx, LEAF_RATIO_NODE)] = desc > 0.0f ? leafCount / (desc + 1.0f) : 1.0f;
                 }
 
                 if (!tree.isLeaf(idxGlobalId)) {
                     if (computeBalance) {
-                        float alturaMax = bufferHeight[indexOfHeight(idx)];
-                        float alturaMin = buffer[attrNames.linearIndex(idx, BALANCE_NODE)];
-                        buffer[attrNames.linearIndex(idx, BALANCE_NODE)] = alturaMax - alturaMin;
+                        const float maxChildHeight = bufferHeight[indexOfHeight(idx)] - 1.0f;
+                        const float minChildHeight = minChildHeightStorage[static_cast<std::size_t>(idx)];
+                        buffer[attrNames.linearIndex(idx, BALANCE_NODE)] = maxChildHeight - minChildHeight;
                     }
 
                     if (computeAvgChildHeight) {
@@ -182,9 +192,16 @@ public:
         );
     }
 
+    /**
+     * @brief Materializes topology descriptors for one-pixel unit supports.
+     *
+     * A unit proper part is represented as a degenerate one-node tree: root and
+     * leaf flags are true, depths/heights/child counts are zero, and leaf ratio
+     * is one.
+     */
     void computeUnitAttributes(
         const MorphologicalTree& tree,
-        const AltitudeBuffer*,
+        AttributeAltitudeView,
         std::span<const NodeId> unitProperParts,
         std::span<float> buffer,
         const AttributeNames& attrNames,
@@ -249,4 +266,4 @@ public:
     }
 };
 
-} // namespace mmcfilters
+} // namespace mmcfilters::attributes::computers

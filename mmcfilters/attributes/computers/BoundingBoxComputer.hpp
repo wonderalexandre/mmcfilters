@@ -1,15 +1,71 @@
 #pragma once
 
-#include "AttributeComputer.hpp"
-#include "AttributeComputedIncrementally.hpp"
-#include "../trees/MorphologicalTree.hpp"
+#include "../AttributeComputer.hpp"
+#include "../../trees/detail/TreeTraversalDetail.hpp"
+#include "../../trees/MorphologicalTree.hpp"
 
-namespace mmcfilters {
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <span>
+#include <vector>
+
+namespace mmcfilters::attributes::computers {
 
 namespace detail {
 inline NodeId boundingBoxSlotOf(const MorphologicalTree&, NodeId nodeId) noexcept {
     return nodeId;
 }
+
+inline constexpr std::array<Attribute, 9> BOUNDING_BOX_ATTRIBUTES{
+    BOX_WIDTH,
+    BOX_HEIGHT,
+    RECTANGULARITY,
+    RATIO_WH,
+    BOX_COL_MIN,
+    BOX_COL_MAX,
+    BOX_ROW_MIN,
+    BOX_ROW_MAX,
+    DIAGONAL_LENGTH};
+
+struct BoundingBoxRequest {
+    bool width = false;
+    bool height = false;
+    bool rectangularity = false;
+    bool ratioWH = false;
+    bool colMin = false;
+    bool colMax = false;
+    bool rowMin = false;
+    bool rowMax = false;
+    bool diagonalLength = false;
+
+    [[nodiscard]] bool any() const noexcept {
+        return width || height || rectangularity || ratioWH || colMin ||
+               colMax || rowMin || rowMax || diagonalLength;
+    }
+
+    [[nodiscard]] bool needsAreaDependency() const noexcept {
+        return rectangularity;
+    }
+
+    [[nodiscard]] static BoundingBoxRequest from(std::span<const Attribute> requestedAttributes) {
+        return {
+            .width = contains(requestedAttributes, BOX_WIDTH),
+            .height = contains(requestedAttributes, BOX_HEIGHT),
+            .rectangularity = contains(requestedAttributes, RECTANGULARITY),
+            .ratioWH = contains(requestedAttributes, RATIO_WH),
+            .colMin = contains(requestedAttributes, BOX_COL_MIN),
+            .colMax = contains(requestedAttributes, BOX_COL_MAX),
+            .rowMin = contains(requestedAttributes, BOX_ROW_MIN),
+            .rowMax = contains(requestedAttributes, BOX_ROW_MAX),
+            .diagonalLength = contains(requestedAttributes, DIAGONAL_LENGTH)};
+    }
+
+private:
+    [[nodiscard]] static bool contains(std::span<const Attribute> requestedAttributes, Attribute attribute) {
+        return std::find(requestedAttributes.begin(), requestedAttributes.end(), attribute) != requestedAttributes.end();
+    }
+};
 }
 
 /**
@@ -37,26 +93,26 @@ inline NodeId boundingBoxSlotOf(const MorphologicalTree&, NodeId nodeId) noexcep
  */
 class BoundingBoxComputer : public AttributeComputer {
 public:
+    using AttributeComputer::compute;
+    using AttributeComputer::computeUnitAttributes;
+
     /**
      * @brief Returns the full family of bounding-box descriptors produced by
      * this computer.
      */
-    std::vector<Attribute> attributes() const override {
-        return {BOX_WIDTH, BOX_HEIGHT, RECTANGULARITY, RATIO_WH,BOX_COL_MIN, BOX_COL_MAX, BOX_ROW_MIN, BOX_ROW_MAX,DIAGONAL_LENGTH};
-    }
-
-    /**
-     * @brief Declares the dependencies required by the derived descriptors.
-     */
-    std::vector<AttributeOrGroup> requiredAttributes() const override {
-        return {AREA};
+    [[nodiscard]] std::vector<Attribute> attributes() const override {
+        return {detail::BOUNDING_BOX_ATTRIBUTES.begin(), detail::BOUNDING_BOX_ATTRIBUTES.end()};
     }
 
     /**
      * @brief Computes the requested bounding-box descriptors.
+     *
+     * The output buffer is indexed by dense internal node id. `RECTANGULARITY`
+     * requires dependency source `0` containing `AREA`; all other descriptors
+     * are computed directly from row-major proper-part coordinates.
      */
-    void compute(const MorphologicalTree& tree, const AltitudeBuffer*, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes, std::span<const DependencySource> dependencySources) const override {
-        if (PRINT_LOG) std::cout << "\n==== AttributeComputer: Computing BOUNDING_BOX group" << std::endl;
+    void compute(const MorphologicalTree& tree, AttributeAltitudeView, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes, std::span<const DependencySource> dependencySources) const override {
+        requireAttributeBufferShape(tree, buffer, attrNames);
 
         auto indexOfWidth  = [&](NodeId idx) { return attrNames.linearIndex(idx, BOX_WIDTH); };
         auto indexOfHeight = [&](NodeId idx) { return attrNames.linearIndex(idx, BOX_HEIGHT); };
@@ -68,17 +124,15 @@ public:
         auto indexOfRowMax = [&](NodeId idx) { return attrNames.linearIndex(idx, BOX_ROW_MAX); };
         auto indexOfDiagonalLength = [&](NodeId idx) { return attrNames.linearIndex(idx, DIAGONAL_LENGTH); };
 
-        bool computeWidth  = std::find(requestedAttributes.begin(), requestedAttributes.end(), BOX_WIDTH)  != requestedAttributes.end();
-        bool computeHeight = std::find(requestedAttributes.begin(), requestedAttributes.end(), BOX_HEIGHT) != requestedAttributes.end();
-        bool computeRectangularity = std::find(requestedAttributes.begin(), requestedAttributes.end(), RECTANGULARITY) != requestedAttributes.end();
-        bool computeRatioWH = std::find(requestedAttributes.begin(), requestedAttributes.end(), RATIO_WH) != requestedAttributes.end();
-        bool computeColMin = std::find(requestedAttributes.begin(), requestedAttributes.end(), BOX_COL_MIN) != requestedAttributes.end();
-        bool computeColMax = std::find(requestedAttributes.begin(), requestedAttributes.end(), BOX_COL_MAX) != requestedAttributes.end();
-        bool computeRowMin = std::find(requestedAttributes.begin(), requestedAttributes.end(), BOX_ROW_MIN) != requestedAttributes.end();
-        bool computeRowMax = std::find(requestedAttributes.begin(), requestedAttributes.end(), BOX_ROW_MAX) != requestedAttributes.end();
-        bool computeDiagonalLength = std::find(requestedAttributes.begin(), requestedAttributes.end(), DIAGONAL_LENGTH) != requestedAttributes.end();
-        const auto& dependencyArea = dependencySources[0];
-        auto indexOfArea = [&](NodeId idx) { return dependencyArea.attrNames->linearIndex(idx, AREA); };
+        const detail::BoundingBoxRequest request = detail::BoundingBoxRequest::from(requestedAttributes);
+        if (!request.any()) {
+            return;
+        }
+
+        const DependencySource* dependencyArea = request.needsAreaDependency()
+            ? &requireDependencySource(dependencySources, 0, AREA)
+            : nullptr;
+        auto indexOfArea = [&](NodeId idx) { return dependencyArea->attrNames->linearIndex(idx, AREA); };
 
         int n = tree.getNumInternalNodeSlots();
         int numCols = tree.getNumColsOfImage();
@@ -89,7 +143,7 @@ public:
         std::vector<int> ymin(n, numRows);
         std::vector<int> ymax(n, 0);
 
-        AttributeComputedIncrementally::traversePostOrder(
+        ::mmcfilters::detail::traversePostOrder(
             tree,
             tree.getRoot(),
             [&](NodeId nodeId) {
@@ -117,19 +171,19 @@ public:
             },
             [&](NodeId nodeId) {
                 const NodeId idx = detail::boundingBoxSlotOf(tree, nodeId);
-                if(computeWidth)
+                if(request.width)
                     buffer[indexOfWidth(idx)]  = xmax[idx] - xmin[idx] + 1;
-                if(computeHeight)
+                if(request.height)
                     buffer[indexOfHeight(idx)] = ymax[idx] - ymin[idx] + 1;
 
-                if(computeRectangularity) {
-                    float area = dependencyArea.buffer[indexOfArea(idx)];
+                if(request.rectangularity) {
+                    float area = dependencyArea->buffer[indexOfArea(idx)];
                     float width = xmax[idx] - xmin[idx] + 1;
                     float height = ymax[idx] - ymin[idx] + 1;
                     float denom = width * height;
                     buffer[indexOfRectangularity(idx)] = (denom > 0.0f) ? (area / denom) : 0.0f;
                 }
-                if(computeRatioWH) {
+                if(request.ratioWH) {
                     float width  = xmax[idx] - xmin[idx] + 1;
                     float height = ymax[idx] - ymin[idx] + 1;
                     if (width > 0 && height > 0) {
@@ -138,15 +192,15 @@ public:
                         buffer[indexOfRatioWH(idx)] = 0.0f;
                     }
                 }
-                if(computeColMin)
+                if(request.colMin)
                     buffer[indexOfColMin(idx)]  = xmin[idx];
-                if(computeColMax)
+                if(request.colMax)
                     buffer[indexOfColMax(idx)]  = xmax[idx];
-                if(computeRowMin)
+                if(request.rowMin)
                     buffer[indexOfRowMin(idx)]  = ymin[idx];
-                if(computeRowMax)
+                if(request.rowMax)
                     buffer[indexOfRowMax(idx)]  = ymax[idx];
-                if(computeDiagonalLength) {
+                if(request.diagonalLength) {
                     float width  = xmax[idx] - xmin[idx] + 1;
                     float height = ymax[idx] - ymin[idx] + 1;
                     buffer[indexOfDiagonalLength(idx)] = std::sqrt(width*width + height*height);
@@ -155,9 +209,15 @@ public:
         );
     }
 
+    /**
+     * @brief Materializes bounding-box descriptors for one-pixel unit supports.
+     *
+     * A unit support has width/height `1`, rectangularity `1`, ratio `1`, and
+     * min/max coordinates equal to the proper part coordinate.
+     */
     void computeUnitAttributes(
         const MorphologicalTree& tree,
-        const AltitudeBuffer*,
+        AttributeAltitudeView,
         std::span<const NodeId> unitProperParts,
         std::span<float> buffer,
         const AttributeNames& attrNames,
@@ -165,19 +225,8 @@ public:
     {
         requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
 
-        const bool computeWidth = requestsAttribute(requestedAttributes, BOX_WIDTH);
-        const bool computeHeight = requestsAttribute(requestedAttributes, BOX_HEIGHT);
-        const bool computeRectangularity = requestsAttribute(requestedAttributes, RECTANGULARITY);
-        const bool computeRatioWH = requestsAttribute(requestedAttributes, RATIO_WH);
-        const bool computeColMin = requestsAttribute(requestedAttributes, BOX_COL_MIN);
-        const bool computeColMax = requestsAttribute(requestedAttributes, BOX_COL_MAX);
-        const bool computeRowMin = requestsAttribute(requestedAttributes, BOX_ROW_MIN);
-        const bool computeRowMax = requestsAttribute(requestedAttributes, BOX_ROW_MAX);
-        const bool computeDiagonalLength = requestsAttribute(requestedAttributes, DIAGONAL_LENGTH);
-
-        if (!computeWidth && !computeHeight && !computeRectangularity && !computeRatioWH &&
-            !computeColMin && !computeColMax && !computeRowMin && !computeRowMax &&
-            !computeDiagonalLength) {
+        const detail::BoundingBoxRequest request = detail::BoundingBoxRequest::from(requestedAttributes);
+        if (!request.any()) {
             return;
         }
 
@@ -185,35 +234,35 @@ public:
         for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
             const NodeId properPart = unitProperParts[static_cast<size_t>(leafIndex)];
             const auto [row, col] = ImageUtils::to2D(properPart, numCols);
-            if (computeWidth) {
+            if (request.width) {
                 buffer[attrNames.linearIndex(leafIndex, BOX_WIDTH)] = 1.0f;
             }
-            if (computeHeight) {
+            if (request.height) {
                 buffer[attrNames.linearIndex(leafIndex, BOX_HEIGHT)] = 1.0f;
             }
-            if (computeRectangularity) {
+            if (request.rectangularity) {
                 buffer[attrNames.linearIndex(leafIndex, RECTANGULARITY)] = 1.0f;
             }
-            if (computeRatioWH) {
+            if (request.ratioWH) {
                 buffer[attrNames.linearIndex(leafIndex, RATIO_WH)] = 1.0f;
             }
-            if (computeColMin) {
+            if (request.colMin) {
                 buffer[attrNames.linearIndex(leafIndex, BOX_COL_MIN)] = static_cast<float>(col);
             }
-            if (computeColMax) {
+            if (request.colMax) {
                 buffer[attrNames.linearIndex(leafIndex, BOX_COL_MAX)] = static_cast<float>(col);
             }
-            if (computeRowMin) {
+            if (request.rowMin) {
                 buffer[attrNames.linearIndex(leafIndex, BOX_ROW_MIN)] = static_cast<float>(row);
             }
-            if (computeRowMax) {
+            if (request.rowMax) {
                 buffer[attrNames.linearIndex(leafIndex, BOX_ROW_MAX)] = static_cast<float>(row);
             }
-            if (computeDiagonalLength) {
+            if (request.diagonalLength) {
                 buffer[attrNames.linearIndex(leafIndex, DIAGONAL_LENGTH)] = std::sqrt(2.0f);
             }
         }
     }
 };
 
-} // namespace mmcfilters
+} // namespace mmcfilters::attributes::computers

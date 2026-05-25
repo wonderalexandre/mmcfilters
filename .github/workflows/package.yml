@@ -110,8 +110,15 @@ jobs:
           import mmcfilters
 
           image = np.array([[1, 2], [3, 4]], dtype=np.uint8)
-          tree = mmcfilters.WeightedMorphologicalTree.createMaxTree(image)
+          tree = mmcfilters.MorphologicalTreeFactory.createMaxTree(image)
           assert tree.reconstructionImage().shape == image.shape
+          assert hasattr(mmcfilters, "Attribute")
+          area = mmcfilters.Attribute.computeSingleAttribute(tree, mmcfilters.Attribute.Type.AREA)
+          assert area.shape[0] == tree.numInternalNodeSlots
+          names, attrs = mmcfilters.Attribute.computeAttributes(tree, [mmcfilters.Attribute.ALL])
+          assert "CONTOUR_PIXELS" in names
+          assert "CONTOUR_SIDE_SOUTH" in names
+          assert attrs.shape[1] == len(names)
           PY
 
       - name: Check package metadata

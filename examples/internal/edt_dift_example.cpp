@@ -1,5 +1,15 @@
-#include "../mmcfilters/attributes/maxdist/EdtDIFT.hpp"
-#include "../external/stb/stb_image_write.h"
+/**
+ * Internal visualization example for the exact distance-transform support used
+ * by the `MAX_DIST` attribute family.
+ *
+ * Build with `-DMMCFILTERS_BUILD_EXAMPLES=ON` and run:
+ * `./build/examples/mmcfilters_internal_edt_dift tmp/edt_dift_example`.
+ *
+ * The program writes binary and distance-transform PNGs. It includes a
+ * `detail/` header and is not a public API example.
+ */
+#include "mmcfilters/attributes/computers/detail/maxdist/EdtDIFT.hpp"
+#include "stb_image_write.h"
 
 #include <filesystem>
 #include <iostream>
@@ -46,7 +56,7 @@ int main(int argc, char** argv)
     constexpr int bottom = 11;
     constexpr int right = 10;
 
-    mmcfilters::maxdist::EdtDIFT edt(rows, cols);
+    mmcfilters::attributes::computers::detail::maxdist::EdtDIFT edt(rows, cols);
 
     for (int row = top; row <= bottom; ++row) {
         for (int col = left; col <= right; ++col) {

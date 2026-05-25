@@ -1,12 +1,15 @@
 build/* 
+build-*/*
 mmcfilters.egg-info/*
 mmcfilters/__pycache__/*
 __pycache__/
 *.py[cod]
+*.dSYM/
 anaconda_projects/
 .vscode/
 .eggs/*
 dist/*
+downloads/*
 tmp/
 build_setup_py/*
 .DS_Store

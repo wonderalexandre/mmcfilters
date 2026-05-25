@@ -22,6 +22,7 @@ set(MMCFILTERS_COMPONENT_DIRS
     ${MMCFILTERS_ROOT}/filters
     ${MMCFILTERS_ROOT}/attributes
     ${MMCFILTERS_ROOT}/contours
+    ${MMCFILTERS_ROOT}/localEvents
     ${MMCFILTERS_ROOT}/dataStructure
     ${MMCFILTERS_ROOT}/utils
 )
@@ -34,9 +35,9 @@ file(GLOB_RECURSE MMCFILTERS_HEADER_FILES CONFIGURE_DEPENDS
     "${MMCFILTERS_ROOT}/filters/*.hpp"
     "${MMCFILTERS_ROOT}/attributes/*.hpp"
     "${MMCFILTERS_ROOT}/contours/*.hpp"
+    "${MMCFILTERS_ROOT}/localEvents/*.hpp"
     "${MMCFILTERS_ROOT}/dataStructure/*.hpp"
     "${MMCFILTERS_ROOT}/utils/*.hpp"
-    "${MMCFILTERS_ROOT}/attributes/maxdist/*.hpp"
 )
 
 file(GLOB_RECURSE MMCFILTERS_SOURCE_FILES CONFIGURE_DEPENDS
@@ -44,9 +45,9 @@ file(GLOB_RECURSE MMCFILTERS_SOURCE_FILES CONFIGURE_DEPENDS
     "${MMCFILTERS_ROOT}/filters/*.cpp"
     "${MMCFILTERS_ROOT}/attributes/*.cpp"
     "${MMCFILTERS_ROOT}/contours/*.cpp"
+    "${MMCFILTERS_ROOT}/localEvents/*.cpp"
     "${MMCFILTERS_ROOT}/dataStructure/*.cpp"
     "${MMCFILTERS_ROOT}/utils/*.cpp"
-    "${MMCFILTERS_ROOT}/attributes/maxdist/*.cpp"
 )
 
 if(NOT TARGET mmcfilters_lib)
@@ -65,13 +66,6 @@ target_include_directories(mmcfilters_lib
 
 # Garante C++20 para tudo que linkar nesta biblioteca.
 target_compile_features(mmcfilters_lib INTERFACE cxx_std_20)
-
-# Ajusta flags de otimização dependendo do compilador: evita passar -O3 ao MSVC.
-target_compile_options(mmcfilters_lib
-    INTERFACE
-        $<$<CXX_COMPILER_ID:MSVC>:/O2>
-        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-O3>
-)
 
 # Alias canônico para consumo moderno via target namespace.
 add_library(mmcfilters::core ALIAS mmcfilters_lib)

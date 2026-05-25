@@ -1,11 +1,11 @@
 # arquivos de controle do build
 include README.md
 include LICENSE
-#include pyproject.toml
+include pyproject.toml
 include CMakeLists.txt
 include pybind11.cmake
 recursive-include cmake *.cmake
 
 recursive-include mmcfilters *.cpp *.hpp *.tpp CMakeLists.txt
-recursive-include mmcfilters *.cpp *.hpp *.tpp CMakeLists.txt
+recursive-include python *.py
 recursive-include pybinds *.cpp *.hpp

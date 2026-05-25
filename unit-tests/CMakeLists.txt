@@ -37,6 +37,10 @@ function(mmcfilters_add_unit_test target)
     add_test(NAME ${target} COMMAND ${target})
 endfunction()
 
+mmcfilters_add_unit_test(unit_altitude_traits
+    utils/test_altitude_traits.cpp
+)
+
 mmcfilters_add_unit_test(unit_morphological_tree_build
     trees/test_morphological_tree_build.cpp
 )
@@ -73,8 +77,20 @@ mmcfilters_add_unit_test(unit_weighted_morphological_tree
     trees/test_weighted_morphological_tree.cpp
 )
 
+mmcfilters_add_unit_test(unit_weighted_altitude_templates
+    trees/test_weighted_altitude_templates.cpp
+)
+
+mmcfilters_add_unit_test(unit_owner_state_contracts
+    trees/test_owner_state_contracts.cpp
+)
+
 mmcfilters_add_unit_test(unit_component_tree_adjust
     trees/test_component_tree_adjust.cpp
+)
+
+mmcfilters_add_unit_test(unit_sdrt_builder
+    trees/sdrt/test_sdrt_builder.cpp
 )
 
 mmcfilters_add_unit_test(unit_morphological_tree_invariants
@@ -89,12 +105,24 @@ mmcfilters_add_unit_test(unit_attributes_on_morphological_tree
     attributes/test_attributes_on_morphological_tree.cpp
 )
 
+mmcfilters_add_unit_test(unit_local_event_computations
+    attributes/test_local_event_computations.cpp
+)
+
 mmcfilters_add_unit_test(unit_attribute_plumbing
     attributes/test_attribute_plumbing.cpp
 )
 
+mmcfilters_add_unit_test(unit_public_attribute_api
+    attributes/test_public_attribute_api.cpp
+)
+
 mmcfilters_add_unit_test(unit_attribute_unit_values
     attributes/test_attribute_unit_values.cpp
+)
+
+mmcfilters_add_unit_test(unit_maxdist_support
+    attributes/test_maxdist_support.cpp
 )
 
 mmcfilters_add_unit_test(unit_secondary_attribute_consumers
@@ -155,6 +183,15 @@ if(TARGET mmcfilters)
             set(MMCFILTERS_PYTHON_TEST_EXECUTABLE "/opt/anaconda3/bin/python3.12")
         endif()
     endif()
+
+    add_test(
+        NAME unit_python_import_smoke
+        COMMAND ${CMAKE_COMMAND} -E env
+            "MMCFILTERS_BUILD_PYTHON=${CMAKE_BINARY_DIR}/python"
+            "PYTHONPATH=${CMAKE_BINARY_DIR}/python"
+            ${MMCFILTERS_PYTHON_TEST_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_import_smoke.py
+    )
 
     add_test(
         NAME unit_python_nodeid_api

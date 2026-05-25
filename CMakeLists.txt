@@ -23,6 +23,7 @@ option(MMCFILTERS_BUILD_PYTHON "Build the pybind11 extension module" ON)
 option(MMCFILTERS_BUILD_TESTS "Build C++ test executables" OFF)
 option(MMCFILTERS_BUILD_EXAMPLES "Build example executables" OFF)
 option(MMCFILTERS_ENABLE_ASSERTS "Keep runtime asserts enabled even in Release" OFF)
+option(MMCFILTERS_ENABLE_DOC_TARGETS "Enable Doxygen documentation targets" ON)
 
 # Núcleo C++ compartilhado entre as saídas (biblioteca + bindings Python).
 add_subdirectory(mmcfilters)
@@ -34,8 +35,6 @@ if(MMCFILTERS_ENABLE_ASSERTS)
             $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>
             $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>
     )
-else()
-    target_compile_definitions(mmcfilters_lib INTERFACE NDEBUG)
 endif()
 
 if(MMCFILTERS_BUILD_PYTHON)
@@ -49,16 +48,17 @@ if(MMCFILTERS_BUILD_PYTHON)
         set(MMC_PYBINDS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/${MMC_PYBINDS_DIR}")
     endif()
 
-    set(MMCFILTERS_PYBIND_CPP "${MMC_PYBINDS_DIR}/mmcfilters.cpp")
+    set(MMCFILTERS_PYBIND_MAIN "${MMC_PYBINDS_DIR}/mmcfilters.cpp")
     set(MMCFILTERS_PYTHON_PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/python/mmcfilters")
     set(MMCFILTERS_PYTHON_BUILD_PACKAGE_DIR "${CMAKE_BINARY_DIR}/python/mmcfilters")
 
-    if(NOT EXISTS "${MMCFILTERS_PYBIND_CPP}")
+    if(NOT EXISTS "${MMCFILTERS_PYBIND_MAIN}")
         message(FATAL_ERROR
-            "Arquivo de binding não encontrado: ${MMCFILTERS_PYBIND_CPP}.\n"
+            "Arquivo de binding não encontrado: ${MMCFILTERS_PYBIND_MAIN}.\n"
             "Verifique se o diretório 'pybinds' está presente.")
     endif()
 
+    file(GLOB MMCFILTERS_PYBIND_CPP CONFIGURE_DEPENDS "${MMC_PYBINDS_DIR}/*.cpp")
     file(GLOB_RECURSE MMCFILTERS_PYBIND_HEADERS "${MMC_PYBINDS_DIR}/*.hpp")
     file(GLOB MMCFILTERS_PYTHON_PACKAGE_FILES CONFIGURE_DEPENDS
         "${MMCFILTERS_PYTHON_PACKAGE_DIR}/*.py")
@@ -114,6 +114,46 @@ endif()
 
 if(MMCFILTERS_BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+if(MMCFILTERS_ENABLE_DOC_TARGETS)
+    find_package(Doxygen QUIET)
+    if(DOXYGEN_FOUND)
+        set(MMCFILTERS_DOCS_PUBLIC_DIR "${CMAKE_CURRENT_BINARY_DIR}/docs/public")
+        set(MMCFILTERS_DOCS_INTERNAL_DIR "${CMAKE_CURRENT_BINARY_DIR}/docs/internal")
+        set(MMCFILTERS_DOCS_PUBLIC_WARN_LOG "${CMAKE_CURRENT_BINARY_DIR}/docs/doxygen-public.log")
+        set(MMCFILTERS_DOCS_INTERNAL_WARN_LOG "${CMAKE_CURRENT_BINARY_DIR}/docs/doxygen-internal.log")
+        file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/docs")
+
+        configure_file(
+            "${CMAKE_CURRENT_SOURCE_DIR}/docs/Doxyfile.public.in"
+            "${CMAKE_CURRENT_BINARY_DIR}/Doxyfile.public"
+            @ONLY
+        )
+        configure_file(
+            "${CMAKE_CURRENT_SOURCE_DIR}/docs/Doxyfile.internal.in"
+            "${CMAKE_CURRENT_BINARY_DIR}/Doxyfile.internal"
+            @ONLY
+        )
+
+        add_custom_target(docs-public
+            COMMAND "${DOXYGEN_EXECUTABLE}" "${CMAKE_CURRENT_BINARY_DIR}/Doxyfile.public"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            COMMENT "Generating public API documentation"
+            VERBATIM
+        )
+        add_custom_target(docs-internal
+            COMMAND "${DOXYGEN_EXECUTABLE}" "${CMAKE_CURRENT_BINARY_DIR}/Doxyfile.internal"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            COMMENT "Generating internal contributor documentation"
+            VERBATIM
+        )
+        add_custom_target(docs
+            DEPENDS docs-public docs-internal
+        )
+    else()
+        message(STATUS "Doxygen not found; docs-public and docs-internal targets are unavailable.")
+    endif()
 endif()
 
 configure_package_config_file(

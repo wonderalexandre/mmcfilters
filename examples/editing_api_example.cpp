@@ -1,5 +1,16 @@
+/**
+ * Demonstrate the public editing boundary for topology-only and weighted
+ * morphological trees.
+ *
+ * Build with `-DMMCFILTERS_BUILD_EXAMPLES=ON` and run:
+ * `./build/examples/mmcfilters_example_editing_api`.
+ *
+ * The example covers safe public mutators, staged `TreeEditor` commits,
+ * weighted altitude insertion, and rejection of a non-monotone weighted edit.
+ */
 #include "../mmcfilters/trees/TreeEditor.hpp"
 #include "../mmcfilters/trees/WeightedMorphologicalTree.hpp"
+#include "../mmcfilters/trees/MorphologicalTreeFactory.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -44,13 +55,14 @@ mmcfilters::NodeId firstNonRootLeaf(const mmcfilters::MorphologicalTree& tree)
 
 void safeMutatorExample()
 {
-    auto tree = mmcfilters::MorphologicalTree::createComponentTree(makeFixtureImage(), true);
+    auto topologySource = mmcfilters::MorphologicalTreeFactory::createMaxTree(makeFixtureImage());
+    auto tree = topologySource.topology().clone();
     const int nodesBeforePrune = tree.getNumNodes();
 
     tree.pruneNode(firstNonRootLeaf(tree));
     require(tree.getNumNodes() < nodesBeforePrune, "pruneNode should remove a live subtree");
 
-    auto weighted = mmcfilters::WeightedMorphologicalTree::createComponentTree(makeFixtureImage(), true);
+    auto weighted = mmcfilters::MorphologicalTreeFactory::createMaxTree(makeFixtureImage());
     const int nodesBeforeMerge = weighted.topology().getNumNodes();
 
     weighted.mergeNodeIntoParent(firstNonRootLeaf(weighted.topology()));
@@ -59,7 +71,8 @@ void safeMutatorExample()
 
 void treeEditorExample()
 {
-    auto tree = mmcfilters::MorphologicalTree::createComponentTree(makeFixtureImage(), false);
+    auto topologySource = mmcfilters::MorphologicalTreeFactory::createMinTree(makeFixtureImage());
+    auto tree = topologySource.topology().clone();
     auto editor = tree.edit();
 
     const mmcfilters::NodeId insertedNode = editor.createDetachedNode();
@@ -73,10 +86,10 @@ void treeEditorExample()
 
 void weightedTreeEditorExample()
 {
-    auto weighted = mmcfilters::WeightedMorphologicalTree::createComponentTree(makeFixtureImage(), false);
+    auto weighted = mmcfilters::MorphologicalTreeFactory::createMinTree(makeFixtureImage());
     auto editor = weighted.edit();
 
-    const mmcfilters::AltitudeType insertedAltitude = std::min(
+    const std::uint8_t insertedAltitude = std::min(
         weighted.getAltitude(2),
         std::max(weighted.getAltitude(3), weighted.getAltitude(4)));
     const mmcfilters::NodeId insertedNode = editor.createDetachedNode(insertedAltitude);
@@ -86,25 +99,22 @@ void weightedTreeEditorExample()
     editor.attach(2, insertedNode);
     editor.commit();
 
-    require(weighted.getAltitude(insertedNode) == insertedAltitude, "WeightedTreeEditor should preserve inserted altitude");
+    require(weighted.getAltitude(insertedNode) == insertedAltitude, "WeightedTreeEditor<std::uint8_t> should preserve inserted altitude");
 }
 
 void rejectedWeightedCommitExample()
 {
-    auto weighted = mmcfilters::WeightedMorphologicalTree::createComponentTree(makeFixtureImage(), true);
+    auto weighted = mmcfilters::MorphologicalTreeFactory::createMinTree(makeFixtureImage());
     auto editor = weighted.edit();
 
     const mmcfilters::NodeId root = weighted.topology().getRoot();
-    const mmcfilters::NodeId insertedNode = editor.createDetachedNode(weighted.getAltitude(root) - 1);
+    const auto invalidAltitude = static_cast<std::uint8_t>(weighted.getAltitude(root) + 1);
+    const mmcfilters::NodeId insertedNode = editor.createDetachedNode(invalidAltitude);
     editor.attach(root, insertedNode);
 
-    bool rejected = false;
-    try {
-        editor.commit();
-    } catch (const std::runtime_error&) {
-        rejected = true;
-    }
-    require(rejected, "WeightedTreeEditor::commit should reject non-monotone altitude");
+    const auto result = editor.validateAndCommit();
+    require(!result.ok, "WeightedTreeEditor<std::uint8_t>::validateAndCommit should reject non-monotone altitude");
+    require(weighted.topology().isEditing(), "failed validateAndCommit should keep the edit session open");
 }
 
 } // namespace

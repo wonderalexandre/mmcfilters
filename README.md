@@ -234,6 +234,11 @@ Use this map to find the right entry point quickly:
 - Build and packaging: [CMakeLists.txt](CMakeLists.txt) and
   [pyproject.toml](pyproject.toml)
 
+The `Documentation` workflow validates the public and internal Doxygen targets.
+On pushes to `main`, it publishes only the public HTML output to GitHub Pages:
+[wonderalexandre.github.io/MorphologicalAttributeFilters](https://wonderalexandre.github.io/MorphologicalAttributeFilters/).
+The internal HTML output remains available as a workflow artifact.
+
 ## Release process
 
 Releases are automated by GitHub Actions. For a production release:

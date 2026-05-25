@@ -1,0 +1,107 @@
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  PIP_NO_CACHE_DIR: "1"
+
+concurrency:
+  group: docs-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  doxygen:
+    name: Doxygen
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install documentation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y doxygen graphviz
+          python -m pip install --upgrade pip
+          python -m pip install "cmake>=3.20" ninja
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DMMCFILTERS_BUILD_PYTHON=OFF
+          -DMMCFILTERS_BUILD_TESTS=OFF
+          -DMMCFILTERS_BUILD_EXAMPLES=OFF
+          -DMMCFILTERS_ENABLE_DOC_TARGETS=ON
+          -DCMAKE_BUILD_TYPE=Release
+
+      - name: Generate documentation
+        run: cmake --build build --target docs-public docs-internal
+
+      - name: Fail on Doxygen warnings
+        shell: bash
+        run: |
+          for log in build/docs/doxygen-public.log build/docs/doxygen-internal.log; do
+            if [[ -s "${log}" ]]; then
+              echo "::error file=${log}::Doxygen emitted warnings."
+              cat "${log}"
+              exit 1
+            fi
+          done
+
+      - name: Upload public Doxygen HTML
+        uses: actions/upload-artifact@v7
+        with:
+          name: doxygen-public-html
+          path: build/docs/public/html
+          if-no-files-found: error
+
+      - name: Upload internal Doxygen HTML
+        uses: actions/upload-artifact@v7
+        with:
+          name: doxygen-internal-html
+          path: build/docs/internal/html
+          if-no-files-found: error
+
+      - name: Configure GitHub Pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/docs/public/html
+
+  deploy-pages:
+    name: Deploy public documentation
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: doxygen
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

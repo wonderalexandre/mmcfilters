@@ -12,90 +12,6 @@
 namespace mmcfilters::detail {
 
 /**
- * @brief Attribute-computer family identifiers used by orchestration code.
- *
- * @details
- * These ids are the runtime counterpart of the registered computer list. They are
- * intentionally small and local to the scheduler/backend; public users should
- * select attributes, not families.
- */
-enum class AttributeFamily {
-    Area,
-    Volume,
-    GrayLevelStats,
-    MaxDist,
-    BoundingBox,
-    TreeTopology,
-    CentralMoments,
-    HuMoments,
-    MomentDerived,
-    Bitquad,
-    ContourSide,
-    Unsupported
-};
-
-template <class Computer>
-struct AttributeComputerFamily;
-
-template <>
-struct AttributeComputerFamily<attributes::computers::AreaComputer> {
-    static constexpr AttributeFamily value = AttributeFamily::Area;
-};
-
-template <>
-struct AttributeComputerFamily<attributes::computers::VolumeComputer> {
-    static constexpr AttributeFamily value = AttributeFamily::Volume;
-};
-
-template <>
-struct AttributeComputerFamily<attributes::computers::GrayLevelStatsComputer> {
-    static constexpr AttributeFamily value = AttributeFamily::GrayLevelStats;
-};
-
-template <>
-struct AttributeComputerFamily<attributes::computers::MaxDistComputer> {
-    static constexpr AttributeFamily value = AttributeFamily::MaxDist;
-};
-
-template <>
-struct AttributeComputerFamily<attributes::computers::BoundingBoxComputer> {
-    static constexpr AttributeFamily value = AttributeFamily::BoundingBox;
-};
-
-template <>
-struct AttributeComputerFamily<attributes::computers::TreeTopologyComputer> {
-    static constexpr AttributeFamily value = AttributeFamily::TreeTopology;
-};
-
-template <>
-struct AttributeComputerFamily<attributes::computers::CentralMomentsComputer> {
-    static constexpr AttributeFamily value = AttributeFamily::CentralMoments;
-};
-
-template <>
-struct AttributeComputerFamily<attributes::computers::HuMomentsComputer> {
-    static constexpr AttributeFamily value = AttributeFamily::HuMoments;
-};
-
-template <>
-struct AttributeComputerFamily<attributes::computers::MomentBasedAttributeComputer> {
-    static constexpr AttributeFamily value = AttributeFamily::MomentDerived;
-};
-
-template <>
-struct AttributeComputerFamily<attributes::computers::BitquadAttributeComputer> {
-    static constexpr AttributeFamily value = AttributeFamily::Bitquad;
-};
-
-template <>
-struct AttributeComputerFamily<attributes::computers::ContourSideAttributeComputer> {
-    static constexpr AttributeFamily value = AttributeFamily::ContourSide;
-};
-
-template <class Computer>
-inline constexpr AttributeFamily attributeComputerFamilyV = AttributeComputerFamily<Computer>::value;
-
-/**
  * @brief Tests membership in a scheduler-owned attribute list.
  */
 inline bool containsScheduledAttribute(std::span<const Attribute> attributes, Attribute attribute) noexcept
@@ -119,24 +35,24 @@ inline void appendScheduledAttributeOnce(std::vector<Attribute>& attributes, Att
 }
 
 template <class Computer>
-inline AttributeFamily familyForAttributeWithComputer(Attribute attribute) noexcept
+inline attributes::computers::AttributeComputerFamily familyForAttributeWithComputer(Attribute attribute) noexcept
 {
     return attributes::computers::producesAttribute<Computer>(attribute)
-        ? attributeComputerFamilyV<Computer>
-        : AttributeFamily::Unsupported;
+        ? Computer::family
+        : attributes::computers::AttributeComputerFamily::Unsupported;
 }
 
 template <class Computer, class... Rest>
-inline AttributeFamily familyForAttributeInComputers(Attribute attribute) noexcept
+inline attributes::computers::AttributeComputerFamily familyForAttributeInComputers(Attribute attribute) noexcept
 {
-    const AttributeFamily family = familyForAttributeWithComputer<Computer>(attribute);
-    if (family != AttributeFamily::Unsupported) {
+    const attributes::computers::AttributeComputerFamily family = familyForAttributeWithComputer<Computer>(attribute);
+    if (family != attributes::computers::AttributeComputerFamily::Unsupported) {
         return family;
     }
     if constexpr (sizeof...(Rest) > 0) {
         return familyForAttributeInComputers<Rest...>(attribute);
     } else {
-        return AttributeFamily::Unsupported;
+        return attributes::computers::AttributeComputerFamily::Unsupported;
     }
 }
 
@@ -145,7 +61,7 @@ struct AttributeFamilyLookup;
 
 template <class... Computers>
 struct AttributeFamilyLookup<std::tuple<Computers...>> {
-    static AttributeFamily familyForAttribute(Attribute attribute) noexcept
+    static attributes::computers::AttributeComputerFamily familyForAttribute(Attribute attribute) noexcept
     {
         return familyForAttributeInComputers<Computers...>(attribute);
     }
@@ -154,7 +70,7 @@ struct AttributeFamilyLookup<std::tuple<Computers...>> {
 /**
  * @brief Returns the unique family declared as producer of `attribute`.
  */
-inline AttributeFamily familyForAttribute(Attribute attribute) noexcept
+inline attributes::computers::AttributeComputerFamily familyForAttribute(Attribute attribute) noexcept
 {
     return AttributeFamilyLookup<attributes::computers::RegisteredAttributeComputers>::familyForAttribute(attribute);
 }
@@ -365,7 +281,8 @@ struct AttributeComputationPlan {
     /**
      * @brief Returns public requested attributes produced by `family`.
      */
-    [[nodiscard]] std::vector<Attribute> requestedForFamily(AttributeFamily family) const
+    [[nodiscard]] std::vector<Attribute> requestedForFamily(
+        attributes::computers::AttributeComputerFamily family) const
     {
         return attributesForFamily(requestedAttributes, family);
     }
@@ -373,7 +290,8 @@ struct AttributeComputationPlan {
     /**
      * @brief Returns requested and hidden attributes produced by `family`.
      */
-    [[nodiscard]] std::vector<Attribute> materializedForFamily(AttributeFamily family) const
+    [[nodiscard]] std::vector<Attribute> materializedForFamily(
+        attributes::computers::AttributeComputerFamily family) const
     {
         return attributesForFamily(materializedAttributes, family);
     }
@@ -381,7 +299,7 @@ struct AttributeComputationPlan {
 private:
     [[nodiscard]] static std::vector<Attribute> attributesForFamily(
         const std::vector<Attribute>& attributes,
-        AttributeFamily family)
+        attributes::computers::AttributeComputerFamily family)
     {
         std::vector<Attribute> filtered;
         for (Attribute attribute : attributes) {

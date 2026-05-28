@@ -157,17 +157,25 @@ inline void executeTopologyAttributeComputationPlan(
             return available.at(requiredAttributes.front()).dependencySource();
         };
 
-    const std::vector<Attribute> boundingBoxAttributes = plan.requestedForFamily(AttributeFamily::BoundingBox);
-    const std::vector<Attribute> treeTopologyAttributes = plan.requestedForFamily(AttributeFamily::TreeTopology);
-    const std::vector<Attribute> centralMomentAttributes = plan.requestedForFamily(AttributeFamily::CentralMoments);
-    const std::vector<Attribute> huMomentAttributes = plan.requestedForFamily(AttributeFamily::HuMoments);
-    const std::vector<Attribute> momentBasedAttributes = plan.requestedForFamily(AttributeFamily::MomentDerived);
-    const std::vector<Attribute> bitquadAttributes = plan.requestedForFamily(AttributeFamily::Bitquad);
-    const std::vector<Attribute> contourAttributes = plan.requestedForFamily(AttributeFamily::ContourSide);
+    const std::vector<Attribute> boundingBoxAttributes =
+        plan.requestedForFamily(attributes::computers::AttributeComputerFamily::BoundingBox);
+    const std::vector<Attribute> treeTopologyAttributes =
+        plan.requestedForFamily(attributes::computers::AttributeComputerFamily::TreeTopology);
+    const std::vector<Attribute> centralMomentAttributes =
+        plan.requestedForFamily(attributes::computers::AttributeComputerFamily::CentralMoments);
+    const std::vector<Attribute> huMomentAttributes =
+        plan.requestedForFamily(attributes::computers::AttributeComputerFamily::HuMoments);
+    const std::vector<Attribute> momentBasedAttributes =
+        plan.requestedForFamily(attributes::computers::AttributeComputerFamily::MomentDerived);
+    const std::vector<Attribute> bitquadAttributes =
+        plan.requestedForFamily(attributes::computers::AttributeComputerFamily::Bitquad);
+    const std::vector<Attribute> contourAttributes =
+        plan.requestedForFamily(attributes::computers::AttributeComputerFamily::ContourSide);
     std::vector<AttributeOrGroup> topologyOnlyRequests;
 
     for (const Attribute attribute : plan.requestedAttributes) {
-        if (isTopologyOnlyAttribute(attribute) && familyForAttribute(attribute) == AttributeFamily::Unsupported) {
+        if (isTopologyOnlyAttribute(attribute) &&
+            familyForAttribute(attribute) == attributes::computers::AttributeComputerFamily::Unsupported) {
             topologyOnlyRequests.emplace_back(attribute);
         }
     }

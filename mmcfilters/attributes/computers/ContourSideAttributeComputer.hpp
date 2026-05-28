@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AttributeComputerDomain.hpp"
+#include "AttributeComputerFamily.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
 #include "detail/ContourSideAttributeMaterialization.hpp"
 #include "detail/ContourSideLocalEventComputation.hpp"
@@ -32,6 +33,9 @@ class ContourSideAttributeComputer {
 public:
     /// Family name used in dependency-plan diagnostics.
     static constexpr std::string_view familyName = "contour-side";
+
+    /// Stable family id used by the scheduler.
+    static constexpr AttributeComputerFamily family = AttributeComputerFamily::ContourSide;
 
     /// Execution domain required by the computer.
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;

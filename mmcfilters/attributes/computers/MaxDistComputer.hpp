@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AttributeComputerDomain.hpp"
+#include "AttributeComputerFamily.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
 #include "../../contours/ContoursComputedIncrementally.hpp"
 #include "../../trees/MorphologicalTree.hpp"
@@ -310,6 +311,9 @@ class MaxDistComputer {
 public:
     /// Family name used in dependency-plan diagnostics.
     static constexpr std::string_view familyName = "max-dist";
+
+    /// Stable family id used by the scheduler.
+    static constexpr AttributeComputerFamily family = AttributeComputerFamily::MaxDist;
 
     /// Execution domain required by the computer.
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Altitude;

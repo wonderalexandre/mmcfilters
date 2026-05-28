@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AttributeComputerDomain.hpp"
+#include "AttributeComputerFamily.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
 #include "../../trees/detail/TreeTraversalDetail.hpp"
 #include "../../trees/MorphologicalTree.hpp"
@@ -45,6 +46,9 @@ class CentralMomentsComputer {
 public:
     /// Family name used in dependency-plan diagnostics.
     static constexpr std::string_view familyName = "central-moments";
+
+    /// Stable family id used by the scheduler.
+    static constexpr AttributeComputerFamily family = AttributeComputerFamily::CentralMoments;
 
     /// Execution domain required by the computer.
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
@@ -256,6 +260,9 @@ public:
     /// Family name used in dependency-plan diagnostics.
     static constexpr std::string_view familyName = "hu-moments";
 
+    /// Stable family id used by the scheduler.
+    static constexpr AttributeComputerFamily family = AttributeComputerFamily::HuMoments;
+
     /// Execution domain required by the computer.
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
 
@@ -433,6 +440,9 @@ class MomentBasedAttributeComputer {
 public:
     /// Family name used in dependency-plan diagnostics.
     static constexpr std::string_view familyName = "moment-derived";
+
+    /// Stable family id used by the scheduler.
+    static constexpr AttributeComputerFamily family = AttributeComputerFamily::MomentDerived;
 
     /// Execution domain required by the computer.
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;

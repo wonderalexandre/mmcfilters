@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AttributeComputerDomain.hpp"
+#include "AttributeComputerFamily.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
 #include "detail/BitquadAttributeMaterialization.hpp"
 #include "detail/BitquadLocalEventComputation.hpp"
@@ -33,6 +34,9 @@ class BitquadAttributeComputer {
 public:
     /// Family name used in dependency-plan diagnostics.
     static constexpr std::string_view familyName = "bitquad";
+
+    /// Stable family id used by the scheduler.
+    static constexpr AttributeComputerFamily family = AttributeComputerFamily::Bitquad;
 
     /// Execution domain required by the computer.
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;

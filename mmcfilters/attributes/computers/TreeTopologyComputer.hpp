@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AttributeComputerDomain.hpp"
+#include "AttributeComputerFamily.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
 #include "../../trees/detail/TreeTraversalDetail.hpp"
 #include "../../trees/MorphologicalTree.hpp"
@@ -51,6 +52,9 @@ class TreeTopologyComputer {
 public:
     /// Family name used in dependency-plan diagnostics.
     static constexpr std::string_view familyName = "tree-topology";
+
+    /// Stable family id used by the scheduler.
+    static constexpr AttributeComputerFamily family = AttributeComputerFamily::TreeTopology;
 
     /// Execution domain required by the computer.
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;

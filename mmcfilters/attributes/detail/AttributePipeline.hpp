@@ -130,7 +130,8 @@ inline void executeAttributeComputationPlan(
     std::vector<Real> volumeDependencyBuffer;
     std::unique_ptr<AttributeNames> volumeDependencyNames;
     DependencySourceT<Real> volumeSource{};
-    const std::vector<Attribute> volumeAttributes = plan.materializedForFamily(AttributeFamily::Volume);
+    const std::vector<Attribute> volumeAttributes =
+        plan.materializedForFamily(attributes::computers::AttributeComputerFamily::Volume);
     if (!volumeAttributes.empty()) {
         const bool hasHiddenVolumeDependency = std::any_of(
             volumeAttributes.begin(),
@@ -186,7 +187,8 @@ inline void executeAttributeComputationPlan(
         }
     }
 
-    const std::vector<Attribute> grayAttributes = plan.requestedForFamily(AttributeFamily::GrayLevelStats);
+    const std::vector<Attribute> grayAttributes =
+        plan.requestedForFamily(attributes::computers::AttributeComputerFamily::GrayLevelStats);
     if (!grayAttributes.empty()) {
         std::array<DependencySourceT<Real>, 2> grayDependencies{{volumeSource, areaSource}};
         const bool needsGrayAggregateDependencies =
@@ -207,7 +209,8 @@ inline void executeAttributeComputationPlan(
                 grayDependencySpan});
     }
 
-    const std::vector<Attribute> maxDistAttributes = plan.requestedForFamily(AttributeFamily::MaxDist);
+    const std::vector<Attribute> maxDistAttributes =
+        plan.requestedForFamily(attributes::computers::AttributeComputerFamily::MaxDist);
     if (!maxDistAttributes.empty()) {
         ::mmcfilters::attributes::computers::MaxDistComputer::compute(
             AltitudeAttributeComputeContext<Real, T>{

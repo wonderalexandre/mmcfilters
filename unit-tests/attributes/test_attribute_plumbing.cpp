@@ -55,6 +55,7 @@ template <class Computer>
 void requireComputerContract(
     std::initializer_list<Attribute> producedAttributes,
     AttributeComputerDomain domain,
+    AttributeComputerFamily family,
     std::string_view label)
 {
     const auto& produced = Computer::producedAttributes;
@@ -66,6 +67,10 @@ void requireComputerContract(
         static_cast<int>(Computer::domain),
         static_cast<int>(domain),
         labelText + " execution domain");
+    requireEqual(
+        static_cast<int>(Computer::family),
+        static_cast<int>(family),
+        labelText + " scheduler family");
     requireEqual(numProducedAttributes<Computer>(), producedAttributes.size(), labelText + " produced helper count");
 
     for (Attribute attribute : producedAttributes) {
@@ -94,7 +99,7 @@ void requireRuntimeProducedAttributesMatchCanonical(std::string_view label)
 }
 
 template <class Computer>
-void requireRegisteredComputerFamily(mmcfilters::detail::AttributeFamily expectedFamily, std::string_view label)
+void requireRegisteredComputerFamily(AttributeComputerFamily expectedFamily, std::string_view label)
 {
     const std::string labelText(label);
     for (Attribute attribute : Computer::producedAttributes) {
@@ -149,14 +154,14 @@ void requireGlobalAttributeRegistryContracts()
             1,
             attributeName + " must be produced by exactly one registered computer family");
         require(
-            mmcfilters::detail::familyForAttribute(attribute) != mmcfilters::detail::AttributeFamily::Unsupported,
+            mmcfilters::detail::familyForAttribute(attribute) != AttributeComputerFamily::Unsupported,
             attributeName + " must resolve to a scheduler family");
         require(
             attributes::registry::isPipelineComputed(attribute),
             attributeName + " must be computable by the ordinary attribute pipeline");
 
         const bool topologyFamily =
-            mmcfilters::detail::familyForAttribute(attribute) == mmcfilters::detail::AttributeFamily::Area ||
+            mmcfilters::detail::familyForAttribute(attribute) == AttributeComputerFamily::Area ||
             attributes::registry::isTopologyOnly(attribute);
         if (attributes::registry::requiresAltitude(attribute)) {
             require(!topologyFamily, attributeName + " altitude attribute must not be topology-only");
@@ -208,7 +213,7 @@ void requireGlobalDependencySchedulerContracts()
                 attributes::registry::metadata(dependency) != nullptr,
                 attributeName + " dependency " + dependencyName + " must be registered");
             require(
-                mmcfilters::detail::familyForAttribute(dependency) != mmcfilters::detail::AttributeFamily::Unsupported,
+                mmcfilters::detail::familyForAttribute(dependency) != AttributeComputerFamily::Unsupported,
                 attributeName + " dependency " + dependencyName + " must resolve to a scheduler family");
             require(
                 singlePlan.materializes(dependency),
@@ -308,46 +313,60 @@ int main() {
     }
 
     {
-        requireComputerContract<AreaComputer>({AREA}, AttributeComputerDomain::Topology, "AreaComputer");
+        requireComputerContract<AreaComputer>(
+            {AREA},
+            AttributeComputerDomain::Topology,
+            AttributeComputerFamily::Area,
+            "AreaComputer");
         requireComputerContract<BoundingBoxComputer>(
             {BOX_WIDTH, BOX_HEIGHT, DIAGONAL_LENGTH, RECTANGULARITY, RATIO_WH, BOX_COL_MIN, BOX_COL_MAX, BOX_ROW_MIN, BOX_ROW_MAX},
             AttributeComputerDomain::Topology,
+            AttributeComputerFamily::BoundingBox,
             "BoundingBoxComputer");
         requireComputerContract<TreeTopologyComputer>(
             {HEIGHT_NODE, DEPTH_NODE, IS_LEAF_NODE, IS_ROOT_NODE, NUM_CHILDREN_NODE, NUM_SIBLINGS_NODE, NUM_DESCENDANTS_NODE, NUM_LEAF_DESCENDANTS_NODE, LEAF_RATIO_NODE, BALANCE_NODE, AVG_CHILD_HEIGHT_NODE},
             AttributeComputerDomain::Topology,
+            AttributeComputerFamily::TreeTopology,
             "TreeTopologyComputer");
         requireComputerContract<CentralMomentsComputer>(
             {CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11, CENTRAL_MOMENT_30, CENTRAL_MOMENT_03, CENTRAL_MOMENT_21, CENTRAL_MOMENT_12},
             AttributeComputerDomain::Topology,
+            AttributeComputerFamily::CentralMoments,
             "CentralMomentsComputer");
         requireComputerContract<HuMomentsComputer>(
             {HU_MOMENT_1, HU_MOMENT_2, HU_MOMENT_3, HU_MOMENT_4, HU_MOMENT_5, HU_MOMENT_6, HU_MOMENT_7},
             AttributeComputerDomain::Topology,
+            AttributeComputerFamily::HuMoments,
             "HuMomentsComputer");
         requireComputerContract<MomentBasedAttributeComputer>(
             {INERTIA, COMPACTNESS, ECCENTRICITY, LENGTH_MAJOR_AXIS, LENGTH_MINOR_AXIS, AXIS_ORIENTATION, CIRCULARITY},
             AttributeComputerDomain::Topology,
+            AttributeComputerFamily::MomentDerived,
             "MomentBasedAttributeComputer");
         requireComputerContract<BitquadAttributeComputer>(
             {BITQUADS_AREA, BITQUADS_NUMBER_EULER, BITQUADS_NUMBER_HOLES, BITQUADS_PERIMETER, BITQUADS_PERIMETER_CONTINUOUS, BITQUADS_CIRCULARITY, BITQUADS_PERIMETER_AVERAGE, BITQUADS_LENGTH_AVERAGE, BITQUADS_WIDTH_AVERAGE},
             AttributeComputerDomain::Topology,
+            AttributeComputerFamily::Bitquad,
             "BitquadAttributeComputer");
         requireComputerContract<ContourSideAttributeComputer>(
             {CONTOUR_PIXELS, CONTOUR_PERIMETER, CONTOUR_SIDE_NORTH, CONTOUR_SIDE_WEST, CONTOUR_SIDE_EAST, CONTOUR_SIDE_SOUTH},
             AttributeComputerDomain::Topology,
+            AttributeComputerFamily::ContourSide,
             "ContourSideAttributeComputer");
         requireComputerContract<VolumeComputer>(
             {VOLUME, RELATIVE_VOLUME},
             AttributeComputerDomain::Altitude,
+            AttributeComputerFamily::Volume,
             "VolumeComputer");
         requireComputerContract<GrayLevelStatsComputer>(
             {LEVEL, MEAN_LEVEL, VARIANCE_LEVEL, GRAY_HEIGHT},
             AttributeComputerDomain::Altitude,
+            AttributeComputerFamily::GrayLevelStats,
             "GrayLevelStatsComputer");
         requireComputerContract<MaxDistComputer>(
             {MAX_DIST},
             AttributeComputerDomain::Altitude,
+            AttributeComputerFamily::MaxDist,
             "MaxDistComputer");
 
         requireRuntimeProducedAttributesMatchCanonical<AreaComputer>("AreaComputer");
@@ -362,49 +381,49 @@ int main() {
         requireRuntimeProducedAttributesMatchCanonical<GrayLevelStatsComputer>("GrayLevelStatsComputer");
         requireRuntimeProducedAttributesMatchCanonical<MaxDistComputer>("MaxDistComputer");
 
-        requireRegisteredComputerFamily<AreaComputer>(mmcfilters::detail::AttributeFamily::Area, "AreaComputer");
-        requireRegisteredComputerFamily<BoundingBoxComputer>(mmcfilters::detail::AttributeFamily::BoundingBox, "BoundingBoxComputer");
-        requireRegisteredComputerFamily<TreeTopologyComputer>(mmcfilters::detail::AttributeFamily::TreeTopology, "TreeTopologyComputer");
-        requireRegisteredComputerFamily<CentralMomentsComputer>(mmcfilters::detail::AttributeFamily::CentralMoments, "CentralMomentsComputer");
-        requireRegisteredComputerFamily<HuMomentsComputer>(mmcfilters::detail::AttributeFamily::HuMoments, "HuMomentsComputer");
-        requireRegisteredComputerFamily<MomentBasedAttributeComputer>(mmcfilters::detail::AttributeFamily::MomentDerived, "MomentBasedAttributeComputer");
-        requireRegisteredComputerFamily<BitquadAttributeComputer>(mmcfilters::detail::AttributeFamily::Bitquad, "BitquadAttributeComputer");
-        requireRegisteredComputerFamily<ContourSideAttributeComputer>(mmcfilters::detail::AttributeFamily::ContourSide, "ContourSideAttributeComputer");
-        requireRegisteredComputerFamily<VolumeComputer>(mmcfilters::detail::AttributeFamily::Volume, "VolumeComputer");
-        requireRegisteredComputerFamily<GrayLevelStatsComputer>(mmcfilters::detail::AttributeFamily::GrayLevelStats, "GrayLevelStatsComputer");
-        requireRegisteredComputerFamily<MaxDistComputer>(mmcfilters::detail::AttributeFamily::MaxDist, "MaxDistComputer");
+        requireRegisteredComputerFamily<AreaComputer>(AttributeComputerFamily::Area, "AreaComputer");
+        requireRegisteredComputerFamily<BoundingBoxComputer>(AttributeComputerFamily::BoundingBox, "BoundingBoxComputer");
+        requireRegisteredComputerFamily<TreeTopologyComputer>(AttributeComputerFamily::TreeTopology, "TreeTopologyComputer");
+        requireRegisteredComputerFamily<CentralMomentsComputer>(AttributeComputerFamily::CentralMoments, "CentralMomentsComputer");
+        requireRegisteredComputerFamily<HuMomentsComputer>(AttributeComputerFamily::HuMoments, "HuMomentsComputer");
+        requireRegisteredComputerFamily<MomentBasedAttributeComputer>(AttributeComputerFamily::MomentDerived, "MomentBasedAttributeComputer");
+        requireRegisteredComputerFamily<BitquadAttributeComputer>(AttributeComputerFamily::Bitquad, "BitquadAttributeComputer");
+        requireRegisteredComputerFamily<ContourSideAttributeComputer>(AttributeComputerFamily::ContourSide, "ContourSideAttributeComputer");
+        requireRegisteredComputerFamily<VolumeComputer>(AttributeComputerFamily::Volume, "VolumeComputer");
+        requireRegisteredComputerFamily<GrayLevelStatsComputer>(AttributeComputerFamily::GrayLevelStats, "GrayLevelStatsComputer");
+        requireRegisteredComputerFamily<MaxDistComputer>(AttributeComputerFamily::MaxDist, "MaxDistComputer");
 
         requireEqual(
             static_cast<int>(mmcfilters::detail::familyForAttribute(RECTANGULARITY)),
-            static_cast<int>(mmcfilters::detail::AttributeFamily::BoundingBox),
+            static_cast<int>(AttributeComputerFamily::BoundingBox),
             "scheduler family lookup for bounding boxes");
         requireEqual(
             static_cast<int>(mmcfilters::detail::familyForAttribute(AREA)),
-            static_cast<int>(mmcfilters::detail::AttributeFamily::Area),
+            static_cast<int>(AttributeComputerFamily::Area),
             "scheduler family lookup for AREA");
         requireEqual(
             static_cast<int>(mmcfilters::detail::familyForAttribute(AVG_CHILD_HEIGHT_NODE)),
-            static_cast<int>(mmcfilters::detail::AttributeFamily::TreeTopology),
+            static_cast<int>(AttributeComputerFamily::TreeTopology),
             "scheduler family lookup for tree topology");
         requireEqual(
             static_cast<int>(mmcfilters::detail::familyForAttribute(CENTRAL_MOMENT_20)),
-            static_cast<int>(mmcfilters::detail::AttributeFamily::CentralMoments),
+            static_cast<int>(AttributeComputerFamily::CentralMoments),
             "scheduler family lookup for central moments");
         requireEqual(
             static_cast<int>(mmcfilters::detail::familyForAttribute(HU_MOMENT_7)),
-            static_cast<int>(mmcfilters::detail::AttributeFamily::HuMoments),
+            static_cast<int>(AttributeComputerFamily::HuMoments),
             "scheduler family lookup for Hu moments");
         requireEqual(
             static_cast<int>(mmcfilters::detail::familyForAttribute(ECCENTRICITY)),
-            static_cast<int>(mmcfilters::detail::AttributeFamily::MomentDerived),
+            static_cast<int>(AttributeComputerFamily::MomentDerived),
             "scheduler family lookup for moment-derived attributes");
         requireEqual(
             static_cast<int>(mmcfilters::detail::familyForAttribute(BITQUADS_CIRCULARITY)),
-            static_cast<int>(mmcfilters::detail::AttributeFamily::Bitquad),
+            static_cast<int>(AttributeComputerFamily::Bitquad),
             "scheduler family lookup for bitquads");
         requireEqual(
             static_cast<int>(mmcfilters::detail::familyForAttribute(CONTOUR_SIDE_SOUTH)),
-            static_cast<int>(mmcfilters::detail::AttributeFamily::ContourSide),
+            static_cast<int>(AttributeComputerFamily::ContourSide),
             "scheduler family lookup for contour sides");
 
         requireGlobalAttributeRegistryContracts();
@@ -428,12 +447,12 @@ int main() {
         require(!schedulerPlan.hides(MEAN_LEVEL), "scheduler does not hide requested attributes");
 
         const std::vector<Attribute> scheduledVolume =
-            schedulerPlan.materializedForFamily(mmcfilters::detail::AttributeFamily::Volume);
+            schedulerPlan.materializedForFamily(AttributeComputerFamily::Volume);
         requireEqual(scheduledVolume.size(), static_cast<std::size_t>(1), "scheduler volume family count");
         requireEqual(static_cast<int>(scheduledVolume.front()), static_cast<int>(VOLUME), "scheduler volume family attribute");
 
         const std::vector<Attribute> scheduledGray =
-            schedulerPlan.requestedForFamily(mmcfilters::detail::AttributeFamily::GrayLevelStats);
+            schedulerPlan.requestedForFamily(AttributeComputerFamily::GrayLevelStats);
         requireEqual(scheduledGray.size(), static_cast<std::size_t>(1), "scheduler gray family count");
         requireEqual(static_cast<int>(scheduledGray.front()), static_cast<int>(MEAN_LEVEL), "scheduler gray family attribute");
 
@@ -447,11 +466,11 @@ int main() {
             "scheduler does not add AREA to independent bounding-box attributes");
         requireEqual(
             static_cast<int>(mmcfilters::detail::familyForAttribute(ECCENTRICITY)),
-            static_cast<int>(mmcfilters::detail::AttributeFamily::MomentDerived),
+            static_cast<int>(AttributeComputerFamily::MomentDerived),
             "scheduler family lookup for ECCENTRICITY");
         requireEqual(
             static_cast<int>(mmcfilters::detail::familyForAttribute(CONTOUR_SIDE_SOUTH)),
-            static_cast<int>(mmcfilters::detail::AttributeFamily::ContourSide),
+            static_cast<int>(AttributeComputerFamily::ContourSide),
             "scheduler family lookup for contour sides");
 
         requireGlobalDependencySchedulerContracts();

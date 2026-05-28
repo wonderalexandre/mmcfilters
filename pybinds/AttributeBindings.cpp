@@ -104,7 +104,8 @@ Returns a 1D floating-point array indexed by `outputSpace`.)doc")
 
 Parameters:
     delta: Non-negative neighbourhood radius. Columns cover `[-delta, delta]`.
-    padding: Boundary strategy, currently `"last-padding"` for clamped samples.
+    padding: Boundary strategy. Supported values are `"last-padding"`,
+        `"nan-padding"`, `"null-padding"`, and `"zero-padding"`.
     dtype: Attribute value dtype, either `np.float32` or `np.float64`.
 
 Returns:

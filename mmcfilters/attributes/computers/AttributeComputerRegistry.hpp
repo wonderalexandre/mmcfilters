@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AttributeComputerDomain.hpp"
+#include "AttributeComputerFamily.hpp"
 #include "AreaComputer.hpp"
 #include "BitquadAttributeComputer.hpp"
 #include "BoundingBoxComputer.hpp"
@@ -28,9 +29,17 @@ namespace mmcfilters::attributes::computers {
  * @brief Concepts and canonical family lists for concrete attribute computers.
  */
 
+namespace detail {
+
+/**
+ * @brief Fallback trait for types that are not canonical attribute arrays.
+ */
 template <class T>
 struct IsAttributeArray : std::false_type {};
 
+/**
+ * @brief Matches the fixed-size attribute arrays used by computer metadata.
+ */
 template <std::size_t N>
 struct IsAttributeArray<std::array<Attribute, N>> : std::true_type {};
 
@@ -40,6 +49,8 @@ struct IsAttributeArray<std::array<Attribute, N>> : std::true_type {};
 template <class T>
 inline constexpr bool IsAttributeArrayV = IsAttributeArray<std::remove_cvref_t<T>>::value;
 
+} // namespace detail
+
 /**
  * @brief Verifies that a computer declares its canonical output list.
  */
@@ -48,7 +59,7 @@ concept AttributeComputerProducesAttributes =
     requires {
         Computer::producedAttributes;
     } &&
-    IsAttributeArrayV<decltype(Computer::producedAttributes)>;
+    detail::IsAttributeArrayV<decltype(Computer::producedAttributes)>;
 
 /**
  * @brief Verifies the complete static protocol of one attribute computer.
@@ -58,6 +69,7 @@ concept AttributeComputer =
     AttributeComputerProducesAttributes<Computer> &&
     requires {
         { Computer::familyName } -> std::convertible_to<std::string_view>;
+        { Computer::family } -> std::convertible_to<AttributeComputerFamily>;
         { Computer::domain } -> std::convertible_to<AttributeComputerDomain>;
     };
 

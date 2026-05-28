@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <span>
 #include <stdexcept>
+#include <tuple>
 #include <vector>
 
 namespace mmcfilters::detail {
@@ -33,6 +34,67 @@ enum class AttributeFamily {
     Unsupported
 };
 
+template <class Computer>
+struct AttributeComputerFamily;
+
+template <>
+struct AttributeComputerFamily<attributes::computers::AreaComputer> {
+    static constexpr AttributeFamily value = AttributeFamily::Area;
+};
+
+template <>
+struct AttributeComputerFamily<attributes::computers::VolumeComputer> {
+    static constexpr AttributeFamily value = AttributeFamily::Volume;
+};
+
+template <>
+struct AttributeComputerFamily<attributes::computers::GrayLevelStatsComputer> {
+    static constexpr AttributeFamily value = AttributeFamily::GrayLevelStats;
+};
+
+template <>
+struct AttributeComputerFamily<attributes::computers::MaxDistComputer> {
+    static constexpr AttributeFamily value = AttributeFamily::MaxDist;
+};
+
+template <>
+struct AttributeComputerFamily<attributes::computers::BoundingBoxComputer> {
+    static constexpr AttributeFamily value = AttributeFamily::BoundingBox;
+};
+
+template <>
+struct AttributeComputerFamily<attributes::computers::TreeTopologyComputer> {
+    static constexpr AttributeFamily value = AttributeFamily::TreeTopology;
+};
+
+template <>
+struct AttributeComputerFamily<attributes::computers::CentralMomentsComputer> {
+    static constexpr AttributeFamily value = AttributeFamily::CentralMoments;
+};
+
+template <>
+struct AttributeComputerFamily<attributes::computers::HuMomentsComputer> {
+    static constexpr AttributeFamily value = AttributeFamily::HuMoments;
+};
+
+template <>
+struct AttributeComputerFamily<attributes::computers::MomentBasedAttributeComputer> {
+    static constexpr AttributeFamily value = AttributeFamily::MomentDerived;
+};
+
+template <>
+struct AttributeComputerFamily<attributes::computers::BitquadAttributeComputer> {
+    static constexpr AttributeFamily value = AttributeFamily::Bitquad;
+};
+
+template <>
+struct AttributeComputerFamily<attributes::computers::ContourSideAttributeComputer> {
+    static constexpr AttributeFamily value = AttributeFamily::ContourSide;
+};
+
+template <class Computer>
+inline constexpr AttributeFamily attributeComputerFamilyV = AttributeComputerFamily<Computer>::value;
+
 /**
  * @brief Tests membership in a scheduler-owned attribute list.
  */
@@ -56,47 +118,85 @@ inline void appendScheduledAttributeOnce(std::vector<Attribute>& attributes, Att
     }
 }
 
+template <class Computer>
+inline AttributeFamily familyForAttributeWithComputer(Attribute attribute) noexcept
+{
+    return attributes::computers::producesAttribute<Computer>(attribute)
+        ? attributeComputerFamilyV<Computer>
+        : AttributeFamily::Unsupported;
+}
+
+template <class Computer, class... Rest>
+inline AttributeFamily familyForAttributeInComputers(Attribute attribute) noexcept
+{
+    const AttributeFamily family = familyForAttributeWithComputer<Computer>(attribute);
+    if (family != AttributeFamily::Unsupported) {
+        return family;
+    }
+    if constexpr (sizeof...(Rest) > 0) {
+        return familyForAttributeInComputers<Rest...>(attribute);
+    } else {
+        return AttributeFamily::Unsupported;
+    }
+}
+
+template <class Tuple>
+struct AttributeFamilyLookup;
+
+template <class... Computers>
+struct AttributeFamilyLookup<std::tuple<Computers...>> {
+    static AttributeFamily familyForAttribute(Attribute attribute) noexcept
+    {
+        return familyForAttributeInComputers<Computers...>(attribute);
+    }
+};
+
 /**
  * @brief Returns the unique family declared as producer of `attribute`.
  */
 inline AttributeFamily familyForAttribute(Attribute attribute) noexcept
 {
-    using namespace ::mmcfilters::attributes::computers;
+    return AttributeFamilyLookup<attributes::computers::RegisteredAttributeComputers>::familyForAttribute(attribute);
+}
 
-    if (producesAttribute<AreaComputer>(attribute)) {
-        return AttributeFamily::Area;
+template <attributes::computers::AttributeComputerDomain Domain, class Computer>
+inline bool computerProducesAttributeInDomain(Attribute attribute) noexcept
+{
+    if constexpr (attributes::computers::AttributeComputerTraits<Computer>::domain == Domain) {
+        return attributes::computers::producesAttribute<Computer>(attribute);
+    } else {
+        return false;
     }
-    if (producesAttribute<VolumeComputer>(attribute)) {
-        return AttributeFamily::Volume;
+}
+
+template <attributes::computers::AttributeComputerDomain Domain, class Computer, class... Rest>
+inline bool attributeHasComputerDomainInComputers(Attribute attribute) noexcept
+{
+    if (computerProducesAttributeInDomain<Domain, Computer>(attribute)) {
+        return true;
     }
-    if (producesAttribute<GrayLevelStatsComputer>(attribute)) {
-        return AttributeFamily::GrayLevelStats;
+    if constexpr (sizeof...(Rest) > 0) {
+        return attributeHasComputerDomainInComputers<Domain, Rest...>(attribute);
+    } else {
+        return false;
     }
-    if (producesAttribute<MaxDistComputer>(attribute)) {
-        return AttributeFamily::MaxDist;
+}
+
+template <attributes::computers::AttributeComputerDomain Domain, class Tuple>
+struct AttributeComputerDomainLookup;
+
+template <attributes::computers::AttributeComputerDomain Domain, class... Computers>
+struct AttributeComputerDomainLookup<Domain, std::tuple<Computers...>> {
+    static bool contains(Attribute attribute) noexcept
+    {
+        return attributeHasComputerDomainInComputers<Domain, Computers...>(attribute);
     }
-    if (producesAttribute<BoundingBoxComputer>(attribute)) {
-        return AttributeFamily::BoundingBox;
-    }
-    if (producesAttribute<TreeTopologyComputer>(attribute)) {
-        return AttributeFamily::TreeTopology;
-    }
-    if (producesAttribute<CentralMomentsComputer>(attribute)) {
-        return AttributeFamily::CentralMoments;
-    }
-    if (producesAttribute<HuMomentsComputer>(attribute)) {
-        return AttributeFamily::HuMoments;
-    }
-    if (producesAttribute<MomentBasedAttributeComputer>(attribute)) {
-        return AttributeFamily::MomentDerived;
-    }
-    if (producesAttribute<BitquadAttributeComputer>(attribute)) {
-        return AttributeFamily::Bitquad;
-    }
-    if (producesAttribute<ContourSideAttributeComputer>(attribute)) {
-        return AttributeFamily::ContourSide;
-    }
-    return AttributeFamily::Unsupported;
+};
+
+template <attributes::computers::AttributeComputerDomain Domain>
+inline bool attributeHasComputerDomain(Attribute attribute) noexcept
+{
+    return AttributeComputerDomainLookup<Domain, attributes::computers::RegisteredAttributeComputers>::contains(attribute);
 }
 
 /**

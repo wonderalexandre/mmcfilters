@@ -14,8 +14,7 @@ provide:
 - `static computeUnitRows(unitContext)` for compact exported-Higra unit rows.
 
 The produced-attribute list has a single source of truth: the computer class.
-`AttributeComputerTraits<Computer>::producedAttributes` references that class
-member, and `runtimeProducedAttributes<Computer>()` materializes it as a
+`runtimeProducedAttributes<Computer>()` materializes it as a
 `std::vector<Attribute>` only for call sites that need runtime storage.
 
 Unit-row support is mandatory. If a descriptor has a degenerate one-pixel
@@ -28,19 +27,15 @@ defines the exported unit-row convention.
 `AttributeComputerTraits<Computer>` declares:
 
 - `familyName`;
-- `domain`;
-- `producedAttributes`;
-- `requiredAttributes`.
-
-`producedAttributes` must come from `Computer::producedAttributes`; do not
-repeat the descriptor list in the trait specialization.
+- `domain`.
 
 `domain` determines the compute context: topology families receive topology
 contexts, while altitude families receive altitude-aware contexts.
 
-`requiredAttributes` is a family-level superset. Precise descriptor-level
-dependencies live in `AttributeFamilyScheduler.hpp`, where the scheduler builds
-the recursive dependency closure for each public request.
+Produced descriptors are declared only by `Computer::producedAttributes`.
+Precise descriptor-level dependencies live in `AttributeFamilyScheduler.hpp`,
+where the scheduler builds the recursive dependency closure for each public
+request. Traits do not repeat either list.
 
 ## Contexts
 
@@ -70,6 +65,11 @@ executors are:
 
 - `executeAttributeComputationPlan(...)` for altitude-aware requests;
 - `executeTopologyAttributeComputationPlan(...)` for topology/support requests.
+
+The scheduler also owns the internal mapping between registered computers and
+`AttributeFamily` ids. `familyForAttribute(...)` and unit-row projection derive
+their dispatch from `RegisteredAttributeComputers`, so adding a family should
+update the registered-computer list and the computer-to-family mapping together.
 
 Public result layouts contain only requested attributes. Hidden dependencies
 remain internal scratch data unless they were explicitly requested.

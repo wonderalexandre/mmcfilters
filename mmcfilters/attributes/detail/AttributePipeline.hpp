@@ -207,8 +207,8 @@ inline void executeAttributeComputationPlan(
                 grayDependencySpan});
     }
 
-    if (plan.requests(MAX_DIST)) {
-        const std::array<Attribute, 1> maxDistAttributes{MAX_DIST};
+    const std::vector<Attribute> maxDistAttributes = plan.requestedForFamily(AttributeFamily::MaxDist);
+    if (!maxDistAttributes.empty()) {
         ::mmcfilters::attributes::computers::MaxDistComputer::compute(
             AltitudeAttributeComputeContext<Real, T>{
                 tree,

@@ -1,16 +1,8 @@
 #pragma once
 
+#include "AttributeFamilyScheduler.hpp"
 #include "../AttributeNames.hpp"
 #include "../AttributeResultTypes.hpp"
-#include "../computers/AreaComputer.hpp"
-#include "../computers/BitquadAttributeComputer.hpp"
-#include "../computers/BoundingBoxComputer.hpp"
-#include "../computers/ContourSideAttributeComputer.hpp"
-#include "../computers/GrayLevelStatsComputer.hpp"
-#include "../computers/MaxDistComputer.hpp"
-#include "../computers/MomentBasedAttributeComputer.hpp"
-#include "../computers/TreeTopologyComputer.hpp"
-#include "../computers/VolumeComputer.hpp"
 #include "../../trees/MorphologicalTree.hpp"
 #include "../../trees/detail/HigraExportLayoutDetail.hpp"
 #include "../../utils/Altitude.hpp"
@@ -21,27 +13,18 @@
 #include <array>
 #include <concepts>
 #include <cstddef>
+#include <initializer_list>
 #include <limits>
 #include <span>
 #include <stdexcept>
+#include <tuple>
 #include <utility>
 #include <vector>
 
 namespace mmcfilters::detail {
 
 inline bool isGenericAltitudeUnitAttribute(Attribute attribute) noexcept {
-    switch (attribute) {
-        case VOLUME:
-        case RELATIVE_VOLUME:
-        case LEVEL:
-        case MEAN_LEVEL:
-        case VARIANCE_LEVEL:
-        case GRAY_HEIGHT:
-        case MAX_DIST:
-            return true;
-        default:
-            return false;
-    }
+    return attributeHasComputerDomain<attributes::computers::AttributeComputerDomain::Altitude>(attribute);
 }
 
 inline std::vector<NodeId> makeRowMajorProperPartOrder(const MorphologicalTree& tree) {
@@ -64,94 +47,55 @@ inline void computeUnitAttributeWithComputer(const MorphologicalTree& tree, std:
         std::span<const Attribute>(requested)});
 }
 
+template<class Computer, std::floating_point Real>
+inline bool tryComputeTopologyUnitAttributeWithComputer(
+    const MorphologicalTree& tree,
+    std::span<const NodeId> unitProperParts,
+    std::span<Real> unitValues,
+    const AttributeNames& attrNames,
+    Attribute attribute)
+{
+    if constexpr (attributes::computers::AttributeComputerTraits<Computer>::domain == attributes::computers::AttributeComputerDomain::Topology) {
+        if (attributes::computers::producesAttribute<Computer>(attribute)) {
+            computeUnitAttributeWithComputer<Computer>(tree, unitProperParts, unitValues, attrNames, attribute);
+            return true;
+        }
+    }
+    return false;
+}
+
+template<std::floating_point Real, class... Computers>
+inline bool computeTopologyUnitAttributeWithComputers(
+    std::tuple<Computers...>,
+    const MorphologicalTree& tree,
+    std::span<const NodeId> unitProperParts,
+    std::span<Real> unitValues,
+    const AttributeNames& attrNames,
+    Attribute attribute)
+{
+    bool computed = false;
+    (void)std::initializer_list<int>{
+        ((!computed && tryComputeTopologyUnitAttributeWithComputer<Computers>(
+            tree,
+            unitProperParts,
+            unitValues,
+            attrNames,
+            attribute))
+            ? (computed = true, 0)
+            : 0)...};
+    return computed;
+}
+
 template <std::floating_point Real>
 inline void computeTopologyUnitAttribute(const MorphologicalTree& tree, std::span<const NodeId> unitProperParts, std::span<Real> unitValues, const AttributeNames& attrNames, Attribute attribute) {
-    using namespace ::mmcfilters::attributes::computers;
-
-    switch (attribute) {
-        case AREA:
-            computeUnitAttributeWithComputer<AreaComputer>(tree, unitProperParts, unitValues, attrNames, attribute);
-            return;
-
-        case BOX_WIDTH:
-        case BOX_HEIGHT:
-        case DIAGONAL_LENGTH:
-        case RECTANGULARITY:
-        case RATIO_WH:
-        case BOX_COL_MIN:
-        case BOX_COL_MAX:
-        case BOX_ROW_MIN:
-        case BOX_ROW_MAX:
-            computeUnitAttributeWithComputer<BoundingBoxComputer>(tree, unitProperParts, unitValues, attrNames, attribute);
-            return;
-
-        case CENTRAL_MOMENT_20:
-        case CENTRAL_MOMENT_02:
-        case CENTRAL_MOMENT_11:
-        case CENTRAL_MOMENT_30:
-        case CENTRAL_MOMENT_03:
-        case CENTRAL_MOMENT_21:
-        case CENTRAL_MOMENT_12:
-            computeUnitAttributeWithComputer<CentralMomentsComputer>(tree, unitProperParts, unitValues, attrNames, attribute);
-            return;
-
-        case HU_MOMENT_1:
-        case HU_MOMENT_2:
-        case HU_MOMENT_3:
-        case HU_MOMENT_4:
-        case HU_MOMENT_5:
-        case HU_MOMENT_6:
-        case HU_MOMENT_7:
-            computeUnitAttributeWithComputer<HuMomentsComputer>(tree, unitProperParts, unitValues, attrNames, attribute);
-            return;
-
-        case INERTIA:
-        case COMPACTNESS:
-        case ECCENTRICITY:
-        case LENGTH_MAJOR_AXIS:
-        case LENGTH_MINOR_AXIS:
-        case AXIS_ORIENTATION:
-        case CIRCULARITY:
-            computeUnitAttributeWithComputer<MomentBasedAttributeComputer>(tree, unitProperParts, unitValues, attrNames, attribute);
-            return;
-
-        case BITQUADS_AREA:
-        case BITQUADS_NUMBER_EULER:
-        case BITQUADS_NUMBER_HOLES:
-        case BITQUADS_PERIMETER:
-        case BITQUADS_PERIMETER_CONTINUOUS:
-        case BITQUADS_CIRCULARITY:
-        case BITQUADS_PERIMETER_AVERAGE:
-        case BITQUADS_LENGTH_AVERAGE:
-        case BITQUADS_WIDTH_AVERAGE:
-            computeUnitAttributeWithComputer<BitquadAttributeComputer>(tree, unitProperParts, unitValues, attrNames, attribute);
-            return;
-
-        case HEIGHT_NODE:
-        case DEPTH_NODE:
-        case IS_LEAF_NODE:
-        case IS_ROOT_NODE:
-        case NUM_CHILDREN_NODE:
-        case NUM_SIBLINGS_NODE:
-        case NUM_DESCENDANTS_NODE:
-        case NUM_LEAF_DESCENDANTS_NODE:
-        case LEAF_RATIO_NODE:
-        case BALANCE_NODE:
-        case AVG_CHILD_HEIGHT_NODE:
-            computeUnitAttributeWithComputer<TreeTopologyComputer>(tree, unitProperParts, unitValues, attrNames, attribute);
-            return;
-
-        case CONTOUR_PIXELS:
-        case CONTOUR_PERIMETER:
-        case CONTOUR_SIDE_NORTH:
-        case CONTOUR_SIDE_WEST:
-        case CONTOUR_SIDE_EAST:
-        case CONTOUR_SIDE_SOUTH:
-            computeUnitAttributeWithComputer<ContourSideAttributeComputer>(tree, unitProperParts, unitValues, attrNames, attribute);
-            return;
-
-        default:
-            throw std::runtime_error("No exported-Higra unit projection is registered for the requested attribute.");
+    if (!computeTopologyUnitAttributeWithComputers(
+            attributes::computers::RegisteredAttributeComputers{},
+            tree,
+            unitProperParts,
+            unitValues,
+            attrNames,
+            attribute)) {
+        throw std::runtime_error("No exported-Higra unit projection is registered for the requested attribute.");
     }
 }
 
@@ -165,6 +109,34 @@ inline std::vector<Real> computeTopologyUnitAttributeRows(const MorphologicalTre
     }
 
     return unitValues;
+}
+
+template<class Computer, std::floating_point Real, AltitudeValue T>
+inline bool tryComputeAltitudeUnitAttributeWithComputer(
+    const AltitudeUnitAttributeComputeContext<Real, T>& context,
+    Attribute attribute)
+{
+    if constexpr (attributes::computers::AttributeComputerTraits<Computer>::domain == attributes::computers::AttributeComputerDomain::Altitude) {
+        if (attributes::computers::producesAttribute<Computer>(attribute)) {
+            Computer::computeUnitRows(context);
+            return true;
+        }
+    }
+    return false;
+}
+
+template<std::floating_point Real, AltitudeValue T, class... Computers>
+inline bool computeAltitudeUnitAttributeWithComputers(
+    std::tuple<Computers...>,
+    const AltitudeUnitAttributeComputeContext<Real, T>& context,
+    Attribute attribute)
+{
+    bool computed = false;
+    (void)std::initializer_list<int>{
+        ((!computed && tryComputeAltitudeUnitAttributeWithComputer<Computers>(context, attribute))
+            ? (computed = true, 0)
+            : 0)...};
+    return computed;
 }
 
 template<std::floating_point Real, AltitudeValue T>
@@ -182,26 +154,8 @@ inline void computeGenericAltitudeUnitAttribute(const MorphologicalTree& tree, s
         attrNames,
         std::span<const Attribute>(requested)};
 
-    using namespace ::mmcfilters::attributes::computers;
-    switch (attribute) {
-        case VOLUME:
-        case RELATIVE_VOLUME:
-            VolumeComputer::computeUnitRows(context);
-            return;
-
-        case LEVEL:
-        case MEAN_LEVEL:
-        case VARIANCE_LEVEL:
-        case GRAY_HEIGHT:
-            GrayLevelStatsComputer::computeUnitRows(context);
-            return;
-
-        case MAX_DIST:
-            MaxDistComputer::computeUnitRows(context);
-            return;
-
-        default:
-            return;
+    if (!computeAltitudeUnitAttributeWithComputers(attributes::computers::RegisteredAttributeComputers{}, context, attribute)) {
+        throw std::runtime_error("No altitude unit projection is registered for the requested attribute.");
     }
 }
 

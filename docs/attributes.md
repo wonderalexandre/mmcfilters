@@ -417,9 +417,9 @@ Use this checklist for new attributes:
    traversal/state fits.
 5. Declare the computer's canonical `producedAttributes` list in the computer
    class. Declare the remaining family contract in `AttributeComputerTraits.hpp`:
-   family name, execution domain, and dependency set. The execution domain
-   determines whether the computer receives an altitude-aware context. Unit rows
-   are mandatory for every computer through `computeUnitRows(unitContext)`.
+   family name and execution domain. The execution domain determines whether the
+   computer receives an altitude-aware context. Unit rows are mandatory for
+   every computer through `computeUnitRows(unitContext)`.
 6. Add attribute-level dependencies in `AttributeFamilyScheduler.hpp` only for
    descriptors that consume another materialized attribute. Dependencies should
    be semantic (`AREA`, `VOLUME`, moments) rather than positional buffer
@@ -433,7 +433,9 @@ Use this checklist for new attributes:
    defined proper-part rows.
 9. Register execution in the central plan executor:
    `AttributePipeline.hpp` for altitude-aware families, or
-   `TopologyAttributeBackend.hpp` for topology/support families.
+   `TopologyAttributeBackend.hpp` for topology/support families. Also register
+   the computer in `RegisteredAttributeComputers` and map it to its
+   `AttributeFamily` in `AttributeFamilyScheduler.hpp`.
 10. Add small C++ tests with hand-checkable trees/images, plus plumbing tests
     when the registry, traits, dependencies, unit projection, or public layout
     contract changes.

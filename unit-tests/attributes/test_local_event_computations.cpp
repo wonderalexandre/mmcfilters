@@ -1,7 +1,7 @@
 #include "support/TestSupport.hpp"
 
 #include "mmcfilters/attributes/AttributeComputation.hpp"
-#include "mmcfilters/attributes/computers/AttributeComputerProtocol.hpp"
+#include "mmcfilters/attributes/computers/AttributeComputerRegistry.hpp"
 #include "mmcfilters/attributes/computers/BitquadAttributeComputer.hpp"
 #include "mmcfilters/attributes/computers/ContourSideAttributeComputer.hpp"
 #include "mmcfilters/attributes/computers/detail/BitquadAttributeMaterialization.hpp"

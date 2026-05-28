@@ -25,7 +25,7 @@ defines the exported unit-row convention.
 
 ## Protocol
 
-`AttributeComputerProtocol.hpp` defines the common protocol:
+`AttributeComputerRegistry.hpp` defines the registered-computer protocol:
 
 - `AttributeComputerDomain`;
 - `AttributeComputer`;

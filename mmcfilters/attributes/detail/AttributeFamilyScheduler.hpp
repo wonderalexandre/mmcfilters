@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../AttributeTypes.hpp"
-#include "../computers/AttributeComputerProtocol.hpp"
+#include "../computers/AttributeComputerRegistry.hpp"
 
 #include <algorithm>
 #include <span>

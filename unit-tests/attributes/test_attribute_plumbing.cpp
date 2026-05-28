@@ -1,6 +1,6 @@
 #include "support/TestSupport.hpp"
 
-#include "mmcfilters/attributes/computers/AttributeComputerProtocol.hpp"
+#include "mmcfilters/attributes/computers/AttributeComputerRegistry.hpp"
 #include "mmcfilters/attributes/computers/BoundingBoxComputer.hpp"
 #include "mmcfilters/attributes/computers/GrayLevelStatsComputer.hpp"
 #include "mmcfilters/attributes/computers/MomentBasedAttributeComputer.hpp"

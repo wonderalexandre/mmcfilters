@@ -23,12 +23,20 @@
 
 namespace mmcfilters::attributes::computers {
 
+/**
+ * @file AttributeComputerRegistry.hpp
+ * @brief Concepts and canonical family lists for concrete attribute computers.
+ */
+
 template <class T>
 struct IsAttributeArray : std::false_type {};
 
 template <std::size_t N>
 struct IsAttributeArray<std::array<Attribute, N>> : std::true_type {};
 
+/**
+ * @brief Convenience value for checking whether a type is a canonical attribute array.
+ */
 template <class T>
 inline constexpr bool IsAttributeArrayV = IsAttributeArray<std::remove_cvref_t<T>>::value;
 

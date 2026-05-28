@@ -1,6 +1,6 @@
 #pragma once
 
-namespace mmcfilters::attributes::computers {
+namespace mmcfilters::attributes::computers::detail {
 
 /**
  * @brief Compact per-node counters grouped by bitquad family.
@@ -8,8 +8,8 @@ namespace mmcfilters::attributes::computers {
  * @details
  * `empty` corresponds to state `0000`, `qd` to diagonal two-pixel states, and
  * the other fields are the usual Q1/Q2/Q3/Q4 families. These counters are the
- * stable bucket consumed by `BitquadAttributeComputer`; the local-event
- * machinery that produces them remains an implementation detail.
+ * internal bucket consumed by the bitquad local-event implementation and its
+ * scalar materialization helper.
  */
 struct BitquadFamilyCounts {
     /// Count of all-background 2x2 configurations.
@@ -31,4 +31,4 @@ struct BitquadFamilyCounts {
     int q4 = 0;
 };
 
-} // namespace mmcfilters::attributes::computers
+} // namespace mmcfilters::attributes::computers::detail

@@ -121,6 +121,14 @@ mmcfilters_add_unit_test(unit_attribute_unit_values
     attributes/test_attribute_unit_values.cpp
 )
 
+mmcfilters_add_unit_test(unit_all_attributes_numeric_validation
+    attributes/test_all_attributes_numeric_validation.cpp
+)
+target_compile_definitions(unit_all_attributes_numeric_validation
+    PRIVATE
+        MMCFILTERS_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../dat"
+)
+
 mmcfilters_add_unit_test(unit_maxdist_support
     attributes/test_maxdist_support.cpp
 )
@@ -197,6 +205,15 @@ if(TARGET mmcfilters)
         NAME unit_python_nodeid_api
         COMMAND ${MMCFILTERS_PYTHON_TEST_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_nodeid_api.py
+            ${CMAKE_BINARY_DIR}
+    )
+
+    add_test(
+        NAME unit_python_attribute_numeric_validation
+        COMMAND ${CMAKE_COMMAND} -E env
+            "MMCFILTERS_TEST_DATA_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../dat"
+            ${MMCFILTERS_PYTHON_TEST_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_attribute_numeric_validation.py
             ${CMAKE_BINARY_DIR}
     )
 

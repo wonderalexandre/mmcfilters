@@ -1,9 +1,9 @@
 #pragma once
 
-namespace mmcfilters::attributes::computers {
+namespace mmcfilters::attributes::computers::detail {
 
 /**
- * @brief Projected local contour-side counters.
+ * @brief Internal projected local contour-side counters.
  *
  * @details
  * `contourPixels` counts visible anchor pixels with at least one exposed side.
@@ -30,4 +30,4 @@ struct ContourSideCounts {
     int south = 0;
 };
 
-} // namespace mmcfilters::attributes::computers
+} // namespace mmcfilters::attributes::computers::detail

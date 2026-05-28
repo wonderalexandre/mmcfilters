@@ -4,6 +4,7 @@
 #include "../../trees/MorphologicalTree.hpp"
 
 #include <algorithm>
+#include <concepts>
 #include <cstddef>
 #include <set>
 #include <span>
@@ -79,8 +80,9 @@ inline bool containsAttribute(std::span<const Attribute> attributes, Attribute t
 /**
  * @brief Builds a dense node-major attribute buffer initialized to zero.
  */
-inline std::vector<float> makeAttributeValueBuffer(const MorphologicalTree& tree, const AttributeNames& attrNames) {
-    return std::vector<float>(static_cast<std::size_t>(tree.getNumInternalNodeSlots()) * static_cast<std::size_t>(attrNames.NUM_ATTRIBUTES), 0.0f);
+template <std::floating_point Real = float>
+inline std::vector<Real> makeAttributeValueBuffer(const MorphologicalTree& tree, const AttributeNames& attrNames) {
+    return std::vector<Real>(static_cast<std::size_t>(tree.getNumInternalNodeSlots()) * static_cast<std::size_t>(attrNames.NUM_ATTRIBUTES), Real{0});
 }
 
 /**
@@ -93,7 +95,8 @@ inline AttributeNames makeAttributeNamesFromSet(const std::set<Attribute>& attri
 /**
  * @brief Copies one scalar attribute between two flat node-major layouts.
  */
-inline void copyAttributeValuesBetweenLayouts(const MorphologicalTree& tree, const AttributeNames& sourceNames, std::span<const float> sourceBuffer, const AttributeNames& targetNames, std::span<float> targetBuffer, Attribute attribute) {
+template <std::floating_point Real>
+inline void copyAttributeValuesBetweenLayouts(const MorphologicalTree& tree, const AttributeNames& sourceNames, std::span<const Real> sourceBuffer, const AttributeNames& targetNames, std::span<Real> targetBuffer, Attribute attribute) {
     for (NodeId nodeId : tree.getAliveNodeIds()) {
         targetBuffer[targetNames.linearIndex(nodeId, attribute)] = sourceBuffer[sourceNames.linearIndex(nodeId, attribute)];
     }

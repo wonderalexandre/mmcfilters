@@ -83,18 +83,28 @@ def main() -> int:
     weighted_filters = mmcfilters.AttributeFilters(weighted)
     require(np.array_equal(weighted_filters.filteringDirectRule(keep_all), weighted_reconstruction), "weighted AttributeFilters direct rule keep-all")
     require(np.array_equal(weighted_filters.filteringSubtractiveRule(keep_all), weighted_reconstruction), "weighted AttributeFilters subtractive rule keep-all")
-    require(np.array_equal(weighted_filters.filteringMin(keep_all), weighted_reconstruction), "weighted AttributeFilters pruning min keep-all criterion")
-    require(np.array_equal(weighted_filters.filteringMax(keep_all), weighted_reconstruction), "weighted AttributeFilters pruning max keep-all criterion")
+    require(np.array_equal(weighted_filters.filteringByPruningMin(keep_all), weighted_reconstruction), "weighted AttributeFilters pruning min keep-all criterion")
+    require(np.array_equal(weighted_filters.filteringByPruningMax(keep_all), weighted_reconstruction), "weighted AttributeFilters pruning max keep-all criterion")
     weighted_box_height = mmcfilters.Attribute.computeSingleAttribute(weighted, mmcfilters.Attribute.BOX_HEIGHT)
-    require(np.array_equal(weighted_filters.filteringMin(weighted_box_height, 1.0), weighted_reconstruction), "weighted AttributeFilters pruning min keep-all attribute")
-    require(np.array_equal(weighted_filters.filteringMax(weighted_box_height, 1.0), weighted_reconstruction), "weighted AttributeFilters pruning max keep-all attribute")
-    require_raises(lambda: weighted_filters.filteringMin(np.array([1.0], dtype=np.float32), 1.0), "weighted filteringMin must reject short attribute buffer")
+    weighted_box_height64 = mmcfilters.Attribute.computeSingleAttribute(weighted, mmcfilters.Attribute.BOX_HEIGHT, dtype=np.float64)
+    require(weighted_box_height.dtype == np.float32, "default filter attribute dtype")
+    require(weighted_box_height64.dtype == np.float64, "float64 filter attribute dtype")
+    require(np.array_equal(weighted_filters.filteringByPruningMin(weighted_box_height, 1.0), weighted_reconstruction), "weighted AttributeFilters pruning min keep-all attribute")
+    require(np.array_equal(weighted_filters.filteringByPruningMax(weighted_box_height, 1.0), weighted_reconstruction), "weighted AttributeFilters pruning max keep-all attribute")
+    require(np.array_equal(weighted_filters.filteringByPruningMin(weighted_box_height64, 1.0), weighted_reconstruction), "weighted AttributeFilters pruning min float64 attribute")
+    require(np.array_equal(weighted_filters.filteringByPruningMax(weighted_box_height64, 1.0), weighted_reconstruction), "weighted AttributeFilters pruning max float64 attribute")
+    require_raises(lambda: weighted_filters.filteringByPruningMin(np.array([1.0], dtype=np.float32), 1.0), "weighted filteringByPruningMin must reject short attribute buffer")
     require_raises(lambda: weighted_filters.filteringDirectRule([True]), "weighted filteringDirectRule must reject short criterion")
     require(weighted_filters.getAdaptiveCriterion(keep_all, 2) == [False] * weighted.numInternalNodeSlots, "weighted AttributeFilters adaptive criterion on all-true input")
 
     weighted_level_attr = mmcfilters.Attribute.computeSingleAttribute(weighted, mmcfilters.Attribute.LEVEL)
+    weighted_level_attr64 = mmcfilters.Attribute.computeSingleAttribute(weighted, mmcfilters.Attribute.LEVEL, dtype=np.float64)
     require(np.array_equal(weighted_filters.filteringByExtinction(weighted_level_attr, 1024), weighted_reconstruction), "weighted AttributeFilters extinction filtering keep-all")
+    require(np.array_equal(weighted_filters.filteringByExtinction(weighted_level_attr64, 1024), weighted_reconstruction), "weighted AttributeFilters extinction filtering float64")
     require(weighted_filters.saliencyMapByExtinction(weighted_level_attr, 1024).shape == (4, 4), "weighted AttributeFilters extinction saliency shape")
+    saliency64 = weighted_filters.saliencyMapByExtinction(weighted_level_attr64, 1024)
+    require(saliency64.shape == (4, 4), "weighted AttributeFilters extinction float64 saliency shape")
+    require(saliency64.dtype == np.float64, "weighted AttributeFilters extinction float64 saliency dtype")
     require_raises(lambda: weighted_filters.filteringByExtinction(np.array([1.0], dtype=np.float32), 1), "weighted filteringByExtinction must reject short attribute buffer")
     require_raises(lambda: weighted_filters.saliencyMapByExtinction(np.array([1.0], dtype=np.float32), 1), "weighted saliencyMapByExtinction must reject short attribute buffer")
     require(
@@ -103,12 +113,18 @@ def main() -> int:
     )
 
     weighted_uao = mmcfilters.UltimateAttributeOpening(weighted, weighted_box_height)
+    weighted_uao64 = mmcfilters.UltimateAttributeOpening(weighted, weighted_box_height64)
     weighted_uao.execute(int(weighted.numRows))
+    weighted_uao64.execute(float(weighted.numRows))
     require(weighted_uao.getMaxContrastImage().shape == (4, 4), "weighted UltimateAttributeOpening max contrast shape")
+    require(np.array_equal(weighted_uao64.getMaxContrastImage(), weighted_uao.getMaxContrastImage()), "weighted UltimateAttributeOpening float64 max contrast")
     require(weighted_uao.getAssociatedImage().shape == (4, 4), "weighted UltimateAttributeOpening associated image shape")
+    require(np.array_equal(weighted_uao64.getAssociatedImage(), weighted_uao.getAssociatedImage()), "weighted UltimateAttributeOpening float64 associated image")
     require(weighted_uao.getAssociatedColoredImage().shape == (4, 12), "weighted UltimateAttributeOpening associated color image shape")
     weighted_uao.executeWithMSER(int(weighted.numRows), 1)
+    weighted_uao64.executeWithMSER(float(weighted.numRows), 1)
     require(weighted_uao.getMaxContrastImage().shape == (4, 4), "weighted UltimateAttributeOpening MSER execute shape")
+    require(weighted_uao64.getMaxContrastImage().shape == (4, 4), "weighted UltimateAttributeOpening float64 MSER execute shape")
     require_raises(
         lambda: mmcfilters.UltimateAttributeOpening(weighted, np.array([1.0], dtype=np.float32)),
         "weighted UltimateAttributeOpening must reject short attribute buffer",
@@ -123,8 +139,11 @@ def main() -> int:
     require(nonsquare_uao.getAssociatedColoredImage().shape == (2, 9), "non-square UltimateAttributeOpening associated color image shape")
 
     weighted_extinction = mmcfilters.ExtinctionValues(weighted, weighted_level_attr)
+    weighted_extinction64 = mmcfilters.ExtinctionValues(weighted, weighted_level_attr64)
     require(np.array_equal(weighted_extinction.filtering(1024), weighted_reconstruction), "weighted ExtinctionValues filtering keep-all")
+    require(np.array_equal(weighted_extinction64.filtering(1024), weighted_reconstruction), "weighted ExtinctionValues float64 filtering keep-all")
     require(weighted_extinction.saliencyMap(1024).shape == (4, 4), "weighted ExtinctionValues saliency shape")
+    require(weighted_extinction64.saliencyMap(1024).dtype == np.float64, "weighted ExtinctionValues float64 saliency dtype")
     require_raises(
         lambda: mmcfilters.ExtinctionValues(weighted, np.array([1.0], dtype=np.float32)),
         "weighted ExtinctionValues must reject short attribute buffer",

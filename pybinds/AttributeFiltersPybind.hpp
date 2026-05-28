@@ -6,30 +6,49 @@
 #include "MorphologicalTreePybind.hpp"
 #include "PybindUtils.hpp"
 
-#include <stack>
+#include <concepts>
+#include <string>
+#include <string_view>
 #include <vector>
-#include <limits.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
 namespace mmcfilters {
 
-#define UNDEF -999999999999
-
 /**
  * @brief Pybind11 wrapper exposing attribute filtering operators to Python.
  */
 class AttributeFiltersPybind : public AttributeFilters<std::uint8_t> {
-    using FloatArray = py::array_t<float, py::array::c_style | py::array::forcecast>;
-
     std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weightedOwner_;
 
     const MorphologicalTree& topology() const noexcept {
         return this->tree;
     }
 
-    static void requireNodeAttributeArray(const FloatArray& attr, const MorphologicalTree& tree, std::string_view argumentName = "attr") {
-        PybindUtils::require1DArray(attr.request(), tree.getNumInternalNodeSlots(), argumentName);
+    template <std::floating_point Real>
+    py::array_t<uint8_t> filteringByPruningMinTyped(py::array attr, Real threshold) {
+        auto typed = PybindUtils::requireNodeAttributeArray<Real>(std::move(attr), topology());
+        return PybindUtils::toNumpy(AttributeFilters<std::uint8_t>::filteringByPruningMin(PybindUtils::toSharedPtr<Real>(typed), threshold));
+    }
+
+    template <std::floating_point Real>
+    py::array_t<uint8_t> filteringByPruningMaxTyped(py::array attr, Real threshold) {
+        auto typed = PybindUtils::requireNodeAttributeArray<Real>(std::move(attr), topology());
+        return PybindUtils::toNumpy(AttributeFilters<std::uint8_t>::filteringByPruningMax(PybindUtils::toSharedPtr<Real>(typed), threshold));
+    }
+
+    template <std::floating_point Real>
+    py::array_t<uint8_t> filteringByExtinctionValueTyped(py::array attr, int leafToKeep) {
+        auto typed = PybindUtils::requireNodeAttributeArray<Real>(std::move(attr), topology());
+        ExtinctionValues<std::uint8_t, Real> ev(*this->weightedOwner_, PybindUtils::toSharedPtr<Real>(typed));
+        return PybindUtils::toNumpy(ev.filtering(leafToKeep));
+    }
+
+    template <std::floating_point Real>
+    py::array saliencyMapByExtinctionValueTyped(py::array attr, int leafToKeep, bool unweighted) {
+        auto typed = PybindUtils::requireNodeAttributeArray<Real>(std::move(attr), topology());
+        ExtinctionValues<std::uint8_t, Real> ev(*this->weightedOwner_, PybindUtils::toSharedPtr<Real>(typed));
+        return PybindUtils::toNumpy(ev.saliencyMap(leafToKeep, unweighted));
     }
 
     static void requireNodeCriterion(const std::vector<bool>& criterion, const MorphologicalTree& tree, std::string_view argumentName = "criterion") {
@@ -46,19 +65,18 @@ class AttributeFiltersPybind : public AttributeFilters<std::uint8_t> {
     explicit AttributeFiltersPybind(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted)
         : AttributeFilters<std::uint8_t>(*weighted), weightedOwner_(std::move(weighted)) {}
 
-    py::array_t<uint8_t> filteringByPruningMin(FloatArray attr, float threshold){
-        requireNodeAttributeArray(attr, topology());
-
-        std::shared_ptr<float[]> attribute = PybindUtils::toShared_ptr(attr);
-        return PybindUtils::toNumpy(AttributeFilters<std::uint8_t>::filteringByPruningMin(attribute, threshold));
+    py::array_t<uint8_t> filteringByPruningMin(py::array attr, double threshold){
+        if (PybindUtils::parseFloatingArrayDType(attr, "attr") == PybindUtils::FloatingDType::Float64) {
+            return filteringByPruningMinTyped<double>(std::move(attr), threshold);
+        }
+        return filteringByPruningMinTyped<float>(std::move(attr), static_cast<float>(threshold));
     }
 
-    py::array_t<uint8_t> filteringByPruningMax(FloatArray attr, float threshold){
-        requireNodeAttributeArray(attr, topology());
-
-        std::shared_ptr<float[]> attribute = PybindUtils::toShared_ptr(attr);
-        return PybindUtils::toNumpy(AttributeFilters<std::uint8_t>::filteringByPruningMax(attribute, threshold));
-
+    py::array_t<uint8_t> filteringByPruningMax(py::array attr, double threshold){
+        if (PybindUtils::parseFloatingArrayDType(attr, "attr") == PybindUtils::FloatingDType::Float64) {
+            return filteringByPruningMaxTyped<double>(std::move(attr), threshold);
+        }
+        return filteringByPruningMaxTyped<float>(std::move(attr), static_cast<float>(threshold));
     }
 
     py::array_t<uint8_t> filteringByPruningMin(std::vector<bool>& criterion){
@@ -96,16 +114,18 @@ class AttributeFiltersPybind : public AttributeFilters<std::uint8_t> {
 
     }
 
-    py::array_t<uint8_t> filteringByExtinctionValue(FloatArray attr, int leafToKeep){
-        requireNodeAttributeArray(attr, topology());
-        ExtinctionValues<std::uint8_t> ev(*this->weightedOwner_, PybindUtils::toShared_ptr(attr));
-        return PybindUtils::toNumpy(ev.filtering(leafToKeep));
+    py::array_t<uint8_t> filteringByExtinctionValue(py::array attr, int leafToKeep){
+        if (PybindUtils::parseFloatingArrayDType(attr, "attr") == PybindUtils::FloatingDType::Float64) {
+            return filteringByExtinctionValueTyped<double>(std::move(attr), leafToKeep);
+        }
+        return filteringByExtinctionValueTyped<float>(std::move(attr), leafToKeep);
     }
 
-    py::array_t<float> saliencyMapByExtinctionValue(FloatArray attr, int leafToKeep, bool unweighted=false){
-        requireNodeAttributeArray(attr, topology());
-        ExtinctionValues<std::uint8_t> ev(*this->weightedOwner_, PybindUtils::toShared_ptr(attr));
-        return PybindUtils::toNumpy(ev.saliencyMap(leafToKeep, unweighted));
+    py::array saliencyMapByExtinctionValue(py::array attr, int leafToKeep, bool unweighted=false){
+        if (PybindUtils::parseFloatingArrayDType(attr, "attr") == PybindUtils::FloatingDType::Float64) {
+            return saliencyMapByExtinctionValueTyped<double>(std::move(attr), leafToKeep, unweighted);
+        }
+        return saliencyMapByExtinctionValueTyped<float>(std::move(attr), leafToKeep, unweighted);
     }
 
 

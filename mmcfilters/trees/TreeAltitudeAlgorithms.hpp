@@ -26,17 +26,6 @@ namespace mmcfilters {
 class TreeAltitudeAlgorithms {
 public:
     /**
-     * @brief Returns the explicit altitude span required by weighted operations.
-     */
-    template<AltitudeValue T>
-    [[nodiscard]] static AltitudeSpan<T> requireAltitudeSpan(OptionalAltitudeSpan<T> altitude) {
-        if (!altitude.has_value()) {
-            throw std::logic_error("This operation requires an explicit altitude buffer.");
-        }
-        return *altitude;
-    }
-
-    /**
      * @brief Validates that an altitude buffer covers the dense internal-node domain.
      */
     template<AltitudeValue T>

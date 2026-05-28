@@ -4,7 +4,7 @@
 #include "../utils/Common.hpp"
 #include "../trees/WeightedMorphologicalTree.hpp"
 #include "../trees/WeightedTreeView.hpp"
-#include "ComputerMSER.hpp"
+#include "MSERComputer.hpp"
 
 #include <cmath>
 #include <concepts>
@@ -30,16 +30,21 @@ namespace mmcfilters {
  * at construction time and rejects public operations after topology mutation.
  *
  * @tparam T Altitude type used by the weighted tree or weighted view.
+ * @tparam Real Attribute-buffer floating-point type.
  */
-template<AltitudeValue T>
+template<AltitudeValue T, std::floating_point Real = float>
 class UltimateAttributeOpening {
+public:
+    /// Floating-point type used for the input attribute buffer and criteria.
+    using attribute_value_type = Real;
+
 protected:
     /// @cond INTERNAL
     using AltitudeView = WeightedTreeView<T>;
 
-    int maxCriterion = 0;
-    const float* const attrs_increasing;
-    std::shared_ptr<float[]> ownedAttrsIncreasing_;
+    Real maxCriterion = Real{0};
+    const Real* const attrs_increasing;
+    std::shared_ptr<Real[]> ownedAttrsIncreasing_;
     const WeightedMorphologicalTree<T>* weighted_ = nullptr;
     AltitudeView view_;
     const MorphologicalTree& tree;
@@ -60,13 +65,13 @@ protected:
         return view.getAltitude(nodeId);
     }
 
-    static void requireAttributePointer(const float* attr, const char* context) {
+    static void requireAttributePointer(const Real* attr, const char* context) {
         if (attr == nullptr) {
             throw std::invalid_argument(std::string(context) + " requires a non-null attribute buffer.");
         }
     }
 
-    static const float* requireAttributeBuffer(const MorphologicalTree& tree, const std::vector<float>& attr, const char* context) {
+    static const Real* requireAttributeBuffer(const MorphologicalTree& tree, const std::vector<Real>& attr, const char* context) {
         if (attr.size() != static_cast<std::size_t>(tree.getNumInternalNodeSlots())) {
             throw std::invalid_argument(std::string(context) + " attribute size must match the internal node slot count.");
         }
@@ -117,7 +122,7 @@ protected:
         }
     }
 
-    void executeImpl(int maxCriterion, const std::vector<uint8_t>& selectedForFiltering) {
+    void executeImpl(Real maxCriterion, const std::vector<uint8_t>& selectedForFiltering) {
         const AltitudeView altitudeView = view();
         this->maxCriterion = maxCriterion;
         this->selectedForFiltering = selectedForFiltering;
@@ -172,7 +177,7 @@ public:
      * @param attrs_increasing Shared increasing-attribute buffer indexed by
      * dense internal `NodeId`.
      */
-    UltimateAttributeOpening(const AltitudeView& view, const std::shared_ptr<float[]>& attrs_increasing)
+    UltimateAttributeOpening(const AltitudeView& view, const std::shared_ptr<Real[]>& attrs_increasing)
         : UltimateAttributeOpening(view, attrs_increasing.get()) {
         this->ownedAttrsIncreasing_ = attrs_increasing;
     }
@@ -187,7 +192,7 @@ public:
      * @throws std::invalid_argument If `attrs_increasing` does not match the
      * internal node slot count.
      */
-    UltimateAttributeOpening(const AltitudeView& view, const std::vector<float>& attrs_increasing)
+    UltimateAttributeOpening(const AltitudeView& view, const std::vector<Real>& attrs_increasing)
         : UltimateAttributeOpening(view, requireAttributeBuffer(view.topology(), attrs_increasing, "UltimateAttributeOpening")) {}
 
     /**
@@ -200,7 +205,7 @@ public:
      * @throws std::invalid_argument If `attrs_increasing` is null or if the view
      * topology is stale.
      */
-    UltimateAttributeOpening(const AltitudeView& view, const float* attrs_increasing)
+    UltimateAttributeOpening(const AltitudeView& view, const Real* attrs_increasing)
         : attrs_increasing(attrs_increasing),
           view_(view),
           tree(view_.topology()),
@@ -222,7 +227,7 @@ public:
      * @param attrs_increasing Shared increasing-attribute buffer indexed by
      * dense internal `NodeId`.
      */
-    UltimateAttributeOpening(const WeightedMorphologicalTree<T>& weighted, const std::shared_ptr<float[]>& attrs_increasing)
+    UltimateAttributeOpening(const WeightedMorphologicalTree<T>& weighted, const std::shared_ptr<Real[]>& attrs_increasing)
         : UltimateAttributeOpening(weighted, attrs_increasing.get()) {
         this->ownedAttrsIncreasing_ = attrs_increasing;
     }
@@ -239,7 +244,7 @@ public:
      * @throws std::invalid_argument If `attrs_increasing` does not match the
      * internal node slot count.
      */
-    UltimateAttributeOpening(const WeightedMorphologicalTree<T>& weighted, const std::vector<float>& attrs_increasing)
+    UltimateAttributeOpening(const WeightedMorphologicalTree<T>& weighted, const std::vector<Real>& attrs_increasing)
         : UltimateAttributeOpening(weighted.asView(), attrs_increasing) {
         weighted_ = &weighted;
     }
@@ -254,7 +259,7 @@ public:
      * @param attrs_increasing Non-null increasing-attribute buffer indexed by
      * dense internal `NodeId`.
      */
-    UltimateAttributeOpening(const WeightedMorphologicalTree<T>& weighted, const float* attrs_increasing)
+    UltimateAttributeOpening(const WeightedMorphologicalTree<T>& weighted, const Real* attrs_increasing)
         : UltimateAttributeOpening(weighted.asView(), attrs_increasing) {
         weighted_ = &weighted;
     }
@@ -269,7 +274,7 @@ public:
      * the UAO traversal.
      * @throws std::logic_error If the tree topology changed after construction.
      */
-    void execute(int maxCriterion) {
+    void execute(Real maxCriterion) {
         requireStableTree("UltimateAttributeOpening::execute");
         std::vector<uint8_t> tmp(this->tree.getNumInternalNodeSlots(), true);
         executeImpl(maxCriterion, tmp);
@@ -286,7 +291,7 @@ public:
      * internal node slot count.
      * @throws std::logic_error If the tree topology changed after construction.
      */
-    void execute(int maxCriterion, const std::vector<uint8_t>& selectedForFiltering) {
+    void execute(Real maxCriterion, const std::vector<uint8_t>& selectedForFiltering) {
         requireStableTree("UltimateAttributeOpening::execute");
         if (selectedForFiltering.size() != static_cast<std::size_t>(this->tree.getNumInternalNodeSlots())) {
             throw std::invalid_argument("UltimateAttributeOpening::execute selectedForFiltering size must match the internal node slot count.");
@@ -304,13 +309,13 @@ public:
      * than a weighted tree owner, or if the tree topology changed after
      * construction.
      */
-    void executeWithMSER(int maxCriterion, AltitudeDiff<T> deltaMSER)
+    void executeWithMSER(Real maxCriterion, AltitudeDiff<T> deltaMSER)
     {
         requireStableTree("UltimateAttributeOpening::executeWithMSER");
         if (weighted_ == nullptr) {
             throw std::logic_error("UltimateAttributeOpening::executeWithMSER requires a WeightedMorphologicalTree owner because MSER uses the tree-owned altitude.");
         }
-        ComputerMSER<T> mser(*weighted_);
+        MSERComputer<T, Real> mser(*weighted_);
         executeImpl(maxCriterion, mser.computeMSER(deltaMSER));
     }
 

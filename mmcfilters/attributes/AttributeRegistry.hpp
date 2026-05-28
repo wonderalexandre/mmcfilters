@@ -82,7 +82,7 @@ inline constexpr std::array<AttributeMetadata, static_cast<std::size_t>(Attribut
 
     {INERTIA, "INERTIA", "Inertia: Sum of normalized second-order central moments (mu20 + mu02). Measures the dispersion of mass around the centroid. Higher values indicate objects with thin and elongated structures.", false, true},
     {COMPACTNESS, "COMPACTNESS", "Compactness: Area normalized by the shape's dispersion (mu20 + mu02). Higher values indicate more compact and isotropic shapes.", false, true},
-    {ECCENTRICITY, "ECCENTRICITY", "Eccentricity: Ratio of principal inertia eigenvalues (λ_1/λ_2). Measures elongation; values near 1 indicate circularity, higher values indicate elongation.", false, true},
+    {ECCENTRICITY, "ECCENTRICITY", "Eccentricity: Ratio of principal inertia eigenvalues (λ_1/λ_2). Measures elongation; values near 1 indicate circularity, higher values indicate elongation. Degenerate line-like supports saturate at a finite maximum.", false, true},
     {LENGTH_MAJOR_AXIS, "LENGTH_MAJOR_AXIS", "Major axis length: Length of the longest diameter of the shape.", false, true},
     {LENGTH_MINOR_AXIS, "LENGTH_MINOR_AXIS", "Minor axis length: Length of the shortest diameter of the shape.", false, true},
     {AXIS_ORIENTATION, "AXIS_ORIENTATION", "Axis orientation: Angle of the principal inertia axis, computed from central moments. Indicates the dominant orientation of the shape.", false, true},
@@ -93,10 +93,10 @@ inline constexpr std::array<AttributeMetadata, static_cast<std::size_t>(Attribut
     {BITQUADS_NUMBER_HOLES, "BITQUADS_NUMBER_HOLES", "BitQuads number of holes: Number of interior holes in the component, derived from the Euler characteristic assuming a single connected object.", false, true},
     {BITQUADS_PERIMETER, "BITQUADS_PERIMETER", "BitQuads perimeter: Discrete approximation of the shape's boundary length, calculated by summing edge-contributing patterns in the 2x2 pixel grid.", false, true},
     {BITQUADS_PERIMETER_CONTINUOUS, "BITQUADS_PERIMETER_CONTINUOUS", "BitQuads continuous perimeter: Smoothed estimation of the boundary length, incorporating weighted transitions across pixel edges and diagonals.", false, true},
-    {BITQUADS_CIRCULARITY, "BITQUADS_CIRCULARITY", "BitQuads circularity: Compactness measure defined as (4π x areaDuda) / perimeter². Values close to 1 indicate circular shapes; lower values suggest elongation or irregularity.", false, true},
-    {BITQUADS_PERIMETER_AVERAGE, "BITQUADS_PERIMETER_AVERAGE", "BitQuads average perimeter: Mean perimeter per connected component, accounting for complex structures and holes.", false, true},
-    {BITQUADS_LENGTH_AVERAGE, "BITQUADS_LENGTH_AVERAGE", "BitQuads average length: Estimated average longitudinal extent per component, derived from the average perimeter.", false, true},
-    {BITQUADS_WIDTH_AVERAGE, "BITQUADS_WIDTH_AVERAGE", "BitQuads average width: Estimated transverse extent per component, computed as (2 x average area) / average perimeter.", false, true},
+    {BITQUADS_CIRCULARITY, "BITQUADS_CIRCULARITY", "BitQuads circularity: Compactness measure defined as (4π x areaDuda) / perimeter². Values close to 1 indicate circular shapes; lower values suggest elongation or irregularity. Degenerate zero-perimeter supports return 0.", false, true},
+    {BITQUADS_PERIMETER_AVERAGE, "BITQUADS_PERIMETER_AVERAGE", "BitQuads average perimeter: Mean perimeter per connected component, accounting for complex structures and holes. Non-positive Euler component estimates return 0.", false, true},
+    {BITQUADS_LENGTH_AVERAGE, "BITQUADS_LENGTH_AVERAGE", "BitQuads average length: Estimated average longitudinal extent per component, derived from the average perimeter with a zero fallback for non-positive Euler component estimates.", false, true},
+    {BITQUADS_WIDTH_AVERAGE, "BITQUADS_WIDTH_AVERAGE", "BitQuads average width: Estimated transverse extent per component, computed as (2 x areaDuda) / continuous perimeter with a zero fallback for degenerate perimeter.", false, true},
 
     {HEIGHT_NODE, "HEIGHT_NODE", "Height: Longest path from this node to any leaf in its subtree. Measures the depth of the subtree rooted at the node.", false, true},
     {DEPTH_NODE, "DEPTH_NODE", "Depth: Number of steps from this node to the root of the tree. Indicates the level of embedding within the tree hierarchy.", false, true},

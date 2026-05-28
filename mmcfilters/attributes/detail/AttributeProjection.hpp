@@ -6,10 +6,12 @@
 #include "../computers/BitquadAttributeComputer.hpp"
 #include "../computers/BoundingBoxComputer.hpp"
 #include "../computers/ContourSideAttributeComputer.hpp"
+#include "../computers/GrayLevelStatsComputer.hpp"
+#include "../computers/MaxDistComputer.hpp"
 #include "../computers/MomentBasedAttributeComputer.hpp"
 #include "../computers/TreeTopologyComputer.hpp"
+#include "../computers/VolumeComputer.hpp"
 #include "../../trees/MorphologicalTree.hpp"
-#include "../../trees/TreeAltitudeAlgorithms.hpp"
 #include "../../trees/detail/HigraExportLayoutDetail.hpp"
 #include "../../utils/Altitude.hpp"
 #include "../../utils/Common.hpp"
@@ -17,6 +19,7 @@
 
 #include <algorithm>
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <limits>
 #include <span>
@@ -26,22 +29,8 @@
 
 namespace mmcfilters::detail {
 
-template<AltitudeValue T>
-inline T unitAltitudeForProperPart(const MorphologicalTree& tree, std::span<const T> altitude, NodeId properPart){
-    TreeAltitudeAlgorithms::validateAltitudeBufferShape(tree, altitude);
-    if (!tree.isProperPart(properPart)) {
-        throw std::invalid_argument("Unit altitude computation requires a valid proper-part id.");
-    }
-    const NodeId ownerNodeId = tree.getProperPartOwner(properPart);
-    if (ownerNodeId == InvalidNode || !tree.isAlive(ownerNodeId)) {
-        throw std::runtime_error("Unit-attribute computation requires every proper part to have an alive owner.");
-    }
-    return TreeAltitudeAlgorithms::getAltitude(altitude, ownerNodeId);
-}
-
 inline bool isGenericAltitudeUnitAttribute(Attribute attribute) noexcept {
     switch (attribute) {
-        case AREA:
         case VOLUME:
         case RELATIVE_VOLUME:
         case LEVEL:
@@ -64,14 +53,19 @@ inline std::vector<NodeId> makeRowMajorProperPartOrder(const MorphologicalTree& 
     return properParts;
 }
 
-template<class Computer>
-inline void computeUnitAttributeWithComputer(const MorphologicalTree& tree, std::span<const NodeId> unitProperParts, std::span<float> unitValues, const AttributeNames& attrNames, Attribute attribute) {
-    static const Computer computer{};
+template<class Computer, std::floating_point Real>
+inline void computeUnitAttributeWithComputer(const MorphologicalTree& tree, std::span<const NodeId> unitProperParts, std::span<Real> unitValues, const AttributeNames& attrNames, Attribute attribute) {
     const std::array<Attribute, 1> requested{attribute};
-    computer.computeUnitAttributes(tree, AttributeAltitudeView{}, unitProperParts, unitValues, attrNames, std::span<const Attribute>(requested));
+    Computer::computeUnitRows(UnitAttributeComputeContext<Real>{
+        tree,
+        unitProperParts,
+        unitValues,
+        attrNames,
+        std::span<const Attribute>(requested)});
 }
 
-inline void computeTopologyUnitAttribute(const MorphologicalTree& tree, std::span<const NodeId> unitProperParts, std::span<float> unitValues, const AttributeNames& attrNames, Attribute attribute) {
+template <std::floating_point Real>
+inline void computeTopologyUnitAttribute(const MorphologicalTree& tree, std::span<const NodeId> unitProperParts, std::span<Real> unitValues, const AttributeNames& attrNames, Attribute attribute) {
     using namespace ::mmcfilters::attributes::computers;
 
     switch (attribute) {
@@ -161,85 +155,79 @@ inline void computeTopologyUnitAttribute(const MorphologicalTree& tree, std::spa
     }
 }
 
-inline std::vector<float> computeTopologyUnitAttributeRows(const MorphologicalTree& tree, std::span<const NodeId> unitProperParts, const AttributeNames& attrNames) {
+template <std::floating_point Real = float>
+inline std::vector<Real> computeTopologyUnitAttributeRows(const MorphologicalTree& tree, std::span<const NodeId> unitProperParts, const AttributeNames& attrNames) {
     const size_t numColumns = static_cast<size_t>(attrNames.NUM_ATTRIBUTES);
-    std::vector<float> unitValues(unitProperParts.size() * numColumns, std::numeric_limits<float>::quiet_NaN());
+    std::vector<Real> unitValues(unitProperParts.size() * numColumns, std::numeric_limits<Real>::quiet_NaN());
 
     for (const auto& [attribute, _] : attrNames.indexMap) {
-        computeTopologyUnitAttribute(tree, unitProperParts, unitValues, attrNames, attribute);
+        computeTopologyUnitAttribute<Real>(tree, unitProperParts, unitValues, attrNames, attribute);
     }
 
     return unitValues;
 }
 
-template<AltitudeValue T>
-inline void computeGenericAltitudeUnitAttribute(const MorphologicalTree& tree, std::span<const T> altitude, std::span<const NodeId> unitProperParts, std::span<float> unitValues, const AttributeNames& attrNames, Attribute attribute) {
+template<std::floating_point Real, AltitudeValue T>
+inline void computeGenericAltitudeUnitAttribute(const MorphologicalTree& tree, std::span<const T> altitude, std::span<const NodeId> unitProperParts, std::span<Real> unitValues, const AttributeNames& attrNames, Attribute attribute) {
     if (!isGenericAltitudeUnitAttribute(attribute)) {
         return;
     }
 
-    const size_t expectedSize = unitProperParts.size() * static_cast<size_t>(attrNames.NUM_ATTRIBUTES);
-    if (unitValues.size() != expectedSize) {
-        throw std::invalid_argument("Unit-attribute buffer size must match the exported leaf domain and requested attributes.");
-    }
+    const std::array<Attribute, 1> requested{attribute};
+    const AltitudeUnitAttributeComputeContext<Real, T> context{
+        tree,
+        altitude,
+        unitProperParts,
+        unitValues,
+        attrNames,
+        std::span<const Attribute>(requested)};
 
-    TreeAltitudeAlgorithms::validateAltitudeBufferShape(tree, altitude);
-    for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
-        const NodeId properPart = unitProperParts[static_cast<size_t>(leafIndex)];
-        const float altitudeValue = static_cast<float>(unitAltitudeForProperPart(tree, altitude, properPart));
-        switch (attribute) {
-            case AREA:
-                unitValues[attrNames.linearIndex(leafIndex, AREA)] = 1.0f;
-                break;
-            case VOLUME:
-                unitValues[attrNames.linearIndex(leafIndex, VOLUME)] = altitudeValue;
-                break;
-            case RELATIVE_VOLUME:
-                unitValues[attrNames.linearIndex(leafIndex, RELATIVE_VOLUME)] = 1.0f;
-                break;
-            case LEVEL:
-                unitValues[attrNames.linearIndex(leafIndex, LEVEL)] = altitudeValue;
-                break;
-            case MEAN_LEVEL:
-                unitValues[attrNames.linearIndex(leafIndex, MEAN_LEVEL)] = altitudeValue;
-                break;
-            case VARIANCE_LEVEL:
-                unitValues[attrNames.linearIndex(leafIndex, VARIANCE_LEVEL)] = 0.0f;
-                break;
-            case GRAY_HEIGHT:
-                unitValues[attrNames.linearIndex(leafIndex, GRAY_HEIGHT)] = 0.0f;
-                break;
-            case MAX_DIST:
-                unitValues[attrNames.linearIndex(leafIndex, MAX_DIST)] = 0.0f;
-                break;
-            default:
-                break;
-        }
+    using namespace ::mmcfilters::attributes::computers;
+    switch (attribute) {
+        case VOLUME:
+        case RELATIVE_VOLUME:
+            VolumeComputer::computeUnitRows(context);
+            return;
+
+        case LEVEL:
+        case MEAN_LEVEL:
+        case VARIANCE_LEVEL:
+        case GRAY_HEIGHT:
+            GrayLevelStatsComputer::computeUnitRows(context);
+            return;
+
+        case MAX_DIST:
+            MaxDistComputer::computeUnitRows(context);
+            return;
+
+        default:
+            return;
     }
 }
 
-template<AltitudeValue T>
-inline std::vector<float> computeUnitAttributeRows(const MorphologicalTree& tree, std::span<const T> altitude, std::span<const NodeId> unitProperParts, const AttributeNames& attrNames) {
+template<std::floating_point Real = float, AltitudeValue T>
+inline std::vector<Real> computeUnitAttributeRows(const MorphologicalTree& tree, std::span<const T> altitude, std::span<const NodeId> unitProperParts, const AttributeNames& attrNames) {
     const size_t numColumns = static_cast<size_t>(attrNames.NUM_ATTRIBUTES);
-    std::vector<float> unitValues(unitProperParts.size() * numColumns, std::numeric_limits<float>::quiet_NaN());
+    std::vector<Real> unitValues(unitProperParts.size() * numColumns, std::numeric_limits<Real>::quiet_NaN());
 
     for (const auto& [attribute, _] : attrNames.indexMap) {
         if (isGenericAltitudeUnitAttribute(attribute)) {
-            computeGenericAltitudeUnitAttribute(tree, altitude, unitProperParts, unitValues, attrNames, attribute);
+            computeGenericAltitudeUnitAttribute<Real>(tree, altitude, unitProperParts, unitValues, attrNames, attribute);
             continue;
         }
 
-        computeTopologyUnitAttribute(tree, unitProperParts, unitValues, attrNames, attribute);
+        computeTopologyUnitAttribute<Real>(tree, unitProperParts, unitValues, attrNames, attribute);
     }
 
     return unitValues;
 }
 
+template <std::floating_point Real>
 inline void copyScalarUnitRowsToPreservedHigra(
     const MorphologicalTree& tree,
     const AttributeNames& attrNames,
-    std::span<const float> unitValues,
-    std::span<float> projected)
+    std::span<const Real> unitValues,
+    std::span<Real> projected)
 {
     const int numProperParts = tree.getNumTotalProperParts();
     const int numColumns = attrNames.NUM_ATTRIBUTES;
@@ -256,11 +244,12 @@ inline void copyScalarUnitRowsToPreservedHigra(
     }
 }
 
+template <std::floating_point Real>
 inline void copyScalarInternalRowsToPreservedHigra(
     const MorphologicalTree& tree,
     const AttributeNames& attrNames,
-    std::span<const float> nodeValues,
-    std::span<float> projected,
+    std::span<const Real> nodeValues,
+    std::span<Real> projected,
     int outputSize)
 {
     const int numColumns = attrNames.NUM_ATTRIBUTES;
@@ -287,12 +276,13 @@ inline AttributeNames deltaUnitAttributeNames(const AttributeNamesWithDelta& del
     return AttributeNames::fromList(attributes);
 }
 
+template <std::floating_point Real>
 inline void copyDeltaUnitRowsToPreservedHigra(
     const MorphologicalTree& tree,
     const AttributeNamesWithDelta& deltaNames,
     const AttributeNames& unitNames,
-    std::span<const float> unitValues,
-    std::span<float> projected)
+    std::span<const Real> unitValues,
+    std::span<Real> projected)
 {
     const int numProperParts = tree.getNumTotalProperParts();
     const int numColumns = deltaNames.NUM_ATTRIBUTES;
@@ -312,11 +302,12 @@ inline void copyDeltaUnitRowsToPreservedHigra(
     }
 }
 
+template <std::floating_point Real>
 inline void copyDeltaInternalRowsToPreservedHigra(
     const MorphologicalTree& tree,
     const AttributeNamesWithDelta& deltaNames,
-    std::span<const float> nodeValues,
-    std::span<float> projected,
+    std::span<const Real> nodeValues,
+    std::span<Real> projected,
     int outputSize)
 {
     for (NodeId nodeId : tree.getAliveNodeIds()) {
@@ -342,7 +333,8 @@ inline void copyDeltaInternalRowsToPreservedHigra(
  * that target space receive the same unit-component values used by compact
  * Higra export; every live internal node must have a valid target id.
  */
-inline ComputedAttributeData projectComputedDataToNodeIdSpace(const MorphologicalTree& tree, ComputedAttributeData computed, NodeIdSpace outputSpace){
+template <std::floating_point Real>
+inline ComputedAttributeData<Real> projectComputedDataToNodeIdSpace(const MorphologicalTree& tree, ComputedAttributeData<Real> computed, NodeIdSpace outputSpace){
     if (outputSpace == NodeIdSpace::MORPHOLOGICAL_TREE) {
         computed.nodeIdSpace = NodeIdSpace::MORPHOLOGICAL_TREE;
         return computed;
@@ -350,22 +342,22 @@ inline ComputedAttributeData projectComputedDataToNodeIdSpace(const Morphologica
 
     const int numAttributes = computed.first.NUM_ATTRIBUTES;
     const int outputSize = tree.getNodeIdSpaceSize(outputSpace);
-    std::vector<float> projected(static_cast<size_t>(outputSize) * static_cast<size_t>(numAttributes), std::numeric_limits<float>::quiet_NaN());
+    std::vector<Real> projected(static_cast<size_t>(outputSize) * static_cast<size_t>(numAttributes), std::numeric_limits<Real>::quiet_NaN());
 
     if (outputSpace != NodeIdSpace::HIGRA) {
         throw std::runtime_error("Unsupported node-id projection target.");
     }
 
     const std::vector<NodeId> properParts = makeRowMajorProperPartOrder(tree);
-    const std::vector<float> unitValues = computeTopologyUnitAttributeRows(tree, properParts, computed.first);
-    copyScalarUnitRowsToPreservedHigra(tree, computed.first, unitValues, projected);
-    copyScalarInternalRowsToPreservedHigra(tree, computed.first, computed.second, projected, outputSize);
+    const std::vector<Real> unitValues = computeTopologyUnitAttributeRows<Real>(tree, properParts, computed.first);
+    copyScalarUnitRowsToPreservedHigra<Real>(tree, computed.first, unitValues, projected);
+    copyScalarInternalRowsToPreservedHigra<Real>(tree, computed.first, computed.second, projected, outputSize);
 
     return {std::move(computed.first), std::move(projected), outputSpace};
 }
 
-template<AltitudeValue T>
-inline ComputedAttributeData projectComputedDataToNodeIdSpace(const MorphologicalTree& tree, std::span<const T> altitude, ComputedAttributeData computed, NodeIdSpace outputSpace){
+template<std::floating_point Real, AltitudeValue T>
+inline ComputedAttributeData<Real> projectComputedDataToNodeIdSpace(const MorphologicalTree& tree, std::span<const T> altitude, ComputedAttributeData<Real> computed, NodeIdSpace outputSpace){
     if (outputSpace == NodeIdSpace::MORPHOLOGICAL_TREE) {
         computed.nodeIdSpace = NodeIdSpace::MORPHOLOGICAL_TREE;
         return computed;
@@ -373,16 +365,16 @@ inline ComputedAttributeData projectComputedDataToNodeIdSpace(const Morphologica
 
     const int numAttributes = computed.first.NUM_ATTRIBUTES;
     const int outputSize = tree.getNodeIdSpaceSize(outputSpace);
-    std::vector<float> projected(static_cast<size_t>(outputSize) * static_cast<size_t>(numAttributes), std::numeric_limits<float>::quiet_NaN());
+    std::vector<Real> projected(static_cast<size_t>(outputSize) * static_cast<size_t>(numAttributes), std::numeric_limits<Real>::quiet_NaN());
 
     if (outputSpace != NodeIdSpace::HIGRA) {
         throw std::runtime_error("Unsupported node-id projection target.");
     }
 
     const std::vector<NodeId> properParts = makeRowMajorProperPartOrder(tree);
-    const std::vector<float> unitValues = computeUnitAttributeRows(tree, altitude, properParts, computed.first);
-    copyScalarUnitRowsToPreservedHigra(tree, computed.first, unitValues, projected);
-    copyScalarInternalRowsToPreservedHigra(tree, computed.first, computed.second, projected, outputSize);
+    const std::vector<Real> unitValues = computeUnitAttributeRows<Real>(tree, altitude, properParts, computed.first);
+    copyScalarUnitRowsToPreservedHigra<Real>(tree, computed.first, unitValues, projected);
+    copyScalarInternalRowsToPreservedHigra<Real>(tree, computed.first, computed.second, projected, outputSize);
 
     return {std::move(computed.first), std::move(projected), outputSpace};
 }
@@ -390,7 +382,8 @@ inline ComputedAttributeData projectComputedDataToNodeIdSpace(const Morphologica
 /**
  * @brief Delta-aware counterpart of the scalar node-id-space projection.
  */
-inline ComputedAttributeDataWithDelta projectComputedDataToNodeIdSpace(const MorphologicalTree& tree, ComputedAttributeDataWithDelta computed, NodeIdSpace outputSpace) {
+template <std::floating_point Real>
+inline ComputedAttributeDataWithDelta<Real> projectComputedDataToNodeIdSpace(const MorphologicalTree& tree, ComputedAttributeDataWithDelta<Real> computed, NodeIdSpace outputSpace) {
     if (outputSpace == NodeIdSpace::MORPHOLOGICAL_TREE) {
         computed.nodeIdSpace = NodeIdSpace::MORPHOLOGICAL_TREE;
         return computed;
@@ -398,9 +391,9 @@ inline ComputedAttributeDataWithDelta projectComputedDataToNodeIdSpace(const Mor
 
     const int numAttributes = computed.first.NUM_ATTRIBUTES;
     const int outputSize = tree.getNodeIdSpaceSize(outputSpace);
-    std::vector<float> projected(
+    std::vector<Real> projected(
         static_cast<size_t>(outputSize) * static_cast<size_t>(numAttributes),
-        std::numeric_limits<float>::quiet_NaN());
+        std::numeric_limits<Real>::quiet_NaN());
 
     if (outputSpace != NodeIdSpace::HIGRA) {
         throw std::runtime_error("Unsupported node-id projection target.");
@@ -408,15 +401,15 @@ inline ComputedAttributeDataWithDelta projectComputedDataToNodeIdSpace(const Mor
 
     const std::vector<NodeId> properParts = makeRowMajorProperPartOrder(tree);
     const AttributeNames unitNames = deltaUnitAttributeNames(computed.first);
-    const std::vector<float> unitValues = computeTopologyUnitAttributeRows(tree, properParts, unitNames);
-    copyDeltaUnitRowsToPreservedHigra(tree, computed.first, unitNames, unitValues, projected);
-    copyDeltaInternalRowsToPreservedHigra(tree, computed.first, computed.second, projected, outputSize);
+    const std::vector<Real> unitValues = computeTopologyUnitAttributeRows<Real>(tree, properParts, unitNames);
+    copyDeltaUnitRowsToPreservedHigra<Real>(tree, computed.first, unitNames, unitValues, projected);
+    copyDeltaInternalRowsToPreservedHigra<Real>(tree, computed.first, computed.second, projected, outputSize);
 
     return {std::move(computed.first), std::move(projected), outputSpace};
 }
 
-template<AltitudeValue T>
-inline ComputedAttributeDataWithDelta projectComputedDataToNodeIdSpace(const MorphologicalTree& tree, std::span<const T> altitude, ComputedAttributeDataWithDelta computed, NodeIdSpace outputSpace) {
+template<std::floating_point Real, AltitudeValue T>
+inline ComputedAttributeDataWithDelta<Real> projectComputedDataToNodeIdSpace(const MorphologicalTree& tree, std::span<const T> altitude, ComputedAttributeDataWithDelta<Real> computed, NodeIdSpace outputSpace) {
     if (outputSpace == NodeIdSpace::MORPHOLOGICAL_TREE) {
         computed.nodeIdSpace = NodeIdSpace::MORPHOLOGICAL_TREE;
         return computed;
@@ -424,9 +417,9 @@ inline ComputedAttributeDataWithDelta projectComputedDataToNodeIdSpace(const Mor
 
     const int numAttributes = computed.first.NUM_ATTRIBUTES;
     const int outputSize = tree.getNodeIdSpaceSize(outputSpace);
-    std::vector<float> projected(
+    std::vector<Real> projected(
         static_cast<size_t>(outputSize) * static_cast<size_t>(numAttributes),
-        std::numeric_limits<float>::quiet_NaN());
+        std::numeric_limits<Real>::quiet_NaN());
 
     if (outputSpace != NodeIdSpace::HIGRA) {
         throw std::runtime_error("Unsupported node-id projection target.");
@@ -434,15 +427,15 @@ inline ComputedAttributeDataWithDelta projectComputedDataToNodeIdSpace(const Mor
 
     const std::vector<NodeId> properParts = makeRowMajorProperPartOrder(tree);
     const AttributeNames unitNames = deltaUnitAttributeNames(computed.first);
-    const std::vector<float> unitValues = computeUnitAttributeRows(tree, altitude, properParts, unitNames);
-    copyDeltaUnitRowsToPreservedHigra(tree, computed.first, unitNames, unitValues, projected);
-    copyDeltaInternalRowsToPreservedHigra(tree, computed.first, computed.second, projected, outputSize);
+    const std::vector<Real> unitValues = computeUnitAttributeRows<Real>(tree, altitude, properParts, unitNames);
+    copyDeltaUnitRowsToPreservedHigra<Real>(tree, computed.first, unitNames, unitValues, projected);
+    copyDeltaInternalRowsToPreservedHigra<Real>(tree, computed.first, computed.second, projected, outputSize);
 
     return {std::move(computed.first), std::move(projected), outputSpace};
 }
 
-template<AltitudeValue T>
-inline std::vector<float> projectNodeValuesToExportedHigraTyped(const MorphologicalTree& topology, std::span<const T> altitude, const AttributeNames& attrNames, std::span<const float> nodeValues) {
+template<std::floating_point Real, AltitudeValue T>
+inline std::vector<Real> projectNodeValuesToExportedHigraTyped(const MorphologicalTree& topology, std::span<const T> altitude, const AttributeNames& attrNames, std::span<const Real> nodeValues) {
     const int numColumns = attrNames.NUM_ATTRIBUTES;
     const size_t expectedSize = static_cast<size_t>(topology.getNumInternalNodeSlots()) * static_cast<size_t>(numColumns);
     if (nodeValues.size() != expectedSize) {
@@ -451,10 +444,10 @@ inline std::vector<float> projectNodeValuesToExportedHigraTyped(const Morphologi
 
     const auto layout = computeExportedHigraLayout(topology, altitude);
     const size_t numColumnValues = static_cast<size_t>(numColumns);
-    const std::vector<float> unitValues = computeUnitAttributeRows(topology, altitude, layout.properParts, attrNames);
+    const std::vector<Real> unitValues = computeUnitAttributeRows<Real>(topology, altitude, layout.properParts, attrNames);
 
     // Compact Higra buffers place unit proper-part rows before internal-node rows.
-    std::vector<float> projected(static_cast<size_t>(layout.numVertices) * numColumnValues, 0.0f);
+    std::vector<Real> projected(static_cast<size_t>(layout.numVertices) * numColumnValues, Real{0});
 
     for (NodeId leafIndex = 0; leafIndex < layout.numLeaves; ++leafIndex) {
         for (int column = 0; column < numColumns; ++column) {
@@ -481,9 +474,10 @@ inline std::vector<float> projectNodeValuesToExportedHigraTyped(const Morphologi
  * buffer must use the canonical dense internal-node layout described by
  * `attrNames`.
  */
-inline ImageFloatPtr mapNodeAttributeToImage(const MorphologicalTree& tree, const AttributeNames& attrNames, std::span<const float> nodeValues, Attribute attribute) {
-    ImageFloatPtr imgPtr = ImageFloat::create(tree.getNumRowsOfImage(), tree.getNumColsOfImage());
-    float* img = imgPtr->rawData();
+template <std::floating_point Real>
+inline ImagePtr<Real> mapNodeAttributeToImage(const MorphologicalTree& tree, const AttributeNames& attrNames, std::span<const Real> nodeValues, Attribute attribute) {
+    ImagePtr<Real> imgPtr = Image<Real>::create(tree.getNumRowsOfImage(), tree.getNumColsOfImage());
+    Real* img = imgPtr->rawData();
     for (int p = 0; p < imgPtr->getSize(); ++p) {
         const NodeId nodeId = tree.getProperPartOwner(p);
         img[p] = nodeValues[attrNames.linearIndex(nodeId, attribute)];

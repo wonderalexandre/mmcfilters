@@ -26,6 +26,8 @@ struct DirectCentralMoments {
     double mu12 = 0.0;
 };
 
+constexpr double MAX_FINITE_ECCENTRICITY = 1.0e6;
+
 DirectCentralMoments computeDirectCentralMoments(const MorphologicalTree& tree, NodeId nodeId) {
     struct Pixel {
         double x;
@@ -137,8 +139,8 @@ double momentDerivedValue(const DirectCentralMoments& moments, Attribute attribu
                 return 1.0;
             }
             return lambda2 <= std::numeric_limits<float>::epsilon()
-                ? std::numeric_limits<double>::infinity()
-                : lambda1 / lambda2;
+                ? MAX_FINITE_ECCENTRICITY
+                : std::min(lambda1 / lambda2, MAX_FINITE_ECCENTRICITY);
         case COMPACTNESS: {
             const double denom = moments.mu20 + moments.mu02;
             return denom > std::numeric_limits<float>::epsilon()
@@ -199,7 +201,8 @@ void requireAttributesMatchPixelOracle(
                     label + " " + AttributeNames::toString(attribute) + " node " + std::to_string(nodeId) + " expected NaN");
                 continue;
             }
-            const double attrTolerance = attribute == AXIS_ORIENTATION ? 1.0e-4 : tolerance;
+            const double roundingTolerance = std::abs(expected) * 512.0 * static_cast<double>(std::numeric_limits<float>::epsilon());
+            const double attrTolerance = std::max(attribute == AXIS_ORIENTATION ? 1.0e-4 : tolerance, roundingTolerance);
             requireNear(
                 actual,
                 expected,
@@ -214,7 +217,8 @@ void requireMomentFamiliesMatchPixelOracle(const MorphologicalTree& tree, const 
         tree,
         {CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11, CENTRAL_MOMENT_30, CENTRAL_MOMENT_03, CENTRAL_MOMENT_21, CENTRAL_MOMENT_12},
         centralMomentValue,
-        label + " central moment pixel oracle");
+        label + " central moment pixel oracle",
+        1.0e-4);
     requireAttributesMatchPixelOracle(
         tree,
         {HU_MOMENT_1, HU_MOMENT_2, HU_MOMENT_3, HU_MOMENT_4, HU_MOMENT_5, HU_MOMENT_6, HU_MOMENT_7},
@@ -225,7 +229,34 @@ void requireMomentFamiliesMatchPixelOracle(const MorphologicalTree& tree, const 
         tree,
         {COMPACTNESS, ECCENTRICITY, LENGTH_MAJOR_AXIS, LENGTH_MINOR_AXIS, AXIS_ORIENTATION, INERTIA, CIRCULARITY},
         momentDerivedValue,
-        label + " moment-derived pixel oracle");
+        label + " moment-derived pixel oracle",
+        1.0e-4);
+}
+
+void requireDoubleMomentComputationDoesNotRoundThroughFloat() {
+    constexpr int cols = 8193;
+    auto image = ImageUInt8::create(1, cols, static_cast<std::uint8_t>(7));
+    auto weighted = MorphologicalTreeFactory::createMaxTree(image, 1.0);
+    const MorphologicalTree& tree = weighted.topology();
+    const NodeId root = tree.getRoot();
+
+    auto [floatNames, floatValues] =
+        AttributeComputation::computeSingleTopologyAttribute(tree, CENTRAL_MOMENT_20);
+    auto [doubleNames, doubleValues] =
+        AttributeComputation::computeSingleTopologyAttribute<double>(tree, CENTRAL_MOMENT_20);
+
+    const float floatValue = floatValues[floatNames.linearIndex(root, CENTRAL_MOMENT_20)];
+    const double doubleValue = doubleValues[doubleNames.linearIndex(root, CENTRAL_MOMENT_20)];
+    const long double n = static_cast<long double>(cols);
+    const double expected = static_cast<double>(n * (n * n - 1.0L) / 12.0L);
+
+    requireEqual(
+        doubleValue,
+        expected,
+        "double CENTRAL_MOMENT_20 must preserve exact integer moment on large line support");
+    require(
+        static_cast<double>(floatValue) != doubleValue,
+        "double CENTRAL_MOMENT_20 must not be materialized through a rounded float buffer");
 }
 
 int directTopologyHeight(const MorphologicalTree& tree, NodeId nodeId) {
@@ -324,6 +355,8 @@ std::shared_ptr<MorphologicalTree> makeBranchingTopologyFixture() {
 
 int main() {
     auto image = makeComponentTreeFixture();
+
+    requireDoubleMomentComputationDoesNotRoundThroughFloat();
 
     for (bool isMaxtree : {true, false}) {
         auto weighted = makeWeightedComponentTree(image, isMaxtree);
@@ -507,9 +540,9 @@ int main() {
             {BITQUADS_PERIMETER_AVERAGE, BITQUADS_LENGTH_AVERAGE, BITQUADS_WIDTH_AVERAGE}
         );
         for (NodeId nodeId : tree->getAliveNodeIds()) {
-            require(std::isinf(bitquadsBuffer[bitquadsNames.linearIndex(nodeId, BITQUADS_PERIMETER_AVERAGE)]), "BITQUADS_PERIMETER_AVERAGE should be inf on fixture");
-            require(std::isinf(bitquadsBuffer[bitquadsNames.linearIndex(nodeId, BITQUADS_LENGTH_AVERAGE)]), "BITQUADS_LENGTH_AVERAGE should be inf on fixture");
-            require(std::isnan(bitquadsBuffer[bitquadsNames.linearIndex(nodeId, BITQUADS_WIDTH_AVERAGE)]), "BITQUADS_WIDTH_AVERAGE should be nan on fixture");
+            requireEqual(bitquadsBuffer[bitquadsNames.linearIndex(nodeId, BITQUADS_PERIMETER_AVERAGE)], 0.0f, "BITQUADS_PERIMETER_AVERAGE finite zero fallback");
+            requireEqual(bitquadsBuffer[bitquadsNames.linearIndex(nodeId, BITQUADS_LENGTH_AVERAGE)], 0.0f, "BITQUADS_LENGTH_AVERAGE finite zero fallback");
+            require(std::isfinite(bitquadsBuffer[bitquadsNames.linearIndex(nodeId, BITQUADS_WIDTH_AVERAGE)]), "BITQUADS_WIDTH_AVERAGE finite fallback");
         }
 
         auto [groupMomentNames, groupMomentBuffer] = AttributeComputation::computeSingleTopologyAttribute(*tree, AttributeGroup::MOMENTS);
@@ -523,8 +556,10 @@ int main() {
         require(groupMomentNames.contains(CIRCULARITY), "MOMENTS group includes moment-derived descriptors");
         const double groupEccentricity = static_cast<double>(groupMomentBuffer[groupMomentNames.linearIndex(5, ECCENTRICITY)]);
         const double expectedGroupEccentricity = momentDerivedValue(computeDirectCentralMoments(*tree, 5), ECCENTRICITY);
-        require(
-            std::isinf(groupEccentricity) && std::isinf(expectedGroupEccentricity),
+        requireNear(
+            groupEccentricity,
+            expectedGroupEccentricity,
+            1.0e-5,
             "MOMENTS group moment-derived path");
         auto [groupBoundaryNames, groupBoundaryBuffer] = AttributeComputation::computeSingleTopologyAttribute(*tree, AttributeGroup::BOUNDARY);
         requireEqual(groupBoundaryBuffer[groupBoundaryNames.linearIndex(5, BITQUADS_PERIMETER)], 6.0f, "BOUNDARY group BitQuads path");

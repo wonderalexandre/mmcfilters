@@ -1,10 +1,14 @@
 #pragma once
 
+#include "../mmcfilters/trees/MorphologicalTree.hpp"
 #include "../mmcfilters/utils/Image.hpp"
 #include "../mmcfilters/utils/Common.hpp"
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <array>
+#include <concepts>
+#include <stdexcept>
+#include <string>
 #include <sstream>
 #include <string_view>
 #include <vector>
@@ -18,6 +22,40 @@ namespace py = pybind11;
  */
 class PybindUtils{
     public:
+        enum class FloatingDType {
+            Float32,
+            Float64,
+        };
+
+        static FloatingDType parseFloatingDType(py::object dtype, std::string_view argumentName = "dtype") {
+            if (dtype.is_none()) {
+                return FloatingDType::Float32;
+            }
+
+            py::object numpy = py::module_::import("numpy");
+            py::object normalized = numpy.attr("dtype")(dtype);
+            const std::string name = py::str(normalized.attr("name")).cast<std::string>();
+            if (name == "float32") {
+                return FloatingDType::Float32;
+            }
+            if (name == "float64") {
+                return FloatingDType::Float64;
+            }
+            throw std::invalid_argument(std::string(argumentName) + " must be np.float32 or np.float64");
+        }
+
+        static FloatingDType parseFloatingArrayDType(const py::array& array, std::string_view argumentName) {
+            py::object numpy = py::module_::import("numpy");
+            py::object normalized = numpy.attr("dtype")(array.dtype());
+            const std::string name = py::str(normalized.attr("name")).cast<std::string>();
+            if (name == "float32") {
+                return FloatingDType::Float32;
+            }
+            if (name == "float64") {
+                return FloatingDType::Float64;
+            }
+            throw std::invalid_argument(std::string(argumentName) + " must be a 1D np.float32 or np.float64 array.");
+        }
 
         static void require1DArray(const py::buffer_info& bufferInfo, py::ssize_t expectedSize, std::string_view argumentName) {
             if (bufferInfo.ndim != 1) {
@@ -31,6 +69,16 @@ class PybindUtils{
                     << ", got " << bufferInfo.shape[0];
                 throw std::invalid_argument(oss.str());
             }
+        }
+
+        template <std::floating_point Real>
+        static py::array_t<Real, py::array::c_style> requireNodeAttributeArray(py::array attr, const MorphologicalTree& tree, std::string_view argumentName = "attr") {
+            const py::buffer_info info = attr.request();
+            require1DArray(info, tree.getNumInternalNodeSlots(), argumentName);
+            if (info.strides[0] != static_cast<py::ssize_t>(sizeof(Real))) {
+                throw std::invalid_argument(std::string(argumentName) + " must be C-contiguous.");
+            }
+            return py::reinterpret_borrow<py::array_t<Real, py::array::c_style>>(attr);
         }
 
         template <class T>
@@ -71,93 +119,50 @@ class PybindUtils{
         }
     
 
-	    static py::array_t<int> toNumpyInt(int* data, int size) {
-	        // Create a capsule that owns destruction of the raw buffer.
-	        py::capsule free_when_done(data, [](void* f) {
-	            delete[] static_cast<int*>(f);
-	        });
-
-	        // Create a NumPy view backed by the capsule-owned data.
-	        return py::array_t<int>(
-	            { size },                // shape (1D)
-	            { sizeof(int) },       // strides
-	            data,                    // data pointer
-	            free_when_done           // capsule that releases the buffer
-	        );
-	    }
-
-	    static py::array_t<float> toNumpyFloat(float* data, int size) {
-	        // Create a capsule that owns destruction of the raw buffer.
-	        py::capsule free_when_done(data, [](void* f) {
-	            delete[] static_cast<float*>(f);
-	        });
-
-	        // Create a NumPy view backed by the capsule-owned data.
-	        return py::array_t<float>(
-	            { size },                // shape (1D)
-	            { sizeof(float) },       // strides
-	            data,                    // data pointer
-	            free_when_done           // capsule that releases the buffer
-	        );
-	    }
-
-        static py::array_t<float> toNumpyShared_ptr(std::shared_ptr<float[]> buffer, int n){
-	        std::shared_ptr<float[]> bufferCopy = buffer;
-
-	        py::capsule free_when_done(new std::shared_ptr<float[]>(bufferCopy), [](void* ptr) {
-	            // Convert back and destroy the shared_ptr holder.
-	            delete reinterpret_cast<std::shared_ptr<float[]>*>(ptr);
-	        });
-            
-            py::array_t<float> numpy = py::array(py::buffer_info(
-                buffer.get(),
-                sizeof(float),
-                py::format_descriptor<float>::value,
-                1,
-                { n },
-                { sizeof(float) }
-            ), free_when_done);
-            
-            return numpy;
-        }
-
-        static py::array_t<float> toNumpyOwned(std::vector<float>&& buffer, int n) {
-            auto* owned = new std::vector<float>(std::move(buffer));
+        template <typename Real>
+        static py::array_t<Real> toNumpyOwned(std::vector<Real>&& buffer, int n) {
+            auto* owned = new std::vector<Real>(std::move(buffer));
             py::capsule free_when_done(owned, [](void* ptr) {
-                delete reinterpret_cast<std::vector<float>*>(ptr);
+                delete reinterpret_cast<std::vector<Real>*>(ptr);
             });
 
-            return py::array_t<float>(
+            return py::array_t<Real>(
                 {n},
-                {static_cast<py::ssize_t>(sizeof(float))},
+                {static_cast<py::ssize_t>(sizeof(Real))},
                 owned->data(),
                 free_when_done
             );
         }
 
-        static py::array_t<float> toNumpyOwned2D(std::vector<float>&& buffer, int rows, int cols) {
-            auto* owned = new std::vector<float>(std::move(buffer));
+        template <typename Real>
+        static py::array_t<Real> toNumpyOwned2D(std::vector<Real>&& buffer, int rows, int cols) {
+            auto* owned = new std::vector<Real>(std::move(buffer));
             py::capsule free_when_done(owned, [](void* ptr) {
-                delete reinterpret_cast<std::vector<float>*>(ptr);
+                delete reinterpret_cast<std::vector<Real>*>(ptr);
             });
 
-            return py::array_t<float>(
+            return py::array_t<Real>(
                 {rows, cols},
-                {static_cast<py::ssize_t>(sizeof(float) * cols), static_cast<py::ssize_t>(sizeof(float))},
+                {static_cast<py::ssize_t>(sizeof(Real) * cols), static_cast<py::ssize_t>(sizeof(Real))},
                 owned->data(),
                 free_when_done
             );
         }
         
-	    template <typename Array>
-	    static std::shared_ptr<float[]> toShared_ptr(const Array& arr) {
+        template <typename Scalar, typename Array>
+        static std::shared_ptr<Scalar[]> toSharedPtr(const Array& arr) {
 	        // Capture the Python object in the deleter so the buffer stays alive.
-	        return std::shared_ptr<float[]>(
-	            static_cast<float*>(arr.request().ptr),
-	            [obj = py::object(arr)](float*) mutable {
+	        return std::shared_ptr<Scalar[]>(
+	            static_cast<Scalar*>(arr.request().ptr),
+	            [obj = py::object(arr)](Scalar*) mutable {
 	                // Keep the py::object alive until the shared_ptr is destroyed.
 	            }
 	        );
+	    }
+
+	    template <typename Array>
+	    static std::shared_ptr<float[]> toShared_ptr(const Array& arr) {
+	        return toSharedPtr<float>(arr);
 	    }
 
 

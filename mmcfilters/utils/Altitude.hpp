@@ -7,7 +7,6 @@
 
 #include <concepts>
 #include <cstdint>
-#include <optional>
 #include <span>
 #include <type_traits>
 #include <vector>
@@ -53,16 +52,6 @@ concept AltitudeValue =
  */
 template<AltitudeValue T>
 using AltitudeSpan = std::span<const T>;
-
-/**
- * @brief Optional read-only altitude view.
- *
- * This represents computations where altitude is semantically absent, such as
- * topology-only attribute requests, without tying the call contract to an owned
- * `AltitudeBuffer<T>`.
- */
-template<AltitudeValue T>
-using OptionalAltitudeSpan = std::optional<AltitudeSpan<T>>;
 
 namespace detail {
 

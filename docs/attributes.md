@@ -30,8 +30,8 @@ Main entry points:
 - `AttributeComputation`: public facade for computing one attribute,
   one group, or a heterogeneous request.
 - `AttributeNames`: describes column layout in flat attribute buffers.
-- `ComputedAttributeData` and `ComputedAttributeDataWithDelta`: owning result
-  types returned by the facade.
+- `ComputedAttributeData<Real>` and `ComputedAttributeDataWithDelta<Real>`:
+  owning result types returned by the facade.
 
 Use `AttributeComputation` for normal application code. Concrete computers are
 advanced-public implementation components, not an alternate public orchestration
@@ -75,6 +75,20 @@ Single altitude-aware attribute:
 auto [names, values] =
     AttributeComputation::computeSingleAttribute(weightedTree, LEVEL);
 ```
+
+Attribute value buffers default to `float`, but the public facade can also
+materialize `double` buffers by selecting the `Real` template argument:
+
+```cpp
+auto single32 = AttributeComputation::computeSingleAttribute(weightedTree, LEVEL);
+auto single64 = AttributeComputation::computeSingleAttribute<double>(weightedTree, LEVEL);
+auto mapped64 = AttributeComputation::computeAttributeMapping<double>(weightedTree, LEVEL);
+```
+
+The `Real` argument selects both the public result storage and the internal
+floating-point arithmetic used by the typed attribute facade. Integer-valued
+support descriptors are still counted discretely and then materialized in the
+requested real type.
 
 Several scalar attributes or groups in one coordinated request:
 
@@ -157,8 +171,36 @@ Python keeps a smaller public surface than C++:
   topology/support-only entry points;
 - `NodeIdSpace` can be passed to the Python attribute methods when a preserved
   output node-id space is needed;
+- attribute methods accept `dtype=np.float32` or `dtype=np.float64`; the default
+  remains `np.float32`;
 - `AttributePipeline`, concrete C++ computers, local-event deltas, and bitquad
   delta buffers are not Python API.
+
+Python dtype examples:
+
+```python
+area32 = mmcfilters.Attribute.computeSingleAttribute(
+    weightedTree,
+    mmcfilters.Attribute.AREA,
+)
+area64 = mmcfilters.Attribute.computeSingleAttribute(
+    weightedTree,
+    mmcfilters.Attribute.AREA,
+    dtype=np.float64,
+)
+names, values64 = mmcfilters.Attribute.computeAttributes(
+    weightedTree,
+    [mmcfilters.Attribute.AREA, mmcfilters.Attribute.Group.GRAY_LEVEL],
+    dtype=np.float64,
+)
+```
+
+The Python `dtype` keyword maps directly to the C++ attribute facade:
+`np.float32` uses `float` and `np.float64` uses `double`.
+
+Python filtering helpers such as `AttributeFilters`, `ExtinctionValues`, and
+`UltimateAttributeOpening` consume both `np.float32` and `np.float64` attribute
+buffers, matching the dtype selected by the attribute computation call.
 
 ## Result Layout And Output Spaces
 
@@ -173,10 +215,13 @@ where `node_id` is an internal dense `MorphologicalTree` node slot. Dead
 internal slots keep the default buffer value; consumers that reason about tree
 nodes should iterate `tree.getAliveNodeIds()`.
 
-`ComputedAttributeData` and `ComputedAttributeDataWithDelta` also store the
-`NodeIdSpace` of the returned buffer. Public computation methods can request a
-different public node-id space, but projection always happens after the internal
-pipeline has computed the result in `NodeIdSpace::MORPHOLOGICAL_TREE`.
+`ComputedAttributeData<Real>` and `ComputedAttributeDataWithDelta<Real>` also
+store the `NodeIdSpace` of the returned buffer. The default public computation
+type is `ComputedAttributeData<float>` or
+`ComputedAttributeDataWithDelta<float>`; selecting `Real=double` returns the
+corresponding `double` specialization. Public computation methods can request a
+different public node-id space, but projection always happens after the
+internal pipeline has computed the result in `NodeIdSpace::MORPHOLOGICAL_TREE`.
 
 `NodeIdSpace::HIGRA` means the preserved imported Higra node-id domain. It is
 available only for trees imported from Higra whose original node-id space has
@@ -193,6 +238,38 @@ each proper part receives the value stored at its owner node.
 
 For the distinction between preserved imported Higra ids and exported compact
 Higra snapshots, see [Higra Interoperability](higra-interoperability.md).
+
+## Numeric Stability Contract
+
+Scalar attributes returned by the ordinary public attribute APIs are finite for
+valid live nodes and exported proper-part rows. This includes degenerate
+supports such as one-pixel components, line-like components, zero continuous
+BitQuads perimeter, and BitQuads configurations whose Euler estimate is zero.
+
+The finite fallbacks are part of the public attribute contract:
+
+| Attribute family | Degenerate condition | Returned value |
+| --- | --- | --- |
+| `BITQUADS_CIRCULARITY` | `BITQUADS_PERIMETER_CONTINUOUS <= eps` | `0` |
+| `BITQUADS_PERIMETER_AVERAGE` | estimated Euler component count `<= 0` | `0` |
+| `BITQUADS_LENGTH_AVERAGE` | estimated Euler component count `<= 0` | `0` |
+| `BITQUADS_WIDTH_AVERAGE` | continuous perimeter `<= eps` | `0` |
+| `ECCENTRICITY` | both inertia eigenvalues are numerically zero | `1` |
+| `ECCENTRICITY` | smallest inertia eigenvalue `<= eps` or ratio overflows the practical range | `1e6` |
+
+`BITQUADS_WIDTH_AVERAGE` is computed with the algebraically equivalent finite
+formula `2 * BITQUADS_AREA / BITQUADS_PERIMETER_CONTINUOUS` when the continuous
+perimeter is positive. This avoids the `inf / inf` pattern that appears if the
+formula is evaluated through average area and average perimeter separately.
+
+The finite-scalar contract does not mean every buffer cell is finite in every
+API mode:
+
+- dead internal node slots are addressable and may retain sentinel `NaN` values;
+- `computeSingleAttributeWithDelta(..., "nan-padding")` deliberately writes
+  `NaN` for missing ancestor or descendant samples;
+- callers that provide non-finite floating-point altitudes are rejected by
+  weighted-tree and altitude-validation code before attributes are computed.
 
 ## Execution Model
 
@@ -236,10 +313,10 @@ specific operator owns a separate edit-aware update path.
 ## Dependencies
 
 Dependencies are ordinary attribute results consumed by another attribute
-computer. They are passed as `DependencySource`, a non-owning pair of:
+kernel. They are passed as `DependencySourceT<Real>`, a non-owning pair of:
 
 - `AttributeNames`, describing the dependency layout;
-- `const float*`, pointing to the dependency buffer.
+- `const Real*`, pointing to the dependency buffer.
 
 The current implementation has one orchestration path:
 
@@ -260,7 +337,11 @@ owns a coherent attribute family, not necessarily a single scalar descriptor.
 
 Each computer is expected to:
 
-- declare the attributes it can produce;
+- declare the attributes it can produce through `attributes()`;
+- expose a static `compute(context)` entry point for its node-level family
+  kernel;
+- expose a static `computeUnitRows(unitContext)` entry point for compact export
+  rows;
 - validate any dependency sources required by the requested descriptors;
 - respect the requested subset passed by the pipeline;
 - write into the caller-owned flat result buffer;
@@ -269,10 +350,23 @@ Each computer is expected to:
 Computers are treated as stateless function objects. Implementations must not
 keep request-specific mutable state inside the computer object.
 
-Public bucket types that may be useful to direct computer tests live outside
-`detail`, such as `BitquadFamilyCounts` and `ContourSideCounts`. Local deltas,
-state histograms, traversal policies, and other implementation-only helpers
-remain under `computers/detail` and are not public contracts.
+The context types in `AttributeKernelSupport.hpp` are the adapter boundary for
+computer execution: topology/support families use
+`AttributeComputeContext<Real>`, and altitude-aware families use
+`AltitudeAttributeComputeContext<Real, T>`. Unit-row projection uses
+`UnitAttributeComputeContext<Real>` for topology/support families and
+`AltitudeUnitAttributeComputeContext<Real, T>` for altitude-aware families.
+`TopologyAttributeComputer` and `AltitudeAttributeComputer` concepts enforce
+these names, so a new computer should not introduce family-specific public
+method names. Positional span kernels may exist as private or `detail`
+implementation helpers, but ordinary orchestration and computer-level tests
+should call the context entry points.
+
+Local-event bucket types such as `detail::BitquadFamilyCounts` and
+`detail::ContourSideCounts` are implementation storage, not public contracts.
+Direct local-event tests and internal validation programs may include the
+corresponding `computers/detail` headers when they intentionally validate those
+storage invariants.
 
 ## Header-Only Boundary
 
@@ -284,10 +378,9 @@ consumers; they are not part of the compatibility contract.
 Ordinary consumer code should include documented public facade headers such as
 `mmcfilters/attributes/Attributes.hpp`. Advanced extension or test code may
 include concrete computers under `mmcfilters/attributes/computers/` directly
-when it is intentionally targeting the computer protocol. Public bucket types
-that are intentionally shareable live outside `detail`, for example
-`attributes::computers::BitquadFamilyCounts` and
-`attributes::computers::ContourSideCounts`.
+when it is intentionally targeting the computer protocol. Headers under
+`computers/detail` are reserved for internal algorithms, local-event storage,
+and tests that explicitly exercise those internals.
 
 ## Registry
 
@@ -309,22 +402,49 @@ groups are `GRAY_LEVEL`, `SHAPE`, `MOMENTS`, `BOUNDARY`, `TREE_TOPOLOGY`, and
 
 Use this checklist for new attributes:
 
-1. Add the scalar enum and registry metadata.
+1. Add the scalar enum in `AttributeTypes.hpp` and one matching row in
+   `AttributeRegistry.hpp`. The enum ordinal and registry row must stay aligned
+   because metadata lookup is indexed by enum value.
 2. Decide whether the attribute is topology-only, altitude-aware, adjacency
    dependent, or tree-kind specific.
 3. Add the attribute to any coherent group only if the group semantics still
    hold.
-4. Choose whether it belongs in a typed pipeline kernel or a concrete computer.
-5. Declare and validate dependencies explicitly.
-6. Implement unit-component behavior for exported layouts.
-7. Register the attribute in the pipeline/topology backend route.
-8. Add small C++ tests with hand-checkable trees/images.
-9. Update Python bindings, notebooks, or examples only if the public surface
+4. Place the descriptor in the coherent computer family under
+   `mmcfilters/attributes/computers/`, or add a new family only when no current
+   traversal/state fits.
+5. Declare the family contract in `AttributeComputerTraits.hpp`: produced
+   attributes, family name, execution domain, and dependency set. The execution
+   domain determines whether the computer receives an altitude-aware context.
+   Unit rows are mandatory for every computer through
+   `computeUnitRows(unitContext)`.
+6. Add attribute-level dependencies in `AttributeFamilyScheduler.hpp` only for
+   descriptors that consume another materialized attribute. Dependencies should
+   be semantic (`AREA`, `VOLUME`, moments) rather than positional buffer
+   assumptions.
+7. Implement `compute(context)` with `AttributeComputeContext<Real>` or
+   `AltitudeAttributeComputeContext<Real, T>`, validate dependencies through
+   `DependencyResolver<Real>`, and use `AttributeNumericPolicy.hpp` for
+   degenerate divisions, square roots, ratios, and finite fallbacks.
+8. Implement `computeUnitRows(unitContext)` with `UnitAttributeComputeContext`
+   or `AltitudeUnitAttributeComputeContext` so compact Higra exports have
+   defined proper-part rows.
+9. Register execution in the central plan executor:
+   `AttributePipeline.hpp` for altitude-aware families, or
+   `TopologyAttributeBackend.hpp` for topology/support families.
+10. Add small C++ tests with hand-checkable trees/images, plus plumbing tests
+    when the registry, traits, dependencies, unit projection, or public layout
+    contract changes.
+11. Update Python bindings, notebooks, or examples only if the public surface
    changes.
 
 Prefer the smallest coherent implementation path. If an attribute shares a
 traversal or intermediate state with an existing family, extend that family
 instead of adding a separate computer.
+
+The expected invariant after these steps is mechanical: every public attribute
+has exactly one producing computer family, every dependency is registered and
+ordered before its consumer in the computation plan, hidden dependencies are not
+returned in public result layouts, and valid live-node outputs are finite.
 
 ## Validation
 
@@ -403,7 +523,7 @@ once. `ALL` expands to every attribute in this table.
 | `HU_MOMENT_7` | `MOMENTS`, `SHAPE` | Topology/support | Seventh Hu invariant. It is highly sensitive to fine asymmetries and helps distinguish mirror-related shapes. |
 | `INERTIA` | `MOMENTS`, `SHAPE` | Topology/support | Sum of normalized second-order central moments, `mu20 / area^2 + mu02 / area^2`. In the current implementation this equals `HU_MOMENT_1`, but it is materialized by `MomentBasedAttributeComputer` and belongs to the moment-derived descriptor family. |
 | `COMPACTNESS` | `MOMENTS`, `SHAPE` | Topology/support | Area normalized by second-order dispersion, currently `(1 / (2*pi)) * area / (mu20 + mu02)` when the denominator is positive. Higher values indicate more compact supports. |
-| `ECCENTRICITY` | `MOMENTS`, `SHAPE` | Topology/support | Ratio of the largest to smallest eigenvalue of the second-moment matrix. Values near `1` indicate isotropic shapes; larger values indicate elongation. |
+| `ECCENTRICITY` | `MOMENTS`, `SHAPE` | Topology/support | Ratio of the largest to smallest eigenvalue of the second-moment matrix. Values near `1` indicate isotropic shapes; larger values indicate elongation. Degenerate line-like supports saturate at the finite value `1e6`. |
 | `LENGTH_MAJOR_AXIS` | `MOMENTS`, `SHAPE` | Topology/support | Length proxy for the major axis of the equivalent second-moment ellipse, derived from the largest inertia eigenvalue and area. |
 | `LENGTH_MINOR_AXIS` | `MOMENTS`, `SHAPE` | Topology/support | Length proxy for the minor axis of the equivalent second-moment ellipse, derived from the smallest inertia eigenvalue and area. |
 | `AXIS_ORIENTATION` | `MOMENTS`, `SHAPE` | Topology/support | Principal-axis orientation in degrees, computed as `0.5 * atan2(2*mu11, mu20 - mu02)` and normalized by the implementation to a non-negative angle. |
@@ -413,10 +533,10 @@ once. `ALL` expands to every attribute in this table.
 | `BITQUADS_NUMBER_HOLES` | `BOUNDARY`, `SHAPE` | Topology/support | Number of holes inferred from the bitquad Euler characteristic for a single connected support. |
 | `BITQUADS_PERIMETER` | `BOUNDARY`, `SHAPE` | Topology/support | Discrete boundary-length estimate from bitquad edge-contributing patterns. |
 | `BITQUADS_PERIMETER_CONTINUOUS` | `BOUNDARY`, `SHAPE` | Topology/support | Smoothed continuous perimeter estimate from bitquad counters, using weighted transitions across local `2x2` configurations. |
-| `BITQUADS_CIRCULARITY` | `BOUNDARY`, `SHAPE` | Topology/support | Bitquad compactness measure `(4*pi*BITQUADS_AREA) / BITQUADS_PERIMETER_CONTINUOUS^2`. Values closer to `1` indicate rounder supports. |
-| `BITQUADS_PERIMETER_AVERAGE` | `BOUNDARY`, `SHAPE` | Topology/support | Average continuous perimeter per connected component, computed from bitquad perimeter and Euler-count estimates. |
-| `BITQUADS_LENGTH_AVERAGE` | `BOUNDARY`, `SHAPE` | Topology/support | Average longitudinal extent proxy, derived as half of the average continuous perimeter. |
-| `BITQUADS_WIDTH_AVERAGE` | `BOUNDARY`, `SHAPE` | Topology/support | Average transverse extent proxy, derived from average bitquad area and average perimeter. |
+| `BITQUADS_CIRCULARITY` | `BOUNDARY`, `SHAPE` | Topology/support | Bitquad compactness measure `(4*pi*BITQUADS_AREA) / BITQUADS_PERIMETER_CONTINUOUS^2`. Values closer to `1` indicate rounder supports. Degenerate zero-perimeter supports return `0`. |
+| `BITQUADS_PERIMETER_AVERAGE` | `BOUNDARY`, `SHAPE` | Topology/support | Average continuous perimeter per connected component, computed from bitquad perimeter and Euler-count estimates. Euler estimates `<= 0` return `0`. |
+| `BITQUADS_LENGTH_AVERAGE` | `BOUNDARY`, `SHAPE` | Topology/support | Average longitudinal extent proxy, derived as half of the average continuous perimeter. Euler estimates `<= 0` return `0`. |
+| `BITQUADS_WIDTH_AVERAGE` | `BOUNDARY`, `SHAPE` | Topology/support | Average transverse extent proxy, computed as `2 * BITQUADS_AREA / BITQUADS_PERIMETER_CONTINUOUS` with a zero fallback when the continuous perimeter is degenerate. |
 | `CONTOUR_PIXELS` | `BOUNDARY`, `SHAPE` | Topology/support | Number of support pixels that touch the 4-neighbour complement by at least one side. |
 | `CONTOUR_PERIMETER` | `BOUNDARY`, `SHAPE` | Topology/support | Total number of exposed 4-neighbour sides over the support. This is the side-count perimeter, not an Euclidean perimeter estimate. |
 | `CONTOUR_SIDE_NORTH` | `BOUNDARY`, `SHAPE` | Topology/support | Number of exposed north-facing sides over support pixels. |

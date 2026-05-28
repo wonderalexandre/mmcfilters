@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../BitquadAttributeData.hpp"
+#include "BitquadAttributeData.hpp"
 #include "../../../localEvents/EventEngine.hpp"
 
 #include <array>
@@ -67,7 +67,7 @@ public:
         Q4
     };
 
-    using BitquadFamilyCounts = ::mmcfilters::attributes::computers::BitquadFamilyCounts;
+    using BitquadFamilyCounts = ::mmcfilters::attributes::computers::detail::BitquadFamilyCounts;
 
 private:
     /**

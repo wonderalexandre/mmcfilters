@@ -19,6 +19,7 @@
 #include "../../utils/Common.hpp"
 
 #include <cmath>
+#include <concepts>
 #include <limits>
 #include <span>
 #include <stdexcept>
@@ -66,7 +67,7 @@ inline void validateDeltaRadius(int radius, const char* context) {
  * @brief Materializes a delta layout with only the center value.
  *
  * This helper keeps the output shape compatible with
- * `ComputedAttributeDataWithDelta` when no ancestor/descendant offsets are
+ * `ComputedAttributeDataWithDelta<float>` when no ancestor/descendant offsets are
  * requested. `base` must be expressed in the dense internal `MorphologicalTree`
  * node-id space because projection is applied only after the delta layout has
  * been assembled.
@@ -82,20 +83,21 @@ inline void validateDeltaRadius(int radius, const char* context) {
  * @throws std::invalid_argument If `padding` is unknown.
  * @throws std::logic_error If `base` is not in internal node-id space.
  */
-inline ComputedAttributeDataWithDelta materializeSingleAttributeCenterOnly(const MorphologicalTree& tree, ComputedAttributeData base, Attribute attribute, const std::string& padding, NodeIdSpace outputSpace){
+template <std::floating_point Real>
+inline ComputedAttributeDataWithDelta<Real> materializeSingleAttributeCenterOnly(const MorphologicalTree& tree, ComputedAttributeData<Real> base, Attribute attribute, const std::string& padding, NodeIdSpace outputSpace){
     validateDeltaPaddingStrategy(padding);
     if (base.nodeIdSpace != NodeIdSpace::MORPHOLOGICAL_TREE) {
         throw std::logic_error("Delta attribute materialization requires base attributes in internal node-id space.");
     }
 
     const AttributeNames& attributeNamesBase = base.first;
-    const std::vector<float>& attrsBase = base.second;
+    const std::vector<Real>& attrsBase = base.second;
     const int n = tree.getNumInternalNodeSlots();
     const std::vector<Attribute> attrVec = {attribute};
     AttributeNamesWithDelta attributeNamesDelta(AttributeNamesWithDelta::create(0, attrVec));
-    std::vector<float> attrsDelta(
+    std::vector<Real> attrsDelta(
         static_cast<size_t>(n) * static_cast<size_t>(attributeNamesDelta.NUM_ATTRIBUTES),
-        std::numeric_limits<float>::quiet_NaN());
+        std::numeric_limits<Real>::quiet_NaN());
 
     for (NodeId nodeId : tree.getAliveNodeIds()) {
         const int outIdx = attributeNamesDelta.linearIndex(nodeId, attribute, 0);
@@ -105,7 +107,7 @@ inline ComputedAttributeDataWithDelta materializeSingleAttributeCenterOnly(const
 
     return projectComputedDataToNodeIdSpace(
         tree,
-        {std::move(attributeNamesDelta), std::move(attrsDelta), NodeIdSpace::MORPHOLOGICAL_TREE},
+        ComputedAttributeDataWithDelta<Real>{std::move(attributeNamesDelta), std::move(attrsDelta), NodeIdSpace::MORPHOLOGICAL_TREE},
         outputSpace);
 }
 
@@ -140,8 +142,8 @@ inline ComputedAttributeDataWithDelta materializeSingleAttributeCenterOnly(const
  *
  * Complexity: O(radius * (tree traversal + live nodes)) plus output projection.
  */
-template<AltitudeValue T>
-inline ComputedAttributeDataWithDelta materializeSingleAttributeWithTypedDelta(const MorphologicalTree& tree, std::span<const T> altitude, ComputedAttributeData base, Attribute attribute, AltitudeDiff<T> deltaStep, int radius, const std::string& padding, NodeIdSpace outputSpace){
+template<std::floating_point Real, AltitudeValue T>
+inline ComputedAttributeDataWithDelta<Real> materializeSingleAttributeWithTypedDelta(const MorphologicalTree& tree, std::span<const T> altitude, ComputedAttributeData<Real> base, Attribute attribute, AltitudeDiff<T> deltaStep, int radius, const std::string& padding, NodeIdSpace outputSpace){
     validateDeltaPaddingStrategy(padding);
     validateDeltaRadius(radius, "computeSingleAttributeWithDelta");
     validateAltitudeDelta<T>(deltaStep, "computeSingleAttributeWithDelta");
@@ -151,14 +153,14 @@ inline ComputedAttributeDataWithDelta materializeSingleAttributeWithTypedDelta(c
     }
 
     const AttributeNames& attributeNamesBase = base.first;
-    const std::vector<float>& attrsBase = base.second;
+    const std::vector<Real>& attrsBase = base.second;
     const int n = tree.getNumInternalNodeSlots();
     const std::vector<Attribute> attrVec = {attribute};
     AttributeNamesWithDelta attributeNamesDelta(AttributeNamesWithDelta::create(radius, attrVec));
 
-    std::vector<float> attrsDelta(
+    std::vector<Real> attrsDelta(
         static_cast<size_t>(n) * static_cast<size_t>(attributeNamesDelta.NUM_ATTRIBUTES),
-        std::numeric_limits<float>::quiet_NaN());
+        std::numeric_limits<Real>::quiet_NaN());
 
     for (NodeId nodeId : tree.getAliveNodeIds()) {
         const NodeId nodeIndex = nodeId;
@@ -207,7 +209,7 @@ inline ComputedAttributeDataWithDelta materializeSingleAttributeWithTypedDelta(c
                     if (padding == "last-padding") {
                         attrsDelta[static_cast<size_t>(outIdx)] = attrsDelta[static_cast<size_t>(refIdx)];
                     } else {
-                        attrsDelta[static_cast<size_t>(outIdx)] = std::numeric_limits<float>::quiet_NaN();
+                        attrsDelta[static_cast<size_t>(outIdx)] = std::numeric_limits<Real>::quiet_NaN();
                     }
                 }
             }
@@ -220,7 +222,7 @@ inline ComputedAttributeDataWithDelta materializeSingleAttributeWithTypedDelta(c
                     if (padding == "last-padding") {
                         attrsDelta[static_cast<size_t>(outIdx)] = attrsDelta[static_cast<size_t>(refIdx)];
                     } else {
-                        attrsDelta[static_cast<size_t>(outIdx)] = std::numeric_limits<float>::quiet_NaN();
+                        attrsDelta[static_cast<size_t>(outIdx)] = std::numeric_limits<Real>::quiet_NaN();
                     }
                 }
             }
@@ -232,10 +234,10 @@ inline ComputedAttributeDataWithDelta materializeSingleAttributeWithTypedDelta(c
                 const int ascIdx = attributeNamesDelta.linearIndex(nodeIndex, attribute, -d);
                 const int descIdx = attributeNamesDelta.linearIndex(nodeIndex, attribute, +d);
                 if (std::isnan(attrsDelta[static_cast<size_t>(ascIdx)])) {
-                    attrsDelta[static_cast<size_t>(ascIdx)] = 0.0f;
+                    attrsDelta[static_cast<size_t>(ascIdx)] = Real{0};
                 }
                 if (std::isnan(attrsDelta[static_cast<size_t>(descIdx)])) {
-                    attrsDelta[static_cast<size_t>(descIdx)] = 0.0f;
+                    attrsDelta[static_cast<size_t>(descIdx)] = Real{0};
                 }
             }
         }
@@ -244,7 +246,7 @@ inline ComputedAttributeDataWithDelta materializeSingleAttributeWithTypedDelta(c
     return projectComputedDataToNodeIdSpace(
         tree,
         altitude,
-        {std::move(attributeNamesDelta), std::move(attrsDelta), NodeIdSpace::MORPHOLOGICAL_TREE},
+        ComputedAttributeDataWithDelta<Real>{std::move(attributeNamesDelta), std::move(attrsDelta), NodeIdSpace::MORPHOLOGICAL_TREE},
         outputSpace);
 }
 

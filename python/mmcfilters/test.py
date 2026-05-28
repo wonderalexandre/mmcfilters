@@ -32,13 +32,13 @@ attr_area = mmcfilters.Attribute.computeSingleTopologyAttribute(
     mmcfilters.Attribute.AREA,
 )
 filter = mmcfilters.AttributeFilters(tree)
-print( filter.filteringMax(attr_area < 10).reshape(num_rows, num_cols))
-img_vector_filtered_min = filter.filteringMin(attr_area, 10)
+print( filter.filteringByPruningMax(attr_area < 10).reshape(num_rows, num_cols))
+img_vector_filtered_min = filter.filteringByPruningMin(attr_area, 10)
 img_filtered_min = img_vector_filtered_min.reshape(num_rows, num_cols)
 print("Filtered image (min):")
 print( img_filtered_min )
 
-img_vector_filtered_max = filter.filteringMax(attr_area, 10)
+img_vector_filtered_max = filter.filteringByPruningMax(attr_area, 10)
 img_filtered_max = img_vector_filtered_max.reshape(num_rows, num_cols)
 print("Filtered image (max):")
 print( img_filtered_max )

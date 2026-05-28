@@ -8,7 +8,7 @@
  * The program writes CSV files for implementation inspection. It includes
  * `detail/` headers and is not public API.
  */
-#include "mmcfilters/attributes/computers/BitquadAttributeData.hpp"
+#include "mmcfilters/attributes/computers/detail/BitquadAttributeData.hpp"
 #include "mmcfilters/attributes/computers/detail/BitquadLocalEventComputation.hpp"
 #include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
 #include "mmcfilters/trees/WeightedMorphologicalTree.hpp"
@@ -29,7 +29,7 @@ using namespace mmcfilters::attributes::computers::detail;
 
 namespace {
 
-using FamilyCounts = mmcfilters::attributes::computers::BitquadFamilyCounts;
+using FamilyCounts = mmcfilters::attributes::computers::detail::BitquadFamilyCounts;
 using StateHistogram = BitquadLocalEventComputation::BitquadStateHistogram;
 
 struct Options {

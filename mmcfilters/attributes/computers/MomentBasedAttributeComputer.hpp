@@ -1,10 +1,12 @@
 #pragma once
 
-#include "../AttributeComputer.hpp"
+#include "../detail/AttributeKernelSupport.hpp"
 #include "../../trees/detail/TreeTraversalDetail.hpp"
 #include "../../trees/MorphologicalTree.hpp"
 
 #include <algorithm>
+#include <array>
+#include <concepts>
 #include <cmath>
 #include <limits>
 #include <numbers>
@@ -37,25 +39,38 @@ inline NodeId momentSlotOf(const MorphologicalTree&, NodeId nodeId) noexcept {
  * merged directly into their parent without the centroid-shift error that
  * occurs when summing already-centralised child moments.
  */
-class CentralMomentsComputer : public AttributeComputer {
+class CentralMomentsComputer {
 public:
-    using AttributeComputer::compute;
-    using AttributeComputer::computeUnitAttributes;
 
     /**
      * @brief Returns the family of central moments produced together.
      */
-    [[nodiscard]] std::vector<Attribute> attributes() const override {
+    [[nodiscard]] std::vector<Attribute> attributes() const {
         return {CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11, CENTRAL_MOMENT_30, CENTRAL_MOMENT_03, CENTRAL_MOMENT_21, CENTRAL_MOMENT_12};
     }
 
     /**
      * @brief Computes the requested central moments.
      *
-     * The output buffer is indexed by dense internal node id. Coordinates are
-     * row-major image coordinates interpreted as `(x = col, y = row)`.
+     * @details
+     * The output buffer is indexed by dense internal node id and interpreted by
+     * `context.attrNames`. Coordinates are row-major image coordinates
+     * interpreted as `(x = col, y = row)`. The method accumulates raw moments
+     * bottom-up and converts them to central moments after each subtree support
+     * has been assembled.
      */
-    void compute(const MorphologicalTree& tree, AttributeAltitudeView, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute> requested, [[maybe_unused]] std::span<const DependencySource> dependencySources) const override {
+    template <std::floating_point Real>
+    static void compute(const AttributeComputeContext<Real>& context) {
+        computeImpl(
+            context.tree,
+            context.buffer,
+            context.attrNames,
+            context.requestedAttributes);
+    }
+
+private:
+    template <std::floating_point Real>
+    static void computeImpl(const MorphologicalTree& tree, std::span<Real> buffer, const AttributeNames& attrNames, std::span<const Attribute> requested) {
         requireAttributeBufferShape(tree, buffer, attrNames);
 
         bool computeMu20 = std::find(requested.begin(), requested.end(), CENTRAL_MOMENT_20) != requested.end();
@@ -71,16 +86,16 @@ public:
         }
 
         struct RawMoments {
-            double m00 = 0.0;
-            double m10 = 0.0;
-            double m01 = 0.0;
-            double m20 = 0.0;
-            double m02 = 0.0;
-            double m11 = 0.0;
-            double m30 = 0.0;
-            double m03 = 0.0;
-            double m21 = 0.0;
-            double m12 = 0.0;
+            Real m00 = Real{0};
+            Real m10 = Real{0};
+            Real m01 = Real{0};
+            Real m20 = Real{0};
+            Real m02 = Real{0};
+            Real m11 = Real{0};
+            Real m30 = Real{0};
+            Real m03 = Real{0};
+            Real m21 = Real{0};
+            Real m12 = Real{0};
 
             void add(const RawMoments& other) {
                 m00 += other.m00;
@@ -108,12 +123,12 @@ public:
                 raw[static_cast<std::size_t>(node)] = RawMoments{};
                 for (int p : tree.getProperParts(nodeId)) {
                     auto [py, px] = ImageUtils::to2D(p, numCols);
-                    const double x = static_cast<double>(px);
-                    const double y = static_cast<double>(py);
-                    const double x2 = x * x;
-                    const double y2 = y * y;
+                    const Real x = static_cast<Real>(px);
+                    const Real y = static_cast<Real>(py);
+                    const Real x2 = x * x;
+                    const Real y2 = y * y;
                     RawMoments& moments = raw[static_cast<std::size_t>(node)];
-                    moments.m00 += 1.0;
+                    moments.m00 += Real{1};
                     moments.m10 += x;
                     moments.m01 += y;
                     moments.m20 += x2;
@@ -133,75 +148,79 @@ public:
             [&](NodeId nodeId) {
                 const NodeId node = detail::momentSlotOf(tree, nodeId);
                 const RawMoments& moments = raw[static_cast<std::size_t>(node)];
-                if (moments.m00 <= 0.0) {
+                if (moments.m00 <= Real{0}) {
                     return;
                 }
 
-                const double cx = moments.m10 / moments.m00;
-                const double cy = moments.m01 / moments.m00;
+                const Real cx = moments.m10 / moments.m00;
+                const Real cy = moments.m01 / moments.m00;
 
                 if (computeMu20) {
-                    const double mu20 = moments.m20 - 2.0 * cx * moments.m10 + cx * cx * moments.m00;
-                    buffer[indexOf(node, CENTRAL_MOMENT_20)] = static_cast<float>(mu20);
+                    const Real mu20 = moments.m20 - Real{2} * cx * moments.m10 + cx * cx * moments.m00;
+                    buffer[indexOf(node, CENTRAL_MOMENT_20)] = mu20;
                 }
                 if (computeMu02) {
-                    const double mu02 = moments.m02 - 2.0 * cy * moments.m01 + cy * cy * moments.m00;
-                    buffer[indexOf(node, CENTRAL_MOMENT_02)] = static_cast<float>(mu02);
+                    const Real mu02 = moments.m02 - Real{2} * cy * moments.m01 + cy * cy * moments.m00;
+                    buffer[indexOf(node, CENTRAL_MOMENT_02)] = mu02;
                 }
                 if (computeMu11) {
-                    const double mu11 = moments.m11 - cx * moments.m01 - cy * moments.m10 + cx * cy * moments.m00;
-                    buffer[indexOf(node, CENTRAL_MOMENT_11)] = static_cast<float>(mu11);
+                    const Real mu11 = moments.m11 - cx * moments.m01 - cy * moments.m10 + cx * cy * moments.m00;
+                    buffer[indexOf(node, CENTRAL_MOMENT_11)] = mu11;
                 }
                 if (computeMu30) {
-                    const double mu30 = moments.m30 - 3.0 * cx * moments.m20 + 3.0 * cx * cx * moments.m10 - cx * cx * cx * moments.m00;
-                    buffer[indexOf(node, CENTRAL_MOMENT_30)] = static_cast<float>(mu30);
+                    const Real mu30 = moments.m30 - Real{3} * cx * moments.m20 + Real{3} * cx * cx * moments.m10 - cx * cx * cx * moments.m00;
+                    buffer[indexOf(node, CENTRAL_MOMENT_30)] = mu30;
                 }
                 if (computeMu03) {
-                    const double mu03 = moments.m03 - 3.0 * cy * moments.m02 + 3.0 * cy * cy * moments.m01 - cy * cy * cy * moments.m00;
-                    buffer[indexOf(node, CENTRAL_MOMENT_03)] = static_cast<float>(mu03);
+                    const Real mu03 = moments.m03 - Real{3} * cy * moments.m02 + Real{3} * cy * cy * moments.m01 - cy * cy * cy * moments.m00;
+                    buffer[indexOf(node, CENTRAL_MOMENT_03)] = mu03;
                 }
                 if (computeMu21) {
-                    const double mu21 =
-                        moments.m21 - 2.0 * cx * moments.m11 - cy * moments.m20 +
-                        2.0 * cx * cy * moments.m10 + cx * cx * moments.m01 -
+                    const Real mu21 =
+                        moments.m21 - Real{2} * cx * moments.m11 - cy * moments.m20 +
+                        Real{2} * cx * cy * moments.m10 + cx * cx * moments.m01 -
                         cx * cx * cy * moments.m00;
-                    buffer[indexOf(node, CENTRAL_MOMENT_21)] = static_cast<float>(mu21);
+                    buffer[indexOf(node, CENTRAL_MOMENT_21)] = mu21;
                 }
                 if (computeMu12) {
-                    const double mu12 =
-                        moments.m12 - 2.0 * cy * moments.m11 - cx * moments.m02 +
-                        2.0 * cx * cy * moments.m01 + cy * cy * moments.m10 -
+                    const Real mu12 =
+                        moments.m12 - Real{2} * cy * moments.m11 - cx * moments.m02 +
+                        Real{2} * cx * cy * moments.m01 + cy * cy * moments.m10 -
                         cx * cy * cy * moments.m00;
-                    buffer[indexOf(node, CENTRAL_MOMENT_12)] = static_cast<float>(mu12);
+                    buffer[indexOf(node, CENTRAL_MOMENT_12)] = mu12;
                 }
             }
         );
     }
 
+public:
     /**
      * @brief Materializes central moments for one-pixel unit supports.
      *
      * All central moments of a one-pixel support are zero.
      */
-    void computeUnitAttributes(
-        const MorphologicalTree& tree,
-        AttributeAltitudeView,
-        std::span<const NodeId> unitProperParts,
-        std::span<float> buffer,
-        const AttributeNames& attrNames,
-        std::span<const Attribute> requested) const override
+    template <std::floating_point Real>
+    static void computeUnitRows(const UnitAttributeComputeContext<Real>& context)
     {
-        requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
-        const std::vector<Attribute> zeroAttributes = attributes();
+        requireUnitAttributeBufferShape(context.tree, context.unitProperParts, context.buffer, context.attrNames);
+        constexpr std::array<Attribute, 7> zeroAttributes{
+            CENTRAL_MOMENT_20,
+            CENTRAL_MOMENT_02,
+            CENTRAL_MOMENT_11,
+            CENTRAL_MOMENT_30,
+            CENTRAL_MOMENT_03,
+            CENTRAL_MOMENT_21,
+            CENTRAL_MOMENT_12};
         for (const Attribute attribute : zeroAttributes) {
-            if (!requestsAttribute(requested, attribute)) {
+            if (!requestsAttribute(context.requestedAttributes, attribute)) {
                 continue;
             }
-            for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
-                buffer[attrNames.linearIndex(leafIndex, attribute)] = 0.0f;
+            for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitProperParts.size()); ++leafIndex) {
+                context.buffer[context.attrNames.linearIndex(leafIndex, attribute)] = Real{0};
             }
         }
     }
+
 };
 
 
@@ -220,46 +239,59 @@ public:
  * @note The normalisation step is undefined for degenerate zero-area supports.
  * In practice such supports should not occur for live nodes in a valid tree.
  */
-class HuMomentsComputer : public AttributeComputer {
+class HuMomentsComputer {
 public:
-    using AttributeComputer::compute;
-    using AttributeComputer::computeUnitAttributes;
 
     /**
      * @brief Returns the Hu moments naturally produced together.
      */
-    [[nodiscard]] std::vector<Attribute> attributes() const override {
+    [[nodiscard]] std::vector<Attribute> attributes() const {
         return {HU_MOMENT_1, HU_MOMENT_2, HU_MOMENT_3, HU_MOMENT_4, HU_MOMENT_5, HU_MOMENT_6, HU_MOMENT_7};
     }
 
     /**
      * @brief Computes the requested Hu invariant moments.
      *
-     * Requires dependency source `0` containing all central moments and source
-     * `1` containing `AREA`.
+     * @details
+     * Requires one dependency source containing all central moments and another
+     * containing `AREA`. Sources are resolved semantically through
+     * `context.dependencies`, so their order in the dependency span is not part
+     * of the contract.
      */
-    void compute(const MorphologicalTree& tree, AttributeAltitudeView, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute> requested, std::span<const DependencySource> dependencySources) const override {
+    template <std::floating_point Real>
+    static void compute(const AttributeComputeContext<Real>& context) {
+        computeImpl(
+            context.tree,
+            context.buffer,
+            context.attrNames,
+            context.requestedAttributes,
+            context.dependencySources);
+    }
+
+private:
+    template <std::floating_point Real>
+    static void computeImpl(const MorphologicalTree& tree, std::span<Real> buffer, const AttributeNames& attrNames, std::span<const Attribute> requested, std::span<const DependencySourceT<Real>> dependencySources) {
         requireAttributeBufferShape(tree, buffer, attrNames);
 
         auto indexOf = [&](NodeId idx, Attribute attr) { return attrNames.linearIndex(idx, attr); };
-        const auto& muDependency = requireDependencySourceForAttributes(
-            dependencySources,
-            0,
-            {
-                CENTRAL_MOMENT_20,
-                CENTRAL_MOMENT_02,
-                CENTRAL_MOMENT_11,
-                CENTRAL_MOMENT_30,
-                CENTRAL_MOMENT_03,
-                CENTRAL_MOMENT_21,
-                CENTRAL_MOMENT_12,
-            });
-        const auto& areaDependency = requireDependencySourceForAttribute(dependencySources, 1, AREA);
+        const DependencyResolver<Real> dependencies{dependencySources};
+        const auto& muDependency = dependencies.requireAll({
+            CENTRAL_MOMENT_20,
+            CENTRAL_MOMENT_02,
+            CENTRAL_MOMENT_11,
+            CENTRAL_MOMENT_30,
+            CENTRAL_MOMENT_03,
+            CENTRAL_MOMENT_21,
+            CENTRAL_MOMENT_12,
+        });
+        const auto& areaDependency = dependencies.require(AREA);
         auto indexOfMu = [&](NodeId idx, Attribute attr) { return muDependency.attrNames->linearIndex(idx, attr); };
         auto indexOfArea = [&](NodeId idx) { return areaDependency.attrNames->linearIndex(idx, AREA); };
 
-        auto normMoment = [](int area, float moment, int p, int q) {
-            return moment / std::pow(static_cast<float>(area), (p + q + 2.0f) / 2.0f);
+        auto normMoment = [](Real area, Real moment, int p, int q) {
+            return ::mmcfilters::attributes::numeric::safeDivide(
+                moment,
+                std::pow(area, static_cast<Real>(p + q + 2) / Real{2}));
         };
 
         bool computeHu1 = std::find(requested.begin(), requested.end(), HU_MOMENT_1) != requested.end();
@@ -277,71 +309,78 @@ public:
             [](NodeId, NodeId) {},
             [&](NodeId idxGlobalId) {
                 const NodeId idx = detail::momentSlotOf(tree, idxGlobalId);
-                float mu20 = muDependency.buffer[indexOfMu(idx, CENTRAL_MOMENT_20)];
-                float mu02 = muDependency.buffer[indexOfMu(idx, CENTRAL_MOMENT_02)];
-                float mu11 = muDependency.buffer[indexOfMu(idx, CENTRAL_MOMENT_11)];
-                float mu30 = muDependency.buffer[indexOfMu(idx, CENTRAL_MOMENT_30)];
-                float mu03 = muDependency.buffer[indexOfMu(idx, CENTRAL_MOMENT_03)];
-                float mu21 = muDependency.buffer[indexOfMu(idx, CENTRAL_MOMENT_21)];
-                float mu12 = muDependency.buffer[indexOfMu(idx, CENTRAL_MOMENT_12)];
-                int area = static_cast<int>(areaDependency.buffer[indexOfArea(idx)]);
+                Real mu20 = muDependency.buffer[indexOfMu(idx, CENTRAL_MOMENT_20)];
+                Real mu02 = muDependency.buffer[indexOfMu(idx, CENTRAL_MOMENT_02)];
+                Real mu11 = muDependency.buffer[indexOfMu(idx, CENTRAL_MOMENT_11)];
+                Real mu30 = muDependency.buffer[indexOfMu(idx, CENTRAL_MOMENT_30)];
+                Real mu03 = muDependency.buffer[indexOfMu(idx, CENTRAL_MOMENT_03)];
+                Real mu21 = muDependency.buffer[indexOfMu(idx, CENTRAL_MOMENT_21)];
+                Real mu12 = muDependency.buffer[indexOfMu(idx, CENTRAL_MOMENT_12)];
+                Real area = areaDependency.buffer[indexOfArea(idx)];
+                if (area <= Real{0}) {
+                    return;
+                }
 
                 // Normalise the central moments before evaluating the Hu invariants.
-                float eta20 = normMoment(area, mu20, 2, 0);
-                float eta02 = normMoment(area, mu02, 0, 2);
-                float eta11 = normMoment(area, mu11, 1, 1);
-                float eta30 = normMoment(area, mu30, 3, 0);
-                float eta03 = normMoment(area, mu03, 0, 3);
-                float eta21 = normMoment(area, mu21, 2, 1);
-                float eta12 = normMoment(area, mu12, 1, 2);
+                Real eta20 = normMoment(area, mu20, 2, 0);
+                Real eta02 = normMoment(area, mu02, 0, 2);
+                Real eta11 = normMoment(area, mu11, 1, 1);
+                Real eta30 = normMoment(area, mu30, 3, 0);
+                Real eta03 = normMoment(area, mu03, 0, 3);
+                Real eta21 = normMoment(area, mu21, 2, 1);
+                Real eta12 = normMoment(area, mu12, 1, 2);
 
                 // Evaluate the seven classical Hu combinations.
                 if(computeHu1)
                     buffer[indexOf(idx, HU_MOMENT_1)] = eta20 + eta02; // The first Hu moment corresponds to a normalised inertia term.
                 if(computeHu2)
-                    buffer[indexOf(idx, HU_MOMENT_2)]  = std::pow(eta20 - eta02, 2) + 4 * std::pow(eta11, 2);
+                    buffer[indexOf(idx, HU_MOMENT_2)]  = std::pow(eta20 - eta02, 2) + Real{4} * std::pow(eta11, 2);
                 if(computeHu3)
-                    buffer[indexOf(idx, HU_MOMENT_3)]  = std::pow(eta30 - 3 * eta12, 2) + std::pow(3 * eta21 - eta03, 2);
+                    buffer[indexOf(idx, HU_MOMENT_3)]  = std::pow(eta30 - Real{3} * eta12, 2) + std::pow(Real{3} * eta21 - eta03, 2);
                 if(computeHu4)
                     buffer[indexOf(idx, HU_MOMENT_4)]  = std::pow(eta30 + eta12, 2) + std::pow(eta21 + eta03, 2);
                 if(computeHu5)
-                    buffer[indexOf(idx, HU_MOMENT_5)] = (eta30 - 3 * eta12) * (eta30 + eta12) * (std::pow(eta30 + eta12, 2) - 3 * std::pow(eta21 + eta03, 2)) +
-                                                    (3 * eta21 - eta03) * (eta21 + eta03) * (3 * std::pow(eta30 + eta12, 2) - std::pow(eta21 + eta03, 2));
+                    buffer[indexOf(idx, HU_MOMENT_5)] = (eta30 - Real{3} * eta12) * (eta30 + eta12) * (std::pow(eta30 + eta12, 2) - Real{3} * std::pow(eta21 + eta03, 2)) +
+                                                    (Real{3} * eta21 - eta03) * (eta21 + eta03) * (Real{3} * std::pow(eta30 + eta12, 2) - std::pow(eta21 + eta03, 2));
                 if(computeHu6)
                     buffer[indexOf(idx, HU_MOMENT_6)] = (eta20 - eta02) * (std::pow(eta30 + eta12, 2) - std::pow(eta21 + eta03, 2)) +
-                                                    4 * eta11 * (eta30 + eta12) * (eta21 + eta03);
+                                                    Real{4} * eta11 * (eta30 + eta12) * (eta21 + eta03);
                 if(computeHu7)
-                    buffer[indexOf(idx, HU_MOMENT_7)] = (3 * eta21 - eta03) * (eta30 + eta12) * (std::pow(eta30 + eta12, 2) - 3 * std::pow(eta21 + eta03, 2)) -
-                                                    (eta30 - 3 * eta12) * (eta21 + eta03) * (3 * std::pow(eta30 + eta12, 2) - std::pow(eta21 + eta03, 2));
+                    buffer[indexOf(idx, HU_MOMENT_7)] = (Real{3} * eta21 - eta03) * (eta30 + eta12) * (std::pow(eta30 + eta12, 2) - Real{3} * std::pow(eta21 + eta03, 2)) -
+                                                    (eta30 - Real{3} * eta12) * (eta21 + eta03) * (Real{3} * std::pow(eta30 + eta12, 2) - std::pow(eta21 + eta03, 2));
             }
         );
     }
 
+public:
     /**
      * @brief Materializes Hu moments for one-pixel unit supports.
      *
      * The degenerate one-pixel support uses zero for all Hu invariants in the
      * exported unit path.
      */
-    void computeUnitAttributes(
-        const MorphologicalTree& tree,
-        AttributeAltitudeView,
-        std::span<const NodeId> unitProperParts,
-        std::span<float> buffer,
-        const AttributeNames& attrNames,
-        std::span<const Attribute> requested) const override
+    template <std::floating_point Real>
+    static void computeUnitRows(const UnitAttributeComputeContext<Real>& context)
     {
-        requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
-        const std::vector<Attribute> zeroAttributes = attributes();
+        requireUnitAttributeBufferShape(context.tree, context.unitProperParts, context.buffer, context.attrNames);
+        constexpr std::array<Attribute, 7> zeroAttributes{
+            HU_MOMENT_1,
+            HU_MOMENT_2,
+            HU_MOMENT_3,
+            HU_MOMENT_4,
+            HU_MOMENT_5,
+            HU_MOMENT_6,
+            HU_MOMENT_7};
         for (const Attribute attribute : zeroAttributes) {
-            if (!requestsAttribute(requested, attribute)) {
+            if (!requestsAttribute(context.requestedAttributes, attribute)) {
                 continue;
             }
-            for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
-                buffer[attrNames.linearIndex(leafIndex, attribute)] = 0.0f;
+            for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitProperParts.size()); ++leafIndex) {
+                context.buffer[context.attrNames.linearIndex(leafIndex, attribute)] = Real{0};
             }
         }
     }
+
 };
 
 
@@ -368,28 +407,47 @@ public:
  * No additional tree traversal state is required beyond iterating over the
  * live nodes in post-order.
  */
-class MomentBasedAttributeComputer : public AttributeComputer {
+class MomentBasedAttributeComputer {
 public:
-    using AttributeComputer::compute;
-    using AttributeComputer::computeUnitAttributes;
+
+    /**
+     * @brief Largest finite eccentricity emitted for degenerate one-dimensional supports.
+     */
+    template <std::floating_point Real>
+    static constexpr Real maxFiniteEccentricity() noexcept {
+        return static_cast<Real>(1.0e6);
+    }
 
     /**
      * @brief Returns the family of moment-derived descriptors.
      */
-    [[nodiscard]] std::vector<Attribute> attributes() const override {
+    [[nodiscard]] std::vector<Attribute> attributes() const {
         return {COMPACTNESS, ECCENTRICITY, LENGTH_MAJOR_AXIS, LENGTH_MINOR_AXIS,AXIS_ORIENTATION, INERTIA, CIRCULARITY};
     }
 
     /**
      * @brief Computes the requested moment-derived descriptors.
      *
-     * Requires dependency source `0` containing `CENTRAL_MOMENT_20`,
-     * `CENTRAL_MOMENT_02`, and `CENTRAL_MOMENT_11`, and source `1` containing
-     * `AREA`.
+     * @details
+     * Requires dependencies for `CENTRAL_MOMENT_20`, `CENTRAL_MOMENT_02`,
+     * `CENTRAL_MOMENT_11`, and `AREA`. The dependencies are resolved by name,
+     * then each live node is evaluated independently from the second-order
+     * moment matrix.
      */
-    void compute(const MorphologicalTree& tree, AttributeAltitudeView, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes, std::span<const DependencySource> dependencySources) const override {
-        requireAttributeBufferShape(tree, buffer, attrNames);
+    template <std::floating_point Real>
+    static void compute(const AttributeComputeContext<Real>& context) {
+        computeImpl(
+            context.tree,
+            context.buffer,
+            context.attrNames,
+            context.requestedAttributes,
+            context.dependencySources);
+    }
 
+private:
+    template <std::floating_point Real>
+    static void computeImpl(const MorphologicalTree& tree, std::span<Real> buffer, const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes, std::span<const DependencySourceT<Real>> dependencySources) {
+        requireAttributeBufferShape(tree, buffer, attrNames);
 
         auto indexOfMajorAxis = [&](int idx) { return attrNames.linearIndex(idx, LENGTH_MAJOR_AXIS); };
         auto indexOfMinorAxis = [&](int idx) { return attrNames.linearIndex(idx, LENGTH_MINOR_AXIS); };
@@ -399,7 +457,7 @@ public:
         auto indexOfInertia = [&](int idx) { return attrNames.linearIndex(idx, INERTIA); };
         auto indexOfCircularity = [&](int idx) { return attrNames.linearIndex(idx, CIRCULARITY); };
 
-        bool computeMajorAxis  = std::find(requestedAttributes.begin(), requestedAttributes.end(), LENGTH_MAJOR_AXIS)  != requestedAttributes.end();
+        bool computeMajorAxis = std::find(requestedAttributes.begin(), requestedAttributes.end(), LENGTH_MAJOR_AXIS) != requestedAttributes.end();
         bool computeMinorAxis = std::find(requestedAttributes.begin(), requestedAttributes.end(), LENGTH_MINOR_AXIS) != requestedAttributes.end();
         bool computeEccentricity = std::find(requestedAttributes.begin(), requestedAttributes.end(), ECCENTRICITY) != requestedAttributes.end();
         bool computeCompactness = std::find(requestedAttributes.begin(), requestedAttributes.end(), COMPACTNESS) != requestedAttributes.end();
@@ -407,20 +465,17 @@ public:
         bool computeInertia = std::find(requestedAttributes.begin(), requestedAttributes.end(), INERTIA) != requestedAttributes.end();
         bool computeCircularity = std::find(requestedAttributes.begin(), requestedAttributes.end(), CIRCULARITY) != requestedAttributes.end();
 
-        const auto& momentDependency = requireDependencySourceForAttributes(
-            dependencySources,
-            0,
-            {
-                CENTRAL_MOMENT_20,
-                CENTRAL_MOMENT_02,
-                CENTRAL_MOMENT_11,
-            });
-        const auto& areaDependency = requireDependencySourceForAttribute(dependencySources, 1, AREA);
+        const DependencyResolver<Real> dependencies{dependencySources};
+        const auto& momentDependency = dependencies.requireAll({
+            CENTRAL_MOMENT_20,
+            CENTRAL_MOMENT_02,
+            CENTRAL_MOMENT_11,
+        });
+        const auto& areaDependency = dependencies.require(AREA);
         auto indexMu20 = [&](int idx) { return momentDependency.attrNames->linearIndex(idx, CENTRAL_MOMENT_20); };
         auto indexMu02 = [&](int idx) { return momentDependency.attrNames->linearIndex(idx, CENTRAL_MOMENT_02); };
         auto indexMu11 = [&](int idx) { return momentDependency.attrNames->linearIndex(idx, CENTRAL_MOMENT_11); };
         auto indexArea = [&](int idx) { return areaDependency.attrNames->linearIndex(idx, AREA); };
-
 
         ::mmcfilters::detail::traversePostOrder(
             tree,
@@ -429,105 +484,106 @@ public:
             [&](NodeId, NodeId) {},
             [&](NodeId idxGlobalId) {
                 const NodeId idx = detail::momentSlotOf(tree, idxGlobalId);
-                float mu20 = momentDependency.buffer[indexMu20(idx)];
-                float mu02 = momentDependency.buffer[indexMu02(idx)];
-                float mu11 = momentDependency.buffer[indexMu11(idx)];
-                float area = areaDependency.buffer[indexArea(idx)];
+                Real mu20 = momentDependency.buffer[indexMu20(idx)];
+                Real mu02 = momentDependency.buffer[indexMu02(idx)];
+                Real mu11 = momentDependency.buffer[indexMu11(idx)];
+                Real area = areaDependency.buffer[indexArea(idx)];
 
-                float discriminant = std::pow(mu20 - mu02, 2.0f) + 4.0f * std::pow(mu11, 2.0f);
-                discriminant = std::max(discriminant, 0.0f);
-                float lambda1 = mu20 + mu02 + std::sqrt(discriminant);  // Largest eigenvalue of the inertia matrix.
-                float lambda2 = mu20 + mu02 - std::sqrt(discriminant);  // Smallest eigenvalue of the inertia matrix.
+                const Real discriminant = std::pow(mu20 - mu02, 2) + Real{4} * std::pow(mu11, 2);
+                const Real sqrtDiscriminant = ::mmcfilters::attributes::numeric::safeSqrt(discriminant);
+                const Real lambda1 = mu20 + mu02 + sqrtDiscriminant;  // Largest eigenvalue of the inertia matrix.
+                const Real lambda2 = mu20 + mu02 - sqrtDiscriminant;  // Smallest eigenvalue of the inertia matrix.
 
-                if(computeMajorAxis){
-                    if (area > 0.0f && lambda1 > 0.0f) {
-                        buffer[indexOfMajorAxis(idx)] = std::sqrt((2.0f * lambda1) / area);
-                    } else {
-                        buffer[indexOfMajorAxis(idx)] = 0.0f;
-                    }
+                if (computeMajorAxis) {
+                    buffer[indexOfMajorAxis(idx)] =
+                        ::mmcfilters::attributes::numeric::safeSqrt(
+                            ::mmcfilters::attributes::numeric::safeDivide(Real{2} * lambda1, area));
                 }
-                if(computeMinorAxis){
-                    if (area > 0.0f && lambda2 > 0.0f) {
-                        buffer[indexOfMinorAxis(idx)] = std::sqrt((2.0f * lambda2) / area);
-                    } else {
-                        buffer[indexOfMinorAxis(idx)] = 0.0f;
-                    }
+                if (computeMinorAxis) {
+                    buffer[indexOfMinorAxis(idx)] =
+                        ::mmcfilters::attributes::numeric::safeSqrt(
+                            ::mmcfilters::attributes::numeric::safeDivide(Real{2} * lambda2, area));
                 }
-                if(computeEccentricity){
-                    const float eps = std::numeric_limits<float>::epsilon();
+                if (computeEccentricity) {
+                    const Real eps = std::numeric_limits<Real>::epsilon();
                     if (lambda1 <= eps && std::abs(lambda2) <= eps) {
-                        buffer[indexOfEccentricity(idx)] = 1.0f;
+                        buffer[indexOfEccentricity(idx)] = Real{1};
                     } else if (lambda2 <= eps) {
-                        buffer[indexOfEccentricity(idx)] = std::numeric_limits<float>::infinity();
+                        buffer[indexOfEccentricity(idx)] = maxFiniteEccentricity<Real>();
                     } else {
-                        buffer[indexOfEccentricity(idx)] = lambda1 / lambda2;
+                        buffer[indexOfEccentricity(idx)] =
+                            ::mmcfilters::attributes::numeric::clampUpper(
+                                ::mmcfilters::attributes::numeric::safeDivide(lambda1, lambda2, maxFiniteEccentricity<Real>()),
+                                maxFiniteEccentricity<Real>());
                     }
                 }
-                if(computeCompactness){
-                    float denom = mu20 + mu02;
-                    if (denom > std::numeric_limits<float>::epsilon()) {
-                        buffer[indexOfCompactness(idx)] = (1.0f / (2.0f * std::numbers::pi) ) * (area / denom);
-                    } else {
-                        buffer[indexOfCompactness(idx)] = 0.0f;
-                    }
+                if (computeCompactness) {
+                    Real denom = mu20 + mu02;
+                    buffer[indexOfCompactness(idx)] =
+                        (Real{1} / (Real{2} * std::numbers::pi_v<Real>)) *
+                        ::mmcfilters::attributes::numeric::safeDivide(area, denom);
                 }
-                if(computeAxisOrientation){
+                if (computeAxisOrientation) {
                     // Guard the orientation computation against the fully isotropic case.
                     if (mu20 != mu02 || mu11 != 0) {
-                        float radians = 0.5 * std::atan2(2 * mu11, mu20 - mu02); // Orientation in radians.
-                        float degrees = radians * (180.0 / std::numbers::pi); // Converted to degrees for the public API.
-                        buffer[indexOfAxisOrientation(idx)] = std::fmod(std::abs(degrees), 360.0f); ; // Orientation stored in [0, 360].
+                        Real radians = Real{0.5} * std::atan2(Real{2} * mu11, mu20 - mu02); // Orientation in radians.
+                        Real degrees = radians * (Real{180} / std::numbers::pi_v<Real>); // Converted to degrees for the public API.
+                        buffer[indexOfAxisOrientation(idx)] = std::fmod(std::abs(degrees), Real{360}); // Orientation stored in [0, 360].
                     } else {
-                        buffer[indexOfAxisOrientation(idx)] = 0.0; // Degenerate isotropic support: the principal direction is undefined.
+                        buffer[indexOfAxisOrientation(idx)] = Real{0}; // Degenerate isotropic support: the principal direction is undefined.
                     }
                 }
-                if(computeInertia){
-                    float normMu20 = mu20 / std::pow(area, 2.0f);
-                    float normMu02 = mu02 / std::pow(area, 2.0f);
+                if (computeInertia) {
+                    const Real areaSquared = area * area;
+                    Real normMu20 = ::mmcfilters::attributes::numeric::safeDivide(mu20, areaSquared);
+                    Real normMu02 = ::mmcfilters::attributes::numeric::safeDivide(mu02, areaSquared);
                     buffer[indexOfInertia(idx)] = normMu20 + normMu02;
                 }
-                if(computeCircularity){
-                    const float eps = std::numeric_limits<float>::epsilon();
+                if (computeCircularity) {
+                    const Real eps = std::numeric_limits<Real>::epsilon();
                     if (lambda1 <= eps && std::abs(lambda2) <= eps) {
-                        buffer[indexOfCircularity(idx)] = 1.0f;
+                        buffer[indexOfCircularity(idx)] = Real{1};
                     } else if (lambda1 <= eps || lambda2 <= eps) {
-                        buffer[indexOfCircularity(idx)] = 0.0f;
+                        buffer[indexOfCircularity(idx)] = Real{0};
                     } else {
-                        buffer[indexOfCircularity(idx)] = lambda2 / lambda1;
+                        buffer[indexOfCircularity(idx)] =
+                            ::mmcfilters::attributes::numeric::safeDivide(lambda2, lambda1);
                     }
                 }
-
-
             }
         );
     }
 
+public:
     /**
      * @brief Materializes moment-derived descriptors for one-pixel unit supports.
      *
      * Eccentricity and circularity are defined as `1` for the degenerate unit
      * support; other descriptors are zero.
      */
-    void computeUnitAttributes(
-        const MorphologicalTree& tree,
-        AttributeAltitudeView,
-        std::span<const NodeId> unitProperParts,
-        std::span<float> buffer,
-        const AttributeNames& attrNames,
-        std::span<const Attribute> requestedAttributes) const override
+    template <std::floating_point Real>
+    static void computeUnitRows(const UnitAttributeComputeContext<Real>& context)
     {
-        requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
-        const std::vector<Attribute> zeroAttributes = attributes();
+        requireUnitAttributeBufferShape(context.tree, context.unitProperParts, context.buffer, context.attrNames);
+        constexpr std::array<Attribute, 7> zeroAttributes{
+            COMPACTNESS,
+            ECCENTRICITY,
+            LENGTH_MAJOR_AXIS,
+            LENGTH_MINOR_AXIS,
+            AXIS_ORIENTATION,
+            INERTIA,
+            CIRCULARITY};
         for (const Attribute attribute : zeroAttributes) {
-            if (!requestsAttribute(requestedAttributes, attribute)) {
+            if (!requestsAttribute(context.requestedAttributes, attribute)) {
                 continue;
             }
-            for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
-                buffer[attrNames.linearIndex(leafIndex, attribute)] =
-                    (attribute == ECCENTRICITY || attribute == CIRCULARITY) ? 1.0f : 0.0f;
+            for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitProperParts.size()); ++leafIndex) {
+                context.buffer[context.attrNames.linearIndex(leafIndex, attribute)] =
+                    (attribute == ECCENTRICITY || attribute == CIRCULARITY) ? Real{1} : Real{0};
             }
         }
     }
+
 };
 
 

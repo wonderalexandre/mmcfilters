@@ -9,6 +9,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <concepts>
 #include <limits>
 #include <memory>
 #include <span>
@@ -49,37 +50,37 @@ namespace mmcfilters {
  * tree topology. Public constructors therefore accept
  * `WeightedMorphologicalTree<T>` only.
  */
-template<AltitudeValue T>
-class ComputerMSER {
+template<AltitudeValue T, std::floating_point Real = float>
+class MSERComputer {
 private:
 	const WeightedMorphologicalTree<T>& weighted_;
 	const MorphologicalTree& tree;
 	const std::vector<T>& altitude_;
-	const float* attrMserView_;
-	std::vector<float> ownedAttrMser_;
-	float maxVariation;
-	float minAttr;
-	float maxAttr;
+	const Real* attrMserView_;
+	std::vector<Real> ownedAttrMser_;
+	Real maxVariation;
+	Real minAttr;
+	Real maxAttr;
 	int num;
-	std::vector<float> stability;
+	std::vector<Real> stability;
 	std::vector<NodeId> ascendants;
 	std::vector<NodeId> descendants;
 
-	static void validateOwnedAttributeSize(const MorphologicalTree& tree, const std::vector<float>& attr) {
+	static void validateOwnedAttributeSize(const MorphologicalTree& tree, const std::vector<Real>& attr) {
 		if (attr.size() != static_cast<std::size_t>(tree.getNumInternalNodeSlots())) {
-			throw std::invalid_argument("ComputerMSER attribute size must match the internal node slot count.");
+			throw std::invalid_argument("MSERComputer attribute size must match the internal node slot count.");
 		}
 	}
 
-	ComputerMSER(const WeightedMorphologicalTree<T>& weighted, const float* attr_increasing, std::vector<float> ownedAttr)
+	MSERComputer(const WeightedMorphologicalTree<T>& weighted, const Real* attr_increasing, std::vector<Real> ownedAttr)
 		: weighted_(weighted),
 		  tree(weighted.topology()),
 		  altitude_(weighted.getAltitudeBuffer()),
 		  attrMserView_(nullptr),
 		  ownedAttrMser_(std::move(ownedAttr)),
-		  maxVariation(10.0),
-		  minAttr(0),
-		  maxAttr(this->tree.getNumColsOfImage() * this->tree.getNumRowsOfImage()) {
+		  maxVariation(Real{10}),
+		  minAttr(Real{0}),
+		  maxAttr(static_cast<Real>(this->tree.getNumColsOfImage() * this->tree.getNumRowsOfImage())) {
 		TreeAltitudeAlgorithms::validateAltitudeBufferShape(this->tree, std::span<const T>(this->altitude_));
 		this->attrMserView_ = this->ownedAttrMser_.empty() ? attr_increasing : this->ownedAttrMser_.data();
 	}
@@ -88,8 +89,8 @@ public:
 	/**
 	 * @brief Creates an MSER detector backed by an owned attribute buffer.
 	 */
-	ComputerMSER(const WeightedMorphologicalTree<T>& weighted, std::vector<float> attr_increasing)
-		: ComputerMSER(weighted, nullptr, [&]() {
+	MSERComputer(const WeightedMorphologicalTree<T>& weighted, std::vector<Real> attr_increasing)
+		: MSERComputer(weighted, nullptr, [&]() {
 			validateOwnedAttributeSize(weighted.topology(), attr_increasing);
 			return std::move(attr_increasing);
 		}()) {}
@@ -99,20 +100,20 @@ public:
 	 *
 	 * The raw pointer must reference one value per internal node slot.
 	 */
-	ComputerMSER(const WeightedMorphologicalTree<T>& weighted, const float* attr_increasing)
-		: ComputerMSER(weighted, attr_increasing, {}) {
+	MSERComputer(const WeightedMorphologicalTree<T>& weighted, const Real* attr_increasing)
+		: MSERComputer(weighted, attr_increasing, {}) {
 		if (attr_increasing == nullptr) {
-			throw std::invalid_argument("ComputerMSER requires a non-null attribute buffer for the raw-pointer constructor.");
+			throw std::invalid_argument("MSERComputer requires a non-null attribute buffer for the raw-pointer constructor.");
 		}
 	}
 
 	/**
 	 * @brief Creates an MSER detector that lazily falls back to `AREA`.
 	 */
-	ComputerMSER(const WeightedMorphologicalTree<T>& weighted)
-		: ComputerMSER(weighted, nullptr, {}) { }
+	MSERComputer(const WeightedMorphologicalTree<T>& weighted)
+		: MSERComputer(weighted, nullptr, {}) { }
 
-		~ComputerMSER() = default;
+		~MSERComputer() = default;
 
 	/**
 	 * @brief Computes the MSER indicator vector for the given delta.
@@ -128,7 +129,7 @@ public:
 				delta);
 		this->ascendants = std::move(ascDesc.first);
 		this->descendants = std::move(ascDesc.second);
-		this->stability.assign(tree.getNumInternalNodeSlots(), std::numeric_limits<float>::quiet_NaN());
+		this->stability.assign(tree.getNumInternalNodeSlots(), std::numeric_limits<Real>::quiet_NaN());
 
 		for (NodeId nodeId : tree.getAliveNodeIds()) {
 			const NodeId node = nodeId;
@@ -138,7 +139,7 @@ public:
 		}
 
 		this->num = 0;
-		double maxStabilityDesc, maxStabilityAsc;
+		Real maxStabilityDesc, maxStabilityAsc;
 		std::vector<uint8_t> mser(this->tree.getNumInternalNodeSlots(), false);
 		for (NodeId nodeId : tree.getAliveNodeIds()) {
 			const NodeId node = nodeId;
@@ -160,7 +161,7 @@ public:
 	/**
 	 * @brief Returns the stability score currently associated with a node.
 	 */
-	[[nodiscard]] double getStability(NodeId node){
+	[[nodiscard]] Real getStability(NodeId node){
 		return (this->getAttrMSER(this->ascendants[node]) - this->getAttrMSER(this->descendants[node])) / this->getAttrMSER(node)  ;
 	}
 
@@ -168,14 +169,14 @@ public:
 	 * @brief Returns the attribute used by the MSER criterion, lazily
 	 * computing `AREA` when no external buffer has been provided.
 	 */
-	[[nodiscard]] float getAttrMSER(NodeId node){
+	[[nodiscard]] Real getAttrMSER(NodeId node){
 			if(attrMserView_ == nullptr) {
-				auto area = AttributeComputation::computeSingleAttribute(weighted_, AREA);
+				auto area = AttributeComputation::computeSingleAttribute<Real>(weighted_, AREA);
 				ownedAttrMser_ = std::move(area.second);
 				attrMserView_ = ownedAttrMser_.data();
 			}
 		if(attrMserView_ == nullptr)
-			return 0.0f;
+			return Real{0};
 		else
 			return this->attrMserView_[node];
 	}
@@ -210,7 +211,7 @@ public:
 	/**
 	 * @brief Returns the current stability array, indexed by node slot.
 	 */
-	std::vector<float>& getStabilities() { return stability; }
+	std::vector<Real>& getStabilities() { return stability; }
 	/**
 	 * @brief Returns the number of nodes selected as MSER-like in the last run.
 	 */
@@ -218,15 +219,15 @@ public:
 	/**
 	 * @brief Sets the maximum accepted stability value.
 	 */
-	void setMaxVariation(float maxVariation) { this->maxVariation = maxVariation; }
+	void setMaxVariation(Real maxVariation) { this->maxVariation = maxVariation; }
 	/**
 	 * @brief Sets the lower bound of the accepted attribute interval.
 	 */
-	void setMinAttribute(float minAttr) { this->minAttr = minAttr; }
+	void setMinAttribute(Real minAttr) { this->minAttr = minAttr; }
 	/**
 	 * @brief Sets the upper bound of the accepted attribute interval.
 	 */
-	void setMaxAttribute(float maxAttr) { this->maxAttr = maxAttr; }
+	void setMaxAttribute(Real maxAttr) { this->maxAttr = maxAttr; }
 };
 
 

@@ -3,7 +3,9 @@
 #include "mmcfilters/attributes/AttributeComputation.hpp"
 #include "mmcfilters/attributes/computers/BitquadAttributeComputer.hpp"
 #include "mmcfilters/attributes/computers/ContourSideAttributeComputer.hpp"
+#include "mmcfilters/attributes/computers/detail/BitquadAttributeMaterialization.hpp"
 #include "mmcfilters/attributes/computers/detail/BitquadLocalEventComputation.hpp"
+#include "mmcfilters/attributes/computers/detail/ContourSideAttributeMaterialization.hpp"
 #include "mmcfilters/attributes/computers/detail/ContourSideLocalEventComputation.hpp"
 #include "mmcfilters/localEvents/EventEngine.hpp"
 #include "mmcfilters/trees/detail/ProperPartEntryNode.hpp"
@@ -25,7 +27,8 @@ using namespace mmcfilters::unit_tests;
 namespace {
 
 using Offset = mmcfilters::local_events::WindowOffset;
-using ContourSideCounts = ContourSideAttributeComputer::ContourSideCounts;
+using BitquadFamilyCounts = mmcfilters::attributes::computers::detail::BitquadFamilyCounts;
+using ContourSideCounts = mmcfilters::attributes::computers::detail::ContourSideCounts;
 
 AttributeNames makeDenseAttributeNames(const std::vector<Attribute>& attributes) {
     std::unordered_map<Attribute, int> offsets;
@@ -153,8 +156,8 @@ void requireFamily(
 }
 
 void requireBitquadFamilyCountsEqual(
-    const BitquadAttributeComputer::BitquadFamilyCounts& actual,
-    const BitquadAttributeComputer::BitquadFamilyCounts& expected,
+    const BitquadFamilyCounts& actual,
+    const BitquadFamilyCounts& expected,
     const std::string& label) {
     requireEqual(actual.empty, expected.empty, label + " empty");
     requireEqual(actual.q1, expected.q1, label + " q1");
@@ -195,8 +198,8 @@ float projectedContourSideScalarValue(const ContourSideCounts& counts, Attribute
     }
 }
 
-std::vector<BitquadAttributeComputer::BitquadFamilyCounts> makeQ1ConnectivityProbeCounts(const MorphologicalTree& tree) {
-    std::vector<BitquadAttributeComputer::BitquadFamilyCounts> counts(
+std::vector<BitquadFamilyCounts> makeQ1ConnectivityProbeCounts(const MorphologicalTree& tree) {
+    std::vector<BitquadFamilyCounts> counts(
         static_cast<std::size_t>(tree.getNumInternalNodeSlots()));
     for (NodeId nodeId : tree.getAliveNodeIds()) {
         counts[static_cast<std::size_t>(nodeId)].q1 = 4;
@@ -214,11 +217,11 @@ std::vector<float> materializeTreeOfShapesQ1ProbeEuler(const WeightedMorphologic
         0.0f);
 
     const auto counts = makeQ1ConnectivityProbeCounts(tree);
-    BitquadAttributeComputer::materializeAttributesFromBitquadFamilyCounts(
+    BitquadAttributeMaterialization::materializeAttributesFromBitquadFamilyCounts(
         tree,
-        makeAttributeAltitudeView(weighted.getAltitudeBuffer()),
-        counts,
-        buffer,
+        weighted.altitudeSpan(),
+        std::span<const BitquadFamilyCounts>(counts),
+        std::span<float>(buffer),
         names,
         requestedAttributes);
     return buffer;
@@ -322,7 +325,7 @@ void verifyBitquadStateFamilyTable() {
         std::array<int, 16> oneHot{};
         oneHot[state] = 1;
         const auto counts = BitquadLocalEventComputation::projectBitquadFamilyCounts(oneHot);
-        BitquadAttributeComputer::BitquadFamilyCounts expectedCounts;
+        BitquadFamilyCounts expectedCounts;
         switch (expected[state]) {
             case Family::Empty: expectedCounts.empty = 1; break;
             case Family::Q1: expectedCounts.q1 = 1; break;
@@ -359,17 +362,16 @@ void verifyLocalEventBitquadScalarComputer(
     const auto directBitquadFamilyCounts =
         BitquadLocalEventComputation::aggregateBitquadFamilyDeltas(tree, directBitquadFamilyDeltas);
 
-    localComputer.compute(
+    BitquadAttributeComputer::compute(
+        AttributeComputeContext<float>{
+            tree,
+            std::span<float>(localBuffer),
+            names,
+            std::span<const Attribute>(requestedAttributes)});
+    BitquadAttributeMaterialization::materializeAttributesFromBitquadFamilyCounts(
         tree,
-        AttributeAltitudeView{},
-        localBuffer,
-        names,
-        requestedAttributes,
-        std::span<const DependencySource>{});
-    BitquadAttributeComputer::materializeAttributesFromBitquadFamilyCounts(
-        tree,
-        directBitquadFamilyCounts,
-        directFamilyBuffer,
+        std::span<const BitquadFamilyCounts>(directBitquadFamilyCounts),
+        std::span<float>(directFamilyBuffer),
         names,
         requestedAttributes);
 
@@ -408,38 +410,38 @@ void verifyLocalEventTreeOfShapesBitquadScalarComputer(
     std::vector<float> genericSpanBuffer(bufferSize, 0.0f);
     std::vector<float> genericViewBuffer(bufferSize, 0.0f);
 
-    localComputer.compute(
-        tree,
-        makeAttributeAltitudeView(weighted.getAltitudeBuffer()),
-        computeBuffer,
-        names,
-        requestedAttributes,
-        std::span<const DependencySource>{});
+    BitquadAttributeComputer::compute(
+        AltitudeAttributeComputeContext<float, std::uint8_t>{
+            tree,
+            weighted.altitudeSpan(),
+            std::span<float>(computeBuffer),
+            names,
+            std::span<const Attribute>(requestedAttributes)});
 
     const auto directBitquadFamilyCounts = BitquadLocalEventComputation::computeBitquadFamilyCounts(tree);
-    BitquadAttributeComputer::materializeAttributesFromBitquadFamilyCounts(
+    BitquadAttributeMaterialization::materializeAttributesFromBitquadFamilyCounts(
         tree,
-        makeAttributeAltitudeView(weighted.getAltitudeBuffer()),
-        directBitquadFamilyCounts,
-        directBuffer,
+        weighted.altitudeSpan(),
+        std::span<const BitquadFamilyCounts>(directBitquadFamilyCounts),
+        std::span<float>(directBuffer),
         names,
         requestedAttributes);
 
     const std::vector<std::int32_t> externalIntAltitude = copyAltitudeAs<std::int32_t>(weighted);
-    BitquadAttributeComputer::materializeAttributesFromBitquadFamilyCounts(
+    BitquadAttributeMaterialization::materializeAttributesFromBitquadFamilyCounts(
         tree,
         std::span<const std::int32_t>(externalIntAltitude),
-        directBitquadFamilyCounts,
-        genericSpanBuffer,
+        std::span<const BitquadFamilyCounts>(directBitquadFamilyCounts),
+        std::span<float>(genericSpanBuffer),
         names,
         requestedAttributes);
 
     const std::vector<float> externalFloatAltitude = copyAltitudeAs<float>(weighted);
     const WeightedTreeView<float> externalFloatView(tree, std::span<const float>(externalFloatAltitude));
-    BitquadAttributeComputer::materializeAttributesFromBitquadFamilyCounts(
+    BitquadAttributeMaterialization::materializeAttributesFromBitquadFamilyCounts(
         externalFloatView,
-        directBitquadFamilyCounts,
-        genericViewBuffer,
+        std::span<const BitquadFamilyCounts>(directBitquadFamilyCounts),
+        std::span<float>(genericViewBuffer),
         names,
         requestedAttributes);
 
@@ -488,13 +490,12 @@ void verifyLocalEventTreeOfShapesBitquadScalarComputer(
 
     requireThrows<std::invalid_argument>(
         [&]() {
-            localComputer.compute(
-                tree,
-                AttributeAltitudeView{},
-                computeBuffer,
-                names,
-                requestedAttributes,
-                std::span<const DependencySource>{});
+            BitquadAttributeComputer::compute(
+                AttributeComputeContext<float>{
+                    tree,
+                    std::span<float>(computeBuffer),
+                    names,
+                    std::span<const Attribute>(requestedAttributes)});
         },
         label + " ToS scalar projection without altitude must throw");
 
@@ -505,11 +506,11 @@ void verifyLocalEventTreeOfShapesBitquadScalarComputer(
     requireThrows<std::runtime_error>(
         [&]() {
             std::vector<float> throwBuffer(bufferSize, 0.0f);
-            BitquadAttributeComputer::materializeAttributesFromBitquadFamilyCounts(
+            BitquadAttributeMaterialization::materializeAttributesFromBitquadFamilyCounts(
                 tree,
                 std::span<const float>(shortAltitude),
-                directBitquadFamilyCounts,
-                throwBuffer,
+                std::span<const BitquadFamilyCounts>(directBitquadFamilyCounts),
+                std::span<float>(throwBuffer),
                 names,
                 requestedAttributes);
         },
@@ -529,11 +530,11 @@ void verifyLocalEventTreeOfShapesBitquadScalarComputer(
         requireThrows<std::runtime_error>(
             [&]() {
                 std::vector<float> throwBuffer(bufferSize, 0.0f);
-                BitquadAttributeComputer::materializeAttributesFromBitquadFamilyCounts(
+                BitquadAttributeMaterialization::materializeAttributesFromBitquadFamilyCounts(
                     tree,
                     std::span<const float>(ambiguousAltitude),
-                    directBitquadFamilyCounts,
-                    throwBuffer,
+                    std::span<const BitquadFamilyCounts>(directBitquadFamilyCounts),
+                    std::span<float>(throwBuffer),
                     names,
                     requestedAttributes);
             },
@@ -617,19 +618,18 @@ void verifyPublicContourSideCountsComputer(
     std::vector<float> computeBuffer(bufferSize, 0.0f);
     std::vector<float> directBuffer(bufferSize, 0.0f);
 
-    computer.compute(
-        tree,
-        AttributeAltitudeView{},
-        computeBuffer,
-        names,
-        requestedAttributes,
-        std::span<const DependencySource>{});
+    ContourSideAttributeComputer::compute(
+        AttributeComputeContext<float>{
+            tree,
+            std::span<float>(computeBuffer),
+            names,
+            std::span<const Attribute>(requestedAttributes)});
 
     const auto expectedSideCounts = expectedContourSideCounts(tree);
-    ContourSideAttributeComputer::materializeAttributesFromContourSideCounts(
+    ContourSideAttributeMaterialization::materializeAttributesFromContourSideCounts(
         tree,
-        expectedSideCounts,
-        directBuffer,
+        std::span<const ContourSideCounts>(expectedSideCounts),
+        std::span<float>(directBuffer),
         names,
         requestedAttributes);
 
@@ -681,13 +681,13 @@ void verifyPublicContourSideCountUnitAttributes(const MorphologicalTree& tree, c
         unitProperParts.size() * static_cast<std::size_t>(names.NUM_ATTRIBUTES),
         0.0f);
 
-    computer.computeUnitAttributes(
-        tree,
-        AttributeAltitudeView{},
-        unitProperParts,
-        buffer,
-        names,
-        attributes);
+    ContourSideAttributeComputer::computeUnitRows(
+        UnitAttributeComputeContext<float>{
+            tree,
+            std::span<const NodeId>(unitProperParts),
+            std::span<float>(buffer),
+            names,
+            std::span<const Attribute>(attributes)});
 
     ContourSideCounts expected;
     expected.contourPixels = 1;
@@ -763,7 +763,7 @@ void verifyBitquadDeltaProjection(const MorphologicalTree& tree, const std::stri
             label + " proper-part family-delta projection " + std::to_string(properPart));
     }
 
-    std::vector<BitquadAttributeComputer::BitquadFamilyCounts> shortFamilyDeltas = familyDeltas;
+    std::vector<BitquadFamilyCounts> shortFamilyDeltas = familyDeltas;
     if (!shortFamilyDeltas.empty()) {
         shortFamilyDeltas.pop_back();
     }

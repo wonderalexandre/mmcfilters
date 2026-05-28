@@ -1,8 +1,9 @@
 # Attribute Filters, Extinction Values, And UAO
 
 This guide covers the public filtering layer in `mmcfilters/filters`. It
-connects `AttributeFilters<T>`, `ExtinctionValues<T>`,
-`UltimateAttributeOpening<T>`, and the MSER helper used by adaptive filtering.
+connects `AttributeFilters<T>`, `ExtinctionValues<T, Real>`,
+`UltimateAttributeOpening<T, Real>`, and the MSER helper used by adaptive
+filtering.
 
 For the tree ownership, `NodeId`, proper-part, altitude, and mutation-version
 model used here, see [Morphological Trees](trees.md). For computing the
@@ -37,7 +38,7 @@ buffer[node_id]
 
 The expected sizes are:
 
-- attributes: `tree.getNumInternalNodeSlots()` float values;
+- attributes: `tree.getNumInternalNodeSlots()` floating-point values;
 - criteria: `tree.getNumInternalNodeSlots()` boolean values;
 - scores: `tree.getNumInternalNodeSlots()` float values;
 - UAO selection masks: `tree.getNumInternalNodeSlots()` byte/boolean values.
@@ -46,8 +47,9 @@ Dead internal slots may exist after edits. Buffers still keep the full slot
 count; filtering traverses live nodes through the current tree topology.
 
 Python arrays passed as attributes must be one-dimensional, C-contiguous
-`np.float32` arrays with length `tree.numInternalNodeSlots`. Python boolean
-criteria are passed as lists or vectors of the same length.
+`np.float32` or `np.float64` arrays with length
+`tree.numInternalNodeSlots`. Python boolean criteria are passed as lists or
+vectors of the same length.
 
 ## AttributeFilters
 
@@ -64,11 +66,14 @@ using namespace mmcfilters;
 auto boxHeightResult =
     AttributeComputation::computeSingleAttribute(weightedTree, BOX_HEIGHT);
 const std::vector<float>& boxHeight = boxHeightResult.values();
+auto boxHeight64 =
+    AttributeComputation::computeSingleAttribute<double>(weightedTree, BOX_HEIGHT);
 
 AttributeFilters<std::uint8_t> filters(weightedTree);
 
 auto prunedMin = filters.filteringByPruningMin(boxHeight.data(), 2.0f);
 auto prunedMax = filters.filteringByPruningMax(boxHeight.data(), 2.0f);
+auto prunedMin64 = filters.filteringByPruningMin(boxHeight64.values().data(), 2.0);
 ```
 
 When extracting one attribute column from a flat multi-attribute C++ result,
@@ -106,8 +111,8 @@ semantics:
   according to the pruning-max convention.
 
 The criterion-based overloads receive the keep/reject decision directly. The
-attribute-threshold overloads build the decision from a float node attribute and
-a threshold.
+attribute-threshold overloads build the decision from a floating-point node
+attribute and a threshold.
 
 ## Adaptive Criterion And MSER
 
@@ -124,11 +129,11 @@ std::vector<bool> pruned = filters.getAdaptiveCriterion(
     AltitudeDiff<std::uint8_t>{2});
 ```
 
-`ComputerMSER<T>` is the advanced-public helper behind this path. It pairs each
-node with altitude-delta ascendant and descendant nodes, computes a stability
-score from an increasing attribute, and marks strict local stability minima that
-pass the configured variation and attribute bounds. If no attribute buffer is
-provided, it lazily computes `AREA`.
+`MSERComputer<T, Real>` is the advanced-public helper behind this path. It
+pairs each node with altitude-delta ascendant and descendant nodes, computes a
+stability score from an increasing attribute, and marks strict local stability
+minima that pass the configured variation and attribute bounds. If no attribute
+buffer is provided, it lazily computes `AREA`.
 
 MSER is not a general `WeightedTreeView<T>` operation. View-based filter objects
 can run ordinary direct, subtractive, and pruning rules, but reject MSER-assisted
@@ -136,21 +141,25 @@ methods that need owner state.
 
 ## Extinction Values
 
-`ExtinctionValues<T>` ranks regional extrema by a scalar node attribute. The
-attribute is a dense float buffer indexed by internal `NodeId`. Results are
-stored as `RegionalExtremaNode` records sorted by decreasing extinction:
+`ExtinctionValues<T, Real>` ranks regional extrema by a scalar node attribute.
+The attribute is a dense floating-point buffer indexed by internal `NodeId`.
+`Real` defaults to `float`; select `double` when consuming double-precision
+attribute buffers. Results are stored as `RegionalExtremaNode<Real>` records
+sorted by decreasing extinction:
 
 ```cpp
 #include <mmcfilters/filters/ExtinctionValues.hpp>
 
 auto areaResult = AttributeComputation::computeSingleAttribute(weightedTree, AREA);
 const std::vector<float>& area = areaResult.values();
+auto area64Result = AttributeComputation::computeSingleAttribute<double>(weightedTree, AREA);
 
 ExtinctionValues<std::uint8_t> extinction(weightedTree, area);
+ExtinctionValues<std::uint8_t, double> extinction64(weightedTree, area64Result.values());
 auto filtered = extinction.filtering(8);
 auto saliency = extinction.saliencyMap(8, true);
 
-for (const RegionalExtremaNode& item : extinction.getExtinctionValues()) {
+for (const RegionalExtremaNode<float>& item : extinction.getExtinctionValues()) {
     NodeId leaf = item.leaf;
     NodeId cutoff = item.cutoffNode;
     float value = item.extinction;
@@ -164,8 +173,9 @@ rank-like scores; with `unweighted=false`, they receive extinction values.
 
 ## Ultimate Attribute Opening
 
-`UltimateAttributeOpening<T>` consumes a dense increasing-attribute buffer and
-computes two image-domain outputs:
+`UltimateAttributeOpening<T, Real>` consumes a dense increasing-attribute buffer
+and computes two image-domain outputs. `Real` defaults to `float`; use
+`double` for double-precision attribute buffers:
 
 - maximum contrast image: the largest selected altitude contrast for each
   pixel;
@@ -180,8 +190,12 @@ auto boxHeightResult = AttributeComputation::computeSingleAttribute(
     weightedTree,
     BOX_HEIGHT);
 const std::vector<float>& boxHeight = boxHeightResult.values();
+auto boxHeight64 = AttributeComputation::computeSingleAttribute<double>(
+    weightedTree,
+    BOX_HEIGHT);
 
 UltimateAttributeOpening<std::uint8_t> uao(weightedTree, boxHeight);
+UltimateAttributeOpening<std::uint8_t, double> uao64(weightedTree, boxHeight64.values());
 uao.execute(maxCriterion);
 
 auto contrast = uao.getMaxContrastImage();
@@ -226,8 +240,8 @@ filters = mmcfilters.AttributeFilters(tree)
 keep_large = (area >= 4.0).tolist()
 direct = filters.filteringDirectRule(keep_large)
 subtractive = filters.filteringSubtractiveRule(keep_large)
-pruned_min = filters.filteringMin(box_height, 2.0)
-pruned_max = filters.filteringMax(box_height, 2.0)
+pruned_min = filters.filteringByPruningMin(box_height, 2.0)
+pruned_max = filters.filteringByPruningMax(box_height, 2.0)
 score = filters.filteringSubtractiveScoreRule(area.tolist())
 adaptive = filters.getAdaptiveCriterion(keep_large, delta=2)
 ```
@@ -276,7 +290,7 @@ tree.mergeNodeIntoParent(node_id)
 
 area = mmcfilters.Attribute.computeSingleAttribute(tree, mmcfilters.Attribute.AREA)
 filters = mmcfilters.AttributeFilters(tree)
-result = filters.filteringMin(area, 4.0)
+result = filters.filteringByPruningMin(area, 4.0)
 ```
 
 Do not reuse `AttributeFilters`, `ExtinctionValues`, or

@@ -4,6 +4,7 @@
 #include "../trees/MorphologicalTree.hpp"
 #include "../utils/Common.hpp"
 
+#include <concepts>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -28,12 +29,13 @@ namespace mmcfilters {
  * The public fields remain named `first` and `second` so existing direct uses
  * and structured bindings keep working naturally.
  */
+template <std::floating_point Real = float>
 struct [[nodiscard]] ComputedAttributeData {
     /// Layout used to interpret `second`; kept public for tuple-like access.
     AttributeNames first;
 
     /// Flat per-node attribute buffer indexed through `first`.
-    std::vector<float> second;
+    std::vector<Real> second;
 
     /// Node-id domain used by the rows of `second`.
     NodeIdSpace nodeIdSpace = NodeIdSpace::MORPHOLOGICAL_TREE;
@@ -45,7 +47,7 @@ struct [[nodiscard]] ComputedAttributeData {
      * @param buffer Attribute values stored in node-major order.
      * @param outputSpace Node-id domain used by the buffer rows.
      */
-    ComputedAttributeData(AttributeNames attrNames, std::vector<float> buffer, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE)
+    ComputedAttributeData(AttributeNames attrNames, std::vector<Real> buffer, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE)
         : first(std::move(attrNames)), second(std::move(buffer)), nodeIdSpace(outputSpace) {}
 
     ComputedAttributeData(const ComputedAttributeData&) = delete;
@@ -63,10 +65,10 @@ struct [[nodiscard]] ComputedAttributeData {
     const AttributeNames& attributeNames() const noexcept { return this->first; }
 
     /// Returns the mutable flat attribute buffer.
-    std::vector<float>& values() noexcept { return this->second; }
+    std::vector<Real>& values() noexcept { return this->second; }
 
     /// Returns the immutable flat attribute buffer.
-    const std::vector<float>& values() const noexcept { return this->second; }
+    const std::vector<Real>& values() const noexcept { return this->second; }
 
 };
 
@@ -74,16 +76,17 @@ struct [[nodiscard]] ComputedAttributeData {
  * @brief Owning result for one delta-augmented attribute layout and buffer.
  *
  * @details
- * This is the delta-aware counterpart of `ComputedAttributeData`. It is used
- * when one logical attribute is sampled at several ancestor/descendant offsets
- * around each node.
+ * This is the delta-aware counterpart of `ComputedAttributeData<Real>`. It is
+ * used when one logical attribute is sampled at several ancestor/descendant
+ * offsets around each node.
  */
+template <std::floating_point Real = float>
 struct [[nodiscard]] ComputedAttributeDataWithDelta {
     /// Delta-aware layout used to interpret `second`.
     AttributeNamesWithDelta first;
 
     /// Flat per-node, per-delta attribute buffer indexed through `first`.
-    std::vector<float> second;
+    std::vector<Real> second;
 
     /// Node-id domain used by the rows of `second`.
     NodeIdSpace nodeIdSpace = NodeIdSpace::MORPHOLOGICAL_TREE;
@@ -95,7 +98,7 @@ struct [[nodiscard]] ComputedAttributeDataWithDelta {
      * @param buffer Attribute values stored in node-major order.
      * @param outputSpace Node-id domain used by the buffer rows.
      */
-    ComputedAttributeDataWithDelta(AttributeNamesWithDelta attrNames, std::vector<float> buffer, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE)
+    ComputedAttributeDataWithDelta(AttributeNamesWithDelta attrNames, std::vector<Real> buffer, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE)
         : first(std::move(attrNames)), second(std::move(buffer)), nodeIdSpace(outputSpace) {}
 
     ComputedAttributeDataWithDelta(const ComputedAttributeDataWithDelta&) = delete;
@@ -113,40 +116,40 @@ struct [[nodiscard]] ComputedAttributeDataWithDelta {
     const AttributeNamesWithDelta& attributeNames() const noexcept { return this->first; }
 
     /// Returns the mutable flat attribute buffer.
-    std::vector<float>& values() noexcept { return this->second; }
+    std::vector<Real>& values() noexcept { return this->second; }
 
     /// Returns the immutable flat attribute buffer.
-    const std::vector<float>& values() const noexcept { return this->second; }
+    const std::vector<Real>& values() const noexcept { return this->second; }
 };
 
 } // namespace mmcfilters
 
 namespace std {
 
-template <>
-struct tuple_size<mmcfilters::ComputedAttributeData> : integral_constant<std::size_t, 2> {};
+template <std::floating_point Real>
+struct tuple_size<mmcfilters::ComputedAttributeData<Real>> : integral_constant<std::size_t, 2> {};
 
-template <>
-struct tuple_element<0, mmcfilters::ComputedAttributeData> {
+template <std::floating_point Real>
+struct tuple_element<0, mmcfilters::ComputedAttributeData<Real>> {
     using type = mmcfilters::AttributeNames;
 };
 
-template <>
-struct tuple_element<1, mmcfilters::ComputedAttributeData> {
-    using type = std::vector<float>;
+template <std::floating_point Real>
+struct tuple_element<1, mmcfilters::ComputedAttributeData<Real>> {
+    using type = std::vector<Real>;
 };
 
-template <>
-struct tuple_size<mmcfilters::ComputedAttributeDataWithDelta> : integral_constant<std::size_t, 2> {};
+template <std::floating_point Real>
+struct tuple_size<mmcfilters::ComputedAttributeDataWithDelta<Real>> : integral_constant<std::size_t, 2> {};
 
-template <>
-struct tuple_element<0, mmcfilters::ComputedAttributeDataWithDelta> {
+template <std::floating_point Real>
+struct tuple_element<0, mmcfilters::ComputedAttributeDataWithDelta<Real>> {
     using type = mmcfilters::AttributeNamesWithDelta;
 };
 
-template <>
-struct tuple_element<1, mmcfilters::ComputedAttributeDataWithDelta> {
-    using type = std::vector<float>;
+template <std::floating_point Real>
+struct tuple_element<1, mmcfilters::ComputedAttributeDataWithDelta<Real>> {
+    using type = std::vector<Real>;
 };
 
 } // namespace std
@@ -156,8 +159,8 @@ namespace mmcfilters {
 /**
  * @brief Tuple-like `std::get` overloads for computed attribute results.
  */
-template <std::size_t I>
-decltype(auto) get(ComputedAttributeData& computed) noexcept {
+template <std::size_t I, std::floating_point Real>
+decltype(auto) get(ComputedAttributeData<Real>& computed) noexcept {
     if constexpr (I == 0) {
         return (computed.first);
     } else {
@@ -165,8 +168,8 @@ decltype(auto) get(ComputedAttributeData& computed) noexcept {
     }
 }
 
-template <std::size_t I>
-decltype(auto) get(const ComputedAttributeData& computed) noexcept {
+template <std::size_t I, std::floating_point Real>
+decltype(auto) get(const ComputedAttributeData<Real>& computed) noexcept {
     if constexpr (I == 0) {
         return (computed.first);
     } else {
@@ -174,8 +177,8 @@ decltype(auto) get(const ComputedAttributeData& computed) noexcept {
     }
 }
 
-template <std::size_t I>
-decltype(auto) get(ComputedAttributeData&& computed) noexcept {
+template <std::size_t I, std::floating_point Real>
+decltype(auto) get(ComputedAttributeData<Real>&& computed) noexcept {
     if constexpr (I == 0) {
         return std::move(computed.first);
     } else {
@@ -183,8 +186,8 @@ decltype(auto) get(ComputedAttributeData&& computed) noexcept {
     }
 }
 
-template <std::size_t I>
-decltype(auto) get(ComputedAttributeDataWithDelta& computed) noexcept {
+template <std::size_t I, std::floating_point Real>
+decltype(auto) get(ComputedAttributeDataWithDelta<Real>& computed) noexcept {
     if constexpr (I == 0) {
         return (computed.first);
     } else {
@@ -192,8 +195,8 @@ decltype(auto) get(ComputedAttributeDataWithDelta& computed) noexcept {
     }
 }
 
-template <std::size_t I>
-decltype(auto) get(const ComputedAttributeDataWithDelta& computed) noexcept {
+template <std::size_t I, std::floating_point Real>
+decltype(auto) get(const ComputedAttributeDataWithDelta<Real>& computed) noexcept {
     if constexpr (I == 0) {
         return (computed.first);
     } else {
@@ -201,8 +204,8 @@ decltype(auto) get(const ComputedAttributeDataWithDelta& computed) noexcept {
     }
 }
 
-template <std::size_t I>
-decltype(auto) get(ComputedAttributeDataWithDelta&& computed) noexcept {
+template <std::size_t I, std::floating_point Real>
+decltype(auto) get(ComputedAttributeDataWithDelta<Real>&& computed) noexcept {
     if constexpr (I == 0) {
         return std::move(computed.first);
     } else {

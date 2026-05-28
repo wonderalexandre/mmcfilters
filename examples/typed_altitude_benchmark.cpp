@@ -193,7 +193,7 @@ std::uint64_t checksumTree(const MorphologicalTree& tree) {
 
 std::uint64_t checksumComputed(
     const MorphologicalTree& tree,
-    const ComputedAttributeData& data,
+    const ComputedAttributeData<float>& data,
     const std::vector<Attribute>& attributes)
 {
     std::uint64_t checksum = 1469598103934665603ull;

@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <span>
 #include <sstream>
 
@@ -66,37 +67,36 @@ void requireUnitComputersUseProvidedLeafOrder() {
         exportedProperParts.size() * static_cast<size_t>(unitNames.NUM_ATTRIBUTES),
         std::numeric_limits<float>::quiet_NaN());
 
-    GrayLevelStatsComputer grayComputer;
-    VolumeComputer volumeComputer;
-    BoundingBoxComputer boundingBoxComputer;
-    const AttributeAltitudeView altitude = makeAttributeAltitudeView(weighted->getAltitudeBuffer());
+    const std::span<const std::uint8_t> altitude = weighted->altitudeSpan();
 
     const std::array<Attribute, 1> levelRequest{LEVEL};
-    grayComputer.computeUnitAttributes(
-        topology,
-        altitude,
-        exportedProperParts,
-        unitValues,
-        unitNames,
-        std::span<const Attribute>(levelRequest));
+    GrayLevelStatsComputer::computeUnitRows(
+        AltitudeUnitAttributeComputeContext<float, std::uint8_t>{
+            topology,
+            altitude,
+            std::span<const NodeId>(exportedProperParts),
+            std::span<float>(unitValues),
+            unitNames,
+            std::span<const Attribute>(levelRequest)});
 
     const std::array<Attribute, 1> volumeRequest{VOLUME};
-    volumeComputer.computeUnitAttributes(
-        topology,
-        altitude,
-        exportedProperParts,
-        unitValues,
-        unitNames,
-        std::span<const Attribute>(volumeRequest));
+    VolumeComputer::computeUnitRows(
+        AltitudeUnitAttributeComputeContext<float, std::uint8_t>{
+            topology,
+            altitude,
+            std::span<const NodeId>(exportedProperParts),
+            std::span<float>(unitValues),
+            unitNames,
+            std::span<const Attribute>(volumeRequest)});
 
     const std::array<Attribute, 2> boundingBoxRequest{BOX_COL_MIN, BOX_ROW_MIN};
-    boundingBoxComputer.computeUnitAttributes(
-        topology,
-        AttributeAltitudeView{},
-        exportedProperParts,
-        unitValues,
-        unitNames,
-        std::span<const Attribute>(boundingBoxRequest));
+    BoundingBoxComputer::computeUnitRows(
+        UnitAttributeComputeContext<float>{
+            topology,
+            std::span<const NodeId>(exportedProperParts),
+            std::span<float>(unitValues),
+            unitNames,
+            std::span<const Attribute>(boundingBoxRequest)});
 
     for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(exportedProperParts.size()); ++leafIndex) {
         const NodeId properPart = exportedProperParts[static_cast<size_t>(leafIndex)];

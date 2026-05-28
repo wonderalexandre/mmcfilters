@@ -270,7 +270,10 @@ int main() {
 
         auto [attrNames, attr] = AttributeComputation::computeSingleAttribute(*weighted, BOX_HEIGHT);
         (void)attrNames;
+        auto [attrNames64, attr64] = AttributeComputation::computeSingleAttribute<double>(*weighted, BOX_HEIGHT);
+        (void)attrNames64;
         float maxCriterion = static_cast<float>(weighted->topology().getNumRowsOfImage());
+        double maxCriterion64 = static_cast<double>(weighted->topology().getNumRowsOfImage());
 
         auto pruningMinAttrWeighted = ImageUInt8::create(weighted->topology().getNumRowsOfImage(), weighted->topology().getNumColsOfImage(), 0);
         auto pruningMinAttrView = ImageUInt8::create(weighted->topology().getNumRowsOfImage(), weighted->topology().getNumColsOfImage(), 0);
@@ -313,6 +316,19 @@ int main() {
             collectImageValues(pruningMaxAttrInt16View),
             collectImageValuesAs<std::int16_t>(pruningMaxAttrWeighted),
             isMaxtree ? "weighted max-tree pruning-max attr via int16 view" : "weighted min-tree pruning-max attr via int16 view");
+
+        auto pruningMinAttr64 = ImageUInt8::create(weighted->topology().getNumRowsOfImage(), weighted->topology().getNumColsOfImage(), 0);
+        auto pruningMaxAttr64 = ImageUInt8::create(weighted->topology().getNumRowsOfImage(), weighted->topology().getNumColsOfImage(), 0);
+        AttributeFilters<std::uint8_t>::filteringByPruningMin(*weighted, attr64.data(), maxCriterion64, pruningMinAttr64);
+        AttributeFilters<std::uint8_t>::filteringByPruningMax(*weighted, attr64.data(), maxCriterion64, pruningMaxAttr64);
+        requireVectorEqual(
+            collectImageValues(pruningMinAttr64),
+            collectImageValues(pruningMinAttrWeighted),
+            isMaxtree ? "weighted max-tree pruning-min double attr" : "weighted min-tree pruning-min double attr");
+        requireVectorEqual(
+            collectImageValues(pruningMaxAttr64),
+            collectImageValues(pruningMaxAttrWeighted),
+            isMaxtree ? "weighted max-tree pruning-max double attr" : "weighted min-tree pruning-max double attr");
 
         if (isMaxtree) {
             requireThrows<std::invalid_argument>(
@@ -398,8 +414,10 @@ int main() {
         UltimateAttributeOpening<std::uint8_t> weightedUaoRaw(*weighted, attr.data());
         UltimateAttributeOpening<std::uint8_t> weightedUaoSelected(*weighted, attr);
         UltimateAttributeOpening<std::uint8_t> weightedUaoMser(*weighted, attr);
+        UltimateAttributeOpening<std::uint8_t, double> weightedUao64(*weighted, attr64);
         weightedUao.execute(static_cast<int>(maxCriterion));
         weightedUaoRaw.execute(static_cast<int>(maxCriterion));
+        weightedUao64.execute(maxCriterion64);
         std::vector<uint8_t> selectedAll(weighted->topology().getNumInternalNodeSlots(), true);
         weightedUaoSelected.execute(static_cast<int>(maxCriterion), selectedAll);
         weightedUaoMser.executeWithMSER(static_cast<int>(maxCriterion), 1);
@@ -407,6 +425,16 @@ int main() {
         requireImageShape(weightedUao.getAssociatedImage(), weighted->topology().getNumRowsOfImage(), weighted->topology().getNumColsOfImage());
         requireImageShape(weightedUaoRaw.getMaxContrastImage(), weighted->topology().getNumRowsOfImage(), weighted->topology().getNumColsOfImage());
         requireImageShape(weightedUaoRaw.getAssociatedImage(), weighted->topology().getNumRowsOfImage(), weighted->topology().getNumColsOfImage());
+        requireVectorEqual(
+            collectImageValues(weightedUao64.getMaxContrastImage()),
+            collectImageValues(weightedUao.getMaxContrastImage()),
+            isMaxtree ? "weighted max-tree UAO double attr max contrast" : "weighted min-tree UAO double attr max contrast"
+        );
+        requireVectorEqual(
+            collectImageValues(weightedUao64.getAssociatedImage()),
+            collectImageValues(weightedUao.getAssociatedImage()),
+            isMaxtree ? "weighted max-tree UAO double attr associated image" : "weighted min-tree UAO double attr associated image"
+        );
         requireVectorEqual(
             collectImageValues(weightedUaoSelected.getMaxContrastImage()),
             collectImageValues(weightedUao.getMaxContrastImage()),
@@ -421,8 +449,20 @@ int main() {
         requireImageShape(weightedUaoMser.getAssociatedImage(), weighted->topology().getNumRowsOfImage(), weighted->topology().getNumColsOfImage());
 
         ExtinctionValues<std::uint8_t> weightedExtinction(*weighted, attr);
+        ExtinctionValues<std::uint8_t, double> weightedExtinction64(*weighted, attr64);
         ExtinctionValues<std::uint8_t> viewExtinction(externalView, attr);
         ExtinctionValues<std::int16_t> int16Extinction(int16View, attr);
+        static_assert(std::is_same_v<decltype(weightedExtinction64.saliencyMap(1024)), ImagePtr<double>>);
+        requireVectorEqual(
+            collectImageValues(weightedExtinction64.filtering(1024)),
+            collectImageValues(weightedExtinction.filtering(1024)),
+            isMaxtree ? "weighted max-tree ExtinctionValues double attr filtering" : "weighted min-tree ExtinctionValues double attr filtering"
+        );
+        requireVectorEqual(
+            collectImageValuesAs<float>(weightedExtinction64.saliencyMap(1024)),
+            collectImageValues(weightedExtinction.saliencyMap(1024)),
+            isMaxtree ? "weighted max-tree ExtinctionValues double attr saliency" : "weighted min-tree ExtinctionValues double attr saliency"
+        );
         requireVectorEqual(
             collectImageValues(viewExtinction.filtering(1024)),
             collectImageValues(weightedExtinction.filtering(1024)),

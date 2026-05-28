@@ -3,7 +3,9 @@
 #include <mmcfilters/utils/Image.hpp>
 
 #include <array>
+#include <cmath>
 #include <cstdint>
+#include <initializer_list>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -20,6 +22,29 @@ template<class T, class U>
 void requireEqual(const T& actual, const U& expected, const std::string& message) {
     if (!(actual == expected)) {
         throw std::runtime_error(message);
+    }
+}
+
+void requireHiddenDependenciesAreAbsent(
+    const mmcfilters::AttributeNames& names,
+    std::initializer_list<mmcfilters::Attribute> hiddenDependencies,
+    const std::string& label)
+{
+    for (mmcfilters::Attribute dependency : hiddenDependencies) {
+        require(!names.contains(dependency), label + " must not expose hidden dependency");
+    }
+}
+
+void requireFiniteLiveNodeValues(
+    const mmcfilters::MorphologicalTree& tree,
+    const mmcfilters::AttributeNames& names,
+    const std::vector<float>& values,
+    mmcfilters::Attribute attribute,
+    const std::string& label)
+{
+    for (mmcfilters::NodeId nodeId : tree.getAliveNodeIds()) {
+        const float value = values[names.linearIndex(nodeId, attribute)];
+        require(std::isfinite(value), label + " must be finite for every live node");
     }
 }
 
@@ -76,6 +101,71 @@ int main() {
         deltaLevel.second[deltaLevel.first.linearIndex(root, LEVEL, 0)],
         static_cast<float>(weighted.getAltitude(root)),
         "delta center LEVEL through public weighted facade");
+
+    auto meanOnly = AttributeComputation::computeAttributes(
+        weighted,
+        std::vector<AttributeOrGroup>{MEAN_LEVEL});
+    requireEqual(meanOnly.first.NUM_ATTRIBUTES, 1, "MEAN_LEVEL request exposes one public attribute");
+    require(meanOnly.first.contains(MEAN_LEVEL), "MEAN_LEVEL request exposes requested attribute");
+    requireHiddenDependenciesAreAbsent(meanOnly.first, {AREA, VOLUME}, "MEAN_LEVEL request");
+    requireFiniteLiveNodeValues(weighted.topology(), meanOnly.first, meanOnly.second, MEAN_LEVEL, "MEAN_LEVEL request");
+
+    auto eccentricityOnly = AttributeComputation::computeAttributes(
+        weighted,
+        std::vector<AttributeOrGroup>{ECCENTRICITY});
+    requireEqual(eccentricityOnly.first.NUM_ATTRIBUTES, 1, "ECCENTRICITY weighted request exposes one public attribute");
+    require(eccentricityOnly.first.contains(ECCENTRICITY), "ECCENTRICITY weighted request exposes requested attribute");
+    requireHiddenDependenciesAreAbsent(
+        eccentricityOnly.first,
+        {AREA, CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11},
+        "ECCENTRICITY weighted request");
+    requireFiniteLiveNodeValues(weighted.topology(), eccentricityOnly.first, eccentricityOnly.second, ECCENTRICITY, "ECCENTRICITY weighted request");
+
+    auto topologyEccentricityOnly = AttributeComputation::computeTopologyAttributes(
+        weighted.topology(),
+        std::vector<AttributeOrGroup>{ECCENTRICITY});
+    requireEqual(topologyEccentricityOnly.first.NUM_ATTRIBUTES, 1, "ECCENTRICITY topology request exposes one public attribute");
+    require(topologyEccentricityOnly.first.contains(ECCENTRICITY), "ECCENTRICITY topology request exposes requested attribute");
+    requireHiddenDependenciesAreAbsent(
+        topologyEccentricityOnly.first,
+        {AREA, CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11},
+        "ECCENTRICITY topology request");
+    requireFiniteLiveNodeValues(
+        weighted.topology(),
+        topologyEccentricityOnly.first,
+        topologyEccentricityOnly.second,
+        ECCENTRICITY,
+        "ECCENTRICITY topology request");
+
+    auto huOnly = AttributeComputation::computeAttributes(
+        weighted,
+        std::vector<AttributeOrGroup>{HU_MOMENT_1});
+    requireEqual(huOnly.first.NUM_ATTRIBUTES, 1, "HU_MOMENT_1 request exposes one public attribute");
+    require(huOnly.first.contains(HU_MOMENT_1), "HU_MOMENT_1 request exposes requested attribute");
+    requireHiddenDependenciesAreAbsent(
+        huOnly.first,
+        {AREA, CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11, CENTRAL_MOMENT_30, CENTRAL_MOMENT_03, CENTRAL_MOMENT_21, CENTRAL_MOMENT_12},
+        "HU_MOMENT_1 request");
+    requireFiniteLiveNodeValues(weighted.topology(), huOnly.first, huOnly.second, HU_MOMENT_1, "HU_MOMENT_1 request");
+
+    auto rectangularityOnly = AttributeComputation::computeTopologyAttributes(
+        weighted.topology(),
+        std::vector<AttributeOrGroup>{RECTANGULARITY});
+    requireEqual(rectangularityOnly.first.NUM_ATTRIBUTES, 1, "RECTANGULARITY topology request exposes one public attribute");
+    require(rectangularityOnly.first.contains(RECTANGULARITY), "RECTANGULARITY topology request exposes requested attribute");
+    requireHiddenDependenciesAreAbsent(rectangularityOnly.first, {AREA}, "RECTANGULARITY topology request");
+    requireFiniteLiveNodeValues(
+        weighted.topology(),
+        rectangularityOnly.first,
+        rectangularityOnly.second,
+        RECTANGULARITY,
+        "RECTANGULARITY topology request");
+
+    auto grayGroup = AttributeComputation::computeAttributes(
+        weighted,
+        std::vector<AttributeOrGroup>{AttributeGroup::GRAY_LEVEL});
+    requireEqual(grayGroup.first.NUM_ATTRIBUTES, 6, "GRAY_LEVEL group public attribute stride");
+    require(!grayGroup.first.contains(AREA), "GRAY_LEVEL group must not expose hidden AREA dependency");
 
     return 0;
 }

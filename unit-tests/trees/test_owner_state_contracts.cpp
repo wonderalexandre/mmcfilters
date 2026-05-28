@@ -1,6 +1,6 @@
 #include "support/TestSupport.hpp"
 
-#include "mmcfilters/filters/ComputerMSER.hpp"
+#include "mmcfilters/filters/MSERComputer.hpp"
 #include "mmcfilters/filters/AttributeFilters.hpp"
 #include "mmcfilters/filters/UltimateAttributeOpening.hpp"
 #include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
@@ -67,11 +67,11 @@ static_assert(std::is_same_v<
     decltype(MorphologicalTreeFactory::createSelfDualResidualTree(std::declval<ImageFloatPtr>(), 1.5)),
     WeightedMorphologicalTree<float>>);
 
-static_assert(std::is_constructible_v<ComputerMSER<std::uint8_t>, const WeightedMorphologicalTree<std::uint8_t>&>);
-static_assert(std::is_constructible_v<ComputerMSER<std::int32_t>, const WeightedMorphologicalTree<std::int32_t>&>);
-static_assert(!std::is_constructible_v<ComputerMSER<std::uint8_t>, const MorphologicalTree&>);
-static_assert(!std::is_constructible_v<ComputerMSER<std::uint8_t>, const WeightedTreeView<std::uint8_t>&>);
-static_assert(!std::is_constructible_v<ComputerMSER<std::uint8_t>, const WeightedTreeView<std::int16_t>&>);
+static_assert(std::is_constructible_v<MSERComputer<std::uint8_t>, const WeightedMorphologicalTree<std::uint8_t>&>);
+static_assert(std::is_constructible_v<MSERComputer<std::int32_t>, const WeightedMorphologicalTree<std::int32_t>&>);
+static_assert(!std::is_constructible_v<MSERComputer<std::uint8_t>, const MorphologicalTree&>);
+static_assert(!std::is_constructible_v<MSERComputer<std::uint8_t>, const WeightedTreeView<std::uint8_t>&>);
+static_assert(!std::is_constructible_v<MSERComputer<std::uint8_t>, const WeightedTreeView<std::int16_t>&>);
 
 static_assert(HasAdaptiveCriterion<AttributeFilters<std::uint8_t>>);
 static_assert(HasAdaptiveCriterion<AttributeFilters<std::int16_t>>);
@@ -151,7 +151,7 @@ int main() {
     require(minTree.topology().getRoot() != InvalidNode, "dual adjuster must keep a valid mutable min-tree owner");
     require(maxTree.topology().getRoot() != InvalidNode, "dual adjuster must keep a valid mutable max-tree owner");
 
-    ComputerMSER<std::uint8_t> mser(maxTree);
+    MSERComputer<std::uint8_t> mser(maxTree);
     requireEqual(
         static_cast<int>(mser.computeMSER(1).size()),
         maxTree.topology().getNumInternalNodeSlots(),
@@ -165,7 +165,7 @@ int main() {
     };
     auto intImage = ImageInt32::fromExternal(intPixels.data(), 4, 4);
     auto intMaxTree = MorphologicalTreeFactory::createMaxTree(intImage);
-    ComputerMSER<std::int32_t> intMser(intMaxTree);
+    MSERComputer<std::int32_t> intMser(intMaxTree);
     requireEqual(
         static_cast<int>(intMser.computeMSER(AltitudeDiff<std::int32_t>{1}).size()),
         intMaxTree.topology().getNumInternalNodeSlots(),
@@ -186,7 +186,7 @@ int main() {
     };
     auto floatImage = ImageFloat::fromExternal(floatPixels.data(), 4, 4);
     auto floatMaxTree = MorphologicalTreeFactory::createMaxTree(floatImage);
-    ComputerMSER<float> floatMser(floatMaxTree);
+    MSERComputer<float> floatMser(floatMaxTree);
     requireEqual(
         static_cast<int>(floatMser.computeMSER(0.1f).size()),
         floatMaxTree.topology().getNumInternalNodeSlots(),

@@ -1,7 +1,7 @@
 #include "support/TestSupport.hpp"
 
 #include "mmcfilters/attributes/AttributeComputation.hpp"
-#include "mmcfilters/filters/ComputerMSER.hpp"
+#include "mmcfilters/filters/MSERComputer.hpp"
 
 #include <cmath>
 
@@ -261,13 +261,13 @@ int main() {
     requireEqual(grayBuffer[grayNames.linearIndex(3, VOLUME)], 28.0f, "node 3 volume after middle-slot merge");
     requireEqual(grayBuffer[grayNames.linearIndex(3, RELATIVE_VOLUME)], 14.0f, "node 3 relative volume after middle-slot merge");
 
-    ComputerMSER<std::uint8_t> mser(*weighted);
+    MSERComputer<std::uint8_t> mser(*weighted);
     std::vector<uint8_t> isMSER = mser.computeMSER(1);
     const std::vector<float> implicitStabilities = mser.getStabilities();
-    ComputerMSER<std::uint8_t> mserExplicit(*weighted, areaBuffer);
+    MSERComputer<std::uint8_t> mserExplicit(*weighted, areaBuffer);
     std::vector<uint8_t> isMSERExplicit = mserExplicit.computeMSER(1);
     const std::vector<float> explicitStabilities = mserExplicit.getStabilities();
-    ComputerMSER<std::uint8_t> mserRaw(*weighted, areaBuffer.data());
+    MSERComputer<std::uint8_t> mserRaw(*weighted, areaBuffer.data());
     std::vector<uint8_t> isMSERRaw = mserRaw.computeMSER(1);
     const std::vector<float> rawStabilities = mserRaw.getStabilities();
     requireEqual(static_cast<int>(isMSER.size()), tree.getNumInternalNodeSlots(), "MSER buffer size after middle-slot merge");

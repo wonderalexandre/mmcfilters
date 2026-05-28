@@ -57,19 +57,52 @@ static_assert(std::is_same_v<
         std::declval<std::span<const float>>())),
     std::vector<float>>);
 static_assert(std::is_same_v<
+    decltype(AttributeComputation::projectNodeValuesToExportedHigra<double>(
+        std::declval<const WeightedMorphologicalTree<float>&>(),
+        std::declval<const AttributeNames&>(),
+        std::declval<std::span<const double>>())),
+    std::vector<double>>);
+static_assert(std::is_same_v<
+    decltype(AttributeComputation::computeAttributes(
+        std::declval<const WeightedMorphologicalTree<std::uint8_t>&>(),
+        std::declval<const std::vector<AttributeOrGroup>&>())),
+    ComputedAttributeData<float>>);
+static_assert(std::is_same_v<
+    decltype(AttributeComputation::computeAttributes<double>(
+        std::declval<const WeightedMorphologicalTree<std::uint8_t>&>(),
+        std::declval<const std::vector<AttributeOrGroup>&>())),
+    ComputedAttributeData<double>>);
+static_assert(std::is_same_v<
+    decltype(AttributeComputation::computeTopologyAttributes<double>(
+        std::declval<const MorphologicalTree&>(),
+        std::declval<const std::vector<AttributeOrGroup>&>())),
+    ComputedAttributeData<double>>);
+static_assert(std::is_same_v<
     decltype(AttributeComputation::computeSingleAttributeWithDelta(
         std::declval<const WeightedMorphologicalTree<std::int32_t>&>(),
         AREA,
         std::declval<AltitudeDiff<std::int32_t>>(),
         2)),
-    ComputedAttributeDataWithDelta>);
+    ComputedAttributeDataWithDelta<float>>);
 static_assert(std::is_same_v<
     decltype(AttributeComputation::computeSingleAttributeWithDelta(
         std::declval<const WeightedMorphologicalTree<float>&>(),
         LEVEL,
         std::declval<AltitudeDiff<float>>(),
         2)),
-    ComputedAttributeDataWithDelta>);
+    ComputedAttributeDataWithDelta<float>>);
+static_assert(std::is_same_v<
+    decltype(AttributeComputation::computeSingleAttributeWithDelta<double>(
+        std::declval<const WeightedMorphologicalTree<std::int32_t>&>(),
+        AREA,
+        std::declval<AltitudeDiff<std::int32_t>>(),
+        2)),
+    ComputedAttributeDataWithDelta<double>>);
+static_assert(std::is_same_v<
+    decltype(AttributeComputation::computeAttributeMapping<double>(
+        std::declval<const WeightedMorphologicalTree<std::uint8_t>&>(),
+        LEVEL)),
+    ImagePtr<double>>);
 
 template<class T>
 std::vector<T> makeGenericAltitude(const WeightedMorphologicalTree<std::uint8_t>& weighted) {
@@ -229,8 +262,8 @@ void checkWeightedTreeViewContract(const WeightedMorphologicalTree<std::uint8_t>
 }
 
 void requireComputedAttributesNear(
-    const ComputedAttributeData& actual,
-    const ComputedAttributeData& expected,
+    const ComputedAttributeData<float>& actual,
+    const ComputedAttributeData<float>& expected,
     const MorphologicalTree& tree,
     std::initializer_list<Attribute> attributes,
     const std::string& label)
@@ -259,8 +292,8 @@ void requireFloatEquivalent(float actual, float expected, const std::string& lab
 }
 
 void requireComputedAttributesEquivalent(
-    const ComputedAttributeData& actual,
-    const ComputedAttributeData& expected,
+    const ComputedAttributeData<float>& actual,
+    const ComputedAttributeData<float>& expected,
     const MorphologicalTree& tree,
     const std::vector<Attribute>& attributes,
     const std::string& label)
@@ -276,8 +309,8 @@ void requireComputedAttributesEquivalent(
 }
 
 void requireDeltaAttributeNear(
-    const ComputedAttributeDataWithDelta& actual,
-    const ComputedAttributeDataWithDelta& expected,
+    const ComputedAttributeDataWithDelta<float>& actual,
+    const ComputedAttributeDataWithDelta<float>& expected,
     const MorphologicalTree& tree,
     Attribute attribute,
     int delta,
@@ -974,8 +1007,8 @@ void checkGenericVolumeKernel(const WeightedMorphologicalTree<std::uint8_t>& wei
 
     const AttributeNames volumeNames = AttributeNames::fromList({VOLUME, RELATIVE_VOLUME});
     const std::vector<Attribute> requested{VOLUME, RELATIVE_VOLUME};
-    const std::array<DependencySource, 1> dependencies{{
-        DependencySource{&areaComputed.first, areaComputed.second.data()}
+    const std::array<DependencySourceT<float>, 1> dependencies{{
+        DependencySourceT<float>{&areaComputed.first, areaComputed.second.data()}
     }};
     std::vector<float> genericBuffer(
         static_cast<std::size_t>(tree.getNumInternalNodeSlots()) *
@@ -983,13 +1016,13 @@ void checkGenericVolumeKernel(const WeightedMorphologicalTree<std::uint8_t>& wei
         0.0f);
 
     const std::vector<T> equivalentAltitude = makeEquivalentAltitude<T>(weighted);
-    mmcfilters::attributes::computers::detail::computeVolumeAttributes(
+    mmcfilters::attributes::computers::detail::computeVolumeAttributeKernel(
         tree,
         std::span<const T>(equivalentAltitude),
-        genericBuffer,
+        std::span<float>(genericBuffer),
         volumeNames,
         requested,
-        std::span<const DependencySource>(dependencies));
+        std::span<const DependencySourceT<float>>(dependencies));
 
     for (NodeId nodeId : tree.getAliveNodeIds()) {
         requireNear(
@@ -1007,13 +1040,13 @@ void checkGenericVolumeKernel(const WeightedMorphologicalTree<std::uint8_t>& wei
     if constexpr (std::is_floating_point_v<T>) {
         std::vector<float> fractionalBuffer(genericBuffer.size(), 0.0f);
         const std::vector<T> fractionalAltitude = makeGenericAltitude<T>(weighted);
-        mmcfilters::attributes::computers::detail::computeVolumeAttributes(
+        mmcfilters::attributes::computers::detail::computeVolumeAttributeKernel(
             tree,
             std::span<const T>(fractionalAltitude),
-            fractionalBuffer,
+            std::span<float>(fractionalBuffer),
             volumeNames,
             requested,
-            std::span<const DependencySource>(dependencies));
+            std::span<const DependencySourceT<float>>(dependencies));
 
         for (NodeId nodeId : tree.getAliveNodeIds()) {
             const float area = areaComputed.second[areaComputed.first.linearIndex(nodeId, AREA)];
@@ -1042,9 +1075,9 @@ void checkGenericGrayLevelStatsKernel(const WeightedMorphologicalTree<std::uint8
 
     const AttributeNames grayNames = AttributeNames::fromList({LEVEL, MEAN_LEVEL, VARIANCE_LEVEL, GRAY_HEIGHT});
     const std::vector<Attribute> requested{LEVEL, MEAN_LEVEL, VARIANCE_LEVEL, GRAY_HEIGHT};
-    const std::array<DependencySource, 2> dependencies{{
-        DependencySource{&volumeComputed.first, volumeComputed.second.data()},
-        DependencySource{&areaComputed.first, areaComputed.second.data()}
+    const std::array<DependencySourceT<float>, 2> dependencies{{
+        DependencySourceT<float>{&volumeComputed.first, volumeComputed.second.data()},
+        DependencySourceT<float>{&areaComputed.first, areaComputed.second.data()}
     }};
     std::vector<float> genericBuffer(
         static_cast<std::size_t>(tree.getNumInternalNodeSlots()) *
@@ -1052,13 +1085,13 @@ void checkGenericGrayLevelStatsKernel(const WeightedMorphologicalTree<std::uint8
         0.0f);
 
     const std::vector<T> equivalentAltitude = makeEquivalentAltitude<T>(weighted);
-    mmcfilters::attributes::computers::detail::computeGrayLevelStatsAttributes(
+    mmcfilters::attributes::computers::detail::computeGrayLevelStatsAttributeKernel(
         tree,
         std::span<const T>(equivalentAltitude),
-        genericBuffer,
+        std::span<float>(genericBuffer),
         grayNames,
         requested,
-        std::span<const DependencySource>(dependencies));
+        std::span<const DependencySourceT<float>>(dependencies));
 
     for (NodeId nodeId : tree.getAliveNodeIds()) {
         for (Attribute attribute : requested) {
@@ -1073,34 +1106,34 @@ void checkGenericGrayLevelStatsKernel(const WeightedMorphologicalTree<std::uint8
     if constexpr (std::is_floating_point_v<T>) {
         const AttributeNames volumeNames = AttributeNames::fromList({VOLUME, RELATIVE_VOLUME});
         const std::vector<Attribute> volumeRequested{VOLUME, RELATIVE_VOLUME};
-        const std::array<DependencySource, 1> volumeDependencies{{
-            DependencySource{&areaComputed.first, areaComputed.second.data()}
+        const std::array<DependencySourceT<float>, 1> volumeDependencies{{
+            DependencySourceT<float>{&areaComputed.first, areaComputed.second.data()}
         }};
         std::vector<float> fractionalVolumeBuffer(
             static_cast<std::size_t>(tree.getNumInternalNodeSlots()) *
                 static_cast<std::size_t>(volumeNames.NUM_ATTRIBUTES),
             0.0f);
         const std::vector<T> fractionalAltitude = makeGenericAltitude<T>(weighted);
-        mmcfilters::attributes::computers::detail::computeVolumeAttributes(
+        mmcfilters::attributes::computers::detail::computeVolumeAttributeKernel(
             tree,
             std::span<const T>(fractionalAltitude),
-            fractionalVolumeBuffer,
+            std::span<float>(fractionalVolumeBuffer),
             volumeNames,
             volumeRequested,
-            std::span<const DependencySource>(volumeDependencies));
+            std::span<const DependencySourceT<float>>(volumeDependencies));
 
-        const std::array<DependencySource, 2> fractionalDependencies{{
-            DependencySource{&volumeNames, fractionalVolumeBuffer.data()},
-            DependencySource{&areaComputed.first, areaComputed.second.data()}
+        const std::array<DependencySourceT<float>, 2> fractionalDependencies{{
+            DependencySourceT<float>{&volumeNames, fractionalVolumeBuffer.data()},
+            DependencySourceT<float>{&areaComputed.first, areaComputed.second.data()}
         }};
         std::vector<float> fractionalGrayBuffer(genericBuffer.size(), 0.0f);
-        mmcfilters::attributes::computers::detail::computeGrayLevelStatsAttributes(
+        mmcfilters::attributes::computers::detail::computeGrayLevelStatsAttributeKernel(
             tree,
             std::span<const T>(fractionalAltitude),
-            fractionalGrayBuffer,
+            std::span<float>(fractionalGrayBuffer),
             grayNames,
             requested,
-            std::span<const DependencySource>(fractionalDependencies));
+            std::span<const DependencySourceT<float>>(fractionalDependencies));
 
         for (NodeId nodeId : tree.getAliveNodeIds()) {
             requireNear(

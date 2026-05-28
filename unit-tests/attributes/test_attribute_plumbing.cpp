@@ -1,17 +1,230 @@
 #include "support/TestSupport.hpp"
 
+#include "mmcfilters/attributes/computers/AttributeComputerTraits.hpp"
 #include "mmcfilters/attributes/computers/BoundingBoxComputer.hpp"
 #include "mmcfilters/attributes/computers/GrayLevelStatsComputer.hpp"
 #include "mmcfilters/attributes/computers/MomentBasedAttributeComputer.hpp"
 #include "mmcfilters/attributes/computers/VolumeComputer.hpp"
+#include "mmcfilters/attributes/detail/AttributeFamilyScheduler.hpp"
+#include "mmcfilters/attributes/detail/TopologyAttributeBackend.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cstdint>
+#include <initializer_list>
 #include <optional>
 #include <span>
+#include <string_view>
+#include <tuple>
+#include <vector>
 
 using namespace mmcfilters;
 using namespace mmcfilters::attributes::computers;
 using namespace mmcfilters::unit_tests;
+
+static_assert(AttributeComputerWithTraits<AreaComputer>);
+static_assert(AttributeComputerWithTraits<BoundingBoxComputer>);
+static_assert(AttributeComputerWithTraits<TreeTopologyComputer>);
+static_assert(AttributeComputerWithTraits<CentralMomentsComputer>);
+static_assert(AttributeComputerWithTraits<HuMomentsComputer>);
+static_assert(AttributeComputerWithTraits<MomentBasedAttributeComputer>);
+static_assert(AttributeComputerWithTraits<BitquadAttributeComputer>);
+static_assert(AttributeComputerWithTraits<ContourSideAttributeComputer>);
+static_assert(AttributeComputerWithTraits<VolumeComputer>);
+static_assert(AttributeComputerWithTraits<GrayLevelStatsComputer>);
+static_assert(AttributeComputerWithTraits<MaxDistComputer>);
+
+static_assert(TopologyAttributeComputer<AreaComputer>);
+static_assert(TopologyAttributeComputer<BoundingBoxComputer>);
+static_assert(TopologyAttributeComputer<TreeTopologyComputer>);
+static_assert(TopologyAttributeComputer<CentralMomentsComputer>);
+static_assert(TopologyAttributeComputer<HuMomentsComputer>);
+static_assert(TopologyAttributeComputer<MomentBasedAttributeComputer>);
+static_assert(TopologyAttributeComputer<BitquadAttributeComputer>);
+static_assert(TopologyAttributeComputer<ContourSideAttributeComputer>);
+
+static_assert(AltitudeAttributeComputer<VolumeComputer>);
+static_assert(AltitudeAttributeComputer<GrayLevelStatsComputer>);
+static_assert(AltitudeAttributeComputer<MaxDistComputer>);
+static_assert(std::tuple_size_v<TopologyAttributeComputers> == 8);
+static_assert(std::tuple_size_v<AltitudeAttributeComputers> == 3);
+static_assert(std::tuple_size_v<RegisteredAttributeComputers> == 11);
+
+template <class Computer>
+void requireTraitContract(
+    std::initializer_list<Attribute> producedAttributes,
+    std::initializer_list<Attribute> requiredAttributes,
+    AttributeComputerDomain domain,
+    std::string_view label)
+{
+    const auto& produced = AttributeComputerTraits<Computer>::producedAttributes;
+    const auto& required = AttributeComputerTraits<Computer>::requiredAttributes;
+    const std::string labelText(label);
+
+    require(!AttributeComputerTraits<Computer>::familyName.empty(), labelText + " trait family name");
+    requireEqual(produced.size(), producedAttributes.size(), labelText + " produced attribute count");
+    requireEqual(required.size(), requiredAttributes.size(), labelText + " required attribute count");
+    requireEqual(
+        static_cast<int>(AttributeComputerTraits<Computer>::domain),
+        static_cast<int>(domain),
+        labelText + " execution domain");
+    requireEqual(numProducedAttributes<Computer>(), producedAttributes.size(), labelText + " produced helper count");
+    requireEqual(numRequiredAttributes<Computer>(), requiredAttributes.size(), labelText + " required helper count");
+
+    for (Attribute attribute : producedAttributes) {
+        require(producesAttribute<Computer>(attribute), labelText + " produces expected attribute");
+    }
+    for (Attribute attribute : produced) {
+        require(attributes::registry::metadata(attribute) != nullptr, labelText + " produced attribute is registered");
+        require(std::find(producedAttributes.begin(), producedAttributes.end(), attribute) != producedAttributes.end(), labelText + " has no unexpected produced attribute");
+    }
+    for (Attribute attribute : requiredAttributes) {
+        require(requiresAttribute<Computer>(attribute), labelText + " requires expected dependency");
+    }
+    for (Attribute attribute : required) {
+        require(attributes::registry::metadata(attribute) != nullptr, labelText + " required attribute is registered");
+        require(std::find(requiredAttributes.begin(), requiredAttributes.end(), attribute) != requiredAttributes.end(), labelText + " has no unexpected dependency");
+    }
+}
+
+template <class Computer>
+void requireRuntimeAttributesMatchTraits(std::string_view label)
+{
+    const Computer computer;
+    const std::vector<Attribute> runtimeAttributes = computer.attributes();
+    const auto& traitAttributes = AttributeComputerTraits<Computer>::producedAttributes;
+    const std::string labelText(label);
+
+    requireEqual(runtimeAttributes.size(), traitAttributes.size(), labelText + " runtime attribute count");
+    for (Attribute attribute : traitAttributes) {
+        require(
+            std::find(runtimeAttributes.begin(), runtimeAttributes.end(), attribute) != runtimeAttributes.end(),
+            labelText + " runtime attributes match trait");
+    }
+}
+
+template <class Computer>
+void countProducedAttributes(std::array<int, static_cast<std::size_t>(CONTOUR_SIDE_SOUTH) + 1>& counts)
+{
+    for (Attribute attribute : AttributeComputerTraits<Computer>::producedAttributes) {
+        const auto index = static_cast<std::size_t>(attribute);
+        require(index < counts.size(), "computer trait produced attribute must be in registry range");
+        counts[index] += 1;
+    }
+}
+
+void requireGlobalAttributeRegistryContracts()
+{
+    std::array<int, static_cast<std::size_t>(CONTOUR_SIDE_SOUTH) + 1> producedCounts{};
+    countProducedAttributes<AreaComputer>(producedCounts);
+    countProducedAttributes<BoundingBoxComputer>(producedCounts);
+    countProducedAttributes<TreeTopologyComputer>(producedCounts);
+    countProducedAttributes<CentralMomentsComputer>(producedCounts);
+    countProducedAttributes<HuMomentsComputer>(producedCounts);
+    countProducedAttributes<MomentBasedAttributeComputer>(producedCounts);
+    countProducedAttributes<BitquadAttributeComputer>(producedCounts);
+    countProducedAttributes<ContourSideAttributeComputer>(producedCounts);
+    countProducedAttributes<VolumeComputer>(producedCounts);
+    countProducedAttributes<GrayLevelStatsComputer>(producedCounts);
+    countProducedAttributes<MaxDistComputer>(producedCounts);
+
+    const std::vector<Attribute>& allAttributes = ATTRIBUTE_GROUPS.at(AttributeGroup::ALL);
+    requireEqual(
+        allAttributes.size(),
+        producedCounts.size(),
+        "ALL group and registered computer trait range must have the same size");
+
+    for (Attribute attribute : allAttributes) {
+        const std::string attributeName(AttributeNames::toString(attribute));
+        const auto index = static_cast<std::size_t>(attribute);
+        const auto* metadata = attributes::registry::metadata(attribute);
+        require(metadata != nullptr, attributeName + " must have registry metadata");
+        requireEqual(
+            producedCounts[index],
+            1,
+            attributeName + " must be produced by exactly one registered computer family");
+        require(
+            mmcfilters::detail::familyForAttribute(attribute) != mmcfilters::detail::AttributeFamily::Unsupported,
+            attributeName + " must resolve to a scheduler family");
+        require(
+            attributes::registry::isPipelineComputed(attribute),
+            attributeName + " must be computable by the ordinary attribute pipeline");
+
+        const bool topologyFamily =
+            mmcfilters::detail::familyForAttribute(attribute) == mmcfilters::detail::AttributeFamily::Area ||
+            attributes::registry::isTopologyOnly(attribute);
+        if (attributes::registry::requiresAltitude(attribute)) {
+            require(!topologyFamily, attributeName + " altitude attribute must not be topology-only");
+        }
+    }
+}
+
+void requireGlobalDependencySchedulerContracts()
+{
+    const std::vector<Attribute>& allAttributes = ATTRIBUTE_GROUPS.at(AttributeGroup::ALL);
+    const auto allPlan = mmcfilters::detail::makeAttributeComputationPlan(std::span<const Attribute>(allAttributes));
+
+    requireEqual(
+        allPlan.requestedAttributes.size(),
+        allAttributes.size(),
+        "ALL plan requested attribute count");
+    requireEqual(
+        allPlan.materializedAttributes.size(),
+        allAttributes.size(),
+        "ALL plan materialized attribute count");
+    require(
+        allPlan.hiddenDependencyAttributes.empty(),
+        "ALL plan must not create hidden dependencies because every dependency is requested");
+
+    for (Attribute attribute : allAttributes) {
+        const std::string attributeName(AttributeNames::toString(attribute));
+        require(allPlan.requests(attribute), attributeName + " must be requested in ALL plan");
+        require(allPlan.materializes(attribute), attributeName + " must be materialized in ALL plan");
+        require(!allPlan.hides(attribute), attributeName + " must not be hidden in ALL plan");
+
+        const std::array<Attribute, 1> singleRequest{attribute};
+        const auto singlePlan = mmcfilters::detail::makeAttributeComputationPlan(std::span<const Attribute>(singleRequest));
+        require(singlePlan.requests(attribute), attributeName + " single plan must preserve the request");
+        require(singlePlan.materializes(attribute), attributeName + " single plan must materialize the request");
+        require(!singlePlan.hides(attribute), attributeName + " single plan must not hide the requested attribute");
+
+        const auto attributePosition = std::find(
+            singlePlan.materializedAttributes.begin(),
+            singlePlan.materializedAttributes.end(),
+            attribute);
+        require(
+            attributePosition != singlePlan.materializedAttributes.end(),
+            attributeName + " single plan must contain the requested attribute");
+
+        const std::vector<Attribute> dependencies = mmcfilters::detail::dependenciesForAttribute(attribute);
+        for (Attribute dependency : dependencies) {
+            const std::string dependencyName(AttributeNames::toString(dependency));
+            require(
+                attributes::registry::metadata(dependency) != nullptr,
+                attributeName + " dependency " + dependencyName + " must be registered");
+            require(
+                mmcfilters::detail::familyForAttribute(dependency) != mmcfilters::detail::AttributeFamily::Unsupported,
+                attributeName + " dependency " + dependencyName + " must resolve to a scheduler family");
+            require(
+                singlePlan.materializes(dependency),
+                attributeName + " single plan must materialize dependency " + dependencyName);
+            require(
+                singlePlan.hides(dependency),
+                attributeName + " single plan must hide dependency " + dependencyName);
+
+            const auto dependencyPosition = std::find(
+                singlePlan.materializedAttributes.begin(),
+                singlePlan.materializedAttributes.end(),
+                dependency);
+            require(
+                dependencyPosition != singlePlan.materializedAttributes.end(),
+                attributeName + " dependency " + dependencyName + " must be present in closure");
+            require(
+                dependencyPosition < attributePosition,
+                attributeName + " dependency " + dependencyName + " must be ordered before the consumer");
+        }
+    }
+}
 
 int main() {
     {
@@ -90,8 +303,198 @@ int main() {
     }
 
     {
+        requireTraitContract<AreaComputer>({AREA}, {}, AttributeComputerDomain::Topology, "AreaComputer");
+        requireTraitContract<BoundingBoxComputer>(
+            {BOX_WIDTH, BOX_HEIGHT, DIAGONAL_LENGTH, RECTANGULARITY, RATIO_WH, BOX_COL_MIN, BOX_COL_MAX, BOX_ROW_MIN, BOX_ROW_MAX},
+            {AREA},
+            AttributeComputerDomain::Topology,
+            "BoundingBoxComputer");
+        requireTraitContract<TreeTopologyComputer>(
+            {HEIGHT_NODE, DEPTH_NODE, IS_LEAF_NODE, IS_ROOT_NODE, NUM_CHILDREN_NODE, NUM_SIBLINGS_NODE, NUM_DESCENDANTS_NODE, NUM_LEAF_DESCENDANTS_NODE, LEAF_RATIO_NODE, BALANCE_NODE, AVG_CHILD_HEIGHT_NODE},
+            {},
+            AttributeComputerDomain::Topology,
+            "TreeTopologyComputer");
+        requireTraitContract<CentralMomentsComputer>(
+            {CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11, CENTRAL_MOMENT_30, CENTRAL_MOMENT_03, CENTRAL_MOMENT_21, CENTRAL_MOMENT_12},
+            {},
+            AttributeComputerDomain::Topology,
+            "CentralMomentsComputer");
+        requireTraitContract<HuMomentsComputer>(
+            {HU_MOMENT_1, HU_MOMENT_2, HU_MOMENT_3, HU_MOMENT_4, HU_MOMENT_5, HU_MOMENT_6, HU_MOMENT_7},
+            {AREA, CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11, CENTRAL_MOMENT_30, CENTRAL_MOMENT_03, CENTRAL_MOMENT_21, CENTRAL_MOMENT_12},
+            AttributeComputerDomain::Topology,
+            "HuMomentsComputer");
+        requireTraitContract<MomentBasedAttributeComputer>(
+            {INERTIA, COMPACTNESS, ECCENTRICITY, LENGTH_MAJOR_AXIS, LENGTH_MINOR_AXIS, AXIS_ORIENTATION, CIRCULARITY},
+            {AREA, CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11},
+            AttributeComputerDomain::Topology,
+            "MomentBasedAttributeComputer");
+        requireTraitContract<BitquadAttributeComputer>(
+            {BITQUADS_AREA, BITQUADS_NUMBER_EULER, BITQUADS_NUMBER_HOLES, BITQUADS_PERIMETER, BITQUADS_PERIMETER_CONTINUOUS, BITQUADS_CIRCULARITY, BITQUADS_PERIMETER_AVERAGE, BITQUADS_LENGTH_AVERAGE, BITQUADS_WIDTH_AVERAGE},
+            {},
+            AttributeComputerDomain::Topology,
+            "BitquadAttributeComputer");
+        requireTraitContract<ContourSideAttributeComputer>(
+            {CONTOUR_PIXELS, CONTOUR_PERIMETER, CONTOUR_SIDE_NORTH, CONTOUR_SIDE_WEST, CONTOUR_SIDE_EAST, CONTOUR_SIDE_SOUTH},
+            {},
+            AttributeComputerDomain::Topology,
+            "ContourSideAttributeComputer");
+        requireTraitContract<VolumeComputer>(
+            {VOLUME, RELATIVE_VOLUME},
+            {AREA},
+            AttributeComputerDomain::Altitude,
+            "VolumeComputer");
+        requireTraitContract<GrayLevelStatsComputer>(
+            {LEVEL, MEAN_LEVEL, VARIANCE_LEVEL, GRAY_HEIGHT},
+            {AREA, VOLUME},
+            AttributeComputerDomain::Altitude,
+            "GrayLevelStatsComputer");
+        requireTraitContract<MaxDistComputer>(
+            {MAX_DIST},
+            {},
+            AttributeComputerDomain::Altitude,
+            "MaxDistComputer");
+
+        requireRuntimeAttributesMatchTraits<AreaComputer>("AreaComputer");
+        requireRuntimeAttributesMatchTraits<BoundingBoxComputer>("BoundingBoxComputer");
+        requireRuntimeAttributesMatchTraits<TreeTopologyComputer>("TreeTopologyComputer");
+        requireRuntimeAttributesMatchTraits<CentralMomentsComputer>("CentralMomentsComputer");
+        requireRuntimeAttributesMatchTraits<HuMomentsComputer>("HuMomentsComputer");
+        requireRuntimeAttributesMatchTraits<MomentBasedAttributeComputer>("MomentBasedAttributeComputer");
+        requireRuntimeAttributesMatchTraits<BitquadAttributeComputer>("BitquadAttributeComputer");
+        requireRuntimeAttributesMatchTraits<ContourSideAttributeComputer>("ContourSideAttributeComputer");
+        requireRuntimeAttributesMatchTraits<VolumeComputer>("VolumeComputer");
+        requireRuntimeAttributesMatchTraits<GrayLevelStatsComputer>("GrayLevelStatsComputer");
+        requireRuntimeAttributesMatchTraits<MaxDistComputer>("MaxDistComputer");
+
+        requireEqual(
+            static_cast<int>(mmcfilters::detail::familyForAttribute(RECTANGULARITY)),
+            static_cast<int>(mmcfilters::detail::AttributeFamily::BoundingBox),
+            "scheduler family lookup for bounding boxes");
+        requireEqual(
+            static_cast<int>(mmcfilters::detail::familyForAttribute(AREA)),
+            static_cast<int>(mmcfilters::detail::AttributeFamily::Area),
+            "scheduler family lookup for AREA");
+        requireEqual(
+            static_cast<int>(mmcfilters::detail::familyForAttribute(AVG_CHILD_HEIGHT_NODE)),
+            static_cast<int>(mmcfilters::detail::AttributeFamily::TreeTopology),
+            "scheduler family lookup for tree topology");
+        requireEqual(
+            static_cast<int>(mmcfilters::detail::familyForAttribute(CENTRAL_MOMENT_20)),
+            static_cast<int>(mmcfilters::detail::AttributeFamily::CentralMoments),
+            "scheduler family lookup for central moments");
+        requireEqual(
+            static_cast<int>(mmcfilters::detail::familyForAttribute(HU_MOMENT_7)),
+            static_cast<int>(mmcfilters::detail::AttributeFamily::HuMoments),
+            "scheduler family lookup for Hu moments");
+        requireEqual(
+            static_cast<int>(mmcfilters::detail::familyForAttribute(ECCENTRICITY)),
+            static_cast<int>(mmcfilters::detail::AttributeFamily::MomentDerived),
+            "scheduler family lookup for moment-derived attributes");
+        requireEqual(
+            static_cast<int>(mmcfilters::detail::familyForAttribute(BITQUADS_CIRCULARITY)),
+            static_cast<int>(mmcfilters::detail::AttributeFamily::Bitquad),
+            "scheduler family lookup for bitquads");
+        requireEqual(
+            static_cast<int>(mmcfilters::detail::familyForAttribute(CONTOUR_SIDE_SOUTH)),
+            static_cast<int>(mmcfilters::detail::AttributeFamily::ContourSide),
+            "scheduler family lookup for contour sides");
+
+        requireGlobalAttributeRegistryContracts();
+    }
+
+    {
+        const std::array<Attribute, 3> scheduledRequest{MEAN_LEVEL, ECCENTRICITY, RECTANGULARITY};
+        const mmcfilters::detail::AttributeComputationPlan schedulerPlan =
+            mmcfilters::detail::makeAttributeComputationPlan(std::span<const Attribute>(scheduledRequest));
+
+        require(schedulerPlan.requests(MEAN_LEVEL), "scheduler preserves requested MEAN_LEVEL");
+        require(schedulerPlan.requests(ECCENTRICITY), "scheduler preserves requested ECCENTRICITY");
+        require(schedulerPlan.requests(RECTANGULARITY), "scheduler preserves requested RECTANGULARITY");
+        require(schedulerPlan.materializes(VOLUME), "scheduler adds hidden VOLUME dependency");
+        require(schedulerPlan.materializes(AREA), "scheduler adds hidden AREA dependency");
+        require(schedulerPlan.materializes(CENTRAL_MOMENT_20), "scheduler adds hidden central moment dependency");
+        require(schedulerPlan.materializes(CENTRAL_MOMENT_02), "scheduler adds hidden central moment dependency");
+        require(schedulerPlan.materializes(CENTRAL_MOMENT_11), "scheduler adds hidden central moment dependency");
+        require(schedulerPlan.hides(VOLUME), "scheduler marks VOLUME as hidden");
+        require(schedulerPlan.hides(AREA), "scheduler marks AREA as hidden");
+        require(!schedulerPlan.hides(MEAN_LEVEL), "scheduler does not hide requested attributes");
+
+        const std::vector<Attribute> scheduledVolume =
+            schedulerPlan.materializedForFamily(mmcfilters::detail::AttributeFamily::Volume);
+        requireEqual(scheduledVolume.size(), static_cast<std::size_t>(1), "scheduler volume family count");
+        requireEqual(static_cast<int>(scheduledVolume.front()), static_cast<int>(VOLUME), "scheduler volume family attribute");
+
+        const std::vector<Attribute> scheduledGray =
+            schedulerPlan.requestedForFamily(mmcfilters::detail::AttributeFamily::GrayLevelStats);
+        requireEqual(scheduledGray.size(), static_cast<std::size_t>(1), "scheduler gray family count");
+        requireEqual(static_cast<int>(scheduledGray.front()), static_cast<int>(MEAN_LEVEL), "scheduler gray family attribute");
+
+        const std::array<Attribute, 1> rectangularityOnly{RECTANGULARITY};
+        const std::array<Attribute, 1> widthOnly{BOX_WIDTH};
+        require(
+            mmcfilters::detail::anyAttributeRequiresDependency(std::span<const Attribute>(rectangularityOnly), AREA),
+            "scheduler identifies RECTANGULARITY AREA dependency");
+        require(
+            !mmcfilters::detail::anyAttributeRequiresDependency(std::span<const Attribute>(widthOnly), AREA),
+            "scheduler does not add AREA to independent bounding-box attributes");
+        requireEqual(
+            static_cast<int>(mmcfilters::detail::familyForAttribute(ECCENTRICITY)),
+            static_cast<int>(mmcfilters::detail::AttributeFamily::MomentDerived),
+            "scheduler family lookup for ECCENTRICITY");
+        requireEqual(
+            static_cast<int>(mmcfilters::detail::familyForAttribute(CONTOUR_SIDE_SOUTH)),
+            static_cast<int>(mmcfilters::detail::AttributeFamily::ContourSide),
+            "scheduler family lookup for contour sides");
+
+        requireGlobalDependencySchedulerContracts();
+    }
+
+    {
+        const AttributeNames areaNames = AttributeNames::fromList({AREA});
+        const AttributeNames volumeNames = AttributeNames::fromList({VOLUME, RELATIVE_VOLUME});
+        const std::array<float, 2> areaValues{4.0f, 8.0f};
+        const std::array<float, 4> volumeValues{12.0f, 1.5f, 30.0f, 3.75f};
+        const std::array<DependencySourceT<float>, 2> sources{{
+            DependencySourceT<float>{&volumeNames, volumeValues.data()},
+            DependencySourceT<float>{&areaNames, areaValues.data()},
+        }};
+        const DependencyResolver<float> resolver{std::span<const DependencySourceT<float>>(sources)};
+
+        require(&resolver.require(AREA) == &sources[1], "DependencyResolver resolves AREA by name");
+        require(&resolver.require(VOLUME) == &sources[0], "DependencyResolver resolves VOLUME by name");
+        require(&resolver.requireAll({VOLUME, RELATIVE_VOLUME}) == &sources[0], "DependencyResolver resolves multi-attribute source");
+        requireThrows<std::invalid_argument>(
+            [&]() { static_cast<void>(resolver.require(MEAN_LEVEL)); },
+            "DependencyResolver rejects missing named dependency");
+
+        const std::array<DependencySourceT<float>, 1> invalidSources{{DependencySourceT<float>{nullptr, areaValues.data()}}};
+        const DependencyResolver<float> invalidResolver{std::span<const DependencySourceT<float>>(invalidSources)};
+        requireThrows<std::invalid_argument>(
+            [&]() { static_cast<void>(invalidResolver.require(AREA)); },
+            "DependencyResolver rejects invalid dependency source");
+
+        requireNear(
+            ::mmcfilters::attributes::numeric::safeDivide(6.0f, 3.0f),
+            2.0f,
+            0.0f,
+            "safeDivide normal division");
+        requireEqual(
+            ::mmcfilters::attributes::numeric::safeDivide(6.0f, 0.0f, -1.0f),
+            -1.0f,
+            "safeDivide returns finite fallback");
+        requireEqual(
+            ::mmcfilters::attributes::numeric::safeSqrt(-4.0f),
+            0.0f,
+            "safeSqrt clamps negative input");
+        requireEqual(
+            ::mmcfilters::attributes::numeric::clampUpper(5.0f, 3.0f),
+            3.0f,
+            "clampUpper caps values");
+    }
+
+    {
         auto tree = makeComponentTree(makeComponentTreeFixture(), true);
-        BoundingBoxComputer boxComputer;
 
         const std::array<Attribute, 1> widthRequest{BOX_WIDTH};
         const AttributeNames widthNames = AttributeNames::fromList({BOX_WIDTH});
@@ -99,14 +502,13 @@ int main() {
             static_cast<std::size_t>(tree->getNumInternalNodeSlots()) *
                 static_cast<std::size_t>(widthNames.NUM_ATTRIBUTES),
             0.0f);
-        boxComputer.compute(
-            *tree,
-            AttributeAltitudeView{},
-            widthBuffer,
-            widthNames,
-            std::span<const Attribute>(widthRequest),
-            {});
-        requireEqual(widthBuffer[widthNames.linearIndex(tree->getRoot(), BOX_WIDTH)], 4.0f, "BOX_WIDTH direct compute does not require AREA dependency");
+        BoundingBoxComputer::compute(
+            AttributeComputeContext<float>{
+                *tree,
+                std::span<float>(widthBuffer),
+                widthNames,
+                std::span<const Attribute>(widthRequest)});
+        requireEqual(widthBuffer[widthNames.linearIndex(tree->getRoot(), BOX_WIDTH)], 4.0f, "BOX_WIDTH context compute does not require AREA dependency");
 
         const std::array<Attribute, 1> rectangularityRequest{RECTANGULARITY};
         const AttributeNames rectangularityNames = AttributeNames::fromList({RECTANGULARITY});
@@ -116,37 +518,35 @@ int main() {
             0.0f);
         requireThrows<std::invalid_argument>(
             [&]() {
-                boxComputer.compute(
-                    *tree,
-                    AttributeAltitudeView{},
-                    rectangularityBuffer,
-                    rectangularityNames,
-                    std::span<const Attribute>(rectangularityRequest),
-                    {});
+                BoundingBoxComputer::compute(
+                    AttributeComputeContext<float>{
+                        *tree,
+                        std::span<float>(rectangularityBuffer),
+                        rectangularityNames,
+                        std::span<const Attribute>(rectangularityRequest)});
             },
-            "RECTANGULARITY direct compute must reject missing AREA dependency");
+            "RECTANGULARITY context compute must reject missing AREA dependency");
     }
 
     {
         auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
         const MorphologicalTree& tree = weighted->topology();
-        const AttributeAltitudeView altitudeView = makeAttributeAltitudeView(weighted->getAltitudeBuffer());
+        const std::span<const std::uint8_t> altitude = weighted->altitudeSpan();
 
-        VolumeComputer volumeComputer;
         const std::array<Attribute, 1> volumeRequest{VOLUME};
         const AttributeNames volumeNames = AttributeNames::fromList({VOLUME});
         std::vector<float> volumeBuffer(
             static_cast<std::size_t>(tree.getNumInternalNodeSlots()) *
                 static_cast<std::size_t>(volumeNames.NUM_ATTRIBUTES),
             0.0f);
-        volumeComputer.compute(
-            tree,
-            altitudeView,
-            volumeBuffer,
-            volumeNames,
-            std::span<const Attribute>(volumeRequest),
-            {});
-        requireEqual(volumeBuffer[volumeNames.linearIndex(tree.getRoot(), VOLUME)], 42.0f, "VOLUME direct compute does not require AREA dependency");
+        VolumeComputer::compute(
+            AltitudeAttributeComputeContext<float, std::uint8_t>{
+                tree,
+                altitude,
+                std::span<float>(volumeBuffer),
+                volumeNames,
+                std::span<const Attribute>(volumeRequest)});
+        requireEqual(volumeBuffer[volumeNames.linearIndex(tree.getRoot(), VOLUME)], 42.0f, "VOLUME context compute does not require AREA dependency");
 
         const std::array<Attribute, 1> relativeVolumeRequest{RELATIVE_VOLUME};
         const AttributeNames relativeVolumeNames = AttributeNames::fromList({RELATIVE_VOLUME});
@@ -156,34 +556,33 @@ int main() {
             0.0f);
         requireThrows<std::invalid_argument>(
             [&]() {
-                volumeComputer.compute(
-                    tree,
-                    altitudeView,
-                    relativeVolumeBuffer,
-                    relativeVolumeNames,
-                    std::span<const Attribute>(relativeVolumeRequest),
-                    {});
+                VolumeComputer::compute(
+                    AltitudeAttributeComputeContext<float, std::uint8_t>{
+                        tree,
+                        altitude,
+                        std::span<float>(relativeVolumeBuffer),
+                        relativeVolumeNames,
+                        std::span<const Attribute>(relativeVolumeRequest)});
             },
-            "RELATIVE_VOLUME direct compute must reject missing AREA dependency");
+            "RELATIVE_VOLUME context compute must reject missing AREA dependency");
 
-        GrayLevelStatsComputer grayComputer;
         const std::array<Attribute, 1> levelRequest{LEVEL};
         const AttributeNames levelNames = AttributeNames::fromList({LEVEL});
         std::vector<float> levelBuffer(
             static_cast<std::size_t>(tree.getNumInternalNodeSlots()) *
                 static_cast<std::size_t>(levelNames.NUM_ATTRIBUTES),
             0.0f);
-        grayComputer.compute(
-            tree,
-            altitudeView,
-            levelBuffer,
-            levelNames,
-            std::span<const Attribute>(levelRequest),
-            {});
+        GrayLevelStatsComputer::compute(
+            AltitudeAttributeComputeContext<float, std::uint8_t>{
+                tree,
+                altitude,
+                std::span<float>(levelBuffer),
+                levelNames,
+                std::span<const Attribute>(levelRequest)});
         requireEqual(
             levelBuffer[levelNames.linearIndex(tree.getRoot(), LEVEL)],
             static_cast<float>(weighted->getAltitude(tree.getRoot())),
-            "LEVEL direct compute does not require aggregate dependencies");
+            "LEVEL context compute does not require aggregate dependencies");
 
         const std::array<Attribute, 1> grayHeightRequest{GRAY_HEIGHT};
         const AttributeNames grayHeightNames = AttributeNames::fromList({GRAY_HEIGHT});
@@ -191,16 +590,16 @@ int main() {
             static_cast<std::size_t>(tree.getNumInternalNodeSlots()) *
                 static_cast<std::size_t>(grayHeightNames.NUM_ATTRIBUTES),
             0.0f);
-        grayComputer.compute(
-            tree,
-            altitudeView,
-            grayHeightBuffer,
-            grayHeightNames,
-            std::span<const Attribute>(grayHeightRequest),
-            {});
+        GrayLevelStatsComputer::compute(
+            AltitudeAttributeComputeContext<float, std::uint8_t>{
+                tree,
+                altitude,
+                std::span<float>(grayHeightBuffer),
+                grayHeightNames,
+                std::span<const Attribute>(grayHeightRequest)});
         require(
             grayHeightBuffer[grayHeightNames.linearIndex(tree.getRoot(), GRAY_HEIGHT)] >= 0.0f,
-            "GRAY_HEIGHT direct compute does not require aggregate dependencies");
+            "GRAY_HEIGHT context compute does not require aggregate dependencies");
 
         const std::array<Attribute, 1> meanRequest{MEAN_LEVEL};
         const AttributeNames meanNames = AttributeNames::fromList({MEAN_LEVEL});
@@ -210,17 +609,16 @@ int main() {
             0.0f);
         requireThrows<std::invalid_argument>(
             [&]() {
-                grayComputer.compute(
-                    tree,
-                    altitudeView,
-                    meanBuffer,
-                    meanNames,
-                    std::span<const Attribute>(meanRequest),
-                    {});
+                GrayLevelStatsComputer::compute(
+                    AltitudeAttributeComputeContext<float, std::uint8_t>{
+                        tree,
+                        altitude,
+                        std::span<float>(meanBuffer),
+                        meanNames,
+                        std::span<const Attribute>(meanRequest)});
             },
-            "MEAN_LEVEL direct compute must reject missing VOLUME and AREA dependencies");
+            "MEAN_LEVEL context compute must reject missing VOLUME and AREA dependencies");
 
-        HuMomentsComputer huComputer;
         const std::array<Attribute, 1> huRequest{HU_MOMENT_1};
         const AttributeNames huNames = AttributeNames::fromList({HU_MOMENT_1});
         std::vector<float> huBuffer(
@@ -229,17 +627,15 @@ int main() {
             0.0f);
         requireThrows<std::invalid_argument>(
             [&]() {
-                huComputer.compute(
-                    tree,
-                    AttributeAltitudeView{},
-                    huBuffer,
-                    huNames,
-                    std::span<const Attribute>(huRequest),
-                    {});
+                HuMomentsComputer::compute(
+                    AttributeComputeContext<float>{
+                        tree,
+                        std::span<float>(huBuffer),
+                        huNames,
+                        std::span<const Attribute>(huRequest)});
             },
-            "HU_MOMENT direct compute must reject missing central moment and AREA dependencies");
+            "HU_MOMENT context compute must reject missing central moment and AREA dependencies");
 
-        MomentBasedAttributeComputer momentBasedComputer;
         const std::array<Attribute, 1> inertiaRequest{INERTIA};
         const AttributeNames inertiaNames = AttributeNames::fromList({INERTIA});
         std::vector<float> inertiaBuffer(
@@ -248,15 +644,14 @@ int main() {
             0.0f);
         requireThrows<std::invalid_argument>(
             [&]() {
-                momentBasedComputer.compute(
-                    tree,
-                    AttributeAltitudeView{},
-                    inertiaBuffer,
-                    inertiaNames,
-                    std::span<const Attribute>(inertiaRequest),
-                    {});
+                MomentBasedAttributeComputer::compute(
+                    AttributeComputeContext<float>{
+                        tree,
+                        std::span<float>(inertiaBuffer),
+                        inertiaNames,
+                        std::span<const Attribute>(inertiaRequest)});
             },
-            "moment-based direct compute must reject missing central moment and AREA dependencies");
+            "moment-based context compute must reject missing central moment and AREA dependencies");
     }
 
     return 0;

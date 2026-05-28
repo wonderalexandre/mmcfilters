@@ -1,11 +1,14 @@
 #pragma once
 
-#include "../AttributeComputer.hpp"
+#include "../detail/AttributeKernelSupport.hpp"
 #include "../../trees/detail/TreeTraversalDetail.hpp"
 #include "../../trees/MorphologicalTree.hpp"
 
 #include <algorithm>
+#include <array>
+#include <concepts>
 #include <limits>
+#include <vector>
 
 
 namespace mmcfilters::attributes::computers {
@@ -42,25 +45,38 @@ inline NodeId topologySlotOf(const MorphologicalTree&, NodeId nodeId) noexcept {
  * - a final visit converts the accumulated values into the derived ratios and
  *   balance measures.
  */
-class TreeTopologyComputer : public AttributeComputer {
+class TreeTopologyComputer {
 public:
-    using AttributeComputer::compute;
-    using AttributeComputer::computeUnitAttributes;
 
     /**
      * @brief Returns the full family of topology-derived descriptors.
      */
-    [[nodiscard]] std::vector<Attribute> attributes() const override {
+    [[nodiscard]] std::vector<Attribute> attributes() const {
         return {HEIGHT_NODE, DEPTH_NODE, IS_LEAF_NODE, IS_ROOT_NODE, NUM_CHILDREN_NODE, NUM_SIBLINGS_NODE, NUM_DESCENDANTS_NODE, NUM_LEAF_DESCENDANTS_NODE, LEAF_RATIO_NODE, BALANCE_NODE, AVG_CHILD_HEIGHT_NODE};
     }
 
     /**
      * @brief Computes the requested topology descriptors.
      *
+     * @details
      * The computation is topology-only and ignores altitude/dependencies. All
-     * output rows are indexed by dense internal node id.
+     * output rows are indexed by dense internal node id. Intermediate quantities
+     * such as height, depth, and descendant counts are kept in scratch storage
+     * when they are needed to derive a requested descriptor but are not
+     * themselves requested as public columns.
      */
-    void compute(const MorphologicalTree& tree, AttributeAltitudeView, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes, std::span<const DependencySource>) const override {
+    template <std::floating_point Real>
+    static void compute(const AttributeComputeContext<Real>& context) {
+        computeImpl(
+            context.tree,
+            context.buffer,
+            context.attrNames,
+            context.requestedAttributes);
+    }
+
+private:
+    template <std::floating_point Real>
+    static void computeImpl(const MorphologicalTree& tree, std::span<Real> buffer, const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes) {
         requireAttributeBufferShape(tree, buffer, attrNames);
 
         bool computeHeight = std::find(requestedAttributes.begin(), requestedAttributes.end(), HEIGHT_NODE) != requestedAttributes.end();
@@ -80,31 +96,31 @@ public:
         // Reuse the public output buffer when an intermediate quantity has been
         // requested explicitly; otherwise, fall back to temporary storage so
         // the derived descriptors can still be computed internally.
-        std::vector<float> heightStorage(computeHeight ? 0 : numNodeSlots, 0.0f);
-        float* bufferHeight = computeHeight ? buffer.data() : heightStorage.data();
+        std::vector<Real> heightStorage(computeHeight ? 0 : numNodeSlots, Real{0});
+        Real* bufferHeight = computeHeight ? buffer.data() : heightStorage.data();
         auto indexOfHeight = [&](NodeId idx) {
             return computeHeight ? attrNames.linearIndex(idx, HEIGHT_NODE) : idx;
         };
 
-        std::vector<float> numDescStorage(computeNumDescendants ? 0 : numNodeSlots, 0.0f);
-        float* bufferNumDesc = computeNumDescendants ? buffer.data() : numDescStorage.data();
+        std::vector<Real> numDescStorage(computeNumDescendants ? 0 : numNodeSlots, Real{0});
+        Real* bufferNumDesc = computeNumDescendants ? buffer.data() : numDescStorage.data();
         auto indexOfNumDescendants = [&](NodeId idx) {
             return computeNumDescendants ? attrNames.linearIndex(idx, NUM_DESCENDANTS_NODE) : idx;
         };
 
-        std::vector<float> numLeafDescStorage(computeNumLeafDescendants ? 0 : numNodeSlots, 0.0f);
-        float* bufferNumLeafDesc = computeNumLeafDescendants ? buffer.data() : numLeafDescStorage.data();
+        std::vector<Real> numLeafDescStorage(computeNumLeafDescendants ? 0 : numNodeSlots, Real{0});
+        Real* bufferNumLeafDesc = computeNumLeafDescendants ? buffer.data() : numLeafDescStorage.data();
         auto indexOfNumLeafDescendants = [&](NodeId idx) {
             return computeNumLeafDescendants ? attrNames.linearIndex(idx, NUM_LEAF_DESCENDANTS_NODE) : idx;
         };
 
-        std::vector<float> depthStorage(computeDepth ? 0 : numNodeSlots, 0.0f);
-        float* bufferDepth = computeDepth ? buffer.data() : depthStorage.data();
+        std::vector<Real> depthStorage(computeDepth ? 0 : numNodeSlots, Real{0});
+        Real* bufferDepth = computeDepth ? buffer.data() : depthStorage.data();
         auto indexOfDepth = [&](NodeId idx) {
             return computeDepth ? attrNames.linearIndex(idx, DEPTH_NODE) : idx;
         };
 
-        std::vector<float> minChildHeightStorage(computeBalance ? numNodeSlots : 0, 0.0f);
+        std::vector<Real> minChildHeightStorage(computeBalance ? numNodeSlots : 0, Real{0});
 
         ::mmcfilters::detail::traversePostOrder(tree,
             tree.getRoot(),
@@ -116,51 +132,51 @@ public:
                 const int numChildren = tree.getNumChildren(nodeId);
                 const bool isLeaf = tree.isLeaf(nodeId);
 
-                float parentDepth = (parent != InvalidNode) ? bufferDepth[indexOfDepth(parent)] : InvalidNode;
-                bufferDepth[indexOfDepth(node)] = parent != InvalidNode ? parentDepth + 1.0f : 0.0f;
+                Real parentDepth = (parent != InvalidNode) ? bufferDepth[indexOfDepth(parent)] : Real{0};
+                bufferDepth[indexOfDepth(node)] = parent != InvalidNode ? parentDepth + Real{1} : Real{0};
 
-                bufferHeight[indexOfHeight(node)] = 0.0f;
-                bufferNumDesc[indexOfNumDescendants(node)] = 0.0f;
-                bufferNumLeafDesc[indexOfNumLeafDescendants(node)] = isLeaf ? 1.0f : 0.0f;
+                bufferHeight[indexOfHeight(node)] = Real{0};
+                bufferNumDesc[indexOfNumDescendants(node)] = Real{0};
+                bufferNumLeafDesc[indexOfNumLeafDescendants(node)] = isLeaf ? Real{1} : Real{0};
 
                 if (computeHeight)
-                    buffer[attrNames.linearIndex(node, HEIGHT_NODE)] = 0.0f;
+                    buffer[attrNames.linearIndex(node, HEIGHT_NODE)] = Real{0};
                 if (computeIsLeaf)
-                    buffer[attrNames.linearIndex(node, IS_LEAF_NODE)] = isLeaf ? 1.0f : 0.0f;
+                    buffer[attrNames.linearIndex(node, IS_LEAF_NODE)] = isLeaf ? Real{1} : Real{0};
                 if (computeIsRoot)
-                    buffer[attrNames.linearIndex(node, IS_ROOT_NODE)] = isRoot ? 1.0f : 0.0f;
+                    buffer[attrNames.linearIndex(node, IS_ROOT_NODE)] = isRoot ? Real{1} : Real{0};
                 if (computeNumChildren)
-                    buffer[attrNames.linearIndex(node, NUM_CHILDREN_NODE)] = static_cast<float>(numChildren);
+                    buffer[attrNames.linearIndex(node, NUM_CHILDREN_NODE)] = static_cast<Real>(numChildren);
                 if (computeNumSiblings)
-                    buffer[attrNames.linearIndex(node, NUM_SIBLINGS_NODE)] = isRoot ? 0.0f : static_cast<float>(tree.getNumChildren(parentNodeId) - 1);
+                    buffer[attrNames.linearIndex(node, NUM_SIBLINGS_NODE)] = isRoot ? Real{0} : static_cast<Real>(tree.getNumChildren(parentNodeId) - 1);
                 if (computeLeafRatio)
-                    buffer[attrNames.linearIndex(node, LEAF_RATIO_NODE)] = 0.0f;
+                    buffer[attrNames.linearIndex(node, LEAF_RATIO_NODE)] = Real{0};
                 if (computeBalance) {
-                    minChildHeightStorage[static_cast<std::size_t>(node)] = std::numeric_limits<float>::infinity();
-                    buffer[attrNames.linearIndex(node, BALANCE_NODE)] = 0.0f;
+                    minChildHeightStorage[static_cast<std::size_t>(node)] = std::numeric_limits<Real>::infinity();
+                    buffer[attrNames.linearIndex(node, BALANCE_NODE)] = Real{0};
                 }
                 if (computeAvgChildHeight)
-                    buffer[attrNames.linearIndex(node, AVG_CHILD_HEIGHT_NODE)] = 0.0f;
+                    buffer[attrNames.linearIndex(node, AVG_CHILD_HEIGHT_NODE)] = Real{0};
             },
             [&](NodeId parentNodeId, NodeId childNodeId) {
                 const NodeId parent = detail::topologySlotOf(tree, parentNodeId);
                 const NodeId child = detail::topologySlotOf(tree, childNodeId);
 
-                bufferNumDesc[indexOfNumDescendants(parent)] += bufferNumDesc[indexOfNumDescendants(child)] + 1.0f;
+                bufferNumDesc[indexOfNumDescendants(parent)] += bufferNumDesc[indexOfNumDescendants(child)] + Real{1};
                 bufferNumLeafDesc[indexOfNumLeafDescendants(parent)] += bufferNumLeafDesc[indexOfNumLeafDescendants(child)];
 
-                float childHeight = bufferHeight[indexOfHeight(child)];
-                float& parentHeight = bufferHeight[indexOfHeight(parent)];
-                parentHeight = std::max(parentHeight, childHeight + 1.0f);
+                Real childHeight = bufferHeight[indexOfHeight(child)];
+                Real& parentHeight = bufferHeight[indexOfHeight(parent)];
+                parentHeight = std::max(parentHeight, childHeight + Real{1});
                 const int numChildren = tree.getNumChildren(parentNodeId);
 
                 if (computeBalance) {
-                    float& minChildHeight = minChildHeightStorage[static_cast<std::size_t>(parent)];
+                    Real& minChildHeight = minChildHeightStorage[static_cast<std::size_t>(parent)];
                     minChildHeight = std::min(minChildHeight, childHeight);
                 }
 
                 if (computeAvgChildHeight) {
-                    float& sumH = buffer[attrNames.linearIndex(parent, AVG_CHILD_HEIGHT_NODE)];
+                    Real& sumH = buffer[attrNames.linearIndex(parent, AVG_CHILD_HEIGHT_NODE)];
                     if (numChildren == 1)
                         sumH = childHeight;
                     else
@@ -171,27 +187,33 @@ public:
                 const NodeId idx = detail::topologySlotOf(tree, idxGlobalId);
 
                 if (computeLeafRatio) {
-                    float desc = bufferNumDesc[indexOfNumDescendants(idx)];
-                    float leafCount = bufferNumLeafDesc[indexOfNumLeafDescendants(idx)];
-                    buffer[attrNames.linearIndex(idx, LEAF_RATIO_NODE)] = desc > 0.0f ? leafCount / (desc + 1.0f) : 1.0f;
+                    Real desc = bufferNumDesc[indexOfNumDescendants(idx)];
+                    Real leafCount = bufferNumLeafDesc[indexOfNumLeafDescendants(idx)];
+                    buffer[attrNames.linearIndex(idx, LEAF_RATIO_NODE)] =
+                        desc > Real{0}
+                            ? ::mmcfilters::attributes::numeric::safeDivide(leafCount, desc + Real{1})
+                            : Real{1};
                 }
 
                 if (!tree.isLeaf(idxGlobalId)) {
                     if (computeBalance) {
-                        const float maxChildHeight = bufferHeight[indexOfHeight(idx)] - 1.0f;
-                        const float minChildHeight = minChildHeightStorage[static_cast<std::size_t>(idx)];
+                        const Real maxChildHeight = bufferHeight[indexOfHeight(idx)] - Real{1};
+                        const Real minChildHeight = minChildHeightStorage[static_cast<std::size_t>(idx)];
                         buffer[attrNames.linearIndex(idx, BALANCE_NODE)] = maxChildHeight - minChildHeight;
                     }
 
                     if (computeAvgChildHeight) {
-                        buffer[attrNames.linearIndex(idx, AVG_CHILD_HEIGHT_NODE)] = buffer[attrNames.linearIndex(idx, AVG_CHILD_HEIGHT_NODE)] /
-                                                                                     static_cast<float>(tree.getNumChildren(idxGlobalId));
+                        buffer[attrNames.linearIndex(idx, AVG_CHILD_HEIGHT_NODE)] =
+                            ::mmcfilters::attributes::numeric::safeDivide(
+                                buffer[attrNames.linearIndex(idx, AVG_CHILD_HEIGHT_NODE)],
+                                static_cast<Real>(tree.getNumChildren(idxGlobalId)));
                     }
                 }
             }
         );
     }
 
+public:
     /**
      * @brief Materializes topology descriptors for one-pixel unit supports.
      *
@@ -199,14 +221,15 @@ public:
      * leaf flags are true, depths/heights/child counts are zero, and leaf ratio
      * is one.
      */
-    void computeUnitAttributes(
-        const MorphologicalTree& tree,
-        AttributeAltitudeView,
-        std::span<const NodeId> unitProperParts,
-        std::span<float> buffer,
-        const AttributeNames& attrNames,
-        std::span<const Attribute> requestedAttributes) const override
+    template <std::floating_point Real>
+    static void computeUnitRows(const UnitAttributeComputeContext<Real>& context)
     {
+        const MorphologicalTree& tree = context.tree;
+        std::span<const NodeId> unitProperParts = context.unitProperParts;
+        std::span<Real> buffer = context.buffer;
+        const AttributeNames& attrNames = context.attrNames;
+        std::span<const Attribute> requestedAttributes = context.requestedAttributes;
+
         requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
 
         const bool computeHeight = requestsAttribute(requestedAttributes, HEIGHT_NODE);
@@ -230,40 +253,41 @@ public:
 
         for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
             if (computeHeight) {
-                buffer[attrNames.linearIndex(leafIndex, HEIGHT_NODE)] = 0.0f;
+                buffer[attrNames.linearIndex(leafIndex, HEIGHT_NODE)] = Real{0};
             }
             if (computeDepth) {
-                buffer[attrNames.linearIndex(leafIndex, DEPTH_NODE)] = 0.0f;
+                buffer[attrNames.linearIndex(leafIndex, DEPTH_NODE)] = Real{0};
             }
             if (computeIsLeaf) {
-                buffer[attrNames.linearIndex(leafIndex, IS_LEAF_NODE)] = 1.0f;
+                buffer[attrNames.linearIndex(leafIndex, IS_LEAF_NODE)] = Real{1};
             }
             if (computeIsRoot) {
-                buffer[attrNames.linearIndex(leafIndex, IS_ROOT_NODE)] = 1.0f;
+                buffer[attrNames.linearIndex(leafIndex, IS_ROOT_NODE)] = Real{1};
             }
             if (computeNumChildren) {
-                buffer[attrNames.linearIndex(leafIndex, NUM_CHILDREN_NODE)] = 0.0f;
+                buffer[attrNames.linearIndex(leafIndex, NUM_CHILDREN_NODE)] = Real{0};
             }
             if (computeNumSiblings) {
-                buffer[attrNames.linearIndex(leafIndex, NUM_SIBLINGS_NODE)] = 0.0f;
+                buffer[attrNames.linearIndex(leafIndex, NUM_SIBLINGS_NODE)] = Real{0};
             }
             if (computeNumDescendants) {
-                buffer[attrNames.linearIndex(leafIndex, NUM_DESCENDANTS_NODE)] = 0.0f;
+                buffer[attrNames.linearIndex(leafIndex, NUM_DESCENDANTS_NODE)] = Real{0};
             }
             if (computeNumLeafDescendants) {
-                buffer[attrNames.linearIndex(leafIndex, NUM_LEAF_DESCENDANTS_NODE)] = 1.0f;
+                buffer[attrNames.linearIndex(leafIndex, NUM_LEAF_DESCENDANTS_NODE)] = Real{1};
             }
             if (computeLeafRatio) {
-                buffer[attrNames.linearIndex(leafIndex, LEAF_RATIO_NODE)] = 1.0f;
+                buffer[attrNames.linearIndex(leafIndex, LEAF_RATIO_NODE)] = Real{1};
             }
             if (computeBalance) {
-                buffer[attrNames.linearIndex(leafIndex, BALANCE_NODE)] = 0.0f;
+                buffer[attrNames.linearIndex(leafIndex, BALANCE_NODE)] = Real{0};
             }
             if (computeAvgChildHeight) {
-                buffer[attrNames.linearIndex(leafIndex, AVG_CHILD_HEIGHT_NODE)] = 0.0f;
+                buffer[attrNames.linearIndex(leafIndex, AVG_CHILD_HEIGHT_NODE)] = Real{0};
             }
         }
     }
+
 };
 
 } // namespace mmcfilters::attributes::computers

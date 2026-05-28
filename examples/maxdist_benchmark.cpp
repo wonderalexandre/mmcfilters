@@ -61,7 +61,7 @@ auto timedValue(Fn&& fn) {
     return std::pair{std::move(value), static_cast<double>(micros) / 1000.0};
 }
 
-std::uint64_t checksumMaxDist(const WeightedMorphologicalTree<std::uint8_t>& tree, const ComputedAttributeData& data) {
+std::uint64_t checksumMaxDist(const WeightedMorphologicalTree<std::uint8_t>& tree, const ComputedAttributeData<float>& data) {
     const auto& attrNames = data.first;
     const auto& buffer = data.second;
 

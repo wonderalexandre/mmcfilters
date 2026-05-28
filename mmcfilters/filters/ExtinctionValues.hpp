@@ -8,6 +8,7 @@
 #include "../contours/ContoursComputedIncrementally.hpp"
 
 #include <algorithm>
+#include <concepts>
 #include <limits>
 #include <memory>
 #include <stack>
@@ -20,6 +21,7 @@ namespace mmcfilters {
 /**
  * @brief Record describing one regional extremum and its extinction value.
  */
+template <std::floating_point Real = float>
 struct RegionalExtremaNode {
     /// Leaf node that represents the regional extremum.
     NodeId leaf;
@@ -28,7 +30,7 @@ struct RegionalExtremaNode {
     NodeId cutoffNode;
 
     /// Attribute value at `cutoffNode`, or infinity-like sentinel at the root.
-    float extinction;
+    Real extinction;
 
     /**
      * @brief Builds one extinction-value record.
@@ -37,7 +39,7 @@ struct RegionalExtremaNode {
      * @param cutoffNode Node where the extremum stops being dominant.
      * @param extinction Attribute value associated with the cutoff.
      */
-    RegionalExtremaNode(NodeId leaf, NodeId cutoffNode, float extinction)
+    RegionalExtremaNode(NodeId leaf, NodeId cutoffNode, Real extinction)
         : leaf(leaf), cutoffNode(cutoffNode), extinction(extinction) {}
 };
 
@@ -55,14 +57,15 @@ struct RegionalExtremaNode {
  * operations reject use after the underlying topology changes.
  *
  * @tparam T Altitude type used by the weighted tree or weighted view.
+ * @tparam Real Attribute-buffer floating-point type.
  */
-template<AltitudeValue T>
+template<AltitudeValue T, std::floating_point Real = float>
 class ExtinctionValues {
 protected:
     /// @cond INTERNAL
     using AltitudeView = WeightedTreeView<T>;
 
-    std::vector<RegionalExtremaNode> regionalExtremaNodes;
+    std::vector<RegionalExtremaNode<Real>> regionalExtremaNodes;
     AltitudeView view_;
     const WeightedMorphologicalTree<T>* weighted_ = nullptr;
     const MorphologicalTree& tree;
@@ -76,13 +79,13 @@ protected:
         tree.requireMutationVersion(treeMutationVersion_, context);
     }
 
-    static void requireAttributePointer(const float* attr, const char* context) {
+    static void requireAttributePointer(const Real* attr, const char* context) {
         if (attr == nullptr) {
             throw std::invalid_argument(std::string(context) + " requires a non-null attribute buffer.");
         }
     }
 
-    static const float* requireAttributeBuffer(const MorphologicalTree& tree, const std::vector<float>& attr, const char* context) {
+    static const Real* requireAttributeBuffer(const MorphologicalTree& tree, const std::vector<Real>& attr, const char* context) {
         if (attr.size() != static_cast<std::size_t>(tree.getNumInternalNodeSlots())) {
             throw std::invalid_argument(std::string(context) + " attribute size must match the internal node slot count.");
         }
@@ -93,13 +96,13 @@ protected:
         return view.getAltitude(nodeId);
     }
 
-    void initialize(const float* attr) {
+    void initialize(const Real* attr) {
         requireAttributePointer(attr, "ExtinctionValues");
         std::vector<NodeId> leaves = this->tree.getLeaves();
         regionalExtremaNodes.reserve(leaves.size());
         std::vector<uint8_t> visited(this->tree.getNumInternalNodeSlots(), false);
         for (NodeId leafNodeId : leaves) {
-            float extinction = std::numeric_limits<float>::max();
+            Real extinction = std::numeric_limits<Real>::max();
             NodeId cutoffNodeId = leafNodeId;
             NodeId parentNodeId = this->tree.getNodeParent(cutoffNodeId);
             bool flag = true;
@@ -142,7 +145,7 @@ public:
      * @param attr Shared buffer with one scalar attribute value per internal
      * node slot.
      */
-    ExtinctionValues(const AltitudeView& view, const std::shared_ptr<float[]>& attr)
+    ExtinctionValues(const AltitudeView& view, const std::shared_ptr<Real[]>& attr)
         : ExtinctionValues(view, attr.get()) {}
 
     /**
@@ -151,7 +154,7 @@ public:
      * @throws std::invalid_argument If `attr` does not match the internal node
      * slot count of `view.topology()`.
      */
-    ExtinctionValues(const AltitudeView& view, const std::vector<float>& attr)
+    ExtinctionValues(const AltitudeView& view, const std::vector<Real>& attr)
         : ExtinctionValues(view, requireAttributeBuffer(view.topology(), attr, "ExtinctionValues")) {}
 
     /**
@@ -162,7 +165,7 @@ public:
      * @param attr Non-null buffer indexed by dense internal `NodeId`.
      * @throws std::invalid_argument If `attr` is null or if the view topology is stale.
      */
-    ExtinctionValues(const AltitudeView& view, const float* attr)
+    ExtinctionValues(const AltitudeView& view, const Real* attr)
         : view_(view),
           tree(view_.topology()),
           treeMutationVersion_(tree.getMutationVersion()) {
@@ -175,7 +178,7 @@ public:
      *
      * The weighted tree is borrowed; it must outlive this object.
      */
-    ExtinctionValues(const WeightedMorphologicalTree<T>& weighted, const std::shared_ptr<float[]>& attr)
+    ExtinctionValues(const WeightedMorphologicalTree<T>& weighted, const std::shared_ptr<Real[]>& attr)
         : ExtinctionValues(weighted.asView(), attr.get()) {
         weighted_ = &weighted;
     }
@@ -188,7 +191,7 @@ public:
      * @throws std::invalid_argument If `attr` does not match the internal node
      * slot count of the tree.
      */
-    ExtinctionValues(const WeightedMorphologicalTree<T>& weighted, const std::vector<float>& attr)
+    ExtinctionValues(const WeightedMorphologicalTree<T>& weighted, const std::vector<Real>& attr)
         : ExtinctionValues(weighted.asView(), attr) {
         weighted_ = &weighted;
     }
@@ -202,7 +205,7 @@ public:
      * reconstruction domain.
      * @param attr Non-null buffer indexed by dense internal `NodeId`.
      */
-    ExtinctionValues(const WeightedMorphologicalTree<T>& weighted, const float* attr)
+    ExtinctionValues(const WeightedMorphologicalTree<T>& weighted, const Real* attr)
         : ExtinctionValues(weighted.asView(), attr) {
         weighted_ = &weighted;
     }
@@ -214,13 +217,13 @@ public:
      * descending extinction ranking.
      * @param unweighted When true, contours receive rank-like scores; when
      * false, contours receive their extinction values.
-     * @return Float image on the original image domain.
+     * @return Floating-point image on the original image domain.
      * @throws std::logic_error If the tree topology changed after construction.
      */
-    [[nodiscard]] ImageFloatPtr saliencyMap(int extremaToKeep, bool unweighted = true) {
+    [[nodiscard]] ImagePtr<Real> saliencyMap(int extremaToKeep, bool unweighted = true) {
         requireStableTree("ExtinctionValues::saliencyMap");
         std::vector<uint8_t> keep(tree.getNumInternalNodeSlots(), false);
-        std::vector<float> extinctionByNode(tree.getNumInternalNodeSlots(), 0.0f);
+        std::vector<Real> extinctionByNode(tree.getNumInternalNodeSlots(), Real{0});
         std::vector<NodeId> keptNodes;
         const int leafToKeep = std::min(extremaToKeep, static_cast<int>(regionalExtremaNodes.size()));
         for (int i = 0; i < leafToKeep; ++i) {
@@ -229,10 +232,10 @@ public:
                 keptNodes.push_back(cutoffNode);
             }
             keep[cutoffNode] = true;
-            extinctionByNode[cutoffNode] = unweighted ? static_cast<float>(leafToKeep - i) : this->regionalExtremaNodes[i].extinction;
+            extinctionByNode[cutoffNode] = unweighted ? static_cast<Real>(leafToKeep - i) : this->regionalExtremaNodes[i].extinction;
         }
 
-        ImageFloatPtr imgOutputPtr = ImageFloat::create(tree.getNumRowsOfImage(), tree.getNumColsOfImage(), 0);
+        ImagePtr<Real> imgOutputPtr = Image<Real>::create(tree.getNumRowsOfImage(), tree.getNumColsOfImage(), Real{0});
         auto saliencyOutput = imgOutputPtr->rawData();
 
         auto contours = ContoursComputedIncrementally::extractCompactContours(tree);
@@ -299,7 +302,7 @@ public:
      * @return Mutable record vector kept by this object.
      * @throws std::logic_error If the tree topology changed after construction.
      */
-    std::vector<RegionalExtremaNode>& getExtinctionValues() {
+    std::vector<RegionalExtremaNode<Real>>& getExtinctionValues() {
         requireStableTree("ExtinctionValues::getExtinctionValues");
         return regionalExtremaNodes;
     }

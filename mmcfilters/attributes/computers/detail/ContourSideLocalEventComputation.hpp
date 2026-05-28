@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../ContourSideAttributeData.hpp"
+#include "ContourSideAttributeData.hpp"
 #include "../../../localEvents/EventEngine.hpp"
 
 #include <cstdint>
@@ -35,7 +35,7 @@ public:
      */
     using WindowOffset = local_events::EventEngine::WindowOffset;
 
-    using ContourSideCounts = ::mmcfilters::attributes::computers::ContourSideCounts;
+    using ContourSideCounts = ::mmcfilters::attributes::computers::detail::ContourSideCounts;
 
 private:
     /**

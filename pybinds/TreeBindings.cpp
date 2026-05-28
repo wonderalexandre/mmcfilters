@@ -16,6 +16,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <concepts>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -34,7 +35,6 @@ namespace py = pybind11;
 using namespace pybind11::literals;
 
 using UInt8InputArray = py::array;
-using FloatInputArray = py::array_t<float, py::array::c_style | py::array::forcecast>;
 
 namespace {
 
@@ -181,9 +181,10 @@ AttributeNames makeProjectionAttributeNames(const std::vector<Attribute>& attrib
     return AttributeNames(std::move(offsets));
 }
 
-py::array_t<float> projectNodeValuesToExportedHigraOf(
+template <std::floating_point Real>
+py::array projectNodeValuesToExportedHigraTyped(
     const WeightedMorphologicalTree<std::uint8_t>& weighted,
-    const FloatInputArray& nodeValues,
+    const py::array& nodeValues,
     py::object attributes) {
     const auto buffer = nodeValues.request();
     const int numNodeSlots = weighted.topology().getNumInternalNodeSlots();
@@ -193,10 +194,10 @@ py::array_t<float> projectNodeValuesToExportedHigraOf(
         PybindUtils::require1DArray(buffer, numNodeSlots, "nodeValues");
         const auto parsedAttributes = parseProjectionAttributes(attributes, 1);
         const AttributeNames attrNames = makeProjectionAttributeNames(parsedAttributes);
-        auto projected = AttributeComputation::projectNodeValuesToExportedHigra(
+        auto projected = AttributeComputation::projectNodeValuesToExportedHigra<Real>(
             weighted,
             attrNames,
-            std::span<const float>(static_cast<const float*>(buffer.ptr), static_cast<size_t>(numNodeSlots)));
+            std::span<const Real>(static_cast<const Real*>(buffer.ptr), static_cast<size_t>(numNodeSlots)));
         return PybindUtils::toNumpyOwned(std::move(projected), numHigraVertices);
     }
 
@@ -209,11 +210,11 @@ py::array_t<float> projectNodeValuesToExportedHigraOf(
         const int valuesPerNode = static_cast<int>(buffer.shape[1]);
         const auto parsedAttributes = parseProjectionAttributes(attributes, valuesPerNode);
         const AttributeNames attrNames = makeProjectionAttributeNames(parsedAttributes);
-        auto projected = AttributeComputation::projectNodeValuesToExportedHigra(
+        auto projected = AttributeComputation::projectNodeValuesToExportedHigra<Real>(
             weighted,
             attrNames,
-            std::span<const float>(
-                static_cast<const float*>(buffer.ptr),
+            std::span<const Real>(
+                static_cast<const Real*>(buffer.ptr),
                 static_cast<size_t>(numNodeSlots) * static_cast<size_t>(valuesPerNode)));
         return PybindUtils::toNumpyOwned2D(
             std::move(projected),
@@ -221,7 +222,26 @@ py::array_t<float> projectNodeValuesToExportedHigraOf(
             valuesPerNode);
     }
 
-    throw std::invalid_argument("nodeValues must be a 1D or 2D float array");
+    throw std::invalid_argument("nodeValues must be a 1D or 2D float32 or float64 array");
+}
+
+py::array projectNodeValuesToExportedHigraOf(
+    const WeightedMorphologicalTree<std::uint8_t>& weighted,
+    const py::array& nodeValues,
+    py::object attributes) {
+    py::array contiguous = py::array::ensure(nodeValues, py::array::c_style);
+    if (!contiguous) {
+        throw std::invalid_argument("nodeValues must be a 1D or 2D C-contiguous float32 or float64 array");
+    }
+
+    if (contiguous.dtype().is(py::dtype::of<float>())) {
+        return projectNodeValuesToExportedHigraTyped<float>(weighted, contiguous, std::move(attributes));
+    }
+    if (contiguous.dtype().is(py::dtype::of<double>())) {
+        return projectNodeValuesToExportedHigraTyped<double>(weighted, contiguous, std::move(attributes));
+    }
+
+    throw std::invalid_argument("nodeValues must be a 1D or 2D C-contiguous float32 or float64 array");
 }
 
 template <class TreeLike, class PyClass>

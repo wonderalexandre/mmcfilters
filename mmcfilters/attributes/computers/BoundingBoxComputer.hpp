@@ -1,11 +1,12 @@
 #pragma once
 
-#include "../AttributeComputer.hpp"
+#include "../detail/AttributeKernelSupport.hpp"
 #include "../../trees/detail/TreeTraversalDetail.hpp"
 #include "../../trees/MorphologicalTree.hpp"
 
 #include <algorithm>
 #include <array>
+#include <concepts>
 #include <cmath>
 #include <span>
 #include <vector>
@@ -91,27 +92,34 @@ private:
  * @note The computed box is purely image-domain based. It assumes that the
  * tree exposes a valid original image domain through `rows` and `cols`.
  */
-class BoundingBoxComputer : public AttributeComputer {
+class BoundingBoxComputer {
 public:
-    using AttributeComputer::compute;
-    using AttributeComputer::computeUnitAttributes;
 
     /**
      * @brief Returns the full family of bounding-box descriptors produced by
      * this computer.
      */
-    [[nodiscard]] std::vector<Attribute> attributes() const override {
+    [[nodiscard]] std::vector<Attribute> attributes() const {
         return {detail::BOUNDING_BOX_ATTRIBUTES.begin(), detail::BOUNDING_BOX_ATTRIBUTES.end()};
     }
 
     /**
      * @brief Computes the requested bounding-box descriptors.
      *
-     * The output buffer is indexed by dense internal node id. `RECTANGULARITY`
-     * requires dependency source `0` containing `AREA`; all other descriptors
-     * are computed directly from row-major proper-part coordinates.
+     * @details
+     * The output buffer is indexed by dense internal node id and interpreted by
+     * `context.attrNames`. `context.requestedAttributes` selects which columns
+     * are written. `RECTANGULARITY` requires an `AREA` dependency available
+     * through `context.dependencies`; all other descriptors are computed
+     * directly from row-major proper-part coordinates.
      */
-    void compute(const MorphologicalTree& tree, AttributeAltitudeView, std::span<float> buffer, const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes, std::span<const DependencySource> dependencySources) const override {
+    template <std::floating_point Real>
+    static void compute(const AttributeComputeContext<Real>& context) {
+        const MorphologicalTree& tree = context.tree;
+        std::span<Real> buffer = context.buffer;
+        const AttributeNames& attrNames = context.attrNames;
+        std::span<const Attribute> requestedAttributes = context.requestedAttributes;
+
         requireAttributeBufferShape(tree, buffer, attrNames);
 
         auto indexOfWidth  = [&](NodeId idx) { return attrNames.linearIndex(idx, BOX_WIDTH); };
@@ -129,8 +137,8 @@ public:
             return;
         }
 
-        const DependencySource* dependencyArea = request.needsAreaDependency()
-            ? &requireDependencySource(dependencySources, 0, AREA)
+        const DependencySourceT<Real>* dependencyArea = request.needsAreaDependency()
+            ? &context.dependencies.require(AREA)
             : nullptr;
         auto indexOfArea = [&](NodeId idx) { return dependencyArea->attrNames->linearIndex(idx, AREA); };
 
@@ -172,38 +180,37 @@ public:
             [&](NodeId nodeId) {
                 const NodeId idx = detail::boundingBoxSlotOf(tree, nodeId);
                 if(request.width)
-                    buffer[indexOfWidth(idx)]  = xmax[idx] - xmin[idx] + 1;
+                    buffer[indexOfWidth(idx)]  = static_cast<Real>(xmax[idx] - xmin[idx] + 1);
                 if(request.height)
-                    buffer[indexOfHeight(idx)] = ymax[idx] - ymin[idx] + 1;
+                    buffer[indexOfHeight(idx)] = static_cast<Real>(ymax[idx] - ymin[idx] + 1);
 
                 if(request.rectangularity) {
-                    float area = dependencyArea->buffer[indexOfArea(idx)];
-                    float width = xmax[idx] - xmin[idx] + 1;
-                    float height = ymax[idx] - ymin[idx] + 1;
-                    float denom = width * height;
-                    buffer[indexOfRectangularity(idx)] = (denom > 0.0f) ? (area / denom) : 0.0f;
+                    Real area = dependencyArea->buffer[indexOfArea(idx)];
+                    Real width = static_cast<Real>(xmax[idx] - xmin[idx] + 1);
+                    Real height = static_cast<Real>(ymax[idx] - ymin[idx] + 1);
+                    Real denom = width * height;
+                    buffer[indexOfRectangularity(idx)] =
+                        ::mmcfilters::attributes::numeric::safeDivide(area, denom);
                 }
                 if(request.ratioWH) {
-                    float width  = xmax[idx] - xmin[idx] + 1;
-                    float height = ymax[idx] - ymin[idx] + 1;
-                    if (width > 0 && height > 0) {
-                        buffer[indexOfRatioWH(idx)] = std::max(width, height) / std::min(width, height);
-                    } else {
-                        buffer[indexOfRatioWH(idx)] = 0.0f;
-                    }
+                    Real width  = static_cast<Real>(xmax[idx] - xmin[idx] + 1);
+                    Real height = static_cast<Real>(ymax[idx] - ymin[idx] + 1);
+                    buffer[indexOfRatioWH(idx)] =
+                        ::mmcfilters::attributes::numeric::safeDivide(std::max(width, height), std::min(width, height));
                 }
                 if(request.colMin)
-                    buffer[indexOfColMin(idx)]  = xmin[idx];
+                    buffer[indexOfColMin(idx)]  = static_cast<Real>(xmin[idx]);
                 if(request.colMax)
-                    buffer[indexOfColMax(idx)]  = xmax[idx];
+                    buffer[indexOfColMax(idx)]  = static_cast<Real>(xmax[idx]);
                 if(request.rowMin)
-                    buffer[indexOfRowMin(idx)]  = ymin[idx];
+                    buffer[indexOfRowMin(idx)]  = static_cast<Real>(ymin[idx]);
                 if(request.rowMax)
-                    buffer[indexOfRowMax(idx)]  = ymax[idx];
+                    buffer[indexOfRowMax(idx)]  = static_cast<Real>(ymax[idx]);
                 if(request.diagonalLength) {
-                    float width  = xmax[idx] - xmin[idx] + 1;
-                    float height = ymax[idx] - ymin[idx] + 1;
-                    buffer[indexOfDiagonalLength(idx)] = std::sqrt(width*width + height*height);
+                    Real width  = static_cast<Real>(xmax[idx] - xmin[idx] + 1);
+                    Real height = static_cast<Real>(ymax[idx] - ymin[idx] + 1);
+                    buffer[indexOfDiagonalLength(idx)] =
+                        ::mmcfilters::attributes::numeric::safeSqrt(width * width + height * height);
                 }
             }
         );
@@ -215,54 +222,50 @@ public:
      * A unit support has width/height `1`, rectangularity `1`, ratio `1`, and
      * min/max coordinates equal to the proper part coordinate.
      */
-    void computeUnitAttributes(
-        const MorphologicalTree& tree,
-        AttributeAltitudeView,
-        std::span<const NodeId> unitProperParts,
-        std::span<float> buffer,
-        const AttributeNames& attrNames,
-        std::span<const Attribute> requestedAttributes) const override
+    template <std::floating_point Real>
+    static void computeUnitRows(const UnitAttributeComputeContext<Real>& context)
     {
-        requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
+        requireUnitAttributeBufferShape(context.tree, context.unitProperParts, context.buffer, context.attrNames);
 
-        const detail::BoundingBoxRequest request = detail::BoundingBoxRequest::from(requestedAttributes);
+        const detail::BoundingBoxRequest request = detail::BoundingBoxRequest::from(context.requestedAttributes);
         if (!request.any()) {
             return;
         }
 
-        const int numCols = tree.getNumColsOfImage();
-        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
-            const NodeId properPart = unitProperParts[static_cast<size_t>(leafIndex)];
+        const int numCols = context.tree.getNumColsOfImage();
+        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitProperParts.size()); ++leafIndex) {
+            const NodeId properPart = context.unitProperParts[static_cast<size_t>(leafIndex)];
             const auto [row, col] = ImageUtils::to2D(properPart, numCols);
             if (request.width) {
-                buffer[attrNames.linearIndex(leafIndex, BOX_WIDTH)] = 1.0f;
+                context.buffer[context.attrNames.linearIndex(leafIndex, BOX_WIDTH)] = Real{1};
             }
             if (request.height) {
-                buffer[attrNames.linearIndex(leafIndex, BOX_HEIGHT)] = 1.0f;
+                context.buffer[context.attrNames.linearIndex(leafIndex, BOX_HEIGHT)] = Real{1};
             }
             if (request.rectangularity) {
-                buffer[attrNames.linearIndex(leafIndex, RECTANGULARITY)] = 1.0f;
+                context.buffer[context.attrNames.linearIndex(leafIndex, RECTANGULARITY)] = Real{1};
             }
             if (request.ratioWH) {
-                buffer[attrNames.linearIndex(leafIndex, RATIO_WH)] = 1.0f;
+                context.buffer[context.attrNames.linearIndex(leafIndex, RATIO_WH)] = Real{1};
             }
             if (request.colMin) {
-                buffer[attrNames.linearIndex(leafIndex, BOX_COL_MIN)] = static_cast<float>(col);
+                context.buffer[context.attrNames.linearIndex(leafIndex, BOX_COL_MIN)] = static_cast<Real>(col);
             }
             if (request.colMax) {
-                buffer[attrNames.linearIndex(leafIndex, BOX_COL_MAX)] = static_cast<float>(col);
+                context.buffer[context.attrNames.linearIndex(leafIndex, BOX_COL_MAX)] = static_cast<Real>(col);
             }
             if (request.rowMin) {
-                buffer[attrNames.linearIndex(leafIndex, BOX_ROW_MIN)] = static_cast<float>(row);
+                context.buffer[context.attrNames.linearIndex(leafIndex, BOX_ROW_MIN)] = static_cast<Real>(row);
             }
             if (request.rowMax) {
-                buffer[attrNames.linearIndex(leafIndex, BOX_ROW_MAX)] = static_cast<float>(row);
+                context.buffer[context.attrNames.linearIndex(leafIndex, BOX_ROW_MAX)] = static_cast<Real>(row);
             }
             if (request.diagonalLength) {
-                buffer[attrNames.linearIndex(leafIndex, DIAGONAL_LENGTH)] = std::sqrt(2.0f);
+                context.buffer[context.attrNames.linearIndex(leafIndex, DIAGONAL_LENGTH)] = std::sqrt(Real{2});
             }
         }
     }
+
 };
 
 } // namespace mmcfilters::attributes::computers

@@ -18,25 +18,23 @@ namespace py = pybind11;
 using namespace pybind11::literals;
 
 void initAttributeFilters(py::module_& m) {
-    using FloatArray = py::array_t<float, py::array::c_style | py::array::forcecast>;
-
     py::class_<AttributeFiltersPybind>(m, "AttributeFilters", py::module_local(false),
         R"doc(Attribute-based filtering operators over a weighted morphological tree.
 
-All attribute arrays are 1D `np.float32` buffers indexed by dense internal
-`NodeId`, C-contiguous, and with length `tree.numInternalNodeSlots`. Returned
-images are 2D NumPy arrays on the original image domain.)doc")
+Attribute arrays are 1D `np.float32` or `np.float64` buffers indexed by dense
+internal `NodeId`, C-contiguous, and with length `tree.numInternalNodeSlots`.
+Returned images are 2D NumPy arrays on the original image domain.)doc")
         .def(py::init<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>>(),
             "tree"_a,
             "Create filtering operators over a `WeightedMorphologicalTree`.")
-        .def("filteringMin", [](AttributeFiltersPybind& self, FloatArray attr, float threshold) {
-            return self.filteringByPruningMin(std::move(attr), threshold);
-        }, "attr"_a, "threshold"_a,
-            "Apply pruning-min filtering from a node-indexed float attribute buffer.")
-        .def("filteringMin", py::overload_cast<std::vector<bool>&>(&AttributeFiltersPybind::filteringByPruningMin),
+        .def("filteringByPruningMin", py::overload_cast<std::vector<bool>&>(&AttributeFiltersPybind::filteringByPruningMin),
             "criterion"_a,
             "Apply pruning-min filtering from a dense boolean keep/remove criterion.")
-        .def("filteringMax", py::overload_cast<std::vector<bool>&>(&AttributeFiltersPybind::filteringByPruningMax),
+        .def("filteringByPruningMin", [](AttributeFiltersPybind& self, py::array attr, double threshold) {
+            return self.filteringByPruningMin(std::move(attr), threshold);
+        }, "attr"_a, "threshold"_a,
+            "Apply pruning-min filtering from a node-indexed floating-point attribute buffer.")
+        .def("filteringByPruningMax", py::overload_cast<std::vector<bool>&>(&AttributeFiltersPybind::filteringByPruningMax),
             "criterion"_a,
             "Apply pruning-max filtering from a dense boolean keep/remove criterion.")
         .def("filteringDirectRule", py::overload_cast<std::vector<bool>&>(&AttributeFiltersPybind::filteringByDirectRule),
@@ -48,15 +46,15 @@ images are 2D NumPy arrays on the original image domain.)doc")
         .def("filteringSubtractiveScoreRule", py::overload_cast<std::vector<float>&>(&AttributeFiltersPybind::filteringBySubtractiveScoreRule),
             "scores"_a,
             "Apply subtractive-score filtering from dense per-node float scores.")
-        .def("filteringMax", [](AttributeFiltersPybind& self, FloatArray attr, float threshold) {
+        .def("filteringByPruningMax", [](AttributeFiltersPybind& self, py::array attr, double threshold) {
             return self.filteringByPruningMax(std::move(attr), threshold);
         }, "attr"_a, "threshold"_a,
-            "Apply pruning-max filtering from a node-indexed float attribute buffer.")
-        .def("filteringByExtinction", [](AttributeFiltersPybind& self, FloatArray attr, int leafToKeep) {
+            "Apply pruning-max filtering from a node-indexed floating-point attribute buffer.")
+        .def("filteringByExtinction", [](AttributeFiltersPybind& self, py::array attr, int leafToKeep) {
             return self.filteringByExtinctionValue(std::move(attr), leafToKeep);
         }, "attr"_a, "leafToKeep"_a,
             "Filter by keeping the strongest extinction extrema.")
-        .def("saliencyMapByExtinction", [](AttributeFiltersPybind& self, FloatArray attr, int leafToKeep, bool unweighted) {
+        .def("saliencyMapByExtinction", [](AttributeFiltersPybind& self, py::array attr, int leafToKeep, bool unweighted) {
             return self.saliencyMapByExtinctionValue(std::move(attr), leafToKeep, unweighted);
         }, "attr"_a, "leafToKeep"_a, "unweighted"_a = false,
             "Build a contour saliency map from extinction values.")
@@ -67,14 +65,12 @@ images are 2D NumPy arrays on the original image domain.)doc")
 }
 
 void initExtinctionValues(py::module_& m) {
-    using FloatArray = py::array_t<float, py::array::c_style | py::array::forcecast>;
-
     py::class_<ExtinctionValuesPybind>(m, "ExtinctionValues", py::module_local(false),
         R"doc(Extinction value utilities over a weighted morphological tree.
 
-The constructor attribute array must be 1D `np.float32`, C-contiguous, and
-indexed by dense internal `NodeId`.)doc")
-        .def(py::init<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, FloatArray>(),
+The constructor attribute array must be 1D `np.float32` or `np.float64`,
+C-contiguous, and indexed by dense internal `NodeId`.)doc")
+        .def(py::init<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, py::array>(),
             "tree"_a,
             "attribute"_a,
             "Compute extinction values from a node-indexed attribute buffer.")
@@ -88,18 +84,17 @@ indexed by dense internal `NodeId`.)doc")
 }
 
 void initUltimateAttributeOpening(py::module_& m) {
-    using FloatArray = py::array_t<float, py::array::c_style | py::array::forcecast>;
-
     py::class_<UltimateAttributeOpeningPybind>(m, "UltimateAttributeOpening", py::module_local(false),
         R"doc(Ultimate Attribute Opening over a weighted morphological tree.
 
-The constructor attribute array must be 1D `np.float32`, C-contiguous, and
-indexed by dense internal `NodeId`. Call `execute` before reading output images.)doc")
-        .def(py::init<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, FloatArray>(),
+The constructor attribute array must be 1D `np.float32` or `np.float64`,
+C-contiguous, and indexed by dense internal `NodeId`. Call `execute` before
+reading output images.)doc")
+        .def(py::init<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, py::array>(),
             "tree"_a,
             "attr"_a,
             "Create a UAO computation from a weighted tree and increasing attribute buffer.")
-        .def("execute", py::overload_cast<int>(&UltimateAttributeOpeningPybind::execute),
+        .def("execute", &UltimateAttributeOpeningPybind::execute,
             "maxCriterion"_a,
             "Run UAO using all nodes as selectable candidates.")
         .def("executeWithMSER", &UltimateAttributeOpeningPybind::executeWithMSER,

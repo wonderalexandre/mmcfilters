@@ -9,6 +9,7 @@
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
 #include <algorithm>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -36,28 +37,29 @@ class AttributeComputationPybind {
         return topologyOf(*tree).getNodeIdSpaceSize(outputSpace);
     }
 
-    template <class TreePtr>
-    static py::array_t<float> computeSingleAttributeImpl(TreePtr tree, Attribute attribute, NodeIdSpace outputSpace) {
-        auto [attributeNames, buffer] = AttributeComputation::computeSingleAttribute(
-            *tree,
-            attribute,
-            outputSpace);
-        return PybindUtils::toNumpyOwned(std::move(buffer), outputSize(tree, outputSpace));
+    static py::dict makeAttributeLayoutDict(const AttributeNames& attributeNames) {
+        std::vector<std::string> keys;
+        std::vector<int> values;
+        for (const auto& pair : attributeNames.indexMap) {
+            Attribute attribute = pair.first;
+            int offset = pair.second;
+
+            keys.push_back(attributeNames.toString(attribute));
+            values.push_back(offset);
+        }
+
+        std::vector<size_t> indices(values.size());
+        std::iota(indices.begin(), indices.end(), 0);
+        std::sort(indices.begin(), indices.end(), [&values](size_t i1, size_t i2) { return values[i1] < values[i2]; });
+
+        py::dict dict;
+        for (size_t i = 0; i < indices.size(); ++i) {
+            dict[py::str(keys[indices[i]])] = values[indices[i]];
+        }
+        return dict;
     }
 
-    template <class TreePtr>
-    static std::pair<py::dict, py::array_t<float>> computeSingleAttributeWithDeltaImpl(TreePtr tree, Attribute attribute, int delta, std::string padding, NodeIdSpace outputSpace) {
-        auto [attributeNames, buffer] = AttributeComputation::computeSingleAttributeWithDelta(
-            *tree,
-            attribute,
-            AltitudeDiff<std::uint8_t>{1},
-            delta,
-            std::move(padding),
-            outputSpace);
-
-        const int numAttribute = attributeNames.NUM_ATTRIBUTES;
-        const int n = outputSize(tree, outputSpace);
-
+    static py::dict makeDeltaAttributeLayoutDict(const AttributeNamesWithDelta& attributeNames) {
         std::vector<std::string> keys;
         std::vector<int> values;
 
@@ -76,97 +78,107 @@ class AttributeComputationPybind {
         for (size_t i = 0; i < indices.size(); ++i) {
             dict[py::str(keys[indices[i]])] = values[indices[i]];
         }
-
-        return std::make_pair(dict, PybindUtils::toNumpyOwned2D(std::move(buffer), n, numAttribute));
+        return dict;
     }
 
-    template <class TreePtr>
-    static py::array_t<float> computeAttributeMappingImpl(TreePtr tree, Attribute attribute) {
-        auto imgFloatPtr = AttributeComputation::computeAttributeMapping(*tree, attribute);
-        return PybindUtils::toNumpy(imgFloatPtr);
-    }
-
-    template <class TreePtr>
-    static std::pair<py::dict, py::array_t<float>> computeAttributesFromListImpl(TreePtr tree, const std::vector<AttributeOrGroup>& attributes, NodeIdSpace outputSpace) {
-        auto [attributeNames, buffer] = AttributeComputation::computeAttributes(
-            *tree,
-            attributes,
-            outputSpace);
-
-        const int numAttribute = attributeNames.NUM_ATTRIBUTES;
-        const int n = outputSize(tree, outputSpace);
-
-        std::vector<std::string> keys;
-        std::vector<int> values;
-        for (const auto& pair : attributeNames.indexMap) {
-            Attribute attribute = pair.first;
-            int offset = pair.second;
-
-            keys.push_back(attributeNames.toString(attribute));
-            values.push_back(offset);
-        }
-
-        std::vector<size_t> indices(values.size());
-        std::iota(indices.begin(), indices.end(), 0);
-        std::sort(indices.begin(), indices.end(), [&values](size_t i1, size_t i2) { return values[i1] < values[i2]; });
-
-        py::dict dict;
-        for (size_t i = 0; i < indices.size(); ++i) {
-            dict[py::str(keys[indices[i]])] = values[indices[i]];
-        }
-
-        return std::make_pair(dict, PybindUtils::toNumpyOwned2D(std::move(buffer), n, numAttribute));
-    }
-
-    static py::array_t<float> computeSingleTopologyAttributeImpl(MorphologicalTreePybindPtr tree, Attribute attribute, NodeIdSpace outputSpace) {
-        auto [attributeNames, buffer] = AttributeComputation::computeSingleTopologyAttribute(
+    template <std::floating_point Real, class TreePtr>
+    static py::array_t<Real> computeSingleAttributeTyped(TreePtr tree, Attribute attribute, NodeIdSpace outputSpace) {
+        auto [attributeNames, buffer] = AttributeComputation::computeSingleAttribute<Real>(
             *tree,
             attribute,
             outputSpace);
         return PybindUtils::toNumpyOwned(std::move(buffer), outputSize(tree, outputSpace));
     }
 
-    static py::array_t<float> computeSingleTopologyAttributeImpl(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree, Attribute attribute, NodeIdSpace outputSpace) {
-        auto [attributeNames, buffer] = AttributeComputation::computeSingleTopologyAttribute(
+    template <class TreePtr>
+    static py::array computeSingleAttributeImpl(TreePtr tree, Attribute attribute, NodeIdSpace outputSpace, py::object dtype) {
+        if (PybindUtils::parseFloatingDType(std::move(dtype)) == PybindUtils::FloatingDType::Float64) {
+            return computeSingleAttributeTyped<double>(std::move(tree), attribute, outputSpace);
+        }
+        return computeSingleAttributeTyped<float>(std::move(tree), attribute, outputSpace);
+    }
+
+    template <std::floating_point Real, class TreePtr>
+    static std::pair<py::dict, py::array> computeSingleAttributeWithDeltaTyped(TreePtr tree, Attribute attribute, int delta, std::string padding, NodeIdSpace outputSpace) {
+        auto [attributeNames, buffer] = AttributeComputation::computeSingleAttributeWithDelta<Real>(
+            *tree,
+            attribute,
+            AltitudeDiff<std::uint8_t>{1},
+            delta,
+            std::move(padding),
+            outputSpace);
+
+        const int numAttribute = attributeNames.NUM_ATTRIBUTES;
+        const int n = outputSize(tree, outputSpace);
+        return std::make_pair(
+            makeDeltaAttributeLayoutDict(attributeNames),
+            PybindUtils::toNumpyOwned2D(std::move(buffer), n, numAttribute));
+    }
+
+    template <class TreePtr>
+    static std::pair<py::dict, py::array> computeSingleAttributeWithDeltaImpl(TreePtr tree, Attribute attribute, int delta, std::string padding, NodeIdSpace outputSpace, py::object dtype) {
+        if (PybindUtils::parseFloatingDType(std::move(dtype)) == PybindUtils::FloatingDType::Float64) {
+            return computeSingleAttributeWithDeltaTyped<double>(std::move(tree), attribute, delta, std::move(padding), outputSpace);
+        }
+        return computeSingleAttributeWithDeltaTyped<float>(std::move(tree), attribute, delta, std::move(padding), outputSpace);
+    }
+
+    template <std::floating_point Real, class TreePtr>
+    static py::array_t<Real> computeAttributeMappingTyped(TreePtr tree, Attribute attribute) {
+        auto imagePtr = AttributeComputation::computeAttributeMapping<Real>(*tree, attribute);
+        return PybindUtils::toNumpy(imagePtr);
+    }
+
+    template <class TreePtr>
+    static py::array computeAttributeMappingImpl(TreePtr tree, Attribute attribute, py::object dtype) {
+        if (PybindUtils::parseFloatingDType(std::move(dtype)) == PybindUtils::FloatingDType::Float64) {
+            return computeAttributeMappingTyped<double>(std::move(tree), attribute);
+        }
+        return computeAttributeMappingTyped<float>(std::move(tree), attribute);
+    }
+
+    template <std::floating_point Real, class TreePtr>
+    static std::pair<py::dict, py::array> computeAttributesFromListTyped(TreePtr tree, const std::vector<AttributeOrGroup>& attributes, NodeIdSpace outputSpace) {
+        auto [attributeNames, buffer] = AttributeComputation::computeAttributes<Real>(
+            *tree,
+            attributes,
+            outputSpace);
+
+        const int numAttribute = attributeNames.NUM_ATTRIBUTES;
+        const int n = outputSize(tree, outputSpace);
+        return std::make_pair(
+            makeAttributeLayoutDict(attributeNames),
+            PybindUtils::toNumpyOwned2D(std::move(buffer), n, numAttribute));
+    }
+
+    template <class TreePtr>
+    static std::pair<py::dict, py::array> computeAttributesFromListImpl(TreePtr tree, const std::vector<AttributeOrGroup>& attributes, NodeIdSpace outputSpace, py::object dtype) {
+        if (PybindUtils::parseFloatingDType(std::move(dtype)) == PybindUtils::FloatingDType::Float64) {
+            return computeAttributesFromListTyped<double>(std::move(tree), attributes, outputSpace);
+        }
+        return computeAttributesFromListTyped<float>(std::move(tree), attributes, outputSpace);
+    }
+
+    template <std::floating_point Real, class TreePtr>
+    static py::array_t<Real> computeSingleTopologyAttributeTyped(TreePtr tree, Attribute attribute, NodeIdSpace outputSpace) {
+        auto [attributeNames, buffer] = AttributeComputation::computeSingleTopologyAttribute<Real>(
             *tree,
             attribute,
             outputSpace);
         return PybindUtils::toNumpyOwned(std::move(buffer), outputSize(tree, outputSpace));
     }
 
-    static std::pair<py::dict, py::array_t<float>> computeTopologyAttributesFromListImpl(MorphologicalTreePybindPtr tree, const std::vector<AttributeOrGroup>& attributes, NodeIdSpace outputSpace) {
-        auto [attributeNames, buffer] = AttributeComputation::computeTopologyAttributes(
-            *tree,
-            attributes,
-            outputSpace);
-
-        const int numAttribute = attributeNames.NUM_ATTRIBUTES;
-        const int n = outputSize(tree, outputSpace);
-
-        std::vector<std::string> keys;
-        std::vector<int> values;
-        for (const auto& pair : attributeNames.indexMap) {
-            Attribute attribute = pair.first;
-            int offset = pair.second;
-
-            keys.push_back(attributeNames.toString(attribute));
-            values.push_back(offset);
+    template <class TreePtr>
+    static py::array computeSingleTopologyAttributeImpl(TreePtr tree, Attribute attribute, NodeIdSpace outputSpace, py::object dtype) {
+        if (PybindUtils::parseFloatingDType(std::move(dtype)) == PybindUtils::FloatingDType::Float64) {
+            return computeSingleTopologyAttributeTyped<double>(std::move(tree), attribute, outputSpace);
         }
-
-        std::vector<size_t> indices(values.size());
-        std::iota(indices.begin(), indices.end(), 0);
-        std::sort(indices.begin(), indices.end(), [&values](size_t i1, size_t i2) { return values[i1] < values[i2]; });
-
-        py::dict dict;
-        for (size_t i = 0; i < indices.size(); ++i) {
-            dict[py::str(keys[indices[i]])] = values[indices[i]];
-        }
-
-        return std::make_pair(dict, PybindUtils::toNumpyOwned2D(std::move(buffer), n, numAttribute));
+        return computeSingleTopologyAttributeTyped<float>(std::move(tree), attribute, outputSpace);
     }
 
-    static std::pair<py::dict, py::array_t<float>> computeTopologyAttributesFromListImpl(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree, const std::vector<AttributeOrGroup>& attributes, NodeIdSpace outputSpace) {
-        auto [attributeNames, buffer] = AttributeComputation::computeTopologyAttributes(
+    template <std::floating_point Real, class TreePtr>
+    static std::pair<py::dict, py::array> computeTopologyAttributesFromListTyped(TreePtr tree, const std::vector<AttributeOrGroup>& attributes, NodeIdSpace outputSpace) {
+        auto [attributeNames, buffer] = AttributeComputation::computeTopologyAttributes<Real>(
             *tree,
             attributes,
             outputSpace);
@@ -174,26 +186,17 @@ class AttributeComputationPybind {
         const int numAttribute = attributeNames.NUM_ATTRIBUTES;
         const int n = outputSize(tree, outputSpace);
 
-        std::vector<std::string> keys;
-        std::vector<int> values;
-        for (const auto& pair : attributeNames.indexMap) {
-            Attribute attribute = pair.first;
-            int offset = pair.second;
+        return std::make_pair(
+            makeAttributeLayoutDict(attributeNames),
+            PybindUtils::toNumpyOwned2D(std::move(buffer), n, numAttribute));
+    }
 
-            keys.push_back(attributeNames.toString(attribute));
-            values.push_back(offset);
+    template <class TreePtr>
+    static std::pair<py::dict, py::array> computeTopologyAttributesFromListImpl(TreePtr tree, const std::vector<AttributeOrGroup>& attributes, NodeIdSpace outputSpace, py::object dtype) {
+        if (PybindUtils::parseFloatingDType(std::move(dtype)) == PybindUtils::FloatingDType::Float64) {
+            return computeTopologyAttributesFromListTyped<double>(std::move(tree), attributes, outputSpace);
         }
-
-        std::vector<size_t> indices(values.size());
-        std::iota(indices.begin(), indices.end(), 0);
-        std::sort(indices.begin(), indices.end(), [&values](size_t i1, size_t i2) { return values[i1] < values[i2]; });
-
-        py::dict dict;
-        for (size_t i = 0; i < indices.size(); ++i) {
-            dict[py::str(keys[indices[i]])] = values[indices[i]];
-        }
-
-        return std::make_pair(dict, PybindUtils::toNumpyOwned2D(std::move(buffer), n, numAttribute));
+        return computeTopologyAttributesFromListTyped<float>(std::move(tree), attributes, outputSpace);
     }
 
 public:
@@ -201,36 +204,36 @@ public:
         return AttributeNames::describe(attribute);
     }
 
-    static py::array_t<float> computeSingleAttribute(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree, Attribute attribute, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE){
-        return computeSingleAttributeImpl(std::move(tree), attribute, outputSpace);
+    static py::array computeSingleAttribute(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree, Attribute attribute, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE, py::object dtype = py::none()){
+        return computeSingleAttributeImpl(std::move(tree), attribute, outputSpace, std::move(dtype));
     }
 
-    static std::pair<py::dict, py::array_t<float>> computeSingleAttributeWithDelta(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree, Attribute attribute, int delta, std::string padding = "last-padding", NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE) {
-        return computeSingleAttributeWithDeltaImpl(std::move(tree), attribute, delta, std::move(padding), outputSpace);
+    static std::pair<py::dict, py::array> computeSingleAttributeWithDelta(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree, Attribute attribute, int delta, std::string padding = "last-padding", NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE, py::object dtype = py::none()) {
+        return computeSingleAttributeWithDeltaImpl(std::move(tree), attribute, delta, std::move(padding), outputSpace, std::move(dtype));
     }
 
-    static py::array_t<float> computeAttributeMapping(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree, Attribute attribute) {
-        return computeAttributeMappingImpl(std::move(tree), attribute);
+    static py::array computeAttributeMapping(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree, Attribute attribute, py::object dtype = py::none()) {
+        return computeAttributeMappingImpl(std::move(tree), attribute, std::move(dtype));
     }
 
-    static std::pair<py::dict, py::array_t<float>> computeAttributesFromList(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree, const std::vector<AttributeOrGroup>& attributes, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE) {
-        return computeAttributesFromListImpl(std::move(tree), attributes, outputSpace);
+    static std::pair<py::dict, py::array> computeAttributesFromList(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree, const std::vector<AttributeOrGroup>& attributes, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE, py::object dtype = py::none()) {
+        return computeAttributesFromListImpl(std::move(tree), attributes, outputSpace, std::move(dtype));
     }
 
-    static py::array_t<float> computeSingleTopologyAttribute(MorphologicalTreePybindPtr tree, Attribute attribute, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE) {
-        return computeSingleTopologyAttributeImpl(std::move(tree), attribute, outputSpace);
+    static py::array computeSingleTopologyAttribute(MorphologicalTreePybindPtr tree, Attribute attribute, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE, py::object dtype = py::none()) {
+        return computeSingleTopologyAttributeImpl(std::move(tree), attribute, outputSpace, std::move(dtype));
     }
 
-    static py::array_t<float> computeSingleTopologyAttribute(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree, Attribute attribute, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE) {
-        return computeSingleTopologyAttributeImpl(std::move(tree), attribute, outputSpace);
+    static py::array computeSingleTopologyAttribute(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree, Attribute attribute, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE, py::object dtype = py::none()) {
+        return computeSingleTopologyAttributeImpl(std::move(tree), attribute, outputSpace, std::move(dtype));
     }
 
-    static std::pair<py::dict, py::array_t<float>> computeTopologyAttributesFromList(MorphologicalTreePybindPtr tree, const std::vector<AttributeOrGroup>& attributes, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE) {
-        return computeTopologyAttributesFromListImpl(std::move(tree), attributes, outputSpace);
+    static std::pair<py::dict, py::array> computeTopologyAttributesFromList(MorphologicalTreePybindPtr tree, const std::vector<AttributeOrGroup>& attributes, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE, py::object dtype = py::none()) {
+        return computeTopologyAttributesFromListImpl(std::move(tree), attributes, outputSpace, std::move(dtype));
     }
 
-    static std::pair<py::dict, py::array_t<float>> computeTopologyAttributesFromList(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree, const std::vector<AttributeOrGroup>& attributes, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE) {
-        return computeTopologyAttributesFromListImpl(std::move(tree), attributes, outputSpace);
+    static std::pair<py::dict, py::array> computeTopologyAttributesFromList(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree, const std::vector<AttributeOrGroup>& attributes, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE, py::object dtype = py::none()) {
+        return computeTopologyAttributesFromListImpl(std::move(tree), attributes, outputSpace, std::move(dtype));
     }
 
 };

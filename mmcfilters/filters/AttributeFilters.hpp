@@ -6,7 +6,7 @@
 #include "../trees/WeightedMorphologicalTree.hpp"
 #include "../trees/WeightedTreeView.hpp"
 #include "../trees/detail/TreeTraversalDetail.hpp"
-#include "ComputerMSER.hpp"
+#include "MSERComputer.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -47,7 +47,8 @@ protected:
         tree.requireMutationVersion(treeMutationVersion_, context);
     }
 
-    static void requireAttributePointer(const float* attribute, const char* context) {
+    template <std::floating_point Real>
+    static void requireAttributePointer(const Real* attribute, const char* context) {
         if (attribute == nullptr) {
             throw std::invalid_argument(std::string(context) + " requires a non-null attribute buffer.");
         }
@@ -227,7 +228,8 @@ protected:
         }
     }
 
-    static void filteringByPruningMinAttributeImpl(AltitudeView view, const float* attribute, float threshold, ImagePtr<T> imgOutputPtr) {
+    template <std::floating_point Real>
+    static void filteringByPruningMinAttributeImpl(AltitudeView view, const Real* attribute, Real threshold, ImagePtr<T> imgOutputPtr) {
         const char* context = "AttributeFilters::filteringByPruningMin";
         view.requireTopologyUnchanged(context);
         const MorphologicalTree& tree = view.topology();
@@ -250,7 +252,8 @@ protected:
         }
     }
 
-    static void filteringByPruningMaxAttributeImpl(AltitudeView view, const float* attribute, float threshold, ImagePtr<T> imgOutputPtr) {
+    template <std::floating_point Real>
+    static void filteringByPruningMaxAttributeImpl(AltitudeView view, const Real* attribute, Real threshold, ImagePtr<T> imgOutputPtr) {
         const char* context = "AttributeFilters::filteringByPruningMax";
         view.requireTopologyUnchanged(context);
         const MorphologicalTree& tree = view.topology();
@@ -287,26 +290,27 @@ protected:
         }
     }
 
-    static std::vector<bool> getAdaptiveCriterionImpl(const WeightedMorphologicalTree<T>& weighted, const float* attribute, float threshold, AltitudeDiff<T> delta) {
+    template <std::floating_point Real>
+    static std::vector<bool> getAdaptiveCriterionImpl(const WeightedMorphologicalTree<T>& weighted, const Real* attribute, Real threshold, AltitudeDiff<T> delta) {
         requireAttributePointer(attribute, "AttributeFilters::getAdaptiveCriterion");
 
         const MorphologicalTree& tree = weighted.topology();
-        ComputerMSER<T> mser(weighted);
+        MSERComputer<T, Real> mser(weighted);
         std::vector<uint8_t> isMSER = mser.computeMSER(delta);
         (void)isMSER;
 
-        std::vector<float> stability = mser.getStabilities();
+        std::vector<Real> stability = mser.getStabilities();
         std::vector<bool> isPruned(tree.getNumInternalNodeSlots(), false);
         for (NodeId nodeId : tree.getAliveNodeIds()) {
             if (attribute[nodeId] < threshold) {
                 if (std::isnan(stability[nodeId])) {
                     isPruned[nodeId] = true;
                 } else {
-                    const float max = stability[nodeId];
+                    const Real max = stability[nodeId];
                     const NodeId indexDescMaxStability = mser.descendantWithMaxStability(nodeId);
                     const NodeId indexAscMaxStability = mser.ascendantWithMaxStability(nodeId);
-                    const float maxDesc = stability[indexDescMaxStability];
-                    const float maxAnc = stability[indexAscMaxStability];
+                    const Real maxDesc = stability[indexDescMaxStability];
+                    const Real maxAnc = stability[indexAscMaxStability];
 
                     if (max >= maxDesc && max >= maxAnc) {
                         isPruned[nodeId] = true;
@@ -324,7 +328,7 @@ protected:
     static std::vector<bool> getAdaptiveCriterionImpl(const WeightedMorphologicalTree<T>& weighted, std::vector<bool>& criterion, AltitudeDiff<T> delta) {
         const MorphologicalTree& tree = weighted.topology();
         requireCriterionSize(tree, criterion, "AttributeFilters::getAdaptiveCriterion");
-        ComputerMSER<T> mser(weighted);
+        MSERComputer<T> mser(weighted);
         std::vector<uint8_t> isMSER = mser.computeMSER(delta);
         (void)isMSER;
 
@@ -406,14 +410,16 @@ public:
      * subtrees are reconstructed at the ancestor level selected by the pruning-min
      * rule.
      */
-    [[nodiscard]] ImagePtr<T> filteringByPruningMin(const std::shared_ptr<float[]>& attr, float threshold) {
+    template <std::floating_point Real>
+    [[nodiscard]] ImagePtr<T> filteringByPruningMin(const std::shared_ptr<Real[]>& attr, Real threshold) {
         return filteringByPruningMin(attr.get(), threshold);
     }
 
     /**
      * @brief Applies pruning-min filtering from a raw internal-node attribute buffer.
      */
-    [[nodiscard]] ImagePtr<T> filteringByPruningMin(const float* attr, float threshold) {
+    template <std::floating_point Real>
+    [[nodiscard]] ImagePtr<T> filteringByPruningMin(const Real* attr, Real threshold) {
         requireStableTree("AttributeFilters::filteringByPruningMin");
         assert(attr != nullptr);
         ImagePtr<T> imgOutput = Image<T>::create(this->tree.getNumRowsOfImage(), this->tree.getNumColsOfImage());
@@ -427,14 +433,16 @@ public:
      * Nodes with attribute values above `threshold` are kept, and fully rejected
      * subtrees are reconstructed at their own subtree levels.
      */
-    [[nodiscard]] ImagePtr<T> filteringByPruningMax(const std::shared_ptr<float[]>& attr, float threshold) {
+    template <std::floating_point Real>
+    [[nodiscard]] ImagePtr<T> filteringByPruningMax(const std::shared_ptr<Real[]>& attr, Real threshold) {
         return filteringByPruningMax(attr.get(), threshold);
     }
 
     /**
      * @brief Applies pruning-max filtering from a raw internal-node attribute buffer.
      */
-    [[nodiscard]] ImagePtr<T> filteringByPruningMax(const float* attr, float threshold) {
+    template <std::floating_point Real>
+    [[nodiscard]] ImagePtr<T> filteringByPruningMax(const Real* attr, Real threshold) {
         requireStableTree("AttributeFilters::filteringByPruningMax");
         assert(attr != nullptr);
         ImagePtr<T> imgOutput = Image<T>::create(this->tree.getNumRowsOfImage(), this->tree.getNumColsOfImage());
@@ -574,70 +582,80 @@ public:
     /**
      * @brief Writes pruning-min filtering from an owned attribute buffer into an output image.
      */
-    static void filteringByPruningMin(const WeightedTreeView<T>& weighted, const std::shared_ptr<float[]>& attribute, float threshold, ImagePtr<T> imgOutputPtr) {
+    template <std::floating_point Real>
+    static void filteringByPruningMin(const WeightedTreeView<T>& weighted, const std::shared_ptr<Real[]>& attribute, Real threshold, ImagePtr<T> imgOutputPtr) {
         filteringByPruningMin(weighted, attribute.get(), threshold, imgOutputPtr);
     }
 
     /**
      * @brief Writes pruning-min filtering from a weighted owner and owned attribute buffer.
      */
-    static void filteringByPruningMin(const WeightedMorphologicalTree<T>& weighted, const std::shared_ptr<float[]>& attribute, float threshold, ImagePtr<T> imgOutputPtr) {
+    template <std::floating_point Real>
+    static void filteringByPruningMin(const WeightedMorphologicalTree<T>& weighted, const std::shared_ptr<Real[]>& attribute, Real threshold, ImagePtr<T> imgOutputPtr) {
         filteringByPruningMin(weighted.asView(), attribute.get(), threshold, imgOutputPtr);
     }
 
     /**
      * @brief Writes pruning-min filtering from a raw attribute buffer into an output image.
      */
-    static void filteringByPruningMin(const WeightedTreeView<T>& weighted, const float* attribute, float threshold, ImagePtr<T> imgOutputPtr) {
+    template <std::floating_point Real>
+    static void filteringByPruningMin(const WeightedTreeView<T>& weighted, const Real* attribute, Real threshold, ImagePtr<T> imgOutputPtr) {
         filteringByPruningMinAttributeImpl(weighted, attribute, threshold, imgOutputPtr);
     }
 
     /**
      * @brief Writes pruning-min filtering from a weighted owner and raw attribute buffer.
      */
-    static void filteringByPruningMin(const WeightedMorphologicalTree<T>& weighted, const float* attribute, float threshold, ImagePtr<T> imgOutputPtr) {
+    template <std::floating_point Real>
+    static void filteringByPruningMin(const WeightedMorphologicalTree<T>& weighted, const Real* attribute, Real threshold, ImagePtr<T> imgOutputPtr) {
         filteringByPruningMin(weighted.asView(), attribute, threshold, imgOutputPtr);
     }
 
     /**
      * @brief Writes pruning-max filtering from an owned attribute buffer into an output image.
      */
-    static void filteringByPruningMax(const WeightedTreeView<T>& weighted, const std::shared_ptr<float[]>& attribute, float threshold, ImagePtr<T> imgOutputPtr) {
+    template <std::floating_point Real>
+    static void filteringByPruningMax(const WeightedTreeView<T>& weighted, const std::shared_ptr<Real[]>& attribute, Real threshold, ImagePtr<T> imgOutputPtr) {
         filteringByPruningMax(weighted, attribute.get(), threshold, imgOutputPtr);
     }
 
     /**
      * @brief Writes pruning-max filtering from a weighted owner and owned attribute buffer.
      */
-    static void filteringByPruningMax(const WeightedMorphologicalTree<T>& weighted, const std::shared_ptr<float[]>& attribute, float threshold, ImagePtr<T> imgOutputPtr) {
+    template <std::floating_point Real>
+    static void filteringByPruningMax(const WeightedMorphologicalTree<T>& weighted, const std::shared_ptr<Real[]>& attribute, Real threshold, ImagePtr<T> imgOutputPtr) {
         filteringByPruningMax(weighted.asView(), attribute.get(), threshold, imgOutputPtr);
     }
 
     /**
      * @brief Writes pruning-max filtering from a raw attribute buffer into an output image.
      */
-    static void filteringByPruningMax(const WeightedTreeView<T>& weighted, const float* attribute, float threshold, ImagePtr<T> imgOutputPtr) {
+    template <std::floating_point Real>
+    static void filteringByPruningMax(const WeightedTreeView<T>& weighted, const Real* attribute, Real threshold, ImagePtr<T> imgOutputPtr) {
         filteringByPruningMaxAttributeImpl(weighted, attribute, threshold, imgOutputPtr);
     }
 
     /**
      * @brief Writes pruning-max filtering from a weighted owner and raw attribute buffer.
      */
-    static void filteringByPruningMax(const WeightedMorphologicalTree<T>& weighted, const float* attribute, float threshold, ImagePtr<T> imgOutputPtr) {
+    template <std::floating_point Real>
+    static void filteringByPruningMax(const WeightedMorphologicalTree<T>& weighted, const Real* attribute, Real threshold, ImagePtr<T> imgOutputPtr) {
         filteringByPruningMax(weighted.asView(), attribute, threshold, imgOutputPtr);
     }
 
     /**
      * @brief Builds an MSER-assisted pruning criterion from an attribute threshold.
      */
-    [[nodiscard]] static std::vector<bool> getAdaptiveCriterion(const WeightedMorphologicalTree<T>& weighted, const std::shared_ptr<float[]>& attribute, float threshold, AltitudeDiff<T> delta) {
+    template <std::floating_point Real>
+    [[nodiscard]] static std::vector<bool> getAdaptiveCriterion(const WeightedMorphologicalTree<T>& weighted, const std::shared_ptr<Real[]>& attribute, Real threshold, AltitudeDiff<T> delta) {
         return getAdaptiveCriterionImpl(weighted, attribute.get(), threshold, delta);
     }
 
     /**
      * @brief Builds an MSER-assisted pruning criterion from a raw attribute buffer.
      */
-    [[nodiscard]] static std::vector<bool> getAdaptiveCriterion(const WeightedMorphologicalTree<T>& weighted, const float* attribute, float threshold, AltitudeDiff<T> delta) {
+    template <std::floating_point Real>
+    [[nodiscard]] static std::vector<bool> getAdaptiveCriterion(const WeightedMorphologicalTree<T>& weighted, const Real* attribute, Real threshold, AltitudeDiff<T> delta) {
         return getAdaptiveCriterionImpl(weighted, attribute, threshold, delta);
     }
 

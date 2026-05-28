@@ -278,9 +278,10 @@ AttributeNames makeDenseAttributeNames(const std::vector<Attribute>& attributes)
     return AttributeNames(std::move(offsets));
 }
 
+template<AltitudeValue T>
 std::uint64_t computeLocalScalarChecksum(
     const MorphologicalTree& tree,
-    AttributeAltitudeView altitude = {}) {
+    std::span<const T> altitude) {
     BitquadAttributeComputer computer;
     const auto attributes = computer.attributes();
     const AttributeNames names = makeDenseAttributeNames(attributes);
@@ -288,13 +289,30 @@ std::uint64_t computeLocalScalarChecksum(
         static_cast<std::size_t>(tree.getNumInternalNodeSlots()) *
         static_cast<std::size_t>(names.NUM_ATTRIBUTES),
         0.0f);
-    computer.compute(
-        tree,
-        altitude,
-        buffer,
-        names,
-        attributes,
-        std::span<const DependencySource>{});
+    BitquadAttributeComputer::compute(
+        AltitudeAttributeComputeContext<float, T>{
+            tree,
+            altitude,
+            std::span<float>(buffer),
+            names,
+            std::span<const Attribute>(attributes)});
+    return checksumFloatBuffer(buffer);
+}
+
+std::uint64_t computeLocalScalarChecksum(const MorphologicalTree& tree) {
+    BitquadAttributeComputer computer;
+    const auto attributes = computer.attributes();
+    const AttributeNames names = makeDenseAttributeNames(attributes);
+    std::vector<float> buffer(
+        static_cast<std::size_t>(tree.getNumInternalNodeSlots()) *
+        static_cast<std::size_t>(names.NUM_ATTRIBUTES),
+        0.0f);
+    BitquadAttributeComputer::compute(
+        AttributeComputeContext<float>{
+            tree,
+            std::span<float>(buffer),
+            names,
+            std::span<const Attribute>(attributes)});
     return checksumFloatBuffer(buffer);
 }
 
@@ -418,7 +436,7 @@ void runTreeOfShapesCase(
     }));
 
     printMeasurement("local delta scalar computer", measure(repeats, [&]() {
-        return computeLocalScalarChecksum(tree, makeAttributeAltitudeView(weightedTree.getAltitudeBuffer()));
+        return computeLocalScalarChecksum(tree, weightedTree.altitudeSpan());
     }));
 
     printMeasurement("local contour side counts", measure(repeats, [&]() {

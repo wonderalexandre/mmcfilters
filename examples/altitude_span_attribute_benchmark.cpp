@@ -76,7 +76,7 @@ std::string formatBytes(std::size_t bytes) {
 
 std::uint64_t checksumComputed(
     const MorphologicalTree& tree,
-    const ComputedAttributeData& data,
+    const ComputedAttributeData<float>& data,
     const std::vector<Attribute>& attributes)
 {
     std::uint64_t checksum = 1469598103934665603ull;

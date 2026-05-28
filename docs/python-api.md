@@ -93,9 +93,14 @@ component_mask = max_tree.reconstructNode(owner_node)
 Use weighted entry points for attributes that may read altitude values, and
 topology entry points for support-only descriptors.
 
-Single attributes return a 1D `np.float32` array indexed by the selected
+Single attributes return a 1D floating-point array indexed by the selected
 `NodeIdSpace`. Multi-attribute calls return `(layout, values)`, where `layout`
-maps attribute names to columns in a 2D `np.float32` array.
+maps attribute names to columns in a 2D floating-point array. The optional
+`dtype` keyword accepts `np.float32` or `np.float64`; the default is
+`np.float32`.
+
+The selected `dtype` controls both the NumPy output array and the C++
+floating-point type used by the attribute facade.
 
 ```python
 area = mmcfilters.Attribute.computeSingleTopologyAttribute(
@@ -115,11 +120,16 @@ layout, values = mmcfilters.Attribute.computeAttributes(
         mmcfilters.Attribute.VOLUME,
         mmcfilters.Attribute.RELATIVE_VOLUME,
     ],
+    dtype=np.float64,
 )
 
 area_column = values[:, layout["AREA"]]
 volume_column = values[:, layout["VOLUME"]]
 ```
+
+Filtering helpers documented below consume `np.float32` and `np.float64`
+attribute buffers, so arrays can be passed through without downcasting after
+selecting either supported dtype.
 
 Attribute groups expand to a stable set of scalar attributes:
 
@@ -177,8 +187,8 @@ box_height = mmcfilters.Attribute.computeSingleAttribute(
     mmcfilters.Attribute.BOX_HEIGHT,
 )
 
-pruned_min = filters.filteringMin(box_height, 2.0)
-pruned_max = filters.filteringMax(box_height, 2.0)
+pruned_min = filters.filteringByPruningMin(box_height, 2.0)
+pruned_max = filters.filteringByPruningMax(box_height, 2.0)
 
 keep_large = (area >= 4.0).tolist()
 direct = filters.filteringDirectRule(keep_large)

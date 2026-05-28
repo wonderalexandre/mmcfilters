@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../AttributeComputer.hpp"
+#include "../detail/AttributeKernelSupport.hpp"
 #include "../../trees/detail/TreeTraversalDetail.hpp"
 #include "../../trees/TreeAltitudeAlgorithms.hpp"
 #include "../../utils/Altitude.hpp"
@@ -70,14 +70,14 @@ private:
  * @param requestedAttributes Requested subset of grey-level descriptors.
  * @param dependencySources Required dependency buffers for aggregate statistics.
  */
-template<AltitudeValue T>
-void computeGrayLevelStatsAttributes(
+template<std::floating_point Real, AltitudeValue T>
+void computeGrayLevelStatsAttributeKernel(
     const MorphologicalTree& tree,
     std::span<const T> altitude,
-    std::span<float> buffer,
+    std::span<Real> buffer,
     const AttributeNames& attrNames,
     std::span<const Attribute> requestedAttributes,
-    std::span<const DependencySource> dependencySources)
+    std::span<const DependencySourceT<Real>> dependencySources)
 {
     TreeAltitudeAlgorithms::validateAltitudeBufferShape(tree, altitude);
 
@@ -93,11 +93,12 @@ void computeGrayLevelStatsAttributes(
     auto indexOfVariance = [&](NodeId idx) { return attrNames.linearIndex(idx, VARIANCE_LEVEL); };
     auto indexOfGrayHeight = [&](NodeId idx) { return attrNames.linearIndex(idx, GRAY_HEIGHT); };
 
-    const DependencySource* dependencyVol = needsAggregateDependencies
-        ? &requireDependencySourceForAttribute(dependencySources, 0, VOLUME)
+    const DependencyResolver<Real> dependencies{dependencySources};
+    const DependencySourceT<Real>* dependencyVol = needsAggregateDependencies
+        ? &dependencies.require(VOLUME)
         : nullptr;
-    const DependencySource* dependencyArea = needsAggregateDependencies
-        ? &requireDependencySourceForAttribute(dependencySources, 1, AREA)
+    const DependencySourceT<Real>* dependencyArea = needsAggregateDependencies
+        ? &dependencies.require(AREA)
         : nullptr;
     auto indexOfVol = [&](NodeId idx) { return dependencyVol->attrNames->linearIndex(idx, VOLUME); };
     auto indexOfArea = [&](NodeId idx) { return dependencyArea->attrNames->linearIndex(idx, AREA); };
@@ -113,7 +114,7 @@ void computeGrayLevelStatsAttributes(
         [&](NodeId nodeId) {
             const NodeId node = detail::grayStatsSlotOf(tree, nodeId);
             const T nodeAltitude = TreeAltitudeAlgorithms::getAltitude(altitude, nodeId);
-            const float nodeAltitudeAsFloat = static_cast<float>(nodeAltitude);
+            const Real nodeAltitudeAsReal = static_cast<Real>(nodeAltitude);
             if (request.varianceLevel) {
                 const double nodeAltitudeAsDouble = static_cast<double>(nodeAltitude);
                 sumGrayLevelSquare[node] =
@@ -122,9 +123,9 @@ void computeGrayLevelStatsAttributes(
                     nodeAltitudeAsDouble;
             }
             if (request.level)
-                buffer[indexOfLevel(node)] = nodeAltitudeAsFloat;
+                buffer[indexOfLevel(node)] = nodeAltitudeAsReal;
             if (request.grayHeight)
-                buffer[indexOfGrayHeight(node)] = nodeAltitudeAsFloat;
+                buffer[indexOfGrayHeight(node)] = nodeAltitudeAsReal;
         },
         [&](NodeId parentNodeId, NodeId childNodeId) {
             const NodeId parent = detail::grayStatsSlotOf(tree, parentNodeId);
@@ -132,8 +133,8 @@ void computeGrayLevelStatsAttributes(
             if (request.varianceLevel)
                 sumGrayLevelSquare[parent] += sumGrayLevelSquare[child];
             if (request.grayHeight) {
-                float childValue = buffer[indexOfGrayHeight(child)];
-                float& parentValue = buffer[indexOfGrayHeight(parent)];
+                Real childValue = buffer[indexOfGrayHeight(child)];
+                Real& parentValue = buffer[indexOfGrayHeight(parent)];
                 if (tree.getTreeType() == MorphologicalTreeKind::MAX_TREE)
                     parentValue = std::max(parentValue, childValue);
                 else
@@ -142,14 +143,17 @@ void computeGrayLevelStatsAttributes(
         },
         [&](NodeId nodeId) {
             const NodeId node = detail::grayStatsSlotOf(tree, nodeId);
-            float area = needsAggregateDependencies ? dependencyArea->buffer[indexOfArea(node)] : 0.0f;
+            Real area = needsAggregateDependencies ? dependencyArea->buffer[indexOfArea(node)] : Real{0};
             if (request.meanLevel)
-                buffer[indexOfMean(node)] = dependencyVol->buffer[indexOfVol(node)] / area;
+                buffer[indexOfMean(node)] =
+                    ::mmcfilters::attributes::numeric::safeDivide(dependencyVol->buffer[indexOfVol(node)], area);
             if (request.varianceLevel) {
-                float meanGrayLevel = dependencyVol->buffer[indexOfVol(node)] / area;
-                double meanGrayLevelSquare = sumGrayLevelSquare[node] / area;
-                float var = static_cast<float>(meanGrayLevelSquare - (meanGrayLevel * meanGrayLevel));
-                buffer[indexOfVariance(node)] = var > 0.0f ? var : 0.0f;
+                Real meanGrayLevel =
+                    ::mmcfilters::attributes::numeric::safeDivide(dependencyVol->buffer[indexOfVol(node)], area);
+                double meanGrayLevelSquare =
+                    ::mmcfilters::attributes::numeric::safeDivide(sumGrayLevelSquare[node], static_cast<double>(area));
+                Real var = static_cast<Real>(meanGrayLevelSquare - (static_cast<double>(meanGrayLevel) * static_cast<double>(meanGrayLevel)));
+                buffer[indexOfVariance(node)] = ::mmcfilters::attributes::numeric::clampNonNegative(var);
             }
         });
 
@@ -160,7 +164,7 @@ void computeGrayLevelStatsAttributes(
                 buffer[indexOfGrayHeight(node)] = 0.0f;
             } else {
                 buffer[indexOfGrayHeight(node)] =
-                    std::abs(static_cast<float>(TreeAltitudeAlgorithms::getAltitude(altitude, nodeId)) -
+                    std::abs(static_cast<Real>(TreeAltitudeAlgorithms::getAltitude(altitude, nodeId)) -
                              buffer[indexOfGrayHeight(node)]);
             }
         }
@@ -191,40 +195,36 @@ void computeGrayLevelStatsAttributes(
  * - in a max-tree, the relevant descendant is the one with maximum altitude;
  * - in a min-tree, the relevant descendant is the one with minimum altitude.
  */
-class GrayLevelStatsComputer : public AttributeComputer {
+class GrayLevelStatsComputer {
 public:
-    using AttributeComputer::compute;
-    using AttributeComputer::computeUnitAttributes;
 
     /**
      * @brief Returns the grey-level descriptors naturally produced together.
      */
-    [[nodiscard]] std::vector<Attribute> attributes() const override {
+    [[nodiscard]] std::vector<Attribute> attributes() const {
         return {detail::GRAY_LEVEL_STATS_ATTRIBUTES.begin(), detail::GRAY_LEVEL_STATS_ATTRIBUTES.end()};
     }
 
     /**
      * @brief Computes the requested grey-level statistics.
      *
-     * Requires an altitude span. Mean and variance additionally require
-     * dependency sources containing `VOLUME` and `AREA`, respectively.
+     * @details
+     * Requires a typed altitude span in dense internal-node order. `LEVEL` and
+     * `GRAY_HEIGHT` use altitude directly. `MEAN_LEVEL` and `VARIANCE_LEVEL`
+     * additionally require `VOLUME` and `AREA` dependencies available through
+     * `context.dependencies`.
      */
-    void compute(
-        const MorphologicalTree& tree,
-        AttributeAltitudeView altitude,
-        std::span<float> buffer,
-        const AttributeNames& attrNames,
-        std::span<const Attribute> requestedAttributes,
-        std::span<const DependencySource> dependencySources) const override
+    template <std::floating_point Real, AltitudeValue T>
+    static void compute(const AltitudeAttributeComputeContext<Real, T>& context)
     {
-        requireAttributeBufferShape(tree, buffer, attrNames);
-        detail::computeGrayLevelStatsAttributes(
-            tree,
-            TreeAltitudeAlgorithms::requireAltitudeSpan(altitude),
-            buffer,
-            attrNames,
-            requestedAttributes,
-            dependencySources);
+        requireAttributeBufferShape(context.tree, context.buffer, context.attrNames);
+        detail::computeGrayLevelStatsAttributeKernel(
+            context.tree,
+            context.altitude,
+            context.buffer,
+            context.attrNames,
+            context.requestedAttributes,
+            context.dependencySources);
     }
 
     /**
@@ -233,42 +233,39 @@ public:
      * Unit `LEVEL` and `MEAN_LEVEL` equal the owner-node altitude. Unit
      * `VARIANCE_LEVEL` and `GRAY_HEIGHT` are zero.
      */
-    void computeUnitAttributes(
-        const MorphologicalTree& tree,
-        AttributeAltitudeView altitude,
-        std::span<const NodeId> unitProperParts,
-        std::span<float> buffer,
-        const AttributeNames& attrNames,
-        std::span<const Attribute> requestedAttributes) const override
+    template <std::floating_point Real, AltitudeValue T>
+    static void computeUnitRows(const AltitudeUnitAttributeComputeContext<Real, T>& context)
     {
-        requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
+        requireUnitAttributeBufferShape(context.tree, context.unitProperParts, context.buffer, context.attrNames);
+        TreeAltitudeAlgorithms::validateAltitudeBufferShape(context.tree, context.altitude);
 
-        const detail::GrayLevelStatsRequest request = detail::GrayLevelStatsRequest::from(requestedAttributes);
+        const detail::GrayLevelStatsRequest request = detail::GrayLevelStatsRequest::from(context.requestedAttributes);
         if (!request.any()) {
             return;
         }
 
-        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
-            const NodeId properPart = unitProperParts[static_cast<size_t>(leafIndex)];
-            const float altitudeValue =
+        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitProperParts.size()); ++leafIndex) {
+            const NodeId properPart = context.unitProperParts[static_cast<size_t>(leafIndex)];
+            const Real altitudeValue =
                 (request.level || request.meanLevel)
-                    ? static_cast<float>(unitAltitude(tree, altitude, properPart))
-                    : 0.0f;
+                    ? static_cast<Real>(unitAltitude(context.tree, context.altitude, properPart))
+                    : Real{0};
 
             if (request.level) {
-                buffer[attrNames.linearIndex(leafIndex, LEVEL)] = altitudeValue;
+                context.buffer[context.attrNames.linearIndex(leafIndex, LEVEL)] = altitudeValue;
             }
             if (request.meanLevel) {
-                buffer[attrNames.linearIndex(leafIndex, MEAN_LEVEL)] = altitudeValue;
+                context.buffer[context.attrNames.linearIndex(leafIndex, MEAN_LEVEL)] = altitudeValue;
             }
             if (request.varianceLevel) {
-                buffer[attrNames.linearIndex(leafIndex, VARIANCE_LEVEL)] = 0.0f;
+                context.buffer[context.attrNames.linearIndex(leafIndex, VARIANCE_LEVEL)] = Real{0};
             }
             if (request.grayHeight) {
-                buffer[attrNames.linearIndex(leafIndex, GRAY_HEIGHT)] = 0.0f;
+                context.buffer[context.attrNames.linearIndex(leafIndex, GRAY_HEIGHT)] = Real{0};
             }
         }
     }
+
 };
 
 } // namespace mmcfilters::attributes::computers

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../AttributeTypes.hpp"
-#include "../computers/AttributeComputerTraits.hpp"
+#include "../computers/AttributeComputerProtocol.hpp"
 
 #include <algorithm>
 #include <span>
@@ -15,7 +15,7 @@ namespace mmcfilters::detail {
  * @brief Attribute-computer family identifiers used by orchestration code.
  *
  * @details
- * These ids are the runtime counterpart of `AttributeComputerTraits`. They are
+ * These ids are the runtime counterpart of the registered computer list. They are
  * intentionally small and local to the scheduler/backend; public users should
  * select attributes, not families.
  */
@@ -162,7 +162,7 @@ inline AttributeFamily familyForAttribute(Attribute attribute) noexcept
 template <attributes::computers::AttributeComputerDomain Domain, class Computer>
 inline bool computerProducesAttributeInDomain(Attribute attribute) noexcept
 {
-    if constexpr (attributes::computers::AttributeComputerTraits<Computer>::domain == Domain) {
+    if constexpr (Computer::domain == Domain) {
         return attributes::computers::producesAttribute<Computer>(attribute);
     } else {
         return false;

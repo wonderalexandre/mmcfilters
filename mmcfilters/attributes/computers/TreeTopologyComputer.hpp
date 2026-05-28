@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AttributeComputerDomain.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
 #include "../../trees/detail/TreeTraversalDetail.hpp"
 #include "../../trees/MorphologicalTree.hpp"
@@ -8,6 +9,7 @@
 #include <array>
 #include <concepts>
 #include <limits>
+#include <string_view>
 #include <vector>
 
 
@@ -47,6 +49,11 @@ inline NodeId topologySlotOf(const MorphologicalTree&, NodeId nodeId) noexcept {
  */
 class TreeTopologyComputer {
 public:
+    /// Family name used in dependency-plan diagnostics.
+    static constexpr std::string_view familyName = "tree-topology";
+
+    /// Execution domain required by the computer.
+    static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
 
     /**
      * @brief Canonical list of topology-derived descriptors produced by this computer.

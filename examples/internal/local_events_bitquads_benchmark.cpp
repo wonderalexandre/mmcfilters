@@ -9,7 +9,7 @@
  * attribute requests. It includes `detail/` headers and is not public API.
  */
 #include "mmcfilters/attributes/Attributes.hpp"
-#include "mmcfilters/attributes/computers/AttributeComputerTraits.hpp"
+#include "mmcfilters/attributes/computers/AttributeComputerProtocol.hpp"
 #include "mmcfilters/attributes/computers/BitquadAttributeComputer.hpp"
 #include "mmcfilters/attributes/computers/detail/BitquadLocalEventComputation.hpp"
 #include "mmcfilters/attributes/computers/detail/ContourSideLocalEventComputation.hpp"

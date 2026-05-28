@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AttributeComputerDomain.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
 #include "detail/BitquadAttributeMaterialization.hpp"
 #include "detail/BitquadLocalEventComputation.hpp"
@@ -8,6 +9,7 @@
 #include <numbers>
 #include <span>
 #include <stdexcept>
+#include <string_view>
 
 namespace mmcfilters::attributes::computers {
 
@@ -29,6 +31,12 @@ namespace mmcfilters::attributes::computers {
  */
 class BitquadAttributeComputer {
 public:
+    /// Family name used in dependency-plan diagnostics.
+    static constexpr std::string_view familyName = "bitquad";
+
+    /// Execution domain required by the computer.
+    static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
+
     /**
      * @brief Canonical list of scalar bitquad attributes materialized by this computer.
      */

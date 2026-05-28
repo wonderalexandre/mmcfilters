@@ -1,11 +1,13 @@
 #pragma once
 
+#include "AttributeComputerDomain.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
 #include "../../trees/detail/TreeTraversalDetail.hpp"
 #include "../../trees/MorphologicalTree.hpp"
 
 #include <array>
 #include <concepts>
+#include <string_view>
 
 namespace mmcfilters::attributes::computers {
 
@@ -30,6 +32,11 @@ namespace mmcfilters::attributes::computers {
  */
 class AreaComputer {
 public:
+    /// Family name used in dependency-plan diagnostics.
+    static constexpr std::string_view familyName = "area";
+
+    /// Execution domain required by the computer.
+    static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
 
     /**
      * @brief Canonical list of attributes produced by this computer.

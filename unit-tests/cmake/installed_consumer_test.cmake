@@ -38,6 +38,10 @@ if(EXISTS "${prefix}/${CMAKE_INSTALL_INCLUDEDIR}/mmcfilters/filters/AttributeOpe
     message(FATAL_ERROR "Removed AttributeOpeningPrimitivesFamily header must not be installed.")
 endif()
 
+if(EXISTS "${prefix}/${CMAKE_INSTALL_INCLUDEDIR}/mmcfilters/attributes/computers/AttributeComputerTraits.hpp")
+    message(FATAL_ERROR "Removed AttributeComputerTraits header must not be installed.")
+endif()
+
 file(WRITE "${consumer_source_dir}/CMakeLists.txt"
 "cmake_minimum_required(VERSION 3.20)\n"
 "project(mmcfilters_installed_consumer LANGUAGES CXX)\n"
@@ -56,7 +60,7 @@ file(WRITE "${consumer_source_dir}/main.cpp"
 "#include <type_traits>\n"
 "#include <vector>\n"
 "#include <mmcfilters/attributes/Attributes.hpp>\n"
-"#include <mmcfilters/attributes/computers/AttributeComputerTraits.hpp>\n"
+"#include <mmcfilters/attributes/computers/AttributeComputerProtocol.hpp>\n"
 "#include <mmcfilters/attributes/computers/MaxDistComputer.hpp>\n"
 "#include <mmcfilters/attributes/computers/BitquadAttributeComputer.hpp>\n"
 "#include <mmcfilters/attributes/computers/ContourSideAttributeComputer.hpp>\n"

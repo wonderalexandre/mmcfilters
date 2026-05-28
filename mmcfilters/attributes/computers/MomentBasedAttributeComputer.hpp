@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AttributeComputerDomain.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
 #include "../../trees/detail/TreeTraversalDetail.hpp"
 #include "../../trees/MorphologicalTree.hpp"
@@ -10,6 +11,7 @@
 #include <cmath>
 #include <limits>
 #include <numbers>
+#include <string_view>
 #include <vector>
 
 namespace mmcfilters::attributes::computers {
@@ -41,6 +43,11 @@ inline NodeId momentSlotOf(const MorphologicalTree&, NodeId nodeId) noexcept {
  */
 class CentralMomentsComputer {
 public:
+    /// Family name used in dependency-plan diagnostics.
+    static constexpr std::string_view familyName = "central-moments";
+
+    /// Execution domain required by the computer.
+    static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
 
     /**
      * @brief Canonical list of central moments produced together.
@@ -246,6 +253,11 @@ public:
  */
 class HuMomentsComputer {
 public:
+    /// Family name used in dependency-plan diagnostics.
+    static constexpr std::string_view familyName = "hu-moments";
+
+    /// Execution domain required by the computer.
+    static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
 
     /**
      * @brief Canonical list of Hu moments produced together.
@@ -419,6 +431,11 @@ public:
  */
 class MomentBasedAttributeComputer {
 public:
+    /// Family name used in dependency-plan diagnostics.
+    static constexpr std::string_view familyName = "moment-derived";
+
+    /// Execution domain required by the computer.
+    static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
 
     /**
      * @brief Largest finite eccentricity emitted for degenerate one-dimensional supports.

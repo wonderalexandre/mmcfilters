@@ -7,7 +7,7 @@
 #include "../AttributeNames.hpp"
 #include "../AttributeRegistry.hpp"
 #include "../AttributeResultTypes.hpp"
-#include "../computers/AttributeComputerTraits.hpp"
+#include "../computers/AttributeComputerProtocol.hpp"
 #include "../computers/AreaComputer.hpp"
 #include "../computers/BoundingBoxComputer.hpp"
 #include "../computers/BitquadAttributeComputer.hpp"

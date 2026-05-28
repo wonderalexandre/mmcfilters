@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AttributeComputerDomain.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
 #include "../../trees/detail/TreeTraversalDetail.hpp"
 #include "../../trees/MorphologicalTree.hpp"
@@ -9,6 +10,7 @@
 #include <concepts>
 #include <cmath>
 #include <span>
+#include <string_view>
 #include <vector>
 
 namespace mmcfilters::attributes::computers {
@@ -83,6 +85,11 @@ private:
  */
 class BoundingBoxComputer {
 public:
+    /// Family name used in dependency-plan diagnostics.
+    static constexpr std::string_view familyName = "bounding-box";
+
+    /// Execution domain required by the computer.
+    static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
 
     /**
      * @brief Canonical list of bounding-box descriptors produced by this computer.

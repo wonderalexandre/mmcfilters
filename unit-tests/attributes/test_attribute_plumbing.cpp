@@ -1,6 +1,6 @@
 #include "support/TestSupport.hpp"
 
-#include "mmcfilters/attributes/computers/AttributeComputerTraits.hpp"
+#include "mmcfilters/attributes/computers/AttributeComputerProtocol.hpp"
 #include "mmcfilters/attributes/computers/BoundingBoxComputer.hpp"
 #include "mmcfilters/attributes/computers/GrayLevelStatsComputer.hpp"
 #include "mmcfilters/attributes/computers/MomentBasedAttributeComputer.hpp"
@@ -23,17 +23,17 @@ using namespace mmcfilters;
 using namespace mmcfilters::attributes::computers;
 using namespace mmcfilters::unit_tests;
 
-static_assert(AttributeComputerWithTraits<AreaComputer>);
-static_assert(AttributeComputerWithTraits<BoundingBoxComputer>);
-static_assert(AttributeComputerWithTraits<TreeTopologyComputer>);
-static_assert(AttributeComputerWithTraits<CentralMomentsComputer>);
-static_assert(AttributeComputerWithTraits<HuMomentsComputer>);
-static_assert(AttributeComputerWithTraits<MomentBasedAttributeComputer>);
-static_assert(AttributeComputerWithTraits<BitquadAttributeComputer>);
-static_assert(AttributeComputerWithTraits<ContourSideAttributeComputer>);
-static_assert(AttributeComputerWithTraits<VolumeComputer>);
-static_assert(AttributeComputerWithTraits<GrayLevelStatsComputer>);
-static_assert(AttributeComputerWithTraits<MaxDistComputer>);
+static_assert(AttributeComputer<AreaComputer>);
+static_assert(AttributeComputer<BoundingBoxComputer>);
+static_assert(AttributeComputer<TreeTopologyComputer>);
+static_assert(AttributeComputer<CentralMomentsComputer>);
+static_assert(AttributeComputer<HuMomentsComputer>);
+static_assert(AttributeComputer<MomentBasedAttributeComputer>);
+static_assert(AttributeComputer<BitquadAttributeComputer>);
+static_assert(AttributeComputer<ContourSideAttributeComputer>);
+static_assert(AttributeComputer<VolumeComputer>);
+static_assert(AttributeComputer<GrayLevelStatsComputer>);
+static_assert(AttributeComputer<MaxDistComputer>);
 
 static_assert(TopologyAttributeComputer<AreaComputer>);
 static_assert(TopologyAttributeComputer<BoundingBoxComputer>);
@@ -60,10 +60,10 @@ void requireComputerContract(
     const auto& produced = Computer::producedAttributes;
     const std::string labelText(label);
 
-    require(!AttributeComputerTraits<Computer>::familyName.empty(), labelText + " trait family name");
+    require(!std::string_view(Computer::familyName).empty(), labelText + " family name");
     requireEqual(produced.size(), producedAttributes.size(), labelText + " produced attribute count");
     requireEqual(
-        static_cast<int>(AttributeComputerTraits<Computer>::domain),
+        static_cast<int>(Computer::domain),
         static_cast<int>(domain),
         labelText + " execution domain");
     requireEqual(numProducedAttributes<Computer>(), producedAttributes.size(), labelText + " produced helper count");
@@ -103,7 +103,7 @@ void requireRegisteredComputerFamily(mmcfilters::detail::AttributeFamily expecte
             static_cast<int>(expectedFamily),
             labelText + " registered family for " + AttributeNames::toString(attribute));
         require(
-            mmcfilters::detail::attributeHasComputerDomain<AttributeComputerTraits<Computer>::domain>(attribute),
+            mmcfilters::detail::attributeHasComputerDomain<Computer::domain>(attribute),
             labelText + " registered domain for " + AttributeNames::toString(attribute));
     }
 }

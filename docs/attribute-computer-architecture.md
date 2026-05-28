@@ -8,8 +8,9 @@ transition plan.
 An attribute computer owns one coherent descriptor family. Every computer must
 provide:
 
+- `inline static constexpr familyName` for diagnostics;
+- `inline static constexpr domain` for execution routing;
 - `inline static constexpr producedAttributes` as the canonical descriptor list;
-- `AttributeComputerTraits<Computer>` for compile-time family metadata;
 - `static compute(context)` for internal-node rows;
 - `static computeUnitRows(unitContext)` for compact exported-Higra unit rows.
 
@@ -22,20 +23,25 @@ meaning, the computer defines that value explicitly. If the descriptor cannot
 mathematically use internal-node state in the unit domain, the computer still
 defines the exported unit-row convention.
 
-## Traits
+## Protocol
 
-`AttributeComputerTraits<Computer>` declares:
+`AttributeComputerProtocol.hpp` defines the common protocol:
 
-- `familyName`;
-- `domain`.
+- `AttributeComputerDomain`;
+- `AttributeComputer`;
+- `TopologyAttributeComputer`;
+- `AltitudeAttributeComputer`;
+- helpers such as `producesAttribute<Computer>(...)` and
+  `runtimeProducedAttributes<Computer>()`;
+- `RegisteredAttributeComputers`.
 
-`domain` determines the compute context: topology families receive topology
-contexts, while altitude families receive altitude-aware contexts.
+`Computer::domain` determines the compute context: topology families receive
+topology contexts, while altitude families receive altitude-aware contexts.
 
 Produced descriptors are declared only by `Computer::producedAttributes`.
 Precise descriptor-level dependencies live in `AttributeFamilyScheduler.hpp`,
 where the scheduler builds the recursive dependency closure for each public
-request. Traits do not repeat either list.
+request.
 
 ## Contexts
 

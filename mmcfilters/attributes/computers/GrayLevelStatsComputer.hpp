@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AttributeComputerDomain.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
 #include "../../trees/detail/TreeTraversalDetail.hpp"
 #include "../../trees/TreeAltitudeAlgorithms.hpp"
@@ -10,6 +11,7 @@
 #include <cmath>
 #include <span>
 #include <stdexcept>
+#include <string_view>
 #include <vector>
 
 namespace mmcfilters::attributes::computers {
@@ -191,6 +193,11 @@ void computeGrayLevelStatsAttributeKernel(
  */
 class GrayLevelStatsComputer {
 public:
+    /// Family name used in dependency-plan diagnostics.
+    static constexpr std::string_view familyName = "gray-level-stats";
+
+    /// Execution domain required by the computer.
+    static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Altitude;
 
     /**
      * @brief Canonical list of grey-level descriptors produced by this computer.

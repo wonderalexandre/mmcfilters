@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AttributeComputerDomain.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
 #include "../../contours/ContoursComputedIncrementally.hpp"
 #include "../../trees/MorphologicalTree.hpp"
@@ -17,6 +18,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -306,6 +308,12 @@ namespace mmcfilters::attributes::computers {
  */
 class MaxDistComputer {
 public:
+    /// Family name used in dependency-plan diagnostics.
+    static constexpr std::string_view familyName = "max-dist";
+
+    /// Execution domain required by the computer.
+    static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Altitude;
+
     /**
      * @brief Canonical list of scalar descriptors materialized by this computer.
      */

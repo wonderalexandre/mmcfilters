@@ -55,7 +55,7 @@ inline bool tryComputeTopologyUnitAttributeWithComputer(
     const AttributeNames& attrNames,
     Attribute attribute)
 {
-    if constexpr (attributes::computers::AttributeComputerTraits<Computer>::domain == attributes::computers::AttributeComputerDomain::Topology) {
+    if constexpr (Computer::domain == attributes::computers::AttributeComputerDomain::Topology) {
         if (attributes::computers::producesAttribute<Computer>(attribute)) {
             computeUnitAttributeWithComputer<Computer>(tree, unitProperParts, unitValues, attrNames, attribute);
             return true;
@@ -116,7 +116,7 @@ inline bool tryComputeAltitudeUnitAttributeWithComputer(
     const AltitudeUnitAttributeComputeContext<Real, T>& context,
     Attribute attribute)
 {
-    if constexpr (attributes::computers::AttributeComputerTraits<Computer>::domain == attributes::computers::AttributeComputerDomain::Altitude) {
+    if constexpr (Computer::domain == attributes::computers::AttributeComputerDomain::Altitude) {
         if (attributes::computers::producesAttribute<Computer>(attribute)) {
             Computer::computeUnitRows(context);
             return true;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "AttributeComputerDomain.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
 #include "detail/ContourSideAttributeMaterialization.hpp"
 #include "detail/ContourSideLocalEventComputation.hpp"
@@ -7,6 +8,7 @@
 #include <array>
 #include <concepts>
 #include <span>
+#include <string_view>
 
 namespace mmcfilters::attributes::computers {
 
@@ -28,6 +30,12 @@ namespace mmcfilters::attributes::computers {
  */
 class ContourSideAttributeComputer {
 public:
+    /// Family name used in dependency-plan diagnostics.
+    static constexpr std::string_view familyName = "contour-side";
+
+    /// Execution domain required by the computer.
+    static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
+
     /**
      * @brief Canonical list of scalar contour attributes materialized by this computer.
      */

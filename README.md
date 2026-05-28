@@ -33,8 +33,9 @@ Higra remains the better fit for stable, general-purpose hierarchical
 image-analysis workflows. Use this project when the experiment needs mutable
 tree topology, direct owner-state access, or the local attribute/filter
 machinery exposed here. See
-[docs/higra-interoperability.md](docs/higra-interoperability.md) for import,
-export, and attribute-projection contracts.
+[docs/attribute-catalog.md](docs/attribute-catalog.md) for the public descriptor
+catalog and [docs/higra-interoperability.md](docs/higra-interoperability.md)
+for import, export, and attribute-projection contracts.
 
 Python currently follows the canonical 8-bit contract: factory inputs must be
 C-contiguous `np.uint8` arrays and external altitude inputs must stay in
@@ -63,58 +64,6 @@ Installed C++ package:
 ```cmake
 find_package(mmcfilters CONFIG REQUIRED)
 target_link_libraries(my_target PRIVATE mmcfilters::core)
-```
-
-For attribute computation in C++, prefer the aggregate public header:
-
-```cpp
-#include <mmcfilters/attributes/Attributes.hpp>
-```
-
-That header exposes the stable attribute-facing contracts: `Attribute`,
-`AttributeGroup`, `AttributeNames`, `AttributeComputation`, and owning result
-types. Use `AttributeComputation` with `WeightedMorphologicalTree<T>` or
-`WeightedTreeView<T>` for altitude-aware requests, and use
-`computeTopologyAttributes(...)` for topology/support-only requests. Concrete
-attribute computers are advanced implementation components; ordinary consumers
-should not include `mmcfilters/*/detail/` headers directly.
-
-Canonical C++ attribute usage:
-
-```cpp
-#include <cstdint>
-#include <array>
-#include <vector>
-
-#include <mmcfilters/attributes/Attributes.hpp>
-#include <mmcfilters/trees/MorphologicalTreeFactory.hpp>
-#include <mmcfilters/utils/Image.hpp>
-
-using namespace mmcfilters;
-
-std::array<std::uint8_t, 16> pixels{
-    3, 3, 2, 2,
-    3, 4, 4, 2,
-    1, 4, 5, 2,
-    1, 1, 5, 0};
-auto image = ImageUInt8::fromExternal(pixels.data(), 4, 4);
-auto weighted = MorphologicalTreeFactory::createMaxTree(image, 1.5);
-
-auto [names, values] = AttributeComputation::computeAttributes(
-    weighted,
-    std::vector<AttributeOrGroup>{AREA, LEVEL, MAX_DIST});
-
-auto [topologyNames, topologyValues] =
-    AttributeComputation::computeTopologyAttributes(
-        weighted.topology(),
-        std::vector<AttributeOrGroup>{AREA, BOX_WIDTH, BALANCE_NODE});
-
-auto [deltaNames, deltaValues] =
-    AttributeComputation::computeSingleAttributeWithDelta(
-        weighted,
-        LEVEL,
-        AltitudeDiff<std::uint8_t>{1},
-        2);
 ```
 
 To enable the regression suite or examples:
@@ -204,38 +153,29 @@ roundtrip_weighted_tree = mmcfilters.MorphologicalTreeFactory.createFromHigraPar
 )
 ```
 
-For detailed API contracts, use:
-
-- tree ownership and `NodeId` semantics: [docs/trees.md](docs/trees.md);
-- attribute computation and descriptor semantics:
-  [docs/attributes.md](docs/attributes.md);
-- editing and validation rules: [docs/editing-api.md](docs/editing-api.md);
-- Higra preserved vs exported node-id spaces:
-  [docs/higra-interoperability.md](docs/higra-interoperability.md);
-- Python facade examples: [docs/python-api.md](docs/python-api.md).
-
 ## Repository guide
 
 Use this map to find the right entry point quickly:
 
-- Core C++: [mmcfilters/](mmcfilters/)
+API guides:
+
 - Morphological tree model: [docs/trees.md](docs/trees.md)
-- Public attributes: [docs/attributes.md](docs/attributes.md). The C++ package
-  is header-only; installed `detail` headers are implementation support, not
-  compatibility-contract headers.
-- Attribute filters, extinction values, and UAO:
-  [docs/filters.md](docs/filters.md)
-- Higra interoperability:
-  [docs/higra-interoperability.md](docs/higra-interoperability.md)
-- Python interface: [docs/python-api.md](docs/python-api.md),
-  [pybinds/mmcfilters.cpp](pybinds/mmcfilters.cpp), and [python/](python/)
-- Tests: [unit-tests/](unit-tests/)
-- Examples and notebooks: [examples/README.md](examples/README.md) and
-  [notebooks/README.md](notebooks/README.md)
-- Design notes: [docs/editing-api.md](docs/editing-api.md) and
+- Attribute computation: [docs/attributes.md](docs/attributes.md)
+- Attribute catalog: [docs/attribute-catalog.md](docs/attribute-catalog.md)
+- Attribute filters, extinction values, and UAO: [docs/filters.md](docs/filters.md)
+- Editing API and derived-state lifetime: [docs/editing-api.md](docs/editing-api.md)
+- Higra interoperability: [docs/higra-interoperability.md](docs/higra-interoperability.md)
+- Python interface: [docs/python-api.md](docs/python-api.md)
+- Incremental contours: [docs/contours.md](docs/contours.md)
+
+Contributor design notes:
+
+- Attribute computer architecture and extension:
+  [docs/attribute-computer-architecture.md](docs/attribute-computer-architecture.md)
+- Contour internals and benchmarks:
   [docs/contours.md](docs/contours.md)
-- Build and packaging: [CMakeLists.txt](CMakeLists.txt) and
-  [pyproject.toml](pyproject.toml)
+
+## Documentation
 
 The `Documentation` workflow validates the public and internal Doxygen targets.
 On pushes to `main`, it publishes only the public HTML output to GitHub Pages:

@@ -161,6 +161,10 @@ asc_1 = delta_values[:, delta_layout["AREA_ASC_1"]]
 desc_1 = delta_values[:, delta_layout["AREA_DESC_1"]]
 ```
 
+The `padding` argument controls missing ancestor/descendant samples:
+`"last-padding"` repeats the nearest available value, `"zero-padding"` writes
+zero, and `"nan-padding"` or `"null-padding"` leave missing samples as `NaN`.
+
 To project one node attribute back to the image domain, use
 `computeAttributeMapping`:
 

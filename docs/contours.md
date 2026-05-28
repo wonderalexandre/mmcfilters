@@ -339,7 +339,7 @@ guarded by benchmarks on Component Tree and Tree of Shapes.
 
 - [Morphological Trees](trees.md): tree support, proper-part ownership, and
   dense `NodeId` domains.
-- [Attributes](attributes.md): public `CONTOUR_*` descriptors and attribute
-  result layouts.
+- [Attribute Catalog](attribute-catalog.md): public `CONTOUR_*` descriptors.
+- [Attributes](attributes.md): attribute result layouts.
 - [Python API Guide](python-api.md): Python contour access names and iteration
   patterns.

@@ -1,49 +1,92 @@
 # Attribute Computer Architecture
 
-This note records the current attribute-computer architecture. It is not a
-transition plan.
+This guide documents the attribute-computer architecture and the extension path
+for adding or changing descriptors. For public usage, see [Attributes](attributes.md);
+for the descriptor table, see [Attribute Catalog](attribute-catalog.md).
 
-## Contract
+In this subsystem, incremental means bottom-up and local-event-oriented
+computation over the current tree. It does not mean that every public attribute
+buffer stays live after arbitrary topology edits.
+
+## Public Boundary
+
+Ordinary application code should include `mmcfilters/attributes/Attributes.hpp`
+and call `AttributeComputation`. Concrete computers are advanced extension
+components, not alternate public orchestration APIs.
+
+The C++ library is header-only, so installed packages include some `detail`
+headers as transitive implementation dependencies. Those headers are shipped so
+public headers compile downstream; they are not compatibility-contract headers.
+
+## Computer Contract
 
 An attribute computer owns one coherent descriptor family. Every computer must
 provide:
 
 - `inline static constexpr familyName` for diagnostics;
+- `inline static constexpr family` for scheduler grouping;
 - `inline static constexpr domain` for execution routing;
 - `inline static constexpr producedAttributes` as the canonical descriptor list;
 - `static compute(context)` for internal-node rows;
 - `static computeUnitRows(unitContext)` for compact exported-Higra unit rows.
 
-The produced-attribute list has a single source of truth: the computer class.
-`runtimeProducedAttributes<Computer>()` materializes it as a
-`std::vector<Attribute>` only for call sites that need runtime storage.
+Computers are stateless static kernels. The produced-attribute list has a single
+source of truth: the computer class. `runtimeProducedAttributes<Computer>()`
+materializes it only for call sites that need runtime storage.
 
 Unit-row support is mandatory. If a descriptor has a degenerate one-pixel
-meaning, the computer defines that value explicitly. If the descriptor cannot
-mathematically use internal-node state in the unit domain, the computer still
-defines the exported unit-row convention.
+meaning, the computer defines that value explicitly. Otherwise it still defines
+the exported unit-row convention.
 
-## Protocol
+## Registry And Metadata
 
-`AttributeComputerRegistry.hpp` defines the registered-computer protocol:
+`AttributeRegistry.hpp` stores public descriptor metadata:
 
-- `AttributeComputerDomain`;
-- `AttributeComputer`;
-- `TopologyAttributeComputer`;
-- `AltitudeAttributeComputer`;
-- helpers such as `producesAttribute<Computer>(...)` and
-  `runtimeProducedAttributes<Computer>()`;
-- `RegisteredAttributeComputers`.
+- public name;
+- description;
+- group membership;
+- altitude requirement;
+- topology-only flag.
 
-`Computer::domain` determines the compute context: topology families receive
-topology contexts, while altitude families receive altitude-aware contexts.
+Group membership is metadata. Public requests may mix scalar attributes and
+groups; the pipeline expands groups, deduplicates scalars, and returns only the
+requested public descriptors.
 
-Produced descriptors are declared only by `Computer::producedAttributes`.
-Precise descriptor-level dependencies live in `AttributeFamilyScheduler.hpp`,
-where the scheduler builds the recursive dependency closure for each public
-request.
+`AttributeComputerRegistry.hpp` defines the computer protocol and
+`RegisteredAttributeComputers`. Produced descriptors are declared only by
+`Computer::producedAttributes`, and scheduler grouping is declared only by
+`Computer::family`.
 
-## Contexts
+## Execution Model
+
+At a high level, a request follows this path:
+
+```text
+request -> expand groups -> validate support -> materialize dependencies
+        -> compute buffers -> assemble requested result -> project if needed
+```
+
+`AttributeFamilyScheduler` adds hidden dependencies, groups descriptors by
+family, and preserves dependency order. The central executors are:
+
+- `executeAttributeComputationPlan(...)` for altitude-aware requests;
+- `executeTopologyAttributeComputationPlan(...)` for topology/support requests.
+
+The internal orchestration path is `detail::AttributePipeline`; topology-only
+families are delegated to `TopologyAttributeBackend`. New code should extend this
+path instead of adding another top-level execution pipeline.
+
+Dependencies are ordinary attribute results consumed by another computer. They
+are passed as `DependencySourceT<Real>`, a non-owning pair of `AttributeNames`
+and `const Real*`. Dependency buffers are reusable only when they contain the
+requested descriptors and use `NodeIdSpace::MORPHOLOGICAL_TREE`.
+
+Several computers use bottom-up accumulation: preprocess the current node, merge
+children into the parent, then finalize the current node. Delta-augmented public
+calls compute the base attribute first, then materialize ancestor/descendant
+offsets from a typed altitude step, radius, and padding policy.
+
+## Contexts And Concepts
 
 The context types in `AttributeKernelSupport.hpp` are the adapter boundary:
 
@@ -52,33 +95,13 @@ The context types in `AttributeKernelSupport.hpp` are the adapter boundary:
 - topology/support unit rows use `UnitAttributeComputeContext<Real>`;
 - altitude-aware unit rows use `AltitudeUnitAttributeComputeContext<Real, T>`.
 
-The contexts are borrowed views over topology, altitude spans, output buffers,
-attribute layouts, requested subsets, and dependency sources. They do not own
-storage.
-
-## Concepts
-
 `TopologyAttributeComputer` and `AltitudeAttributeComputer` enforce the standard
 computer protocol. A new family should not add public family-specific method
-names. Private helpers and `detail` kernels may keep narrow span-based
-signatures when that makes the implementation clearer or easier to test.
+names. Private helpers and `detail` kernels may keep narrower signatures when
+that makes implementation or testing clearer.
 
-## Execution
-
-`AttributeFamilyScheduler` expands public requests, adds hidden dependencies,
-groups descriptors by family, and preserves dependency order. The central
-executors are:
-
-- `executeAttributeComputationPlan(...)` for altitude-aware requests;
-- `executeTopologyAttributeComputationPlan(...)` for topology/support requests.
-
-The scheduler also owns the internal mapping between registered computers and
-`AttributeFamily` ids. `familyForAttribute(...)` and unit-row projection derive
-their dispatch from `RegisteredAttributeComputers`, so adding a family should
-update the registered-computer list and the computer-to-family mapping together.
-
-Public result layouts contain only requested attributes. Hidden dependencies
-remain internal scratch data unless they were explicitly requested.
+Local-event bucket types such as `detail::BitquadFamilyCounts` and
+`detail::ContourSideCounts` are implementation storage, not public contracts.
 
 ## Numeric Policy
 
@@ -86,6 +109,64 @@ Computers use `AttributeNumericPolicy.hpp` for degenerate divisions, square
 roots, non-negative clamping, finite fallbacks, and ratio bounds. Attribute
 buffers should not expose accidental `NaN` or infinite values for ordinary
 finite inputs.
+
+## Adding Or Changing Attributes
+
+Start by deciding whether the descriptor belongs to an existing family or
+requires a new family. Prefer an existing family when traversal, dependencies,
+or intermediate state are shared.
+
+Common metadata steps:
+
+1. Add the scalar enum in `AttributeTypes.hpp` and one matching row in
+   `AttributeRegistry.hpp`.
+2. Classify the attribute as topology-only, altitude-aware, adjacency-dependent,
+   or tree-kind specific.
+3. Add it to a group only when the group semantics still hold.
+
+For a descriptor in an existing family:
+
+1. Add it to the family's `producedAttributes`.
+2. Extend request selection and `compute(context)`.
+3. Use `DependencyResolver<Real>` for semantic dependencies and
+   `AttributeNumericPolicy.hpp` for finite fallbacks.
+4. Add descriptor-level dependencies in `AttributeFamilyScheduler.hpp` only when
+   another materialized attribute is consumed.
+5. Extend `computeUnitRows(unitContext)`.
+6. Add focused value tests, plus plumbing tests when registry, dependencies,
+   projection, or public layout changes.
+
+For a new family:
+
+1. Add a new `AttributeComputerFamily` value.
+2. Create a computer under `mmcfilters/attributes/computers/`.
+3. Declare `familyName`, `family`, `domain`, and `producedAttributes`.
+4. Implement `compute(context)` and `computeUnitRows(unitContext)`.
+5. Register the computer in `RegisteredAttributeComputers`.
+6. Register execution in `AttributePipeline.hpp` or `TopologyAttributeBackend.hpp`.
+7. Add contract/plumbing tests and focused value tests.
+
+Update Python bindings, notebooks, or examples only when the public surface
+changes.
+
+## Validation
+
+Useful checks while changing this subsystem are:
+
+```bash
+cmake --build build --target \
+  unit_public_attribute_api \
+  unit_attribute_plumbing \
+  unit_attribute_unit_values \
+  unit_attributes_on_morphological_tree \
+  unit_local_event_computations \
+  unit_maxdist_support
+
+ctest --test-dir build --output-on-failure -R \
+  "unit_(public_attribute_api|attribute_plumbing|attribute_unit_values|attributes_on_morphological_tree|local_event_computations|maxdist_support|installed_consumer)"
+```
+
+Run Python tests when bindings or the Python facade change.
 
 ## Non-Goals
 

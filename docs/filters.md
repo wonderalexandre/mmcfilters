@@ -129,11 +129,11 @@ std::vector<bool> pruned = filters.getAdaptiveCriterion(
     AltitudeDiff<std::uint8_t>{2});
 ```
 
-`MSERComputer<T, Real>` is the advanced-public helper behind this path. It
-pairs each node with altitude-delta ascendant and descendant nodes, computes a
-stability score from an increasing attribute, and marks strict local stability
-minima that pass the configured variation and attribute bounds. If no attribute
-buffer is provided, it lazily computes `AREA`.
+`MSERComputer<T, Real>` is the advanced helper behind this path. It pairs each
+node with altitude-delta ascendant and descendant nodes, computes a stability
+score from an increasing attribute, and marks strict local stability minima that
+pass the configured variation and attribute bounds. If no attribute buffer is
+provided, it lazily computes `AREA`.
 
 MSER is not a general `WeightedTreeView<T>` operation. View-based filter objects
 can run ordinary direct, subtractive, and pruning rules, but reject MSER-assisted
@@ -263,9 +263,9 @@ saliency2 = filters.saliencyMapByExtinction(
 )
 ```
 
-Pass `unweighted` explicitly when the saliency score convention matters. The
-direct `ExtinctionValues.saliencyMap(...)` API and older convenience wrappers
-have historically exposed different defaults.
+Pass `unweighted` explicitly when the saliency score convention matters because
+the direct `ExtinctionValues.saliencyMap(...)` API and convenience wrappers use
+different defaults.
 
 UAO follows the same dense attribute-buffer convention:
 

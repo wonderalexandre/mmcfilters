@@ -11,8 +11,8 @@ USE_MDFILE_AS_MAINPAGE = "@CMAKE_CURRENT_SOURCE_DIR@/README.md"
 
 RECURSIVE              = YES
 FILE_PATTERNS          = *.hpp *.tpp *.md
-# Implementation families installed for template/backward-compatibility support
-# are documented only by the internal Doxygen target.
+# Implementation-heavy headers installed for template support are documented
+# only by the internal Doxygen target.
 EXCLUDE                = "@CMAKE_CURRENT_SOURCE_DIR@/mmcfilters/dataStructure" \
                          "@CMAKE_CURRENT_SOURCE_DIR@/mmcfilters/trees/BuilderMorphologicalTreeByUnionFind.hpp" \
                          "@CMAKE_CURRENT_SOURCE_DIR@/mmcfilters/trees/adjust/DualMinMaxTreeIncrementalFilterLeaf.hpp" \

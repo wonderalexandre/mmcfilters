@@ -18,17 +18,6 @@ inline NodeId boundingBoxSlotOf(const MorphologicalTree&, NodeId nodeId) noexcep
     return nodeId;
 }
 
-inline constexpr std::array<Attribute, 9> BOUNDING_BOX_ATTRIBUTES{
-    BOX_WIDTH,
-    BOX_HEIGHT,
-    RECTANGULARITY,
-    RATIO_WH,
-    BOX_COL_MIN,
-    BOX_COL_MAX,
-    BOX_ROW_MIN,
-    BOX_ROW_MAX,
-    DIAGONAL_LENGTH};
-
 struct BoundingBoxRequest {
     bool width = false;
     bool height = false;
@@ -96,12 +85,18 @@ class BoundingBoxComputer {
 public:
 
     /**
-     * @brief Returns the full family of bounding-box descriptors produced by
-     * this computer.
+     * @brief Canonical list of bounding-box descriptors produced by this computer.
      */
-    [[nodiscard]] std::vector<Attribute> attributes() const {
-        return {detail::BOUNDING_BOX_ATTRIBUTES.begin(), detail::BOUNDING_BOX_ATTRIBUTES.end()};
-    }
+    inline static constexpr std::array<Attribute, 9> producedAttributes{
+        BOX_WIDTH,
+        BOX_HEIGHT,
+        DIAGONAL_LENGTH,
+        RECTANGULARITY,
+        RATIO_WH,
+        BOX_COL_MIN,
+        BOX_COL_MAX,
+        BOX_ROW_MIN,
+        BOX_ROW_MAX};
 
     /**
      * @brief Computes the requested bounding-box descriptors.

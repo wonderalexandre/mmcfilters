@@ -43,11 +43,16 @@ class CentralMomentsComputer {
 public:
 
     /**
-     * @brief Returns the family of central moments produced together.
+     * @brief Canonical list of central moments produced together.
      */
-    [[nodiscard]] std::vector<Attribute> attributes() const {
-        return {CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11, CENTRAL_MOMENT_30, CENTRAL_MOMENT_03, CENTRAL_MOMENT_21, CENTRAL_MOMENT_12};
-    }
+    inline static constexpr std::array<Attribute, 7> producedAttributes{
+        CENTRAL_MOMENT_20,
+        CENTRAL_MOMENT_02,
+        CENTRAL_MOMENT_11,
+        CENTRAL_MOMENT_30,
+        CENTRAL_MOMENT_03,
+        CENTRAL_MOMENT_21,
+        CENTRAL_MOMENT_12};
 
     /**
      * @brief Computes the requested central moments.
@@ -243,11 +248,16 @@ class HuMomentsComputer {
 public:
 
     /**
-     * @brief Returns the Hu moments naturally produced together.
+     * @brief Canonical list of Hu moments produced together.
      */
-    [[nodiscard]] std::vector<Attribute> attributes() const {
-        return {HU_MOMENT_1, HU_MOMENT_2, HU_MOMENT_3, HU_MOMENT_4, HU_MOMENT_5, HU_MOMENT_6, HU_MOMENT_7};
-    }
+    inline static constexpr std::array<Attribute, 7> producedAttributes{
+        HU_MOMENT_1,
+        HU_MOMENT_2,
+        HU_MOMENT_3,
+        HU_MOMENT_4,
+        HU_MOMENT_5,
+        HU_MOMENT_6,
+        HU_MOMENT_7};
 
     /**
      * @brief Computes the requested Hu invariant moments.
@@ -419,11 +429,16 @@ public:
     }
 
     /**
-     * @brief Returns the family of moment-derived descriptors.
+     * @brief Canonical list of moment-derived descriptors produced by this computer.
      */
-    [[nodiscard]] std::vector<Attribute> attributes() const {
-        return {COMPACTNESS, ECCENTRICITY, LENGTH_MAJOR_AXIS, LENGTH_MINOR_AXIS,AXIS_ORIENTATION, INERTIA, CIRCULARITY};
-    }
+    inline static constexpr std::array<Attribute, 7> producedAttributes{
+        INERTIA,
+        COMPACTNESS,
+        ECCENTRICITY,
+        LENGTH_MAJOR_AXIS,
+        LENGTH_MINOR_AXIS,
+        AXIS_ORIENTATION,
+        CIRCULARITY};
 
     /**
      * @brief Computes the requested moment-derived descriptors.

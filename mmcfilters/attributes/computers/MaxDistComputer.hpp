@@ -9,6 +9,7 @@
 #include "detail/maxdist/EdtDIFT.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <concepts>
 #include <cstddef>
@@ -306,11 +307,9 @@ namespace mmcfilters::attributes::computers {
 class MaxDistComputer {
 public:
     /**
-     * @brief Returns the scalar descriptors materialized by this computer.
+     * @brief Canonical list of scalar descriptors materialized by this computer.
      */
-    [[nodiscard]] std::vector<Attribute> attributes() const {
-        return {MAX_DIST};
-    }
+    inline static constexpr std::array<Attribute, 1> producedAttributes{MAX_DIST};
 
     /**
      * @brief Rejects tree kinds for which MAX_DIST is not defined.

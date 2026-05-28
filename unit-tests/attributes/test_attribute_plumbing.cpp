@@ -14,6 +14,7 @@
 #include <initializer_list>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <tuple>
 #include <vector>
@@ -88,18 +89,24 @@ void requireTraitContract(
 }
 
 template <class Computer>
-void requireRuntimeAttributesMatchTraits(std::string_view label)
+void requireRuntimeProducedAttributesMatchTraits(std::string_view label)
 {
-    const Computer computer;
-    const std::vector<Attribute> runtimeAttributes = computer.attributes();
+    const auto& canonicalAttributes = Computer::producedAttributes;
     const auto& traitAttributes = AttributeComputerTraits<Computer>::producedAttributes;
+    const std::vector<Attribute> runtimeAttributes = runtimeProducedAttributes<Computer>();
     const std::string labelText(label);
 
-    requireEqual(runtimeAttributes.size(), traitAttributes.size(), labelText + " runtime attribute count");
-    for (Attribute attribute : traitAttributes) {
-        require(
-            std::find(runtimeAttributes.begin(), runtimeAttributes.end(), attribute) != runtimeAttributes.end(),
-            labelText + " runtime attributes match trait");
+    requireEqual(traitAttributes.size(), canonicalAttributes.size(), labelText + " trait attribute count");
+    requireEqual(runtimeAttributes.size(), canonicalAttributes.size(), labelText + " runtime attribute count");
+    for (std::size_t i = 0; i < canonicalAttributes.size(); ++i) {
+        requireEqual(
+            static_cast<int>(traitAttributes[i]),
+            static_cast<int>(canonicalAttributes[i]),
+            labelText + " trait uses canonical produced attribute order " + std::to_string(i));
+        requireEqual(
+            static_cast<int>(runtimeAttributes[i]),
+            static_cast<int>(canonicalAttributes[i]),
+            labelText + " runtime vector uses canonical produced attribute order " + std::to_string(i));
     }
 }
 
@@ -355,17 +362,17 @@ int main() {
             AttributeComputerDomain::Altitude,
             "MaxDistComputer");
 
-        requireRuntimeAttributesMatchTraits<AreaComputer>("AreaComputer");
-        requireRuntimeAttributesMatchTraits<BoundingBoxComputer>("BoundingBoxComputer");
-        requireRuntimeAttributesMatchTraits<TreeTopologyComputer>("TreeTopologyComputer");
-        requireRuntimeAttributesMatchTraits<CentralMomentsComputer>("CentralMomentsComputer");
-        requireRuntimeAttributesMatchTraits<HuMomentsComputer>("HuMomentsComputer");
-        requireRuntimeAttributesMatchTraits<MomentBasedAttributeComputer>("MomentBasedAttributeComputer");
-        requireRuntimeAttributesMatchTraits<BitquadAttributeComputer>("BitquadAttributeComputer");
-        requireRuntimeAttributesMatchTraits<ContourSideAttributeComputer>("ContourSideAttributeComputer");
-        requireRuntimeAttributesMatchTraits<VolumeComputer>("VolumeComputer");
-        requireRuntimeAttributesMatchTraits<GrayLevelStatsComputer>("GrayLevelStatsComputer");
-        requireRuntimeAttributesMatchTraits<MaxDistComputer>("MaxDistComputer");
+        requireRuntimeProducedAttributesMatchTraits<AreaComputer>("AreaComputer");
+        requireRuntimeProducedAttributesMatchTraits<BoundingBoxComputer>("BoundingBoxComputer");
+        requireRuntimeProducedAttributesMatchTraits<TreeTopologyComputer>("TreeTopologyComputer");
+        requireRuntimeProducedAttributesMatchTraits<CentralMomentsComputer>("CentralMomentsComputer");
+        requireRuntimeProducedAttributesMatchTraits<HuMomentsComputer>("HuMomentsComputer");
+        requireRuntimeProducedAttributesMatchTraits<MomentBasedAttributeComputer>("MomentBasedAttributeComputer");
+        requireRuntimeProducedAttributesMatchTraits<BitquadAttributeComputer>("BitquadAttributeComputer");
+        requireRuntimeProducedAttributesMatchTraits<ContourSideAttributeComputer>("ContourSideAttributeComputer");
+        requireRuntimeProducedAttributesMatchTraits<VolumeComputer>("VolumeComputer");
+        requireRuntimeProducedAttributesMatchTraits<GrayLevelStatsComputer>("GrayLevelStatsComputer");
+        requireRuntimeProducedAttributesMatchTraits<MaxDistComputer>("MaxDistComputer");
 
         requireEqual(
             static_cast<int>(mmcfilters::detail::familyForAttribute(RECTANGULARITY)),

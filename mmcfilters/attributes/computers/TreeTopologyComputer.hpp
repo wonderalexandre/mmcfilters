@@ -49,11 +49,20 @@ class TreeTopologyComputer {
 public:
 
     /**
-     * @brief Returns the full family of topology-derived descriptors.
+     * @brief Canonical list of topology-derived descriptors produced by this computer.
      */
-    [[nodiscard]] std::vector<Attribute> attributes() const {
-        return {HEIGHT_NODE, DEPTH_NODE, IS_LEAF_NODE, IS_ROOT_NODE, NUM_CHILDREN_NODE, NUM_SIBLINGS_NODE, NUM_DESCENDANTS_NODE, NUM_LEAF_DESCENDANTS_NODE, LEAF_RATIO_NODE, BALANCE_NODE, AVG_CHILD_HEIGHT_NODE};
-    }
+    inline static constexpr std::array<Attribute, 11> producedAttributes{
+        HEIGHT_NODE,
+        DEPTH_NODE,
+        IS_LEAF_NODE,
+        IS_ROOT_NODE,
+        NUM_CHILDREN_NODE,
+        NUM_SIBLINGS_NODE,
+        NUM_DESCENDANTS_NODE,
+        NUM_LEAF_DESCENDANTS_NODE,
+        LEAF_RATIO_NODE,
+        BALANCE_NODE,
+        AVG_CHILD_HEIGHT_NODE};
 
     /**
      * @brief Computes the requested topology descriptors.

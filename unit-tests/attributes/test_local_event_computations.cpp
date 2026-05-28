@@ -1,6 +1,7 @@
 #include "support/TestSupport.hpp"
 
 #include "mmcfilters/attributes/AttributeComputation.hpp"
+#include "mmcfilters/attributes/computers/AttributeComputerTraits.hpp"
 #include "mmcfilters/attributes/computers/BitquadAttributeComputer.hpp"
 #include "mmcfilters/attributes/computers/ContourSideAttributeComputer.hpp"
 #include "mmcfilters/attributes/computers/detail/BitquadAttributeMaterialization.hpp"
@@ -346,9 +347,7 @@ void verifyLocalEventBitquadScalarComputer(
     const MorphologicalTree& tree,
     const std::vector<Attribute>& requestedAttributes,
     const std::string& label) {
-    BitquadAttributeComputer localComputer;
-
-    const auto scalarAttributes = localComputer.attributes();
+    const auto scalarAttributes = runtimeProducedAttributes<BitquadAttributeComputer>();
     requireEqual(scalarAttributes.size(), static_cast<std::size_t>(9), label + " attribute count");
 
     const AttributeNames names = makeDenseAttributeNames(requestedAttributes);
@@ -387,8 +386,7 @@ void verifyLocalEventBitquadScalarComputer(
 }
 
 void verifyLocalEventBitquadScalarComputer(const MorphologicalTree& tree, const std::string& label) {
-    BitquadAttributeComputer localComputer;
-    verifyLocalEventBitquadScalarComputer(tree, localComputer.attributes(), label + " full");
+    verifyLocalEventBitquadScalarComputer(tree, runtimeProducedAttributes<BitquadAttributeComputer>(), label + " full");
     verifyLocalEventBitquadScalarComputer(
         tree,
         {BITQUADS_AREA, BITQUADS_PERIMETER, BITQUADS_CIRCULARITY},
@@ -399,8 +397,7 @@ void verifyLocalEventTreeOfShapesBitquadScalarComputer(
     const WeightedMorphologicalTree<std::uint8_t>& weighted,
     const std::string& label) {
     const MorphologicalTree& tree = weighted.topology();
-    BitquadAttributeComputer localComputer;
-    const auto requestedAttributes = localComputer.attributes();
+    const auto requestedAttributes = runtimeProducedAttributes<BitquadAttributeComputer>();
     const AttributeNames names = makeDenseAttributeNames(requestedAttributes);
     const std::size_t bufferSize =
         static_cast<std::size_t>(tree.getNumInternalNodeSlots()) *
@@ -593,8 +590,7 @@ void verifyPublicContourSideCountsComputer(
     const MorphologicalTree& tree,
     const std::vector<Attribute>& requestedAttributes,
     const std::string& label) {
-    ContourSideAttributeComputer computer;
-    const auto allContourAttributes = computer.attributes();
+    const auto allContourAttributes = runtimeProducedAttributes<ContourSideAttributeComputer>();
     const std::vector<Attribute> expectedAttributes = {
         CONTOUR_PIXELS,
         CONTOUR_PERIMETER,
@@ -661,8 +657,7 @@ void verifyPublicContourSideCountsComputer(
 }
 
 void verifyPublicContourSideCountsComputer(const MorphologicalTree& tree, const std::string& label) {
-    ContourSideAttributeComputer computer;
-    verifyPublicContourSideCountsComputer(tree, computer.attributes(), label + " full");
+    verifyPublicContourSideCountsComputer(tree, runtimeProducedAttributes<ContourSideAttributeComputer>(), label + " full");
     verifyPublicContourSideCountsComputer(
         tree,
         {CONTOUR_PIXELS, CONTOUR_PERIMETER, CONTOUR_SIDE_EAST},
@@ -670,8 +665,7 @@ void verifyPublicContourSideCountsComputer(const MorphologicalTree& tree, const 
 }
 
 void verifyPublicContourSideCountUnitAttributes(const MorphologicalTree& tree, const std::string& label) {
-    ContourSideAttributeComputer computer;
-    const auto attributes = computer.attributes();
+    const auto attributes = runtimeProducedAttributes<ContourSideAttributeComputer>();
     const AttributeNames names = makeDenseAttributeNames(attributes);
     const std::vector<NodeId> unitProperParts = {
         0,

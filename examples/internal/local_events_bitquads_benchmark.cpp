@@ -9,6 +9,7 @@
  * attribute requests. It includes `detail/` headers and is not public API.
  */
 #include "mmcfilters/attributes/Attributes.hpp"
+#include "mmcfilters/attributes/computers/AttributeComputerTraits.hpp"
 #include "mmcfilters/attributes/computers/BitquadAttributeComputer.hpp"
 #include "mmcfilters/attributes/computers/detail/BitquadLocalEventComputation.hpp"
 #include "mmcfilters/attributes/computers/detail/ContourSideLocalEventComputation.hpp"
@@ -282,8 +283,7 @@ template<AltitudeValue T>
 std::uint64_t computeLocalScalarChecksum(
     const MorphologicalTree& tree,
     std::span<const T> altitude) {
-    BitquadAttributeComputer computer;
-    const auto attributes = computer.attributes();
+    const auto attributes = runtimeProducedAttributes<BitquadAttributeComputer>();
     const AttributeNames names = makeDenseAttributeNames(attributes);
     std::vector<float> buffer(
         static_cast<std::size_t>(tree.getNumInternalNodeSlots()) *
@@ -300,8 +300,7 @@ std::uint64_t computeLocalScalarChecksum(
 }
 
 std::uint64_t computeLocalScalarChecksum(const MorphologicalTree& tree) {
-    BitquadAttributeComputer computer;
-    const auto attributes = computer.attributes();
+    const auto attributes = runtimeProducedAttributes<BitquadAttributeComputer>();
     const AttributeNames names = makeDenseAttributeNames(attributes);
     std::vector<float> buffer(
         static_cast<std::size_t>(tree.getNumInternalNodeSlots()) *

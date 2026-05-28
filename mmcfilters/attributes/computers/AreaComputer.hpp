@@ -4,6 +4,7 @@
 #include "../../trees/detail/TreeTraversalDetail.hpp"
 #include "../../trees/MorphologicalTree.hpp"
 
+#include <array>
 #include <concepts>
 
 namespace mmcfilters::attributes::computers {
@@ -31,9 +32,9 @@ class AreaComputer {
 public:
 
     /**
-     * @brief Returns the attribute naturally produced by this computer.
+     * @brief Canonical list of attributes produced by this computer.
      */
-    [[nodiscard]] std::vector<Attribute> attributes() const { return {AREA}; }
+    inline static constexpr std::array<Attribute, 1> producedAttributes{AREA};
 
     /**
      * @brief Computes area by summing direct proper-part counts bottom-up.

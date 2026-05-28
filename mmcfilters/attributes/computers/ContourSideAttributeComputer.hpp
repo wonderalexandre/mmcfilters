@@ -4,9 +4,9 @@
 #include "detail/ContourSideAttributeMaterialization.hpp"
 #include "detail/ContourSideLocalEventComputation.hpp"
 
+#include <array>
 #include <concepts>
 #include <span>
-#include <vector>
 
 namespace mmcfilters::attributes::computers {
 
@@ -29,18 +29,15 @@ namespace mmcfilters::attributes::computers {
 class ContourSideAttributeComputer {
 public:
     /**
-     * @brief Returns the scalar contour attributes materialized by this computer.
+     * @brief Canonical list of scalar contour attributes materialized by this computer.
      */
-    [[nodiscard]] std::vector<Attribute> attributes() const {
-        return {
-            CONTOUR_PIXELS,
-            CONTOUR_PERIMETER,
-            CONTOUR_SIDE_NORTH,
-            CONTOUR_SIDE_WEST,
-            CONTOUR_SIDE_EAST,
-            CONTOUR_SIDE_SOUTH,
-        };
-    }
+    inline static constexpr std::array<Attribute, 6> producedAttributes{
+        CONTOUR_PIXELS,
+        CONTOUR_PERIMETER,
+        CONTOUR_SIDE_NORTH,
+        CONTOUR_SIDE_WEST,
+        CONTOUR_SIDE_EAST,
+        CONTOUR_SIDE_SOUTH};
 
     /**
      * @brief Computes requested contour-side scalar attributes for live nodes.

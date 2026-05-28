@@ -8,10 +8,15 @@ transition plan.
 An attribute computer owns one coherent descriptor family. Every computer must
 provide:
 
-- `attributes()` for runtime inspection of the produced descriptors;
+- `inline static constexpr producedAttributes` as the canonical descriptor list;
 - `AttributeComputerTraits<Computer>` for compile-time family metadata;
 - `static compute(context)` for internal-node rows;
 - `static computeUnitRows(unitContext)` for compact exported-Higra unit rows.
+
+The produced-attribute list has a single source of truth: the computer class.
+`AttributeComputerTraits<Computer>::producedAttributes` references that class
+member, and `runtimeProducedAttributes<Computer>()` materializes it as a
+`std::vector<Attribute>` only for call sites that need runtime storage.
 
 Unit-row support is mandatory. If a descriptor has a degenerate one-pixel
 meaning, the computer defines that value explicitly. If the descriptor cannot
@@ -26,6 +31,9 @@ defines the exported unit-row convention.
 - `domain`;
 - `producedAttributes`;
 - `requiredAttributes`.
+
+`producedAttributes` must come from `Computer::producedAttributes`; do not
+repeat the descriptor list in the trait specialization.
 
 `domain` determines the compute context: topology families receive topology
 contexts, while altitude families receive altitude-aware contexts.

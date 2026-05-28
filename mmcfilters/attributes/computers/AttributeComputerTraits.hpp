@@ -66,10 +66,21 @@ template <class Computer>
 struct AttributeComputerTraits;
 
 /**
+ * @brief Verifies that a computer declares its canonical output list.
+ */
+template <class Computer>
+concept AttributeComputerProducesAttributes =
+    requires {
+        Computer::producedAttributes;
+    } &&
+    IsAttributeArrayV<decltype(Computer::producedAttributes)>;
+
+/**
  * @brief Verifies that a concrete computer has a complete trait contract.
  */
 template <class Computer>
 concept AttributeComputerWithTraits =
+    AttributeComputerProducesAttributes<Computer> &&
     requires {
         { AttributeComputerTraits<Computer>::familyName } -> std::convertible_to<std::string_view>;
         { AttributeComputerTraits<Computer>::domain } -> std::convertible_to<AttributeComputerDomain>;
@@ -77,17 +88,10 @@ concept AttributeComputerWithTraits =
         AttributeComputerTraits<Computer>::requiredAttributes;
     } &&
     IsAttributeArrayV<decltype(AttributeComputerTraits<Computer>::producedAttributes)> &&
-    IsAttributeArrayV<decltype(AttributeComputerTraits<Computer>::requiredAttributes)>;
-
-/**
- * @brief Verifies the runtime metadata method exposed by a computer instance.
- */
-template <class Computer>
-concept AttributeComputerInstance =
-    std::default_initializable<Computer> &&
-    requires(const Computer& computer) {
-        { computer.attributes() } -> std::same_as<std::vector<Attribute>>;
-    };
+    IsAttributeArrayV<decltype(AttributeComputerTraits<Computer>::requiredAttributes)> &&
+    std::same_as<
+        std::remove_cvref_t<decltype(AttributeComputerTraits<Computer>::producedAttributes)>,
+        std::remove_cvref_t<decltype(Computer::producedAttributes)>>;
 
 /**
  * @brief Computer concept for families that do not read node altitudes.
@@ -96,7 +100,6 @@ template <class Computer, class Real = float>
 concept TopologyAttributeComputer =
     std::floating_point<Real> &&
     AttributeComputerWithTraits<Computer> &&
-    AttributeComputerInstance<Computer> &&
     AttributeComputerTraits<Computer>::domain == AttributeComputerDomain::Topology &&
     requires(
         const AttributeComputeContext<Real>& context,
@@ -113,7 +116,6 @@ concept AltitudeAttributeComputer =
     std::floating_point<Real> &&
     AltitudeValue<T> &&
     AttributeComputerWithTraits<Computer> &&
-    AttributeComputerInstance<Computer> &&
     AttributeComputerTraits<Computer>::domain == AttributeComputerDomain::Altitude &&
     requires(
         const AltitudeAttributeComputeContext<Real, T>& context,
@@ -152,6 +154,16 @@ template <AttributeComputerWithTraits Computer>
 }
 
 /**
+ * @brief Materializes a computer's canonical output list as a runtime vector.
+ */
+template <AttributeComputerWithTraits Computer>
+[[nodiscard]] std::vector<Attribute> runtimeProducedAttributes()
+{
+    const auto& attributes = AttributeComputerTraits<Computer>::producedAttributes;
+    return {attributes.begin(), attributes.end()};
+}
+
+/**
  * @brief Number of dependency descriptors declared by the family.
  */
 template <AttributeComputerWithTraits Computer>
@@ -170,7 +182,7 @@ struct AttributeComputerTraits<AreaComputer> {
     /// Execution domain required by the computer.
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
     /// Attributes produced by the family.
-    inline static constexpr std::array<Attribute, 1> producedAttributes{AREA};
+    inline static constexpr const auto& producedAttributes = AreaComputer::producedAttributes;
     /// Attributes that may be required by the family.
     inline static constexpr std::array<Attribute, 0> requiredAttributes{};
 };
@@ -185,16 +197,7 @@ struct AttributeComputerTraits<BoundingBoxComputer> {
     /// Execution domain required by the computer.
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
     /// Attributes produced by the family.
-    inline static constexpr std::array<Attribute, 9> producedAttributes{
-        BOX_WIDTH,
-        BOX_HEIGHT,
-        DIAGONAL_LENGTH,
-        RECTANGULARITY,
-        RATIO_WH,
-        BOX_COL_MIN,
-        BOX_COL_MAX,
-        BOX_ROW_MIN,
-        BOX_ROW_MAX};
+    inline static constexpr const auto& producedAttributes = BoundingBoxComputer::producedAttributes;
     /// Attributes that may be required by the family.
     inline static constexpr std::array<Attribute, 1> requiredAttributes{AREA};
 };
@@ -209,18 +212,7 @@ struct AttributeComputerTraits<TreeTopologyComputer> {
     /// Execution domain required by the computer.
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
     /// Attributes produced by the family.
-    inline static constexpr std::array<Attribute, 11> producedAttributes{
-        HEIGHT_NODE,
-        DEPTH_NODE,
-        IS_LEAF_NODE,
-        IS_ROOT_NODE,
-        NUM_CHILDREN_NODE,
-        NUM_SIBLINGS_NODE,
-        NUM_DESCENDANTS_NODE,
-        NUM_LEAF_DESCENDANTS_NODE,
-        LEAF_RATIO_NODE,
-        BALANCE_NODE,
-        AVG_CHILD_HEIGHT_NODE};
+    inline static constexpr const auto& producedAttributes = TreeTopologyComputer::producedAttributes;
     /// Attributes that may be required by the family.
     inline static constexpr std::array<Attribute, 0> requiredAttributes{};
 };
@@ -235,14 +227,7 @@ struct AttributeComputerTraits<CentralMomentsComputer> {
     /// Execution domain required by the computer.
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
     /// Attributes produced by the family.
-    inline static constexpr std::array<Attribute, 7> producedAttributes{
-        CENTRAL_MOMENT_20,
-        CENTRAL_MOMENT_02,
-        CENTRAL_MOMENT_11,
-        CENTRAL_MOMENT_30,
-        CENTRAL_MOMENT_03,
-        CENTRAL_MOMENT_21,
-        CENTRAL_MOMENT_12};
+    inline static constexpr const auto& producedAttributes = CentralMomentsComputer::producedAttributes;
     /// Attributes that may be required by the family.
     inline static constexpr std::array<Attribute, 0> requiredAttributes{};
 };
@@ -257,14 +242,7 @@ struct AttributeComputerTraits<HuMomentsComputer> {
     /// Execution domain required by the computer.
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
     /// Attributes produced by the family.
-    inline static constexpr std::array<Attribute, 7> producedAttributes{
-        HU_MOMENT_1,
-        HU_MOMENT_2,
-        HU_MOMENT_3,
-        HU_MOMENT_4,
-        HU_MOMENT_5,
-        HU_MOMENT_6,
-        HU_MOMENT_7};
+    inline static constexpr const auto& producedAttributes = HuMomentsComputer::producedAttributes;
     /// Attributes that may be required by the family.
     inline static constexpr std::array<Attribute, 8> requiredAttributes{
         AREA,
@@ -287,14 +265,7 @@ struct AttributeComputerTraits<MomentBasedAttributeComputer> {
     /// Execution domain required by the computer.
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
     /// Attributes produced by the family.
-    inline static constexpr std::array<Attribute, 7> producedAttributes{
-        INERTIA,
-        COMPACTNESS,
-        ECCENTRICITY,
-        LENGTH_MAJOR_AXIS,
-        LENGTH_MINOR_AXIS,
-        AXIS_ORIENTATION,
-        CIRCULARITY};
+    inline static constexpr const auto& producedAttributes = MomentBasedAttributeComputer::producedAttributes;
     /// Attributes that may be required by the family.
     inline static constexpr std::array<Attribute, 4> requiredAttributes{
         AREA,
@@ -313,16 +284,7 @@ struct AttributeComputerTraits<BitquadAttributeComputer> {
     /// Execution domain required by the computer.
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
     /// Attributes produced by the family.
-    inline static constexpr std::array<Attribute, 9> producedAttributes{
-        BITQUADS_AREA,
-        BITQUADS_NUMBER_EULER,
-        BITQUADS_NUMBER_HOLES,
-        BITQUADS_PERIMETER,
-        BITQUADS_PERIMETER_CONTINUOUS,
-        BITQUADS_CIRCULARITY,
-        BITQUADS_PERIMETER_AVERAGE,
-        BITQUADS_LENGTH_AVERAGE,
-        BITQUADS_WIDTH_AVERAGE};
+    inline static constexpr const auto& producedAttributes = BitquadAttributeComputer::producedAttributes;
     /// Attributes that may be required by the family.
     inline static constexpr std::array<Attribute, 0> requiredAttributes{};
 };
@@ -337,13 +299,7 @@ struct AttributeComputerTraits<ContourSideAttributeComputer> {
     /// Execution domain required by the computer.
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
     /// Attributes produced by the family.
-    inline static constexpr std::array<Attribute, 6> producedAttributes{
-        CONTOUR_PIXELS,
-        CONTOUR_PERIMETER,
-        CONTOUR_SIDE_NORTH,
-        CONTOUR_SIDE_WEST,
-        CONTOUR_SIDE_EAST,
-        CONTOUR_SIDE_SOUTH};
+    inline static constexpr const auto& producedAttributes = ContourSideAttributeComputer::producedAttributes;
     /// Attributes that may be required by the family.
     inline static constexpr std::array<Attribute, 0> requiredAttributes{};
 };
@@ -358,9 +314,7 @@ struct AttributeComputerTraits<VolumeComputer> {
     /// Execution domain required by the computer.
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Altitude;
     /// Attributes produced by the family.
-    inline static constexpr std::array<Attribute, 2> producedAttributes{
-        VOLUME,
-        RELATIVE_VOLUME};
+    inline static constexpr const auto& producedAttributes = VolumeComputer::producedAttributes;
     /// Attributes that may be required by the family.
     inline static constexpr std::array<Attribute, 1> requiredAttributes{AREA};
 };
@@ -375,11 +329,7 @@ struct AttributeComputerTraits<GrayLevelStatsComputer> {
     /// Execution domain required by the computer.
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Altitude;
     /// Attributes produced by the family.
-    inline static constexpr std::array<Attribute, 4> producedAttributes{
-        LEVEL,
-        MEAN_LEVEL,
-        VARIANCE_LEVEL,
-        GRAY_HEIGHT};
+    inline static constexpr const auto& producedAttributes = GrayLevelStatsComputer::producedAttributes;
     /// Attributes that may be required by the family.
     inline static constexpr std::array<Attribute, 2> requiredAttributes{
         AREA,
@@ -396,7 +346,7 @@ struct AttributeComputerTraits<MaxDistComputer> {
     /// Execution domain required by the computer.
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Altitude;
     /// Attributes produced by the family.
-    inline static constexpr std::array<Attribute, 1> producedAttributes{MAX_DIST};
+    inline static constexpr const auto& producedAttributes = MaxDistComputer::producedAttributes;
     /// Attributes that may be required by the family.
     inline static constexpr std::array<Attribute, 0> requiredAttributes{};
 };

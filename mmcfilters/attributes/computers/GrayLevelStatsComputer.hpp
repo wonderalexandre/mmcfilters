@@ -19,12 +19,6 @@ inline NodeId grayStatsSlotOf(const MorphologicalTree&, NodeId nodeId) noexcept 
     return nodeId;
 }
 
-inline constexpr std::array<Attribute, 4> GRAY_LEVEL_STATS_ATTRIBUTES{
-    LEVEL,
-    MEAN_LEVEL,
-    VARIANCE_LEVEL,
-    GRAY_HEIGHT};
-
 struct GrayLevelStatsRequest {
     bool level = false;
     bool meanLevel = false;
@@ -199,11 +193,13 @@ class GrayLevelStatsComputer {
 public:
 
     /**
-     * @brief Returns the grey-level descriptors naturally produced together.
+     * @brief Canonical list of grey-level descriptors produced by this computer.
      */
-    [[nodiscard]] std::vector<Attribute> attributes() const {
-        return {detail::GRAY_LEVEL_STATS_ATTRIBUTES.begin(), detail::GRAY_LEVEL_STATS_ATTRIBUTES.end()};
-    }
+    inline static constexpr std::array<Attribute, 4> producedAttributes{
+        LEVEL,
+        MEAN_LEVEL,
+        VARIANCE_LEVEL,
+        GRAY_HEIGHT};
 
     /**
      * @brief Computes the requested grey-level statistics.

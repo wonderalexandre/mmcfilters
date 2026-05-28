@@ -10,7 +10,6 @@
 #include <cmath>
 #include <span>
 #include <stdexcept>
-#include <vector>
 
 namespace mmcfilters::attributes::computers {
 
@@ -18,10 +17,6 @@ namespace detail {
 inline NodeId volumeSlotOf(const MorphologicalTree&, NodeId nodeId) noexcept {
     return nodeId;
 }
-
-inline constexpr std::array<Attribute, 2> VOLUME_ATTRIBUTES{
-    VOLUME,
-    RELATIVE_VOLUME};
 
 struct VolumeRequest {
     bool volume = false;
@@ -144,11 +139,11 @@ class VolumeComputer {
 public:
 
     /**
-     * @brief Returns the volume descriptors produced by this computer.
+     * @brief Canonical list of volume descriptors produced by this computer.
      */
-    [[nodiscard]] std::vector<Attribute> attributes() const {
-        return {detail::VOLUME_ATTRIBUTES.begin(), detail::VOLUME_ATTRIBUTES.end()};
-    }
+    inline static constexpr std::array<Attribute, 2> producedAttributes{
+        VOLUME,
+        RELATIVE_VOLUME};
 
     /**
      * @brief Computes the requested volume descriptors.

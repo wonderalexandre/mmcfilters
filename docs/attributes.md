@@ -337,7 +337,7 @@ owns a coherent attribute family, not necessarily a single scalar descriptor.
 
 Each computer is expected to:
 
-- declare the attributes it can produce through `attributes()`;
+- declare the attributes it can produce through `inline static constexpr producedAttributes`;
 - expose a static `compute(context)` entry point for its node-level family
   kernel;
 - expose a static `computeUnitRows(unitContext)` entry point for compact export
@@ -347,8 +347,11 @@ Each computer is expected to:
 - write into the caller-owned flat result buffer;
 - define unit-component values for compact Higra-style export projection.
 
-Computers are treated as stateless function objects. Implementations must not
-keep request-specific mutable state inside the computer object.
+Computers are treated as stateless static kernels. Implementations must not keep
+request-specific mutable state inside a computer object. Runtime callers that
+need a `std::vector<Attribute>` can use
+`runtimeProducedAttributes<Computer>()`, which is derived from the canonical
+static list.
 
 The context types in `AttributeKernelSupport.hpp` are the adapter boundary for
 computer execution: topology/support families use
@@ -412,11 +415,11 @@ Use this checklist for new attributes:
 4. Place the descriptor in the coherent computer family under
    `mmcfilters/attributes/computers/`, or add a new family only when no current
    traversal/state fits.
-5. Declare the family contract in `AttributeComputerTraits.hpp`: produced
-   attributes, family name, execution domain, and dependency set. The execution
-   domain determines whether the computer receives an altitude-aware context.
-   Unit rows are mandatory for every computer through
-   `computeUnitRows(unitContext)`.
+5. Declare the computer's canonical `producedAttributes` list in the computer
+   class. Declare the remaining family contract in `AttributeComputerTraits.hpp`:
+   family name, execution domain, and dependency set. The execution domain
+   determines whether the computer receives an altitude-aware context. Unit rows
+   are mandatory for every computer through `computeUnitRows(unitContext)`.
 6. Add attribute-level dependencies in `AttributeFamilyScheduler.hpp` only for
    descriptors that consume another materialized attribute. Dependencies should
    be semantic (`AREA`, `VOLUME`, moments) rather than positional buffer

@@ -8,7 +8,6 @@
 #include <numbers>
 #include <span>
 #include <stdexcept>
-#include <vector>
 
 namespace mmcfilters::attributes::computers {
 
@@ -31,21 +30,18 @@ namespace mmcfilters::attributes::computers {
 class BitquadAttributeComputer {
 public:
     /**
-     * @brief Returns the scalar bitquad attributes materialized by this computer.
+     * @brief Canonical list of scalar bitquad attributes materialized by this computer.
      */
-    [[nodiscard]] std::vector<Attribute> attributes() const {
-        return {
-            BITQUADS_AREA,
-            BITQUADS_NUMBER_EULER,
-            BITQUADS_NUMBER_HOLES,
-            BITQUADS_PERIMETER,
-            BITQUADS_PERIMETER_CONTINUOUS,
-            BITQUADS_CIRCULARITY,
-            BITQUADS_PERIMETER_AVERAGE,
-            BITQUADS_LENGTH_AVERAGE,
-            BITQUADS_WIDTH_AVERAGE,
-        };
-    }
+    inline static constexpr std::array<Attribute, 9> producedAttributes{
+        BITQUADS_AREA,
+        BITQUADS_NUMBER_EULER,
+        BITQUADS_NUMBER_HOLES,
+        BITQUADS_PERIMETER,
+        BITQUADS_PERIMETER_CONTINUOUS,
+        BITQUADS_CIRCULARITY,
+        BITQUADS_PERIMETER_AVERAGE,
+        BITQUADS_LENGTH_AVERAGE,
+        BITQUADS_WIDTH_AVERAGE};
 
     /**
      * @brief Computes requested scalar bitquad attributes for every live node.

@@ -233,7 +233,7 @@ void requireMomentFamiliesMatchPixelOracle(const MorphologicalTree& tree, const 
         1.0e-4);
 }
 
-void requireDoubleMomentComputationDoesNotRoundThroughFloat() {
+void requireMomentOutputDtypeOnlyAffectsStorage() {
     constexpr int cols = 8193;
     auto image = ImageUInt8::create(1, cols, static_cast<std::uint8_t>(7));
     auto weighted = MorphologicalTreeFactory::createMaxTree(image, 1.0);
@@ -254,9 +254,10 @@ void requireDoubleMomentComputationDoesNotRoundThroughFloat() {
         doubleValue,
         expected,
         "double CENTRAL_MOMENT_20 must preserve exact integer moment on large line support");
-    require(
-        static_cast<double>(floatValue) != doubleValue,
-        "double CENTRAL_MOMENT_20 must not be materialized through a rounded float buffer");
+    requireEqual(
+        floatValue,
+        static_cast<float>(doubleValue),
+        "float CENTRAL_MOMENT_20 must be the rounded double-facade output");
 }
 
 int directTopologyHeight(const MorphologicalTree& tree, NodeId nodeId) {
@@ -356,7 +357,7 @@ std::shared_ptr<MorphologicalTree> makeBranchingTopologyFixture() {
 int main() {
     auto image = makeComponentTreeFixture();
 
-    requireDoubleMomentComputationDoesNotRoundThroughFloat();
+    requireMomentOutputDtypeOnlyAffectsStorage();
 
     for (bool isMaxtree : {true, false}) {
         auto weighted = makeWeightedComponentTree(image, isMaxtree);

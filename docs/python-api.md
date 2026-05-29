@@ -99,8 +99,9 @@ maps attribute names to columns in a 2D floating-point array. The optional
 `dtype` keyword accepts `np.float32` or `np.float64`; the default is
 `np.float32`.
 
-The selected `dtype` controls both the NumPy output array and the C++
-floating-point type used by the attribute facade.
+The selected `dtype` controls the NumPy output array. Attribute values are
+computed internally through the same double-precision facade and cast only when
+the output buffer is materialized.
 
 ```python
 area = mmcfilters.Attribute.computeSingleTopologyAttribute(

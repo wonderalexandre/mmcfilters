@@ -91,10 +91,10 @@ auto single64 = AttributeComputation::computeSingleAttribute<double>(weightedTre
 auto mapped64 = AttributeComputation::computeAttributeMapping<double>(weightedTree, LEVEL);
 ```
 
-The `Real` argument selects both the public result storage and the internal
-floating-point arithmetic used by the typed attribute facade. Integer-valued
-support descriptors are still counted discretely and then materialized in the
-requested real type.
+The `Real` argument selects the public result storage. The typed attribute
+facade computes through the same internal `double` pipeline and casts only when
+materializing the returned buffer. Integer-valued support descriptors are still
+counted discretely and then materialized in the requested real type.
 
 Several scalar attributes or groups in one coordinated request:
 
@@ -182,8 +182,9 @@ topology_names, topology_values = mmcfilters.Attribute.computeTopologyAttributes
 )
 ```
 
-The `dtype` keyword selects the public result storage and maps directly to the
-C++ attribute facade: `np.float32` uses `float` and `np.float64` uses `double`.
+The `dtype` keyword selects the public result storage. Both `np.float32` and
+`np.float64` requests use the same internal `double` attribute pipeline; the
+only difference is the dtype of the returned NumPy buffer.
 
 ```python
 area32 = mmcfilters.Attribute.computeSingleAttribute(

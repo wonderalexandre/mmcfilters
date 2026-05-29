@@ -184,6 +184,28 @@ def require_float32_finite(values, label: str, layout=None):
     require_dtype_finite(values, label, layout, np.float32)
 
 
+def require_same_layout(lhs, rhs, label: str):
+    require(dict(lhs) == dict(rhs), f"{label}: layouts differ")
+
+
+def require_float32_matches_float64_cast(float32_values, float64_values, label: str):
+    lhs = np.asarray(float32_values)
+    rhs64 = np.asarray(float64_values)
+    require(lhs.dtype == np.float32, f"{label}: expected float32 lhs, got {lhs.dtype}")
+    require(rhs64.dtype == np.float64, f"{label}: expected float64 rhs, got {rhs64.dtype}")
+    require(lhs.shape == rhs64.shape, f"{label}: shapes differ: {lhs.shape} != {rhs64.shape}")
+    rhs = rhs64.astype(np.float32)
+    if np.array_equal(lhs, rhs):
+        return
+
+    mismatch = np.argwhere(lhs != rhs)
+    examples = []
+    for index in mismatch[:8]:
+        key = tuple(int(i) for i in index)
+        examples.append(f"{key}: {lhs[key]!r} != {rhs[key]!r}")
+    raise RuntimeError(f"{label}: float32 output differs from cast float64 output: {', '.join(examples)}")
+
+
 def require_finite_matrix(values, label: str, layout=None, expected_dtype=np.float32):
     require(values.ndim == 2, f"{label}: expected a 2D attribute matrix")
     require(values.shape[0] > 0, f"{label}: expected at least one output row")
@@ -282,6 +304,89 @@ def validate_tree(mmcfilters, tree, label: str):
 
     default_single = mmcfilters.Attribute.computeSingleAttribute(tree, mmcfilters.Attribute.ECCENTRICITY)
     require_float32_finite(default_single, f"{label}: default dtype")
+
+    all32_layout, all32 = mmcfilters.Attribute.computeAttributes(
+        tree,
+        [mmcfilters.Attribute.Group.ALL],
+        dtype=np.float32,
+    )
+    all64_layout, all64 = mmcfilters.Attribute.computeAttributes(
+        tree,
+        [mmcfilters.Attribute.Group.ALL],
+        dtype=np.float64,
+    )
+    require_same_layout(all32_layout, all64_layout, f"{label}: Attribute.Group.ALL cast contract")
+    require_float32_matches_float64_cast(all32, all64, f"{label}: Attribute.Group.ALL cast contract")
+
+    topology32_layout, topology32 = mmcfilters.Attribute.computeTopologyAttributes(
+        tree,
+        [
+            mmcfilters.Attribute.Group.MOMENTS,
+            mmcfilters.Attribute.Group.BOUNDARY,
+            mmcfilters.Attribute.Group.TREE_TOPOLOGY,
+        ],
+        dtype=np.float32,
+    )
+    topology64_layout, topology64 = mmcfilters.Attribute.computeTopologyAttributes(
+        tree,
+        [
+            mmcfilters.Attribute.Group.MOMENTS,
+            mmcfilters.Attribute.Group.BOUNDARY,
+            mmcfilters.Attribute.Group.TREE_TOPOLOGY,
+        ],
+        dtype=np.float64,
+    )
+    require_same_layout(topology32_layout, topology64_layout, f"{label}: topology cast contract")
+    require_float32_matches_float64_cast(topology32, topology64, f"{label}: topology cast contract")
+
+    for attr_name in ("ECCENTRICITY", "BITQUADS_WIDTH_AVERAGE", "LEVEL", "MAX_DIST"):
+        attr = getattr(mmcfilters.Attribute, attr_name)
+
+        single32 = mmcfilters.Attribute.computeSingleAttribute(tree, attr, dtype=np.float32)
+        single64 = mmcfilters.Attribute.computeSingleAttribute(tree, attr, dtype=np.float64)
+        require_float32_matches_float64_cast(single32, single64, f"{label}: single {attr_name} cast contract")
+
+        mapped32 = mmcfilters.Attribute.computeAttributeMapping(tree, attr, dtype=np.float32)
+        mapped64 = mmcfilters.Attribute.computeAttributeMapping(tree, attr, dtype=np.float64)
+        require_float32_matches_float64_cast(mapped32, mapped64, f"{label}: mapped {attr_name} cast contract")
+
+    delta32_layout, delta32 = mmcfilters.Attribute.computeSingleAttributeWithDelta(
+        tree,
+        mmcfilters.Attribute.ECCENTRICITY,
+        1,
+        "last-padding",
+        dtype=np.float32,
+    )
+    delta64_layout, delta64 = mmcfilters.Attribute.computeSingleAttributeWithDelta(
+        tree,
+        mmcfilters.Attribute.ECCENTRICITY,
+        1,
+        "last-padding",
+        dtype=np.float64,
+    )
+    require_same_layout(delta32_layout, delta64_layout, f"{label}: delta cast contract")
+    require_float32_matches_float64_cast(delta32, delta64, f"{label}: delta cast contract")
+
+    projection32_layout, projection32_values = mmcfilters.Attribute.computeAttributes(
+        tree,
+        [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST],
+        dtype=np.float32,
+    )
+    projection64_layout, projection64_values = mmcfilters.Attribute.computeAttributes(
+        tree,
+        [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST],
+        dtype=np.float64,
+    )
+    require_same_layout(projection32_layout, projection64_layout, f"{label}: exported projection input layout")
+    projected32 = tree.project_node_values_to_exported_higra(
+        projection32_values,
+        [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST],
+    )
+    projected64 = tree.project_node_values_to_exported_higra(
+        projection64_values,
+        [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST],
+    )
+    require_float32_matches_float64_cast(projected32, projected64, f"{label}: exported projection cast contract")
 
 
 def validate_higra_roundtrip(mmcfilters, tree, label: str, kind):

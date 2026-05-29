@@ -9,6 +9,7 @@
 #include <concepts>
 #include <span>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -41,7 +42,10 @@ namespace mmcfilters {
  * space. Projection to the preserved imported Higra space only happens at the
  * boundary of the public API. Attribute value buffers are materialized as
  * `float` by default; public methods can select any `std::floating_point`
- * `Real` type, with `double` supported by the packaged Python bindings.
+ * output `Real` type, with `double` supported by the packaged Python bindings.
+ * The public `Real` controls result storage. Ordinary facade computations run
+ * their internal attribute pipeline in `double` and cast only at the API
+ * boundary.
  */
 class AttributeComputation {
 public:
@@ -332,14 +336,84 @@ public:
 
 namespace mmcfilters {
 
+namespace detail {
+
+template<std::floating_point OutputReal, std::floating_point InternalReal>
+[[nodiscard]] inline ComputedAttributeData<OutputReal> castComputedAttributeData(ComputedAttributeData<InternalReal> computed) {
+    if constexpr (std::is_same_v<OutputReal, InternalReal>) {
+        return computed;
+    } else {
+        std::vector<OutputReal> output;
+        output.reserve(computed.second.size());
+        for (const InternalReal value : computed.second) {
+            output.push_back(static_cast<OutputReal>(value));
+        }
+        return ComputedAttributeData<OutputReal>{
+            std::move(computed.first),
+            std::move(output),
+            computed.nodeIdSpace};
+    }
+}
+
+template<std::floating_point OutputReal, std::floating_point InternalReal>
+[[nodiscard]] inline ComputedAttributeDataWithDelta<OutputReal> castComputedAttributeDataWithDelta(ComputedAttributeDataWithDelta<InternalReal> computed) {
+    if constexpr (std::is_same_v<OutputReal, InternalReal>) {
+        return computed;
+    } else {
+        std::vector<OutputReal> output;
+        output.reserve(computed.second.size());
+        for (const InternalReal value : computed.second) {
+            output.push_back(static_cast<OutputReal>(value));
+        }
+        return ComputedAttributeDataWithDelta<OutputReal>{
+            std::move(computed.first),
+            std::move(output),
+            computed.nodeIdSpace};
+    }
+}
+
+template<std::floating_point OutputReal, std::floating_point InternalReal>
+[[nodiscard]] inline std::vector<OutputReal> castAttributeValues(std::vector<InternalReal> values) {
+    if constexpr (std::is_same_v<OutputReal, InternalReal>) {
+        return values;
+    } else {
+        std::vector<OutputReal> output;
+        output.reserve(values.size());
+        for (const InternalReal value : values) {
+            output.push_back(static_cast<OutputReal>(value));
+        }
+        return output;
+    }
+}
+
+template<std::floating_point OutputReal, std::floating_point InternalReal>
+[[nodiscard]] inline ImagePtr<OutputReal> mapNodeAttributeToImageCast(
+    const MorphologicalTree& tree,
+    const AttributeNames& attrNames,
+    std::span<const InternalReal> nodeValues,
+    Attribute attribute)
+{
+    ImagePtr<OutputReal> imgPtr = Image<OutputReal>::create(tree.getNumRowsOfImage(), tree.getNumColsOfImage());
+    OutputReal* img = imgPtr->rawData();
+    for (int p = 0; p < imgPtr->getSize(); ++p) {
+        const NodeId nodeId = tree.getProperPartOwner(p);
+        img[p] = static_cast<OutputReal>(nodeValues[attrNames.linearIndex(nodeId, attribute)]);
+    }
+    return imgPtr;
+}
+
+} // namespace detail
+
 template <std::floating_point Real>
 inline ComputedAttributeData<Real> AttributeComputation::computeSingleTopologyAttribute(const MorphologicalTree& tree, AttributeOrGroup attrOrGroup, NodeIdSpace outputSpace) {
-    return detail::materializeAttributesWithoutAltitude<Real>(tree, {attrOrGroup}, outputSpace);
+    return detail::castComputedAttributeData<Real>(
+        detail::materializeAttributesWithoutAltitude<double>(tree, {attrOrGroup}, outputSpace));
 }
 
 template <std::floating_point Real>
 inline ComputedAttributeData<Real> AttributeComputation::computeTopologyAttributes(const MorphologicalTree& tree, const std::vector<AttributeOrGroup>& attributes, NodeIdSpace outputSpace) {
-    return detail::materializeAttributesWithoutAltitude<Real>(tree, attributes, outputSpace);
+    return detail::castComputedAttributeData<Real>(
+        detail::materializeAttributesWithoutAltitude<double>(tree, attributes, outputSpace));
 }
 
 template<std::floating_point Real, AltitudeValue T>
@@ -350,12 +424,13 @@ inline ComputedAttributeData<Real> AttributeComputation::computeSingleTopologyAt
 template<std::floating_point Real, AltitudeValue T>
 inline ComputedAttributeData<Real> AttributeComputation::computeSingleTopologyAttribute(const WeightedTreeView<T>& tree, AttributeOrGroup attrOrGroup, NodeIdSpace outputSpace) {
     tree.requireTopologyUnchanged("AttributeComputation::computeSingleTopologyAttribute");
-    return detail::materializeTopologyAttributeRequest<Real>(
-        tree.topology(),
-        tree.altitude(),
-        {attrOrGroup},
-        detail::DependencyMapT<Real>{},
-        outputSpace);
+    return detail::castComputedAttributeData<Real>(
+        detail::materializeTopologyAttributeRequest<double>(
+            tree.topology(),
+            tree.altitude(),
+            {attrOrGroup},
+            detail::DependencyMapT<double>{},
+            outputSpace));
 }
 
 template<std::floating_point Real, AltitudeValue T>
@@ -366,7 +441,13 @@ inline ComputedAttributeData<Real> AttributeComputation::computeTopologyAttribut
 template<std::floating_point Real, AltitudeValue T>
 inline ComputedAttributeData<Real> AttributeComputation::computeTopologyAttributes(const WeightedTreeView<T>& tree, const std::vector<AttributeOrGroup>& attributes, NodeIdSpace outputSpace) {
     tree.requireTopologyUnchanged("AttributeComputation::computeTopologyAttributes");
-    return detail::materializeTopologyAttributeRequest<Real>(tree.topology(), tree.altitude(), attributes, detail::DependencyMapT<Real>{}, outputSpace);
+    return detail::castComputedAttributeData<Real>(
+        detail::materializeTopologyAttributeRequest<double>(
+            tree.topology(),
+            tree.altitude(),
+            attributes,
+            detail::DependencyMapT<double>{},
+            outputSpace));
 }
 
 template<std::floating_point Real, AltitudeValue T>
@@ -387,9 +468,18 @@ inline ComputedAttributeDataWithDelta<Real> AttributeComputation::computeSingleA
 template<std::floating_point Real, AltitudeValue T>
 inline ComputedAttributeDataWithDelta<Real> AttributeComputation::computeSingleAttributeWithDelta(const WeightedTreeView<T>& tree, Attribute attribute, AltitudeDiff<T> deltaStep, int radius, std::string padding, NodeIdSpace outputSpace) {
     tree.requireTopologyUnchanged("AttributeComputation::computeSingleAttributeWithDelta");
-    auto base = computeSingleAttribute<Real>(tree, attribute, NodeIdSpace::MORPHOLOGICAL_TREE);
+    auto base = computeSingleAttribute<double>(tree, attribute, NodeIdSpace::MORPHOLOGICAL_TREE);
 
-    return detail::materializeSingleAttributeWithTypedDelta<Real>(tree.topology(), tree.altitude(), std::move(base), attribute, deltaStep, radius, std::move(padding), outputSpace);
+    return detail::castComputedAttributeDataWithDelta<Real>(
+        detail::materializeSingleAttributeWithTypedDelta<double>(
+            tree.topology(),
+            tree.altitude(),
+            std::move(base),
+            attribute,
+            deltaStep,
+            radius,
+            std::move(padding),
+            outputSpace));
 }
 
 template<std::floating_point Real, AltitudeValue T>
@@ -409,7 +499,8 @@ inline ComputedAttributeData<Real> AttributeComputation::computeAttributesFromAl
     const std::vector<AttributeOrGroup>& attributes,
     NodeIdSpace outputSpace) {
     weighted.requireTopologyUnchanged("AttributeComputation::computeAttributesFromAltitudeSpan");
-    return detail::materializeAttributes<Real>(weighted.topology(), weighted.altitude(), attributes, outputSpace);
+    return detail::castComputedAttributeData<Real>(
+        detail::materializeAttributes<double>(weighted.topology(), weighted.altitude(), attributes, outputSpace));
 }
 
 template<std::floating_point Real, AltitudeValue T>
@@ -435,7 +526,25 @@ inline std::vector<Real> AttributeComputation::projectNodeValuesToExportedHigra(
     std::span<const Real> nodeValues) {
     tree.topology().requireNotEditing("AttributeComputation::projectNodeValuesToExportedHigra");
     tree.requireTopologyUnchanged("AttributeComputation::projectNodeValuesToExportedHigra");
-    return detail::projectNodeValuesToExportedHigraTyped<Real>(tree.topology(), tree.altitude(), attrNames, nodeValues);
+    if constexpr (std::is_same_v<Real, double>) {
+        return detail::projectNodeValuesToExportedHigraTyped<double>(
+            tree.topology(),
+            tree.altitude(),
+            attrNames,
+            nodeValues);
+    } else {
+        std::vector<double> internalValues;
+        internalValues.reserve(nodeValues.size());
+        for (const Real value : nodeValues) {
+            internalValues.push_back(static_cast<double>(value));
+        }
+        return detail::castAttributeValues<Real>(
+            detail::projectNodeValuesToExportedHigraTyped<double>(
+                tree.topology(),
+                tree.altitude(),
+                attrNames,
+                std::span<const double>(internalValues)));
+    }
 }
 
 template<std::floating_point Real, AltitudeValue T>
@@ -448,15 +557,15 @@ inline std::vector<Real> AttributeComputation::projectNodeValuesToExportedHigra(
 
 template<std::floating_point Real, AltitudeValue T>
 inline ImagePtr<Real> AttributeComputation::computeAttributeMapping(const WeightedMorphologicalTree<T>& tree, Attribute attribute) {
-    auto [attrNames, buffer] = AttributeComputation::computeSingleAttribute<Real>(tree, attribute, NodeIdSpace::MORPHOLOGICAL_TREE);
-    return detail::mapNodeAttributeToImage<Real>(tree.topology(), attrNames, buffer, attribute);
+    auto [attrNames, buffer] = AttributeComputation::computeSingleAttribute<double>(tree, attribute, NodeIdSpace::MORPHOLOGICAL_TREE);
+    return detail::mapNodeAttributeToImageCast<Real>(tree.topology(), attrNames, std::span<const double>(buffer), attribute);
 }
 
 template<std::floating_point Real, AltitudeValue T>
 inline ImagePtr<Real> AttributeComputation::computeAttributeMapping(const WeightedTreeView<T>& tree, Attribute attribute) {
     tree.requireTopologyUnchanged("AttributeComputation::computeAttributeMapping");
-    auto [attrNames, buffer] = AttributeComputation::computeSingleAttribute<Real>(tree, attribute, NodeIdSpace::MORPHOLOGICAL_TREE);
-    return detail::mapNodeAttributeToImage<Real>(tree.topology(), attrNames, buffer, attribute);
+    auto [attrNames, buffer] = AttributeComputation::computeSingleAttribute<double>(tree, attribute, NodeIdSpace::MORPHOLOGICAL_TREE);
+    return detail::mapNodeAttributeToImageCast<Real>(tree.topology(), attrNames, std::span<const double>(buffer), attribute);
 }
 
 } // namespace mmcfilters

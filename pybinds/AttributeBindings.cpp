@@ -26,7 +26,7 @@ the selected `NodeIdSpace`. Methods returning several attributes return
 `(layout, values)`, where `layout` maps stable attribute names to columns and
 `values` is a 2D floating-point array with one row per output node. The optional
 `dtype` keyword accepts `np.float32` or `np.float64` and defaults to
-`np.float32`.)doc")
+`np.float32`; it controls only the returned NumPy buffer dtype.)doc")
         .def_static("computeAttributes", py::overload_cast<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, const std::vector<AttributeOrGroup>&, NodeIdSpace, py::object>(&AttributeComputationPybind::computeAttributesFromList),
             py::arg("tree"),
             py::arg("attributes"),
@@ -39,7 +39,7 @@ Parameters:
     tree: `WeightedMorphologicalTree` with uint8 altitudes.
     attributes: Sequence of `Attribute` or `Attribute.Group` values.
     outputSpace: Node-id domain of the returned rows.
-    dtype: Attribute value dtype, either `np.float32` or `np.float64`.
+    dtype: Returned attribute value dtype, either `np.float32` or `np.float64`.
 
 Returns:
     `(layout, values)` where `values.shape == (num_output_nodes, len(layout))`
@@ -72,8 +72,9 @@ attributes must use `computeAttributes` or `computeSingleAttribute`.)doc")
             py::arg("dtype") = py::none(),
             R"doc(Compute one altitude-dependent attribute.
 
-Returns a 1D array indexed by `outputSpace`. `dtype` accepts `np.float32` or
-`np.float64` and defaults to `np.float32`.)doc")
+Returns a 1D array indexed by `outputSpace`. `dtype` controls the returned
+buffer dtype and accepts `np.float32` or `np.float64`; the default is
+`np.float32`.)doc")
         .def_static("computeSingleTopologyAttribute", py::overload_cast<MorphologicalTreePybindPtr, Attribute, NodeIdSpace, py::object>(&AttributeComputationPybind::computeSingleTopologyAttribute),
             py::arg("tree"),
             py::arg("attribute"),
@@ -106,7 +107,7 @@ Parameters:
     delta: Non-negative neighbourhood radius. Columns cover `[-delta, delta]`.
     padding: Boundary strategy. Supported values are `"last-padding"`,
         `"nan-padding"`, `"null-padding"`, and `"zero-padding"`.
-    dtype: Attribute value dtype, either `np.float32` or `np.float64`.
+    dtype: Returned attribute value dtype, either `np.float32` or `np.float64`.
 
 Returns:
     `(layout, values)` where layout keys include suffixes such as `_ASC_1`

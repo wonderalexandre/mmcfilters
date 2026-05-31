@@ -263,13 +263,13 @@ int main() {
 
     MSERComputer<std::uint8_t> mser(*weighted);
     std::vector<uint8_t> isMSER = mser.computeMSER(1);
-    const std::vector<float> implicitStabilities = mser.getStabilities();
+    const std::vector<float> implicitVariations = mser.getVariations();
     MSERComputer<std::uint8_t> mserExplicit(*weighted, areaBuffer);
     std::vector<uint8_t> isMSERExplicit = mserExplicit.computeMSER(1);
-    const std::vector<float> explicitStabilities = mserExplicit.getStabilities();
+    const std::vector<float> explicitVariations = mserExplicit.getVariations();
     MSERComputer<std::uint8_t> mserRaw(*weighted, areaBuffer.data());
     std::vector<uint8_t> isMSERRaw = mserRaw.computeMSER(1);
-    const std::vector<float> rawStabilities = mserRaw.getStabilities();
+    const std::vector<float> rawVariations = mserRaw.getVariations();
     requireEqual(static_cast<int>(isMSER.size()), tree.getNumInternalNodeSlots(), "MSER buffer size after middle-slot merge");
     requireVectorEqual(isMSERExplicit, isMSER, "explicit area MSER flags must match implicit area MSER flags");
     requireVectorEqual(isMSERRaw, isMSER, "raw area MSER flags must match implicit area MSER flags");
@@ -277,9 +277,9 @@ int main() {
     int numActiveMserFlags = 0;
     for (NodeId nodeId : tree.getAliveNodeIds()) {
         numActiveMserFlags += isMSER[nodeId] ? 1 : 0;
-        const float implicit = implicitStabilities[nodeId];
-        const float explicitValue = explicitStabilities[nodeId];
-        const float rawValue = rawStabilities[nodeId];
+        const float implicit = implicitVariations[nodeId];
+        const float explicitValue = explicitVariations[nodeId];
+        const float rawValue = rawVariations[nodeId];
         if (std::isnan(implicit) || std::isnan(explicitValue)) {
             require(std::isnan(implicit) && std::isnan(explicitValue) && std::isnan(rawValue), "MSER stability NaN pattern after middle-slot merge");
         } else {

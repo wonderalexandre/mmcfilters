@@ -1,11 +1,13 @@
 #pragma once
 
 #include "../attributes/AttributeComputation.hpp"
-#include "../trees/detail/TreeAltitudeDeltaNeighborhood.hpp"
+#include "../trees/detail/TreeStabilityNeighborhood.hpp"
+#include "../trees/detail/TreeKindValidation.hpp"
 #include "../trees/MorphologicalTree.hpp"
 #include "../trees/TreeAltitudeAlgorithms.hpp"
 #include "../trees/WeightedMorphologicalTree.hpp"
 #include "../utils/Common.hpp"
+#include "detail/VariationMeasure.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -29,29 +31,33 @@ namespace mmcfilters {
  * neighbourhood is computed from the altitude buffer owned by the weighted
  * tree, not from an arbitrary external altitude array. Given a delta value,
  * each node is paired with an ascendant and a descendant located approximately
- * `delta` units away in altitude space. The node stability is then defined
+ * `delta` units away in altitude space. The node variation is then defined
  * from a monotone increasing attribute as:
  *
- * `stability(node) = (attr(asc(node)) - attr(desc(node))) / attr(node)`
+ * `variation(node) = (attr(asc(node)) - attr(desc(node))) / attr(node)`
  *
  * A node is marked as MSER-like when:
- * - both delta neighbours exist;
- * - its stability is a strict local minimum with respect to those neighbours;
- * - the stability lies below `maxVariation`;
- * - the attribute value is within the user-specified `[minAttr, maxAttr]`
- *   acceptance interval.
+ * @li both delta neighbours exist;
+ * @li its variation is a strict local minimum with respect to those neighbours;
+ * @li the variation lies below `maxVariation`;
+ * @li the attribute value is within the user-specified `[minAttr, maxAttr]`
+ *     acceptance interval.
  *
  * If no external attribute buffer is supplied, the class lazily computes
  * `AREA` and uses it as the increasing attribute. The object may therefore act
  * either as a lightweight view over an externally owned buffer or as a small
  * owner of the fallback `AREA` buffer.
  *
- * @note MSER only makes semantic sense when the altitude matches the weighted
- * tree topology. Public constructors therefore accept
- * `WeightedMorphologicalTree<T>` only.
+ * @note MSER only makes semantic sense for max-trees and min-trees whose
+ * altitude matches the weighted tree topology. Public constructors therefore
+ * accept `WeightedMorphologicalTree<T>` only and reject self-dual tree kinds.
  */
 template<AltitudeValue T, std::floating_point Real = float>
 class MSERComputer {
+public:
+	/// Floating-point type used to store variation scores.
+	using variation_value_type = Real;
+
 private:
 	const WeightedMorphologicalTree<T>& weighted_;
 	const MorphologicalTree& tree;
@@ -62,7 +68,7 @@ private:
 	Real minAttr;
 	Real maxAttr;
 	int num;
-	std::vector<Real> stability;
+	std::vector<Real> variation;
 	std::vector<NodeId> ascendants;
 	std::vector<NodeId> descendants;
 
@@ -82,6 +88,7 @@ private:
 		  minAttr(Real{0}),
 		  maxAttr(static_cast<Real>(this->tree.getNumColsOfImage() * this->tree.getNumRowsOfImage())) {
 		TreeAltitudeAlgorithms::validateAltitudeBufferShape(this->tree, std::span<const T>(this->altitude_));
+		detail::validateComponentTreeKind(this->tree, "MSERComputer");
 		this->attrMserView_ = this->ownedAttrMser_.empty() ? attr_increasing : this->ownedAttrMser_.data();
 	}
 
@@ -113,7 +120,7 @@ public:
 	MSERComputer(const WeightedMorphologicalTree<T>& weighted)
 		: MSERComputer(weighted, nullptr, {}) { }
 
-		~MSERComputer() = default;
+	~MSERComputer() = default;
 
 	/**
 	 * @brief Computes the MSER indicator vector for the given delta.
@@ -122,47 +129,56 @@ public:
 	 * slots, with `true` at the nodes selected as MSER-like regions.
 	 */
 	[[nodiscard]] std::vector<uint8_t> computeMSER(AltitudeDiff<T> delta){
-		std::pair<std::vector<NodeId>, std::vector<NodeId>> ascDesc =
-			detail::computeAscendantsAndDescendantsByAltitude(
+		detail::StabilityNeighborhood neighborhood =
+			detail::computeAltitudeStabilityNeighborhood(
 				tree,
 				std::span<const T>(altitude_),
 				delta);
-		this->ascendants = std::move(ascDesc.first);
-		this->descendants = std::move(ascDesc.second);
-		this->stability.assign(tree.getNumInternalNodeSlots(), std::numeric_limits<Real>::quiet_NaN());
+		this->ascendants = std::move(neighborhood.ascendants);
+		this->descendants = std::move(neighborhood.descendants);
 
-		for (NodeId nodeId : tree.getAliveNodeIds()) {
-			const NodeId node = nodeId;
-			if(this->ascendants[node] != InvalidNode && this->descendants[node] != InvalidNode){
-				this->stability[node] = this->getStability(node);
-			}
-		}
-
-		this->num = 0;
-		Real maxStabilityDesc, maxStabilityAsc;
-		std::vector<uint8_t> mser(this->tree.getNumInternalNodeSlots(), false);
-		for (NodeId nodeId : tree.getAliveNodeIds()) {
-			const NodeId node = nodeId;
-			if(!std::isnan(this->stability[node]) && !std::isnan(this->stability[this->ascendants[node]]) && !std::isnan(this->stability[this->descendants[node]])){
-				maxStabilityDesc = this->stability[this->descendants[node]];
-				maxStabilityAsc = this->stability[this->ascendants[node]];
-				if(this->stability[node] < maxStabilityDesc && this->stability[node] < maxStabilityAsc){
-					if(stability[node] < this->maxVariation && this->getAttrMSER(node) >= this->minAttr && this->getAttrMSER(node) <= this->maxAttr){
-						mser[node] = true;
-						this->num++;
-					}
-				}
-			}
-		}
-		return mser;
+		auto attrAt = [this](NodeId node) -> Real {
+			return this->getAttrMSER(node);
+		};
+		this->variation =
+			detail::computeVariationsFromNeighborhood<Real>(
+				this->tree,
+				this->ascendants,
+				this->descendants,
+				attrAt);
+		return detail::selectStrictVariationMinima<Real>(
+			this->tree,
+			this->variation,
+			this->ascendants,
+			this->descendants,
+			attrAt,
+			this->maxVariation,
+			this->minAttr,
+			this->maxAttr,
+			this->num);
 	}
 
 
 	/**
-	 * @brief Returns the stability score currently associated with a node.
+	 * @brief Returns the variation score currently associated with a node.
 	 */
-	[[nodiscard]] Real getStability(NodeId node){
-		return (this->getAttrMSER(this->ascendants[node]) - this->getAttrMSER(this->descendants[node])) / this->getAttrMSER(node)  ;
+	[[nodiscard]] Real getVariation(NodeId node){
+		detail::validateStabilityNeighborhoodShape(
+			this->tree,
+			this->ascendants,
+			this->descendants,
+			"MSERComputer::getVariation");
+		if (this->variation.size() != static_cast<std::size_t>(this->tree.getNumInternalNodeSlots())) {
+			throw std::logic_error("MSERComputer::getVariation requires computeMSER to run first.");
+		}
+		auto attrAt = [this](NodeId nodeId) -> Real {
+			return this->getAttrMSER(nodeId);
+		};
+		return detail::computeVariationValue<Real>(
+			node,
+			this->ascendants,
+			this->descendants,
+			attrAt);
 	}
 
 	/**
@@ -170,11 +186,11 @@ public:
 	 * computing `AREA` when no external buffer has been provided.
 	 */
 	[[nodiscard]] Real getAttrMSER(NodeId node){
-			if(attrMserView_ == nullptr) {
-				auto area = AttributeComputation::computeSingleAttribute<Real>(weighted_, AREA);
-				ownedAttrMser_ = std::move(area.second);
-				attrMserView_ = ownedAttrMser_.data();
-			}
+		if(attrMserView_ == nullptr) {
+			auto area = AttributeComputation::computeSingleAttribute<Real>(weighted_, AREA);
+			ownedAttrMser_ = std::move(area.second);
+			attrMserView_ = ownedAttrMser_.data();
+		}
 		if(attrMserView_ == nullptr)
 			return Real{0};
 		else
@@ -182,42 +198,43 @@ public:
 	}
 
 	/**
-	 * @brief Returns the most stable node among the current node and its
-	 * delta-linked neighbours.
+	 * @brief Returns the node with minimum variation among the current node and
+	 * its delta-linked neighbours.
 	 */
-	[[nodiscard]] NodeId getNodeInPathWithMaxStability(NodeId node){
-		NodeId nodeAsc = this->ascendants[node];
-		NodeId nodeDes = this->descendants[node];
-
-        if(stability[node] <= stability[nodeDes] && stability[node] <= stability[nodeAsc]) {
-            return node;
-        }else if (stability[nodeDes] <= stability[nodeAsc]) {
-            return nodeDes;
-        }else {
-            return nodeAsc;
-        }
-
+	[[nodiscard]] NodeId nodeWithMinimumVariationInWindow(NodeId node){
+		detail::validateStabilityNeighborhoodShape(
+			this->tree,
+			this->ascendants,
+			this->descendants,
+			"MSERComputer::nodeWithMinimumVariationInWindow");
+		if (this->variation.size() != static_cast<std::size_t>(this->tree.getNumInternalNodeSlots())) {
+			throw std::logic_error("MSERComputer::nodeWithMinimumVariationInWindow requires computeMSER to run first.");
+		}
+		return detail::nodeWithMinimumVariationInWindow<Real>(
+			node,
+			this->variation,
+			this->ascendants,
+			this->descendants);
 	}
-
 
 	/**
 	 * @brief Returns the ascendant used in the current stability window.
 	 */
-	[[nodiscard]] NodeId ascendantWithMaxStability(NodeId node) const { return this->ascendants[node];}
+	[[nodiscard]] NodeId ascendantInStabilityWindow(NodeId node) const { return this->ascendants[node];}
 	/**
 	 * @brief Returns the descendant used in the current stability window.
 	 */
-	[[nodiscard]] NodeId descendantWithMaxStability(NodeId node) const { return descendants[node];}
+	[[nodiscard]] NodeId descendantInStabilityWindow(NodeId node) const { return descendants[node];}
 	/**
-	 * @brief Returns the current stability array, indexed by node slot.
+	 * @brief Returns the current variation array, indexed by node slot.
 	 */
-	std::vector<Real>& getStabilities() { return stability; }
+	std::vector<Real>& getVariations() { return variation; }
 	/**
 	 * @brief Returns the number of nodes selected as MSER-like in the last run.
 	 */
 	[[nodiscard]] int getNumNodes() {return  num;}
 	/**
-	 * @brief Sets the maximum accepted stability value.
+	 * @brief Sets the maximum accepted variation value.
 	 */
 	void setMaxVariation(Real maxVariation) { this->maxVariation = maxVariation; }
 	/**

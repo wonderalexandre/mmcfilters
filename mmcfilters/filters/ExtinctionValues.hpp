@@ -3,6 +3,7 @@
 #include "../trees/TreeAltitudeAlgorithms.hpp"
 #include "../trees/WeightedMorphologicalTree.hpp"
 #include "../trees/WeightedTreeView.hpp"
+#include "../trees/detail/TreeKindValidation.hpp"
 #include "../utils/Image.hpp"
 #include "../utils/Common.hpp"
 #include "../contours/ContoursComputedIncrementally.hpp"
@@ -23,13 +24,14 @@ namespace mmcfilters {
  */
 template <std::floating_point Real = float>
 struct RegionalExtremaNode {
-    /// Leaf node that represents the regional extremum.
+    /// Leaf node that represents the regional extremum in a max-tree/min-tree.
     NodeId leaf;
 
     /// Highest node retained before the extremum merges with a stronger branch.
     NodeId cutoffNode;
 
-    /// Attribute value at `cutoffNode`, or infinity-like sentinel at the root.
+    /// Attribute value at `cutoffNode`, or `numeric_limits<Real>::max()` for
+    /// the dominant extremum that survives until the root.
     Real extinction;
 
     /**
@@ -47,11 +49,21 @@ struct RegionalExtremaNode {
  * @brief Computes and stores extinction values for regional extrema.
  *
  * @details
- * `ExtinctionValues` ranks tree leaves by the persistence of a supplied scalar
- * attribute. The attribute buffer is indexed by dense internal `NodeId` and must
- * have one value for every internal node slot of the tree. Results are sorted in
- * decreasing extinction order and can be consumed either as records, a filtered
- * reconstruction, or a contour saliency map.
+ * `ExtinctionValues` implements the classical leaf-extrema extinction ranking
+ * for max-trees and min-trees. In this component-tree setting, the regional
+ * extrema processed by the algorithm are the tree leaves. The supplied scalar
+ * attribute is indexed by dense internal `NodeId`, must have one value for every
+ * internal node slot, and is interpreted so that larger values represent
+ * stronger extrema. Results are sorted in decreasing extinction order and can be
+ * consumed either as records, a filtered reconstruction, or a contour saliency
+ * map.
+ *
+ * The strongest extremum has no stronger merge point. Its extinction value is
+ * represented by the explicit finite sentinel `numeric_limits<Real>::max()`.
+ *
+ * Trees of shapes and self-dual residual trees are intentionally rejected by the
+ * public constructors because their complete regional-extrema set is not
+ * generally equivalent to `tree.getLeaves()`.
  *
  * The object records the tree mutation version at construction time. Public
  * operations reject use after the underlying topology changes.
@@ -96,13 +108,27 @@ protected:
         return view.getAltitude(nodeId);
     }
 
+    std::vector<NodeId> collectComponentTreeExtrema() const {
+        return this->tree.getLeaves();
+    }
+
+    static Real dominantExtremumSentinel() noexcept {
+        return std::numeric_limits<Real>::max();
+    }
+
+    static void requireNonNegativeExtremaToKeep(int extremaToKeep, const char* context) {
+        if (extremaToKeep < 0) {
+            throw std::invalid_argument(std::string(context) + " requires a non-negative extremaToKeep value.");
+        }
+    }
+
     void initialize(const Real* attr) {
         requireAttributePointer(attr, "ExtinctionValues");
-        std::vector<NodeId> leaves = this->tree.getLeaves();
+        std::vector<NodeId> leaves = collectComponentTreeExtrema();
         regionalExtremaNodes.reserve(leaves.size());
         std::vector<uint8_t> visited(this->tree.getNumInternalNodeSlots(), false);
         for (NodeId leafNodeId : leaves) {
-            Real extinction = std::numeric_limits<Real>::max();
+            Real extinction = dominantExtremumSentinel();
             NodeId cutoffNodeId = leafNodeId;
             NodeId parentNodeId = this->tree.getNodeParent(cutoffNodeId);
             bool flag = true;
@@ -131,7 +157,13 @@ protected:
         }
 
         std::sort(regionalExtremaNodes.begin(), regionalExtremaNodes.end(), [](const auto& a, const auto& b) {
-            return a.extinction > b.extinction;
+            if (a.extinction != b.extinction) {
+                return a.extinction > b.extinction;
+            }
+            if (a.cutoffNode != b.cutoffNode) {
+                return a.cutoffNode < b.cutoffNode;
+            }
+            return a.leaf < b.leaf;
         });
     }
     /// @endcond
@@ -170,6 +202,7 @@ public:
           tree(view_.topology()),
           treeMutationVersion_(tree.getMutationVersion()) {
         view_.requireTopologyUnchanged("ExtinctionValues");
+        detail::validateComponentTreeKind(this->tree, "ExtinctionValues");
         initialize(attr);
     }
 
@@ -222,6 +255,7 @@ public:
      */
     [[nodiscard]] ImagePtr<Real> saliencyMap(int extremaToKeep, bool unweighted = true) {
         requireStableTree("ExtinctionValues::saliencyMap");
+        requireNonNegativeExtremaToKeep(extremaToKeep, "ExtinctionValues::saliencyMap");
         std::vector<uint8_t> keep(tree.getNumInternalNodeSlots(), false);
         std::vector<Real> extinctionByNode(tree.getNumInternalNodeSlots(), Real{0});
         std::vector<NodeId> keptNodes;
@@ -258,6 +292,7 @@ public:
      */
     [[nodiscard]] ImagePtr<T> filtering(int extremaToKeep) {
         requireStableTree("ExtinctionValues::filtering");
+        requireNonNegativeExtremaToKeep(extremaToKeep, "ExtinctionValues::filtering");
         const AltitudeView altitudeView = view();
         std::vector<uint8_t> criterion(tree.getNumInternalNodeSlots(), false);
         const int leafToKeep = std::min(extremaToKeep, static_cast<int>(regionalExtremaNodes.size()));

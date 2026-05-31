@@ -114,11 +114,13 @@ The criterion-based overloads receive the keep/reject decision directly. The
 attribute-threshold overloads build the decision from a floating-point node
 attribute and a threshold.
 
-## Adaptive Criterion And MSER
+## Adaptive Criterion, MSER, And Depth Stability
 
 `getAdaptiveCriterion(...)` adjusts a criterion with an MSER-style stability
 analysis. It requires `WeightedMorphologicalTree<T>` ownership because MSER uses
-the tree-owned altitude buffer to build delta neighbourhoods:
+the tree-owned altitude buffer to build delta neighbourhoods. Classical MSER is
+defined only for max-trees and min-trees, where altitude is monotone along every
+root-to-leaf path:
 
 ```cpp
 AttributeFilters<std::uint8_t> filters(weightedTree);
@@ -129,23 +131,55 @@ std::vector<bool> pruned = filters.getAdaptiveCriterion(
     AltitudeDiff<std::uint8_t>{2});
 ```
 
-`MSERComputer<T, Real>` is the advanced helper behind this path. It pairs each
-node with altitude-delta ascendant and descendant nodes, computes a stability
-score from an increasing attribute, and marks strict local stability minima that
-pass the configured variation and attribute bounds. If no attribute buffer is
-provided, it lazily computes `AREA`.
+`MSERComputer<T, Real>` is the advanced helper behind this path. For a positive
+altitude delta, it pairs each node with an altitude-delta ascendant and
+descendant, computes a variation score from an increasing attribute, and marks
+strict local minima that pass the configured variation and attribute bounds. If
+no attribute buffer is provided, it lazily computes `AREA`. Missing windows
+produce `NaN`; nodes with `NaN` variation are not selected as MSERs.
+
+The variation score is:
+
+```text
+variation(x) = (attr(asc_delta(x)) - attr(desc_delta(x))) / attr(x)
+```
+
+Lower finite values are more stable. Adaptive pruning therefore moves a rejected
+node to the minimum-variation representative among the node, its selected
+ascendant, and its selected descendant.
 
 MSER is not a general `WeightedTreeView<T>` operation. View-based filter objects
 can run ordinary direct, subtractive, and pruning rules, but reject MSER-assisted
 methods that need owner state.
 
+Tree-of-shapes and self-dual residual trees do not have a single max/min
+altitude polarity. For them, use depth stability instead:
+
+```cpp
+std::vector<bool> pruned = filters.getAdaptiveCriterionByDepth(
+    keep,
+    2);
+```
+
+`DepthStableRegionComputer<Real>` implements that rule. Here `depthDelta = 2`
+means exactly two tree edges: climb two parent links for the ascendant and select
+a descendant exactly two child links below the center. If several descendants
+exist at that depth, the largest-area one is chosen; ties use the smallest
+`NodeId`. This operator does not read altitude and should be described as
+topological depth stability, not classical MSER. Its numeric score is still a
+variation value; use `getVariation(...)`/`getVariations()` when inspecting it
+directly.
+
 ## Extinction Values
 
-`ExtinctionValues<T, Real>` ranks regional extrema by a scalar node attribute.
-The attribute is a dense floating-point buffer indexed by internal `NodeId`.
-`Real` defaults to `float`; select `double` when consuming double-precision
-attribute buffers. Results are stored as `RegionalExtremaNode<Real>` records
-sorted by decreasing extinction:
+`ExtinctionValues<T, Real>` ranks regional extrema by a scalar node attribute
+on max-trees and min-trees. In this classical component-tree setting, the
+regional extrema processed by the implementation are the tree leaves. The
+attribute is a dense floating-point buffer indexed by internal `NodeId`; larger
+attribute values are interpreted as stronger extrema. `Real` defaults to
+`float`; select `double` when consuming double-precision attribute buffers.
+Results are stored as `RegionalExtremaNode<Real>` records sorted by decreasing
+extinction:
 
 ```cpp
 #include <mmcfilters/filters/ExtinctionValues.hpp>
@@ -170,6 +204,15 @@ for (const RegionalExtremaNode<float>& item : extinction.getExtinctionValues()) 
 extrema. `saliencyMap(extremaToKeep, unweighted)` writes saliency on compact
 contours of the retained cutoff nodes. With `unweighted=true`, contours receive
 rank-like scores; with `unweighted=false`, they receive extinction values.
+`extremaToKeep` must be non-negative. The dominant extremum has no stronger
+merge point; its extinction is represented by the explicit finite sentinel
+`std::numeric_limits<Real>::max()`.
+
+Trees of shapes and self-dual residual trees are rejected by `ExtinctionValues`.
+Their leaves can be regional extrema, but the complete regional-extrema set is
+not generally equivalent to `tree.getLeaves()`. Support for those tree kinds
+should therefore use a separate extrema-collection stage before applying an
+extinction ranking.
 
 ## Ultimate Attribute Opening
 
@@ -206,8 +249,10 @@ auto colors = uao.getAssociatedColorImage();
 `execute(maxCriterion)` treats all internal nodes as selectable candidates.
 `execute(maxCriterion, selectedForFiltering)` accepts an explicit dense
 selection mask. `executeWithMSER(maxCriterion, deltaMSER)` builds that mask from
-MSER and therefore requires a `WeightedMorphologicalTree<T>` owner, not just a
-view.
+classical altitude MSER and therefore requires a `WeightedMorphologicalTree<T>`
+owner, not just a view. `executeWithDepthStability(maxCriterion, depthDelta)`
+builds the mask from topological depth stability and does not use altitude for
+the stability selection.
 
 The increasing attribute is expected to encode the primitive scale used by UAO,
 for example area, height, or another monotone criterion. The implementation
@@ -244,13 +289,19 @@ pruned_min = filters.filteringByPruningMin(box_height, 2.0)
 pruned_max = filters.filteringByPruningMax(box_height, 2.0)
 score = filters.filteringSubtractiveScoreRule(area.tolist())
 adaptive = filters.getAdaptiveCriterion(keep_large, delta=2)
+depth_adaptive = filters.getAdaptiveCriterionByDepth(keep_large, depthDelta=2)
+
+depth_stability = mmcfilters.DepthStableRegionComputer(tree)
+depth_mask = depth_stability.computeByDepth(depthDelta=2)
+depth_variation = depth_stability.getVariations()
 ```
 
-Extinction values are available either through `ExtinctionValues` directly or
-through convenience methods on `AttributeFilters`:
+Extinction values are available for max-trees and min-trees either through
+`ExtinctionValues` directly or through convenience methods on
+`AttributeFilters`:
 
 ```python
-extinction = mmcfilters.ExtinctionValues(tree, area)
+extinction = mmcfilters.ExtinctionValues(max_tree, area)
 filtered = extinction.filtering(leafToKeep=8)
 saliency = extinction.saliencyMap(leafToKeep=8, unweighted=True)
 records = extinction.getExtinctionValues()
@@ -278,6 +329,7 @@ associated = uao.getAssociatedImage()
 associated_color = uao.getAssociatedColoredImage()
 
 uao.executeWithMSER(maxCriterion=image.shape[0], deltaMSER=2)
+uao.executeWithDepthStability(maxCriterion=image.shape[0], depthDelta=2)
 ```
 
 ## Edits And Lifetime

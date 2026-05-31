@@ -2,12 +2,14 @@
 
 #include "mmcfilters/attributes/AttributeComputation.hpp"
 #include "mmcfilters/filters/AttributeFilters.hpp"
+#include "mmcfilters/filters/detail/ViterbiDecision.hpp"
 #include "mmcfilters/filters/ExtinctionValues.hpp"
 #include "mmcfilters/filters/UltimateAttributeOpening.hpp"
 #include "mmcfilters/trees/WeightedTreeView.hpp"
 
 #include <cstdint>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <span>
 #include <type_traits>
@@ -25,7 +27,162 @@ std::vector<OutputValue> collectImageValuesAs(const ImagePtrT& image) {
     return output;
 }
 
+template<class T>
+void writeReferenceProperParts(
+    const MorphologicalTree& tree,
+    NodeId nodeId,
+    std::shared_ptr<Image<T>>& image,
+    T value) {
+    for (int pixel : tree.getProperParts(nodeId)) {
+        (*image)[pixel] = value;
+    }
+}
+
+template<class T>
+void propagateDirectReference(
+    const WeightedMorphologicalTree<T>& weighted,
+    NodeId nodeId,
+    const std::vector<bool>& criterion,
+    std::vector<T>& mapLevel) {
+    const MorphologicalTree& tree = weighted.topology();
+    for (NodeId childNodeId : tree.getChildren(nodeId)) {
+        mapLevel[childNodeId] = criterion[childNodeId] ? weighted.getAltitude(childNodeId) : mapLevel[nodeId];
+        propagateDirectReference(weighted, childNodeId, criterion, mapLevel);
+    }
+}
+
+template<class T>
+std::vector<T> directReferenceImage(
+    const WeightedMorphologicalTree<T>& weighted,
+    const std::vector<bool>& criterion) {
+    const MorphologicalTree& tree = weighted.topology();
+    std::vector<T> mapLevel(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), T{});
+    const NodeId rootNodeId = tree.getRoot();
+    mapLevel[rootNodeId] = weighted.getAltitude(rootNodeId);
+    propagateDirectReference(weighted, rootNodeId, criterion, mapLevel);
+
+    auto image = Image<T>::create(tree.getNumRowsOfImage(), tree.getNumColsOfImage(), T{});
+    for (NodeId nodeId : tree.getAliveNodeIds()) {
+        writeReferenceProperParts(tree, nodeId, image, mapLevel[nodeId]);
+    }
+    return collectImageValues(image);
+}
+
+template<class T>
+void propagateSubtractiveReference(
+    const WeightedMorphologicalTree<T>& weighted,
+    NodeId nodeId,
+    const std::vector<bool>& criterion,
+    std::vector<AltitudeDiff<T>>& mapLevel) {
+    const MorphologicalTree& tree = weighted.topology();
+    for (NodeId childNodeId : tree.getChildren(nodeId)) {
+        mapLevel[childNodeId] = criterion[childNodeId]
+            ? static_cast<AltitudeDiff<T>>(mapLevel[nodeId] + weighted.getNodeResidue(childNodeId))
+            : mapLevel[nodeId];
+        propagateSubtractiveReference(weighted, childNodeId, criterion, mapLevel);
+    }
+}
+
+template<class T>
+std::vector<T> subtractiveReferenceImage(
+    const WeightedMorphologicalTree<T>& weighted,
+    const std::vector<bool>& criterion) {
+    const MorphologicalTree& tree = weighted.topology();
+    std::vector<AltitudeDiff<T>> mapLevel(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), AltitudeDiff<T>{});
+    const NodeId rootNodeId = tree.getRoot();
+    mapLevel[rootNodeId] = static_cast<AltitudeDiff<T>>(weighted.getAltitude(rootNodeId));
+    propagateSubtractiveReference(weighted, rootNodeId, criterion, mapLevel);
+
+    auto image = Image<T>::create(tree.getNumRowsOfImage(), tree.getNumColsOfImage(), T{});
+    for (NodeId nodeId : tree.getAliveNodeIds()) {
+        writeReferenceProperParts(tree, nodeId, image, static_cast<T>(mapLevel[nodeId]));
+    }
+    return collectImageValues(image);
+}
+
+WeightedMorphologicalTree<std::uint8_t> makeViterbiChainFixture() {
+    const std::vector<NodeId> parent = {1, 2, 3, 3};
+    const std::vector<std::uint8_t> altitude = {5, 5, 3, 0};
+    return MorphologicalTreeFactory::createFromHigraParent<std::uint8_t>(
+        std::span<const NodeId>(parent),
+        std::span<const std::uint8_t>(altitude),
+        1,
+        1,
+        MorphologicalTreeKind::MAX_TREE,
+        AdjacencyRelation(1, 1, 1.5));
+}
+
+WeightedMorphologicalTree<std::uint8_t> makeViterbiBranchFixture() {
+    const std::vector<NodeId> parent = {3, 4, 4, 5, 5, 5};
+    const std::vector<std::uint8_t> altitude = {5, 4, 4, 5, 4, 0};
+    return MorphologicalTreeFactory::createFromHigraParent<std::uint8_t>(
+        std::span<const NodeId>(parent),
+        std::span<const std::uint8_t>(altitude),
+        1,
+        3,
+        MorphologicalTreeKind::MAX_TREE,
+        AdjacencyRelation(1, 3, 1.5));
+}
+
 int main() {
+    {
+        auto chain = makeViterbiChainFixture();
+        AttributeFilters<std::uint8_t> filters(chain);
+        std::vector<float> attr = {1.1f, 0.0f, 2.0f};
+        auto costs = detail::makeThresholdViterbiCosts(chain.topology(), attr.data(), 1.0f);
+        auto keep = detail::computeViterbiKeepCriterion(chain.topology(), costs);
+        require(!keep[0] && !keep[1] && keep[2], "Viterbi chain must remove descendants below a removed ancestor");
+        requireVectorEqual(
+            collectImageValues(filters.filteringByViterbiRule(attr.data(), 1.0f)),
+            std::vector<std::uint8_t>{0},
+            "Viterbi chain reconstruction with removed middle node");
+
+        attr = {10.0f, 0.9f, 2.0f};
+        keep = detail::computeViterbiKeepCriterion(
+            chain.topology(),
+            detail::makeThresholdViterbiCosts(chain.topology(), attr.data(), 1.0f));
+        require(keep[0] && keep[1] && keep[2], "Viterbi chain must preserve a costly-to-remove descendant branch");
+        requireVectorEqual(
+            collectImageValues(filters.filteringByViterbiRule(attr.data(), 1.0f)),
+            std::vector<std::uint8_t>{5},
+            "Viterbi chain reconstruction with preserved branch");
+
+        attr = {1.0f, 1.0f, 1.0f};
+        costs = detail::makeThresholdViterbiCosts(chain.topology(), attr.data(), 1.0f);
+        keep = detail::computeViterbiKeepCriterion(chain.topology(), costs);
+        require(!keep[0] && !keep[1] && keep[2], "Viterbi default tie-break must prefer removal except at the forced root");
+
+        detail::ViterbiDecisionOptions preserveTies;
+        preserveTies.tieBreak = detail::ViterbiTieBreak::PreferPreserve;
+        keep = detail::computeViterbiKeepCriterion(chain.topology(), costs, preserveTies);
+        require(keep[0] && keep[1] && keep[2], "Viterbi preserve tie-break must keep the full chain");
+
+        std::vector<float> nanAttr = {1.0f, std::numeric_limits<float>::quiet_NaN(), 1.0f};
+        requireThrows<std::invalid_argument>(
+            [&]() { static_cast<void>(filters.filteringByViterbiRule(nanAttr.data(), 1.0f)); },
+            "Viterbi rule must reject NaN attributes");
+        requireThrows<std::invalid_argument>(
+            [&]() { static_cast<void>(filters.filteringByViterbiRule(attr.data(), std::numeric_limits<float>::quiet_NaN())); },
+            "Viterbi rule must reject NaN thresholds");
+        requireThrows<std::invalid_argument>(
+            [&]() { static_cast<void>(filters.filteringByViterbiRule(static_cast<const float*>(nullptr), 1.0f)); },
+            "Viterbi rule must reject null attribute buffers");
+    }
+
+    {
+        auto branch = makeViterbiBranchFixture();
+        AttributeFilters<std::uint8_t> filters(branch);
+        std::vector<double> attr = {2.0, 0.0, 2.0};
+        auto keep = detail::computeViterbiKeepCriterion(
+            branch.topology(),
+            detail::makeThresholdViterbiCosts(branch.topology(), attr.data(), 1.0));
+        require(keep[0] && !keep[1] && keep[2], "Viterbi branch must decide sibling subtrees independently");
+        requireVectorEqual(
+            collectImageValues(filters.filteringByViterbiRule(attr.data(), 1.0)),
+            std::vector<std::uint8_t>{5, 0, 0},
+            "Viterbi branch reconstruction");
+    }
+
     auto image = makeComponentTreeFixture();
 
     for (bool isMaxtree : {true, false}) {
@@ -177,6 +334,48 @@ int main() {
             isMaxtree ? "weighted max-tree subtractive-score via int16 view" : "weighted min-tree subtractive-score via int16 view"
         );
 
+        {
+            const auto [higraParent, higraAltitude] = weighted->exportHigraHierarchy();
+            auto importedWeighted = MorphologicalTreeFactory::createFromHigraParent<std::uint8_t>(
+                std::span<const NodeId>(higraParent),
+                std::span<const std::uint8_t>(higraAltitude),
+                image->getNumRows(),
+                image->getNumCols(),
+                isMaxtree ? MorphologicalTreeKind::MAX_TREE : MorphologicalTreeKind::MIN_TREE,
+                AdjacencyRelation(image->getNumRows(), image->getNumCols(), 1.5));
+            AttributeFilters<std::uint8_t> importedFilters(importedWeighted);
+            std::vector<bool> importedKeepAll(importedWeighted.topology().getNumInternalNodeSlots(), true);
+            auto importedReconstruction = importedWeighted.reconstructionImage();
+
+            requireVectorEqual(
+                collectImageValues(importedFilters.filteringBySubtractiveRule(importedKeepAll)),
+                collectImageValues(importedReconstruction),
+                isMaxtree ? "imported max-tree subtractive-rule keep-all" : "imported min-tree subtractive-rule keep-all");
+
+            std::vector<float> importedUnitScores(importedWeighted.topology().getNumInternalNodeSlots(), 1.0f);
+            requireVectorEqual(
+                collectImageValues(importedFilters.filteringBySubtractiveScoreRule(importedUnitScores)),
+                collectImageValuesAs<float>(importedReconstruction),
+                isMaxtree ? "imported max-tree subtractive-score unit scores" : "imported min-tree subtractive-score unit scores");
+
+            std::vector<bool> mixedCriterion(importedWeighted.topology().getNumInternalNodeSlots(), true);
+            if (!mixedCriterion.empty()) {
+                mixedCriterion[0] = false;
+            }
+            if (mixedCriterion.size() > 2) {
+                mixedCriterion[2] = false;
+            }
+
+            requireVectorEqual(
+                collectImageValues(importedFilters.filteringByDirectRule(mixedCriterion)),
+                directReferenceImage(importedWeighted, mixedCriterion),
+                isMaxtree ? "imported max-tree direct-rule mixed criterion" : "imported min-tree direct-rule mixed criterion");
+            requireVectorEqual(
+                collectImageValues(importedFilters.filteringBySubtractiveRule(mixedCriterion)),
+                subtractiveReferenceImage(importedWeighted, mixedCriterion),
+                isMaxtree ? "imported max-tree subtractive-rule mixed criterion" : "imported min-tree subtractive-rule mixed criterion");
+        }
+
         auto subtractive = ImageUInt8::create(weighted->topology().getNumRowsOfImage(), weighted->topology().getNumColsOfImage(), 0);
         AttributeFilters<std::uint8_t>::filteringBySubtractiveRule(*weighted, keepAll, subtractive);
         requireVectorEqual(
@@ -274,6 +473,22 @@ int main() {
         (void)attrNames64;
         float maxCriterion = static_cast<float>(weighted->topology().getNumRowsOfImage());
         double maxCriterion64 = static_cast<double>(weighted->topology().getNumRowsOfImage());
+
+        for (float threshold : {1.0f, 2.0f, 3.0f, 4.0f}) {
+            std::vector<bool> keepByAttribute(weighted->topology().getNumInternalNodeSlots(), false);
+            for (NodeId nodeId : weighted->topology().getAliveNodeIds()) {
+                keepByAttribute[nodeId] = attr[static_cast<std::size_t>(nodeId)] > threshold;
+            }
+
+            requireVectorEqual(
+                collectImageValues(weightedFilters.filteringByPruningMin(keepByAttribute)),
+                collectImageValues(weightedFilters.filteringByPruningMin(attr.data(), threshold)),
+                isMaxtree ? "weighted max-tree pruning-min criterion/attribute equivalence" : "weighted min-tree pruning-min criterion/attribute equivalence");
+            requireVectorEqual(
+                collectImageValues(weightedFilters.filteringByPruningMax(keepByAttribute)),
+                collectImageValues(weightedFilters.filteringByPruningMax(attr.data(), threshold)),
+                isMaxtree ? "weighted max-tree pruning-max criterion/attribute equivalence" : "weighted min-tree pruning-max criterion/attribute equivalence");
+        }
 
         auto pruningMinAttrWeighted = ImageUInt8::create(weighted->topology().getNumRowsOfImage(), weighted->topology().getNumColsOfImage(), 0);
         auto pruningMinAttrView = ImageUInt8::create(weighted->topology().getNumRowsOfImage(), weighted->topology().getNumColsOfImage(), 0);

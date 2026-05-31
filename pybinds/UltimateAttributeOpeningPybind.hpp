@@ -55,6 +55,16 @@ public:
             uao_);
     }
 
+    void executeWithDepthStability(double maxCriterion, int depthDelta) {
+        std::visit(
+            [maxCriterion, depthDelta](auto& uao) {
+                using Uao = std::decay_t<decltype(uao)>;
+                using Real = typename Uao::attribute_value_type;
+                uao.executeWithDepthStability(static_cast<Real>(maxCriterion), depthDelta);
+            },
+            uao_);
+    }
+
     py::array_t<uint8_t> getMaxContrastImage(){
         return std::visit(
             [](auto& uao) {

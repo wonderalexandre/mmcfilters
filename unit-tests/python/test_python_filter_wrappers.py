@@ -96,6 +96,52 @@ def main() -> int:
     require_raises(lambda: weighted_filters.filteringByPruningMin(np.array([1.0], dtype=np.float32), 1.0), "weighted filteringByPruningMin must reject short attribute buffer")
     require_raises(lambda: weighted_filters.filteringDirectRule([True]), "weighted filteringDirectRule must reject short criterion")
     require(weighted_filters.getAdaptiveCriterion(keep_all, 2) == [False] * weighted.numInternalNodeSlots, "weighted AttributeFilters adaptive criterion on all-true input")
+    require(weighted_filters.getAdaptiveCriterionByDepth(keep_all, 2) == [False] * weighted.numInternalNodeSlots, "weighted AttributeFilters depth adaptive criterion on all-true input")
+
+    viterbi_chain = mmcfilters.MorphologicalTreeFactory.createFromHigraParent(
+        [1, 2, 3, 3],
+        np.array([5, 5, 3, 0], dtype=np.uint8),
+        1,
+        1,
+        mmcfilters.MorphologicalTreeKind.MAX_TREE,
+        1.5,
+    )
+    viterbi_chain_filters = mmcfilters.AttributeFilters(viterbi_chain)
+    chain_remove_attr = np.array([1.1, 0.0, 2.0], dtype=np.float32)
+    chain_preserve_attr = np.array([10.0, 0.9, 2.0], dtype=np.float64)
+    require(
+        np.array_equal(viterbi_chain_filters.filteringByViterbiRule(chain_remove_attr, 1.0), np.array([[0]], dtype=np.uint8)),
+        "Python AttributeFilters Viterbi chain remove",
+    )
+    require(
+        np.array_equal(viterbi_chain_filters.filteringByViterbiRule(chain_preserve_attr, 1.0), np.array([[5]], dtype=np.uint8)),
+        "Python AttributeFilters Viterbi chain preserve float64",
+    )
+    require_raises(
+        lambda: viterbi_chain_filters.filteringByViterbiRule(np.array([1.0], dtype=np.float32), 1.0),
+        "Python Viterbi must reject short attribute buffer",
+    )
+    require_raises(
+        lambda: viterbi_chain_filters.filteringByViterbiRule(np.array([1.0, np.nan, 1.0], dtype=np.float32), 1.0),
+        "Python Viterbi must reject NaN attributes",
+    )
+
+    viterbi_branch = mmcfilters.MorphologicalTreeFactory.createFromHigraParent(
+        [3, 4, 4, 5, 5, 5],
+        np.array([5, 4, 4, 5, 4, 0], dtype=np.uint8),
+        1,
+        3,
+        mmcfilters.MorphologicalTreeKind.MAX_TREE,
+        1.5,
+    )
+    branch_attr = np.array([2.0, 0.0, 2.0], dtype=np.float32)
+    require(
+        np.array_equal(
+            mmcfilters.AttributeFilters(viterbi_branch).filteringByViterbiRule(branch_attr, 1.0),
+            np.array([[5, 0, 0]], dtype=np.uint8),
+        ),
+        "Python AttributeFilters Viterbi branch",
+    )
 
     weighted_level_attr = mmcfilters.Attribute.computeSingleAttribute(weighted, mmcfilters.Attribute.LEVEL)
     weighted_level_attr64 = mmcfilters.Attribute.computeSingleAttribute(weighted, mmcfilters.Attribute.LEVEL, dtype=np.float64)
@@ -107,6 +153,8 @@ def main() -> int:
     require(saliency64.dtype == np.float64, "weighted AttributeFilters extinction float64 saliency dtype")
     require_raises(lambda: weighted_filters.filteringByExtinction(np.array([1.0], dtype=np.float32), 1), "weighted filteringByExtinction must reject short attribute buffer")
     require_raises(lambda: weighted_filters.saliencyMapByExtinction(np.array([1.0], dtype=np.float32), 1), "weighted saliencyMapByExtinction must reject short attribute buffer")
+    require_raises(lambda: weighted_filters.filteringByExtinction(weighted_level_attr, -1), "weighted filteringByExtinction must reject negative keep count")
+    require_raises(lambda: weighted_filters.saliencyMapByExtinction(weighted_level_attr, -1), "weighted saliencyMapByExtinction must reject negative keep count")
     require(
         not hasattr(mmcfilters, "AttributeOpeningPrimitivesFamily"),
         "AttributeOpeningPrimitivesFamily must not be exported in the Python API",
@@ -125,6 +173,34 @@ def main() -> int:
     weighted_uao64.executeWithMSER(float(weighted.numRows), 1)
     require(weighted_uao.getMaxContrastImage().shape == (4, 4), "weighted UltimateAttributeOpening MSER execute shape")
     require(weighted_uao64.getMaxContrastImage().shape == (4, 4), "weighted UltimateAttributeOpening float64 MSER execute shape")
+    weighted_uao.executeWithDepthStability(int(weighted.numRows), 1)
+    weighted_uao64.executeWithDepthStability(float(weighted.numRows), 1)
+    require(weighted_uao.getMaxContrastImage().shape == (4, 4), "weighted UltimateAttributeOpening depth stability execute shape")
+    require(weighted_uao64.getMaxContrastImage().shape == (4, 4), "weighted UltimateAttributeOpening float64 depth stability execute shape")
+
+    tos = mmcfilters.MorphologicalTreeFactory.createTreeOfShapes(image)
+    tos_area = mmcfilters.Attribute.computeSingleTopologyAttribute(tos, mmcfilters.Attribute.AREA)
+    tos_filters = mmcfilters.AttributeFilters(tos)
+    tos_keep_all = [True] * tos.numInternalNodeSlots
+    require(tos_filters.getAdaptiveCriterionByDepth(tos_keep_all, 1) == [False] * tos.numInternalNodeSlots, "ToS depth adaptive criterion on all-true input")
+    depth_computer = mmcfilters.DepthStableRegionComputer(tos)
+    depth_mask = depth_computer.computeByDepth(1)
+    require(depth_mask.shape == (tos.numInternalNodeSlots,), "DepthStableRegionComputer mask shape")
+    require(depth_mask.dtype == np.uint8, "DepthStableRegionComputer mask dtype")
+    depth_variations = depth_computer.getVariations()
+    require(depth_variations.shape == (tos.numInternalNodeSlots,), "DepthStableRegionComputer variation shape")
+    require(depth_variations.dtype == np.float32, "DepthStableRegionComputer default variation dtype")
+    require(abs(depth_computer.getVariation(2) - float(depth_variations[2])) < 1e-6, "DepthStableRegionComputer getVariation")
+    require_raises(lambda: depth_computer.computeByDepth(0), "DepthStableRegionComputer must reject zero depth delta")
+    depth_computer64 = mmcfilters.DepthStableRegionComputer(tos, tos_area.astype(np.float64))
+    depth_computer64.computeByDepth(1)
+    require(depth_computer64.getVariations().dtype == np.float64, "DepthStableRegionComputer float64 variation dtype")
+    require_raises(lambda: mmcfilters.ExtinctionValues(tos, tos_area), "ToS ExtinctionValues must be rejected")
+    require_raises(lambda: tos_filters.filteringByExtinction(tos_area, 1), "ToS AttributeFilters extinction filtering must be rejected")
+    tos_uao = mmcfilters.UltimateAttributeOpening(tos, tos_area)
+    require_raises(lambda: tos_uao.executeWithMSER(int(tos.numRows), 1), "ToS UltimateAttributeOpening must reject altitude MSER")
+    tos_uao.executeWithDepthStability(int(tos.numRows), 1)
+    require(tos_uao.getMaxContrastImage().shape == (4, 4), "ToS UltimateAttributeOpening depth stability execute shape")
     require_raises(
         lambda: mmcfilters.UltimateAttributeOpening(weighted, np.array([1.0], dtype=np.float32)),
         "weighted UltimateAttributeOpening must reject short attribute buffer",
@@ -144,6 +220,8 @@ def main() -> int:
     require(np.array_equal(weighted_extinction64.filtering(1024), weighted_reconstruction), "weighted ExtinctionValues float64 filtering keep-all")
     require(weighted_extinction.saliencyMap(1024).shape == (4, 4), "weighted ExtinctionValues saliency shape")
     require(weighted_extinction64.saliencyMap(1024).dtype == np.float64, "weighted ExtinctionValues float64 saliency dtype")
+    require_raises(lambda: weighted_extinction.filtering(-1), "weighted ExtinctionValues filtering must reject negative keep count")
+    require_raises(lambda: weighted_extinction.saliencyMap(-1), "weighted ExtinctionValues saliency must reject negative keep count")
     require_raises(
         lambda: mmcfilters.ExtinctionValues(weighted, np.array([1.0], dtype=np.float32)),
         "weighted ExtinctionValues must reject short attribute buffer",

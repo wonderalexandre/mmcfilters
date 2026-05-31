@@ -9,6 +9,7 @@ PYBIND11_MODULE(mmcfilters, m) {
     mmcfilters::pybindings::initAttributeComputation(m);
     mmcfilters::pybindings::initContoursComputedIncrementally(m);
     mmcfilters::pybindings::initAttributeFilters(m);
+    mmcfilters::pybindings::initDepthStableRegionComputer(m);
     mmcfilters::pybindings::initExtinctionValues(m);
     mmcfilters::pybindings::initAdjacencyRelation(m);
     mmcfilters::pybindings::initUltimateAttributeOpening(m);

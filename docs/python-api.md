@@ -200,8 +200,17 @@ direct = filters.filteringDirectRule(keep_large)
 subtractive = filters.filteringSubtractiveRule(keep_large)
 ```
 
+Topological depth stability is available directly when you need the variation
+scores or the selected mask:
+
+```python
+depth = mmcfilters.DepthStableRegionComputer(tree)
+depth_mask = depth.computeByDepth(depthDelta=2)
+depth_variation = depth.getVariations()
+```
+
 Extinction-value filtering and saliency maps use a dense node-indexed attribute
-buffer:
+buffer and are currently defined for max-trees and min-trees:
 
 ```python
 extinction = mmcfilters.ExtinctionValues(max_tree, level)
@@ -210,11 +219,18 @@ saliency = extinction.saliencyMap(leafToKeep=8)
 extinction_tuples = extinction.getExtinctionValues()
 ```
 
+`leafToKeep` must be non-negative. The dominant extremum is reported with the
+finite sentinel value `numpy.finfo(dtype).max`/`std::numeric_limits<Real>::max()`.
+Trees of shapes and self-dual residual trees are intentionally rejected by this
+API until their regional-extrema set is computed explicitly.
+
 Ultimate Attribute Opening also consumes a dense node-indexed attribute buffer:
 
 ```python
 uao = mmcfilters.UltimateAttributeOpening(max_tree, box_height)
 uao.execute(maxCriterion=image.shape[0])
+uao.executeWithMSER(maxCriterion=image.shape[0], deltaMSER=2)
+uao.executeWithDepthStability(maxCriterion=image.shape[0], depthDelta=2)
 
 max_contrast = uao.getMaxContrastImage()
 associated = uao.getAssociatedImage()

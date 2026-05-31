@@ -4,6 +4,7 @@
 #include "../utils/Common.hpp"
 #include "../trees/WeightedMorphologicalTree.hpp"
 #include "../trees/WeightedTreeView.hpp"
+#include "DepthStableRegionComputer.hpp"
 #include "MSERComputer.hpp"
 
 #include <cmath>
@@ -317,6 +318,23 @@ public:
         }
         MSERComputer<T, Real> mser(*weighted_);
         executeImpl(maxCriterion, mser.computeMSER(deltaMSER));
+    }
+
+    /**
+     * @brief Executes UAO with a depth-stability node-selection mask.
+     *
+     * @param maxCriterion Maximum increasing-attribute threshold considered by
+     * the UAO traversal.
+     * @param depthDelta Positive number of tree edges used to build the stability
+     * window. Altitude is not read by the stability selection.
+     * @throws std::invalid_argument If `depthDelta` is not positive.
+     * @throws std::logic_error If the tree topology changed after construction.
+     */
+    void executeWithDepthStability(Real maxCriterion, int depthDelta)
+    {
+        requireStableTree("UltimateAttributeOpening::executeWithDepthStability");
+        DepthStableRegionComputer<Real> stabilityComputer(this->tree);
+        executeImpl(maxCriterion, stabilityComputer.computeByDepth(depthDelta));
     }
 
     /**

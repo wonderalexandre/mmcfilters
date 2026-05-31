@@ -3,10 +3,65 @@
 #include "mmcfilters/attributes/AttributeComputation.hpp"
 #include "mmcfilters/filters/ExtinctionValues.hpp"
 
+#include <cstdint>
+#include <limits>
 #include <memory>
+#include <span>
+#include <vector>
 
 using namespace mmcfilters;
 using namespace mmcfilters::unit_tests;
+
+namespace {
+
+WeightedMorphologicalTree<std::uint8_t> makeFlatThreeLeafMaxTreeFixture() {
+    const std::vector<NodeId> parent{
+        3, 4, 5,
+        6, 6, 6, 6};
+    const std::vector<std::uint8_t> altitude{
+        5, 5, 5,
+        5, 5, 5, 0};
+    return MorphologicalTreeFactory::createFromHigraParent(
+        std::span<const NodeId>(parent),
+        std::span<const std::uint8_t>(altitude),
+        1,
+        3,
+        MorphologicalTreeKind::MAX_TREE,
+        AdjacencyRelation(1, 3, 1.5));
+}
+
+void verifyDeterministicTieOrdering() {
+    auto weighted = makeFlatThreeLeafMaxTreeFixture();
+    const MorphologicalTree& tree = weighted.topology();
+    std::vector<float> attr(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 1.0f);
+
+    ExtinctionValues<std::uint8_t> extinction(weighted, attr);
+    auto& records = extinction.getExtinctionValues();
+
+    requireEqual(static_cast<int>(records.size()), 3, "flat extinction record count");
+    requireEqual(records[0].extinction, std::numeric_limits<float>::max(), "dominant extinction sentinel");
+    requireEqual(records[1].extinction, 1.0f, "first tied loser extinction");
+    requireEqual(records[2].extinction, 1.0f, "second tied loser extinction");
+    require(records[1].leaf < records[2].leaf, "equal extinction records must be sorted deterministically by leaf NodeId");
+}
+
+void verifySelfDualTreesAreRejected() {
+    auto image = makeComponentTreeFixture();
+    auto tos = makeWeightedTreeOfShapes(image, ToSInterpolation::SelfDual);
+    std::vector<float> tosAttr(static_cast<std::size_t>(tos->topology().getNumInternalNodeSlots()), 1.0f);
+    requireThrows<std::invalid_argument>(
+        [&]() { ExtinctionValues<std::uint8_t> invalid(*tos, tosAttr); },
+        "ExtinctionValues must reject tree of shapes");
+
+    auto residualImage = makeImage(1, 2, {0, 1});
+    auto residual = MorphologicalTreeFactory::createSelfDualResidualTree(residualImage, 1.0);
+    std::vector<float> residualAttr(static_cast<std::size_t>(residual.topology().getNumInternalNodeSlots()), 1.0f);
+    requireThrows<std::invalid_argument>(
+        [&]() { ExtinctionValues<std::uint8_t> invalid(residual, residualAttr); },
+        "ExtinctionValues must reject self-dual residual trees");
+}
+
+} // namespace
 
 int main() {
     auto image = makeComponentTreeFixture();
@@ -23,6 +78,12 @@ int main() {
         }
 
         ExtinctionValues<std::uint8_t> extinction(*weighted, attrBuffer);
+        requireThrows<std::invalid_argument>(
+            [&]() { static_cast<void>(extinction.filtering(-1)); },
+            isMaxtree ? "weighted max-tree extinction filtering must reject negative keep count" : "weighted min-tree extinction filtering must reject negative keep count");
+        requireThrows<std::invalid_argument>(
+            [&]() { static_cast<void>(extinction.saliencyMap(-1)); },
+            isMaxtree ? "weighted max-tree extinction saliency must reject negative keep count" : "weighted min-tree extinction saliency must reject negative keep count");
         auto filtered = extinction.filtering(1024);
         auto reconstructed = weighted->reconstructionImage();
 
@@ -109,6 +170,9 @@ int main() {
         );
         requireImageShape(saliency, weighted->topology().getNumRowsOfImage(), weighted->topology().getNumColsOfImage());
     }
+
+    verifyDeterministicTieOrdering();
+    verifySelfDualTreesAreRejected();
 
     return 0;
 }

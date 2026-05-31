@@ -149,6 +149,10 @@ mmcfilters_add_unit_test(unit_attribute_filters_and_uao
     filters/test_attribute_filters_and_uao.cpp
 )
 
+mmcfilters_add_unit_test(unit_stability_computers
+    filters/test_stability_computers.cpp
+)
+
 set(MMCFILTERS_INSTALLED_CONSUMER_TEST_ARGS
     -DMMCFILTERS_BUILD_DIR=${CMAKE_BINARY_DIR}
 )

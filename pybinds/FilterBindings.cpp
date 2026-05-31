@@ -1,6 +1,7 @@
 #include "ModuleBindings.hpp"
 
 #include "AttributeFiltersPybind.hpp"
+#include "DepthStableRegionComputerPybind.hpp"
 #include "ExtinctionValuesPybind.hpp"
 #include "UltimateAttributeOpeningPybind.hpp"
 
@@ -50,6 +51,10 @@ Returned images are 2D NumPy arrays on the original image domain.)doc")
             return self.filteringByPruningMax(std::move(attr), threshold);
         }, "attr"_a, "threshold"_a,
             "Apply pruning-max filtering from a node-indexed floating-point attribute buffer.")
+        .def("filteringByViterbiRule", [](AttributeFiltersPybind& self, py::array attr, double threshold) {
+            return self.filteringByViterbiRule(std::move(attr), threshold);
+        }, "attr"_a, "threshold"_a,
+            "Apply connected Viterbi filtering from a node-indexed floating-point attribute buffer.")
         .def("filteringByExtinction", [](AttributeFiltersPybind& self, py::array attr, int leafToKeep) {
             return self.filteringByExtinctionValue(std::move(attr), leafToKeep);
         }, "attr"_a, "leafToKeep"_a,
@@ -61,15 +66,66 @@ Returned images are 2D NumPy arrays on the original image domain.)doc")
         .def("getAdaptiveCriterion", &AttributeFiltersPybind::getAdaptiveCriterion,
             "criterion"_a,
             "delta"_a,
-            "Expand a dense boolean criterion by an ancestor/descendant delta.");
-}
+            "Expand a dense boolean criterion by an altitude ancestor/descendant delta.")
+        .def("getAdaptiveCriterionByDepth", &AttributeFiltersPybind::getAdaptiveCriterionByDepth,
+            "criterion"_a,
+            "depthDelta"_a,
+            "Expand a dense boolean criterion by a topological depth stability window.");
+	}
 
-void initExtinctionValues(py::module_& m) {
-    py::class_<ExtinctionValuesPybind>(m, "ExtinctionValues", py::module_local(false),
-        R"doc(Extinction value utilities over a weighted morphological tree.
+	void initDepthStableRegionComputer(py::module_& m) {
+	    py::class_<DepthStableRegionComputerPybind>(m, "DepthStableRegionComputer", py::module_local(false),
+	        R"doc(Topological depth-stability helper over a weighted morphological tree.
 
-The constructor attribute array must be 1D `np.float32` or `np.float64`,
-C-contiguous, and indexed by dense internal `NodeId`.)doc")
+The optional attribute array must be 1D `np.float32` or `np.float64`,
+C-contiguous, and indexed by dense internal `NodeId`. Without an explicit
+attribute, the helper computes topology-only AREA internally. The reported
+numeric score is variation; lower finite values are more stable.)doc")
+	        .def(py::init<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>>(),
+	            "tree"_a,
+	            "Create a depth-stability helper using topology-only AREA.")
+	        .def(py::init<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, py::array>(),
+	            "tree"_a,
+	            "attribute"_a,
+	            "Create a depth-stability helper from a node-indexed increasing attribute buffer.")
+	        .def("computeByDepth", &DepthStableRegionComputerPybind::computeByDepth,
+	            "depthDelta"_a,
+	            "Return a dense uint8 mask of strict local variation minima.")
+	        .def("getVariation", &DepthStableRegionComputerPybind::getVariation,
+	            "nodeId"_a,
+	            "Return the variation score for one node after computeByDepth.")
+	        .def("getVariations", &DepthStableRegionComputerPybind::getVariations,
+	            "Return the dense variation array after computeByDepth.")
+	        .def("nodeWithMinimumVariationInWindow", &DepthStableRegionComputerPybind::nodeWithMinimumVariationInWindow,
+	            "nodeId"_a,
+	            "Return the node with minimum finite variation in the current depth window.")
+	        .def("ascendantInStabilityWindow", &DepthStableRegionComputerPybind::ascendantInStabilityWindow,
+	            "nodeId"_a,
+	            "Return the ascendant used in the current depth window.")
+	        .def("descendantInStabilityWindow", &DepthStableRegionComputerPybind::descendantInStabilityWindow,
+	            "nodeId"_a,
+	            "Return the descendant used in the current depth window.")
+	        .def("getNumNodes", &DepthStableRegionComputerPybind::getNumNodes,
+	            "Return the number of nodes selected by the last computeByDepth call.")
+	        .def("setMaxVariation", &DepthStableRegionComputerPybind::setMaxVariation,
+	            "value"_a,
+	            "Set the maximum accepted variation value.")
+	        .def("setMinAttribute", &DepthStableRegionComputerPybind::setMinAttribute,
+	            "value"_a,
+	            "Set the lower accepted attribute bound.")
+	        .def("setMaxAttribute", &DepthStableRegionComputerPybind::setMaxAttribute,
+	            "value"_a,
+	            "Set the upper accepted attribute bound.");
+	}
+
+	void initExtinctionValues(py::module_& m) {
+	    py::class_<ExtinctionValuesPybind>(m, "ExtinctionValues", py::module_local(false),
+	        R"doc(Extinction value utilities over a weighted morphological tree.
+
+	This class is currently defined for max-trees and min-trees. The constructor
+	attribute array must be 1D `np.float32` or `np.float64`, C-contiguous, and
+	indexed by dense internal `NodeId`. The dominant extremum is reported with
+	`numpy.finfo(dtype).max`/`std::numeric_limits<Real>::max()`.)doc")
         .def(py::init<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, py::array>(),
             "tree"_a,
             "attribute"_a,
@@ -101,6 +157,10 @@ reading output images.)doc")
             "maxCriterion"_a,
             "deltaMSER"_a,
             "Run UAO using an MSER-derived node-selection mask.")
+        .def("executeWithDepthStability", &UltimateAttributeOpeningPybind::executeWithDepthStability,
+            "maxCriterion"_a,
+            "depthDelta"_a,
+            "Run UAO using a depth-stability node-selection mask.")
         .def("getMaxContrastImage", &UltimateAttributeOpeningPybind::getMaxContrastImage,
             "Return the 2D uint8 maximum-contrast image.")
         .def("getAssociatedImage", &UltimateAttributeOpeningPybind::getAssociatedImage,

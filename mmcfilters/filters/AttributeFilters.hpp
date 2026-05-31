@@ -6,7 +6,10 @@
 #include "../trees/WeightedMorphologicalTree.hpp"
 #include "../trees/WeightedTreeView.hpp"
 #include "../trees/detail/TreeTraversalDetail.hpp"
+#include "DepthStableRegionComputer.hpp"
 #include "MSERComputer.hpp"
+#include "detail/VariationMeasure.hpp"
+#include "detail/ViterbiDecision.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -27,6 +30,37 @@ namespace mmcfilters {
  * and a few residual/score-based variants. The operators consume criteria or
  * attribute buffers defined on dense node ids and reconstruct proper-part
  * images as their output.
+ *
+ * Contract and node-domain assumptions:
+ *
+ * - every criterion, score, and attribute buffer is indexed by the dense
+ *   internal `NodeId` slot domain, not by exported Higra ids;
+ * - only alive nodes are reconstructed, but buffers must still cover every
+ *   internal slot so callers can reuse the tree-wide attribute layout;
+ * - output pixels are written through direct proper-part ownership. A node
+ *   represents the support of its full subtree, while `getProperParts(node)`
+ *   contains only the pixels owned directly by that node;
+ * - propagation rules are evaluated in explicit root-to-leaf order because the
+ *   dense `NodeId` slot order is not a topological order after Higra import or
+ *   structural edits;
+ * - public object methods snapshot the topology mutation version at
+ *   construction and reject use after the tree structure changes.
+ *
+ * Reconstruction rule summary:
+ *
+ * - direct rule: a kept node maps to its own altitude; a rejected node inherits
+ *   the already-filtered level of its parent;
+ * - subtractive rule: a kept node adds its altitude residue to the filtered
+ *   parent level; a rejected node inherits that parent level;
+ * - subtractive score rule: each residue is multiplied by a per-node score and
+ *   accumulated in floating point;
+ * - Viterbi rule: a dynamic program chooses a connected preserved set from
+ *   threshold-derived preserve/remove costs, then reconstructs it with the
+ *   direct rule;
+ * - pruning-min rule: rejected branches are cut immediately and their whole
+ *   subtree is painted at the current accepted ancestor level;
+ * - pruning-max rule: only subtrees whose nodes are all rejected are cut, and
+ *   such subtrees are painted at the rejected subtree root level.
  */
 template<AltitudeValue T>
 class AttributeFilters {
@@ -84,6 +118,14 @@ protected:
         return view.getNodeResidue(nodeId);
     }
 
+    /**
+     * @brief Writes one node's direct proper parts only.
+     *
+     * Reconstruction is done by writing every alive node's direct proper parts
+     * exactly once. Descendant supports are intentionally not touched here; use
+     * `writeSubtreeProperParts` only when a pruning rule collapses a whole
+     * branch to a single gray level.
+     */
     template <typename TValue>
     static void writeProperParts(const MorphologicalTree& tree, NodeId nodeId, TValue* output, TValue value) {
         for (int pixel : tree.getProperParts(nodeId)) {
@@ -91,6 +133,13 @@ protected:
         }
     }
 
+    /**
+     * @brief Paints all direct proper parts owned by nodes in one subtree.
+     *
+     * This is the physical image-domain effect of pruning a branch: every node
+     * below the cut, including the cut node itself, receives one replacement
+     * altitude chosen by the specific pruning convention.
+     */
     template <typename TValue>
     static void writeSubtreeProperParts(const MorphologicalTree& tree, NodeId nodeId, TValue* output, TValue value) {
         for (NodeId subtreeNodeId : tree.getNodeSubtree(nodeId)) {
@@ -98,6 +147,14 @@ protected:
         }
     }
 
+    /**
+     * @brief Accumulates scored altitude residues from the root to each node.
+     *
+     * With all scores equal to one, the accumulated level is the original
+     * altitude for max-trees and min-trees. Scores in `[0, 1]` behave like a
+     * soft subtractive filter, but the implementation accepts any finite float
+     * value supplied by the caller.
+     */
     static void filteringBySubtractiveScoreRuleImpl(AltitudeView view, std::vector<float>& prob, ImageFloatPtr imgOutputPtr) {
         view.requireTopologyUnchanged("AttributeFilters::filteringBySubtractiveScoreRule");
         const MorphologicalTree& tree = view.topology();
@@ -108,10 +165,18 @@ protected:
         const NodeId rootNodeId = tree.getRoot();
         mapLevel[rootNodeId] = static_cast<float>(altitudeOf(view, rootNodeId));
 
-        for (NodeId nodeId : tree.getAliveNodeIds()) {
-            if (!tree.isRoot(nodeId)) {
-                const NodeId parentNodeId = tree.getNodeParent(nodeId);
-                mapLevel[nodeId] = mapLevel[parentNodeId] + (static_cast<float>(residueOf(view, nodeId)) * prob[nodeId]);
+        // Parent filtered levels must be available before children are visited.
+        // `getAliveNodeIds()` is slot-order, not tree-order, so use an explicit
+        // top-down traversal that is valid for image-built and Higra-imported trees.
+        std::stack<NodeId> stack;
+        stack.push(rootNodeId);
+        while (!stack.empty()) {
+            const NodeId nodeId = stack.top();
+            stack.pop();
+            for (NodeId childNodeId : tree.getChildren(nodeId)) {
+                mapLevel[childNodeId] =
+                    mapLevel[nodeId] + (static_cast<float>(residueOf(view, childNodeId)) * prob[childNodeId]);
+                stack.push(childNodeId);
             }
         }
 
@@ -121,6 +186,13 @@ protected:
         }
     }
 
+    /**
+     * @brief Binary subtractive reconstruction from a dense keep criterion.
+     *
+     * `mapLevel[node]` stores the filtered altitude assigned to a node after
+     * applying the rule along the root-to-node path. Using `AltitudeDiff<T>`
+     * avoids unsigned wraparound while residues from min-trees are negative.
+     */
     static void filteringBySubtractiveRuleImpl(AltitudeView view, std::vector<bool>& criterion, ImagePtr<T> imgOutputPtr) {
         const char* context = "AttributeFilters::filteringBySubtractiveRule";
         view.requireTopologyUnchanged(context);
@@ -131,12 +203,18 @@ protected:
         const NodeId rootNodeId = tree.getRoot();
         mapLevel[rootNodeId] = static_cast<AltitudeDiff<T>>(altitudeOf(view, rootNodeId));
 
-        for (NodeId nodeId : tree.getAliveNodeIds()) {
-            if (!tree.isRoot(nodeId)) {
-                const NodeId parentNodeId = tree.getNodeParent(nodeId);
-                mapLevel[nodeId] = criterion[nodeId]
-                    ? static_cast<AltitudeDiff<T>>(mapLevel[parentNodeId] + residueOf(view, nodeId))
-                    : mapLevel[parentNodeId];
+        // The parent level in `mapLevel` is the already-filtered level, not the
+        // original altitude. This makes traversal order part of the algorithm.
+        std::stack<NodeId> stack;
+        stack.push(rootNodeId);
+        while (!stack.empty()) {
+            const NodeId nodeId = stack.top();
+            stack.pop();
+            for (NodeId childNodeId : tree.getChildren(nodeId)) {
+                mapLevel[childNodeId] = criterion[childNodeId]
+                    ? static_cast<AltitudeDiff<T>>(mapLevel[nodeId] + residueOf(view, childNodeId))
+                    : mapLevel[nodeId];
+                stack.push(childNodeId);
             }
         }
 
@@ -146,6 +224,13 @@ protected:
         }
     }
 
+    /**
+     * @brief Direct reconstruction from a dense keep criterion.
+     *
+     * A kept node selects its own altitude. A rejected node does not remove its
+     * descendants; it only forwards the filtered parent level, so accepted
+     * descendants can still reintroduce their own levels.
+     */
     static void filteringByDirectRuleImpl(AltitudeView view, std::vector<bool>& criterion, ImagePtr<T> imgOutputPtr) {
         const char* context = "AttributeFilters::filteringByDirectRule";
         view.requireTopologyUnchanged(context);
@@ -156,10 +241,16 @@ protected:
         const NodeId rootNodeId = tree.getRoot();
         mapLevel[rootNodeId] = altitudeOf(view, rootNodeId);
 
-        for (NodeId nodeId : tree.getAliveNodeIds()) {
-            if (!tree.isRoot(nodeId)) {
-                const NodeId parentNodeId = tree.getNodeParent(nodeId);
-                mapLevel[nodeId] = criterion[nodeId] ? altitudeOf(view, nodeId) : mapLevel[parentNodeId];
+        // Direct filtering is path-local. Traverse root-to-leaf so every child
+        // sees the filtered level chosen for its parent.
+        std::stack<NodeId> stack;
+        stack.push(rootNodeId);
+        while (!stack.empty()) {
+            const NodeId nodeId = stack.top();
+            stack.pop();
+            for (NodeId childNodeId : tree.getChildren(nodeId)) {
+                mapLevel[childNodeId] = criterion[childNodeId] ? altitudeOf(view, childNodeId) : mapLevel[nodeId];
+                stack.push(childNodeId);
             }
         }
 
@@ -169,6 +260,14 @@ protected:
         }
     }
 
+    /**
+     * @brief Pruning-min reconstruction from an explicit keep criterion.
+     *
+     * The convention used here is ancestor-level pruning: once a child branch is
+     * rejected, the whole branch is painted at the current accepted node level
+     * and no deeper descendants are evaluated. This matches the attribute
+     * overload where `criterion[node] == (attribute[node] > threshold)`.
+     */
     static void filteringByPruningMinCriterionImpl(AltitudeView view, std::vector<bool>& criterion, ImagePtr<T> imgOutputPtr) {
         const char* context = "AttributeFilters::filteringByPruningMin";
         view.requireTopologyUnchanged(context);
@@ -187,18 +286,29 @@ protected:
                 if (criterion[childNodeId]) {
                     stack.push(childNodeId);
                 } else {
-                    writeSubtreeProperParts(tree, childNodeId, imgOutput, altitudeOf(view, childNodeId));
+                    writeSubtreeProperParts(tree, childNodeId, imgOutput, altitudeOf(view, nodeId));
                 }
             }
         }
     }
 
+    /**
+     * @brief Pruning-max reconstruction from an explicit keep criterion.
+     *
+     * This rule first computes a bottom-up rejected-subtree marker. A node is
+     * collapsible only when the node itself is rejected and every descendant
+     * branch is also collapsible. Mixed subtrees remain traversable so accepted
+     * descendants can preserve their own levels.
+     */
     static void filteringByPruningMaxCriterionImpl(AltitudeView view, std::vector<bool>& keepCriterion, ImagePtr<T> imgOutputPtr) {
         const char* context = "AttributeFilters::filteringByPruningMax";
         view.requireTopologyUnchanged(context);
         const MorphologicalTree& tree = view.topology();
         requireCriterionSize(tree, keepCriterion, context);
         requireOutputImage(tree, imgOutputPtr, context);
+        // Internal `criterion` means "this whole subtree can be collapsed",
+        // which is the opposite of the caller's keep criterion at the leaves
+        // before descendant information is merged.
         std::vector<uint8_t> criterion(tree.getNumInternalNodeSlots(), false);
         detail::traversePostOrder(
             tree,
@@ -228,6 +338,14 @@ protected:
         }
     }
 
+    /**
+     * @brief Pruning-min reconstruction from a node attribute threshold.
+     *
+     * Nodes with `attribute > threshold` stay traversable. Rejected child
+     * branches are reconstructed at the current node altitude, which makes this
+     * overload equivalent to passing `attribute[node] > threshold` to the
+     * criterion overload.
+     */
     template <std::floating_point Real>
     static void filteringByPruningMinAttributeImpl(AltitudeView view, const Real* attribute, Real threshold, ImagePtr<T> imgOutputPtr) {
         const char* context = "AttributeFilters::filteringByPruningMin";
@@ -252,6 +370,13 @@ protected:
         }
     }
 
+    /**
+     * @brief Pruning-max reconstruction from a node attribute threshold.
+     *
+     * The bottom-up marker is true only for fully rejected subtrees. When such a
+     * branch is found during the top-down reconstruction pass, it is painted at
+     * the rejected branch root altitude rather than at the accepted ancestor.
+     */
     template <std::floating_point Real>
     static void filteringByPruningMaxAttributeImpl(AltitudeView view, const Real* attribute, Real threshold, ImagePtr<T> imgOutputPtr) {
         const char* context = "AttributeFilters::filteringByPruningMax";
@@ -259,6 +384,9 @@ protected:
         const MorphologicalTree& tree = view.topology();
         requireAttributePointer(attribute, context);
         requireOutputImage(tree, imgOutputPtr, context);
+        // Internal `criterion` records collapsible rejected subtrees, not a
+        // direct keep decision. The post-order merge implements the universal
+        // quantifier over descendants.
         std::vector<uint8_t> criterion(tree.getNumInternalNodeSlots(), false);
         detail::traversePostOrder(
             tree,
@@ -290,72 +418,99 @@ protected:
         }
     }
 
-    template <std::floating_point Real>
-    static std::vector<bool> getAdaptiveCriterionImpl(const WeightedMorphologicalTree<T>& weighted, const Real* attribute, Real threshold, AltitudeDiff<T> delta) {
-        requireAttributePointer(attribute, "AttributeFilters::getAdaptiveCriterion");
-
-        const MorphologicalTree& tree = weighted.topology();
-        MSERComputer<T, Real> mser(weighted);
-        std::vector<uint8_t> isMSER = mser.computeMSER(delta);
-        (void)isMSER;
-
-        std::vector<Real> stability = mser.getStabilities();
+    template <std::floating_point Real, class StabilityComputer>
+    static std::vector<bool> adaptiveCriterionFromAttributeStability(
+        const MorphologicalTree& tree,
+        const Real* attribute,
+        Real threshold,
+        StabilityComputer& stabilityComputer,
+        const char* context) {
+        requireAttributePointer(attribute, context);
+        const std::vector<Real>& variation = stabilityComputer.getVariations();
         std::vector<bool> isPruned(tree.getNumInternalNodeSlots(), false);
         for (NodeId nodeId : tree.getAliveNodeIds()) {
             if (attribute[nodeId] < threshold) {
-                if (std::isnan(stability[nodeId])) {
+                // Lower finite variation values are more stable. If the center
+                // has no complete stability window, keep the
+                // historical fallback and prune the rejected node itself.
+                if (!detail::isFiniteVariation(variation[static_cast<std::size_t>(nodeId)])) {
                     isPruned[nodeId] = true;
                 } else {
-                    const Real max = stability[nodeId];
-                    const NodeId indexDescMaxStability = mser.descendantWithMaxStability(nodeId);
-                    const NodeId indexAscMaxStability = mser.ascendantWithMaxStability(nodeId);
-                    const Real maxDesc = stability[indexDescMaxStability];
-                    const Real maxAnc = stability[indexAscMaxStability];
-
-                    if (max >= maxDesc && max >= maxAnc) {
-                        isPruned[nodeId] = true;
-                    } else if (maxDesc >= max && maxDesc >= maxAnc) {
-                        isPruned[indexDescMaxStability] = true;
-                    } else {
-                        isPruned[indexAscMaxStability] = true;
-                    }
+                    isPruned[stabilityComputer.nodeWithMinimumVariationInWindow(nodeId)] = true;
                 }
             }
         }
         return isPruned;
     }
 
-    static std::vector<bool> getAdaptiveCriterionImpl(const WeightedMorphologicalTree<T>& weighted, std::vector<bool>& criterion, AltitudeDiff<T> delta) {
-        const MorphologicalTree& tree = weighted.topology();
-        requireCriterionSize(tree, criterion, "AttributeFilters::getAdaptiveCriterion");
-        MSERComputer<T> mser(weighted);
-        std::vector<uint8_t> isMSER = mser.computeMSER(delta);
-        (void)isMSER;
-
-        std::vector<float> stability = mser.getStabilities();
+    template <std::floating_point Real, class StabilityComputer>
+    static std::vector<bool> adaptiveCriterionFromMaskStability(
+        const MorphologicalTree& tree,
+        std::vector<bool>& criterion,
+        StabilityComputer& stabilityComputer,
+        const char* context) {
+        requireCriterionSize(tree, criterion, context);
+        const std::vector<Real>& variation = stabilityComputer.getVariations();
         std::vector<bool> isPruned(tree.getNumInternalNodeSlots(), false);
         for (NodeId nodeId : tree.getAliveNodeIds()) {
             if (!criterion[nodeId]) {
-                if (std::isnan(stability[nodeId])) {
+                // `criterion == false` marks an attribute rejection. The variation
+                // comparison moves the actual pruning decision to the locally
+                // smallest finite variation on the ancestor/descendant window.
+                if (!detail::isFiniteVariation(variation[static_cast<std::size_t>(nodeId)])) {
                     isPruned[nodeId] = true;
                 } else {
-                    const float max = stability[nodeId];
-                    const NodeId indexDescMaxStability = mser.descendantWithMaxStability(nodeId);
-                    const NodeId indexAscMaxStability = mser.ascendantWithMaxStability(nodeId);
-                    const float maxDesc = stability[indexDescMaxStability];
-                    const float maxAnc = stability[indexAscMaxStability];
-
-                    if (max >= maxDesc && max >= maxAnc) {
-                        isPruned[nodeId] = true;
-                    } else if (maxDesc >= max && maxDesc >= maxAnc) {
-                        isPruned[indexDescMaxStability] = true;
-                    } else {
-                        isPruned[indexAscMaxStability] = true;
-                    }
+                    isPruned[stabilityComputer.nodeWithMinimumVariationInWindow(nodeId)] = true;
                 }
             }
         }
         return isPruned;
+    }
+
+    template <std::floating_point Real>
+    static std::vector<bool> getAdaptiveCriterionImpl(const WeightedMorphologicalTree<T>& weighted, const Real* attribute, Real threshold, AltitudeDiff<T> delta) {
+        const MorphologicalTree& tree = weighted.topology();
+        MSERComputer<T, Real> mser(weighted);
+        (void)mser.computeMSER(delta);
+        return adaptiveCriterionFromAttributeStability<Real>(
+            tree,
+            attribute,
+            threshold,
+            mser,
+            "AttributeFilters::getAdaptiveCriterion");
+    }
+
+    static std::vector<bool> getAdaptiveCriterionImpl(const WeightedMorphologicalTree<T>& weighted, std::vector<bool>& criterion, AltitudeDiff<T> delta) {
+        const MorphologicalTree& tree = weighted.topology();
+        MSERComputer<T> mser(weighted);
+        (void)mser.computeMSER(delta);
+        return adaptiveCriterionFromMaskStability<float>(
+            tree,
+            criterion,
+            mser,
+            "AttributeFilters::getAdaptiveCriterion");
+    }
+
+    template <std::floating_point Real>
+    static std::vector<bool> getAdaptiveCriterionByDepthImpl(const MorphologicalTree& tree, const Real* attribute, Real threshold, int depthDelta) {
+        DepthStableRegionComputer<Real> stabilityComputer(tree);
+        (void)stabilityComputer.computeByDepth(depthDelta);
+        return adaptiveCriterionFromAttributeStability<Real>(
+            tree,
+            attribute,
+            threshold,
+            stabilityComputer,
+            "AttributeFilters::getAdaptiveCriterionByDepth");
+    }
+
+    static std::vector<bool> getAdaptiveCriterionByDepthImpl(const MorphologicalTree& tree, std::vector<bool>& criterion, int depthDelta) {
+        DepthStableRegionComputer<float> stabilityComputer(tree);
+        (void)stabilityComputer.computeByDepth(depthDelta);
+        return adaptiveCriterionFromMaskStability<float>(
+            tree,
+            criterion,
+            stabilityComputer,
+            "AttributeFilters::getAdaptiveCriterionByDepth");
     }
     /// @endcond
 
@@ -404,6 +559,18 @@ public:
     }
 
     /**
+     * @brief Builds a depth-stability pruning criterion from an existing mask.
+     *
+     * `depthDelta` is a number of tree edges. The stability computation does not
+     * read altitude, so it is suitable for tree-of-shapes and self-dual residual
+     * trees where max/min altitude polarity is not defined.
+     */
+    [[nodiscard]] std::vector<bool> getAdaptiveCriterionByDepth(std::vector<bool>& criterion, int depthDelta) {
+        requireStableTree("AttributeFilters::getAdaptiveCriterionByDepth");
+        return AttributeFilters::getAdaptiveCriterionByDepthImpl(this->tree, criterion, depthDelta);
+    }
+
+    /**
      * @brief Applies pruning-min filtering from an attribute buffer.
      *
      * Nodes with attribute values above `threshold` remain traversable; rejected
@@ -447,6 +614,27 @@ public:
         assert(attr != nullptr);
         ImagePtr<T> imgOutput = Image<T>::create(this->tree.getNumRowsOfImage(), this->tree.getNumColsOfImage());
         filteringByPruningMaxAttributeImpl(view(), attr, threshold, imgOutput);
+        return imgOutput;
+    }
+
+    /**
+     * @brief Applies Salembier-style Viterbi filtering from a raw attribute buffer.
+     *
+     * The internal `detail` implementation turns `attr` and `threshold` into
+     * preserve/remove costs and solves the optimal connected keep mask on the
+     * tree. The root is always preserved. Once the Viterbi path removes a node,
+     * every descendant is removed as well; preserved descendants can only appear
+     * below preserved ancestors. The final image is reconstructed by the direct
+     * rule using that connected keep criterion.
+     */
+    template <std::floating_point Real>
+    [[nodiscard]] ImagePtr<T> filteringByViterbiRule(const Real* attr, Real threshold) {
+        requireStableTree("AttributeFilters::filteringByViterbiRule");
+        auto costs = detail::makeThresholdViterbiCosts(tree, attr, threshold);
+        std::vector<bool> criterion = detail::computeViterbiKeepCriterion(tree, costs);
+
+        ImagePtr<T> imgOutput = Image<T>::create(this->tree.getNumRowsOfImage(), this->tree.getNumColsOfImage());
+        filteringByDirectRuleImpl(view(), criterion, imgOutput);
         return imgOutput;
     }
 
@@ -664,6 +852,29 @@ public:
      */
     [[nodiscard]] static std::vector<bool> getAdaptiveCriterion(const WeightedMorphologicalTree<T>& weighted, std::vector<bool>& criterion, AltitudeDiff<T> delta) {
         return getAdaptiveCriterionImpl(weighted, criterion, delta);
+    }
+
+    /**
+     * @brief Builds a depth-stability pruning criterion from an attribute threshold.
+     */
+    template <std::floating_point Real>
+    [[nodiscard]] static std::vector<bool> getAdaptiveCriterionByDepth(const WeightedMorphologicalTree<T>& weighted, const std::shared_ptr<Real[]>& attribute, Real threshold, int depthDelta) {
+        return getAdaptiveCriterionByDepthImpl(weighted.topology(), attribute.get(), threshold, depthDelta);
+    }
+
+    /**
+     * @brief Builds a depth-stability pruning criterion from a raw attribute buffer.
+     */
+    template <std::floating_point Real>
+    [[nodiscard]] static std::vector<bool> getAdaptiveCriterionByDepth(const WeightedMorphologicalTree<T>& weighted, const Real* attribute, Real threshold, int depthDelta) {
+        return getAdaptiveCriterionByDepthImpl(weighted.topology(), attribute, threshold, depthDelta);
+    }
+
+    /**
+     * @brief Builds a depth-stability pruning criterion from an existing criterion mask.
+     */
+    [[nodiscard]] static std::vector<bool> getAdaptiveCriterionByDepth(const WeightedMorphologicalTree<T>& weighted, std::vector<bool>& criterion, int depthDelta) {
+        return getAdaptiveCriterionByDepthImpl(weighted.topology(), criterion, depthDelta);
     }
 };
 

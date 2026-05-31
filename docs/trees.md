@@ -150,7 +150,12 @@ borrows an `AltitudeSpan<T>`. Accepted altitude types satisfy `AltitudeValue`:
 
 Max-trees and min-trees validate monotone altitude order. Trees of shapes and
 self-dual residual trees currently skip global monotone-altitude validation
-because their semantics are not a single max/min component-tree order.
+because their semantics are not a single max/min component-tree order. Operators
+that need classical altitude polarity, such as MSER, therefore reject those tree
+kinds; use topological depth-stability operators when `delta` should mean a
+number of tree edges instead of an altitude difference. `ExtinctionValues` is
+also restricted to max-trees and min-trees because it currently identifies
+regional extrema with component-tree leaves.
 
 ## Editing And Derived State
 

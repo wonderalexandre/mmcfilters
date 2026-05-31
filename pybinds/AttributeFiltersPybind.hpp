@@ -38,6 +38,15 @@ class AttributeFiltersPybind : public AttributeFilters<std::uint8_t> {
     }
 
     template <std::floating_point Real>
+    py::array_t<uint8_t> filteringByViterbiRuleTyped(py::array attr, Real threshold) {
+        auto typed = PybindUtils::requireNodeAttributeArray<Real>(std::move(attr), topology());
+        const py::buffer_info buffer = typed.request();
+        return PybindUtils::toNumpy(AttributeFilters<std::uint8_t>::filteringByViterbiRule(
+            static_cast<const Real*>(buffer.ptr),
+            threshold));
+    }
+
+    template <std::floating_point Real>
     py::array_t<uint8_t> filteringByExtinctionValueTyped(py::array attr, int leafToKeep) {
         auto typed = PybindUtils::requireNodeAttributeArray<Real>(std::move(attr), topology());
         ExtinctionValues<std::uint8_t, Real> ev(*this->weightedOwner_, PybindUtils::toSharedPtr<Real>(typed));
@@ -79,6 +88,13 @@ class AttributeFiltersPybind : public AttributeFilters<std::uint8_t> {
         return filteringByPruningMaxTyped<float>(std::move(attr), static_cast<float>(threshold));
     }
 
+    py::array_t<uint8_t> filteringByViterbiRule(py::array attr, double threshold){
+        if (PybindUtils::parseFloatingArrayDType(attr, "attr") == PybindUtils::FloatingDType::Float64) {
+            return filteringByViterbiRuleTyped<double>(std::move(attr), threshold);
+        }
+        return filteringByViterbiRuleTyped<float>(std::move(attr), static_cast<float>(threshold));
+    }
+
     py::array_t<uint8_t> filteringByPruningMin(std::vector<bool>& criterion){
         requireNodeCriterion(criterion, topology());
         return PybindUtils::toNumpy(AttributeFilters<std::uint8_t>::filteringByPruningMin(criterion));
@@ -98,6 +114,11 @@ class AttributeFiltersPybind : public AttributeFilters<std::uint8_t> {
     std::vector<bool> getAdaptiveCriterion(std::vector<bool>& criterion, int delta){
         requireNodeCriterion(criterion, topology());
         return AttributeFilters<std::uint8_t>::getAdaptiveCriterion(criterion, delta);
+    }
+
+    std::vector<bool> getAdaptiveCriterionByDepth(std::vector<bool>& criterion, int depthDelta){
+        requireNodeCriterion(criterion, topology());
+        return AttributeFilters<std::uint8_t>::getAdaptiveCriterionByDepth(criterion, depthDelta);
     }
 
 

@@ -17,6 +17,9 @@ components, not alternate public orchestration APIs.
 The C++ library is header-only, so installed packages include some `detail`
 headers as transitive implementation dependencies. Those headers are shipped so
 public headers compile downstream; they are not compatibility-contract headers.
+The explicit installation manifest is
+`cmake/mmcfiltersPublicHeaders.cmake`; adding a repository header does not
+implicitly publish or install it.
 
 ## Computer Contract
 

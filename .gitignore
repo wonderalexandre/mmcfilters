@@ -17,7 +17,7 @@ build_setup_py/*
 Pipfile
 *.d
 *.o
-notebooks/.ipynb_checkpoints/*
+**/.ipynb_checkpoints/
 notebooks/.virtual_documents/*
 /tests/build
 /tests/build

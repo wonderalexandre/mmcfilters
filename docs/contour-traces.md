@@ -32,7 +32,9 @@ for (const ContourTraceLoop& loop : traces.getLoops(nodeId)) {
 
 `getEdges(node)` materializes only the unordered side-level boundary of the
 requested node. `getLoops(node)` first materializes edges if needed, then traces
-ordered loops for that node. `materializeAll()` traces every live node.
+ordered loops for that node and returns an owning `std::vector`, so retaining
+the result is safe while other nodes are materialized lazily. `materializeAll()`
+traces every live node.
 
 ## Python API
 
@@ -46,8 +48,9 @@ for loop in loops:
     loop_edges = traces.getLoopEdges(loop)
 ```
 
-The Python API returns lists for node-local queries. The C++ owner keeps the
-lazy caches internally.
+The Python API returns lists for node-local queries. A Python `ContourTraces`
+object keeps its source tree alive, while the C++ result still requires its
+referenced tree to outlive the lazy trace object.
 
 ## Geometry Convention
 

@@ -86,7 +86,9 @@ caller-owned output images and are useful in tight loops:
 
 ```cpp
 std::vector<bool> keep(tree.getNumInternalNodeSlots(), true);
-auto output = ImageUInt8::create(tree.getNumRowsOfImage(), tree.getNumColsOfImage());
+auto output = ImageUInt8::create(
+    tree.getNumRowsOfGridDomain2D(),
+    tree.getNumColsOfGridDomain2D());
 
 AttributeFilters<std::uint8_t>::filteringByDirectRule(
     weightedTree,
@@ -118,9 +120,9 @@ attribute and a threshold.
 
 `getAdaptiveCriterion(...)` adjusts a criterion with an MSER-style stability
 analysis. It requires `WeightedMorphologicalTree<T>` ownership because MSER uses
-the tree-owned altitude buffer to build delta neighbourhoods. Classical MSER is
-defined only for max-trees and min-trees, where altitude is monotone along every
-root-to-leaf path:
+the tree-owned altitude buffer to build delta neighbourhoods. Classical MSER
+requires the topology to declare a globally monotone altitude order. The
+standard max-tree and min-tree producers provide that capability:
 
 ```cpp
 AttributeFilters<std::uint8_t> filters(weightedTree);
@@ -137,6 +139,8 @@ descendant, computes a variation score from an increasing attribute, and marks
 strict local minima that pass the configured variation and attribute bounds. If
 no attribute buffer is provided, it lazily computes `AREA`. Missing windows
 produce `NaN`; nodes with `NaN` variation are not selected as MSERs.
+Result getters such as `getVariation`, `getVariations`, and `getNumNodes` throw
+`std::logic_error` until the first successful `computeMSER` call.
 
 The variation score is:
 
@@ -152,8 +156,10 @@ MSER is not a general `WeightedTreeView<T>` operation. View-based filter objects
 can run ordinary direct, subtractive, and pruning rules, but reject MSER-assisted
 methods that need owner state.
 
-Tree-of-shapes and self-dual residual trees do not have a single max/min
-altitude polarity. For them, use depth stability instead:
+The standard tree-of-shapes and self-dual residual-tree producers declare
+`AltitudeOrder::UNCONSTRAINED`, so they do not provide the capability needed by
+altitude MSER. Acceptance is based on this capability rather than the
+descriptive tree kind. For unconstrained hierarchies, use depth stability:
 
 ```cpp
 std::vector<bool> pruned = filters.getAdaptiveCriterionByDepth(
@@ -168,12 +174,22 @@ exist at that depth, the largest-area one is chosen; ties use the smallest
 `NodeId`. This operator does not read altitude and should be described as
 topological depth stability, not classical MSER. Its numeric score is still a
 variation value; use `getVariation(...)`/`getVariations()` when inspecting it
-directly.
+directly. These result getters, the selected-node count, and the window-neighbour
+getters throw `std::logic_error` until `computeByDepth(...)` succeeds.
 
 ## Extinction Values
 
+For the scientific distinction among Cousty persistence, the former monotone
+LCA projection, raster `contourMap`, and Xu shape-space saliency, see
+[Hierarchy Saliency Maps](saliency.md). Its
+[primary-reference mapping](saliency.md#primary-references-and-implementation-correspondence)
+contains the complete citations and states which behavior is defined by each
+paper versus added by this library. This section focuses on extinction selection,
+filtering, and the filter-facing API.
+
 `ExtinctionValues<T, Real>` ranks regional extrema by a scalar node attribute
-on max-trees and min-trees. In this classical component-tree setting, the
+on hierarchies that declare a globally monotone altitude order. Standard
+max-tree and min-tree producers provide that capability. In this setting, the
 regional extrema processed by the implementation are the tree leaves. The
 attribute is a dense floating-point buffer indexed by internal `NodeId`; larger
 attribute values are interpreted as stronger extrema. `Real` defaults to
@@ -190,29 +206,75 @@ auto area64Result = AttributeComputation::computeSingleAttribute<double>(weighte
 
 ExtinctionValues<std::uint8_t> extinction(weightedTree, area);
 ExtinctionValues<std::uint8_t, double> extinction64(weightedTree, area64Result.values());
-auto filtered = extinction.filtering(8);
-auto saliency = extinction.saliencyMap(8, true);
+auto strongest = ExtinctionSelectionPolicy<float>::byTopK(8);
+auto highExtinction = ExtinctionSelectionPolicy<float>::byThreshold(10.0f);
 
-for (const RegionalExtremaNode<float>& item : extinction.getExtinctionValues()) {
+auto filtered = extinction.filtering(strongest);
+auto filteredByThreshold = extinction.filtering(highExtinction);
+auto contours = extinction.contourMap(strongest, ExtinctionContourScorePolicy::RankScore);
+
+for (const RegionalExtremaNode<float>& item : extinction.getRegionalExtrema()) {
     NodeId leaf = item.leaf;
     NodeId cutoff = item.cutoffNode;
     float value = item.extinction;
 }
 ```
 
-`filtering(extremaToKeep)` reconstructs an image by retaining the strongest
-extrema. `saliencyMap(extremaToKeep, unweighted)` writes saliency on compact
-contours of the retained cutoff nodes. With `unweighted=true`, contours receive
-rank-like scores; with `unweighted=false`, they receive extinction values.
-`extremaToKeep` must be non-negative. The dominant extremum has no stronger
-merge point; its extinction is represented by the explicit finite sentinel
-`std::numeric_limits<Real>::max()`.
+`ExtinctionSelectionPolicy::byTopK(extremaToKeep)` selects the strongest extrema
+by decreasing extinction ranking.
+`ExtinctionSelectionPolicy::byThreshold(threshold)` selects every
+extremum whose extinction value is greater than or equal to `threshold`.
+`filtering(selection)` reconstructs an image from the selected extrema.
+`contourMap(selection, scorePolicy)` writes an image-domain contour visualization
+on the retained cutoff nodes. Use `ExtinctionContourScorePolicy::RankScore` for
+dense rank scores, or `ExtinctionContourScorePolicy::ExtinctionValue` for raw
+extinction values.
+Rank counts must be non-negative and extinction thresholds must be finite. The
+dominant extremum has no stronger merge point; its extinction is represented by
+the explicit finite sentinel `std::numeric_limits<Real>::max()`.
 
-Trees of shapes and self-dual residual trees are rejected by `ExtinctionValues`.
-Their leaves can be regional extrema, but the complete regional-extrema set is
-not generally equivalent to `tree.getLeaves()`. Support for those tree kinds
-should therefore use a separate extrema-collection stage before applying an
-extinction ranking.
+`contourMap` is a visualization. For the edge-indexed saliency map of a hierarchy
+in the quasi-flat-zone sense, use the formal extinction path:
+
+```cpp
+const std::vector<float>& valuation = extinction.getExtinctionValueAttribute();
+auto edgeMap = extinction.computeFormalSaliencyEdgeMap();
+
+std::vector<int> rankedValuation = extinction.computeRankedExtinctionValueAttribute();
+auto rankedEdgeMap = extinction.computeRankedFormalSaliencyEdgeMap();
+```
+
+`getExtinctionValueAttribute()` returns a cached dense node
+attribute: each regional-extremum leaf receives its extinction value, and every
+non-leaf node receives the maximum extinction among the extrema contained in its
+subtree. This max-propagated valuation is an intermediate quantity in the
+hierarchical-watershed construction.
+
+`computeFormalSaliencyEdgeMap()` follows Section 8.1 of Cousty et al. It builds
+an altitude-ordered MST/BPTAO, assigns each binary merge the persistence
+
+```text
+persistence(node) = min(maxExtinction(left), maxExtinction(right))
+```
+
+and converts the persistence-weighted MST to its full-graph QFZ saliency map.
+The dominant-extremum sentinel therefore does not propagate to ordinary merger
+edges. The ranked variant ranks values already present on the final edge map.
+
+The former `max descendants -> LCA` experiment remains available explicitly as
+`computeMonotoneExtinctionProjection()`. It is a valid monotone hierarchy
+projection, but it is not the Cousty hierarchical-watershed persistence method.
+
+Standard trees of shapes and self-dual residual trees declare unconstrained
+altitude order and are therefore rejected by `ExtinctionValues`. Their leaves
+can be regional extrema, but the complete regional-extrema set is not generally
+equivalent to `tree.getLeaves()`. The gate is the altitude-order capability,
+not the descriptive kind. Support for these hierarchies is provided by the
+separate `ShapeSpaceSaliency` API when the intended method is Xu shaping: it
+treats all original tree nodes as a parent-child graph,
+computes extrema and finite extinctions in that second shape space, and combines
+the representative scores by maximum on the original region contours. See
+[Morphological Trees](trees.md#shape-space-extinction-saliency).
 
 ## Ultimate Attribute Opening
 
@@ -296,27 +358,33 @@ depth_mask = depth_stability.computeByDepth(depthDelta=2)
 depth_variation = depth_stability.getVariations()
 ```
 
-Extinction values are available for max-trees and min-trees either through
-`ExtinctionValues` directly or through convenience methods on
+Extinction values are available for hierarchies with a globally monotone
+altitude-order capability, including the standard max-tree and min-tree
+producers, either through `ExtinctionValues` directly or through
 `AttributeFilters`:
 
 ```python
 extinction = mmcfilters.ExtinctionValues(max_tree, area)
-filtered = extinction.filtering(leafToKeep=8)
-saliency = extinction.saliencyMap(leafToKeep=8, unweighted=True)
-records = extinction.getExtinctionValues()
+strongest = mmcfilters.ExtinctionSelectionPolicy.byTopK(8)
+high_extinction = mmcfilters.ExtinctionSelectionPolicy.byThreshold(10.0)
 
-filtered2 = filters.filteringByExtinction(area, leafToKeep=8)
-saliency2 = filters.saliencyMapByExtinction(
+filtered = extinction.filtering(strongest)
+filtered_by_threshold = extinction.filtering(high_extinction)
+contours = extinction.contourMap(
+    strongest,
+    mmcfilters.ExtinctionContourScorePolicy.RankScore,
+)
+records = extinction.getRegionalExtrema()
+valuation = extinction.computeRankedExtinctionValueAttribute()
+edge_map = extinction.computeFormalSaliencyEdgeMap(ranked=True)
+
+filtered2 = filters.filteringByExtinction(area, strongest)
+contours2 = filters.contourMapByExtinction(
     area,
-    leafToKeep=8,
-    unweighted=True,
+    strongest,
+    mmcfilters.ExtinctionContourScorePolicy.RankScore,
 )
 ```
-
-Pass `unweighted` explicitly when the saliency score convention matters because
-the direct `ExtinctionValues.saliencyMap(...)` API and convenience wrappers use
-different defaults.
 
 UAO follows the same dense attribute-buffer convention:
 

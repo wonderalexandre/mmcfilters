@@ -1,0 +1,26 @@
+{
+  "status": "ready_to_share",
+  "raw_rows": 900,
+  "groups": 180,
+  "repetitions_per_group": 5,
+  "images_per_resolution": 10,
+  "resolutions": [
+    "480p",
+    "720p",
+    "1080p"
+  ],
+  "algorithms": [
+    "tos_max4c_min8c",
+    "tos_self_dual",
+    "max_tree_8c",
+    "min_tree_8c",
+    "residual_unrestricted_8c",
+    "residual_saturated_8c"
+  ],
+  "exact_reconstruction_checked_during_warmup": true,
+  "deterministic_node_counts": true,
+  "positive_times": true,
+  "complete_rotated_schedules": true,
+  "bootstrap_samples": 20000,
+  "bootstrap_seed_base": 20260804
+}

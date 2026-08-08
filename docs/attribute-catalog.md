@@ -9,9 +9,9 @@ usage patterns and output-space rules, see [Attributes](attributes.md).
 
 The `Contract` column classifies the input required by the attribute:
 
-- `Topology/support`: uses image-domain support, such as proper-part ownership,
-  pixel coordinates, contours, bounding boxes, or shape moments. It does not read
-  node altitudes.
+- `Topology/support`: does not read node altitudes. Some descriptors use only
+  finite proper-part ownership; others additionally declare regular 2D geometry
+  or adjacency requirements.
 - `Altitude-aware`: reads the node altitude buffer and therefore requires a
   `WeightedMorphologicalTree<T>` or `WeightedTreeView<T>`.
 - `Tree topology`: uses only parent/child relations in the hierarchy.
@@ -20,12 +20,27 @@ The `Groups` column lists non-`ALL` group memberships. Rows are sorted by the
 first listed group; attributes that belong to more than one group appear only
 once. `ALL` expands to every attribute in this table.
 
+The complete capability matrix is:
+
+| Attributes | Altitude | Grid 2D | Adjacency | Monotone order | Altitude for directional adjacency | Canonical 4/8 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `AREA`, `HEIGHT_NODE` through `BALANCE_NODE`, `AVG_CHILD_HEIGHT_NODE` | no | no | none | no | no | no |
+| `VOLUME`, `RELATIVE_VOLUME`, `LEVEL`, `GRAY_HEIGHT`, `MEAN_LEVEL`, `VARIANCE_LEVEL` | yes | no | none | no | no | no |
+| bounding boxes, central/Hu moments, moment-derived descriptors, `CONTOUR_*` | no | yes | none | no | no | no |
+| `BITQUADS_*` | no | yes | uniform or directional | no | yes | yes |
+| `MAX_DIST` | yes | yes | uniform | yes | no | no |
+
+C++ callers can query
+`attributes::registry::capabilityRequirements(attribute)`. Python callers use
+`mmcfilters.Attribute.requirements(attribute)`. Group requests are expanded to
+scalar attributes before these requirements are validated.
+
 | Constant | Groups | Contract | Description |
 | --- | --- | --- | --- |
 | `VOLUME` | `GRAY_LEVEL` | Altitude-aware | Sum of altitude-weighted support contributions over the node subtree. It behaves like the gray-level mass or integral of the image over the connected component support. |
 | `RELATIVE_VOLUME` | `GRAY_LEVEL` | Altitude-aware | Cumulative gray-level contrast volume: absolute parent/child altitude jumps weighted by child support area, plus the node support-area contribution. |
 | `LEVEL` | `GRAY_LEVEL` | Altitude-aware | Altitude of the node in the morphological hierarchy. For component trees, this is the gray level at which the connected component appears. |
-| `GRAY_HEIGHT` | `GRAY_LEVEL` | Altitude-aware | Gray-level span from the node altitude to the most extreme descendant altitude: maximum descendant level in a max-tree, minimum descendant level in a min-tree. Leaves have value `0`. |
+| `GRAY_HEIGHT` | `GRAY_LEVEL` | Altitude-aware | Maximum absolute altitude difference between the node and any node in its subtree. On monotone max/min trees this reduces to the traditional one-sided span; it also applies to hierarchies with unconstrained altitude order. Leaves have value `0`. |
 | `MEAN_LEVEL` | `GRAY_LEVEL` | Altitude-aware | Average gray level over the full node support. It is computed from accumulated `VOLUME / AREA`. |
 | `VARIANCE_LEVEL` | `GRAY_LEVEL` | Altitude-aware | Variance of gray levels over the full node support. It uses the accumulated squared gray-level sum and the mean level. |
 | `AREA` | `SHAPE` | Topology/support | Number of proper parts in the full node support, including all descendant supports. In image-domain trees this is the pixel count of the connected component represented by the node. |
@@ -38,7 +53,7 @@ once. `ALL` expands to every attribute in this table.
 | `BOX_COL_MAX` | `SHAPE` | Topology/support | Maximum image column index covered by the node support. |
 | `BOX_ROW_MIN` | `SHAPE` | Topology/support | Minimum image row index covered by the node support. |
 | `BOX_ROW_MAX` | `SHAPE` | Topology/support | Maximum image row index covered by the node support. |
-| `MAX_DIST` | `SHAPE` | Altitude-aware | Maximum squared Euclidean distance reached from the node contour during the incremental distance-transform sweep. It is defined for max-trees and min-trees with valid adjacency metadata. |
+| `MAX_DIST` | `SHAPE` | Altitude-aware | Maximum squared Euclidean distance reached from the node contour during the incremental distance-transform sweep. Requires a regular 2D domain, globally monotone altitude order, and uniform adjacency; the descriptive tree kind is irrelevant. |
 | `CENTRAL_MOMENT_20` | `MOMENTS`, `SHAPE` | Topology/support | Second-order central moment `mu20` around the support centroid. It measures horizontal spread using column coordinates as `x`. |
 | `CENTRAL_MOMENT_02` | `MOMENTS`, `SHAPE` | Topology/support | Second-order central moment `mu02` around the support centroid. It measures vertical spread using row coordinates as `y`. |
 | `CENTRAL_MOMENT_11` | `MOMENTS`, `SHAPE` | Topology/support | Mixed second-order central moment `mu11`. It measures covariance between column and row coordinates. |

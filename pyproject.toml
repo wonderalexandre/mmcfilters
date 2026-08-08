@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-  "scikit-build-core>=0.9",
+  "scikit-build-core>=1.0",
   "setuptools-scm>=8",
   "pybind11>=3.0.1",
 ]
@@ -11,7 +11,7 @@ dynamic = ["version"]
 name = "mmcfilters"
 description = "Library for connected image filtering based on morphological trees"
 readme = "README.md"
-authors = [{ name = "Wonder Alexandre Luz Alves", email = "worderalexandre@gmail.com" }]
+authors = [{ name = "Wonder Alexandre Luz Alves", email = "wonderalexandre@gmail.com" }]
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 dependencies = [
@@ -35,8 +35,25 @@ classifiers = [
   "Operating System :: POSIX :: Linux",
 ]
 
+[project.optional-dependencies]
+notebooks = [
+  "bokeh>=3.3",
+  "higra>=0.6.12",
+  "ipython>=8.12",
+  "jupyterlab>=4.0",
+  "matplotlib>=3.7",
+  "morphotreeviz",
+  "nbclient>=0.10",
+  "nbconvert>=7.10",
+  "nbformat>=5.10",
+  "opencv-python-headless>=4.8",
+  "pandas>=2.0",
+  "scikit-image>=0.21",
+  "scipy>=1.10",
+]
+
 [tool.setuptools_scm]
-# grava a versão resolvida (a partir da tag) dentro do seu pacote python
+# Write the tag-derived version into the Python package during builds.
 write_to = "python/mmcfilters/_version.py"
 version_scheme = "post-release"
 local_scheme = "no-local-version"
@@ -56,21 +73,22 @@ args = [
 [tool.scikit-build.cmake.define]
 CMAKE_OSX_DEPLOYMENT_TARGET = "11.0"
 
-# (opcional)
-#[tool.scikit-build.ninja]
-#args = ["-j", "0"]  # 0 = auto
-
-[tool.scikit-build.metadata]
-# Use setuptools-scm as the version provider for scikit-build-core
-version = { provider = "scikit_build_core.metadata.setuptools_scm" }
+[[tool.dynamic-metadata]]
+provider = "scikit_build_core.metadata.setuptools_scm"
 
 [tool.scikit-build.sdist]
+inclusion-mode = "explicit"
 include = [
   "/python/**",
   "/pybinds/**",
   "/mmcfilters/**",
   "/cmake/**",
+  "/docs/**",
+  "/examples/**",
+  "/external/stb/**",
+  "/CHANGELOG.md",
   "/CMakeLists.txt",
+  "/pyproject.toml",
   "/pybind11.cmake",
   "/LICENSE",
   "/README.md",
@@ -84,17 +102,9 @@ exclude = [
   "/dat/**",
   "/dist/**",
   "/notebooks/**",
-  "/notebooks/README.md",
+  "/docs/benchmarks/**",
   "/python/mmcfilters/__pycache__/**",
   "/python/mmcfilters/**/*.py[cod]",
-  ".github/**",
-  ".gitignore",
-  ".pytest_cache/**",
-  ".vscode/**",
-  "build/**",
-  "dat/**",
-  "dist/**",
-  "notebooks/**",
   "**/.ipynb_checkpoints/**",
   "**/__pycache__/**",
   "**/*.py[cod]",

@@ -5,8 +5,8 @@
 
 > Project status: research library for dynamic morphological-tree experiments.
 >
-> This package focuses on a proper-part tree model for image-domain partial
-> partitions, tree editing, typed altitude contracts, incremental attributes,
+> This package focuses on a proper-part tree model for finite partial
+> partitions, optional image-domain geometry, tree editing, typed altitude contracts, incremental attributes,
 > contours, and project-specific morphology research. It is not intended to be a
 > general-purpose replacement for Higra.
 
@@ -14,19 +14,26 @@
 
 This repository is a research implementation for morphological-tree workflows
 that need direct topology ownership, staged edits, typed altitude buffers, and
-project-specific attribute machinery. Its central model is a tree over
-image-domain partial partitions: image pixels are explicit proper parts, and
-internal morphological nodes own those proper parts directly. The implemented
+project-specific attribute machinery. Its central model is a tree over finite
+partial partitions: proper parts have their own id domain, and internal
+morphological nodes own them directly. Image trees optionally attach a regular
+2D layout, but that layout is not required by the core topology. The implemented
 models share the `MorphologicalTree` topology abstraction: rooted inclusion
 topology, dense internal `NodeId` values, and explicit proper-part ownership.
+Nodes and proper parts have independent id domains, so a node may have no
+direct proper part when its support is supplied entirely by descendants.
+Committed nodes must still have non-empty subtree support. Interpretation is
+expressed through generic altitude-order and adjacency capabilities;
+`MorphologicalTreeKind` is a descriptive diagnostic label.
 
 Current functionality includes:
 
-- max-tree, min-tree, tree-of-shapes, and self-dual residual tree construction;
+- max-tree, min-tree, and tree-of-shapes construction;
 - import/export of Higra-style `(parent, altitude)` hierarchies;
 - dynamic topology edits through safe mutators and staged editors;
 - gray-level, shape, boundary, topology, and max-distance attributes;
-- attribute filters, extinction values, and Ultimate Attribute Opening;
+- attribute filters, extinction values, hierarchy saliency maps, and Ultimate
+  Attribute Opening;
 - a C++20 header-oriented core plus a pybind11 Python package.
 
 Higra remains the better fit for stable, general-purpose hierarchical
@@ -36,13 +43,30 @@ machinery exposed here. See
 [docs/attribute-catalog.md](docs/attribute-catalog.md) for the public descriptor
 catalog and [docs/higra-interoperability.md](docs/higra-interoperability.md)
 for import, export, and attribute-projection contracts.
+The scientific contracts and operator distinctions for saliency are centralized
+in [docs/saliency.md](docs/saliency.md). The unreleased API notes are recorded in
+[CHANGELOG.md](CHANGELOG.md): `computeFormalSaliencyEdgeMap` keeps its name but
+now uses the Cousty persistence MST/BPTAO construction. The former direct LCA
+behavior is available only through `computeMonotoneExtinctionProjection`.
+For an executable English introduction—from a hand-computable `3x3` example
+through LCA, MST, extinction, contour visualization, and shape-space—see
+[notebooks/Saliency_Maps_Tutorial.ipynb](notebooks/Saliency_Maps_Tutorial.ipynb).
 
 Python currently follows the canonical 8-bit contract: factory inputs must be
 C-contiguous `np.uint8` arrays and external altitude inputs must stay in
-`[0, 255]`. C++ supports typed max/min and SDRT construction through `Image<T>`,
+`[0, 255]`. C++ supports typed max/min construction through `Image<T>`,
 typed Higra imports through `createFromHigraParent<T>`, and read-only
 `WeightedTreeView<T>` altitude spans. Tree of Shapes construction is currently
 `uint8_t`.
+
+Self-dual residual trees are available through synchronized max-tree/min-tree
+construction. The public factory exposes both the unrestricted hierarchy and
+the version restricted to saturated regional extrema under one shared symmetric
+adjacency. The underlying algorithm and its scientific reference backends are
+developed in the `MorphoTreeDynamics` project. This branch integrates the
+current synchronized production builder; independent reference constructions
+are confined to differential tests. The obsolete historical implementation
+previously removed from this repository has not been restored.
 
 ## Installation
 
@@ -55,18 +79,25 @@ pip install mmcfilters
 From source:
 
 ```bash
-cmake -S . -B build -DMMCFILTERS_BUILD_PYTHON=ON
-cmake --build build
+python -m pip install .
 ```
 
-Installed C++ package:
+For a C++ source build and installation:
+
+```bash
+cmake -S . -B build -DMMCFILTERS_BUILD_PYTHON=OFF
+cmake --build build
+cmake --install build --prefix /path/to/prefix
+```
+
+Consume the installed C++ package with:
 
 ```cmake
 find_package(mmcfilters CONFIG REQUIRED)
 target_link_libraries(my_target PRIVATE mmcfilters::core)
 ```
 
-To enable the regression suite or examples:
+In a repository checkout, enable the regression suite or C++ examples with:
 
 ```bash
 cmake -S . -B build \
@@ -76,6 +107,9 @@ cmake -S . -B build \
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
+
+Internal benchmarks can be built with
+`-DMMCFILTERS_BUILD_BENCHMARKS=ON`.
 
 ## Quick Python example
 
@@ -160,6 +194,7 @@ Use this map to find the right entry point quickly:
 API guides:
 
 - Morphological tree model: [docs/trees.md](docs/trees.md)
+- Hierarchy saliency maps and scientific contracts: [docs/saliency.md](docs/saliency.md)
 - Attribute computation: [docs/attributes.md](docs/attributes.md)
 - Attribute catalog: [docs/attribute-catalog.md](docs/attribute-catalog.md)
 - Attribute filters, extinction values, and UAO: [docs/filters.md](docs/filters.md)
@@ -175,6 +210,8 @@ Contributor design notes:
   [docs/attribute-computer-architecture.md](docs/attribute-computer-architecture.md)
 - Contour internals and benchmarks:
   [docs/contours.md](docs/contours.md)
+- Recorded benchmark artifacts and provenance status:
+  [docs/benchmarks/index.md](docs/benchmarks/index.md)
 
 ## Documentation
 

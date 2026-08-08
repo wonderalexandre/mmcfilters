@@ -11,6 +11,13 @@ Public examples use stable headers and are suitable as API references. Internal
 examples may include `detail/` headers and are intended for validation,
 benchmarking, and implementation debugging.
 
+The Python filtering demo uses an installed package and does not require a
+CMake example target:
+
+```bash
+python examples/python_attribute_filter_demo.py
+```
+
 ## Public Targets
 
 - `mmcfilters_example_editing_api`

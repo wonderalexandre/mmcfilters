@@ -1,0 +1,8 @@
+BasedOnStyle: LLVM
+ColumnLimit: 160
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+DerivePointerAlignment: false
+PointerAlignment: Left
+SortIncludes: false

@@ -43,11 +43,19 @@ For an image domain with `rows * cols` proper parts:
 When exporting, proper parts are emitted in row-major order. Internal nodes are
 assigned compact ids from the live rooted tree. For max-trees and min-trees, the
 export order follows the tree altitude polarity with a deterministic post-order
-tie-breaker. Trees of shapes and self-dual residual trees derive the export
-direction from their local altitude relation.
+tie-breaker. Trees of shapes and other
+`UNCONSTRAINED` hierarchies use deterministic post-order directly. Consequently,
+every non-root internal node appears before its parent even when one branch
+increases in altitude and another decreases.
 
 The exported altitude array has the same length as the exported parent array.
 Leaf/proper-part altitudes are filled with the altitude of their owner node.
+
+This layout policy lives at the interoperability boundary. Import converts it
+to independent dense node-parent and proper-part-owner buffers before generic
+tree materialization; `MorphologicalTree` does not parse Higra parent arrays.
+While the topology is unchanged, it retains only the affine external-id offset
+needed by the compatibility queries below.
 
 ## Importing A Static Hierarchy
 
@@ -71,7 +79,7 @@ auto tree = MorphologicalTreeFactory::createFromHigraParent(
     rows,
     cols,
     MorphologicalTreeKind::MAX_TREE,
-    AdjacencyRelation(rows, cols, 1.5));
+    RegularGridAdjacency2D(rows, cols, 1.5));
 ```
 
 The altitude type is typed in C++:
@@ -85,7 +93,7 @@ auto floatTree = MorphologicalTreeFactory::createFromHigraParent<float>(
     rows,
     cols,
     MorphologicalTreeKind::MIN_TREE,
-    AdjacencyRelation(rows, cols, 1.5));
+    RegularGridAdjacency2D(rows, cols, 1.5));
 ```
 
 Python exposes the canonical 8-bit path:
@@ -108,11 +116,8 @@ C-contiguous `np.uint8` arrays. C++ accepts any type satisfying the public
 `AltitudeValue` contract.
 
 Max-tree and min-tree imports require adjacency metadata. In Python, pass
-`radius`; in C++, pass an `AdjacencyRelation`. Tree-of-shapes imports can omit
+`radius`; in C++, pass a `RegularGridAdjacency2D`. Tree-of-shapes imports can omit
 component-tree adjacency.
-
-`SELF_DUAL_RESIDUAL_TREE` is not accepted by the Higra import path; SDRT
-construction has its own factory path.
 
 ## Preserved Imported Ids
 
@@ -197,7 +202,8 @@ exported_parent, exported_altitude = tree.exportHigraHierarchy()
 
 The exported layout is a fresh snapshot. It is valid for image-built trees,
 imported trees, and edited trees as long as the current topology is one rooted
-live component and the altitude buffer covers the internal node slots.
+live component, no edit session is open, and the altitude buffer covers the
+internal node slots.
 
 Dead internal slots are not exported. Export size is:
 

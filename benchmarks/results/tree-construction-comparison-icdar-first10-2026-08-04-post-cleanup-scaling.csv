@@ -1,0 +1,7 @@
+algorithm,algorithm_label,empirical_exponent,time_ratio_1080p_over_480p,pixel_ratio_1080p_over_480p
+tos_max4c_min8c,ToS Max4cMin8c,1.046349,5.459945,5.064478
+tos_self_dual,ToS self-dual,1.048452,5.478607,5.064478
+max_tree_8c,Max-tree 8c,0.970929,4.831174,5.064478
+min_tree_8c,Min-tree 8c,0.984927,4.942133,5.064478
+residual_unrestricted_8c,Residual irrestrita 8c,1.028272,5.302168,5.064478
+residual_saturated_8c,Residual saturada 8c,1.062105,5.601307,5.064478

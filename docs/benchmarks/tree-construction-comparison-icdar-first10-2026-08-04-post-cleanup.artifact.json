@@ -1,0 +1,1349 @@
+{
+  "surface": "report",
+  "manifest": {
+    "version": 1,
+    "surface": "report",
+    "title": "Tempo de construção de árvores morfológicas no ICDAR — pós-limpeza",
+    "description": "Comparação de seis construções em dez imagens, três resoluções e cinco repetições, com medição externa da chamada pública completa.",
+    "generatedAt": "2026-08-04T22:52:31Z",
+    "sources": [
+      {
+        "id": "headline",
+        "label": "Indicadores principais em 1080p",
+        "path": "benchmarks/results/tree-construction-comparison-icdar-first10-2026-08-04-post-cleanup-summary.csv",
+        "query": {
+          "description": "Seleção dos quatro tempos principais e de seus comparadores a partir da síntese validada.",
+          "executed_at": "2026-08-04T22:52:31Z",
+          "language": "SQL",
+          "engine": "DuckDB",
+          "sql": "WITH s AS (SELECT * FROM read_csv_auto('benchmarks/results/tree-construction-comparison-icdar-first10-2026-08-04-post-cleanup-summary.csv'))\nSELECT\n  max(CASE WHEN resolution='1080p' AND algorithm='max_tree_8c' THEN mean_ms END) AS max_tree_1080_ms,\n  max(CASE WHEN resolution='1080p' AND algorithm='max_tree_8c' THEN mean_ms END) / max(CASE WHEN resolution='480p' AND algorithm='max_tree_8c' THEN mean_ms END) AS max_tree_1080_vs_480,\n  max(CASE WHEN resolution='1080p' AND algorithm='tos_self_dual' THEN mean_ms END) AS tos_self_dual_1080_ms,\n  max(CASE WHEN resolution='1080p' AND algorithm='tos_self_dual' THEN relative_to_fastest END) AS tos_self_dual_vs_fastest,\n  max(CASE WHEN resolution='1080p' AND algorithm='residual_unrestricted_8c' THEN mean_ms END) AS residual_unrestricted_1080_ms,\n  max(CASE WHEN resolution='1080p' AND algorithm='residual_unrestricted_8c' THEN relative_to_fastest END) AS residual_unrestricted_vs_fastest,\n  max(CASE WHEN resolution='1080p' AND algorithm='residual_saturated_8c' THEN mean_ms END) AS residual_saturated_1080_ms,\n  max(CASE WHEN resolution='1080p' AND algorithm='residual_saturated_8c' THEN mean_ms END) / max(CASE WHEN resolution='1080p' AND algorithm='residual_unrestricted_8c' THEN mean_ms END) AS residual_saturated_vs_unrestricted\nFROM s;",
+          "filters": [],
+          "metric_definitions": [
+            "Tempo por imagem: mediana de cinco construções; agregado: média das medianas das dez imagens.",
+            "IC 95%: bootstrap descritivo da média sobre as dez imagens, com 20.000 reamostragens.",
+            "Tempo normalizado: média em milissegundos dividida pelo número de megapixels.",
+            "Relativo ao mais rápido: média do método dividida pela menor média na mesma resolução."
+          ]
+        }
+      },
+      {
+        "id": "summary",
+        "label": "Síntese do tempo de construção",
+        "path": "benchmarks/results/tree-construction-comparison-icdar-first10-2026-08-04-post-cleanup-summary.csv",
+        "query": {
+          "description": "Agregados por resolução e algoritmo derivados das medianas por imagem.",
+          "executed_at": "2026-08-04T22:52:31Z",
+          "language": "SQL",
+          "engine": "DuckDB",
+          "sql": "SELECT * FROM read_csv_auto('benchmarks/results/tree-construction-comparison-icdar-first10-2026-08-04-post-cleanup-summary.csv') ORDER BY pixels, rank;",
+          "filters": [
+            "test_000.png a test_009.png",
+            "resoluções 480p, 720p e 1080p",
+            "cinco repetições por imagem e algoritmo"
+          ],
+          "metric_definitions": [
+            "Tempo por imagem: mediana de cinco construções; agregado: média das medianas das dez imagens.",
+            "IC 95%: bootstrap descritivo da média sobre as dez imagens, com 20.000 reamostragens.",
+            "Tempo normalizado: média em milissegundos dividida pelo número de megapixels.",
+            "Relativo ao mais rápido: média do método dividida pela menor média na mesma resolução."
+          ]
+        }
+      },
+      {
+        "id": "scaling",
+        "label": "Escalabilidade empírica",
+        "path": "benchmarks/results/tree-construction-comparison-icdar-first10-2026-08-04-post-cleanup-scaling.csv",
+        "query": {
+          "description": "Ajuste log-log da média do tempo contra o número de pixels nas três resoluções.",
+          "executed_at": "2026-08-04T22:52:31Z",
+          "language": "SQL",
+          "engine": "DuckDB",
+          "sql": "SELECT * FROM read_csv_auto('benchmarks/results/tree-construction-comparison-icdar-first10-2026-08-04-post-cleanup-scaling.csv') ORDER BY empirical_exponent DESC;",
+          "filters": [],
+          "metric_definitions": [
+            "Expoente empírico p: inclinação de log(tempo médio) contra log(número de pixels).",
+            "Razão 1080p/480p: média em 1080p dividida pela média em 480p."
+          ]
+        }
+      },
+      {
+        "id": "per_image",
+        "label": "Medianas e dispersão por imagem",
+        "path": "benchmarks/results/tree-construction-comparison-icdar-first10-2026-08-04-post-cleanup-per-image.csv",
+        "query": {
+          "description": "Mediana, mínimo, máximo e amplitude relativa das cinco repetições de cada grupo.",
+          "executed_at": "2026-08-04T22:52:31Z",
+          "language": "CSV",
+          "filters": [],
+          "metric_definitions": []
+        }
+      },
+      {
+        "id": "validation",
+        "label": "Auditoria de completude",
+        "path": "benchmarks/results/tree-construction-comparison-icdar-first10-2026-08-04-post-cleanup-validation.json",
+        "query": {
+          "description": "Resultado das verificações de cobertura, reconstrução, determinismo e positividade.",
+          "executed_at": "2026-08-04T22:52:31Z",
+          "language": "JSON",
+          "filters": [],
+          "metric_definitions": []
+        }
+      },
+      {
+        "id": "raw",
+        "label": "Medições brutas",
+        "path": "benchmarks/results/tree-construction-comparison-icdar-first10-2026-08-04-post-cleanup-raw.csv",
+        "query": {
+          "description": "Novecentas medições individuais produzidas pelo executável C++ em modo Release.",
+          "executed_at": "2026-08-04T22:52:31Z",
+          "language": "CSV",
+          "filters": [],
+          "metric_definitions": []
+        }
+      }
+    ],
+    "cards": [
+      {
+        "id": "fastest-1080",
+        "description": "Menor média em 1080p; max-tree e min-tree ficaram praticamente empatadas.",
+        "dataset": "headline_1080p",
+        "sourceId": "headline",
+        "metrics": [
+          {
+            "label": "Max-tree 1080p (ms)",
+            "field": "max_tree_1080_ms",
+            "format": "number"
+          },
+          {
+            "label": "1080p / 480p",
+            "field": "max_tree_1080_vs_480",
+            "format": "number"
+          }
+        ]
+      },
+      {
+        "id": "tos-1080",
+        "description": "A ToS self-dual foi a ToS mais rápida em média nas três resoluções.",
+        "dataset": "headline_1080p",
+        "sourceId": "headline",
+        "metrics": [
+          {
+            "label": "ToS self-dual 1080p (ms)",
+            "field": "tos_self_dual_1080_ms",
+            "format": "number"
+          },
+          {
+            "label": "× tempo mínimo",
+            "field": "tos_self_dual_vs_fastest",
+            "format": "number"
+          }
+        ]
+      },
+      {
+        "id": "unrestricted-1080",
+        "description": "A residual irrestrita inclui a construção inicial da max-tree e da min-tree.",
+        "dataset": "headline_1080p",
+        "sourceId": "headline",
+        "metrics": [
+          {
+            "label": "Residual irrestrita 1080p (ms)",
+            "field": "residual_unrestricted_1080_ms",
+            "format": "number"
+          },
+          {
+            "label": "× tempo mínimo",
+            "field": "residual_unrestricted_vs_fastest",
+            "format": "number"
+          }
+        ]
+      },
+      {
+        "id": "saturated-1080",
+        "description": "A certificação de saturação adicionou cerca de 61% em 1080p.",
+        "dataset": "headline_1080p",
+        "sourceId": "headline",
+        "metrics": [
+          {
+            "label": "Residual saturada 1080p (ms)",
+            "field": "residual_saturated_1080_ms",
+            "format": "number"
+          },
+          {
+            "label": "× irrestrita",
+            "field": "residual_saturated_vs_unrestricted",
+            "format": "number"
+          }
+        ]
+      }
+    ],
+    "charts": [
+      {
+        "id": "component-tos-times",
+        "title": "Tempo de construção das árvores de componentes e ToS",
+        "subtitle": "Média de dez medianas por imagem; cinco repetições por mediana; unidade: ms.",
+        "intent": "comparison",
+        "question": "Como max-tree, min-tree e as duas ToS se comparam nas três resoluções?",
+        "rationale": "Barras agrupadas preservam as três resoluções discretas e a comparação direta entre quatro métodos.",
+        "comparisonContext": {
+          "grain": "média de dez medianas por imagem",
+          "denominator": "dez imagens ICDAR",
+          "normalization": "cinco repetições por imagem e método",
+          "unit": "ms"
+        },
+        "type": "bar",
+        "dataset": "component_tos_summary",
+        "sourceId": "summary",
+        "encodings": {
+          "x": {
+            "field": "resolution",
+            "type": "ordinal",
+            "label": "Resolução"
+          },
+          "y": {
+            "field": "mean_ms",
+            "type": "quantitative",
+            "format": "number",
+            "label": "Tempo médio",
+            "unit": "ms"
+          },
+          "color": {
+            "field": "chart_label",
+            "type": "nominal",
+            "label": "Árvore"
+          },
+          "tooltip": [
+            {
+              "field": "algorithm_label",
+              "label": "Árvore"
+            },
+            {
+              "field": "mean_ci95_low_ms",
+              "label": "IC 95% inferior"
+            },
+            {
+              "field": "mean_ci95_high_ms",
+              "label": "IC 95% superior"
+            },
+            {
+              "field": "mean_ms_per_megapixel",
+              "label": "ms/MP"
+            },
+            {
+              "field": "mean_nodes",
+              "label": "Nós médios"
+            }
+          ]
+        },
+        "valueFormat": "number",
+        "unit": "ms",
+        "layout": "full",
+        "labels": {
+          "values": "all"
+        },
+        "legend": {
+          "position": "bottom",
+          "title": "Árvore"
+        },
+        "palette": {
+          "kind": "categorical"
+        },
+        "settings": {
+          "groupMode": "grouped",
+          "showValues": true,
+          "sort": "none"
+        },
+        "surface": {
+          "surface": "card",
+          "viewMode": "both"
+        },
+        "maxRows": 12
+      },
+      {
+        "id": "residual-times",
+        "title": "Tempo de construção das árvores residuais",
+        "subtitle": "Média de dez medianas por imagem; a versão saturada certifica a conectividade do complemento.",
+        "intent": "comparison",
+        "question": "Qual é o custo adicional da restrição de saturação nas três resoluções?",
+        "rationale": "Separar as residuais evita que sua escala comprima visualmente as árvores mais rápidas.",
+        "comparisonContext": {
+          "baseline": "residual irrestrita",
+          "grain": "média de dez medianas por imagem",
+          "denominator": "dez imagens ICDAR",
+          "normalization": "cinco repetições por imagem e método",
+          "unit": "ms"
+        },
+        "type": "bar",
+        "dataset": "residual_summary",
+        "sourceId": "summary",
+        "encodings": {
+          "x": {
+            "field": "resolution",
+            "type": "ordinal",
+            "label": "Resolução"
+          },
+          "y": {
+            "field": "mean_ms",
+            "type": "quantitative",
+            "format": "number",
+            "label": "Tempo médio",
+            "unit": "ms"
+          },
+          "color": {
+            "field": "chart_label",
+            "type": "nominal",
+            "label": "Árvore residual"
+          },
+          "tooltip": [
+            {
+              "field": "algorithm_label",
+              "label": "Árvore"
+            },
+            {
+              "field": "mean_ci95_low_ms",
+              "label": "IC 95% inferior"
+            },
+            {
+              "field": "mean_ci95_high_ms",
+              "label": "IC 95% superior"
+            },
+            {
+              "field": "mean_ms_per_megapixel",
+              "label": "ms/MP"
+            },
+            {
+              "field": "mean_nodes",
+              "label": "Nós médios"
+            }
+          ]
+        },
+        "valueFormat": "number",
+        "unit": "ms",
+        "layout": "full",
+        "labels": {
+          "values": "all"
+        },
+        "legend": {
+          "position": "bottom",
+          "title": "Árvore residual"
+        },
+        "palette": {
+          "kind": "categorical"
+        },
+        "settings": {
+          "groupMode": "grouped",
+          "showValues": true,
+          "sort": "none"
+        },
+        "surface": {
+          "surface": "card",
+          "viewMode": "both"
+        },
+        "maxRows": 6
+      }
+    ],
+    "tables": [
+      {
+        "id": "complete-results",
+        "title": "Resultados agregados completos",
+        "subtitle": "Média e IC 95% sobre dez medianas por imagem; tempo normalizado por megapixel.",
+        "dataset": "all_summary",
+        "defaultSort": {
+          "field": "pixels",
+          "direction": "asc"
+        },
+        "density": "dense",
+        "sourceId": "summary",
+        "layout": "full",
+        "columns": [
+          {
+            "field": "pixels",
+            "label": "Pixels",
+            "format": "compact"
+          },
+          {
+            "field": "resolution",
+            "label": "Resolução",
+            "type": "text"
+          },
+          {
+            "field": "algorithm_label",
+            "label": "Árvore",
+            "type": "text"
+          },
+          {
+            "field": "mean_ms",
+            "label": "Média (ms)",
+            "format": "number"
+          },
+          {
+            "field": "mean_ci95_low_ms",
+            "label": "IC inf. (ms)",
+            "format": "number"
+          },
+          {
+            "field": "mean_ci95_high_ms",
+            "label": "IC sup. (ms)",
+            "format": "number"
+          },
+          {
+            "field": "mean_ms_per_megapixel",
+            "label": "ms/MP",
+            "format": "number"
+          },
+          {
+            "field": "relative_to_fastest",
+            "label": "× tempo mínimo",
+            "format": "number"
+          }
+        ]
+      },
+      {
+        "id": "scaling-results",
+        "title": "Escalabilidade entre 480p e 1080p",
+        "subtitle": "Expoente do ajuste log-log e razão observada de tempo; razão de pixels = 5,064×.",
+        "dataset": "scaling",
+        "defaultSort": {
+          "field": "empirical_exponent",
+          "direction": "desc"
+        },
+        "density": "spacious",
+        "sourceId": "scaling",
+        "layout": "full",
+        "columns": [
+          {
+            "field": "algorithm_label",
+            "label": "Árvore",
+            "type": "text"
+          },
+          {
+            "field": "empirical_exponent",
+            "label": "Expoente p",
+            "format": "number"
+          },
+          {
+            "field": "time_ratio_1080p_over_480p",
+            "label": "Tempo 1080p/480p",
+            "format": "number"
+          },
+          {
+            "field": "pixel_ratio_1080p_over_480p",
+            "label": "Pixels 1080p/480p",
+            "format": "number"
+          }
+        ]
+      }
+    ],
+    "blocks": [
+      {
+        "id": "title",
+        "type": "markdown",
+        "layout": "full",
+        "body": "# Tempo de construção de árvores morfológicas no ICDAR — pós-limpeza"
+      },
+      {
+        "id": "technical-summary",
+        "type": "markdown",
+        "layout": "full",
+        "sourceId": "summary",
+        "body": "## Resumo técnico\n\nAs max-tree e min-tree 8c são as construções mais rápidas e ficam praticamente empatadas. Em 1080p, suas médias foram **148,56 ms** e **151,14 ms**. A ToS self-dual exigiu **641,30 ms** e a ToS Max4cMin8c, **660,01 ms**. A residual irrestrita chegou a **2.626,57 ms**; a saturada, a **4.222,16 ms**, ou **1,61×** o tempo da irrestrita."
+      },
+      {
+        "id": "headline-strip",
+        "type": "metric-strip",
+        "layout": "full",
+        "cardIds": [
+          "fastest-1080",
+          "tos-1080",
+          "unrestricted-1080",
+          "saturated-1080"
+        ]
+      },
+      {
+        "id": "component-finding",
+        "type": "markdown",
+        "layout": "full",
+        "sourceId": "summary",
+        "body": "## Árvores de componentes dominam; as duas ToS são próximas\n\nA max-tree e a min-tree custaram **0,15 s** e **0,15 s** em 1080p. As ToS custaram **0,64–0,66 s**. A diferença entre as duas ToS é pequena diante da diferença entre famílias; a vantagem relativa da mais rápida variou de **2,9%** a **3,3%** entre as resoluções."
+      },
+      {
+        "id": "component-chart",
+        "type": "chart",
+        "layout": "full",
+        "chartId": "component-tos-times",
+        "sourceId": "summary"
+      },
+      {
+        "id": "residual-finding",
+        "type": "markdown",
+        "layout": "full",
+        "sourceId": "summary",
+        "body": "## A certificação de saturação é o maior sobrecusto\n\nA residual irrestrita foi **4,10×** mais lenta que a ToS self-dual em 1080p. A residual saturada adicionou **52–61%** sobre a irrestrita entre as três resoluções e, em 1080p, atingiu **28,42×** o tempo da max-tree. A dispersão entre imagens é muito maior nas residuais, o que mostra dependência forte da estrutura de extremos e não apenas do número de pixels."
+      },
+      {
+        "id": "residual-chart",
+        "type": "chart",
+        "layout": "full",
+        "chartId": "residual-times",
+        "sourceId": "summary"
+      },
+      {
+        "id": "complete-results-heading",
+        "type": "markdown",
+        "layout": "full",
+        "body": "## Valores completos confirmam a mesma ordenação\n\nA tabela preserva médias, incerteza descritiva, custo por megapixel e razão contra o método mais rápido em cada resolução."
+      },
+      {
+        "id": "complete-results-table",
+        "type": "table",
+        "layout": "full",
+        "tableId": "complete-results",
+        "sourceId": "summary"
+      },
+      {
+        "id": "scaling-finding",
+        "type": "markdown",
+        "layout": "full",
+        "sourceId": "scaling",
+        "body": "## O crescimento observado é aproximadamente linear no número de pixels\n\nDe 480p para 1080p, o domínio cresce **5,064×** e os tempos crescem entre **4,83×** e **5,60×**. Os expoentes empíricos ficam entre **0,97** e **1,06**. Isso não é uma prova de complexidade assintótica, mas indica que, neste intervalo, as diferenças são principalmente fatores constantes específicos de cada construção."
+      },
+      {
+        "id": "scaling-table",
+        "type": "table",
+        "layout": "full",
+        "tableId": "scaling-results",
+        "sourceId": "scaling"
+      },
+      {
+        "id": "scope",
+        "type": "markdown",
+        "layout": "full",
+        "sourceId": "raw",
+        "body": "## Escopo, dados e definições\n\nForam usadas `test_000.png`–`test_009.png` do ICDAR em **480×853**, **720×1280** e **1080×1920**, sempre em tons de cinza de 8 bits. `Max4cMin8c` corresponde ao modo interno `Min8cMax4c`, que nomeia primeiro a conectividade dos mínimos. Max-tree, min-tree e as duas residuais usam adjacência 8c (`radius=1.5`); a residual saturada usa o pixel de índice zero como infinito."
+      },
+      {
+        "id": "methodology",
+        "type": "markdown",
+        "layout": "full",
+        "sourceId": "validation",
+        "body": "## Metodologia reproduzível\n\nCada método foi aquecido uma vez e validado por reconstrução exata. Depois foram feitas cinco construções por imagem, com ordem rotacionada entre os seis métodos. O tempo mede externamente a chamada pública completa e exclui carregamento da imagem e destruição da árvore; o código de produção não coleta durações internas. Nas residuais, inclui as max-tree e min-tree iniciais e a materialização final. O agregado é a média das dez medianas por imagem. A execução foi Release/NDEBUG, sequencial, em Apple M4 com Apple Clang 21."
+      },
+      {
+        "id": "robustness",
+        "type": "markdown",
+        "layout": "full",
+        "sourceId": "per_image",
+        "body": "## Limitações, incerteza e robustez\n\nA cobertura está completa: **900 medições**, sem tempo inválido, com número de nós determinístico e reconstrução exata no aquecimento. Todas as repetições válidas foram preservadas, e a mediana de cinco reduz a influência de atrasos isolados. Os ICs bootstrap descrevem apenas a variação entre estas dez imagens, que são um subconjunto fixo, não uma amostra aleatória de todo o ICDAR. Os valores também são específicos desta máquina, compilador e versão do código; memória e paralelismo não foram medidos. Como todas as famílias variaram entre as rodadas, a comparação com séries anteriores não isola causalmente o efeito da limpeza de instrumentação."
+      },
+      {
+        "id": "recommendations",
+        "type": "markdown",
+        "layout": "full",
+        "body": "## Próximos passos recomendados\n\n1. Priorizar o perfil da **certificação de saturação**, pois ela explica o maior sobrecusto controlável, usando um profiler externo ou builds dedicadas.\n2. Usar `test_003` e outras imagens lentas como casos de perfil, mantendo as dez imagens para confirmar generalidade.\n3. Preservar max-tree/min-tree 8c como piso de custo e repetir este protocolo após cada otimização.\n4. Acrescentar pico de memória e métricas de eventos apenas ao executável de benchmark ou às implementações de referência, sem reintroduzir instrumentação na produção."
+      },
+      {
+        "id": "further-questions",
+        "type": "markdown",
+        "layout": "full",
+        "body": "## Questões em aberto\n\nQuanto da variação entre imagens é explicado pelo número de nós, extremos rejeitados e travessias exatas do complemento? A ordem relativa permanece igual em imagens coloridas ou com maior profundidade de níveis? E a equivalência de custo entre max-tree e min-tree se mantém em outras distribuições de contraste?"
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "generatedAt": "2026-08-04T22:52:31Z",
+    "status": "ready",
+    "datasets": {
+      "headline_1080p": [
+        {
+          "max_tree_1080_ms": 148.560942,
+          "max_tree_1080_vs_480": 4.831174261555502,
+          "tos_self_dual_1080_ms": 641.302904,
+          "tos_self_dual_vs_fastest": 4.316767,
+          "residual_unrestricted_1080_ms": 2626.566496,
+          "residual_unrestricted_vs_fastest": 17.680061,
+          "residual_saturated_1080_ms": 4222.163842,
+          "residual_saturated_vs_unrestricted": 1.6074840855656753
+        }
+      ],
+      "component_tos_summary": [
+        {
+          "resolution": "480p",
+          "pixels": 409440.0,
+          "megapixels": 0.40944,
+          "algorithm": "tos_max4c_min8c",
+          "algorithm_label": "ToS Max4cMin8c",
+          "mean_ms": 120.881413,
+          "mean_ci95_low_ms": 118.903883,
+          "mean_ci95_high_ms": 122.752596,
+          "median_ms": 121.258375,
+          "standard_deviation_ms": 3.269914,
+          "mean_ms_per_megapixel": 295.235963,
+          "mean_nodes": 58633.5,
+          "median_repetition_relative_range_pct": 1.8637,
+          "rank": 4.0,
+          "relative_to_fastest": 3.952784,
+          "chart_label": "ToS M4/M8"
+        },
+        {
+          "resolution": "480p",
+          "pixels": 409440.0,
+          "megapixels": 0.40944,
+          "algorithm": "tos_self_dual",
+          "algorithm_label": "ToS self-dual",
+          "mean_ms": 117.055829,
+          "mean_ci95_low_ms": 115.314213,
+          "mean_ci95_high_ms": 118.610704,
+          "median_ms": 117.148146,
+          "standard_deviation_ms": 2.797006,
+          "mean_ms_per_megapixel": 285.89251,
+          "mean_nodes": 59204.5,
+          "median_repetition_relative_range_pct": 1.641,
+          "rank": 3.0,
+          "relative_to_fastest": 3.827688,
+          "chart_label": "ToS SD"
+        },
+        {
+          "resolution": "480p",
+          "pixels": 409440.0,
+          "megapixels": 0.40944,
+          "algorithm": "max_tree_8c",
+          "algorithm_label": "Max-tree 8c",
+          "mean_ms": 30.750483,
+          "mean_ci95_low_ms": 29.611946,
+          "mean_ci95_high_ms": 31.870754,
+          "median_ms": 30.911437,
+          "standard_deviation_ms": 1.928406,
+          "mean_ms_per_megapixel": 75.10376,
+          "mean_nodes": 29472.6,
+          "median_repetition_relative_range_pct": 1.7008,
+          "rank": 2.0,
+          "relative_to_fastest": 1.005531,
+          "chart_label": "Max 8c"
+        },
+        {
+          "resolution": "480p",
+          "pixels": 409440.0,
+          "megapixels": 0.40944,
+          "algorithm": "min_tree_8c",
+          "algorithm_label": "Min-tree 8c",
+          "mean_ms": 30.581338,
+          "mean_ci95_low_ms": 29.35921,
+          "mean_ci95_high_ms": 31.656595,
+          "median_ms": 31.167583,
+          "standard_deviation_ms": 1.96929,
+          "mean_ms_per_megapixel": 74.690645,
+          "mean_nodes": 24723.4,
+          "median_repetition_relative_range_pct": 2.9841,
+          "rank": 1.0,
+          "relative_to_fastest": 1.0,
+          "chart_label": "Min 8c"
+        },
+        {
+          "resolution": "720p",
+          "pixels": 921600.0,
+          "megapixels": 0.9216,
+          "algorithm": "tos_max4c_min8c",
+          "algorithm_label": "ToS Max4cMin8c",
+          "mean_ms": 286.017829,
+          "mean_ci95_low_ms": 280.039327,
+          "mean_ci95_high_ms": 291.770267,
+          "median_ms": 285.542188,
+          "standard_deviation_ms": 10.086631,
+          "mean_ms_per_megapixel": 310.349207,
+          "mean_nodes": 105197.3,
+          "median_repetition_relative_range_pct": 2.0538,
+          "rank": 4.0,
+          "relative_to_fastest": 4.188451,
+          "chart_label": "ToS M4/M8"
+        },
+        {
+          "resolution": "720p",
+          "pixels": 921600.0,
+          "megapixels": 0.9216,
+          "algorithm": "tos_self_dual",
+          "algorithm_label": "ToS self-dual",
+          "mean_ms": 278.018175,
+          "mean_ci95_low_ms": 272.653956,
+          "mean_ci95_high_ms": 282.814275,
+          "median_ms": 279.897125,
+          "standard_deviation_ms": 8.628887,
+          "mean_ms_per_megapixel": 301.669027,
+          "mean_nodes": 106844.5,
+          "median_repetition_relative_range_pct": 2.2398,
+          "rank": 3.0,
+          "relative_to_fastest": 4.071304,
+          "chart_label": "ToS SD"
+        },
+        {
+          "resolution": "720p",
+          "pixels": 921600.0,
+          "megapixels": 0.9216,
+          "algorithm": "max_tree_8c",
+          "algorithm_label": "Max-tree 8c",
+          "mean_ms": 68.287254,
+          "mean_ci95_low_ms": 65.167619,
+          "mean_ci95_high_ms": 71.148733,
+          "median_ms": 69.597979,
+          "standard_deviation_ms": 5.106441,
+          "mean_ms_per_megapixel": 74.096413,
+          "mean_nodes": 52484.3,
+          "median_repetition_relative_range_pct": 1.997,
+          "rank": 1.0,
+          "relative_to_fastest": 1.0,
+          "chart_label": "Max 8c"
+        },
+        {
+          "resolution": "720p",
+          "pixels": 921600.0,
+          "megapixels": 0.9216,
+          "algorithm": "min_tree_8c",
+          "algorithm_label": "Min-tree 8c",
+          "mean_ms": 68.466842,
+          "mean_ci95_low_ms": 65.372099,
+          "mean_ci95_high_ms": 71.275241,
+          "median_ms": 70.326583,
+          "standard_deviation_ms": 5.117164,
+          "mean_ms_per_megapixel": 74.291278,
+          "mean_nodes": 45248.2,
+          "median_repetition_relative_range_pct": 2.3632,
+          "rank": 2.0,
+          "relative_to_fastest": 1.00263,
+          "chart_label": "Min 8c"
+        },
+        {
+          "resolution": "1080p",
+          "pixels": 2073600.0,
+          "megapixels": 2.0736,
+          "algorithm": "tos_max4c_min8c",
+          "algorithm_label": "ToS Max4cMin8c",
+          "mean_ms": 660.005821,
+          "mean_ci95_low_ms": 636.528828,
+          "mean_ci95_high_ms": 682.336583,
+          "median_ms": 663.74575,
+          "standard_deviation_ms": 39.019096,
+          "mean_ms_per_megapixel": 318.289844,
+          "mean_nodes": 210291.0,
+          "median_repetition_relative_range_pct": 2.1419,
+          "rank": 4.0,
+          "relative_to_fastest": 4.44266,
+          "chart_label": "ToS M4/M8"
+        },
+        {
+          "resolution": "1080p",
+          "pixels": 2073600.0,
+          "megapixels": 2.0736,
+          "algorithm": "tos_self_dual",
+          "algorithm_label": "ToS self-dual",
+          "mean_ms": 641.302904,
+          "mean_ci95_low_ms": 615.6238,
+          "mean_ci95_high_ms": 666.158284,
+          "median_ms": 642.701812,
+          "standard_deviation_ms": 42.754204,
+          "mean_ms_per_megapixel": 309.270305,
+          "mean_nodes": 216187.5,
+          "median_repetition_relative_range_pct": 2.2828,
+          "rank": 3.0,
+          "relative_to_fastest": 4.316767,
+          "chart_label": "ToS SD"
+        },
+        {
+          "resolution": "1080p",
+          "pixels": 2073600.0,
+          "megapixels": 2.0736,
+          "algorithm": "max_tree_8c",
+          "algorithm_label": "Max-tree 8c",
+          "mean_ms": 148.560942,
+          "mean_ci95_low_ms": 138.601825,
+          "mean_ci95_high_ms": 158.158872,
+          "median_ms": 152.189854,
+          "standard_deviation_ms": 16.682215,
+          "mean_ms_per_megapixel": 71.643973,
+          "mean_nodes": 100311.0,
+          "median_repetition_relative_range_pct": 1.722,
+          "rank": 1.0,
+          "relative_to_fastest": 1.0,
+          "chart_label": "Max 8c"
+        },
+        {
+          "resolution": "1080p",
+          "pixels": 2073600.0,
+          "megapixels": 2.0736,
+          "algorithm": "min_tree_8c",
+          "algorithm_label": "Min-tree 8c",
+          "mean_ms": 151.13705,
+          "mean_ci95_low_ms": 140.770914,
+          "mean_ci95_high_ms": 160.551237,
+          "median_ms": 155.833812,
+          "standard_deviation_ms": 16.778372,
+          "mean_ms_per_megapixel": 72.886309,
+          "mean_nodes": 91205.2,
+          "median_repetition_relative_range_pct": 2.4301,
+          "rank": 2.0,
+          "relative_to_fastest": 1.01734,
+          "chart_label": "Min 8c"
+        }
+      ],
+      "residual_summary": [
+        {
+          "resolution": "480p",
+          "pixels": 409440.0,
+          "megapixels": 0.40944,
+          "algorithm": "residual_unrestricted_8c",
+          "algorithm_label": "Residual irrestrita 8c",
+          "mean_ms": 495.37595,
+          "mean_ci95_low_ms": 422.853075,
+          "mean_ci95_high_ms": 567.95362,
+          "median_ms": 487.012834,
+          "standard_deviation_ms": 123.487764,
+          "mean_ms_per_megapixel": 1209.886553,
+          "mean_nodes": 53814.7,
+          "median_repetition_relative_range_pct": 2.1341,
+          "rank": 5.0,
+          "relative_to_fastest": 16.198636,
+          "chart_label": "Irrestrita 8c"
+        },
+        {
+          "resolution": "480p",
+          "pixels": 409440.0,
+          "megapixels": 0.40944,
+          "algorithm": "residual_saturated_8c",
+          "algorithm_label": "Residual saturada 8c",
+          "mean_ms": 753.781875,
+          "mean_ci95_low_ms": 617.665671,
+          "mean_ci95_high_ms": 902.168638,
+          "median_ms": 728.868396,
+          "standard_deviation_ms": 243.797126,
+          "mean_ms_per_megapixel": 1841.006924,
+          "mean_nodes": 53829.5,
+          "median_repetition_relative_range_pct": 2.2804,
+          "rank": 6.0,
+          "relative_to_fastest": 24.648427,
+          "chart_label": "Saturada 8c"
+        },
+        {
+          "resolution": "720p",
+          "pixels": 921600.0,
+          "megapixels": 0.9216,
+          "algorithm": "residual_unrestricted_8c",
+          "algorithm_label": "Residual irrestrita 8c",
+          "mean_ms": 1141.757837,
+          "mean_ci95_low_ms": 965.164432,
+          "mean_ci95_high_ms": 1317.507952,
+          "median_ms": 1134.555812,
+          "standard_deviation_ms": 297.39413,
+          "mean_ms_per_megapixel": 1238.886542,
+          "mean_nodes": 97289.4,
+          "median_repetition_relative_range_pct": 2.0086,
+          "rank": 5.0,
+          "relative_to_fastest": 16.719926,
+          "chart_label": "Irrestrita 8c"
+        },
+        {
+          "resolution": "720p",
+          "pixels": 921600.0,
+          "megapixels": 0.9216,
+          "algorithm": "residual_saturated_8c",
+          "algorithm_label": "Residual saturada 8c",
+          "mean_ms": 1789.162363,
+          "mean_ci95_low_ms": 1437.654485,
+          "mean_ci95_high_ms": 2173.185672,
+          "median_ms": 1747.146583,
+          "standard_deviation_ms": 626.780143,
+          "mean_ms_per_megapixel": 1941.365411,
+          "mean_nodes": 97318.6,
+          "median_repetition_relative_range_pct": 3.6027,
+          "rank": 6.0,
+          "relative_to_fastest": 26.200532,
+          "chart_label": "Saturada 8c"
+        },
+        {
+          "resolution": "1080p",
+          "pixels": 2073600.0,
+          "megapixels": 2.0736,
+          "algorithm": "residual_unrestricted_8c",
+          "algorithm_label": "Residual irrestrita 8c",
+          "mean_ms": 2626.566496,
+          "mean_ci95_low_ms": 2151.352176,
+          "mean_ci95_high_ms": 3121.431128,
+          "median_ms": 2544.044001,
+          "standard_deviation_ms": 837.991176,
+          "mean_ms_per_megapixel": 1266.669799,
+          "mean_nodes": 191016.4,
+          "median_repetition_relative_range_pct": 2.5232,
+          "rank": 5.0,
+          "relative_to_fastest": 17.680061,
+          "chart_label": "Irrestrita 8c"
+        },
+        {
+          "resolution": "1080p",
+          "pixels": 2073600.0,
+          "megapixels": 2.0736,
+          "algorithm": "residual_saturated_8c",
+          "algorithm_label": "Residual saturada 8c",
+          "mean_ms": 4222.163842,
+          "mean_ci95_low_ms": 3265.853633,
+          "mean_ci95_high_ms": 5290.899621,
+          "median_ms": 4052.217209,
+          "standard_deviation_ms": 1735.710932,
+          "mean_ms_per_megapixel": 2036.151544,
+          "mean_nodes": 191061.1,
+          "median_repetition_relative_range_pct": 3.0697,
+          "rank": 6.0,
+          "relative_to_fastest": 28.420416,
+          "chart_label": "Saturada 8c"
+        }
+      ],
+      "all_summary": [
+        {
+          "resolution": "480p",
+          "pixels": 409440.0,
+          "megapixels": 0.40944,
+          "algorithm": "tos_max4c_min8c",
+          "algorithm_label": "ToS Max4cMin8c",
+          "mean_ms": 120.881413,
+          "mean_ci95_low_ms": 118.903883,
+          "mean_ci95_high_ms": 122.752596,
+          "median_ms": 121.258375,
+          "standard_deviation_ms": 3.269914,
+          "mean_ms_per_megapixel": 295.235963,
+          "mean_nodes": 58633.5,
+          "median_repetition_relative_range_pct": 1.8637,
+          "rank": 4.0,
+          "relative_to_fastest": 3.952784
+        },
+        {
+          "resolution": "480p",
+          "pixels": 409440.0,
+          "megapixels": 0.40944,
+          "algorithm": "tos_self_dual",
+          "algorithm_label": "ToS self-dual",
+          "mean_ms": 117.055829,
+          "mean_ci95_low_ms": 115.314213,
+          "mean_ci95_high_ms": 118.610704,
+          "median_ms": 117.148146,
+          "standard_deviation_ms": 2.797006,
+          "mean_ms_per_megapixel": 285.89251,
+          "mean_nodes": 59204.5,
+          "median_repetition_relative_range_pct": 1.641,
+          "rank": 3.0,
+          "relative_to_fastest": 3.827688
+        },
+        {
+          "resolution": "480p",
+          "pixels": 409440.0,
+          "megapixels": 0.40944,
+          "algorithm": "max_tree_8c",
+          "algorithm_label": "Max-tree 8c",
+          "mean_ms": 30.750483,
+          "mean_ci95_low_ms": 29.611946,
+          "mean_ci95_high_ms": 31.870754,
+          "median_ms": 30.911437,
+          "standard_deviation_ms": 1.928406,
+          "mean_ms_per_megapixel": 75.10376,
+          "mean_nodes": 29472.6,
+          "median_repetition_relative_range_pct": 1.7008,
+          "rank": 2.0,
+          "relative_to_fastest": 1.005531
+        },
+        {
+          "resolution": "480p",
+          "pixels": 409440.0,
+          "megapixels": 0.40944,
+          "algorithm": "min_tree_8c",
+          "algorithm_label": "Min-tree 8c",
+          "mean_ms": 30.581338,
+          "mean_ci95_low_ms": 29.35921,
+          "mean_ci95_high_ms": 31.656595,
+          "median_ms": 31.167583,
+          "standard_deviation_ms": 1.96929,
+          "mean_ms_per_megapixel": 74.690645,
+          "mean_nodes": 24723.4,
+          "median_repetition_relative_range_pct": 2.9841,
+          "rank": 1.0,
+          "relative_to_fastest": 1.0
+        },
+        {
+          "resolution": "480p",
+          "pixels": 409440.0,
+          "megapixels": 0.40944,
+          "algorithm": "residual_unrestricted_8c",
+          "algorithm_label": "Residual irrestrita 8c",
+          "mean_ms": 495.37595,
+          "mean_ci95_low_ms": 422.853075,
+          "mean_ci95_high_ms": 567.95362,
+          "median_ms": 487.012834,
+          "standard_deviation_ms": 123.487764,
+          "mean_ms_per_megapixel": 1209.886553,
+          "mean_nodes": 53814.7,
+          "median_repetition_relative_range_pct": 2.1341,
+          "rank": 5.0,
+          "relative_to_fastest": 16.198636
+        },
+        {
+          "resolution": "480p",
+          "pixels": 409440.0,
+          "megapixels": 0.40944,
+          "algorithm": "residual_saturated_8c",
+          "algorithm_label": "Residual saturada 8c",
+          "mean_ms": 753.781875,
+          "mean_ci95_low_ms": 617.665671,
+          "mean_ci95_high_ms": 902.168638,
+          "median_ms": 728.868396,
+          "standard_deviation_ms": 243.797126,
+          "mean_ms_per_megapixel": 1841.006924,
+          "mean_nodes": 53829.5,
+          "median_repetition_relative_range_pct": 2.2804,
+          "rank": 6.0,
+          "relative_to_fastest": 24.648427
+        },
+        {
+          "resolution": "720p",
+          "pixels": 921600.0,
+          "megapixels": 0.9216,
+          "algorithm": "tos_max4c_min8c",
+          "algorithm_label": "ToS Max4cMin8c",
+          "mean_ms": 286.017829,
+          "mean_ci95_low_ms": 280.039327,
+          "mean_ci95_high_ms": 291.770267,
+          "median_ms": 285.542188,
+          "standard_deviation_ms": 10.086631,
+          "mean_ms_per_megapixel": 310.349207,
+          "mean_nodes": 105197.3,
+          "median_repetition_relative_range_pct": 2.0538,
+          "rank": 4.0,
+          "relative_to_fastest": 4.188451
+        },
+        {
+          "resolution": "720p",
+          "pixels": 921600.0,
+          "megapixels": 0.9216,
+          "algorithm": "tos_self_dual",
+          "algorithm_label": "ToS self-dual",
+          "mean_ms": 278.018175,
+          "mean_ci95_low_ms": 272.653956,
+          "mean_ci95_high_ms": 282.814275,
+          "median_ms": 279.897125,
+          "standard_deviation_ms": 8.628887,
+          "mean_ms_per_megapixel": 301.669027,
+          "mean_nodes": 106844.5,
+          "median_repetition_relative_range_pct": 2.2398,
+          "rank": 3.0,
+          "relative_to_fastest": 4.071304
+        },
+        {
+          "resolution": "720p",
+          "pixels": 921600.0,
+          "megapixels": 0.9216,
+          "algorithm": "max_tree_8c",
+          "algorithm_label": "Max-tree 8c",
+          "mean_ms": 68.287254,
+          "mean_ci95_low_ms": 65.167619,
+          "mean_ci95_high_ms": 71.148733,
+          "median_ms": 69.597979,
+          "standard_deviation_ms": 5.106441,
+          "mean_ms_per_megapixel": 74.096413,
+          "mean_nodes": 52484.3,
+          "median_repetition_relative_range_pct": 1.997,
+          "rank": 1.0,
+          "relative_to_fastest": 1.0
+        },
+        {
+          "resolution": "720p",
+          "pixels": 921600.0,
+          "megapixels": 0.9216,
+          "algorithm": "min_tree_8c",
+          "algorithm_label": "Min-tree 8c",
+          "mean_ms": 68.466842,
+          "mean_ci95_low_ms": 65.372099,
+          "mean_ci95_high_ms": 71.275241,
+          "median_ms": 70.326583,
+          "standard_deviation_ms": 5.117164,
+          "mean_ms_per_megapixel": 74.291278,
+          "mean_nodes": 45248.2,
+          "median_repetition_relative_range_pct": 2.3632,
+          "rank": 2.0,
+          "relative_to_fastest": 1.00263
+        },
+        {
+          "resolution": "720p",
+          "pixels": 921600.0,
+          "megapixels": 0.9216,
+          "algorithm": "residual_unrestricted_8c",
+          "algorithm_label": "Residual irrestrita 8c",
+          "mean_ms": 1141.757837,
+          "mean_ci95_low_ms": 965.164432,
+          "mean_ci95_high_ms": 1317.507952,
+          "median_ms": 1134.555812,
+          "standard_deviation_ms": 297.39413,
+          "mean_ms_per_megapixel": 1238.886542,
+          "mean_nodes": 97289.4,
+          "median_repetition_relative_range_pct": 2.0086,
+          "rank": 5.0,
+          "relative_to_fastest": 16.719926
+        },
+        {
+          "resolution": "720p",
+          "pixels": 921600.0,
+          "megapixels": 0.9216,
+          "algorithm": "residual_saturated_8c",
+          "algorithm_label": "Residual saturada 8c",
+          "mean_ms": 1789.162363,
+          "mean_ci95_low_ms": 1437.654485,
+          "mean_ci95_high_ms": 2173.185672,
+          "median_ms": 1747.146583,
+          "standard_deviation_ms": 626.780143,
+          "mean_ms_per_megapixel": 1941.365411,
+          "mean_nodes": 97318.6,
+          "median_repetition_relative_range_pct": 3.6027,
+          "rank": 6.0,
+          "relative_to_fastest": 26.200532
+        },
+        {
+          "resolution": "1080p",
+          "pixels": 2073600.0,
+          "megapixels": 2.0736,
+          "algorithm": "tos_max4c_min8c",
+          "algorithm_label": "ToS Max4cMin8c",
+          "mean_ms": 660.005821,
+          "mean_ci95_low_ms": 636.528828,
+          "mean_ci95_high_ms": 682.336583,
+          "median_ms": 663.74575,
+          "standard_deviation_ms": 39.019096,
+          "mean_ms_per_megapixel": 318.289844,
+          "mean_nodes": 210291.0,
+          "median_repetition_relative_range_pct": 2.1419,
+          "rank": 4.0,
+          "relative_to_fastest": 4.44266
+        },
+        {
+          "resolution": "1080p",
+          "pixels": 2073600.0,
+          "megapixels": 2.0736,
+          "algorithm": "tos_self_dual",
+          "algorithm_label": "ToS self-dual",
+          "mean_ms": 641.302904,
+          "mean_ci95_low_ms": 615.6238,
+          "mean_ci95_high_ms": 666.158284,
+          "median_ms": 642.701812,
+          "standard_deviation_ms": 42.754204,
+          "mean_ms_per_megapixel": 309.270305,
+          "mean_nodes": 216187.5,
+          "median_repetition_relative_range_pct": 2.2828,
+          "rank": 3.0,
+          "relative_to_fastest": 4.316767
+        },
+        {
+          "resolution": "1080p",
+          "pixels": 2073600.0,
+          "megapixels": 2.0736,
+          "algorithm": "max_tree_8c",
+          "algorithm_label": "Max-tree 8c",
+          "mean_ms": 148.560942,
+          "mean_ci95_low_ms": 138.601825,
+          "mean_ci95_high_ms": 158.158872,
+          "median_ms": 152.189854,
+          "standard_deviation_ms": 16.682215,
+          "mean_ms_per_megapixel": 71.643973,
+          "mean_nodes": 100311.0,
+          "median_repetition_relative_range_pct": 1.722,
+          "rank": 1.0,
+          "relative_to_fastest": 1.0
+        },
+        {
+          "resolution": "1080p",
+          "pixels": 2073600.0,
+          "megapixels": 2.0736,
+          "algorithm": "min_tree_8c",
+          "algorithm_label": "Min-tree 8c",
+          "mean_ms": 151.13705,
+          "mean_ci95_low_ms": 140.770914,
+          "mean_ci95_high_ms": 160.551237,
+          "median_ms": 155.833812,
+          "standard_deviation_ms": 16.778372,
+          "mean_ms_per_megapixel": 72.886309,
+          "mean_nodes": 91205.2,
+          "median_repetition_relative_range_pct": 2.4301,
+          "rank": 2.0,
+          "relative_to_fastest": 1.01734
+        },
+        {
+          "resolution": "1080p",
+          "pixels": 2073600.0,
+          "megapixels": 2.0736,
+          "algorithm": "residual_unrestricted_8c",
+          "algorithm_label": "Residual irrestrita 8c",
+          "mean_ms": 2626.566496,
+          "mean_ci95_low_ms": 2151.352176,
+          "mean_ci95_high_ms": 3121.431128,
+          "median_ms": 2544.044001,
+          "standard_deviation_ms": 837.991176,
+          "mean_ms_per_megapixel": 1266.669799,
+          "mean_nodes": 191016.4,
+          "median_repetition_relative_range_pct": 2.5232,
+          "rank": 5.0,
+          "relative_to_fastest": 17.680061
+        },
+        {
+          "resolution": "1080p",
+          "pixels": 2073600.0,
+          "megapixels": 2.0736,
+          "algorithm": "residual_saturated_8c",
+          "algorithm_label": "Residual saturada 8c",
+          "mean_ms": 4222.163842,
+          "mean_ci95_low_ms": 3265.853633,
+          "mean_ci95_high_ms": 5290.899621,
+          "median_ms": 4052.217209,
+          "standard_deviation_ms": 1735.710932,
+          "mean_ms_per_megapixel": 2036.151544,
+          "mean_nodes": 191061.1,
+          "median_repetition_relative_range_pct": 3.0697,
+          "rank": 6.0,
+          "relative_to_fastest": 28.420416
+        }
+      ],
+      "scaling": [
+        {
+          "algorithm": "tos_max4c_min8c",
+          "algorithm_label": "ToS Max4cMin8c",
+          "empirical_exponent": 1.046349,
+          "time_ratio_1080p_over_480p": 5.459945,
+          "pixel_ratio_1080p_over_480p": 5.064478
+        },
+        {
+          "algorithm": "tos_self_dual",
+          "algorithm_label": "ToS self-dual",
+          "empirical_exponent": 1.048452,
+          "time_ratio_1080p_over_480p": 5.478607,
+          "pixel_ratio_1080p_over_480p": 5.064478
+        },
+        {
+          "algorithm": "max_tree_8c",
+          "algorithm_label": "Max-tree 8c",
+          "empirical_exponent": 0.970929,
+          "time_ratio_1080p_over_480p": 4.831174,
+          "pixel_ratio_1080p_over_480p": 5.064478
+        },
+        {
+          "algorithm": "min_tree_8c",
+          "algorithm_label": "Min-tree 8c",
+          "empirical_exponent": 0.984927,
+          "time_ratio_1080p_over_480p": 4.942133,
+          "pixel_ratio_1080p_over_480p": 5.064478
+        },
+        {
+          "algorithm": "residual_unrestricted_8c",
+          "algorithm_label": "Residual irrestrita 8c",
+          "empirical_exponent": 1.028272,
+          "time_ratio_1080p_over_480p": 5.302168,
+          "pixel_ratio_1080p_over_480p": 5.064478
+        },
+        {
+          "algorithm": "residual_saturated_8c",
+          "algorithm_label": "Residual saturada 8c",
+          "empirical_exponent": 1.062105,
+          "time_ratio_1080p_over_480p": 5.601307,
+          "pixel_ratio_1080p_over_480p": 5.064478
+        }
+      ]
+    },
+    "accessIssues": []
+  },
+  "sources": [
+    {
+      "id": "headline",
+      "label": "Indicadores principais em 1080p",
+      "path": "benchmarks/results/tree-construction-comparison-icdar-first10-2026-08-04-post-cleanup-summary.csv",
+      "query": {
+        "description": "Seleção dos quatro tempos principais e de seus comparadores a partir da síntese validada.",
+        "executed_at": "2026-08-04T22:52:31Z",
+        "language": "SQL",
+        "engine": "DuckDB",
+        "sql": "WITH s AS (SELECT * FROM read_csv_auto('benchmarks/results/tree-construction-comparison-icdar-first10-2026-08-04-post-cleanup-summary.csv'))\nSELECT\n  max(CASE WHEN resolution='1080p' AND algorithm='max_tree_8c' THEN mean_ms END) AS max_tree_1080_ms,\n  max(CASE WHEN resolution='1080p' AND algorithm='max_tree_8c' THEN mean_ms END) / max(CASE WHEN resolution='480p' AND algorithm='max_tree_8c' THEN mean_ms END) AS max_tree_1080_vs_480,\n  max(CASE WHEN resolution='1080p' AND algorithm='tos_self_dual' THEN mean_ms END) AS tos_self_dual_1080_ms,\n  max(CASE WHEN resolution='1080p' AND algorithm='tos_self_dual' THEN relative_to_fastest END) AS tos_self_dual_vs_fastest,\n  max(CASE WHEN resolution='1080p' AND algorithm='residual_unrestricted_8c' THEN mean_ms END) AS residual_unrestricted_1080_ms,\n  max(CASE WHEN resolution='1080p' AND algorithm='residual_unrestricted_8c' THEN relative_to_fastest END) AS residual_unrestricted_vs_fastest,\n  max(CASE WHEN resolution='1080p' AND algorithm='residual_saturated_8c' THEN mean_ms END) AS residual_saturated_1080_ms,\n  max(CASE WHEN resolution='1080p' AND algorithm='residual_saturated_8c' THEN mean_ms END) / max(CASE WHEN resolution='1080p' AND algorithm='residual_unrestricted_8c' THEN mean_ms END) AS residual_saturated_vs_unrestricted\nFROM s;",
+        "filters": [],
+        "metric_definitions": [
+          "Tempo por imagem: mediana de cinco construções; agregado: média das medianas das dez imagens.",
+          "IC 95%: bootstrap descritivo da média sobre as dez imagens, com 20.000 reamostragens.",
+          "Tempo normalizado: média em milissegundos dividida pelo número de megapixels.",
+          "Relativo ao mais rápido: média do método dividida pela menor média na mesma resolução."
+        ]
+      }
+    },
+    {
+      "id": "summary",
+      "label": "Síntese do tempo de construção",
+      "path": "benchmarks/results/tree-construction-comparison-icdar-first10-2026-08-04-post-cleanup-summary.csv",
+      "query": {
+        "description": "Agregados por resolução e algoritmo derivados das medianas por imagem.",
+        "executed_at": "2026-08-04T22:52:31Z",
+        "language": "SQL",
+        "engine": "DuckDB",
+        "sql": "SELECT * FROM read_csv_auto('benchmarks/results/tree-construction-comparison-icdar-first10-2026-08-04-post-cleanup-summary.csv') ORDER BY pixels, rank;",
+        "filters": [
+          "test_000.png a test_009.png",
+          "resoluções 480p, 720p e 1080p",
+          "cinco repetições por imagem e algoritmo"
+        ],
+        "metric_definitions": [
+          "Tempo por imagem: mediana de cinco construções; agregado: média das medianas das dez imagens.",
+          "IC 95%: bootstrap descritivo da média sobre as dez imagens, com 20.000 reamostragens.",
+          "Tempo normalizado: média em milissegundos dividida pelo número de megapixels.",
+          "Relativo ao mais rápido: média do método dividida pela menor média na mesma resolução."
+        ]
+      }
+    },
+    {
+      "id": "scaling",
+      "label": "Escalabilidade empírica",
+      "path": "benchmarks/results/tree-construction-comparison-icdar-first10-2026-08-04-post-cleanup-scaling.csv",
+      "query": {
+        "description": "Ajuste log-log da média do tempo contra o número de pixels nas três resoluções.",
+        "executed_at": "2026-08-04T22:52:31Z",
+        "language": "SQL",
+        "engine": "DuckDB",
+        "sql": "SELECT * FROM read_csv_auto('benchmarks/results/tree-construction-comparison-icdar-first10-2026-08-04-post-cleanup-scaling.csv') ORDER BY empirical_exponent DESC;",
+        "filters": [],
+        "metric_definitions": [
+          "Expoente empírico p: inclinação de log(tempo médio) contra log(número de pixels).",
+          "Razão 1080p/480p: média em 1080p dividida pela média em 480p."
+        ]
+      }
+    },
+    {
+      "id": "per_image",
+      "label": "Medianas e dispersão por imagem",
+      "path": "benchmarks/results/tree-construction-comparison-icdar-first10-2026-08-04-post-cleanup-per-image.csv",
+      "query": {
+        "description": "Mediana, mínimo, máximo e amplitude relativa das cinco repetições de cada grupo.",
+        "executed_at": "2026-08-04T22:52:31Z",
+        "language": "CSV",
+        "filters": [],
+        "metric_definitions": []
+      }
+    },
+    {
+      "id": "validation",
+      "label": "Auditoria de completude",
+      "path": "benchmarks/results/tree-construction-comparison-icdar-first10-2026-08-04-post-cleanup-validation.json",
+      "query": {
+        "description": "Resultado das verificações de cobertura, reconstrução, determinismo e positividade.",
+        "executed_at": "2026-08-04T22:52:31Z",
+        "language": "JSON",
+        "filters": [],
+        "metric_definitions": []
+      }
+    },
+    {
+      "id": "raw",
+      "label": "Medições brutas",
+      "path": "benchmarks/results/tree-construction-comparison-icdar-first10-2026-08-04-post-cleanup-raw.csv",
+      "query": {
+        "description": "Novecentas medições individuais produzidas pelo executável C++ em modo Release.",
+        "executed_at": "2026-08-04T22:52:31Z",
+        "language": "CSV",
+        "filters": [],
+        "metric_definitions": []
+      }
+    }
+  ]
+}

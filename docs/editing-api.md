@@ -15,7 +15,7 @@ For the broader tree ownership, altitude, and `NodeId` model, see
 - dense internal `NodeId` storage;
 - parent/child links;
 - direct proper-part ownership;
-- image-domain metadata and optional adjacency metadata.
+- optional regular-2D proper-part geometry and adjacency semantics.
 
 Weighted values are not part of `MorphologicalTree`. They are owned by
 `WeightedMorphologicalTree`, which stores:
@@ -64,10 +64,37 @@ editor.commit();
 `TreeEditor` is not constructible by callers. `MorphologicalTree::edit()` is
 the public factory. This keeps the edit boundary visible at each call site.
 
-Opening an editor marks the tree as being in an edit session. The library does
-not snapshot or roll back the previous state. If validation fails, the edit
-session remains open and the caller can continue repairing the topology through
-the same editor.
+Opening a public editor marks the tree as being in an edit session without
+copying the tree. The rollback journal is allocated lazily immediately before
+the first mutation and records each affected node/proper-part slot only on its
+first write. If validation fails, the edit session remains open and the caller
+can continue repairing the topology through the same editor.
+
+An owner cannot be moved or cloned while this session is open. An editor stores
+a direct reference to its owner, and the staged topology may temporarily be a
+forest; moving it would strand that reference, while cloning it would publish a
+state that has not crossed the commit validation boundary. Finish with
+`commit()` or `rollback()` before moving or cloning the tree. The same rule
+applies to `WeightedMorphologicalTree<T>`.
+
+Public editors provide the strong rollback guarantee:
+
+```cpp
+auto editor = tree.edit();
+editor.reparent(child, newParent);
+
+if (shouldAbort) {
+    editor.rollback();
+} else {
+    editor.commit();
+}
+```
+
+Calling `rollback()` restores the original topology, ownership, dense-slot
+sizes, free-slot order, and mutation versions. Destroying any active public
+editor performs the same rollback automatically, including during stack
+unwinding after an exception. Journal time and memory are proportional to the
+mutation delta rather than the complete tree.
 
 `TreeEditor::validateAndCommit()` runs the full connected-rooted-tree validation
 and returns a `TreeValidationResult`. On success it closes the edit session. On
@@ -80,23 +107,52 @@ Use `validateAndCommit()` when the caller wants to branch on a failed edit
 without exception control flow; use `commit()` when failure should abort the
 current operation.
 
-The validation cost is linear in the current internal node slots plus proper
-parts: `O(numInternalNodeSlots + numTotalProperParts)`.
+The complete-validation cost is linear in the current internal node slots plus
+proper parts: `O(numInternalNodeSlots + numTotalProperParts)`. There is no
+public unchecked commit path: every published edit crosses a validation or
+proof boundary.
 
-For internal hot paths that preserve invariants by construction,
-`TreeEditor::commitUnchecked()` closes the edit session without connected-tree
-validation. It should not be used at public API boundaries. When
-`MMCFILTERS_ENABLE_ASSERTS` is enabled, `commitUnchecked()` asserts that the
-tree is valid before closing the session.
+For edits composed only of incrementally supported primitives, callers may
+validate and publish the current revision through a move-only proof:
 
-Destroying an active editor does not roll back or close the session. The tree
-remains in editing mode, rejects committed-tree APIs, and rejects a new editor.
-This makes an abandoned edit visible instead of silently publishing a partially
-edited topology.
+```cpp
+auto editor = tree.edit();
+// ...staged mutations...
+
+auto proof = editor.proveIncremental();
+editor.commit(std::move(proof));
+```
+
+The proof is bound to the editor, tree, and exact mutation version. It cannot
+be copied or reused after another mutation. The safe generic path maintains a
+ledger proportional to the edit delta and checks touched support, ownership,
+and changed parent paths. If an edit uses a primitive that has no incremental
+validator, `proveIncremental()` transparently falls back to complete
+validation; `proof.usedCompleteValidation()` reports that choice.
+
+The paired min/max-tree adjusters use the same generic proof protocol through
+an internal by-construction entrypoint. Their existing update passes establish
+topology, support, and altitude invariants, so optimized builds do not duplicate
+that work. Assertion-enabled builds still run complete topology and altitude
+validation as an oracle. This internal entrypoint is not part of the public
+morphological-tree facade and has no concrete adjuster friendship.
+
+`MorphologicalTree::getEditValidationStatistics()` exposes the number of
+commits published with complete and incremental strategies. These counters
+describe the selected publication strategy; assertion-only oracle executions
+are intentionally not counted as complete Release-path commits.
+
+Destroying an active public editor never publishes its partial state. It rolls
+back and closes the session, after which committed-tree APIs and a new editor
+are usable again. The internal established-by-construction editor intentionally
+has no journal; it is available only to algorithms that explicitly publish
+their completed update.
 
 ## Weighted staged edits
 
 `WeightedMorphologicalTree<T>::edit()` returns `WeightedTreeEditor<T>`.
+Its topology journal is paired with a copy-on-first-write altitude journal, so
+rollback covers the complete weighted state.
 
 `WeightedTreeEditor<T>` wraps a structural `TreeEditor` and adds altitude-buffer
 updates for new nodes:
@@ -118,12 +174,10 @@ validates altitude order through
 the weighted edit session remains open so the caller can repair topology or
 altitudes. `WeightedTreeEditor<T>::commit()` is the exception-based wrapper.
 
-`WeightedTreeEditor<T>::commitUnchecked()` is reserved for internal hot paths and
-skips both topology and altitude-order validation.
-
-For max-trees, altitude must be non-decreasing from parent to child. For
-min-trees, altitude must be non-increasing from parent to child. Trees of
-shapes currently skip monotone altitude validation.
+The declared `AltitudeOrder` controls validation:
+`INCREASING_FROM_ROOT` enforces `altitude(parent) < altitude(child)`,
+`DECREASING_FROM_ROOT` enforces `altitude(parent) > altitude(child)`, and
+`UNCONSTRAINED` hierarchies do not invent a global polarity.
 
 ## Altitude setters
 
@@ -138,11 +192,12 @@ Public altitude setters preserve the same committed-tree invariant:
   monotonicity before replacing the owned buffer. The full monotonicity check is
   `O(numInternalNodeSlots)`.
 
-`setAltitudeUnchecked()` and `setAltitudeBufferUnchecked()` are C++ escape
-hatches for code that has already established altitude order by construction.
-They still validate the committed-edit boundary, live node or buffer shape, and
-finite floating-point values, but they intentionally skip monotone-altitude
-validation. They are not exposed in Python.
+There is no public unchecked altitude setter. Algorithms that must update
+altitude together with staged topology use
+`WeightedTreeEditor<T>::setNodeAltitude()` and cannot publish until the weighted
+commit validates the declared altitude order. Internal high-performance
+algorithms use the same editor through the established-by-construction proof
+boundary, with complete Debug validation as an oracle.
 
 ## Derived-state lifetime
 

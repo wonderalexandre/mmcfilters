@@ -134,7 +134,7 @@ Suggested files:
 mmcfilters/contours/ContourTraceComputation.hpp
 mmcfilters/contours/detail/ContourTraceDeltaStore.hpp
 pybinds/ContourTraceBindings.cpp
-pybinds/ContourTraceComputationPybind.hpp
+pybinds/ContourTraceBindings.cpp
 unit-tests/contours/test_contour_traces_on_morphological_tree.cpp
 ```
 

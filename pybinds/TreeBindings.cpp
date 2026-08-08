@@ -4,6 +4,10 @@
 
 #include "../mmcfilters/attributes/AttributeComputation.hpp"
 #include "../mmcfilters/attributes/AttributeNames.hpp"
+#include "../mmcfilters/trees/saliency/HierarchySaliencyMapValidation.hpp"
+#include "../mmcfilters/trees/saliency/HierarchySaliencyMapProjection.hpp"
+#include "../mmcfilters/trees/saliency/HierarchySaliencyMap.hpp"
+#include "../mmcfilters/trees/saliency/ShapeSpaceSaliency.hpp"
 #include "../mmcfilters/trees/MorphologicalTreeFactory.hpp"
 #include "../mmcfilters/trees/TreeAltitudeAlgorithms.hpp"
 #include "../mmcfilters/trees/WeightedMorphologicalTree.hpp"
@@ -227,6 +231,542 @@ py::array projectNodeValuesToExportedHigraOf(const WeightedMorphologicalTree<std
     throw std::invalid_argument("nodeValues must be a 1D or 2D C-contiguous float32 or float64 array");
 }
 
+template <class Value> py::dict edgeSaliencyMapToDict(EdgeSaliencyMap<Value>&& edgeMap) {
+    const int numEdges = static_cast<int>(edgeMap.size());
+    py::dict out;
+    out["numRows"] = edgeMap.numRows;
+    out["numCols"] = edgeMap.numCols;
+    out["adjacencyRadius"] = edgeMap.adjacencyRadius;
+    out["sources"] = pybind_utils::toNumpyOwned(std::move(edgeMap.sources), numEdges);
+    out["targets"] = pybind_utils::toNumpyOwned(std::move(edgeMap.targets), numEdges);
+    out["values"] = pybind_utils::toNumpyOwned(std::move(edgeMap.values), numEdges);
+    return out;
+}
+
+template <std::floating_point Real> py::dict shapeSpaceExtinctionResultToDict(ShapeSpaceExtinctionResult<Real>&& result) {
+    py::list extrema;
+    for (const ShapeSpaceExtremum<Real>& extremum : result.extrema) {
+        py::dict item;
+        item["representative"] = extremum.representative;
+        item["birthLevel"] = extremum.birthLevel;
+        item["deathLevel"] = extremum.deathLevel;
+        item["extinction"] = extremum.extinction;
+        extrema.append(std::move(item));
+    }
+
+    const int numNodeScores = static_cast<int>(result.nodeScores.size());
+    py::dict out;
+    out["extrema"] = std::move(extrema);
+    out["nodeScores"] = pybind_utils::toNumpyOwned(std::move(result.nodeScores), numNodeScores);
+    return out;
+}
+
+template <std::floating_point Real> py::dict shapeSpaceSaliencyResultToDict(ShapeSpaceSaliencyResult<Real>&& result) {
+    py::list extrema;
+    for (const ShapeSpaceExtremum<Real>& extremum : result.extrema) {
+        py::dict item;
+        item["representative"] = extremum.representative;
+        item["birthLevel"] = extremum.birthLevel;
+        item["deathLevel"] = extremum.deathLevel;
+        item["extinction"] = extremum.extinction;
+        extrema.append(std::move(item));
+    }
+
+    const int numNodeScores = static_cast<int>(result.nodeScores.size());
+    py::dict out;
+    out["extrema"] = std::move(extrema);
+    out["nodeScores"] = pybind_utils::toNumpyOwned(std::move(result.nodeScores), numNodeScores);
+    out["edgeMap"] = edgeSaliencyMapToDict(std::move(result.edgeMap));
+    return out;
+}
+
+py::dict edgeContourMapToDict(EdgeContourMap&& contourMap) {
+    const int numEdges = static_cast<int>(contourMap.size());
+    py::dict out;
+    out["numRows"] = contourMap.numRows;
+    out["numCols"] = contourMap.numCols;
+    out["adjacencyRadius"] = contourMap.adjacencyRadius;
+    out["sources"] = pybind_utils::toNumpyOwned(std::move(contourMap.sources), numEdges);
+    out["targets"] = pybind_utils::toNumpyOwned(std::move(contourMap.targets), numEdges);
+    return out;
+}
+
+py::dict nodeContourEdgeMapToDict(NodeContourEdgeMap&& contourMap) {
+    const int numEdges = static_cast<int>(contourMap.size());
+    py::dict out;
+    out["numRows"] = contourMap.numRows;
+    out["numCols"] = contourMap.numCols;
+    out["adjacencyRadius"] = contourMap.adjacencyRadius;
+    out["sources"] = pybind_utils::toNumpyOwned(std::move(contourMap.sources), numEdges);
+    out["targets"] = pybind_utils::toNumpyOwned(std::move(contourMap.targets), numEdges);
+    out["nodes"] = pybind_utils::toNumpyOwned(std::move(contourMap.nodes), numEdges);
+    return out;
+}
+
+py::dict incrementalNodeContourMapToDict(IncrementalNodeContourMap&& contourMap) {
+    const int numEdges = static_cast<int>(contourMap.size());
+    const int numOffsets = static_cast<int>(contourMap.offsets.size());
+    py::dict out;
+    out["numRows"] = contourMap.numRows;
+    out["numCols"] = contourMap.numCols;
+    out["numNodeSlots"] = contourMap.numNodeSlots;
+    out["adjacencyRadius"] = contourMap.adjacencyRadius;
+    out["offsets"] = pybind_utils::toNumpyOwned(std::move(contourMap.offsets), numOffsets);
+    out["sources"] = pybind_utils::toNumpyOwned(std::move(contourMap.sources), numEdges);
+    out["targets"] = pybind_utils::toNumpyOwned(std::move(contourMap.targets), numEdges);
+    return out;
+}
+
+EdgeSaliencyMap<double> edgeSaliencyMapFromDictPy(py::dict edgeMap, const char* context) {
+    for (const char* key : {"numRows", "numCols", "adjacencyRadius", "sources", "targets", "values"}) {
+        if (!edgeMap.contains(key)) {
+            throw std::invalid_argument(std::string(context) + " edgeMap is missing key '" + key + "'.");
+        }
+    }
+
+    auto sources = py::array_t<NodeId, py::array::c_style | py::array::forcecast>::ensure(edgeMap["sources"]);
+    auto targets = py::array_t<NodeId, py::array::c_style | py::array::forcecast>::ensure(edgeMap["targets"]);
+    auto values = py::array_t<double, py::array::c_style | py::array::forcecast>::ensure(edgeMap["values"]);
+    if (!sources || !targets || !values) {
+        throw std::invalid_argument(std::string(context) + " requires 1D numeric sources, targets, and values arrays.");
+    }
+
+    const py::buffer_info sourceInfo = sources.request();
+    const py::buffer_info targetInfo = targets.request();
+    const py::buffer_info valueInfo = values.request();
+    if (sourceInfo.ndim != 1 || targetInfo.ndim != 1 || valueInfo.ndim != 1) {
+        throw std::invalid_argument(std::string(context) + " requires 1D sources, targets, and values arrays.");
+    }
+    if (sourceInfo.shape[0] != targetInfo.shape[0] || sourceInfo.shape[0] != valueInfo.shape[0]) {
+        throw std::invalid_argument(std::string(context) + " requires sources, targets, and values arrays with the same length.");
+    }
+
+    const auto numEdges = static_cast<std::size_t>(sourceInfo.shape[0]);
+    const auto* sourceData = static_cast<const NodeId*>(sourceInfo.ptr);
+    const auto* targetData = static_cast<const NodeId*>(targetInfo.ptr);
+    const auto* valueData = static_cast<const double*>(valueInfo.ptr);
+
+    EdgeSaliencyMap<double> parsed;
+    parsed.numRows = py::cast<int>(edgeMap["numRows"]);
+    parsed.numCols = py::cast<int>(edgeMap["numCols"]);
+    parsed.adjacencyRadius = py::cast<double>(edgeMap["adjacencyRadius"]);
+    parsed.sources.assign(sourceData, sourceData + numEdges);
+    parsed.targets.assign(targetData, targetData + numEdges);
+    parsed.values.assign(valueData, valueData + numEdges);
+    return parsed;
+}
+
+HierarchyValuationPolicy saliencyPolicyFromStrict(bool strict) {
+    return strict ? HierarchyValuationPolicy::RequireStrictHierarchy : HierarchyValuationPolicy::AllowLevelCollapse;
+}
+
+HierarchyValuationRangePolicy saliencyRangePolicyFromNonnegative(bool nonnegative) {
+    return nonnegative ? HierarchyValuationRangePolicy::RequireNonNegative : HierarchyValuationRangePolicy::AllowAnyFinite;
+}
+
+template <class Real>
+void validateHierarchyValuationTypedPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation, bool strict, bool nonnegative) {
+    auto scores = pybind_utils::requireNodeAttributeArray<Real>(std::move(valuation), weighted.topology(), "valuation");
+    const py::buffer_info buffer = scores.request();
+    HierarchySaliencyMapValidation::validateHierarchyValuation(
+        weighted.topology(), std::span<const Real>(static_cast<const Real*>(buffer.ptr), static_cast<std::size_t>(buffer.shape[0])),
+        saliencyPolicyFromStrict(strict), saliencyRangePolicyFromNonnegative(nonnegative), "HierarchySaliencyMapValidation.validateHierarchyValuation");
+}
+
+void validateHierarchyValuationPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation, bool strict, bool nonnegative) {
+    py::array contiguous = py::array::ensure(valuation, py::array::c_style);
+    if (!contiguous) {
+        throw std::invalid_argument("valuation must be a 1D C-contiguous int32, float32, or float64 array");
+    }
+
+    if (contiguous.dtype().is(py::dtype::of<int>())) {
+        validateHierarchyValuationTypedPy<int>(weighted, contiguous, strict, nonnegative);
+        return;
+    }
+    if (contiguous.dtype().is(py::dtype::of<float>())) {
+        validateHierarchyValuationTypedPy<float>(weighted, contiguous, strict, nonnegative);
+        return;
+    }
+    if (contiguous.dtype().is(py::dtype::of<double>())) {
+        validateHierarchyValuationTypedPy<double>(weighted, contiguous, strict, nonnegative);
+        return;
+    }
+
+    throw std::invalid_argument("valuation must be a 1D C-contiguous int32, float32, or float64 array");
+}
+
+template <class Real> py::array rankHierarchyValuationTypedPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation, bool strict) {
+    auto scores = pybind_utils::requireNodeAttributeArray<Real>(std::move(valuation), weighted.topology(), "valuation");
+    const py::buffer_info buffer = scores.request();
+    std::vector<int> ranks = HierarchySaliencyMapValidation::rankHierarchyValuation(
+        weighted.topology(), std::span<const Real>(static_cast<const Real*>(buffer.ptr), static_cast<std::size_t>(buffer.shape[0])),
+        saliencyPolicyFromStrict(strict));
+    const int numRanks = static_cast<int>(ranks.size());
+    return pybind_utils::toNumpyOwned(std::move(ranks), numRanks);
+}
+
+py::array rankHierarchyValuationPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation, bool strict) {
+    py::array contiguous = py::array::ensure(valuation, py::array::c_style);
+    if (!contiguous) {
+        throw std::invalid_argument("valuation must be a 1D C-contiguous int32, float32, or float64 array");
+    }
+
+    if (contiguous.dtype().is(py::dtype::of<int>())) {
+        return rankHierarchyValuationTypedPy<int>(weighted, contiguous, strict);
+    }
+    if (contiguous.dtype().is(py::dtype::of<float>())) {
+        return rankHierarchyValuationTypedPy<float>(weighted, contiguous, strict);
+    }
+    if (contiguous.dtype().is(py::dtype::of<double>())) {
+        return rankHierarchyValuationTypedPy<double>(weighted, contiguous, strict);
+    }
+
+    throw std::invalid_argument("valuation must be a 1D C-contiguous int32, float32, or float64 array");
+}
+
+template <class Real>
+py::array computeNormalizedScoresTypedPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation, bool strict, bool nonnegative) {
+    auto scores = pybind_utils::requireNodeAttributeArray<Real>(std::move(valuation), weighted.topology(), "valuation");
+    const py::buffer_info buffer = scores.request();
+    std::vector<double> normalized = HierarchySaliencyMapValidation::computeNormalizedScores(
+        weighted.topology(), std::span<const Real>(static_cast<const Real*>(buffer.ptr), static_cast<std::size_t>(buffer.shape[0])),
+        saliencyPolicyFromStrict(strict), saliencyRangePolicyFromNonnegative(nonnegative));
+    const int numScores = static_cast<int>(normalized.size());
+    return pybind_utils::toNumpyOwned(std::move(normalized), numScores);
+}
+
+py::array computeNormalizedScoresPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation, bool strict, bool nonnegative) {
+    py::array contiguous = py::array::ensure(valuation, py::array::c_style);
+    if (!contiguous) {
+        throw std::invalid_argument("valuation must be a 1D C-contiguous int32, float32, or float64 array");
+    }
+
+    if (contiguous.dtype().is(py::dtype::of<int>())) {
+        return computeNormalizedScoresTypedPy<int>(weighted, contiguous, strict, nonnegative);
+    }
+    if (contiguous.dtype().is(py::dtype::of<float>())) {
+        return computeNormalizedScoresTypedPy<float>(weighted, contiguous, strict, nonnegative);
+    }
+    if (contiguous.dtype().is(py::dtype::of<double>())) {
+        return computeNormalizedScoresTypedPy<double>(weighted, contiguous, strict, nonnegative);
+    }
+
+    throw std::invalid_argument("valuation must be a 1D C-contiguous int32, float32, or float64 array");
+}
+
+IncrementalNodeContourMap incrementalNodeContourMapFromDictPy(py::dict contours) {
+    constexpr const char* context = "HierarchySaliencyMapProjection incremental contour operation";
+    for (const char* key : {"numRows", "numCols", "numNodeSlots", "adjacencyRadius", "offsets", "sources", "targets"}) {
+        if (!contours.contains(key)) {
+            throw std::invalid_argument(std::string(context) + " contours is missing key '" + key + "'.");
+        }
+    }
+
+    auto offsets = py::array_t<std::size_t, py::array::c_style | py::array::forcecast>::ensure(contours["offsets"]);
+    auto sources = py::array_t<NodeId, py::array::c_style | py::array::forcecast>::ensure(contours["sources"]);
+    auto targets = py::array_t<NodeId, py::array::c_style | py::array::forcecast>::ensure(contours["targets"]);
+    if (!offsets || !sources || !targets) {
+        throw std::invalid_argument(std::string(context) + " requires 1D numeric offsets, sources, and targets arrays.");
+    }
+
+    const py::buffer_info offsetInfo = offsets.request();
+    const py::buffer_info sourceInfo = sources.request();
+    const py::buffer_info targetInfo = targets.request();
+    if (offsetInfo.ndim != 1 || sourceInfo.ndim != 1 || targetInfo.ndim != 1) {
+        throw std::invalid_argument(std::string(context) + " requires 1D offsets, sources, and targets arrays.");
+    }
+    if (sourceInfo.shape[0] != targetInfo.shape[0]) {
+        throw std::invalid_argument(std::string(context) + " requires sources and targets arrays with the same length.");
+    }
+
+    const auto numOffsets = static_cast<std::size_t>(offsetInfo.shape[0]);
+    const auto numEdges = static_cast<std::size_t>(sourceInfo.shape[0]);
+    const auto* offsetData = static_cast<const std::size_t*>(offsetInfo.ptr);
+    const auto* sourceData = static_cast<const NodeId*>(sourceInfo.ptr);
+    const auto* targetData = static_cast<const NodeId*>(targetInfo.ptr);
+
+    IncrementalNodeContourMap parsed;
+    parsed.numRows = py::cast<int>(contours["numRows"]);
+    parsed.numCols = py::cast<int>(contours["numCols"]);
+    parsed.numNodeSlots = py::cast<int>(contours["numNodeSlots"]);
+    parsed.adjacencyRadius = py::cast<double>(contours["adjacencyRadius"]);
+    parsed.offsets.assign(offsetData, offsetData + numOffsets);
+    parsed.sources.assign(sourceData, sourceData + numEdges);
+    parsed.targets.assign(targetData, targetData + numEdges);
+    return parsed;
+}
+
+py::dict computeTopologicalLevelEdgeMapPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, std::optional<double> radius) {
+    if (radius.has_value()) {
+        RegularGridAdjacency2D adjacency =
+            pybind_utils::makeRegularGridAdjacency2D(weighted.topology().getNumRowsOfGridDomain2D(), weighted.topology().getNumColsOfGridDomain2D(), *radius,
+                                                     "HierarchySaliencyMap.computeTopologicalLevelEdgeMap");
+        return edgeSaliencyMapToDict(HierarchySaliencyMap::computeTopologicalLevelEdgeMap(weighted.topology(), adjacency));
+    }
+    return edgeSaliencyMapToDict(HierarchySaliencyMap::computeTopologicalLevelEdgeMap(weighted.topology()));
+}
+
+py::dict computeNormalizedAltitudeEdgeMapPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, std::optional<double> radius) {
+    if (radius.has_value()) {
+        RegularGridAdjacency2D adjacency =
+            pybind_utils::makeRegularGridAdjacency2D(weighted.topology().getNumRowsOfGridDomain2D(), weighted.topology().getNumColsOfGridDomain2D(), *radius,
+                                                     "HierarchySaliencyMap.computeNormalizedAltitudeEdgeMap");
+        return edgeSaliencyMapToDict(HierarchySaliencyMap::computeNormalizedAltitudeEdgeMap(weighted, adjacency));
+    }
+    return edgeSaliencyMapToDict(HierarchySaliencyMap::computeNormalizedAltitudeEdgeMap(weighted));
+}
+
+RegularGridAdjacency2D saliencyAdjacencyPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, std::optional<double> radius, const char* context) {
+    if (radius.has_value()) {
+        return pybind_utils::makeRegularGridAdjacency2D(weighted.topology().getNumRowsOfGridDomain2D(), weighted.topology().getNumColsOfGridDomain2D(), *radius,
+                                                        context);
+    }
+    return HierarchySaliencyMap::requireProjectionAdjacency(weighted.topology(), context);
+}
+
+template <class Real>
+py::dict computeSaliencyEdgeMapTypedPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation, std::optional<double> radius, bool strict,
+                                       HierarchyLevelConvention levelConvention, bool validateConnectivity, const char* context) {
+    auto scores = pybind_utils::requireNodeAttributeArray<Real>(std::move(valuation), weighted.topology(), "valuation");
+    const py::buffer_info buffer = scores.request();
+    const auto* scoreData = static_cast<const Real*>(buffer.ptr);
+    const auto valuationSpan = std::span<const Real>(scoreData, static_cast<std::size_t>(buffer.shape[0]));
+
+    if (radius.has_value()) {
+        RegularGridAdjacency2D adjacency = pybind_utils::makeRegularGridAdjacency2D(weighted.topology().getNumRowsOfGridDomain2D(),
+                                                                                    weighted.topology().getNumColsOfGridDomain2D(), *radius, context);
+        return edgeSaliencyMapToDict(HierarchySaliencyMap::computeSaliencyEdgeMap(
+            weighted.topology(), adjacency, valuationSpan, saliencyPolicyFromStrict(strict), levelConvention,
+            validateConnectivity ? HierarchyConnectivityPolicy::ValidateConnected : HierarchyConnectivityPolicy::AssumeConnected));
+    }
+    return edgeSaliencyMapToDict(HierarchySaliencyMap::computeSaliencyEdgeMap(
+        weighted.topology(), valuationSpan, saliencyPolicyFromStrict(strict), levelConvention,
+        validateConnectivity ? HierarchyConnectivityPolicy::ValidateConnected : HierarchyConnectivityPolicy::AssumeConnected));
+}
+
+py::dict computeSaliencyEdgeMapPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation, std::optional<double> radius, bool strict,
+                                  HierarchyLevelConvention levelConvention, bool validateConnectivity, const char* context) {
+    py::array contiguous = py::array::ensure(valuation, py::array::c_style);
+    if (!contiguous) {
+        throw std::invalid_argument("valuation must be a 1D C-contiguous int32, float32, or float64 array");
+    }
+
+    if (contiguous.dtype().is(py::dtype::of<int>())) {
+        return computeSaliencyEdgeMapTypedPy<int>(weighted, contiguous, radius, strict, levelConvention, validateConnectivity, context);
+    }
+    if (contiguous.dtype().is(py::dtype::of<float>())) {
+        return computeSaliencyEdgeMapTypedPy<float>(weighted, contiguous, radius, strict, levelConvention, validateConnectivity, context);
+    }
+    if (contiguous.dtype().is(py::dtype::of<double>())) {
+        return computeSaliencyEdgeMapTypedPy<double>(weighted, contiguous, radius, strict, levelConvention, validateConnectivity, context);
+    }
+
+    throw std::invalid_argument("valuation must be a 1D C-contiguous int32, float32, or float64 array");
+}
+
+template <class Real>
+py::dict computeCanonicalRankedSaliencyEdgeMapTypedPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation,
+                                                      std::optional<double> radius, bool strict, bool validateConnectivity) {
+    auto scores = pybind_utils::requireNodeAttributeArray<Real>(std::move(valuation), weighted.topology(), "valuation");
+    const py::buffer_info buffer = scores.request();
+    const auto valuationSpan = std::span<const Real>(static_cast<const Real*>(buffer.ptr), static_cast<std::size_t>(buffer.shape[0]));
+    const RegularGridAdjacency2D adjacency = saliencyAdjacencyPy(weighted, radius, "HierarchySaliencyMap.computeCanonicalRankedSaliencyEdgeMap");
+    return edgeSaliencyMapToDict(HierarchySaliencyMap::computeCanonicalRankedSaliencyEdgeMap(
+        weighted.topology(), adjacency, valuationSpan, saliencyPolicyFromStrict(strict),
+        validateConnectivity ? HierarchyConnectivityPolicy::ValidateConnected : HierarchyConnectivityPolicy::AssumeConnected));
+}
+
+py::dict computeCanonicalRankedSaliencyEdgeMapPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation, std::optional<double> radius,
+                                                 bool strict, bool validateConnectivity) {
+    py::array contiguous = py::array::ensure(valuation, py::array::c_style);
+    if (!contiguous) {
+        throw std::invalid_argument("valuation must be a 1D C-contiguous int32, float32, or float64 array");
+    }
+    if (contiguous.dtype().is(py::dtype::of<int>())) {
+        return computeCanonicalRankedSaliencyEdgeMapTypedPy<int>(weighted, contiguous, radius, strict, validateConnectivity);
+    }
+    if (contiguous.dtype().is(py::dtype::of<float>())) {
+        return computeCanonicalRankedSaliencyEdgeMapTypedPy<float>(weighted, contiguous, radius, strict, validateConnectivity);
+    }
+    if (contiguous.dtype().is(py::dtype::of<double>())) {
+        return computeCanonicalRankedSaliencyEdgeMapTypedPy<double>(weighted, contiguous, radius, strict, validateConnectivity);
+    }
+    throw std::invalid_argument("valuation must be a 1D C-contiguous int32, float32, or float64 array");
+}
+
+template <std::floating_point Real>
+std::span<const Real> shapeSpaceDenseNodeSpan(py::array values, const MorphologicalTree& tree, py::array_t<Real, py::array::c_style>& owner,
+                                              const char* argumentName) {
+    owner = pybind_utils::requireNodeAttributeArray<Real>(std::move(values), tree, argumentName);
+    const py::buffer_info buffer = owner.request();
+    return std::span<const Real>(static_cast<const Real*>(buffer.ptr), static_cast<std::size_t>(buffer.shape[0]));
+}
+
+template <std::floating_point Real>
+py::dict computeShapeSpaceExtinctionValuesTypedPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array attribute,
+                                                  ShapeSpaceExtremaPolarity polarity) {
+    py::array_t<Real, py::array::c_style> attributeOwner;
+    const std::span<const Real> attributeSpan = shapeSpaceDenseNodeSpan<Real>(std::move(attribute), weighted.topology(), attributeOwner, "attribute");
+    return shapeSpaceExtinctionResultToDict(ShapeSpaceSaliency::computeExtinctionValues(weighted.topology(), attributeSpan, polarity));
+}
+
+py::dict computeShapeSpaceExtinctionValuesPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array attribute, ShapeSpaceExtremaPolarity polarity) {
+    py::array contiguous = py::array::ensure(attribute, py::array::c_style);
+    if (!contiguous) {
+        throw std::invalid_argument("attribute must be a 1D C-contiguous float32 or float64 array");
+    }
+    if (contiguous.dtype().is(py::dtype::of<float>())) {
+        return computeShapeSpaceExtinctionValuesTypedPy<float>(weighted, contiguous, polarity);
+    }
+    if (contiguous.dtype().is(py::dtype::of<double>())) {
+        return computeShapeSpaceExtinctionValuesTypedPy<double>(weighted, contiguous, polarity);
+    }
+    throw std::invalid_argument("attribute must be a 1D C-contiguous float32 or float64 array");
+}
+
+template <std::floating_point Real>
+py::dict projectShapeSpaceContourScoresTypedPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array scores, std::optional<double> radius) {
+    py::array_t<Real, py::array::c_style> scoreOwner;
+    const std::span<const Real> scoreSpan = shapeSpaceDenseNodeSpan<Real>(std::move(scores), weighted.topology(), scoreOwner, "nodeScores");
+
+    if (radius.has_value()) {
+        RegularGridAdjacency2D adjacency = pybind_utils::makeRegularGridAdjacency2D(
+            weighted.topology().getNumRowsOfGridDomain2D(), weighted.topology().getNumColsOfGridDomain2D(), *radius, "ShapeSpaceSaliency.projectContourScores");
+        return edgeSaliencyMapToDict(ShapeSpaceSaliency::projectContourScores(weighted.topology(), scoreSpan, adjacency));
+    }
+    return edgeSaliencyMapToDict(ShapeSpaceSaliency::projectContourScores(weighted.topology(), scoreSpan));
+}
+
+py::dict projectShapeSpaceContourScoresPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array scores, std::optional<double> radius) {
+    py::array contiguous = py::array::ensure(scores, py::array::c_style);
+    if (!contiguous) {
+        throw std::invalid_argument("nodeScores must be a 1D C-contiguous float32 or float64 array");
+    }
+    if (contiguous.dtype().is(py::dtype::of<float>())) {
+        return projectShapeSpaceContourScoresTypedPy<float>(weighted, contiguous, radius);
+    }
+    if (contiguous.dtype().is(py::dtype::of<double>())) {
+        return projectShapeSpaceContourScoresTypedPy<double>(weighted, contiguous, radius);
+    }
+    throw std::invalid_argument("nodeScores must be a 1D C-contiguous float32 or float64 array");
+}
+
+template <std::floating_point Real>
+py::dict computeShapeSpaceSaliencyTypedPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array attribute, ShapeSpaceExtremaPolarity polarity,
+                                          std::optional<double> radius) {
+    py::array_t<Real, py::array::c_style> attributeOwner;
+    const std::span<const Real> attributeSpan = shapeSpaceDenseNodeSpan<Real>(std::move(attribute), weighted.topology(), attributeOwner, "attribute");
+
+    if (radius.has_value()) {
+        RegularGridAdjacency2D adjacency = pybind_utils::makeRegularGridAdjacency2D(
+            weighted.topology().getNumRowsOfGridDomain2D(), weighted.topology().getNumColsOfGridDomain2D(), *radius, "ShapeSpaceSaliency.compute");
+        return shapeSpaceSaliencyResultToDict(ShapeSpaceSaliency::compute(weighted.topology(), attributeSpan, polarity, adjacency));
+    }
+    return shapeSpaceSaliencyResultToDict(ShapeSpaceSaliency::compute(weighted.topology(), attributeSpan, polarity));
+}
+
+py::dict computeShapeSpaceSaliencyPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array attribute, ShapeSpaceExtremaPolarity polarity,
+                                     std::optional<double> radius) {
+    py::array contiguous = py::array::ensure(attribute, py::array::c_style);
+    if (!contiguous) {
+        throw std::invalid_argument("attribute must be a 1D C-contiguous float32 or float64 array");
+    }
+    if (contiguous.dtype().is(py::dtype::of<float>())) {
+        return computeShapeSpaceSaliencyTypedPy<float>(weighted, contiguous, polarity, radius);
+    }
+    if (contiguous.dtype().is(py::dtype::of<double>())) {
+        return computeShapeSpaceSaliencyTypedPy<double>(weighted, contiguous, polarity, radius);
+    }
+    throw std::invalid_argument("attribute must be a 1D C-contiguous float32 or float64 array");
+}
+
+py::dict thresholdCutPy(py::dict edgeMap, double threshold) {
+    EdgeSaliencyMap<double> parsed = edgeSaliencyMapFromDictPy(std::move(edgeMap), "HierarchySaliencyMapProjection.thresholdCut");
+    return edgeContourMapToDict(HierarchySaliencyMapProjection::thresholdCut(parsed, threshold));
+}
+
+py::array edgeMapToPixelImagePy(py::dict edgeMap, EdgeToPixelReducer reducer) {
+    EdgeSaliencyMap<double> parsed = edgeSaliencyMapFromDictPy(std::move(edgeMap), "HierarchySaliencyMapProjection.edgeMapToPixelImage");
+    return pybind_utils::toNumpy(HierarchySaliencyMapProjection::edgeMapToPixelImage(parsed, reducer));
+}
+
+py::dict nodeContourEdgesPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, std::optional<double> radius) {
+    if (radius.has_value()) {
+        RegularGridAdjacency2D adjacency =
+            pybind_utils::makeRegularGridAdjacency2D(weighted.topology().getNumRowsOfGridDomain2D(), weighted.topology().getNumColsOfGridDomain2D(), *radius,
+                                                     "HierarchySaliencyMapProjection.nodeContourEdges");
+        return nodeContourEdgeMapToDict(HierarchySaliencyMapProjection::nodeContourEdges(weighted, adjacency));
+    }
+    return nodeContourEdgeMapToDict(HierarchySaliencyMapProjection::nodeContourEdges(weighted));
+}
+
+py::dict computeIncrementalNodeContoursPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, std::optional<double> radius) {
+    if (radius.has_value()) {
+        RegularGridAdjacency2D adjacency =
+            pybind_utils::makeRegularGridAdjacency2D(weighted.topology().getNumRowsOfGridDomain2D(), weighted.topology().getNumColsOfGridDomain2D(), *radius,
+                                                     "HierarchySaliencyMapProjection.computeIncrementalNodeContours");
+        return incrementalNodeContourMapToDict(HierarchySaliencyMapProjection::computeIncrementalNodeContours(weighted, adjacency));
+    }
+    return incrementalNodeContourMapToDict(HierarchySaliencyMapProjection::computeIncrementalNodeContours(weighted));
+}
+
+template <std::floating_point Real> py::dict projectNodeValuationOnIncrementalContoursTypedPy(py::dict contours, py::array nodeValuation) {
+    IncrementalNodeContourMap parsed = incrementalNodeContourMapFromDictPy(std::move(contours));
+    auto valuation = py::array_t<Real, py::array::c_style>::ensure(nodeValuation);
+    if (!valuation) {
+        throw std::invalid_argument("nodeValuation must be a 1D C-contiguous float32 or float64 array.");
+    }
+    const py::buffer_info info = valuation.request();
+    pybind_utils::require1DArray(info, parsed.numNodeSlots, "nodeValuation");
+    if (info.strides[0] != static_cast<py::ssize_t>(sizeof(Real))) {
+        throw std::invalid_argument("nodeValuation must be C-contiguous.");
+    }
+    return edgeSaliencyMapToDict(HierarchySaliencyMapProjection::projectNodeValuation(
+        parsed, std::span<const Real>(static_cast<const Real*>(info.ptr), static_cast<std::size_t>(info.shape[0]))));
+}
+
+py::dict projectNodeValuationOnIncrementalContoursPy(py::dict contours, py::array nodeValuation) {
+    py::array contiguous = py::array::ensure(nodeValuation, py::array::c_style);
+    if (!contiguous) {
+        throw std::invalid_argument("nodeValuation must be a 1D C-contiguous float32 or float64 array");
+    }
+    if (contiguous.dtype().is(py::dtype::of<float>())) {
+        return projectNodeValuationOnIncrementalContoursTypedPy<float>(std::move(contours), contiguous);
+    }
+    if (contiguous.dtype().is(py::dtype::of<double>())) {
+        return projectNodeValuationOnIncrementalContoursTypedPy<double>(std::move(contours), contiguous);
+    }
+    throw std::invalid_argument("nodeValuation must be a 1D C-contiguous float32 or float64 array");
+}
+
+template <std::floating_point Real> py::dict thresholdIncrementalContoursByNodeValuationTypedPy(py::dict contours, py::array nodeValuation, double threshold) {
+    IncrementalNodeContourMap parsed = incrementalNodeContourMapFromDictPy(std::move(contours));
+    auto valuation = py::array_t<Real, py::array::c_style>::ensure(nodeValuation);
+    if (!valuation) {
+        throw std::invalid_argument("nodeValuation must be a 1D C-contiguous float32 or float64 array.");
+    }
+    const py::buffer_info info = valuation.request();
+    pybind_utils::require1DArray(info, parsed.numNodeSlots, "nodeValuation");
+    if (info.strides[0] != static_cast<py::ssize_t>(sizeof(Real))) {
+        throw std::invalid_argument("nodeValuation must be C-contiguous.");
+    }
+    return edgeContourMapToDict(HierarchySaliencyMapProjection::thresholdByNodeValuation(
+        parsed, std::span<const Real>(static_cast<const Real*>(info.ptr), static_cast<std::size_t>(info.shape[0])), threshold));
+}
+
+py::dict thresholdIncrementalContoursByNodeValuationPy(py::dict contours, py::array nodeValuation, double threshold) {
+    py::array contiguous = py::array::ensure(nodeValuation, py::array::c_style);
+    if (!contiguous) {
+        throw std::invalid_argument("nodeValuation must be a 1D C-contiguous float32 or float64 array");
+    }
+    if (contiguous.dtype().is(py::dtype::of<float>())) {
+        return thresholdIncrementalContoursByNodeValuationTypedPy<float>(std::move(contours), contiguous, threshold);
+    }
+    if (contiguous.dtype().is(py::dtype::of<double>())) {
+        return thresholdIncrementalContoursByNodeValuationTypedPy<double>(std::move(contours), contiguous, threshold);
+    }
+    throw std::invalid_argument("nodeValuation must be a 1D C-contiguous float32 or float64 array");
+}
 
 template <class TreeLike, class PyClass> void bindTreeQueryApi(PyClass& cls) {
     cls.def_property_readonly(
@@ -542,6 +1082,20 @@ void initMorphologicalTree(py::module_& m) {
         .def_readonly("altitudeOrder", &HierarchySemantics::altitudeOrder)
         .def_property_readonly("adjacencyMode", &HierarchySemantics::adjacencyMode);
 
+    py::enum_<EdgeToPixelReducer>(m, "EdgeToPixelReducer", py::module_local(false))
+        .value("Max", EdgeToPixelReducer::Max)
+        .value("Mean", EdgeToPixelReducer::Mean)
+        .export_values();
+
+    py::enum_<HierarchyLevelConvention>(m, "HierarchyLevelConvention", py::module_local(false))
+        .value("EdgeSaliencyValue", HierarchyLevelConvention::EdgeSaliencyValue)
+        .value("PartitionAppearanceLevel", HierarchyLevelConvention::PartitionAppearanceLevel)
+        .export_values();
+
+    py::enum_<ShapeSpaceExtremaPolarity>(m, "ShapeSpaceExtremaPolarity", py::module_local(false))
+        .value("Minima", ShapeSpaceExtremaPolarity::Minima)
+        .value("Maxima", ShapeSpaceExtremaPolarity::Maxima)
+        .export_values();
 
     auto weightedCls = py::class_<WeightedMorphologicalTree<std::uint8_t>, std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>>(
         m, "WeightedMorphologicalTree", py::module_local(false),
@@ -682,6 +1236,324 @@ support, although structural nodes may own no direct proper parts.)doc")
             "parent"_a, "altitude"_a, "rows"_a, "cols"_a, "kind"_a, "radius"_a = py::none(),
             "Create a weighted tree from an imported static Higra parent/altitude representation [leaves | internal nodes]. "
             "The imported Higra node-id domain is preserved until the tree is edited.");
+
+    py::class_<HierarchySaliencyMapValidation>(m, "HierarchySaliencyMapValidation", py::module_local(false),
+                                               "Utilities for validating and transforming hierarchy valuations used by saliency maps.")
+        .def_static(
+            "validateHierarchyConnectivity",
+            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, std::optional<double> radius) {
+                if (!weighted) {
+                    throw std::invalid_argument("weighted tree must not be null");
+                }
+                const RegularGridAdjacency2D adjacency = saliencyAdjacencyPy(*weighted, radius, "HierarchySaliencyMapValidation.validateHierarchyConnectivity");
+                HierarchySaliencyMapValidation::validateHierarchyConnectivity(weighted->topology(), adjacency,
+                                                                              "HierarchySaliencyMapValidation.validateHierarchyConnectivity");
+            },
+            "tree"_a, "radius"_a = py::none(),
+            R"doc(Validate that every hierarchy support is connected in the projection graph.
+
+This is the graph-connectivity hypothesis required by the Cousty correspondence;
+it is distinct from checking that the parent array forms one rooted tree.)doc")
+        .def_static(
+            "validateHierarchyValuation",
+            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, py::array valuation, bool strict, bool nonnegative) {
+                if (!weighted) {
+                    throw std::invalid_argument("weighted tree must not be null");
+                }
+                validateHierarchyValuationPy(*weighted, std::move(valuation), strict, nonnegative);
+            },
+            "tree"_a, "valuation"_a, "strict"_a = false, "nonnegative"_a = false,
+            R"doc(Validate that a dense node-indexed valuation is compatible with the hierarchy.
+
+The valuation must be a 1D int32, float32, or float64 array with one value per
+dense internal NodeId slot. With `strict=False`, parent values must be greater
+than or equal to child values, allowing equal-valued tree levels to collapse in
+the induced QFZ hierarchy. With `strict=True`, every live parent-child relation
+must be strictly increasing toward the root. Set `nonnegative=True` to enforce
+the paper's literal non-negative edge-weight domain.)doc")
+        .def_static(
+            "rankHierarchyValuation",
+            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, py::array valuation, bool strict) {
+                if (!weighted) {
+                    throw std::invalid_argument("weighted tree must not be null");
+                }
+                return rankHierarchyValuationPy(*weighted, std::move(valuation), strict);
+            },
+            "tree"_a, "valuation"_a, "strict"_a = false,
+            R"doc(Convert a compatible hierarchy valuation to dense non-negative integer levels.
+
+The input valuation must be a 1D int32, float32, or float64 array. Distinct
+live-node valuation values are ranked as `0..k-1` while preserving order. Equal
+values receive the same rank, so level collapse is preserved. Use `strict=True`
+to reject equal parent-child valuation levels before ranking. This ranks all
+live nodes; use `HierarchySaliencyMap.computeCanonicalRankedSaliencyEdgeMap`
+when only levels that occur on graph edges should define the dense scale.)doc")
+        .def_static(
+            "computeNormalizedScores",
+            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, py::array valuation, bool strict, bool nonnegative) {
+                if (!weighted) {
+                    throw std::invalid_argument("weighted tree must not be null");
+                }
+                return computeNormalizedScoresPy(*weighted, std::move(valuation), strict, nonnegative);
+            },
+            "tree"_a, "valuation"_a, "strict"_a = false, "nonnegative"_a = false,
+            R"doc(Normalize a compatible hierarchy valuation to double values in [0, 1].
+
+The input valuation must be a 1D int32, float32, or float64 array. The valuation
+is validated before normalization. The output preserves the valuation order with
+an increasing affine transform over live-node values; equal levels remain equal.
+Set `strict=True` to reject equal parent-child levels before normalization and
+`nonnegative=True` to require the input valuation itself to be non-negative.)doc");
+
+    py::class_<HierarchySaliencyMap>(m, "HierarchySaliencyMap", py::module_local(false),
+                                     R"doc(Utilities for projecting a morphological hierarchy onto an image adjacency graph as an edge saliency map.
+
+Primary reference: Jean Cousty, Laurent Najman, Yukiko Kenmochi, and Silvio
+Guimarães, "Hierarchical segmentations with graphs: quasi-flat zones, minimum
+spanning trees, and saliency maps," Journal of Mathematical Imaging and Vision
+60(4):479-502, 2018, https://doi.org/10.1007/s10851-017-0768-7. The direct
+projection corresponds to Section 4, Equations (5)-(6), and Section 7,
+Algorithm 1.)doc")
+        .def_static(
+            "computeSaliencyEdgeMap",
+            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, py::array valuation, std::optional<double> radius, bool strict,
+               HierarchyLevelConvention levelConvention, bool validateConnectivity) {
+                if (!weighted) {
+                    throw std::invalid_argument("weighted tree must not be null");
+                }
+                return computeSaliencyEdgeMapPy(*weighted, std::move(valuation), radius, strict, levelConvention, validateConnectivity,
+                                                "HierarchySaliencyMap.computeSaliencyEdgeMap");
+            },
+            "tree"_a, "valuation"_a, "radius"_a = py::none(), "strict"_a = false, "levelConvention"_a = HierarchyLevelConvention::EdgeSaliencyValue,
+            "validateConnectivity"_a = true,
+            R"doc(Compute the formal edge-indexed saliency map induced by a hierarchy valuation.
+
+This method implements `Phi(H)` for a connected hierarchy under the
+quasi-flat-zone saliency convention: each adjacency edge receives
+`valuation[LCA(owner(source), owner(target))]` when the endpoint owners differ,
+and value 0 when both endpoints already belong to the same finest represented
+region under `EdgeSaliencyValue`. With `PartitionAppearanceLevel`, transition
+edges receive `valuation[LCA] - 1`, exactly as in Algorithm 1 of Cousty et al.
+It does not build the full `Psi(w) = Phi(QFZ(G, w))` pipeline from an
+arbitrary edge-weighted graph. The valuation is validated before projection. Use
+`strict=True` when the map must preserve every explicit parent-child level of
+the tree; leave it false when equal-valued adjacent levels may be collapsed.
+Formal saliency valuations must be non-negative. Graph connectivity is validated
+by default; disable it only for a trusted producer-internal path.)doc")
+        .def_static(
+            "computeCanonicalRankedSaliencyEdgeMap",
+            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, py::array valuation, std::optional<double> radius, bool strict,
+               bool validateConnectivity) {
+                if (!weighted) {
+                    throw std::invalid_argument("weighted tree must not be null");
+                }
+                return computeCanonicalRankedSaliencyEdgeMapPy(*weighted, std::move(valuation), radius, strict, validateConnectivity);
+            },
+            "tree"_a, "valuation"_a, "radius"_a = py::none(), "strict"_a = false, "validateConnectivity"_a = true,
+            R"doc(Project and rank only hierarchy levels that actually occur on graph edges.
+
+Same-owner edges form the base rank when present. Unlike node-wise ranking,
+unused leaf or incomparable-node values cannot introduce gaps in the canonical
+edge scale. The input may contain negative values because only its order is
+retained.)doc")
+        .def_static(
+            "computeTopologicalLevelEdgeMap",
+            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, std::optional<double> radius) {
+                if (!weighted) {
+                    throw std::invalid_argument("weighted tree must not be null");
+                }
+                return computeTopologicalLevelEdgeMapPy(*weighted, radius);
+            },
+            "tree"_a, "radius"_a = py::none(),
+            R"doc(Compute a topological-level hierarchy saliency map on adjacency edges.
+
+Leaf internal nodes receive level 0, and each ancestor receives one plus the
+maximum level of its children.)doc")
+        .def_static(
+            "computeNormalizedAltitudeEdgeMap",
+            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, std::optional<double> radius) {
+                if (!weighted) {
+                    throw std::invalid_argument("weighted tree must not be null");
+                }
+                return computeNormalizedAltitudeEdgeMapPy(*weighted, radius);
+            },
+            "tree"_a, "radius"_a = py::none(),
+            R"doc(Compute a normalized-altitude hierarchy saliency map on adjacency edges.
+
+Values are doubles in [0, 1], oriented so that ancestors are greater than or
+equal to descendants for max-trees and min-trees.)doc");
+
+    py::class_<ComponentTreePartitionHierarchyAdapter>(m, "ComponentTreePartitionHierarchyAdapter", py::module_local(false),
+                                                       "Explicit proper-part completion of a component tree into connected graph partitions.")
+        .def_static(
+            "validate",
+            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, std::optional<double> radius) {
+                if (!weighted) {
+                    throw std::invalid_argument("weighted tree must not be null");
+                }
+                const RegularGridAdjacency2D adjacency = saliencyAdjacencyPy(*weighted, radius, "ComponentTreePartitionHierarchyAdapter.validate");
+                ComponentTreePartitionHierarchyAdapter::validate(weighted->topology(), adjacency);
+            },
+            "tree"_a, "radius"_a = py::none(), "Validate the connected proper-part completion in the selected graph.")
+        .def_static(
+            "computePartitionAppearanceLevels",
+            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted) {
+                if (!weighted) {
+                    throw std::invalid_argument("weighted tree must not be null");
+                }
+                std::vector<int> levels = ComponentTreePartitionHierarchyAdapter::computePartitionAppearanceLevels(weighted->topology());
+                const int size = static_cast<int>(levels.size());
+                return pybind_utils::toNumpyOwned(std::move(levels), size);
+            },
+            "tree"_a,
+            R"doc(Return positive partition-appearance levels for the component-tree completion.
+
+Use these levels with `HierarchyLevelConvention.PartitionAppearanceLevel` to
+apply the exact `level(LCA)-1` convention.)doc")
+        .def_static(
+            "computeSaliencyEdgeMap",
+            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, py::array partitionAppearanceLevels, std::optional<double> radius,
+               bool strict) {
+                if (!weighted) {
+                    throw std::invalid_argument("weighted tree must not be null");
+                }
+                return computeSaliencyEdgeMapPy(*weighted, std::move(partitionAppearanceLevels), radius, strict,
+                                                HierarchyLevelConvention::PartitionAppearanceLevel, true,
+                                                "ComponentTreePartitionHierarchyAdapter.computeSaliencyEdgeMap");
+            },
+            "tree"_a, "partitionAppearanceLevels"_a, "radius"_a = py::none(), "strict"_a = false,
+            R"doc(Project positive partition-appearance levels using `level(LCA)-1`.
+
+The component-tree support completion is validated for connectivity in the
+selected graph before projection.)doc");
+
+    py::class_<ShapeSpaceSaliency>(m, "ShapeSpaceSaliency", py::module_local(false),
+                                   R"doc(Xu shaping extinction values on the tree-node graph and their maximum-on-contours image projection.
+
+Primary reference: Yongchao Xu, Edwin Carlinet, Thierry Géraud, and Laurent
+Najman, "Hierarchical Segmentation Using Tree-Based Shape Spaces," IEEE
+Transactions on Pattern Analysis and Machine Intelligence 39(3):457-469, 2017,
+https://doi.org/10.1109/TPAMI.2016.2554550, Section 4.3. The minima construction
+is generalized here to minima or maxima and regular-grid graph edges.)doc")
+        .def_static(
+            "computeExtinctionValues",
+            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, py::array attribute, ShapeSpaceExtremaPolarity polarity) {
+                if (!weighted) {
+                    throw std::invalid_argument("weighted tree must not be null");
+                }
+                return computeShapeSpaceExtinctionValuesPy(*weighted, std::move(attribute), polarity);
+            },
+            "tree"_a, "attribute"_a, "polarity"_a,
+            R"doc(Compute shaping extinction values on the original tree-node graph.
+
+`attribute` must be a dense float32 or float64 array with one value per
+internal NodeId slot. The values need not be monotone on the original tree.
+Parent-child relations form the graph for a second component-tree computation;
+`polarity` selects its local minima or maxima. The returned dictionary contains
+an `extrema` list and the dense extinction array `nodeScores`, preserving the
+input dtype.)doc")
+        .def_static(
+            "projectContourScores",
+            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, py::array nodeScores, std::optional<double> radius) {
+                if (!weighted) {
+                    throw std::invalid_argument("weighted tree must not be null");
+                }
+                return projectShapeSpaceContourScoresPy(*weighted, std::move(nodeScores), radius);
+            },
+            "tree"_a, "nodeScores"_a, "radius"_a = py::none(),
+            R"doc(Project dense original-node scores onto their full region contours.
+
+Every image adjacency edge receives the maximum score among original regions
+whose contour contains that edge. The return value is the standard edge-map
+dictionary. If `radius` is omitted, the tree's stored construction adjacency is
+used. This operation is distinct from projecting an LCA valuation.)doc")
+        .def_static(
+            "compute",
+            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, py::array attribute, ShapeSpaceExtremaPolarity polarity,
+               std::optional<double> radius) {
+                if (!weighted) {
+                    throw std::invalid_argument("weighted tree must not be null");
+                }
+                return computeShapeSpaceSaliencyPy(*weighted, std::move(attribute), polarity, radius);
+            },
+            "tree"_a, "attribute"_a, "polarity"_a, "radius"_a = py::none(),
+            R"doc(Compute Xu shaping extinctions and their maximum-on-contours map.
+
+The returned dictionary contains `extrema`, dense extinction `nodeScores`, and
+the standard edge-map dictionary `edgeMap`. If `radius` is omitted, the tree's
+stored construction adjacency is used.)doc");
+
+    py::class_<HierarchySaliencyMapProjection>(m, "HierarchySaliencyMapProjection", py::module_local(false),
+                                               "Derived projections and contour materializations of hierarchy edge saliency maps.")
+        .def_static(
+            "edgeMapToPixelImage", [](py::dict edgeMap, EdgeToPixelReducer reducer) { return edgeMapToPixelImagePy(std::move(edgeMap), reducer); }, "edgeMap"_a,
+            "reducer"_a = EdgeToPixelReducer::Max,
+            R"doc(Rasterize an edge-indexed map into a pixel image for display.
+
+This helper is a visualization projection only. Each edge value contributes to
+both endpoint pixels. `EdgeToPixelReducer.Max` writes the maximum incident edge
+value per pixel; `EdgeToPixelReducer.Mean` writes the arithmetic mean of
+incident edge values. The formal saliency representation remains the edge map
+dictionary.)doc")
+        .def_static(
+            "thresholdCut", [](py::dict edgeMap, double threshold) { return thresholdCutPy(std::move(edgeMap), threshold); }, "edgeMap"_a, "threshold"_a,
+            R"doc(Threshold an edge saliency map into a contour edge set.
+
+The input is the dictionary returned by `HierarchySaliencyMap`. The returned
+dictionary contains `numRows`, `numCols`, `adjacencyRadius`, `sources`, and
+`targets`, selecting edges whose saliency is greater than or equal to
+`threshold`.)doc")
+        .def_static(
+            "nodeContourEdges",
+            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, std::optional<double> radius) {
+                if (!weighted) {
+                    throw std::invalid_argument("weighted tree must not be null");
+                }
+                return nodeContourEdgesPy(*weighted, radius);
+            },
+            "tree"_a, "radius"_a = py::none(),
+            R"doc(Project transition adjacency edges onto their hierarchy owner node.
+
+Each returned edge carries the node id `LCA(owner(source), owner(target))` in the
+`nodes` array. Edges whose endpoints have the same owner are omitted and have
+implicit value 0 in the full formal saliency map. If `radius` is not provided,
+the tree's stored construction adjacency is used.)doc")
+        .def_static(
+            "computeIncrementalNodeContours",
+            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, std::optional<double> radius) {
+                if (!weighted) {
+                    throw std::invalid_argument("weighted tree must not be null");
+                }
+                return computeIncrementalNodeContoursPy(*weighted, radius);
+            },
+            "tree"_a, "radius"_a = py::none(),
+            R"doc(Compute per-node incremental contour edges.
+
+The returned dictionary contains `offsets`, `sources`, and `targets`.
+For node `u`, the slice `offsets[u]:offsets[u + 1]` stores all transition
+adjacency edges whose endpoint owners differ and whose endpoint-owner LCA is
+`u`.)doc")
+        .def_static(
+            "projectNodeValuation",
+            [](py::dict contours, py::array nodeValuation) {
+                return projectNodeValuationOnIncrementalContoursPy(std::move(contours), std::move(nodeValuation));
+            },
+            "contours"_a, "nodeValuation"_a,
+            R"doc(Project a dense node valuation onto per-node transition contour edges.
+
+`contours` must be the dictionary returned by `computeIncrementalNodeContours`.
+`nodeValuation` must be a 1D float32 or float64 array with one value per dense
+internal node slot. The result is sparse over transition edges; same-owner graph
+edges are omitted and have implicit value 0 in the full formal saliency map.)doc")
+        .def_static(
+            "thresholdByNodeValuation",
+            [](py::dict contours, py::array nodeValuation, double threshold) {
+                return thresholdIncrementalContoursByNodeValuationPy(std::move(contours), std::move(nodeValuation), threshold);
+            },
+            "contours"_a, "nodeValuation"_a, "threshold"_a,
+            R"doc(Threshold per-node transition contours by dense node valuation.
+
+All edges in a node slice are selected when `nodeValuation[node] >= threshold`.)doc");
 
     weightedCls
         .def(

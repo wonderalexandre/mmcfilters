@@ -85,8 +85,16 @@ mmcfilters_add_unit_test(unit_weighted_altitude_templates
     trees/test_weighted_altitude_templates.cpp
 )
 
+mmcfilters_add_unit_test(unit_hierarchy_saliency_map
+    trees/test_hierarchy_saliency_map.cpp
+)
+
 mmcfilters_add_unit_test(unit_min_max_residual_tree_factory
     trees/sdrt/test_min_max_residual_tree_factory.cpp
+)
+
+mmcfilters_add_unit_test(unit_shape_space_saliency
+    trees/test_shape_space_saliency.cpp
 )
 
 mmcfilters_add_unit_test(unit_owner_state_contracts
@@ -237,6 +245,20 @@ if(TARGET mmcfilters)
         NAME unit_python_filter_wrappers
         COMMAND ${MMCFILTERS_PYTHON_TEST_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_filter_wrappers.py
+            ${CMAKE_BINARY_DIR}
+    )
+
+    add_test(
+        NAME unit_python_hierarchy_saliency_map
+        COMMAND ${MMCFILTERS_PYTHON_TEST_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_hierarchy_saliency_map.py
+            ${CMAKE_BINARY_DIR}
+    )
+
+    add_test(
+        NAME unit_python_shape_space_saliency
+        COMMAND ${MMCFILTERS_PYTHON_TEST_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_shape_space_saliency.py
             ${CMAKE_BINARY_DIR}
     )
 

@@ -1,5 +1,6 @@
 #include "support/TestSupport.hpp"
 
+#include "mmcfilters/trees/saliency/HierarchySaliencyMap.hpp"
 #include "mmcfilters/trees/sdrt/MinMaxResidualTreeBuilder.hpp"
 #include "sdrt_reference/OptimizedUnionFindSelfDualResidualTreeBuilder.hpp"
 #include "sdrt_reference/oracle/rag/SingleAdjacencySaturatedResidualTreeOracle.hpp"
@@ -83,7 +84,7 @@ void requireResidualSemantics(const MorphologicalTree& tree, const RegularGridAd
     requireEqual(stored->getNumCols(), adjacency.getNumCols(), label + ": adjacency columns");
 }
 
-void testFactoryModesAndSemantics() {
+void testFactoryModesAndSaliencyIntegration() {
     const auto image = makeImage(3, 4,
                                  {
                                      0,
@@ -109,6 +110,12 @@ void testFactoryModesAndSemantics() {
     requireResidualSemantics(unrestricted.topology(), adjacency, "unrestricted residual semantics");
     requireResidualSemantics(saturated.topology(), adjacency, "saturated residual semantics");
 
+    const auto unrestrictedSaliency = HierarchySaliencyMap::computeTopologicalLevelEdgeMap(unrestricted.topology());
+    const auto saturatedSaliency = HierarchySaliencyMap::computeTopologicalLevelEdgeMap(saturated.topology());
+    require(!unrestrictedSaliency.empty(), "unrestricted residual topological saliency");
+    require(!saturatedSaliency.empty(), "saturated residual topological saliency");
+    requireThrows<std::invalid_argument>([&] { static_cast<void>(HierarchySaliencyMap::computeNormalizedAltitudeEdgeMap(unrestricted)); },
+                                         "residual gray-level altitude is not a hierarchy saliency valuation");
 }
 
 void testContrastInversion() {
@@ -244,7 +251,7 @@ void testConfigurablePolicyEquivalence() {
 } // namespace
 
 int main() {
-    testFactoryModesAndSemantics();
+    testFactoryModesAndSaliencyIntegration();
     testContrastInversion();
     testDirectBuilderPolicies();
     testExhaustiveDifferentialOracles();

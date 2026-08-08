@@ -138,17 +138,45 @@ standard max-tree and min-tree producers provide. The constructor attribute
 array must be 1D `np.float32` or `np.float64`, C-contiguous, and indexed by
 dense internal `NodeId`. The dominant extremum is reported with
 `numpy.finfo(dtype).max`/`std::numeric_limits<Real>::max()`. The `contourMap`
-method returns an image-domain contour visualization.
+method returns an image-domain contour visualization; use
+`computeFormalSaliencyEdgeMap` for the persistence-based hierarchical-watershed
+QFZ saliency projection.
 
 Primary extinction reference: Alexandre Gonçalves Silva and Roberto de Alencar
 Lotufo, "Efficient computation of new extinction values from extended component
 tree," Pattern Recognition Letters 32(1):79-90, 2011,
-https://doi.org/10.1016/j.patrec.2010.07.019.)doc")
+https://doi.org/10.1016/j.patrec.2010.07.019. The formal hierarchical-watershed
+projection follows Section 8.1 of Jean Cousty, Laurent Najman, Yukiko Kenmochi,
+and Silvio Guimarães, "Hierarchical segmentations with graphs: quasi-flat zones,
+minimum spanning trees, and saliency maps," Journal of Mathematical Imaging and
+Vision 60(4):479-502, 2018, https://doi.org/10.1007/s10851-017-0768-7.)doc")
         .def(py::init<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, py::array>(), "tree"_a, "attribute"_a,
              "Compute extinction values from a node-indexed attribute buffer.")
         .def("filtering", &ExtinctionValuesPybind::filtering, "selection"_a, "Reconstruct an image by applying an extinction selection policy.")
         .def("contourMap", &ExtinctionValuesPybind::contourMap, "selection"_a, "scorePolicy"_a,
              "Return a 2D contour visualization from an extinction selection policy.")
+        .def("getExtinctionValueAttribute", &ExtinctionValuesPybind::getExtinctionValueAttribute,
+             R"doc(Return the dense node extinction attribute induced by extinction records.
+
+Each regional-extremum leaf receives its raw extinction value and every non-leaf
+node receives the maximum extinction value among the extrema contained in its
+subtree. The result is compatible with
+`HierarchySaliencyMap.computeSaliencyEdgeMap`.)doc")
+        .def("computeRankedExtinctionValueAttribute", &ExtinctionValuesPybind::computeRankedExtinctionValueAttribute,
+             "Return dense non-negative integer ranks for the extinction-value attribute.")
+        .def("computeFormalSaliencyEdgeMap", &ExtinctionValuesPybind::computeFormalSaliencyEdgeMap, "radius"_a = py::none(), "ranked"_a = false,
+             R"doc(Return the edge-indexed hierarchical-watershed saliency map induced by extinction.
+
+This method follows the Cousty persistence construction: it builds an
+altitude-ordered MST/BPTAO, assigns each binary merge the minimum of its two
+max-descendant extinction values, and returns the full-graph QFZ saliency map.
+Set `ranked=True` for the canonical dense edge scale.)doc")
+        .def("computeMonotoneExtinctionProjection", &ExtinctionValuesPybind::computeMonotoneExtinctionProjection, "radius"_a = py::none(), "ranked"_a = false,
+             R"doc(Project the max-propagated extinction node attribute directly by LCA.
+
+This method preserves the former `computeFormalSaliencyEdgeMap` behavior for
+experiments that intentionally use the monotone node valuation. It is not the
+Cousty hierarchical-watershed persistence construction.)doc")
         .def("getRegionalExtrema", &ExtinctionValuesPybind::getRegionalExtremaPy, "Return extinction tuples as (leafNodeId, cutoffNodeId, value).");
 }
 

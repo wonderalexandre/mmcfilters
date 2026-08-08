@@ -7,6 +7,7 @@
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
 #include <concepts>
+#include <optional>
 #include <type_traits>
 #include <variant>
 namespace mmcfilters {
@@ -92,6 +93,23 @@ class ExtinctionValuesPybind {
         return ExtinctionValues<std::uint8_t, Real>(weighted, pybind_utils::toSharedPtr<Real>(typed));
     }
 
+    /**
+     * @brief Converts an edge-indexed saliency map to a Python dictionary.
+     *
+     * @param edgeMap Saliency values indexed by graph edge.
+     * @return Dictionary containing the edge map values and grid metadata.
+     */
+    template <class Value> static py::dict edgeSaliencyMapToDict(EdgeSaliencyMap<Value>&& edgeMap) {
+        const int numEdges = static_cast<int>(edgeMap.values.size());
+        py::dict result;
+        result["numRows"] = edgeMap.numRows;
+        result["numCols"] = edgeMap.numCols;
+        result["adjacencyRadius"] = edgeMap.adjacencyRadius;
+        result["sources"] = pybind_utils::toNumpyOwned(std::move(edgeMap.sources), numEdges);
+        result["targets"] = pybind_utils::toNumpyOwned(std::move(edgeMap.targets), numEdges);
+        result["values"] = pybind_utils::toNumpyOwned(std::move(edgeMap.values), numEdges);
+        return result;
+    }
 
     /**
      * @brief Creates an extinction-value computer for the runtime attribute type.
@@ -154,6 +172,101 @@ class ExtinctionValuesPybind {
             extinction_);
     }
 
+    /**
+     * @brief Returns extinction value attribute.
+     *
+     * @return Extinction value attribute.
+     */
+    py::array getExtinctionValueAttribute() {
+        return std::visit(
+            [](auto& extinction) -> py::array {
+                const auto& cached = extinction.getExtinctionValueAttribute();
+                std::vector<typename std::decay_t<decltype(extinction)>::value_type> valuation(cached.begin(), cached.end());
+                const int numValues = static_cast<int>(valuation.size());
+                return pybind_utils::toNumpyOwned(std::move(valuation), numValues);
+            },
+            extinction_);
+    }
+
+    /**
+     * @brief Computes ranked extinction value attribute.
+     *
+     * @return Computed ranked extinction value attribute.
+     */
+    py::array computeRankedExtinctionValueAttribute() {
+        return std::visit(
+            [](auto& extinction) -> py::array {
+                std::vector<int> valuation = extinction.computeRankedExtinctionValueAttribute();
+                const int numValues = static_cast<int>(valuation.size());
+                return pybind_utils::toNumpyOwned(std::move(valuation), numValues);
+            },
+            extinction_);
+    }
+
+    /**
+     * @brief Computes formal saliency edge map.
+     *
+     * @param radius Neighbourhood radius used by the operation.
+     * @param ranked Ranked extrema from which the selection is produced.
+     * @return Computed formal saliency edge map.
+     */
+    py::dict computeFormalSaliencyEdgeMap(std::optional<double> radius = std::nullopt, bool ranked = false) {
+        const MorphologicalTree& tree = weightedOwner_->topology();
+        std::optional<RegularGridAdjacency2D> adjacency;
+        if (radius.has_value()) {
+            adjacency.emplace(pybind_utils::makeRegularGridAdjacency2D(tree.getNumRowsOfGridDomain2D(), tree.getNumColsOfGridDomain2D(), *radius,
+                                                                       "ExtinctionValues.computeFormalSaliencyEdgeMap"));
+        }
+
+        return std::visit(
+            [&](auto& extinction) -> py::dict {
+                if (ranked) {
+                    if (adjacency.has_value()) {
+                        return edgeSaliencyMapToDict(extinction.computeRankedFormalSaliencyEdgeMap(*adjacency));
+                    }
+                    return edgeSaliencyMapToDict(extinction.computeRankedFormalSaliencyEdgeMap());
+                }
+
+                if (adjacency.has_value()) {
+                    return edgeSaliencyMapToDict(extinction.computeFormalSaliencyEdgeMap(*adjacency));
+                }
+                return edgeSaliencyMapToDict(extinction.computeFormalSaliencyEdgeMap());
+            },
+            extinction_);
+    }
+
+    /**
+     * @brief Computes the legacy max-propagated extinction LCA projection.
+     *
+     * @param radius Optional projection-neighbourhood radius. When omitted, the
+     * tree must carry one unambiguous stored adjacency.
+     * @param ranked Whether to return dense effective-edge ranks instead of raw
+     * extinction values.
+     * @return Python dictionary containing the edge domain and projected values.
+     */
+    py::dict computeMonotoneExtinctionProjection(std::optional<double> radius = std::nullopt, bool ranked = false) {
+        const MorphologicalTree& tree = weightedOwner_->topology();
+        std::optional<RegularGridAdjacency2D> adjacency;
+        if (radius.has_value()) {
+            adjacency.emplace(pybind_utils::makeRegularGridAdjacency2D(tree.getNumRowsOfGridDomain2D(), tree.getNumColsOfGridDomain2D(), *radius,
+                                                                       "ExtinctionValues.computeMonotoneExtinctionProjection"));
+        }
+
+        return std::visit(
+            [&](auto& extinction) -> py::dict {
+                if (ranked) {
+                    if (adjacency.has_value()) {
+                        return edgeSaliencyMapToDict(extinction.computeRankedMonotoneExtinctionProjection(*adjacency));
+                    }
+                    return edgeSaliencyMapToDict(extinction.computeRankedMonotoneExtinctionProjection());
+                }
+                if (adjacency.has_value()) {
+                    return edgeSaliencyMapToDict(extinction.computeMonotoneExtinctionProjection(*adjacency));
+                }
+                return edgeSaliencyMapToDict(extinction.computeMonotoneExtinctionProjection());
+            },
+            extinction_);
+    }
 
     /**
      * @brief Applies filtering.

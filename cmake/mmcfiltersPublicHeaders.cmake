@@ -27,6 +27,11 @@ set(MMCFILTERS_PUBLIC_HEADER_ENTRYPOINTS
     ${MMCFILTERS_ROOT}/trees/WeightedMorphologicalTree.hpp
     ${MMCFILTERS_ROOT}/trees/WeightedTreeView.hpp
     ${MMCFILTERS_ROOT}/trees/adjust/CasfComponentTrees.hpp
+    ${MMCFILTERS_ROOT}/trees/saliency/HierarchySaliencyMap.hpp
+    ${MMCFILTERS_ROOT}/trees/saliency/HierarchySaliencyMapProjection.hpp
+    ${MMCFILTERS_ROOT}/trees/saliency/HierarchySaliencyMapValidation.hpp
+    ${MMCFILTERS_ROOT}/trees/saliency/HierarchicalWatershedSaliency.hpp
+    ${MMCFILTERS_ROOT}/trees/saliency/ShapeSpaceSaliency.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/MinMaxResidualTreeBuilder.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/SdrtTiePolicy.hpp
     ${MMCFILTERS_ROOT}/utils/Altitude.hpp
@@ -116,6 +121,11 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/trees/detail/TreeAltitudeDeltaNeighborhood.hpp
     ${MMCFILTERS_ROOT}/trees/detail/TreeStabilityNeighborhood.hpp
     ${MMCFILTERS_ROOT}/trees/detail/TreeTraversalDetail.hpp
+    ${MMCFILTERS_ROOT}/trees/saliency/HierarchySaliencyMap.hpp
+    ${MMCFILTERS_ROOT}/trees/saliency/HierarchySaliencyMapProjection.hpp
+    ${MMCFILTERS_ROOT}/trees/saliency/HierarchySaliencyMapValidation.hpp
+    ${MMCFILTERS_ROOT}/trees/saliency/HierarchicalWatershedSaliency.hpp
+    ${MMCFILTERS_ROOT}/trees/saliency/ShapeSpaceSaliency.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/MinMaxResidualTreeBuilder.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/SdrtTiePolicy.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/detail/UnionFindRegionTypes.hpp

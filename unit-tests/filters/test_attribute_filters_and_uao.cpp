@@ -514,22 +514,22 @@ int main() {
                            isMaxtree ? "weighted max-tree ExtinctionValues double attr filtering" : "weighted min-tree ExtinctionValues double attr filtering");
         requireVectorEqual(collectImageValuesAs<float>(weightedExtinction64.contourMap(keepAllDouble, ExtinctionContourScorePolicy::RankScore)),
                            collectImageValues(weightedExtinction.contourMap(keepAllFloat, ExtinctionContourScorePolicy::RankScore)),
-                           isMaxtree ? "weighted max-tree ExtinctionValues double attr contour map" : "weighted min-tree ExtinctionValues double attr contour map");
+                           isMaxtree ? "weighted max-tree ExtinctionValues double attr saliency" : "weighted min-tree ExtinctionValues double attr saliency");
         requireVectorEqual(collectImageValues(viewExtinction.filtering(keepAllFloat)), collectImageValues(weightedExtinction.filtering(keepAllFloat)),
                            isMaxtree ? "weighted max-tree ExtinctionValues<std::uint8_t> filtering via external view object"
                                      : "weighted min-tree ExtinctionValues<std::uint8_t> filtering via external view object");
         requireVectorEqual(collectImageValues(viewExtinction.contourMap(keepAllFloat, ExtinctionContourScorePolicy::RankScore)),
                            collectImageValues(weightedExtinction.contourMap(keepAllFloat, ExtinctionContourScorePolicy::RankScore)),
-                           isMaxtree ? "weighted max-tree ExtinctionValues<std::uint8_t> contour map via external view object"
-                                     : "weighted min-tree ExtinctionValues<std::uint8_t> contour map via external view object");
+                           isMaxtree ? "weighted max-tree ExtinctionValues<std::uint8_t> saliency via external view object"
+                                     : "weighted min-tree ExtinctionValues<std::uint8_t> saliency via external view object");
         requireVectorEqual(collectImageValues(int16Extinction.filtering(keepAllFloat)),
                            collectImageValuesAs<std::int16_t>(weightedExtinction.filtering(keepAllFloat)),
                            isMaxtree ? "weighted max-tree ExtinctionValues<std::uint8_t> filtering via int16 view object"
                                      : "weighted min-tree ExtinctionValues<std::uint8_t> filtering via int16 view object");
         requireVectorEqual(collectImageValues(int16Extinction.contourMap(keepAllFloat, ExtinctionContourScorePolicy::RankScore)),
                            collectImageValues(weightedExtinction.contourMap(keepAllFloat, ExtinctionContourScorePolicy::RankScore)),
-                           isMaxtree ? "weighted max-tree ExtinctionValues<std::uint8_t> contour map via int16 view object"
-                                     : "weighted min-tree ExtinctionValues<std::uint8_t> contour map via int16 view object");
+                           isMaxtree ? "weighted max-tree ExtinctionValues<std::uint8_t> saliency via int16 view object"
+                                     : "weighted min-tree ExtinctionValues<std::uint8_t> saliency via int16 view object");
 
         UltimateAttributeOpening<std::uint8_t> viewUao(externalView, attr);
         viewUao.execute(static_cast<int>(maxCriterion));

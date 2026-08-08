@@ -257,6 +257,25 @@ Call `materializeAll()` only when the workload will revisit many contours:
 contours.materializeAll()
 ```
 
+### Contour Traces
+
+`ContourTraceComputation` is the geometric contour API. It exposes side-level
+boundary edges and ordered loops, separating external loops from internal loops.
+
+```python
+traces = mmcfilters.ContourTraceComputation.extraction(max_tree)
+
+root_edges = traces.getEdges(max_tree.getRoot())
+root_loops = traces.getLoops(max_tree.getRoot())
+
+for loop in root_loops:
+    edges = traces.getLoopEdges(loop)
+```
+
+Loop metadata includes `kind`, `edge_count`, and `signed_area2`. External loops
+have positive signed area under the C++ orientation convention; internal loops
+have negative signed area.
+
 ## Higra Interoperability
 
 `exportHigraHierarchy()` creates a compact Higra-style `(parent, altitude)`

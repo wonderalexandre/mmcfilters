@@ -236,4 +236,7 @@ setters, or a mutable topology handle from `WeightedMorphologicalTree`.
   lifetime.
 - [Python API Guide](python-api.md): Python construction, `NodeId` domains,
   attributes, filters, contours, and Higra interop.
-- [Incremental Contours](contours.md): contour extraction over tree supports.
+- [Incremental Contours](contours.md): pixel-contour extraction over tree
+  supports.
+- [Contour Traces](contour-traces.md): definitive geometric contour API with
+  oriented boundary edges and external/internal loops.

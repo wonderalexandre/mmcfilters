@@ -54,6 +54,7 @@ file(WRITE "${consumer_source_dir}/CMakeLists.txt"
 "    message(FATAL_ERROR \"mmcfilters::core target was not exported\")\n"
 "endif()\n"
 "add_executable(consumer main.cpp)\n"
+"set_property(TARGET consumer PROPERTY NO_SYSTEM_FROM_IMPORTED TRUE)\n"
 "target_link_libraries(consumer PRIVATE mmcfilters::core)\n")
 
 file(WRITE "${consumer_source_dir}/main.cpp"

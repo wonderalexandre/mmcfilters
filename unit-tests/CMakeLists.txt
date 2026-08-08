@@ -141,6 +141,14 @@ mmcfilters_add_unit_test(unit_contours_on_morphological_tree
     contours/test_contours_on_morphological_tree.cpp
 )
 
+mmcfilters_add_unit_test(unit_contour_traces_on_morphological_tree
+    contours/test_contour_traces_on_morphological_tree.cpp
+)
+target_compile_definitions(unit_contour_traces_on_morphological_tree
+    PRIVATE
+        MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
+)
+
 mmcfilters_add_unit_test(unit_extinction_values_on_morphological_tree
     filters/test_extinction_values_on_morphological_tree.cpp
 )
@@ -225,6 +233,13 @@ if(TARGET mmcfilters)
         NAME unit_python_filter_wrappers
         COMMAND ${MMCFILTERS_PYTHON_TEST_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_filter_wrappers.py
+            ${CMAKE_BINARY_DIR}
+    )
+
+    add_test(
+        NAME unit_python_contour_traces
+        COMMAND ${MMCFILTERS_PYTHON_TEST_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_contour_traces.py
             ${CMAKE_BINARY_DIR}
     )
 endif()

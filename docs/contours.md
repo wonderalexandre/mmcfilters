@@ -2,6 +2,9 @@
 
 `ContoursComputedIncrementally` stores compact per-node contour deltas during
 extraction and materializes final contours lazily when callers iterate them.
+It is the pixel-contour compatibility API. New geometry-sensitive contour work
+should use [Contour Traces](contour-traces.md), which represents oriented
+boundary edges and separates external and internal loops.
 
 This document covers the public C++/Python API, benchmark interpretation, and
 internal design of `mmcfilters/contours/ContoursComputedIncrementally.hpp` and

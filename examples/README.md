@@ -26,6 +26,14 @@ benchmarking, and implementation debugging.
   or with a grayscale image file:
   `./build/examples/mmcfilters_contour_benchmark path/to/image.png 5`
 
+- `mmcfilters_contour_trace_benchmark`
+  Measures definitive geometric contour traces: extraction, side-level edge
+  materialization, ordered loop tracing, random-order access, and
+  `materializeAll()`. Run with a synthetic square image:
+  `./build/examples/mmcfilters_contour_trace_benchmark 512 512 5`
+  or with a grayscale image file:
+  `./build/examples/mmcfilters_contour_trace_benchmark path/to/image.png 5`
+
 - `mmcfilters_maxdist_benchmark`
   Measures `MAX_DIST` attribute computation on max-trees and min-trees with
   adjacency metadata. Run:
@@ -53,6 +61,14 @@ benchmarking, and implementation debugging.
   Benchmarks local-event bitquad and contour-side computations against baseline
   attribute paths. Run:
   `./build/examples/mmcfilters_local_events_bitquads_benchmark 256 256 3 --tos`
+
+- `mmcfilters_contour_trace_profile`
+  Profiles contour trace loop materialization after edge caches are ready,
+  separating adjacency construction, loop walking, cache commit, and scratch
+  release time. It also reports outgoing-vertex degree distribution and
+  successor-selection scans so loop-walking bottlenecks can be classified
+  before changing the trace data layout. Run:
+  `./build/examples/mmcfilters_contour_trace_profile path/to/image.png 3`
 
 - `mmcfilters_tos_bitquad_projection_export`
   Exports Tree-of-Shapes bitquad projection CSV files for inspection. Run:

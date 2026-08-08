@@ -8,6 +8,7 @@ PYBIND11_MODULE(mmcfilters, m) {
     mmcfilters::pybindings::initMorphologicalTree(m);
     mmcfilters::pybindings::initAttributeComputation(m);
     mmcfilters::pybindings::initContoursComputedIncrementally(m);
+    mmcfilters::pybindings::initContourTraceComputation(m);
     mmcfilters::pybindings::initAttributeFilters(m);
     mmcfilters::pybindings::initDepthStableRegionComputer(m);
     mmcfilters::pybindings::initExtinctionValues(m);

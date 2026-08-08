@@ -76,6 +76,12 @@ ContourComputation = _native.ContourComputation
 Contours = _native.Contours
 ContourRange = _native.ContourRange
 ContoursIterator = _native.ContoursIterator
+ContourTraceComputation = _native.ContourTraceComputation
+ContourTraces = _native.ContourTraces
+ContourTraceEdge = _native.ContourTraceEdge
+ContourTraceLoop = _native.ContourTraceLoop
+ContourTraceSide = _native.ContourTraceSide
+ContourLoopKind = _native.ContourLoopKind
 ExtinctionValues = _native.ExtinctionValues
 DualMinMaxTreeIncrementalFilter = _native.DualMinMaxTreeIncrementalFilter
 CasfComponentTrees = _native.CasfComponentTrees
@@ -98,6 +104,12 @@ __all__ = [
     "Contours",
     "ContourRange",
     "ContoursIterator",
+    "ContourTraceComputation",
+    "ContourTraces",
+    "ContourTraceEdge",
+    "ContourTraceLoop",
+    "ContourTraceSide",
+    "ContourLoopKind",
     "ExtinctionValues",
     "DualMinMaxTreeIncrementalFilter",
     "CasfComponentTrees",

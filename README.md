@@ -166,7 +166,8 @@ API guides:
 - Editing API and derived-state lifetime: [docs/editing-api.md](docs/editing-api.md)
 - Higra interoperability: [docs/higra-interoperability.md](docs/higra-interoperability.md)
 - Python interface: [docs/python-api.md](docs/python-api.md)
-- Incremental contours: [docs/contours.md](docs/contours.md)
+- Incremental pixel contours: [docs/contours.md](docs/contours.md)
+- Geometric contour traces: [docs/contour-traces.md](docs/contour-traces.md)
 
 Contributor design notes:
 

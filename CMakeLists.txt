@@ -6,9 +6,9 @@
 #   2. Para compilar apenas o núcleo C++ use `-DMMCFILTERS_BUILD_PYTHON=OFF`.
 #   3. Para habilitar os testes use `-DMMCFILTERS_BUILD_TESTS=ON` e então
 #      `cmake --build build --target testeQualquer` ou `ctest`.
-#   4. O módulo Python reutiliza a biblioteca C++ (alvo `mmcfilters::core`) e
-#      pode ser instalado via `cmake --install build` ou ferramentas como
-#      `scikit-build-core`.
+#   4. O CMake produz um pacote Python importável na árvore de build para testes
+#      locais. A instalação Python oficial usa `pip`/`scikit-build-core`; uma
+#      instalação CMake publica apenas o pacote C++.
 
 cmake_minimum_required(VERSION 3.20)
 project(mmcfilters LANGUAGES CXX)
@@ -22,6 +22,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(MMCFILTERS_BUILD_PYTHON "Build the pybind11 extension module" ON)
 option(MMCFILTERS_BUILD_TESTS "Build C++ test executables" OFF)
 option(MMCFILTERS_BUILD_EXAMPLES "Build example executables" OFF)
+option(MMCFILTERS_BUILD_BENCHMARKS "Build internal benchmark executables" OFF)
 option(MMCFILTERS_ENABLE_ASSERTS "Keep runtime asserts enabled even in Release" OFF)
 option(MMCFILTERS_ENABLE_DOC_TARGETS "Enable Doxygen documentation targets" ON)
 
@@ -91,20 +92,16 @@ if(MMCFILTERS_BUILD_PYTHON)
         ${MMCFILTERS_PYBIND_HEADERS}
     )
 
-    set(_PY_INSTALL_DIR "${SKBUILD_PLATLIB_DIR}")
-    if(NOT _PY_INSTALL_DIR)
-        if(DEFINED PYTHON_LIBRARY_DIR)
-            set(_PY_INSTALL_DIR "${PYTHON_LIBRARY_DIR}")
-        else()
-            include(GNUInstallDirs)
-            set(_PY_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}")
-        endif()
+    # scikit-build-core stages the native extension beside the Python sources
+    # selected by wheel.packages. A plain CMake install intentionally remains a
+    # complete C++ installation instead of publishing an incomplete Python
+    # package containing only the extension module.
+    if(DEFINED SKBUILD_PLATLIB_DIR AND NOT SKBUILD_PLATLIB_DIR STREQUAL "")
+        install(TARGETS mmcfilters
+            LIBRARY DESTINATION "${SKBUILD_PLATLIB_DIR}/mmcfilters"
+            RUNTIME DESTINATION "${SKBUILD_PLATLIB_DIR}/mmcfilters"
+            ARCHIVE DESTINATION "${SKBUILD_PLATLIB_DIR}/mmcfilters")
     endif()
-
-    install(TARGETS mmcfilters
-        LIBRARY DESTINATION "${_PY_INSTALL_DIR}/mmcfilters"
-        RUNTIME DESTINATION "${_PY_INSTALL_DIR}/mmcfilters"
-        ARCHIVE DESTINATION "${_PY_INSTALL_DIR}/mmcfilters")
 endif()
 
 if(MMCFILTERS_BUILD_TESTS)
@@ -116,9 +113,17 @@ if(MMCFILTERS_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
+if(MMCFILTERS_BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
+endif()
+
 if(MMCFILTERS_ENABLE_DOC_TARGETS)
     find_package(Doxygen QUIET)
     if(DOXYGEN_FOUND)
+        # Doxygen canonicalizes Markdown link targets. Canonicalize INPUT paths as
+        # well so documentation builds remain warning-free when the checkout is
+        # reached through a symlink (for example /Users/... -> /Volumes/...).
+        file(REAL_PATH "${CMAKE_CURRENT_SOURCE_DIR}" MMCFILTERS_DOCS_SOURCE_DIR)
         set(MMCFILTERS_DOCS_PUBLIC_DIR "${CMAKE_CURRENT_BINARY_DIR}/docs/public")
         set(MMCFILTERS_DOCS_INTERNAL_DIR "${CMAKE_CURRENT_BINARY_DIR}/docs/internal")
         set(MMCFILTERS_DOCS_PUBLIC_WARN_LOG "${CMAKE_CURRENT_BINARY_DIR}/docs/doxygen-public.log")

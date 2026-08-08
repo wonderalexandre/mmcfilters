@@ -77,7 +77,38 @@ def main() -> int:
     require(hasattr(mmcfilters, "__version__"), "package import must expose __version__")
     require(hasattr(mmcfilters, "WeightedMorphologicalTree"), "package import must expose WeightedMorphologicalTree")
     require(hasattr(mmcfilters, "MorphologicalTreeKind"), "package import must expose MorphologicalTreeKind")
+    require(hasattr(mmcfilters, "SdrtTiePolicy"), "package import must expose SdrtTiePolicy")
+    require(hasattr(mmcfilters, "HierarchySemantics"), "package import must expose HierarchySemantics")
+    require(hasattr(mmcfilters, "AltitudeOrder"), "package import must expose AltitudeOrder")
+    require(hasattr(mmcfilters, "AdjacencyMode"), "package import must expose AdjacencyMode")
+    require(hasattr(mmcfilters, "GridDomain2D"), "package import must expose GridDomain2D")
+    max_dist_requirements = mmcfilters.Attribute.requirements(
+        mmcfilters.Attribute.MAX_DIST
+    )
+    require(
+        max_dist_requirements
+        == {
+            "altitude": True,
+            "gridDomain2D": True,
+            "adjacency": "uniform",
+            "monotoneAltitudeOrder": True,
+            "altitudeForDirectionalAdjacency": False,
+            "canonical4Or8Adjacency": False,
+        },
+        "Python attribute requirements must expose the C++ capability contract",
+    )
     for api_module in (mmcfilters, mmcfilters._native):
+        for removed_name in (
+            "MorphologicalTree",
+            "MorphologicalTreeBase",
+            "AdjacencyRelation",
+            "DualAdjacencyPolicy",
+            "DirectionalAdjacency",
+        ):
+            require(
+                not hasattr(api_module, removed_name),
+                f"Python API must not expose removed compatibility name {removed_name}",
+            )
         require(
             not hasattr(api_module, "WeightedMorphologicalTreeInt32"),
             "Python API must not expose WeightedMorphologicalTreeInt32 while Python stays uint8-only",
@@ -90,9 +121,6 @@ def main() -> int:
             not hasattr(api_module, "WeightedTreeView"),
             "Python API must not expose WeightedTreeView while Python stays uint8-only",
         )
-    require(not hasattr(mmcfilters.MorphologicalTree, "MAX_TREE"), "MorphologicalTree must not expose legacy integer tree-type constants")
-    require(not hasattr(mmcfilters.MorphologicalTree, "MIN_TREE"), "MorphologicalTree must not expose legacy integer tree-type constants")
-    require(not hasattr(mmcfilters.MorphologicalTree, "TREE_OF_SHAPES"), "MorphologicalTree must not expose legacy integer tree-type constants")
     require(not hasattr(mmcfilters.WeightedMorphologicalTree, "MAX_TREE"), "WeightedMorphologicalTree must not expose legacy integer tree-type constants")
     require(not hasattr(mmcfilters.WeightedMorphologicalTree, "MIN_TREE"), "WeightedMorphologicalTree must not expose legacy integer tree-type constants")
     require(not hasattr(mmcfilters.WeightedMorphologicalTree, "TREE_OF_SHAPES"), "WeightedMorphologicalTree must not expose legacy integer tree-type constants")
@@ -149,15 +177,106 @@ def main() -> int:
     tree = weighted
     weighted_max_tree = mmcfilters.MorphologicalTreeFactory.createMaxTree(image)
     weighted_min_tree = mmcfilters.MorphologicalTreeFactory.createMinTree(image)
+    residual_tree = mmcfilters.MorphologicalTreeFactory.createSelfDualResidualTree(
+        image,
+        radius=1.0,
+    )
+    saturated_residual_tree = (
+        mmcfilters.MorphologicalTreeFactory.createSaturatedSelfDualResidualTree(
+            image,
+            infinityPixel=0,
+            radius=1.0,
+        )
+    )
 
-    require_raises(lambda: mmcfilters.MorphologicalTree(image, True), "direct MorphologicalTree construction should not be public")
-    require_raises(lambda: mmcfilters.MorphologicalTree(image, False), "direct min-tree MorphologicalTree construction should not be public")
     require(weighted_max_tree.getAliveNodeIds() == tree.getAliveNodeIds(), "factory max-tree must expose the expected topology")
-    require(weighted_max_tree.treeType == mmcfilters.MorphologicalTreeKind.MAX_TREE, "factory max-tree tree type")
-    require(weighted_min_tree.treeType == mmcfilters.MorphologicalTreeKind.MIN_TREE, "factory min-tree tree type")
+    require(weighted_max_tree.descriptiveKind == mmcfilters.MorphologicalTreeKind.MAX_TREE, "factory max-tree tree type")
+    require(weighted_min_tree.descriptiveKind == mmcfilters.MorphologicalTreeKind.MIN_TREE, "factory min-tree tree type")
+    require(
+        residual_tree.descriptiveKind
+        == mmcfilters.MorphologicalTreeKind.SELF_DUAL_RESIDUAL_TREE,
+        "factory unrestricted residual-tree type",
+    )
+    require(
+        saturated_residual_tree.descriptiveKind
+        == mmcfilters.MorphologicalTreeKind.SELF_DUAL_RESIDUAL_TREE,
+        "factory saturated residual-tree type",
+    )
+    require(
+        residual_tree.altitudeOrder == mmcfilters.AltitudeOrder.UNCONSTRAINED,
+        "residual-tree altitude order capability",
+    )
+    require(
+        residual_tree.reconstructionImage().tolist() == image.tolist(),
+        "unrestricted residual-tree exact reconstruction",
+    )
+    require(
+        saturated_residual_tree.reconstructionImage().tolist() == image.tolist(),
+        "saturated residual-tree exact reconstruction",
+    )
+    require(
+        weighted_max_tree.altitudeOrder
+        == mmcfilters.AltitudeOrder.INCREASING_FROM_ROOT,
+        "factory max-tree altitude order capability",
+    )
+    require(
+        weighted_min_tree.altitudeOrder
+        == mmcfilters.AltitudeOrder.DECREASING_FROM_ROOT,
+        "factory min-tree altitude order capability",
+    )
+    require(
+        weighted_max_tree.adjacencyMode == mmcfilters.AdjacencyMode.UNIFORM,
+        "factory max-tree uniform adjacency capability",
+    )
+    require(
+        weighted_max_tree.getUniformGridAdjacency2D().radius == 1.5,
+        "factory max-tree uniform adjacency relation",
+    )
+    rectangular_adjacency = mmcfilters.RegularGridAdjacency2D.rectangular(
+        image.shape[0],
+        image.shape[1],
+        1,
+        2,
+    )
+    require(
+        rectangular_adjacency.shape
+        == mmcfilters.RegularGridAdjacencyShape.StructuringElement,
+        "rectangular adjacency shape",
+    )
+    require(
+        rectangular_adjacency.size == 15,
+        "rectangular adjacency stencil size",
+    )
+    require(
+        rectangular_adjacency.neighborIndices(1, 1),
+        "rectangular adjacency neighbor traversal",
+    )
+    custom_adjacency_tree = (
+        mmcfilters.MorphologicalTreeFactory.createMaxTree(
+            image,
+            rectangular_adjacency,
+        )
+    )
+    require(
+        custom_adjacency_tree.hasUniformGridAdjacency2D is True,
+        "custom max-tree regular-grid adjacency capability",
+    )
+    require(
+        custom_adjacency_tree.getUniformGridAdjacency2D().offsets
+        == rectangular_adjacency.offsets,
+        "custom max-tree preserves its immutable stencil",
+    )
+    require_raises(
+        lambda: mmcfilters.RegularGridAdjacency2D.fromStructuringElement(
+            3,
+            3,
+            [(0, 0), (0, 1)],
+        ),
+        "asymmetric structuring element must be rejected",
+    )
     require(weighted_max_tree.reconstructionImage().tolist() == weighted.reconstructionImage().tolist(), "weighted createMaxTree reconstruction")
-    require(weighted_max_tree.treeType == mmcfilters.MorphologicalTreeKind.MAX_TREE, "weighted createMaxTree tree type")
-    require(weighted_min_tree.treeType == mmcfilters.MorphologicalTreeKind.MIN_TREE, "weighted createMinTree tree type")
+    require(weighted_max_tree.descriptiveKind == mmcfilters.MorphologicalTreeKind.MAX_TREE, "weighted createMaxTree tree type")
+    require(weighted_min_tree.descriptiveKind == mmcfilters.MorphologicalTreeKind.MIN_TREE, "weighted createMinTree tree type")
     require(not hasattr(mmcfilters.MorphologicalTreeFactory, "createComponentTree"), "createComponentTree should not be public")
     require(
         not hasattr(mmcfilters.MorphologicalTreeFactory, "createMaxTreeInt32"),
@@ -181,7 +300,7 @@ def main() -> int:
 
     require(tree.getRoot() == 0, "getRoot")
     require(tree.root == tree.getRoot(), "root property")
-    require(tree.hasAdjacencyRelation is True, "max-tree should expose adjacency relation context")
+    require(tree.hasUniformGridAdjacency2D is True, "max-tree should expose adjacency relation context")
     require(tree.getNodeParent(0) == 0, "root parent must point to itself")
     require(tree.getAliveNodeIds() == [0, 1, 2, 3, 4, 5], "alive NodeIds")
     require(tree.aliveNodeIds == tree.getAliveNodeIds(), "aliveNodeIds property")
@@ -263,6 +382,21 @@ def main() -> int:
     require_raises(lambda: weighted.setAltitude(5, True), "weighted setAltitude must reject bool altitude")
     weighted.setAltitudeBuffer([0, 1, 2, 3, 4, 5])
     weighted.setAltitudeBuffer(np.array([0, 1, 2, 3, 4, 5], dtype=np.uint8))
+    strict_sample = 5
+    strict_parent = weighted.getNodeParent(strict_sample)
+    require_raises(
+        lambda: weighted.setAltitude(
+            strict_sample,
+            weighted.getAltitude(strict_parent),
+        ),
+        "weighted setAltitude must reject equality with the parent",
+    )
+    equal_altitude = weighted.altitude
+    equal_altitude[strict_sample] = equal_altitude[strict_parent]
+    require_raises(
+        lambda: weighted.setAltitudeBuffer(equal_altitude),
+        "weighted setAltitudeBuffer must reject equality with the parent",
+    )
     require(
         weighted.reconstructionImage().tolist()
         == [
@@ -636,7 +770,7 @@ def main() -> int:
         mmcfilters.MorphologicalTreeKind.MAX_TREE,
         1.5,
     )
-    require(from_higra.hasAdjacencyRelation is True, "Higra import with explicit adjacency must preserve it")
+    require(from_higra.hasUniformGridAdjacency2D is True, "Higra import with explicit adjacency must preserve it")
     require(from_higra.numHigraNodes == len(higra_parent), "Higra import must expose total Higra node count")
     require(from_higra.getHigraNodeId(3) == weighted.numTotalProperParts + 3, "slot->Higra mapping")
     require(not hasattr(from_higra, "hasHigraNodeIdMapping"), "Higra mapping predicate must not be public")
@@ -677,7 +811,7 @@ def main() -> int:
         mmcfilters.MorphologicalTreeKind.MAX_TREE,
         1.5,
     )
-    require(from_higra_with_adj.hasAdjacencyRelation is True, "explicit Higra adjacency must be preserved")
+    require(from_higra_with_adj.hasUniformGridAdjacency2D is True, "explicit Higra adjacency must be preserved")
 
     exported_higra_parent, exported_higra_altitude = weighted.exportHigraHierarchy()
     require(len(exported_higra_parent) == weighted.numTotalProperParts + weighted.numNodes, "exported Higra hierarchy size")
@@ -728,7 +862,7 @@ def main() -> int:
     require(int(mmcfilters.Attribute.computeSingleAttribute(rebuilt, mmcfilters.Attribute.AREA)[3]) == 8, "Higra topology import area")
 
     attr = np.arange(tree.numNodes, dtype=np.float32)
-    ext_values = mmcfilters.ExtinctionValues(tree, attr).getExtinctionValues()
+    ext_values = mmcfilters.ExtinctionValues(tree, attr).getRegionalExtrema()
     require(ext_values[0][0] == 5 and ext_values[0][1] == 0, "extinction values by NodeId")
 
     require(not hasattr(mmcfilters.Attribute, "traversePostOrder"), "post-order traversal callback API should not be public")
@@ -741,9 +875,7 @@ def main() -> int:
     require(tree.root == tree.getRoot(), "root property should expose a NodeId, not a legacy node handle")
     require(not hasattr(tree, "listNodes"), "legacy listNodes handle API should be removed")
     require(not hasattr(tree, "leaves"), "legacy leaves handle API should be removed")
-    require_raises(lambda: mmcfilters.MorphologicalTree(image, True), "MorphologicalTree must not expose direct Python construction")
     require(hasattr(weighted, "reconstructionImage"), "reconstructionImage should live on WeightedMorphologicalTree")
-    require(not hasattr(mmcfilters.MorphologicalTree, "createFromHigra"), "MorphologicalTree type should not expose weighted Higra import")
     require(not hasattr(mmcfilters.WeightedMorphologicalTree, "createFromHigra"), "legacy weighted Higra import alias should be removed")
     require(not hasattr(tree, "reconstructAltitude"), "reconstructAltitude should be removed from the tree API")
     require(not hasattr(mmcfilters, "reconstructionImage"), "module-level reconstructionImage should be removed")
@@ -796,15 +928,15 @@ def main() -> int:
     require(not hasattr(weighted, "tree"), "weighted tree topology must not be exposed as a mutable Python handle")
     require(not hasattr(weighted, "topology"), "weighted topology accessor must stay C++-only and const")
     require(not hasattr(weighted, "edit"), "staged structural edit sessions must not be exposed without Python editor bindings")
-    require(not hasattr(weighted, "setAltitudeUnchecked"), "unchecked altitude setter must stay C++-only")
-    require(not hasattr(weighted, "setAltitudeBufferUnchecked"), "unchecked altitude-buffer setter must stay C++-only")
+    require(not hasattr(weighted, "setAltitudeUnchecked"), "unchecked altitude setter must not be public")
+    require(not hasattr(weighted, "setAltitudeBufferUnchecked"), "unchecked altitude-buffer setter must not be public")
     require(not hasattr(weighted, "attachNode"), "weighted low-level attachNode mutator should be hidden from Python API")
     require(not hasattr(weighted, "detachNode"), "weighted low-level detachNode mutator should be hidden from Python API")
     require(not hasattr(weighted, "moveNode"), "weighted low-level moveNode mutator should be hidden from Python API")
     require(not hasattr(weighted, "moveChildren"), "weighted low-level moveChildren mutator should be hidden from Python API")
     require(hasattr(weighted, "pruneNode"), "weighted safe prune mutator should stay public in Python API")
     require(hasattr(weighted, "mergeNodeIntoParent"), "weighted safe merge mutator should stay public in Python API")
-    require(hasattr(mmcfilters.ExtinctionValues(tree, attr), "getExtinctionValues"), "extinction tuple API should be exposed under the canonical name")
+    require(hasattr(mmcfilters.ExtinctionValues(tree, attr), "getRegionalExtrema"), "regional-extrema tuple API should be exposed under the canonical name")
 
     tos = mmcfilters.MorphologicalTreeFactory.createTreeOfShapes(
         np.array([[1, 2, 1], [2, 3, 2], [1, 2, 1]], dtype=np.uint8),
@@ -814,14 +946,14 @@ def main() -> int:
         np.array([[1, 2, 1], [2, 3, 2], [1, 2, 1]], dtype=np.uint8),
         mmcfilters.ToSInterpolation.Min4cMax8c,
     )
-    require(tos.hasAdjacencyRelation is False, "ToS should expose adjacency relation as optional/absent")
-    require(tos.hasTreeOfShapesAdjacencyPolicy is True, "ToS should expose auxiliary min/max adjacency policy")
-    require(tos.getTreeOfShapesMinTreeAdjacencyRadius() == 1.0, "Min4cMax8c min-tree radius")
-    require(tos.getTreeOfShapesMaxTreeAdjacencyRadius() == 1.5, "Min4cMax8c max-tree radius")
-    require(tos.getTreeOfShapesMinTreeAdjacencyRelation().radius == 1.0, "Min4cMax8c min-tree adjacency relation radius")
-    require(tos.getTreeOfShapesMaxTreeAdjacencyRelation().radius == 1.5, "Min4cMax8c max-tree adjacency relation radius")
-    require(tos.getTreeOfShapesMinTreeAdjacencyRelation().size == 5, "Min4cMax8c min-tree adjacency relation size")
-    require(tos.getTreeOfShapesMaxTreeAdjacencyRelation().size == 9, "Min4cMax8c max-tree adjacency relation size")
+    require(tos.hasUniformGridAdjacency2D is False, "ToS should expose adjacency relation as optional/absent")
+    require(tos.hasDirectionalGridAdjacency2D is True, "ToS should expose directional adjacency capability")
+    require(tos.adjacencyMode == mmcfilters.AdjacencyMode.DIRECTIONAL, "ToS directional adjacency mode")
+    require(tos.altitudeOrder == mmcfilters.AltitudeOrder.UNCONSTRAINED, "ToS unconstrained altitude order")
+    require(tos.getDecreasingGridAdjacency2D().radius == 1.0, "Min4cMax8c decreasing adjacency radius")
+    require(tos.getIncreasingGridAdjacency2D().radius == 1.5, "Min4cMax8c increasing adjacency radius")
+    require(tos.getDecreasingGridAdjacency2D().size == 5, "Min4cMax8c decreasing adjacency size")
+    require(tos.getIncreasingGridAdjacency2D().size == 9, "Min4cMax8c increasing adjacency size")
     require(tos.numRows == 3, "ToS must expose image rows")
     require(tos.numCols == 3, "ToS must expose image cols")
     require(weighted_tos.reconstructionImage().shape == (3, 3), "weighted ToS reconstructionImage shape")
@@ -846,10 +978,223 @@ def main() -> int:
         np.array([[1, 2], [3, 0]], dtype=np.uint8),
         mmcfilters.ToSInterpolation.Min8cMax4c,
     )
-    require(tos_min8_max4.getTreeOfShapesMinTreeAdjacencyRadius() == 1.5, "Min8cMax4c min-tree radius")
-    require(tos_min8_max4.getTreeOfShapesMaxTreeAdjacencyRadius() == 1.0, "Min8cMax4c max-tree radius")
-    require(tos_min8_max4.getTreeOfShapesMinTreeAdjacencyRelation().size == 9, "Min8cMax4c min-tree adjacency relation size")
-    require(tos_min8_max4.getTreeOfShapesMaxTreeAdjacencyRelation().size == 5, "Min8cMax4c max-tree adjacency relation size")
+    require(tos_min8_max4.getDecreasingGridAdjacency2D().radius == 1.5, "Min8cMax4c decreasing radius")
+    require(tos_min8_max4.getIncreasingGridAdjacency2D().radius == 1.0, "Min8cMax4c increasing radius")
+    require(tos_min8_max4.getDecreasingGridAdjacency2D().size == 9, "Min8cMax4c decreasing adjacency size")
+    require(tos_min8_max4.getIncreasingGridAdjacency2D().size == 5, "Min8cMax4c increasing adjacency size")
+    unpadded_options = mmcfilters.TreeOfShapesProducerOptions(
+        interpolation=mmcfilters.ToSInterpolation.Min4cMax8c,
+        padding=mmcfilters.ToSPaddingPolicy.NoPadding,
+        infinitySeedRow=0,
+        infinitySeedCol=0,
+    )
+    require(
+        unpadded_options.padding == mmcfilters.ToSPaddingPolicy.NoPadding,
+        "ToS producer options must expose the padding policy",
+    )
+    unpadded_input = np.array([[0, 2, 1], [2, 1, 0]], dtype=np.uint8)
+    unpadded_tos = mmcfilters.MorphologicalTreeFactory.createTreeOfShapes(
+        unpadded_input,
+        unpadded_options,
+    )
+    require(
+        unpadded_tos.numRows == 2 and unpadded_tos.numCols == 3,
+        "unpadded ToS must publish the original image domain",
+    )
+    require(
+        unpadded_tos.reconstructionImage().tolist() == unpadded_input.tolist(),
+        "unpadded ToS reconstruction",
+    )
+    virtual_root_tos = mmcfilters.MorphologicalTreeFactory.createTreeOfShapes(
+        np.array([[1, 1], [0, 0]], dtype=np.uint8),
+        mmcfilters.ToSInterpolation.SelfDual,
+    )
+    virtual_root = virtual_root_tos.getRoot()
+    upper_shape = virtual_root_tos.getProperPartOwner(0)
+    lower_shape = virtual_root_tos.getProperPartOwner(2)
+    require(virtual_root_tos.numNodes == 3, "SelfDual ToS must preserve the virtual root")
+    require(virtual_root_tos.getNumProperParts(virtual_root) == 0, "virtual root must have an empty direct proper part")
+    require(virtual_root_tos.isStructuralNode(virtual_root), "virtual root must be derived as structural")
+    require(virtual_root_tos.getNumChildren(virtual_root) == 2, "virtual root must retain both child shapes")
+    require(
+        virtual_root_tos.reconstructionImage().tolist() == [[1, 1], [0, 0]],
+        "virtual-root ToS reconstruction",
+    )
+    native_partial_partition = (
+        mmcfilters.MorphologicalTreeFactory.createFromNativeTopology(
+            [0, 0, 0],
+            [1, 1, 2, 2],
+            np.array([0, 1, 0], dtype=np.uint8),
+            0,
+            2,
+            2,
+            semantics=mmcfilters.HierarchySemantics(
+                descriptiveKind=mmcfilters.MorphologicalTreeKind.GENERIC,
+                directionalAdjacency=mmcfilters.DirectionalGridAdjacency2D(
+                    mmcfilters.RegularGridAdjacency2D(2, 2, 1.0),
+                    mmcfilters.RegularGridAdjacency2D(2, 2, 1.5),
+                ),
+            ),
+        )
+    )
+    require(
+        native_partial_partition.getNumProperParts(0) == 0,
+        "generic native partial-partition root may have no direct proper part",
+    )
+    require(
+        native_partial_partition.getNumChildren(0) == 2,
+        "generic native partial-partition root children",
+    )
+    require(
+        native_partial_partition.hasDirectionalGridAdjacency2D is True,
+        "generic native partial-partition dual adjacency",
+    )
+    require(
+        native_partial_partition.getDecreasingGridAdjacency2D().size == 5,
+        "generic native partial-partition decreasing adjacency",
+    )
+    require(
+        native_partial_partition.getIncreasingGridAdjacency2D().size == 9,
+        "generic native partial-partition increasing adjacency",
+    )
+    require(
+        native_partial_partition.reconstructionImage().tolist()
+        == [[1, 1], [0, 0]],
+        "generic native partial-partition reconstruction",
+    )
+    generic_semantics = mmcfilters.HierarchySemantics(
+        altitudeOrder=mmcfilters.AltitudeOrder.INCREASING_FROM_ROOT,
+    )
+    generic_tree = mmcfilters.MorphologicalTreeFactory.createFromNativeTopology(
+        [0, 0, 1],
+        [2],
+        np.array([0, 1, 2], dtype=np.uint8),
+        0,
+        1,
+        1,
+        semantics=generic_semantics,
+    )
+    require(
+        generic_tree.descriptiveKind == mmcfilters.MorphologicalTreeKind.GENERIC,
+        "generic native tree descriptive kind",
+    )
+    require(
+        generic_tree.altitudeOrder
+        == mmcfilters.AltitudeOrder.INCREASING_FROM_ROOT,
+        "generic native tree altitude order",
+    )
+    require(
+        generic_tree.adjacencyMode == mmcfilters.AdjacencyMode.NONE,
+        "generic native tree adjacency mode",
+    )
+    require(
+        generic_tree.hasGridDomain2D
+        and generic_tree.gridDomain2D.rows == 1
+        and generic_tree.gridDomain2D.cols == 1,
+        "generic native tree explicit 2D domain",
+    )
+    require(
+        generic_tree.isStructuralNode(0)
+        and generic_tree.isStructuralNode(1)
+        and not generic_tree.isStructuralNode(2),
+        "generic native tree structural-node derivation",
+    )
+    for node_id in generic_tree.getAliveNodeIds():
+        require(
+            len(list(generic_tree.getConnectedComponent(node_id))) > 0,
+            "every committed generic node must have non-empty subtree support",
+        )
+    abstract_tree = mmcfilters.MorphologicalTreeFactory.createFromNativeTopology(
+        [0, 0, 0],
+        [1, 2],
+        np.array([10, 3, 20], dtype=np.uint8),
+        0,
+        semantics=mmcfilters.HierarchySemantics(),
+    )
+    require(
+        abstract_tree.hasGridDomain2D is False,
+        "abstract proper-part domain must not invent grid metadata",
+    )
+    require(
+        abstract_tree.gridDomain2D is None,
+        "abstract proper-part domain optional grid",
+    )
+    require(
+        abstract_tree.descriptiveKind
+        == mmcfilters.MorphologicalTreeKind.GENERIC,
+        "canonical descriptive-kind property",
+    )
+    abstract_area = mmcfilters.Attribute.computeSingleAttribute(
+        abstract_tree,
+        mmcfilters.Attribute.AREA,
+    )
+    require(
+        int(abstract_area[0]) == 2,
+        "support attributes must work on an abstract proper-part domain",
+    )
+    abstract_gray_height = mmcfilters.Attribute.computeSingleAttribute(
+        abstract_tree,
+        mmcfilters.Attribute.GRAY_HEIGHT,
+    )
+    require(
+        abstract_gray_height.tolist() == [10.0, 0.0, 0.0],
+        "unconstrained GRAY_HEIGHT must use both subtree extrema",
+    )
+    require_raises(
+        lambda: abstract_tree.reconstructionImage(),
+        "abstract proper-part domain must reject image reconstruction",
+    )
+    require_raises(
+        lambda: mmcfilters.Attribute.computeSingleAttribute(
+            abstract_tree,
+            mmcfilters.Attribute.BOX_WIDTH,
+        ),
+        "abstract proper-part domain must reject geometric attributes",
+    )
+    require_raises(
+        lambda: abstract_tree.numRows,
+        "abstract proper-part domain must not expose invented rows",
+    )
+    require_raises(
+        lambda: mmcfilters.MorphologicalTreeFactory.createFromNativeTopology(
+            [0, 0],
+            [0],
+            np.array([0, 1], dtype=np.uint8),
+            0,
+            1,
+            1,
+            semantics=mmcfilters.HierarchySemantics(),
+        ),
+        "native factory must reject an attached leaf with empty subtree support",
+    )
+    require_raises(
+        lambda: mmcfilters.MorphologicalTreeFactory.createFromNativeTopology(
+            [0, 0, 1],
+            [2],
+            np.array([0, 2, 1], dtype=np.uint8),
+            0,
+            1,
+            1,
+            semantics=mmcfilters.HierarchySemantics(
+                altitudeOrder=mmcfilters.AltitudeOrder.INCREASING_FROM_ROOT,
+            ),
+        ),
+        "native factory altitude must satisfy the declared generic order",
+    )
+    require_raises(
+        lambda: mmcfilters.MorphologicalTreeFactory.createFromNativeTopology(
+            [0, 0, 1],
+            [2],
+            np.array([0, 1, 1], dtype=np.uint8),
+            0,
+            1,
+            1,
+            semantics=mmcfilters.HierarchySemantics(
+                altitudeOrder=mmcfilters.AltitudeOrder.INCREASING_FROM_ROOT,
+            ),
+        ),
+        "native factory altitude must reject equality in a strict order",
+    )
     custom_seed_tos = mmcfilters.MorphologicalTreeFactory.createTreeOfShapes(
         np.array([[0, 1]], dtype=np.uint8),
         mmcfilters.ToSInterpolation.SelfDual,
@@ -878,6 +1223,7 @@ def main() -> int:
     require(single_tos.numRows == 1 and single_tos.numCols == 1, "single-pixel default ToS dimensions")
     require(single_tos.getRoot() != -1, "single-pixel default ToS root")
     require(single_weighted_tos.reconstructionImage().tolist() == [[5]], "single-pixel default weighted ToS reconstruction")
+
     empty = np.empty((0, 0), dtype=np.uint8)
     require_raises(lambda: mmcfilters.MorphologicalTreeFactory.createMaxTree(empty), "empty max-tree must throw")
     require_raises(lambda: mmcfilters.MorphologicalTreeFactory.createTreeOfShapes(empty), "empty tree of shapes must throw")

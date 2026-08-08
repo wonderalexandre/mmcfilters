@@ -58,8 +58,7 @@ ImageUInt8Ptr makeBenchmarkImage(int rows, int cols) {
     for (int row = 0; row < rows; ++row) {
         for (int col = 0; col < cols; ++col) {
             const int idx = row * cols + col;
-            const int radial = (row - rows / 2) * (row - rows / 2) +
-                               (col - cols / 2) * (col - cols / 2);
+            const int radial = (row - rows / 2) * (row - rows / 2) + (col - cols / 2) * (col - cols / 2);
             const int waves = (row * 17) ^ (col * 31) ^ ((row + col) * 7);
             (*image)[idx] = static_cast<uint8_t>((radial / 113 + waves) & 0xff);
         }
@@ -69,16 +68,11 @@ ImageUInt8Ptr makeBenchmarkImage(int rows, int cols) {
 
 std::string formatBytes(std::size_t bytes) {
     std::ostringstream out;
-    out << std::fixed << std::setprecision(2)
-        << (static_cast<double>(bytes) / 1024.0) << " KiB";
+    out << std::fixed << std::setprecision(2) << (static_cast<double>(bytes) / 1024.0) << " KiB";
     return out.str();
 }
 
-std::uint64_t checksumComputed(
-    const MorphologicalTree& tree,
-    const ComputedAttributeData<float>& data,
-    const std::vector<Attribute>& attributes)
-{
+std::uint64_t checksumComputed(const MorphologicalTree& tree, const ComputedAttributeData<float>& data, const std::vector<Attribute>& attributes) {
     std::uint64_t checksum = 1469598103934665603ull;
     for (NodeId nodeId : tree.getAliveNodeIds()) {
         for (Attribute attribute : attributes) {
@@ -101,8 +95,7 @@ std::uint64_t checksumComputed(
     return checksum;
 }
 
-template<class Fn>
-Measurement measure(int repeats, Fn&& fn) {
+template <class Fn> Measurement measure(int repeats, Fn&& fn) {
     if (repeats <= 0) {
         throw std::invalid_argument("repeats must be positive.");
     }
@@ -117,20 +110,15 @@ Measurement measure(int repeats, Fn&& fn) {
     return {static_cast<double>(micros) / static_cast<double>(repeats) / 1000.0, checksum};
 }
 
-template<class T>
-std::vector<T> makeEquivalentAltitude(const WeightedMorphologicalTree<std::uint8_t>& weighted) {
-    std::vector<T> altitude(
-        static_cast<std::size_t>(weighted.topology().getNumInternalNodeSlots()),
-        T{});
+template <class T> std::vector<T> makeEquivalentAltitude(const WeightedMorphologicalTree<std::uint8_t>& weighted) {
+    std::vector<T> altitude(static_cast<std::size_t>(weighted.topology().getNumInternalNodeSlots()), T{});
     for (NodeId nodeId : weighted.topology().getAliveNodeIds()) {
-        altitude[static_cast<std::size_t>(nodeId)] =
-            static_cast<T>(weighted.getAltitude(nodeId));
+        altitude[static_cast<std::size_t>(nodeId)] = static_cast<T>(weighted.getAltitude(nodeId));
     }
     return altitude;
 }
 
-template<class T>
-const char* typeName() {
+template <class T> const char* typeName() {
     if constexpr (std::is_same_v<T, std::uint8_t>) {
         return "uint8_t";
     } else if constexpr (std::is_same_v<T, std::int32_t>) {
@@ -144,32 +132,21 @@ const char* typeName() {
     }
 }
 
-template<class T>
-void runAltitudeSpanType(
-    const WeightedMorphologicalTree<std::uint8_t>& weighted,
-    const RequestCase& requestCase,
-    std::uint64_t baselineChecksum,
-    int repeats)
-{
+template <class T>
+void runAltitudeSpanType(const WeightedMorphologicalTree<std::uint8_t>& weighted, const RequestCase& requestCase, std::uint64_t baselineChecksum, int repeats) {
     const MorphologicalTree& tree = weighted.topology();
     const std::vector<T> altitude = makeEquivalentAltitude<T>(weighted);
     const WeightedTreeView<T> view(tree, std::span<const T>(altitude));
     const std::size_t altitudeBytes = altitude.size() * sizeof(T);
     const Measurement measurement = measure(repeats, [&]() {
-        const auto data = AttributeComputation::computeAttributesFromAltitudeSpan(
-            view,
-            requestCase.request);
+        const auto data = AttributeComputation::computeAttributesFromAltitudeSpan(view, requestCase.request);
         return checksumComputed(tree, data, requestCase.checksumAttributes);
     });
 
     const bool checksumMatches = (measurement.checksum == baselineChecksum);
-    std::cout << "    altitude-span "
-              << std::setw(8) << typeName<T>()
-              << "  altitude=" << std::setw(10) << formatBytes(altitudeBytes)
-              << "  ms/run=" << std::setw(9) << std::fixed << std::setprecision(3) << measurement.msPerRun
-              << "  checksum=" << measurement.checksum
-              << "  match=" << (checksumMatches ? "yes" : "no")
-              << '\n';
+    std::cout << "    altitude-span " << std::setw(8) << typeName<T>() << "  altitude=" << std::setw(10) << formatBytes(altitudeBytes)
+              << "  ms/run=" << std::setw(9) << std::fixed << std::setprecision(3) << measurement.msPerRun << "  checksum=" << measurement.checksum
+              << "  match=" << (checksumMatches ? "yes" : "no") << '\n';
 }
 
 std::vector<int> parseSizes(const std::string& value) {
@@ -223,10 +200,9 @@ Options parseOptions(int argc, char** argv) {
                 throw std::invalid_argument("--suite requires one of: core, topology, all.");
             }
         } else if (arg == "--help" || arg == "-h") {
-            std::cout
-                << "usage: mmcfilters_altitude_span_attribute_benchmark "
-                << "[--sizes 128,256,512] [--repeats 3] [--radius 1.5] "
-                << "[--suite core|topology|all]\n";
+            std::cout << "usage: mmcfilters_altitude_span_attribute_benchmark "
+                      << "[--sizes 128,256,512] [--repeats 3] [--radius 1.5] "
+                      << "[--suite core|topology|all]\n";
             std::exit(0);
         } else {
             throw std::invalid_argument("unknown argument: " + arg);
@@ -297,56 +273,37 @@ std::vector<RequestCase> requestCases(const std::string& suite) {
     }
     std::vector<RequestCase> cases = coreRequestCases();
     auto extra = topologyOnlyRequestCases();
-    cases.insert(
-        cases.end(),
-        std::make_move_iterator(extra.begin()),
-        std::make_move_iterator(extra.end()));
+    cases.insert(cases.end(), std::make_move_iterator(extra.begin()), std::make_move_iterator(extra.end()));
     return cases;
 }
 
 void runCase(int rows, int cols, bool isMaxTree, const Options& options) {
     auto image = makeBenchmarkImage(rows, cols);
     const auto buildStart = std::chrono::steady_clock::now();
-    auto weighted = isMaxTree
-        ? MorphologicalTreeFactory::createMaxTree(image, options.radius)
-        : MorphologicalTreeFactory::createMinTree(image, options.radius);
+    auto weighted = isMaxTree ? MorphologicalTreeFactory::createMaxTree(image, options.radius) : MorphologicalTreeFactory::createMinTree(image, options.radius);
     const auto buildEnd = std::chrono::steady_clock::now();
     const auto buildMicros = std::chrono::duration_cast<std::chrono::microseconds>(buildEnd - buildStart).count();
 
     const MorphologicalTree& tree = weighted.topology();
     const std::size_t slots = static_cast<std::size_t>(tree.getNumInternalNodeSlots());
     std::cout << "\n"
-              << rows << "x" << cols
-              << " " << (isMaxTree ? "max" : "min")
-              << " nodes=" << tree.getNumNodes()
-              << " slots=" << slots
-              << " build_ms=" << std::fixed << std::setprecision(3)
-              << (static_cast<double>(buildMicros) / 1000.0)
-              << '\n';
+              << rows << "x" << cols << " " << (isMaxTree ? "max" : "min") << " nodes=" << tree.getNumNodes() << " slots=" << slots
+              << " build_ms=" << std::fixed << std::setprecision(3) << (static_cast<double>(buildMicros) / 1000.0) << '\n';
 
     for (const RequestCase& requestCase : requestCases(options.suite)) {
-        const std::size_t resultBytes =
-            slots * requestCase.checksumAttributes.size() * sizeof(float);
-        std::cout << "  request=" << requestCase.name
-                  << " attrs=" << requestCase.checksumAttributes.size()
-                  << " result_buffer=" << formatBytes(resultBytes)
+        const std::size_t resultBytes = slots * requestCase.checksumAttributes.size() * sizeof(float);
+        std::cout << "  request=" << requestCase.name << " attrs=" << requestCase.checksumAttributes.size() << " result_buffer=" << formatBytes(resultBytes)
                   << '\n';
 
         const Measurement baseline = measure(options.repeats, [&]() {
-            const auto data = AttributeComputation::computeAttributes(
-                weighted,
-                requestCase.request);
+            const auto data = AttributeComputation::computeAttributes(weighted, requestCase.request);
             return checksumComputed(tree, data, requestCase.checksumAttributes);
         });
 
         std::cout << "    canonical"
                   << "          "
-                  << "  altitude=" << std::setw(10)
-                  << formatBytes(slots * sizeof(std::uint8_t))
-                  << "  ms/run=" << std::setw(9) << std::fixed << std::setprecision(3) << baseline.msPerRun
-                  << "  checksum=" << baseline.checksum
-                  << "  match=yes"
-                  << '\n';
+                  << "  altitude=" << std::setw(10) << formatBytes(slots * sizeof(std::uint8_t)) << "  ms/run=" << std::setw(9) << std::fixed
+                  << std::setprecision(3) << baseline.msPerRun << "  checksum=" << baseline.checksum << "  match=yes" << '\n';
 
         runAltitudeSpanType<std::uint8_t>(weighted, requestCase, baseline.checksum, options.repeats);
         runAltitudeSpanType<std::int32_t>(weighted, requestCase, baseline.checksum, options.repeats);
@@ -361,10 +318,7 @@ int main(int argc, char** argv) {
     try {
         const Options options = parseOptions(argc, argv);
         std::cout << "Altitude-span attribute benchmark\n"
-                  << "repeats=" << options.repeats
-                  << " radius=" << options.radius
-                  << " suite=" << options.suite
-                  << '\n';
+                  << "repeats=" << options.repeats << " radius=" << options.radius << " suite=" << options.suite << '\n';
 
         for (int size : options.sizes) {
             runCase(size, size, true, options);

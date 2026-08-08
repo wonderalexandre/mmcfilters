@@ -25,8 +25,7 @@ namespace mmcfilters {
  * type. Rows are always indexed in dense internal `NodeId` space unless a
  * caller explicitly documents a different projection.
  */
-template <std::floating_point Real>
-struct DependencySourceT {
+template <std::floating_point Real> struct DependencySourceT {
     /// Layout describing the dependency buffer; borrowed and non-owning.
     const AttributeNames* attrNames = nullptr;
 
@@ -44,35 +43,43 @@ struct DependencySourceT {
  * only validates that the borrowed sources are present and expose the requested
  * columns.
  */
-template <std::floating_point Real>
-class DependencyResolver {
+template <std::floating_point Real> class DependencyResolver {
+    /** @brief Stores the sources. */
     std::span<const DependencySourceT<Real>> sources_;
 
-    static void requireValidSource(const DependencySourceT<Real>& source)
-    {
+    /**
+     * @brief Validates valid source.
+     *
+     * @param source Source value or object.
+     */
+    static void requireValidSource(const DependencySourceT<Real>& source) {
         if (source.attrNames == nullptr || source.buffer == nullptr) {
             throw std::invalid_argument("Requested attribute computation received an invalid dependency source.");
         }
     }
 
-public:
+  public:
     /**
      * @brief Creates a resolver over borrowed dependency sources.
      *
      * The span and every referenced `AttributeNames`/buffer must outlive the
      * resolver and any compute context that owns it.
+     *
+     * @param sources Input represented by `sources`.
      */
-    explicit DependencyResolver(std::span<const DependencySourceT<Real>> sources) noexcept
-        : sources_(sources) {}
+    explicit DependencyResolver(std::span<const DependencySourceT<Real>> sources) noexcept : sources_(sources) {}
 
     /**
      * @brief Returns the first source containing `requiredAttribute`.
      *
+     * @param requiredAttribute Attribute information represented by `requiredAttribute`.
+     * @return The first source containing requiredAttribute.
+     *
      * @throws std::invalid_argument if any inspected source is invalid or no
      * source contains the requested attribute.
+     *
      */
-    [[nodiscard]] const DependencySourceT<Real>& require(Attribute requiredAttribute) const
-    {
+    [[nodiscard]] const DependencySourceT<Real>& require(Attribute requiredAttribute) const {
         for (const DependencySourceT<Real>& source : sources_) {
             requireValidSource(source);
             if (source.attrNames->contains(requiredAttribute)) {
@@ -89,24 +96,23 @@ public:
      * This is used by computers whose formulas consume a coherent dependency
      * block, such as several central moments stored in the same buffer layout.
      *
+     * @param requiredAttributes Attribute information represented by `requiredAttributes`.
+     * @return One source that contains all requested attributes.
+     *
      * @throws std::invalid_argument if the request is empty, if an inspected
      * source is invalid, or if no single source contains every requested
      * attribute.
+     *
      */
-    [[nodiscard]] const DependencySourceT<Real>& requireAll(std::initializer_list<Attribute> requiredAttributes) const
-    {
+    [[nodiscard]] const DependencySourceT<Real>& requireAll(std::initializer_list<Attribute> requiredAttributes) const {
         if (requiredAttributes.size() == 0) {
             throw std::invalid_argument("Requested attribute computation must name at least one required dependency attribute.");
         }
 
         for (const DependencySourceT<Real>& source : sources_) {
             requireValidSource(source);
-            const bool hasAll = std::all_of(
-                requiredAttributes.begin(),
-                requiredAttributes.end(),
-                [&](Attribute attribute) {
-                    return source.attrNames->contains(attribute);
-                });
+            const bool hasAll =
+                std::all_of(requiredAttributes.begin(), requiredAttributes.end(), [&](Attribute attribute) { return source.attrNames->contains(attribute); });
             if (hasAll) {
                 return source;
             }
@@ -128,8 +134,7 @@ public:
  * hidden dependency sources can be accessed by semantic name through
  * `dependencies`.
  */
-template <std::floating_point Real>
-struct AttributeComputeContext {
+template <std::floating_point Real> struct AttributeComputeContext {
     /// Topology whose dense internal node ids index `buffer`.
     const MorphologicalTree& tree;
 
@@ -150,20 +155,17 @@ struct AttributeComputeContext {
 
     /**
      * @brief Binds borrowed topology, output, request, and dependency views.
+     *
+     * @param tree_ Tree topology used by the operation.
+     * @param buffer_ Buffer read or written by the operation.
+     * @param attrNames_ Layout that maps attributes to buffer columns.
+     * @param requestedAttributes_ Attributes requested for materialization.
+     * @param dependencySources_ Input represented by `dependencySources_`.
      */
-    AttributeComputeContext(
-        const MorphologicalTree& tree_,
-        std::span<Real> buffer_,
-        const AttributeNames& attrNames_,
-        std::span<const Attribute> requestedAttributes_,
-        std::span<const DependencySourceT<Real>> dependencySources_ = {}) noexcept
-        : tree(tree_),
-          buffer(buffer_),
-          attrNames(attrNames_),
-          requestedAttributes(requestedAttributes_),
-          dependencySources(dependencySources_),
-          dependencies(dependencySources_)
-    {}
+    AttributeComputeContext(const MorphologicalTree& tree_, std::span<Real> buffer_, const AttributeNames& attrNames_,
+                            std::span<const Attribute> requestedAttributes_, std::span<const DependencySourceT<Real>> dependencySources_ = {}) noexcept
+        : tree(tree_), buffer(buffer_), attrNames(attrNames_), requestedAttributes(requestedAttributes_), dependencySources(dependencySources_),
+          dependencies(dependencySources_) {}
 };
 
 /**
@@ -174,8 +176,7 @@ struct AttributeComputeContext {
  * `AttributeComputeContext` plus a typed altitude span indexed by dense
  * internal node id. The altitude span is borrowed and must outlive the context.
  */
-template <std::floating_point Real, AltitudeValue T>
-struct AltitudeAttributeComputeContext {
+template <std::floating_point Real, AltitudeValue T> struct AltitudeAttributeComputeContext {
     /// Topology whose dense internal node ids index `altitude` and `buffer`.
     const MorphologicalTree& tree;
 
@@ -199,22 +200,18 @@ struct AltitudeAttributeComputeContext {
 
     /**
      * @brief Binds borrowed topology, altitude, output, request, and dependencies.
+     *
+     * @param tree_ Tree topology used by the operation.
+     * @param altitude_ Altitude data indexed by node identifier.
+     * @param buffer_ Buffer read or written by the operation.
+     * @param attrNames_ Layout that maps attributes to buffer columns.
+     * @param requestedAttributes_ Attributes requested for materialization.
+     * @param dependencySources_ Input represented by `dependencySources_`.
      */
-    AltitudeAttributeComputeContext(
-        const MorphologicalTree& tree_,
-        std::span<const T> altitude_,
-        std::span<Real> buffer_,
-        const AttributeNames& attrNames_,
-        std::span<const Attribute> requestedAttributes_,
-        std::span<const DependencySourceT<Real>> dependencySources_ = {}) noexcept
-        : tree(tree_),
-          altitude(altitude_),
-          buffer(buffer_),
-          attrNames(attrNames_),
-          requestedAttributes(requestedAttributes_),
-          dependencySources(dependencySources_),
-          dependencies(dependencySources_)
-    {}
+    AltitudeAttributeComputeContext(const MorphologicalTree& tree_, std::span<const T> altitude_, std::span<Real> buffer_, const AttributeNames& attrNames_,
+                                    std::span<const Attribute> requestedAttributes_, std::span<const DependencySourceT<Real>> dependencySources_ = {}) noexcept
+        : tree(tree_), altitude(altitude_), buffer(buffer_), attrNames(attrNames_), requestedAttributes(requestedAttributes_),
+          dependencySources(dependencySources_), dependencies(dependencySources_) {}
 };
 
 /**
@@ -226,8 +223,7 @@ struct AltitudeAttributeComputeContext {
  * index `buffer`; `attrNames` describes the columns in that proper-part row
  * domain.
  */
-template <std::floating_point Real>
-struct UnitAttributeComputeContext {
+template <std::floating_point Real> struct UnitAttributeComputeContext {
     /// Topology that owns the proper parts listed in `unitProperParts`.
     const MorphologicalTree& tree;
 
@@ -245,19 +241,16 @@ struct UnitAttributeComputeContext {
 
     /**
      * @brief Binds borrowed topology, unit rows, output, and request.
+     *
+     * @param tree_ Tree topology used by the operation.
+     * @param unitProperParts_ Proper-part data represented by `unitProperParts_`.
+     * @param buffer_ Buffer read or written by the operation.
+     * @param attrNames_ Layout that maps attributes to buffer columns.
+     * @param requestedAttributes_ Attributes requested for materialization.
      */
-    UnitAttributeComputeContext(
-        const MorphologicalTree& tree_,
-        std::span<const NodeId> unitProperParts_,
-        std::span<Real> buffer_,
-        const AttributeNames& attrNames_,
-        std::span<const Attribute> requestedAttributes_) noexcept
-        : tree(tree_),
-          unitProperParts(unitProperParts_),
-          buffer(buffer_),
-          attrNames(attrNames_),
-          requestedAttributes(requestedAttributes_)
-    {}
+    UnitAttributeComputeContext(const MorphologicalTree& tree_, std::span<const NodeId> unitProperParts_, std::span<Real> buffer_,
+                                const AttributeNames& attrNames_, std::span<const Attribute> requestedAttributes_) noexcept
+        : tree(tree_), unitProperParts(unitProperParts_), buffer(buffer_), attrNames(attrNames_), requestedAttributes(requestedAttributes_) {}
 };
 
 /**
@@ -269,8 +262,7 @@ struct UnitAttributeComputeContext {
  * dense internal node-id space; each unit row reads the altitude of the node
  * that owns its proper part.
  */
-template <std::floating_point Real, AltitudeValue T>
-struct AltitudeUnitAttributeComputeContext {
+template <std::floating_point Real, AltitudeValue T> struct AltitudeUnitAttributeComputeContext {
     /// Topology that owns the proper parts listed in `unitProperParts`.
     const MorphologicalTree& tree;
 
@@ -291,25 +283,21 @@ struct AltitudeUnitAttributeComputeContext {
 
     /**
      * @brief Binds borrowed topology, altitude, unit rows, output, and request.
+     *
+     * @param tree_ Tree topology used by the operation.
+     * @param altitude_ Altitude data indexed by node identifier.
+     * @param unitProperParts_ Proper-part data represented by `unitProperParts_`.
+     * @param buffer_ Buffer read or written by the operation.
+     * @param attrNames_ Layout that maps attributes to buffer columns.
+     * @param requestedAttributes_ Attributes requested for materialization.
      */
-    AltitudeUnitAttributeComputeContext(
-        const MorphologicalTree& tree_,
-        std::span<const T> altitude_,
-        std::span<const NodeId> unitProperParts_,
-        std::span<Real> buffer_,
-        const AttributeNames& attrNames_,
-        std::span<const Attribute> requestedAttributes_) noexcept
-        : tree(tree_),
-          altitude(altitude_),
-          unitProperParts(unitProperParts_),
-          buffer(buffer_),
-          attrNames(attrNames_),
-          requestedAttributes(requestedAttributes_)
-    {}
+    AltitudeUnitAttributeComputeContext(const MorphologicalTree& tree_, std::span<const T> altitude_, std::span<const NodeId> unitProperParts_,
+                                        std::span<Real> buffer_, const AttributeNames& attrNames_, std::span<const Attribute> requestedAttributes_) noexcept
+        : tree(tree_), altitude(altitude_), unitProperParts(unitProperParts_), buffer(buffer_), attrNames(attrNames_),
+          requestedAttributes(requestedAttributes_) {}
 };
 
-template<AltitudeValue T>
-inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, NodeId properPart);
+template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, NodeId properPart);
 
 /**
  * @brief Validates a dense internal-node output buffer.
@@ -318,10 +306,13 @@ inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitude
  * All ordinary attribute computers write one row per internal node slot,
  * including dead slots. Live-node semantics are enforced by traversal code;
  * this helper only checks the flat storage shape.
+ *
+ * @param tree Tree topology used by the operation.
+ * @param buffer Buffer read or written by the operation.
+ * @param attrNames Layout that maps attributes to buffer columns.
  */
 template <std::floating_point Real>
-inline void requireAttributeBufferShape(const MorphologicalTree& tree, std::span<Real> buffer, const AttributeNames& attrNames)
-{
+inline void requireAttributeBufferShape(const MorphologicalTree& tree, std::span<Real> buffer, const AttributeNames& attrNames) {
     const std::size_t expectedSize = static_cast<std::size_t>(tree.getNumInternalNodeSlots()) * static_cast<std::size_t>(attrNames.NUM_ATTRIBUTES);
     if (buffer.size() != expectedSize) {
         throw std::invalid_argument("Attribute output buffer size must match the dense internal-node domain and requested attributes.");
@@ -330,9 +321,12 @@ inline void requireAttributeBufferShape(const MorphologicalTree& tree, std::span
 
 /**
  * @brief Tests whether `requestedAttributes` asks a kernel to fill `attribute`.
+ *
+ * @param requestedAttributes Attributes requested for materialization.
+ * @param attribute Attribute requested by the operation.
+ * @return True if requestedAttributes asks a kernel to fill attribute; otherwise false.
  */
-inline bool requestsAttribute(std::span<const Attribute> requestedAttributes, Attribute attribute)
-{
+inline bool requestsAttribute(std::span<const Attribute> requestedAttributes, Attribute attribute) {
     return std::find(requestedAttributes.begin(), requestedAttributes.end(), attribute) != requestedAttributes.end();
 }
 
@@ -343,14 +337,15 @@ inline bool requestsAttribute(std::span<const Attribute> requestedAttributes, At
  * Unit rows are used when projecting internal tree-node attributes to compact
  * exported Higra layouts. Each row corresponds to one proper part listed in
  * `unitProperParts`, not to an internal tree node.
+ *
+ * @param tree Tree topology used by the operation.
+ * @param unitProperParts Proper-part data represented by `unitProperParts`.
+ * @param buffer Buffer read or written by the operation.
+ * @param attrNames Layout that maps attributes to buffer columns.
  */
 template <std::floating_point Real>
-inline void requireUnitAttributeBufferShape(
-    const MorphologicalTree& tree,
-    std::span<const NodeId> unitProperParts,
-    std::span<Real> buffer,
-    const AttributeNames& attrNames)
-{
+inline void requireUnitAttributeBufferShape(const MorphologicalTree& tree, std::span<const NodeId> unitProperParts, std::span<Real> buffer,
+                                            const AttributeNames& attrNames) {
     const std::size_t expectedSize = unitProperParts.size() * static_cast<std::size_t>(attrNames.NUM_ATTRIBUTES);
     if (buffer.size() != expectedSize) {
         throw std::invalid_argument("Unit-attribute buffer size must match the exported leaf domain and requested attributes.");
@@ -364,10 +359,13 @@ inline void requireUnitAttributeBufferShape(
 
 /**
  * @brief Reads the typed altitude assigned to one unit proper part.
+ *
+ * @param tree Tree topology used by the operation.
+ * @param altitudeView Altitude or level represented by `altitudeView`.
+ * @param properPart Proper-part data represented by `properPart`.
+ * @return The requested typed altitude assigned to one unit proper part.
  */
-template<AltitudeValue T>
-inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, NodeId properPart)
-{
+template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, NodeId properPart) {
     TreeAltitudeAlgorithms::validateAltitudeBufferShape(tree, altitudeView);
     if (!tree.isProperPart(properPart)) {
         throw std::invalid_argument("Unit altitude computation requires a valid proper-part id.");

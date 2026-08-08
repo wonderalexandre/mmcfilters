@@ -12,15 +12,12 @@ using namespace mmcfilters::unit_tests;
 
 namespace {
 
-template <class T>
-std::vector<T> toSorted(std::vector<T> values) {
+template <class T> std::vector<T> toSorted(std::vector<T> values) {
     std::sort(values.begin(), values.end());
     return values;
 }
 
-bool containsNode(const std::vector<NodeId>& nodes, NodeId target) {
-    return std::find(nodes.begin(), nodes.end(), target) != nodes.end();
-}
+bool containsNode(const std::vector<NodeId>& nodes, NodeId target) { return std::find(nodes.begin(), nodes.end(), target) != nodes.end(); }
 
 std::vector<NodeId> componentRoots(const MorphologicalTree& tree) {
     std::vector<NodeId> roots{tree.getRoot()};
@@ -110,11 +107,7 @@ void requireTreeInvariantSnapshot(const MorphologicalTree& tree, const std::stri
                     currentNodeId = parentNodeId;
                 }
             }
-            requireVectorEqual(
-                toSorted(std::move(actualPixelsOfCC)),
-                toSorted(std::move(expectedPixelsOfCC)),
-                label + ": pixels of connected component"
-            );
+            requireVectorEqual(toSorted(std::move(actualPixelsOfCC)), toSorted(std::move(expectedPixelsOfCC)), label + ": pixels of connected component");
         }
     }
 
@@ -160,8 +153,7 @@ void requireTreeInvariantSnapshot(const MorphologicalTree& tree, const std::stri
     }
 }
 
-template <class URBG>
-NodeId randomElement(std::vector<NodeId> values, URBG& rng) {
+template <class URBG> NodeId randomElement(std::vector<NodeId> values, URBG& rng) {
     std::uniform_int_distribution<size_t> dist(0, values.size() - 1);
     return values[dist(rng)];
 }
@@ -276,119 +268,149 @@ int main() {
 
             auto editor = tree->edit();
             switch (op) {
-                case 0: {
-                    const NodeId newNodeId = editor.createDetachedNode();
-                    require(newNodeId != InvalidNode, "createDetachedNode during invariant test");
-                    editor.attach(randomElement(attachedNodes, rng), newNodeId);
-                    break;
+            case 0: {
+                const NodeId newNodeId = editor.createDetachedNode();
+                require(newNodeId != InvalidNode, "createDetachedNode during invariant test");
+                std::vector<NodeId> nonRootNodes;
+                for (NodeId nodeId : attachedNodes) {
+                    if (nodeId != tree->getRoot()) {
+                        nonRootNodes.push_back(nodeId);
+                    }
                 }
-                case 1: {
-                    std::vector<NodeId> sources;
-                    for (NodeId nodeId : attachedNodes) {
-                        if (!collectNodeIds(tree->getProperParts(nodeId)).empty()) {
-                            sources.push_back(nodeId);
-                        }
-                    }
-                    const NodeId sourceId = randomElement(sources, rng);
-                    std::vector<NodeId> targets = attachedNodes;
-                    targets.erase(std::remove(targets.begin(), targets.end(), sourceId), targets.end());
-                    const NodeId targetId = randomElement(targets, rng);
-                    auto directProperParts = collectNodeIds(tree->getProperParts(sourceId));
-                    const NodeId pixelId = randomElement(directProperParts, rng);
-                    editor.moveProperPart(targetId, sourceId, pixelId);
-                    break;
+                if (!nonRootNodes.empty()) {
+                    const NodeId childId = randomElement(nonRootNodes, rng);
+                    const NodeId parentId = tree->getNodeParent(childId);
+                    editor.reparent(childId, newNodeId);
+                    editor.attach(parentId, newNodeId);
+                } else {
+                    const auto rootProperParts = collectNodeIds(tree->getProperParts(tree->getRoot()));
+                    require(!rootProperParts.empty(), "single-node tree must own a proper part");
+                    editor.moveProperPart(newNodeId, tree->getRoot(), rootProperParts.front());
+                    editor.attach(tree->getRoot(), newNodeId);
                 }
-                case 2: {
-                    std::vector<NodeId> sources;
-                    for (NodeId nodeId : attachedNodes) {
-                        if (!collectNodeIds(tree->getProperParts(nodeId)).empty()) {
-                            sources.push_back(nodeId);
-                        }
-                    }
-                    const NodeId sourceId = randomElement(sources, rng);
-                    std::vector<NodeId> targets = attachedNodes;
-                    targets.erase(std::remove(targets.begin(), targets.end(), sourceId), targets.end());
-                    const NodeId targetId = randomElement(targets, rng);
-                    editor.moveProperParts(targetId, sourceId);
-                    break;
-                }
-                case 3: {
-                    std::vector<NodeId> movableNodes;
-                    for (NodeId nodeId : attachedNodes) {
-                        if (nodeId != tree->getRoot()) {
-                            movableNodes.push_back(nodeId);
-                        }
-                    }
-                    const NodeId nodeId = randomElement(movableNodes, rng);
-                    auto subtree = collectNodeIds(tree->getNodeSubtree(nodeId));
-                    std::vector<NodeId> possibleParents;
-                    for (NodeId candidateId : attachedNodes) {
-                        if (!containsNode(subtree, candidateId)) {
-                            possibleParents.push_back(candidateId);
-                        }
-                    }
-                    if (!possibleParents.empty()) {
-                        editor.reparent(nodeId, randomElement(possibleParents, rng));
-                    }
-                    break;
-                }
-                case 4: {
-                    std::vector<NodeId> sources;
-                    for (NodeId nodeId : attachedNodes) {
-                        if (!collectNodeIds(tree->getChildren(nodeId)).empty()) {
-                            sources.push_back(nodeId);
-                        }
-                    }
-                    const NodeId sourceId = randomElement(sources, rng);
-                    auto subtree = collectNodeIds(tree->getNodeSubtree(sourceId));
-                    std::vector<NodeId> possibleTargets;
-                    for (NodeId candidateId : attachedNodes) {
-                        if (candidateId != sourceId && !containsNode(subtree, candidateId)) {
-                            possibleTargets.push_back(candidateId);
-                        }
-                    }
-                    if (!possibleTargets.empty()) {
-                        editor.moveChildren(randomElement(possibleTargets, rng), sourceId);
-                    }
-                    break;
-                }
-                case 5: {
-                    std::vector<NodeId> mergeableLeaves;
-                    for (NodeId nodeId : attachedNodes) {
-                        if (nodeId != tree->getRoot() && tree->isLeaf(nodeId)) {
-                            mergeableLeaves.push_back(nodeId);
-                        }
-                    }
-                    editor.mergeNodeIntoParent(randomElement(mergeableLeaves, rng));
-                    break;
-                }
-                case 6: {
-                    std::vector<NodeId> prunableNodes;
-                    for (NodeId nodeId : attachedNodes) {
-                        if (nodeId != tree->getRoot()) {
-                            prunableNodes.push_back(nodeId);
-                        }
-                    }
-                    editor.pruneNode(randomElement(prunableNodes, rng));
-                    break;
-                }
-                default:
-                    require(false, "unexpected invariant-test operation");
+                break;
             }
-            editor.commitUnchecked();
+            case 1: {
+                std::vector<NodeId> sources;
+                for (NodeId nodeId : attachedNodes) {
+                    if (!collectNodeIds(tree->getProperParts(nodeId)).empty()) {
+                        sources.push_back(nodeId);
+                    }
+                }
+                const NodeId sourceId = randomElement(sources, rng);
+                std::vector<NodeId> targets = attachedNodes;
+                targets.erase(std::remove(targets.begin(), targets.end(), sourceId), targets.end());
+                const NodeId targetId = randomElement(targets, rng);
+                auto directProperParts = collectNodeIds(tree->getProperParts(sourceId));
+                const NodeId pixelId = randomElement(directProperParts, rng);
+                editor.moveProperPart(targetId, sourceId, pixelId);
+                break;
+            }
+            case 2: {
+                std::vector<NodeId> sources;
+                for (NodeId nodeId : attachedNodes) {
+                    if (!collectNodeIds(tree->getProperParts(nodeId)).empty()) {
+                        sources.push_back(nodeId);
+                    }
+                }
+                const NodeId sourceId = randomElement(sources, rng);
+                std::vector<NodeId> targets = attachedNodes;
+                targets.erase(std::remove(targets.begin(), targets.end(), sourceId), targets.end());
+                const NodeId targetId = randomElement(targets, rng);
+                editor.moveProperParts(targetId, sourceId);
+                break;
+            }
+            case 3: {
+                std::vector<NodeId> movableNodes;
+                for (NodeId nodeId : attachedNodes) {
+                    if (nodeId != tree->getRoot()) {
+                        movableNodes.push_back(nodeId);
+                    }
+                }
+                const NodeId nodeId = randomElement(movableNodes, rng);
+                auto subtree = collectNodeIds(tree->getNodeSubtree(nodeId));
+                std::vector<NodeId> possibleParents;
+                for (NodeId candidateId : attachedNodes) {
+                    if (!containsNode(subtree, candidateId)) {
+                        possibleParents.push_back(candidateId);
+                    }
+                }
+                if (!possibleParents.empty()) {
+                    editor.reparent(nodeId, randomElement(possibleParents, rng));
+                }
+                break;
+            }
+            case 4: {
+                std::vector<NodeId> sources;
+                for (NodeId nodeId : attachedNodes) {
+                    if (!collectNodeIds(tree->getChildren(nodeId)).empty()) {
+                        sources.push_back(nodeId);
+                    }
+                }
+                const NodeId sourceId = randomElement(sources, rng);
+                auto subtree = collectNodeIds(tree->getNodeSubtree(sourceId));
+                std::vector<NodeId> possibleTargets;
+                for (NodeId candidateId : attachedNodes) {
+                    if (candidateId != sourceId && !containsNode(subtree, candidateId)) {
+                        possibleTargets.push_back(candidateId);
+                    }
+                }
+                if (!possibleTargets.empty()) {
+                    editor.moveChildren(randomElement(possibleTargets, rng), sourceId);
+                }
+                break;
+            }
+            case 5: {
+                std::vector<NodeId> mergeableLeaves;
+                for (NodeId nodeId : attachedNodes) {
+                    if (nodeId != tree->getRoot() && tree->isLeaf(nodeId)) {
+                        mergeableLeaves.push_back(nodeId);
+                    }
+                }
+                editor.mergeNodeIntoParent(randomElement(mergeableLeaves, rng));
+                break;
+            }
+            case 6: {
+                std::vector<NodeId> prunableNodes;
+                for (NodeId nodeId : attachedNodes) {
+                    if (nodeId != tree->getRoot()) {
+                        prunableNodes.push_back(nodeId);
+                    }
+                }
+                editor.pruneNode(randomElement(prunableNodes, rng));
+                break;
+            }
+            default:
+                require(false, "unexpected invariant-test operation");
+            }
+
+            bool removedEmptySubtree = true;
+            while (removedEmptySubtree) {
+                removedEmptySubtree = false;
+                const auto currentNodes = collectNodeIds(tree->getNodeSubtree(tree->getRoot()));
+                for (NodeId nodeId : currentNodes) {
+                    if (nodeId == tree->getRoot()) {
+                        continue;
+                    }
+                    if (collectNodeIds(tree->getConnectedComponent(nodeId)).empty()) {
+                        editor.pruneNode(nodeId);
+                        removedEmptySubtree = true;
+                        break;
+                    }
+                }
+            }
+            editor.commit();
 
             requireTreeInvariantSnapshot(*tree, (isMaxtree ? "max-tree" : "min-tree") + std::string(" connected mutation step ") + std::to_string(step));
 
             const auto exportedHigra = exportFlatHigraHierarchy(*tree);
-            auto rebuilt = makeTreeFromHigraParent(
-                exportedHigra.first,
-                tree->getNumRowsOfImage(),
-                tree->getNumColsOfImage(),
-                isMaxtree);
+            auto rebuilt = makeTreeFromHigraParent(exportedHigra.first, tree->getNumRowsOfGridDomain2D(), tree->getNumColsOfGridDomain2D(), isMaxtree);
             requireTreeInvariantSnapshot(*rebuilt, (isMaxtree ? "max-tree" : "min-tree") + std::string(" rebuilt mutation step ") + std::to_string(step));
             const auto reexportedHigra = exportFlatHigraHierarchy(*rebuilt);
-            requireVectorEqual(reexportedHigra.first, exportedHigra.first, (isMaxtree ? "max-tree" : "min-tree") + std::string(" Higra parent round-trip step ") + std::to_string(step));
-            requireVectorEqual(reexportedHigra.second, exportedHigra.second, (isMaxtree ? "max-tree" : "min-tree") + std::string(" Higra altitude round-trip step ") + std::to_string(step));
+            requireVectorEqual(reexportedHigra.first, exportedHigra.first,
+                               (isMaxtree ? "max-tree" : "min-tree") + std::string(" Higra parent round-trip step ") + std::to_string(step));
+            requireVectorEqual(reexportedHigra.second, exportedHigra.second,
+                               (isMaxtree ? "max-tree" : "min-tree") + std::string(" Higra altitude round-trip step ") + std::to_string(step));
         }
     }
 

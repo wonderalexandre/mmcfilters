@@ -3,6 +3,7 @@
 #include "../trees/MorphologicalTree.hpp"
 #include "../trees/detail/ProperPartEntryNode.hpp"
 #include "../utils/Common.hpp"
+#include "../utils/Image.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -11,6 +12,20 @@
 #include <vector>
 
 namespace mmcfilters::local_events {
+
+/**
+ * @brief Relative integer offset of one sample in a local image window.
+ *
+ * Offsets are expressed in image coordinates. `rowOffset` moves down for
+ * positive values and `colOffset` moves right for positive values.
+ */
+struct WindowOffset {
+    /// Row displacement from the anchor pixel.
+    int rowOffset = 0;
+
+    /// Column displacement from the anchor pixel.
+    int colOffset = 0;
+};
 
 /**
  * @brief Generic event engine for finite binary local computations.
@@ -35,31 +50,18 @@ namespace mmcfilters::local_events {
  * policy-based event model.
  */
 class EventEngine {
-public:
-    /**
-     * @brief Relative integer offset of one sample in a local image window.
-     *
-     * Offsets are expressed in image coordinates. `rowOffset` moves down for
-     * positive values and `colOffset` moves right for positive values.
-     */
-    struct WindowOffset {
-        /// Row displacement from the anchor pixel.
-        int rowOffset = 0;
-
-        /// Column displacement from the anchor pixel.
-        int colOffset = 0;
-    };
-
-private:
+  private:
     /**
      * @brief One sample becoming visible at `node`.
      */
     struct EntryEvent {
+        /** @brief Stores the node. */
         NodeId node = InvalidNode;
+        /** @brief Stores the mask. */
         uint32_t mask = 0;
     };
 
-public:
+  public:
     /**
      * @brief Returns the first ancestor of `anchorPixel` that contains `samplePixel`.
      *
@@ -106,8 +108,8 @@ public:
      * `InvalidNode` if the anchor/sample is outside the image or unowned.
      */
     static NodeId entryNode(const MorphologicalTree& tree, int anchorPixel, WindowOffset offset) {
-        const int rows = tree.getNumRowsOfImage();
-        const int cols = tree.getNumColsOfImage();
+        const int rows = tree.getNumRowsOfGridDomain2D();
+        const int cols = tree.getNumColsOfGridDomain2D();
         if (rows <= 0 || cols <= 0) {
             return InvalidNode;
         }
@@ -160,19 +162,16 @@ public:
      * @throws std::invalid_argument If the tree has no image domain, has no
      * live root, or the window contains more than 32 samples.
      */
-    template<class Policy>
-    static std::vector<typename Policy::Bucket> computeDeltasWithPolicy(
-        const MorphologicalTree& tree,
-        const std::vector<WindowOffset>& window,
-        const Policy& policy) {
+    template <class Policy>
+    static std::vector<typename Policy::Bucket> computeDeltasWithPolicy(const MorphologicalTree& tree, const std::vector<WindowOffset>& window,
+                                                                        const Policy& policy) {
         requireValidInput(tree, window);
 
-        std::vector<typename Policy::Bucket> buckets(
-            static_cast<std::size_t>(tree.getNumInternalNodeSlots()));
+        std::vector<typename Policy::Bucket> buckets(static_cast<std::size_t>(tree.getNumInternalNodeSlots()));
         std::vector<EntryEvent> events;
         events.reserve(window.size());
 
-        const int totalPixels = tree.getNumRowsOfImage() * tree.getNumColsOfImage();
+        const int totalPixels = tree.getNumRowsOfGridDomain2D() * tree.getNumColsOfGridDomain2D();
         for (int anchorPixel = 0; anchorPixel < totalPixels; ++anchorPixel) {
             events.clear();
             for (std::size_t i = 0; i < window.size(); ++i) {
@@ -239,23 +238,23 @@ public:
      * `tree.getNumInternalNodeSlots()`.
      * @throws std::invalid_argument If the tree/window shape is invalid.
      */
-    template<class Policy>
-    static std::vector<typename Policy::Bucket> computeWithPolicy(
-        const MorphologicalTree& tree,
-        const std::vector<WindowOffset>& window,
-        const Policy& policy) {
-        std::vector<typename Policy::Bucket> buckets =
-            computeDeltasWithPolicy(tree, window, policy);
+    template <class Policy>
+    static std::vector<typename Policy::Bucket> computeWithPolicy(const MorphologicalTree& tree, const std::vector<WindowOffset>& window,
+                                                                  const Policy& policy) {
+        std::vector<typename Policy::Bucket> buckets = computeDeltasWithPolicy(tree, window, policy);
         aggregateSubtreeBuckets(tree, buckets, policy);
         return buckets;
     }
 
-private:
+  private:
     /**
      * @brief Validates the tree/window shape required by the event engine.
+     *
+     * @param tree Tree topology used by the operation.
+     * @param window Finite local sampling window.
      */
     static void requireValidInput(const MorphologicalTree& tree, const std::vector<WindowOffset>& window) {
-        if (tree.getNumRowsOfImage() <= 0 || tree.getNumColsOfImage() <= 0) {
+        if (tree.getNumRowsOfGridDomain2D() <= 0 || tree.getNumColsOfGridDomain2D() <= 0) {
             throw std::invalid_argument("EventEngine requires a non-empty image domain.");
         }
         if (!tree.isAlive(tree.getRoot())) {
@@ -274,6 +273,9 @@ private:
      * root chain. The node-id fallback keeps the comparator strict and
      * deterministic if a caller ever passes a topology with stale or unusual
      * ancestry information.
+     *
+     * @param tree Tree topology used by the operation.
+     * @param events Local events processed by the engine.
      */
     static void sortEventsBottomUp(const MorphologicalTree& tree, std::vector<EntryEvent>& events) {
         std::sort(events.begin(), events.end(), [&](const EntryEvent& lhs, const EntryEvent& rhs) {
@@ -298,12 +300,13 @@ private:
      * starts or changes. The final per-node attribute value is a subtree
      * accumulation, so every child bucket is merged into its parent in
      * post-order using the policy-defined merge operation.
+     *
+     * @param tree Tree topology used by the operation.
+     * @param values Values read or written by the operation.
+     * @param policy Policy controlling the operation.
      */
-    template<class Bucket, class Policy>
-    static void aggregateSubtreeBuckets(
-        const MorphologicalTree& tree,
-        std::vector<Bucket>& values,
-        const Policy& policy) {
+    template <class Bucket, class Policy>
+    static void aggregateSubtreeBuckets(const MorphologicalTree& tree, std::vector<Bucket>& values, const Policy& policy) {
         std::vector<std::pair<NodeId, bool>> stack;
         stack.emplace_back(tree.getRoot(), false);
 
@@ -324,8 +327,5 @@ private:
         }
     }
 };
-
-/// Convenience alias for local-event window offsets.
-using WindowOffset = EventEngine::WindowOffset;
 
 } // namespace mmcfilters::local_events

@@ -55,8 +55,7 @@ ImageUInt8Ptr loadGrayscaleImage(const std::filesystem::path& path) {
     return image;
 }
 
-template <typename Fn>
-auto timed(Fn&& fn) {
+template <typename Fn> auto timed(Fn&& fn) {
     const auto start = std::chrono::steady_clock::now();
     auto result = fn();
     const auto end = std::chrono::steady_clock::now();
@@ -64,8 +63,7 @@ auto timed(Fn&& fn) {
     return std::pair{std::move(result), static_cast<double>(micros) / 1000.0};
 }
 
-template <typename Fn>
-double timedVoid(Fn&& fn) {
+template <typename Fn> double timedVoid(Fn&& fn) {
     const auto start = std::chrono::steady_clock::now();
     fn();
     const auto end = std::chrono::steady_clock::now();
@@ -73,9 +71,7 @@ double timedVoid(Fn&& fn) {
     return static_cast<double>(micros) / 1000.0;
 }
 
-double nsToMs(std::int64_t ns) {
-    return static_cast<double>(ns) / 1'000'000.0;
-}
+double nsToMs(std::int64_t ns) { return static_cast<double>(ns) / 1'000'000.0; }
 
 double safeRatio(std::size_t numerator, std::size_t denominator) {
     if (denominator == 0) {
@@ -87,36 +83,23 @@ double safeRatio(std::size_t numerator, std::size_t denominator) {
 using TraceProfileStats = ContourTraceComputation::IncrementalContourTraces::TraceProfileStats;
 
 std::int64_t accountedNs(const TraceProfileStats& stats) {
-    return stats.profileCountersNs +
-           stats.buildAdjacencyNs +
-           stats.walkLoopsNs +
-           stats.resetOutgoingNs +
-           stats.commitEdgesNs +
-           stats.commitLoopsNs +
+    return stats.profileCountersNs + stats.buildAdjacencyNs + stats.walkLoopsNs + stats.resetOutgoingNs + stats.commitEdgesNs + stats.commitLoopsNs +
            stats.releaseScratchNs;
 }
 
 void printProfileStats(const TraceProfileStats& stats) {
     const auto accounted = accountedNs(stats);
-    std::cout << "    nodes_traced=" << stats.nodesTraced
-              << " edges_traced=" << stats.edgesTraced
-              << " loops_traced=" << stats.loopsTraced << '\n';
-    std::cout << "    outgoing_vertices=" << stats.outgoingVertices
-              << " single_outgoing_vertices=" << stats.singleOutgoingVertices
-              << " multi_outgoing_vertices=" << stats.multiOutgoingVertices
-              << " avg_outgoing_degree=" << safeRatio(stats.edgesTraced, stats.outgoingVertices)
+    std::cout << "    nodes_traced=" << stats.nodesTraced << " edges_traced=" << stats.edgesTraced << " loops_traced=" << stats.loopsTraced << '\n';
+    std::cout << "    outgoing_vertices=" << stats.outgoingVertices << " single_outgoing_vertices=" << stats.singleOutgoingVertices
+              << " multi_outgoing_vertices=" << stats.multiOutgoingVertices << " avg_outgoing_degree=" << safeRatio(stats.edgesTraced, stats.outgoingVertices)
               << " max_outgoing_degree=" << stats.maxOutgoingDegree << '\n';
-    std::cout << "    successor_steps_single=" << stats.singleSuccessorSteps
-              << " successor_steps_ambiguous=" << stats.ambiguousSuccessorSteps
+    std::cout << "    successor_steps_single=" << stats.singleSuccessorSteps << " successor_steps_ambiguous=" << stats.ambiguousSuccessorSteps
               << " avg_scan_per_ambiguous=" << safeRatio(stats.successorCandidateScans, stats.ambiguousSuccessorSteps)
               << " visited_scan_fraction=" << safeRatio(stats.successorVisitedSkips, stats.successorCandidateScans) << '\n';
-    std::cout << "    successor_scans=" << stats.successorCandidateScans
-              << " unvisited_candidates=" << stats.successorUnvisitedCandidates
-              << " visited_skips=" << stats.successorVisitedSkips
-              << " single_visited_stops=" << stats.singleSuccessorVisitedStops
+    std::cout << "    successor_scans=" << stats.successorCandidateScans << " unvisited_candidates=" << stats.successorUnvisitedCandidates
+              << " visited_skips=" << stats.successorVisitedSkips << " single_visited_stops=" << stats.singleSuccessorVisitedStops
               << " ambiguous_dead_ends=" << stats.ambiguousSuccessorDeadEnds << '\n';
-    std::cout << "    closed_loop_stops=" << stats.closedLoopStops
-              << " missing_outgoing_stops=" << stats.missingOutgoingStops << '\n';
+    std::cout << "    closed_loop_stops=" << stats.closedLoopStops << " missing_outgoing_stops=" << stats.missingOutgoingStops << '\n';
     std::cout << "    profile_counters=" << nsToMs(stats.profileCountersNs) << " ms"
               << " build_adjacency=" << nsToMs(stats.buildAdjacencyNs) << " ms"
               << " walk_loops=" << nsToMs(stats.walkLoopsNs) << " ms"
@@ -134,9 +117,7 @@ void profileCase(const std::string& label, const MorphologicalTree& tree, int re
     TraceProfileStats totalStats;
 
     for (int repeat = 0; repeat < repeats; ++repeat) {
-        auto [traces, extractMs] = timed([&]() {
-            return ContourTraceComputation::extract(tree);
-        });
+        auto [traces, extractMs] = timed([&]() { return ContourTraceComputation::extract(tree); });
         totalExtractMs += extractMs;
 
         totalEdgeMs += timedVoid([&]() {
@@ -173,10 +154,10 @@ void profileCase(const std::string& label, const MorphologicalTree& tree, int re
         });
     }
 
-    std::cout << "\n" << label << '\n'
-              << "  nodes: live=" << tree.getNumNodes()
-              << " slots=" << tree.getNumInternalNodeSlots()
-              << " proper_parts=" << tree.getNumTotalProperParts() << '\n'
+    std::cout << "\n"
+              << label << '\n'
+              << "  nodes: live=" << tree.getNumNodes() << " slots=" << tree.getNumInternalNodeSlots() << " proper_parts=" << tree.getNumTotalProperParts()
+              << '\n'
               << "  extract_avg=" << totalExtractMs / repeats << " ms"
               << " edge_materialize_avg=" << totalEdgeMs / repeats << " ms"
               << " loop_trace_wall_avg=" << totalLoopWallMs / repeats << " ms\n";
@@ -208,15 +189,11 @@ void profileCase(const std::string& label, const MorphologicalTree& tree, int re
 }
 
 void runProfile(ImageUInt8Ptr image, int repeats) {
-    auto [maxTree, maxBuildMs] = timed([&]() {
-        return MorphologicalTreeFactory::createMaxTree(image, 1.5);
-    });
+    auto [maxTree, maxBuildMs] = timed([&]() { return MorphologicalTreeFactory::createMaxTree(image, 1.5); });
     std::cout << "max-tree build: " << maxBuildMs << " ms\n";
     profileCase("max-tree contour trace profile", maxTree.topology(), repeats);
 
-    auto [minTree, minBuildMs] = timed([&]() {
-        return MorphologicalTreeFactory::createMinTree(image, 1.5);
-    });
+    auto [minTree, minBuildMs] = timed([&]() { return MorphologicalTreeFactory::createMinTree(image, 1.5); });
     std::cout << "\nmin-tree build: " << minBuildMs << " ms\n";
     profileCase("min-tree contour trace profile", minTree.topology(), repeats);
 }

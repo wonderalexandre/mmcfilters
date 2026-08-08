@@ -17,38 +17,11 @@ include(GNUInstallDirs)
 
 set(MMCFILTERS_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 get_filename_component(MMCFILTERS_INCLUDE_ROOT "${MMCFILTERS_ROOT}" DIRECTORY)
-set(MMCFILTERS_COMPONENT_DIRS
-    ${MMCFILTERS_ROOT}/trees
-    ${MMCFILTERS_ROOT}/filters
-    ${MMCFILTERS_ROOT}/attributes
-    ${MMCFILTERS_ROOT}/contours
-    ${MMCFILTERS_ROOT}/localEvents
-    ${MMCFILTERS_ROOT}/dataStructure
-    ${MMCFILTERS_ROOT}/utils
-)
+include("${MMCFILTERS_INCLUDE_ROOT}/cmake/mmcfiltersPublicHeaders.cmake")
 
-# Agrupa headers e fontes do núcleo. Usamos GLOB para manter listas atualizadas
-# automaticamente ao adicionar novos arquivos.
-file(GLOB_RECURSE MMCFILTERS_HEADER_FILES CONFIGURE_DEPENDS
-    "${MMCFILTERS_ROOT}/trees/*.hpp"
-    "${MMCFILTERS_ROOT}/trees/*.tpp"
-    "${MMCFILTERS_ROOT}/filters/*.hpp"
-    "${MMCFILTERS_ROOT}/attributes/*.hpp"
-    "${MMCFILTERS_ROOT}/contours/*.hpp"
-    "${MMCFILTERS_ROOT}/localEvents/*.hpp"
-    "${MMCFILTERS_ROOT}/dataStructure/*.hpp"
-    "${MMCFILTERS_ROOT}/utils/*.hpp"
-)
-
-file(GLOB_RECURSE MMCFILTERS_SOURCE_FILES CONFIGURE_DEPENDS
-    "${MMCFILTERS_ROOT}/trees/*.cpp"
-    "${MMCFILTERS_ROOT}/filters/*.cpp"
-    "${MMCFILTERS_ROOT}/attributes/*.cpp"
-    "${MMCFILTERS_ROOT}/contours/*.cpp"
-    "${MMCFILTERS_ROOT}/localEvents/*.cpp"
-    "${MMCFILTERS_ROOT}/dataStructure/*.cpp"
-    "${MMCFILTERS_ROOT}/utils/*.cpp"
-)
+# Headers are intentionally explicit: adding a file does not make it part of
+# the installed API by accident.
+set(MMCFILTERS_HEADER_FILES ${MMCFILTERS_INSTALL_HEADERS})
 
 if(NOT TARGET mmcfilters_lib)
     add_library(mmcfilters_lib INTERFACE)
@@ -70,11 +43,8 @@ target_compile_features(mmcfilters_lib INTERFACE cxx_std_20)
 # Alias canônico para consumo moderno via target namespace.
 add_library(mmcfilters::core ALIAS mmcfilters_lib)
 
-# Organiza os arquivos por árvore no Xcode/Visual Studio.
-source_group(TREE ${MMCFILTERS_ROOT} FILES
-    ${MMCFILTERS_HEADER_FILES}
-    ${MMCFILTERS_SOURCE_FILES}
-)
+# Organiza os headers por árvore no Xcode/Visual Studio.
+source_group(TREE ${MMCFILTERS_ROOT} FILES ${MMCFILTERS_HEADER_FILES})
 
 # Regras de instalação padrão: lib + headers.
 install(TARGETS mmcfilters_lib
@@ -83,11 +53,15 @@ install(TARGETS mmcfilters_lib
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
-foreach(dir IN LISTS MMCFILTERS_COMPONENT_DIRS)
-    get_filename_component(dir_name ${dir} NAME)
-    install(DIRECTORY ${dir}/
-            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mmcfilters/${dir_name}
-            FILES_MATCHING PATTERN "*.hpp" PATTERN "*.tpp")
+foreach(header IN LISTS MMCFILTERS_INSTALL_HEADERS)
+    file(RELATIVE_PATH
+        header_relative
+        "${MMCFILTERS_INCLUDE_ROOT}"
+        "${header}")
+    get_filename_component(header_relative_dir "${header_relative}" DIRECTORY)
+    install(
+        FILES "${header}"
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/${header_relative_dir}")
 endforeach()
 
 install(EXPORT mmcfiltersTargets

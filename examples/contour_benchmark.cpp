@@ -59,8 +59,7 @@ ImageUInt8Ptr loadGrayscaleImage(const std::filesystem::path& path) {
     return image;
 }
 
-template <typename Fn>
-auto timed(Fn&& fn) {
+template <typename Fn> auto timed(Fn&& fn) {
     const auto start = std::chrono::steady_clock::now();
     auto result = fn();
     const auto end = std::chrono::steady_clock::now();
@@ -68,8 +67,7 @@ auto timed(Fn&& fn) {
     return std::pair{std::move(result), static_cast<double>(micros) / 1000.0};
 }
 
-template <typename Fn>
-void measure(const std::string& label, int repeats, Fn&& fn) {
+template <typename Fn> void measure(const std::string& label, int repeats, Fn&& fn) {
     std::uint64_t checksum = 0;
     const auto start = std::chrono::steady_clock::now();
     for (int i = 0; i < repeats; ++i) {
@@ -105,8 +103,7 @@ std::vector<NodeId> shuffledAliveNodes(const MorphologicalTree& tree) {
     return nodes;
 }
 
-std::size_t sumContoursInOrder(const std::vector<NodeId>& nodes,
-                               const ContoursComputedIncrementally::IncrementalContours& contours) {
+std::size_t sumContoursInOrder(const std::vector<NodeId>& nodes, const ContoursComputedIncrementally::IncrementalContours& contours) {
     std::size_t sum = 0;
     for (NodeId node : nodes) {
         sum += sumContour(contours, node);
@@ -125,25 +122,19 @@ std::size_t sumContoursByNode(const ContoursComputedIncrementally::IncrementalCo
     return sum;
 }
 
-double mib(std::size_t bytes) {
-    return static_cast<double>(bytes) / (1024.0 * 1024.0);
-}
+double mib(std::size_t bytes) { return static_cast<double>(bytes) / (1024.0 * 1024.0); }
 
 std::size_t storageChecksum(const ContoursComputedIncrementally::IncrementalContours::StorageStats& stats) {
-    return stats.addDeltaValues + stats.removeDeltaValues + stats.cachedContourValues +
-           stats.cachedContourCapacity + stats.cachedContourReadyNodes + stats.approxAllocatedBytes;
+    return stats.addDeltaValues + stats.removeDeltaValues + stats.cachedContourValues + stats.cachedContourCapacity + stats.cachedContourReadyNodes +
+           stats.approxAllocatedBytes;
 }
 
-void printStorageStats(const std::string& label,
-                       const ContoursComputedIncrementally::IncrementalContours& contours) {
+void printStorageStats(const std::string& label, const ContoursComputedIncrementally::IncrementalContours& contours) {
     const auto stats = contours.storageStats();
     std::cout << "    " << label << ": "
-              << "add_delta_values=" << stats.addDeltaValues
-              << " remove_delta_values=" << stats.removeDeltaValues
-              << " cached_contour_values=" << stats.cachedContourValues
-              << " cached_contour_capacity=" << stats.cachedContourCapacity
-              << " cached_ready_nodes=" << stats.cachedContourReadyNodes
-              << " approx_allocated=" << mib(stats.approxAllocatedBytes) << " MiB\n";
+              << "add_delta_values=" << stats.addDeltaValues << " remove_delta_values=" << stats.removeDeltaValues
+              << " cached_contour_values=" << stats.cachedContourValues << " cached_contour_capacity=" << stats.cachedContourCapacity
+              << " cached_ready_nodes=" << stats.cachedContourReadyNodes << " approx_allocated=" << mib(stats.approxAllocatedBytes) << " MiB\n";
 }
 
 void printBenchmarkMethods() {
@@ -179,73 +170,51 @@ void printTreeStats(const MorphologicalTree& tree, double buildMs) {
     }
 
     std::cout << "  build: " << buildMs << " ms\n"
-              << "  nodes: live=" << numNodes
-              << " slots=" << tree.getNumInternalNodeSlots()
-              << " leaves=" << tree.getNumLeafNodes()
+              << "  nodes: live=" << numNodes << " slots=" << tree.getNumInternalNodeSlots() << " leaves=" << tree.getNumLeafNodes()
               << " proper_parts=" << tree.getNumTotalProperParts() << '\n'
-              << "  branching: avg_children=" << (numNodes > 0 ? static_cast<double>(totalChildren) / numNodes : 0.0)
-              << " max_children=" << maxChildren << '\n'
+              << "  branching: avg_children=" << (numNodes > 0 ? static_cast<double>(totalChildren) / numNodes : 0.0) << " max_children=" << maxChildren << '\n'
               << "  direct_proper_parts: avg=" << (numNodes > 0 ? static_cast<double>(totalDirectProperParts) / numNodes : 0.0)
-              << " min=" << minDirectProperParts
-              << " max=" << maxDirectProperParts << '\n';
+              << " min=" << minDirectProperParts << " max=" << maxDirectProperParts << '\n';
 }
 
-void printSingleRunBreakdown(const MorphologicalTree& tree,
-                             const std::vector<NodeId>& nodesInTreeOrder,
-                             const std::vector<NodeId>& nodesInRandomOrder) {
+void printSingleRunBreakdown(const MorphologicalTree& tree, const std::vector<NodeId>& nodesInTreeOrder, const std::vector<NodeId>& nodesInRandomOrder) {
     std::cout << "  single-run breakdown:\n";
 
-    auto [extractedContours, extractMs] = timed([&]() {
-        return ContoursComputedIncrementally::extractCompactContours(tree);
-    });
+    auto [extractedContours, extractMs] = timed([&]() { return ContoursComputedIncrementally::extractCompactContours(tree); });
     std::cout << "    extract only: " << extractMs << " ms"
               << " checksum=" << storageChecksum(extractedContours.storageStats()) << '\n';
     printStorageStats("after extract", extractedContours);
 
-    auto [treeOrderSum, treeOrderIterMs] = timed([&]() {
-        return sumContoursInOrder(nodesInTreeOrder, extractedContours);
-    });
+    auto [treeOrderSum, treeOrderIterMs] = timed([&]() { return sumContoursInOrder(nodesInTreeOrder, extractedContours); });
     std::cout << "    iterate all via getContour(node) after extract: " << treeOrderIterMs << " ms"
               << " checksum=" << treeOrderSum << '\n';
     printStorageStats("after tree-order iteration", extractedContours);
 
-    auto [byNodeContours, byNodeExtractMs] = timed([&]() {
-        return ContoursComputedIncrementally::extractCompactContours(tree);
-    });
+    auto [byNodeContours, byNodeExtractMs] = timed([&]() { return ContoursComputedIncrementally::extractCompactContours(tree); });
     const auto byNodeExtractStats = byNodeContours.storageStats();
-    auto [byNodeSum, byNodeIterMs] = timed([&]() {
-        return sumContoursByNode(byNodeContours);
-    });
+    auto [byNodeSum, byNodeIterMs] = timed([&]() { return sumContoursByNode(byNodeContours); });
     std::cout << "    extract only for contoursByNode(): " << byNodeExtractMs << " ms"
               << " checksum=" << storageChecksum(byNodeExtractStats) << '\n';
     std::cout << "    iterate all via contoursByNode() after extract: " << byNodeIterMs << " ms"
               << " checksum=" << byNodeSum << '\n';
     printStorageStats("after contoursByNode()", byNodeContours);
 
-    auto [randomContours, randomExtractMs] = timed([&]() {
-        return ContoursComputedIncrementally::extractCompactContours(tree);
-    });
+    auto [randomContours, randomExtractMs] = timed([&]() { return ContoursComputedIncrementally::extractCompactContours(tree); });
     const auto randomExtractStats = randomContours.storageStats();
-    auto [randomOrderSum, randomOrderIterMs] = timed([&]() {
-        return sumContoursInOrder(nodesInRandomOrder, randomContours);
-    });
+    auto [randomOrderSum, randomOrderIterMs] = timed([&]() { return sumContoursInOrder(nodesInRandomOrder, randomContours); });
     std::cout << "    extract only for random order: " << randomExtractMs << " ms"
               << " checksum=" << storageChecksum(randomExtractStats) << '\n';
     std::cout << "    iterate all via getContour(node) random order after extract: " << randomOrderIterMs << " ms"
               << " checksum=" << randomOrderSum << '\n';
     printStorageStats("after random-order iteration", randomContours);
 
-    auto [globalCacheContours, globalCacheExtractMs] = timed([&]() {
-        return ContoursComputedIncrementally::extractCompactContours(tree);
-    });
+    auto [globalCacheContours, globalCacheExtractMs] = timed([&]() { return ContoursComputedIncrementally::extractCompactContours(tree); });
     const auto globalCacheExtractStats = globalCacheContours.storageStats();
     auto [globalCacheChecksum, globalCacheMs] = timed([&]() {
         globalCacheContours.materializeAll();
         return storageChecksum(globalCacheContours.storageStats());
     });
-    auto [globalCacheIterSum, globalCacheIterMs] = timed([&]() {
-        return sumContoursInOrder(nodesInTreeOrder, globalCacheContours);
-    });
+    auto [globalCacheIterSum, globalCacheIterMs] = timed([&]() { return sumContoursInOrder(nodesInTreeOrder, globalCacheContours); });
     std::cout << "    extract only for materialize all: " << globalCacheExtractMs << " ms"
               << " checksum=" << storageChecksum(globalCacheExtractStats) << '\n';
     std::cout << "    materializeAll() after extract: " << globalCacheMs << " ms"
@@ -313,18 +282,13 @@ int main(int argc, char** argv) {
         image = makeBenchmarkImage(rows, cols);
     }
 
-    std::cout << "domain=" << image->getNumRows() << "x" << image->getNumCols()
-              << " repeats=" << repeats << '\n';
+    std::cout << "domain=" << image->getNumRows() << "x" << image->getNumCols() << " repeats=" << repeats << '\n';
     printBenchmarkMethods();
 
-    auto [componentTree, componentBuildMs] = timed([&]() {
-        return MorphologicalTreeFactory::createMaxTree(image, 1.5);
-    });
+    auto [componentTree, componentBuildMs] = timed([&]() { return MorphologicalTreeFactory::createMaxTree(image, 1.5); });
     runCase("component-tree max-tree radius=1.5", componentTree.topology(), componentBuildMs, repeats);
 
-    auto [tosTree, tosBuildMs] = timed([&]() {
-        return MorphologicalTreeFactory::createTreeOfShapes(image, ToSInterpolation::SelfDual);
-    });
+    auto [tosTree, tosBuildMs] = timed([&]() { return MorphologicalTreeFactory::createTreeOfShapes(image, ToSInterpolation::SelfDual); });
     runCase("tree-of-shapes SelfDual", tosTree.topology(), tosBuildMs, repeats);
 
     return 0;

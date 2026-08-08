@@ -81,19 +81,19 @@ maf::ImageUInt8Ptr makeImage(int rows, int cols, std::span<const std::uint8_t> v
 
 const char* interpolationName(maf::ToSInterpolation interpolation) {
     switch (interpolation) {
-        case maf::ToSInterpolation::SelfDual:
-            return "SelfDual";
-        case maf::ToSInterpolation::Min4cMax8c:
-            return "Min4cMax8c";
-        case maf::ToSInterpolation::Min8cMax4c:
-            return "Min8cMax4c";
+    case maf::ToSInterpolation::SelfDual:
+        return "SelfDual";
+    case maf::ToSInterpolation::Min4cMax8c:
+        return "Min4cMax8c";
+    case maf::ToSInterpolation::Min8cMax4c:
+        return "Min8cMax4c";
     }
     return "unknown";
 }
 
 std::vector<Histogram> naiveSupportBitquadHistograms(const maf::MorphologicalTree& tree) {
-    const int rows = tree.getNumRowsOfImage();
-    const int cols = tree.getNumColsOfImage();
+    const int rows = tree.getNumRowsOfGridDomain2D();
+    const int cols = tree.getNumColsOfGridDomain2D();
     const std::array<std::pair<int, int>, 4> offsets = {{
         {0, 0},
         {1, 0},
@@ -118,8 +118,7 @@ std::vector<Histogram> naiveSupportBitquadHistograms(const maf::MorphologicalTre
                 }
 
                 const int q = maf::ImageUtils::to1D(qRow, qCol, cols);
-                for (maf::NodeId nodeId = tree.getProperPartOwner(q);
-                     nodeId != maf::InvalidNode;
+                for (maf::NodeId nodeId = tree.getProperPartOwner(q); nodeId != maf::InvalidNode;
                      nodeId = tree.isRoot(nodeId) ? maf::InvalidNode : tree.getNodeParent(nodeId)) {
                     auto& state = stateByNode[static_cast<std::size_t>(nodeId)];
                     if (state == 0) {
@@ -150,19 +149,13 @@ std::vector<Histogram> naiveSupportBitquadHistograms(const maf::MorphologicalTre
     return histograms;
 }
 
-Summary compareHistograms(
-    const maf::MorphologicalTree& tree,
-    std::span<const Histogram> actual,
-    std::span<const Histogram> expected,
-    const char* label) {
+Summary compareHistograms(const maf::MorphologicalTree& tree, std::span<const Histogram> actual, std::span<const Histogram> expected, const char* label) {
     Summary summary;
     int printed = 0;
     for (maf::NodeId nodeId : tree.getAliveNodeIds()) {
         bool nodeDiffers = false;
         for (std::size_t state = 0; state < 16; ++state) {
-            const int diff =
-                actual[static_cast<std::size_t>(nodeId)][state] -
-                expected[static_cast<std::size_t>(nodeId)][state];
+            const int diff = actual[static_cast<std::size_t>(nodeId)][state] - expected[static_cast<std::size_t>(nodeId)][state];
             if (diff == 0) {
                 continue;
             }
@@ -200,11 +193,7 @@ std::array<int, 6> familyValues(const Families& families) {
     }};
 }
 
-FamilySummary compareFamilies(
-    const maf::MorphologicalTree& tree,
-    std::span<const Families> actual,
-    std::span<const Families> expected,
-    const char* label) {
+FamilySummary compareFamilies(const maf::MorphologicalTree& tree, std::span<const Families> actual, std::span<const Families> expected, const char* label) {
     FamilySummary summary;
     int printed = 0;
     for (maf::NodeId nodeId : tree.getAliveNodeIds()) {
@@ -223,13 +212,9 @@ FamilySummary compareFamilies(
         if (nodeDiffers) {
             ++summary.mismatchedNodes;
             if (printed < 5) {
-                std::cout << "  " << label << " mismatch node=" << nodeId
-                          << " actual={empty=" << a[0] << " q1=" << a[1]
-                          << " q2=" << a[2] << " qd=" << a[3]
+                std::cout << "  " << label << " mismatch node=" << nodeId << " actual={empty=" << a[0] << " q1=" << a[1] << " q2=" << a[2] << " qd=" << a[3]
                           << " q3=" << a[4] << " q4=" << a[5] << "}"
-                          << " expected={empty=" << e[0] << " q1=" << e[1]
-                          << " q2=" << e[2] << " qd=" << e[3]
-                          << " q3=" << e[4] << " q4=" << e[5] << "}\n";
+                          << " expected={empty=" << e[0] << " q1=" << e[1] << " q2=" << e[2] << " qd=" << e[3] << " q3=" << e[4] << " q4=" << e[5] << "}\n";
                 ++printed;
             }
         }
@@ -237,11 +222,8 @@ FamilySummary compareFamilies(
     return summary;
 }
 
-FamilySummary compareProjectedFamilies(
-    const maf::MorphologicalTree& tree,
-    std::span<const Families> projected,
-    std::span<const Families> nodeExpected,
-    const char* label) {
+FamilySummary compareProjectedFamilies(const maf::MorphologicalTree& tree, std::span<const Families> projected, std::span<const Families> nodeExpected,
+                                       const char* label) {
     FamilySummary summary;
     int printed = 0;
     for (maf::NodeId properPart = 0; properPart < tree.getNumTotalProperParts(); ++properPart) {
@@ -261,8 +243,7 @@ FamilySummary compareProjectedFamilies(
         if (differs) {
             ++summary.mismatchedNodes;
             if (printed < 5) {
-                std::cout << "  " << label << " mismatch proper_part=" << properPart
-                          << " owner=" << owner << "\n";
+                std::cout << "  " << label << " mismatch proper_part=" << properPart << " owner=" << owner << "\n";
                 ++printed;
             }
         }
@@ -271,28 +252,17 @@ FamilySummary compareProjectedFamilies(
 }
 
 void printSummary(const char* name, const Summary& summary) {
-    std::cout << name
-              << " mismatched_nodes=" << summary.mismatchedNodes
-              << " mismatched_entries=" << summary.mismatchedEntries
+    std::cout << name << " mismatched_nodes=" << summary.mismatchedNodes << " mismatched_entries=" << summary.mismatchedEntries
               << " abs_diff=" << summary.absDiff << "\n";
 }
 
 void printSummary(const char* name, const FamilySummary& summary) {
-    std::cout << name
-              << " mismatched_items=" << summary.mismatchedNodes
-              << " mismatched_fields=" << summary.mismatchedFields
-              << " abs_diff=" << summary.absDiff << "\n";
+    std::cout << name << " mismatched_items=" << summary.mismatchedNodes << " mismatched_fields=" << summary.mismatchedFields << " abs_diff=" << summary.absDiff
+              << "\n";
 }
 
-bool compareOne(
-    const std::filesystem::path& imagePath,
-    int rows,
-    int cols,
-    std::span<const std::uint8_t> pixels,
-    maf::ToSInterpolation interpolation) {
-    auto weighted = maf::MorphologicalTreeFactory::createTreeOfShapes(
-        makeImage(rows, cols, pixels),
-        interpolation);
+bool compareOne(const std::filesystem::path& imagePath, int rows, int cols, std::span<const std::uint8_t> pixels, maf::ToSInterpolation interpolation) {
+    auto weighted = maf::MorphologicalTreeFactory::createTreeOfShapes(makeImage(rows, cols, pixels), interpolation);
     const maf::MorphologicalTree& tree = weighted.topology();
 
     const auto naiveHistograms = naiveSupportBitquadHistograms(tree);
@@ -306,11 +276,8 @@ bool compareOne(
     const auto mafAggregatedHistograms = bitquad_detail::BitquadLocalEventComputation::aggregateBitquadStateHistogramDeltas(tree, mafStateDeltas);
     const auto mafProjectedFamilies = bitquad_detail::BitquadLocalEventComputation::projectBitquadFamilyCountsToProperParts(tree, mafFamilies);
 
-    std::cout << "image=\"" << imagePath.string() << "\" size=" << rows << "x" << cols
-              << " interpolation=" << interpolationName(interpolation)
-              << " nodes=" << tree.getNumNodes()
-              << " node_slots=" << tree.getNumInternalNodeSlots()
-              << " pixels=" << tree.getNumTotalProperParts() << "\n";
+    std::cout << "image=\"" << imagePath.string() << "\" size=" << rows << "x" << cols << " interpolation=" << interpolationName(interpolation)
+              << " nodes=" << tree.getNumNodes() << " node_slots=" << tree.getNumInternalNodeSlots() << " pixels=" << tree.getNumTotalProperParts() << "\n";
 
     const Summary stateSummary = compareHistograms(tree, mafHistograms, naiveHistograms, "state");
     const Summary aggregatedStateSummary = compareHistograms(tree, mafAggregatedHistograms, naiveHistograms, "aggregated-state-delta");
@@ -324,19 +291,14 @@ bool compareOne(
     printSummary("aggregated-family-delta", aggregatedFamilySummary);
     printSummary("proper-part-projection", projectedSummary);
 
-    return stateSummary.mismatchedNodes == 0 &&
-           aggregatedStateSummary.mismatchedNodes == 0 &&
-           familySummary.mismatchedNodes == 0 &&
-           aggregatedFamilySummary.mismatchedNodes == 0 &&
-           projectedSummary.mismatchedNodes == 0;
+    return stateSummary.mismatchedNodes == 0 && aggregatedStateSummary.mismatchedNodes == 0 && familySummary.mismatchedNodes == 0 &&
+           aggregatedFamilySummary.mismatchedNodes == 0 && projectedSummary.mismatchedNodes == 0;
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
-    const std::filesystem::path imagePath = argc > 1
-        ? std::filesystem::path(argv[1])
-        : std::filesystem::path("dat/lena.pgm");
+    const std::filesystem::path imagePath = argc > 1 ? std::filesystem::path(argv[1]) : std::filesystem::path("dat/lena.pgm");
     if (argc > 2) {
         std::cerr << "usage: " << argv[0] << " [image]\n";
         return 64;

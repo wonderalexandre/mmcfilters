@@ -23,9 +23,7 @@ std::vector<int> pixelsOfConnectedComponent(const MorphologicalTree& tree, NodeI
     return pixels;
 }
 
-std::vector<int> contourVector(
-    const ContoursComputedIncrementally::IncrementalContours& contours,
-    NodeId nodeId) {
+std::vector<int> contourVector(const ContoursComputedIncrementally::IncrementalContours& contours, NodeId nodeId) {
     std::vector<int> values;
     for (int pixel : contours.getContour(nodeId)) {
         values.push_back(pixel);
@@ -33,12 +31,8 @@ std::vector<int> contourVector(
     return values;
 }
 
-void appendContourFromDeltas(
-    const MorphologicalTree& tree,
-    const ContoursComputedIncrementally::LocalContourDeltas& deltas,
-    NodeId nodeId,
-    std::vector<int>& values,
-    std::vector<uint8_t>& pixelMark) {
+void appendContourFromDeltas(const MorphologicalTree& tree, const ContoursComputedIncrementally::LocalContourDeltas& deltas, NodeId nodeId,
+                             std::vector<int>& values, std::vector<uint8_t>& pixelMark) {
     for (NodeId child : tree.getChildren(nodeId)) {
         appendContourFromDeltas(tree, deltas, child, values, pixelMark);
     }
@@ -63,24 +57,16 @@ void appendContourFromDeltas(
     values.resize(writeIndex);
 }
 
-std::vector<int> contourVectorFromDeltas(
-    const MorphologicalTree& tree,
-    const ContoursComputedIncrementally::LocalContourDeltas& deltas,
-    NodeId nodeId) {
+std::vector<int> contourVectorFromDeltas(const MorphologicalTree& tree, const ContoursComputedIncrementally::LocalContourDeltas& deltas, NodeId nodeId) {
     std::vector<int> values;
-    std::vector<uint8_t> pixelMark(
-        static_cast<std::size_t>(tree.getNumRowsOfImage() * tree.getNumColsOfImage()),
-        0);
+    std::vector<uint8_t> pixelMark(static_cast<std::size_t>(tree.getNumRowsOfGridDomain2D() * tree.getNumColsOfGridDomain2D()), 0);
     appendContourFromDeltas(tree, deltas, nodeId, values, pixelMark);
     return values;
 }
 
 std::vector<int> expectedContourForNode(const MorphologicalTree& tree, NodeId nodeId) {
-    AdjacencyRelation adj4(
-        tree.getNumRowsOfImage(),
-        tree.getNumColsOfImage(),
-        ContoursComputedIncrementally::ContourSideAdjacencyRadius);
-    std::vector<uint8_t> mask(static_cast<std::size_t>(tree.getNumRowsOfImage() * tree.getNumColsOfImage()), 0);
+    RegularGridAdjacency2D adj4(tree.getNumRowsOfGridDomain2D(), tree.getNumColsOfGridDomain2D(), ContoursComputedIncrementally::ContourSideAdjacencyRadius);
+    std::vector<uint8_t> mask(static_cast<std::size_t>(tree.getNumRowsOfGridDomain2D() * tree.getNumColsOfGridDomain2D()), 0);
     std::vector<int> ccPixels = pixelsOfConnectedComponent(tree, nodeId);
     for (int pixel : ccPixels) {
         mask[static_cast<std::size_t>(pixel)] = 1;
@@ -88,10 +74,10 @@ std::vector<int> expectedContourForNode(const MorphologicalTree& tree, NodeId no
 
     std::vector<int> expectedContour;
     for (int pixel : ccPixels) {
-        auto [row, col] = ImageUtils::to2D(pixel, tree.getNumColsOfImage());
-        bool isContour = row == 0 || col == 0 || row == tree.getNumRowsOfImage() - 1 || col == tree.getNumColsOfImage() - 1;
+        auto [row, col] = ImageUtils::to2D(pixel, tree.getNumColsOfGridDomain2D());
+        bool isContour = row == 0 || col == 0 || row == tree.getNumRowsOfGridDomain2D() - 1 || col == tree.getNumColsOfGridDomain2D() - 1;
         if (!isContour) {
-            for (int q : adj4.getAdjPixels(pixel)) {
+            for (int q : adj4.getAdjacentIndices(pixel)) {
                 if (!mask[static_cast<std::size_t>(q)]) {
                     isContour = true;
                     break;
@@ -128,22 +114,15 @@ void verifyContoursAgainstSupportMasks(const MorphologicalTree& tree, const std:
 
 MorphologicalTree makeTwoBranchInteriorTreeOfShapes() {
     std::vector<NodeId> parent = {
-        9, 11, 10,
-        9, 9, 10,
-        11, 11, 10,
-        11, 11, 11,
+        9, 11, 10, 9, 9, 10, 11, 11, 10, 11, 11, 11,
     };
     std::vector<std::uint8_t> altitude(parent.size(), std::uint8_t{});
-    auto weighted = MorphologicalTreeFactory::createFromHigraParent(
-        std::span<const NodeId>(parent),
-        std::span<const std::uint8_t>(altitude),
-        3,
-        3,
-        MorphologicalTreeKind::TREE_OF_SHAPES);
+    auto weighted = MorphologicalTreeFactory::createFromHigraParent(std::span<const NodeId>(parent), std::span<const std::uint8_t>(altitude), 3, 3,
+                                                                    MorphologicalTreeKind::TREE_OF_SHAPES);
     return weighted.topology().clone();
 }
 
-}
+} // namespace
 
 int main() {
     auto image = makeComponentTreeFixture();
@@ -155,15 +134,11 @@ int main() {
         if (isMaxtree) {
             auto staleContours = ContoursComputedIncrementally::extractCompactContours(*tree);
             tree->mergeNodeIntoParent(4);
-            requireThrows<std::logic_error>(
-                [&]() { static_cast<void>(staleContours.isMaterialized()); },
-                "contours must reject materialization status after topology mutation");
-            requireThrows<std::logic_error>(
-                [&]() { static_cast<void>(staleContours.getContour(tree->getRoot())); },
-                "contours must reject contour access after topology mutation");
-            requireThrows<std::logic_error>(
-                [&]() { staleContours.materializeAll(); },
-                "contours must reject materializeAll after topology mutation");
+            requireThrows<std::logic_error>([&]() { static_cast<void>(staleContours.isMaterialized()); },
+                                            "contours must reject materialization status after topology mutation");
+            requireThrows<std::logic_error>([&]() { static_cast<void>(staleContours.getContour(tree->getRoot())); },
+                                            "contours must reject contour access after topology mutation");
+            requireThrows<std::logic_error>([&]() { staleContours.materializeAll(); }, "contours must reject materializeAll after topology mutation");
         }
 
         auto weighted = makeWeightedComponentTree(image, isMaxtree);
@@ -172,9 +147,7 @@ int main() {
         for (std::uint8_t level : weighted->getAltitudeBuffer()) {
             int16Altitude.push_back(static_cast<std::int16_t>(level));
         }
-        const WeightedTreeView<std::int16_t> int16View(
-            weighted->topology(),
-            std::span<const std::int16_t>(int16Altitude.data(), int16Altitude.size()));
+        const WeightedTreeView<std::int16_t> int16View(weighted->topology(), std::span<const std::int16_t>(int16Altitude.data(), int16Altitude.size()));
         auto topologyContours = ContoursComputedIncrementally::extractCompactContours(weighted->topology());
         auto viewContours = ContoursComputedIncrementally::extractCompactContours(weighted->asView());
         auto int16ViewContours = ContoursComputedIncrementally::extractCompactContours(int16View);
@@ -182,12 +155,10 @@ int main() {
             auto staleWeighted = makeWeightedComponentTree(image, true);
             const auto staleView = staleWeighted->asView();
             staleWeighted->mergeNodeIntoParent(4);
-            requireThrows<std::logic_error>(
-                [&]() { static_cast<void>(ContoursComputedIncrementally::extractCompactContours(staleView)); },
-                "contour extraction must reject stale WeightedTreeView");
-            requireThrows<std::logic_error>(
-                [&]() { static_cast<void>(ContoursComputedIncrementally::extractContourDeltas(staleView)); },
-                "contour delta extraction must reject stale WeightedTreeView");
+            requireThrows<std::logic_error>([&]() { static_cast<void>(ContoursComputedIncrementally::extractCompactContours(staleView)); },
+                                            "contour extraction must reject stale WeightedTreeView");
+            requireThrows<std::logic_error>([&]() { static_cast<void>(ContoursComputedIncrementally::extractContourDeltas(staleView)); },
+                                            "contour delta extraction must reject stale WeightedTreeView");
         }
         for (NodeId nodeId : weighted->topology().getAliveNodeIds()) {
             auto topologyContour = contourVector(topologyContours, nodeId);
@@ -196,14 +167,8 @@ int main() {
             std::sort(topologyContour.begin(), topologyContour.end());
             std::sort(viewContour.begin(), viewContour.end());
             std::sort(int16ViewContour.begin(), int16ViewContour.end());
-            requireVectorEqual(
-                viewContour,
-                topologyContour,
-                isMaxtree ? "max-tree contours via view" : "min-tree contours via view");
-            requireVectorEqual(
-                int16ViewContour,
-                topologyContour,
-                isMaxtree ? "max-tree contours via int16 view" : "min-tree contours via int16 view");
+            requireVectorEqual(viewContour, topologyContour, isMaxtree ? "max-tree contours via view" : "min-tree contours via view");
+            requireVectorEqual(int16ViewContour, topologyContour, isMaxtree ? "max-tree contours via int16 view" : "min-tree contours via int16 view");
         }
     }
 
@@ -255,12 +220,8 @@ int main() {
         std::sort(leafContourFromIncrementalRead.begin(), leafContourFromIncrementalRead.end());
         std::sort(leafMaterialized.begin(), leafMaterialized.end());
         requireVectorEqual(leafContourFromIncrementalRead, leafMaterialized, "incremental contour read must match materialized contour");
-        requireThrows<std::invalid_argument>(
-            [&]() { static_cast<void>(contourVector(contours, 4)); },
-            "contour access must reject dead slots");
-        requireThrows<std::invalid_argument>(
-            [&]() { static_cast<void>(contours.getContour(InvalidNode)); },
-            "contour access must reject invalid node ids");
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(contourVector(contours, 4)); }, "contour access must reject dead slots");
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(contours.getContour(InvalidNode)); }, "contour access must reject invalid node ids");
     }
 
     return 0;

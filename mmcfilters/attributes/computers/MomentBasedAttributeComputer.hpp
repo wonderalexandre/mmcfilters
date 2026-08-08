@@ -5,6 +5,7 @@
 #include "../detail/AttributeKernelSupport.hpp"
 #include "../../trees/detail/TreeTraversalDetail.hpp"
 #include "../../trees/MorphologicalTree.hpp"
+#include "../../utils/Image.hpp"
 
 #include <algorithm>
 #include <array>
@@ -18,12 +19,14 @@
 namespace mmcfilters::attributes::computers {
 
 namespace detail {
-inline NodeId momentSlotOf(const MorphologicalTree&, NodeId nodeId) noexcept {
-    return nodeId;
-}
-}
-
-
+/**
+ * @brief Returns the dense attribute-buffer slot for a tree node.
+ *
+ * @param nodeId Identifier of the node used by the operation.
+ * @return Dense attribute-buffer slot for the node.
+ */
+inline NodeId momentSlotOf(const MorphologicalTree&, NodeId nodeId) noexcept { return nodeId; }
+} // namespace detail
 
 /**
  * @brief Computes geometric central moments up to third order.
@@ -43,7 +46,7 @@ inline NodeId momentSlotOf(const MorphologicalTree&, NodeId nodeId) noexcept {
  * occurs when summing already-centralised child moments.
  */
 class CentralMomentsComputer {
-public:
+  public:
     /// Family name used in dependency-plan diagnostics.
     static constexpr std::string_view familyName = "central-moments";
 
@@ -56,14 +59,8 @@ public:
     /**
      * @brief Canonical list of central moments produced together.
      */
-    inline static constexpr std::array<Attribute, 7> producedAttributes{
-        CENTRAL_MOMENT_20,
-        CENTRAL_MOMENT_02,
-        CENTRAL_MOMENT_11,
-        CENTRAL_MOMENT_30,
-        CENTRAL_MOMENT_03,
-        CENTRAL_MOMENT_21,
-        CENTRAL_MOMENT_12};
+    inline static constexpr std::array<Attribute, 7> producedAttributes{CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11, CENTRAL_MOMENT_30,
+                                                                        CENTRAL_MOMENT_03, CENTRAL_MOMENT_21, CENTRAL_MOMENT_12};
 
     /**
      * @brief Computes the requested central moments.
@@ -74,17 +71,22 @@ public:
      * interpreted as `(x = col, y = row)`. The method accumulates raw moments
      * bottom-up and converts them to central moments after each subtree support
      * has been assembled.
+     *
+     * @param context Operation context or diagnostic label.
      */
-    template <std::floating_point Real>
-    static void compute(const AttributeComputeContext<Real>& context) {
-        computeImpl(
-            context.tree,
-            context.buffer,
-            context.attrNames,
-            context.requestedAttributes);
+    template <std::floating_point Real> static void compute(const AttributeComputeContext<Real>& context) {
+        computeImpl(context.tree, context.buffer, context.attrNames, context.requestedAttributes);
     }
 
-private:
+  private:
+    /**
+     * @brief Computes the requested attribute values into the output buffer.
+     *
+     * @param tree Tree topology used by the operation.
+     * @param buffer Buffer read or written by the operation.
+     * @param attrNames Layout mapping attributes to buffer columns.
+     * @param requested Requested attribute subset.
+     */
     template <std::floating_point Real>
     static void computeImpl(const MorphologicalTree& tree, std::span<Real> buffer, const AttributeNames& attrNames, std::span<const Attribute> requested) {
         requireAttributeBufferShape(tree, buffer, attrNames);
@@ -96,8 +98,7 @@ private:
         bool computeMu03 = std::find(requested.begin(), requested.end(), CENTRAL_MOMENT_03) != requested.end();
         bool computeMu21 = std::find(requested.begin(), requested.end(), CENTRAL_MOMENT_21) != requested.end();
         bool computeMu12 = std::find(requested.begin(), requested.end(), CENTRAL_MOMENT_12) != requested.end();
-        if (!computeMu20 && !computeMu02 && !computeMu11 && !computeMu30 &&
-            !computeMu03 && !computeMu21 && !computeMu12) {
+        if (!computeMu20 && !computeMu02 && !computeMu11 && !computeMu30 && !computeMu03 && !computeMu21 && !computeMu12) {
             return;
         }
 
@@ -127,13 +128,12 @@ private:
             }
         };
 
-        const int numCols = tree.getNumColsOfImage();
+        const int numCols = tree.getNumColsOfGridDomain2D();
         std::vector<RawMoments> raw(static_cast<std::size_t>(tree.getNumInternalNodeSlots()));
         auto indexOf = [&](NodeId idx, Attribute attr) { return attrNames.linearIndex(idx, attr); };
 
         ::mmcfilters::detail::traversePostOrder(
-            tree,
-            tree.getRoot(),
+            tree, tree.getRoot(),
             [&](NodeId nodeId) {
                 const NodeId node = detail::momentSlotOf(tree, nodeId);
                 raw[static_cast<std::size_t>(node)] = RawMoments{};
@@ -192,41 +192,30 @@ private:
                     buffer[indexOf(node, CENTRAL_MOMENT_03)] = mu03;
                 }
                 if (computeMu21) {
-                    const Real mu21 =
-                        moments.m21 - Real{2} * cx * moments.m11 - cy * moments.m20 +
-                        Real{2} * cx * cy * moments.m10 + cx * cx * moments.m01 -
-                        cx * cx * cy * moments.m00;
+                    const Real mu21 = moments.m21 - Real{2} * cx * moments.m11 - cy * moments.m20 + Real{2} * cx * cy * moments.m10 + cx * cx * moments.m01 -
+                                      cx * cx * cy * moments.m00;
                     buffer[indexOf(node, CENTRAL_MOMENT_21)] = mu21;
                 }
                 if (computeMu12) {
-                    const Real mu12 =
-                        moments.m12 - Real{2} * cy * moments.m11 - cx * moments.m02 +
-                        Real{2} * cx * cy * moments.m01 + cy * cy * moments.m10 -
-                        cx * cy * cy * moments.m00;
+                    const Real mu12 = moments.m12 - Real{2} * cy * moments.m11 - cx * moments.m02 + Real{2} * cx * cy * moments.m01 + cy * cy * moments.m10 -
+                                      cx * cy * cy * moments.m00;
                     buffer[indexOf(node, CENTRAL_MOMENT_12)] = mu12;
                 }
-            }
-        );
+            });
     }
 
-public:
+  public:
     /**
      * @brief Materializes central moments for one-pixel unit supports.
      *
      * All central moments of a one-pixel support are zero.
+     *
+     * @param context Operation context or diagnostic label.
      */
-    template <std::floating_point Real>
-    static void computeUnitRows(const UnitAttributeComputeContext<Real>& context)
-    {
+    template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
         requireUnitAttributeBufferShape(context.tree, context.unitProperParts, context.buffer, context.attrNames);
-        constexpr std::array<Attribute, 7> zeroAttributes{
-            CENTRAL_MOMENT_20,
-            CENTRAL_MOMENT_02,
-            CENTRAL_MOMENT_11,
-            CENTRAL_MOMENT_30,
-            CENTRAL_MOMENT_03,
-            CENTRAL_MOMENT_21,
-            CENTRAL_MOMENT_12};
+        constexpr std::array<Attribute, 7> zeroAttributes{CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11, CENTRAL_MOMENT_30,
+                                                          CENTRAL_MOMENT_03, CENTRAL_MOMENT_21, CENTRAL_MOMENT_12};
         for (const Attribute attribute : zeroAttributes) {
             if (!requestsAttribute(context.requestedAttributes, attribute)) {
                 continue;
@@ -236,11 +225,7 @@ public:
             }
         }
     }
-
 };
-
-
-
 
 /**
  * @brief Computes the seven Hu invariant moments.
@@ -256,7 +241,7 @@ public:
  * In practice such supports should not occur for live nodes in a valid tree.
  */
 class HuMomentsComputer {
-public:
+  public:
     /// Family name used in dependency-plan diagnostics.
     static constexpr std::string_view familyName = "hu-moments";
 
@@ -269,14 +254,8 @@ public:
     /**
      * @brief Canonical list of Hu moments produced together.
      */
-    inline static constexpr std::array<Attribute, 7> producedAttributes{
-        HU_MOMENT_1,
-        HU_MOMENT_2,
-        HU_MOMENT_3,
-        HU_MOMENT_4,
-        HU_MOMENT_5,
-        HU_MOMENT_6,
-        HU_MOMENT_7};
+    inline static constexpr std::array<Attribute, 7> producedAttributes{HU_MOMENT_1, HU_MOMENT_2, HU_MOMENT_3, HU_MOMENT_4,
+                                                                        HU_MOMENT_5, HU_MOMENT_6, HU_MOMENT_7};
 
     /**
      * @brief Computes the requested Hu invariant moments.
@@ -286,20 +265,26 @@ public:
      * containing `AREA`. Sources are resolved semantically through
      * `context.dependencies`, so their order in the dependency span is not part
      * of the contract.
+     *
+     * @param context Operation context or diagnostic label.
      */
-    template <std::floating_point Real>
-    static void compute(const AttributeComputeContext<Real>& context) {
-        computeImpl(
-            context.tree,
-            context.buffer,
-            context.attrNames,
-            context.requestedAttributes,
-            context.dependencySources);
+    template <std::floating_point Real> static void compute(const AttributeComputeContext<Real>& context) {
+        computeImpl(context.tree, context.buffer, context.attrNames, context.requestedAttributes, context.dependencySources);
     }
 
-private:
+  private:
+    /**
+     * @brief Computes the requested attribute values into the output buffer.
+     *
+     * @param tree Tree topology used by the operation.
+     * @param buffer Buffer read or written by the operation.
+     * @param attrNames Layout mapping attributes to buffer columns.
+     * @param requested Requested attribute subset.
+     * @param dependencySources Available dependency-attribute sources.
+     */
     template <std::floating_point Real>
-    static void computeImpl(const MorphologicalTree& tree, std::span<Real> buffer, const AttributeNames& attrNames, std::span<const Attribute> requested, std::span<const DependencySourceT<Real>> dependencySources) {
+    static void computeImpl(const MorphologicalTree& tree, std::span<Real> buffer, const AttributeNames& attrNames, std::span<const Attribute> requested,
+                            std::span<const DependencySourceT<Real>> dependencySources) {
         requireAttributeBufferShape(tree, buffer, attrNames);
 
         auto indexOf = [&](NodeId idx, Attribute attr) { return attrNames.linearIndex(idx, attr); };
@@ -318,9 +303,7 @@ private:
         auto indexOfArea = [&](NodeId idx) { return areaDependency.attrNames->linearIndex(idx, AREA); };
 
         auto normMoment = [](Real area, Real moment, int p, int q) {
-            return ::mmcfilters::attributes::numeric::safeDivide(
-                moment,
-                std::pow(area, static_cast<Real>(p + q + 2) / Real{2}));
+            return ::mmcfilters::attributes::numeric::safeDivide(moment, std::pow(area, static_cast<Real>(p + q + 2) / Real{2}));
         };
 
         bool computeHu1 = std::find(requested.begin(), requested.end(), HU_MOMENT_1) != requested.end();
@@ -332,10 +315,7 @@ private:
         bool computeHu7 = std::find(requested.begin(), requested.end(), HU_MOMENT_7) != requested.end();
 
         ::mmcfilters::detail::traversePostOrder(
-            tree,
-            tree.getRoot(),
-            [](NodeId) {},
-            [](NodeId, NodeId) {},
+            tree, tree.getRoot(), [](NodeId) {}, [](NodeId, NodeId) {},
             [&](NodeId idxGlobalId) {
                 const NodeId idx = detail::momentSlotOf(tree, idxGlobalId);
                 Real mu20 = muDependency.buffer[indexOfMu(idx, CENTRAL_MOMENT_20)];
@@ -360,46 +340,40 @@ private:
                 Real eta12 = normMoment(area, mu12, 1, 2);
 
                 // Evaluate the seven classical Hu combinations.
-                if(computeHu1)
+                if (computeHu1)
                     buffer[indexOf(idx, HU_MOMENT_1)] = eta20 + eta02; // The first Hu moment corresponds to a normalised inertia term.
-                if(computeHu2)
-                    buffer[indexOf(idx, HU_MOMENT_2)]  = std::pow(eta20 - eta02, 2) + Real{4} * std::pow(eta11, 2);
-                if(computeHu3)
-                    buffer[indexOf(idx, HU_MOMENT_3)]  = std::pow(eta30 - Real{3} * eta12, 2) + std::pow(Real{3} * eta21 - eta03, 2);
-                if(computeHu4)
-                    buffer[indexOf(idx, HU_MOMENT_4)]  = std::pow(eta30 + eta12, 2) + std::pow(eta21 + eta03, 2);
-                if(computeHu5)
-                    buffer[indexOf(idx, HU_MOMENT_5)] = (eta30 - Real{3} * eta12) * (eta30 + eta12) * (std::pow(eta30 + eta12, 2) - Real{3} * std::pow(eta21 + eta03, 2)) +
-                                                    (Real{3} * eta21 - eta03) * (eta21 + eta03) * (Real{3} * std::pow(eta30 + eta12, 2) - std::pow(eta21 + eta03, 2));
-                if(computeHu6)
-                    buffer[indexOf(idx, HU_MOMENT_6)] = (eta20 - eta02) * (std::pow(eta30 + eta12, 2) - std::pow(eta21 + eta03, 2)) +
-                                                    Real{4} * eta11 * (eta30 + eta12) * (eta21 + eta03);
-                if(computeHu7)
-                    buffer[indexOf(idx, HU_MOMENT_7)] = (Real{3} * eta21 - eta03) * (eta30 + eta12) * (std::pow(eta30 + eta12, 2) - Real{3} * std::pow(eta21 + eta03, 2)) -
-                                                    (eta30 - Real{3} * eta12) * (eta21 + eta03) * (Real{3} * std::pow(eta30 + eta12, 2) - std::pow(eta21 + eta03, 2));
-            }
-        );
+                if (computeHu2)
+                    buffer[indexOf(idx, HU_MOMENT_2)] = std::pow(eta20 - eta02, 2) + Real{4} * std::pow(eta11, 2);
+                if (computeHu3)
+                    buffer[indexOf(idx, HU_MOMENT_3)] = std::pow(eta30 - Real{3} * eta12, 2) + std::pow(Real{3} * eta21 - eta03, 2);
+                if (computeHu4)
+                    buffer[indexOf(idx, HU_MOMENT_4)] = std::pow(eta30 + eta12, 2) + std::pow(eta21 + eta03, 2);
+                if (computeHu5)
+                    buffer[indexOf(idx, HU_MOMENT_5)] =
+                        (eta30 - Real{3} * eta12) * (eta30 + eta12) * (std::pow(eta30 + eta12, 2) - Real{3} * std::pow(eta21 + eta03, 2)) +
+                        (Real{3} * eta21 - eta03) * (eta21 + eta03) * (Real{3} * std::pow(eta30 + eta12, 2) - std::pow(eta21 + eta03, 2));
+                if (computeHu6)
+                    buffer[indexOf(idx, HU_MOMENT_6)] =
+                        (eta20 - eta02) * (std::pow(eta30 + eta12, 2) - std::pow(eta21 + eta03, 2)) + Real{4} * eta11 * (eta30 + eta12) * (eta21 + eta03);
+                if (computeHu7)
+                    buffer[indexOf(idx, HU_MOMENT_7)] =
+                        (Real{3} * eta21 - eta03) * (eta30 + eta12) * (std::pow(eta30 + eta12, 2) - Real{3} * std::pow(eta21 + eta03, 2)) -
+                        (eta30 - Real{3} * eta12) * (eta21 + eta03) * (Real{3} * std::pow(eta30 + eta12, 2) - std::pow(eta21 + eta03, 2));
+            });
     }
 
-public:
+  public:
     /**
      * @brief Materializes Hu moments for one-pixel unit supports.
      *
      * The degenerate one-pixel support uses zero for all Hu invariants in the
      * exported unit path.
+     *
+     * @param context Operation context or diagnostic label.
      */
-    template <std::floating_point Real>
-    static void computeUnitRows(const UnitAttributeComputeContext<Real>& context)
-    {
+    template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
         requireUnitAttributeBufferShape(context.tree, context.unitProperParts, context.buffer, context.attrNames);
-        constexpr std::array<Attribute, 7> zeroAttributes{
-            HU_MOMENT_1,
-            HU_MOMENT_2,
-            HU_MOMENT_3,
-            HU_MOMENT_4,
-            HU_MOMENT_5,
-            HU_MOMENT_6,
-            HU_MOMENT_7};
+        constexpr std::array<Attribute, 7> zeroAttributes{HU_MOMENT_1, HU_MOMENT_2, HU_MOMENT_3, HU_MOMENT_4, HU_MOMENT_5, HU_MOMENT_6, HU_MOMENT_7};
         for (const Attribute attribute : zeroAttributes) {
             if (!requestsAttribute(context.requestedAttributes, attribute)) {
                 continue;
@@ -409,11 +383,7 @@ public:
             }
         }
     }
-
 };
-
-
-
 
 /**
  * @brief Computes higher-level shape descriptors derived from second-order
@@ -437,7 +407,7 @@ public:
  * live nodes in post-order.
  */
 class MomentBasedAttributeComputer {
-public:
+  public:
     /// Family name used in dependency-plan diagnostics.
     static constexpr std::string_view familyName = "moment-derived";
 
@@ -449,23 +419,16 @@ public:
 
     /**
      * @brief Largest finite eccentricity emitted for degenerate one-dimensional supports.
+     *
+     * @return Largest finite eccentricity emitted for degenerate one-dimensional supports.
      */
-    template <std::floating_point Real>
-    static constexpr Real maxFiniteEccentricity() noexcept {
-        return static_cast<Real>(1.0e6);
-    }
+    template <std::floating_point Real> static constexpr Real maxFiniteEccentricity() noexcept { return static_cast<Real>(1.0e6); }
 
     /**
      * @brief Canonical list of moment-derived descriptors produced by this computer.
      */
-    inline static constexpr std::array<Attribute, 7> producedAttributes{
-        INERTIA,
-        COMPACTNESS,
-        ECCENTRICITY,
-        LENGTH_MAJOR_AXIS,
-        LENGTH_MINOR_AXIS,
-        AXIS_ORIENTATION,
-        CIRCULARITY};
+    inline static constexpr std::array<Attribute, 7> producedAttributes{INERTIA,           COMPACTNESS,      ECCENTRICITY, LENGTH_MAJOR_AXIS,
+                                                                        LENGTH_MINOR_AXIS, AXIS_ORIENTATION, CIRCULARITY};
 
     /**
      * @brief Computes the requested moment-derived descriptors.
@@ -475,20 +438,26 @@ public:
      * `CENTRAL_MOMENT_11`, and `AREA`. The dependencies are resolved by name,
      * then each live node is evaluated independently from the second-order
      * moment matrix.
+     *
+     * @param context Operation context or diagnostic label.
      */
-    template <std::floating_point Real>
-    static void compute(const AttributeComputeContext<Real>& context) {
-        computeImpl(
-            context.tree,
-            context.buffer,
-            context.attrNames,
-            context.requestedAttributes,
-            context.dependencySources);
+    template <std::floating_point Real> static void compute(const AttributeComputeContext<Real>& context) {
+        computeImpl(context.tree, context.buffer, context.attrNames, context.requestedAttributes, context.dependencySources);
     }
 
-private:
+  private:
+    /**
+     * @brief Computes the requested attribute values into the output buffer.
+     *
+     * @param tree Tree topology used by the operation.
+     * @param buffer Buffer read or written by the operation.
+     * @param attrNames Layout mapping attributes to buffer columns.
+     * @param requestedAttributes Requested attribute subset.
+     * @param dependencySources Available dependency-attribute sources.
+     */
     template <std::floating_point Real>
-    static void computeImpl(const MorphologicalTree& tree, std::span<Real> buffer, const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes, std::span<const DependencySourceT<Real>> dependencySources) {
+    static void computeImpl(const MorphologicalTree& tree, std::span<Real> buffer, const AttributeNames& attrNames,
+                            std::span<const Attribute> requestedAttributes, std::span<const DependencySourceT<Real>> dependencySources) {
         requireAttributeBufferShape(tree, buffer, attrNames);
 
         auto indexOfMajorAxis = [&](int idx) { return attrNames.linearIndex(idx, LENGTH_MAJOR_AXIS); };
@@ -520,10 +489,7 @@ private:
         auto indexArea = [&](int idx) { return areaDependency.attrNames->linearIndex(idx, AREA); };
 
         ::mmcfilters::detail::traversePostOrder(
-            tree,
-            tree.getRoot(),
-            [&](NodeId) {},
-            [&](NodeId, NodeId) {},
+            tree, tree.getRoot(), [&](NodeId) {}, [&](NodeId, NodeId) {},
             [&](NodeId idxGlobalId) {
                 const NodeId idx = detail::momentSlotOf(tree, idxGlobalId);
                 Real mu20 = momentDependency.buffer[indexMu20(idx)];
@@ -533,18 +499,16 @@ private:
 
                 const Real discriminant = std::pow(mu20 - mu02, 2) + Real{4} * std::pow(mu11, 2);
                 const Real sqrtDiscriminant = ::mmcfilters::attributes::numeric::safeSqrt(discriminant);
-                const Real lambda1 = mu20 + mu02 + sqrtDiscriminant;  // Largest eigenvalue of the inertia matrix.
-                const Real lambda2 = mu20 + mu02 - sqrtDiscriminant;  // Smallest eigenvalue of the inertia matrix.
+                const Real lambda1 = mu20 + mu02 + sqrtDiscriminant; // Largest eigenvalue of the inertia matrix.
+                const Real lambda2 = mu20 + mu02 - sqrtDiscriminant; // Smallest eigenvalue of the inertia matrix.
 
                 if (computeMajorAxis) {
                     buffer[indexOfMajorAxis(idx)] =
-                        ::mmcfilters::attributes::numeric::safeSqrt(
-                            ::mmcfilters::attributes::numeric::safeDivide(Real{2} * lambda1, area));
+                        ::mmcfilters::attributes::numeric::safeSqrt(::mmcfilters::attributes::numeric::safeDivide(Real{2} * lambda1, area));
                 }
                 if (computeMinorAxis) {
                     buffer[indexOfMinorAxis(idx)] =
-                        ::mmcfilters::attributes::numeric::safeSqrt(
-                            ::mmcfilters::attributes::numeric::safeDivide(Real{2} * lambda2, area));
+                        ::mmcfilters::attributes::numeric::safeSqrt(::mmcfilters::attributes::numeric::safeDivide(Real{2} * lambda2, area));
                 }
                 if (computeEccentricity) {
                     const Real eps = std::numeric_limits<Real>::epsilon();
@@ -553,23 +517,20 @@ private:
                     } else if (lambda2 <= eps) {
                         buffer[indexOfEccentricity(idx)] = maxFiniteEccentricity<Real>();
                     } else {
-                        buffer[indexOfEccentricity(idx)] =
-                            ::mmcfilters::attributes::numeric::clampUpper(
-                                ::mmcfilters::attributes::numeric::safeDivide(lambda1, lambda2, maxFiniteEccentricity<Real>()),
-                                maxFiniteEccentricity<Real>());
+                        buffer[indexOfEccentricity(idx)] = ::mmcfilters::attributes::numeric::clampUpper(
+                            ::mmcfilters::attributes::numeric::safeDivide(lambda1, lambda2, maxFiniteEccentricity<Real>()), maxFiniteEccentricity<Real>());
                     }
                 }
                 if (computeCompactness) {
                     Real denom = mu20 + mu02;
                     buffer[indexOfCompactness(idx)] =
-                        (Real{1} / (Real{2} * std::numbers::pi_v<Real>)) *
-                        ::mmcfilters::attributes::numeric::safeDivide(area, denom);
+                        (Real{1} / (Real{2} * std::numbers::pi_v<Real>)) * ::mmcfilters::attributes::numeric::safeDivide(area, denom);
                 }
                 if (computeAxisOrientation) {
                     // Guard the orientation computation against the fully isotropic case.
                     if (mu20 != mu02 || mu11 != 0) {
-                        Real radians = Real{0.5} * std::atan2(Real{2} * mu11, mu20 - mu02); // Orientation in radians.
-                        Real degrees = radians * (Real{180} / std::numbers::pi_v<Real>); // Converted to degrees for the public API.
+                        Real radians = Real{0.5} * std::atan2(Real{2} * mu11, mu20 - mu02);            // Orientation in radians.
+                        Real degrees = radians * (Real{180} / std::numbers::pi_v<Real>);               // Converted to degrees for the public API.
                         buffer[indexOfAxisOrientation(idx)] = std::fmod(std::abs(degrees), Real{360}); // Orientation stored in [0, 360].
                     } else {
                         buffer[indexOfAxisOrientation(idx)] = Real{0}; // Degenerate isotropic support: the principal direction is undefined.
@@ -588,33 +549,25 @@ private:
                     } else if (lambda1 <= eps || lambda2 <= eps) {
                         buffer[indexOfCircularity(idx)] = Real{0};
                     } else {
-                        buffer[indexOfCircularity(idx)] =
-                            ::mmcfilters::attributes::numeric::safeDivide(lambda2, lambda1);
+                        buffer[indexOfCircularity(idx)] = ::mmcfilters::attributes::numeric::safeDivide(lambda2, lambda1);
                     }
                 }
-            }
-        );
+            });
     }
 
-public:
+  public:
     /**
      * @brief Materializes moment-derived descriptors for one-pixel unit supports.
      *
      * Eccentricity and circularity are defined as `1` for the degenerate unit
      * support; other descriptors are zero.
+     *
+     * @param context Operation context or diagnostic label.
      */
-    template <std::floating_point Real>
-    static void computeUnitRows(const UnitAttributeComputeContext<Real>& context)
-    {
+    template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
         requireUnitAttributeBufferShape(context.tree, context.unitProperParts, context.buffer, context.attrNames);
-        constexpr std::array<Attribute, 7> zeroAttributes{
-            COMPACTNESS,
-            ECCENTRICITY,
-            LENGTH_MAJOR_AXIS,
-            LENGTH_MINOR_AXIS,
-            AXIS_ORIENTATION,
-            INERTIA,
-            CIRCULARITY};
+        constexpr std::array<Attribute, 7> zeroAttributes{COMPACTNESS,      ECCENTRICITY, LENGTH_MAJOR_AXIS, LENGTH_MINOR_AXIS,
+                                                          AXIS_ORIENTATION, INERTIA,      CIRCULARITY};
         for (const Attribute attribute : zeroAttributes) {
             if (!requestsAttribute(context.requestedAttributes, attribute)) {
                 continue;
@@ -625,11 +578,6 @@ public:
             }
         }
     }
-
 };
-
-
-
-
 
 } // namespace mmcfilters::attributes::computers

@@ -43,12 +43,12 @@ struct Options {
 
 std::string toString(ToSInterpolation interpolation) {
     switch (interpolation) {
-        case ToSInterpolation::SelfDual:
-            return "SelfDual";
-        case ToSInterpolation::Min4cMax8c:
-            return "Min4cMax8c";
-        case ToSInterpolation::Min8cMax4c:
-            return "Min8cMax4c";
+    case ToSInterpolation::SelfDual:
+        return "SelfDual";
+    case ToSInterpolation::Min4cMax8c:
+        return "Min4cMax8c";
+    case ToSInterpolation::Min8cMax4c:
+        return "Min8cMax4c";
     }
     throw std::invalid_argument("Unsupported Tree-of-Shapes interpolation.");
 }
@@ -67,10 +67,9 @@ ToSInterpolation parseInterpolation(const std::string& value) {
 }
 
 void printUsage(const char* program) {
-    std::cerr
-        << "Usage: " << program << " [--image path] [--out-dir dir]\n"
-        << "       [--interpolation SelfDual|Min4cMax8c|Min8cMax4c]\n"
-        << "       [--synthetic fixture|ramp|checker] [--rows n] [--cols n]\n";
+    std::cerr << "Usage: " << program << " [--image path] [--out-dir dir]\n"
+              << "       [--interpolation SelfDual|Min4cMax8c|Min8cMax4c]\n"
+              << "       [--synthetic fixture|ramp|checker] [--rows n] [--cols n]\n";
 }
 
 Options parseOptions(int argc, char** argv) {
@@ -110,10 +109,7 @@ ImageUInt8Ptr makeSyntheticImage(const Options& options) {
     if (options.synthetic == "fixture") {
         auto image = ImageUInt8::create(4, 4);
         const std::vector<std::uint8_t> values = {
-            3, 3, 2, 2,
-            3, 4, 4, 2,
-            1, 4, 5, 2,
-            1, 1, 5, 0,
+            3, 3, 2, 2, 3, 4, 4, 2, 1, 4, 5, 2, 1, 1, 5, 0,
         };
         for (std::size_t i = 0; i < values.size(); ++i) {
             (*image)[static_cast<int>(i)] = values[i];
@@ -176,21 +172,12 @@ std::ofstream openCsv(const std::filesystem::path& path) {
 }
 
 void writeFamilyHeader(std::ostream& out, const std::string& prefix) {
-    out << ',' << prefix << "empty"
-        << ',' << prefix << "q1"
-        << ',' << prefix << "q2"
-        << ',' << prefix << "qd"
-        << ',' << prefix << "q3"
-        << ',' << prefix << "q4";
+    out << ',' << prefix << "empty" << ',' << prefix << "q1" << ',' << prefix << "q2" << ',' << prefix << "qd" << ',' << prefix << "q3" << ',' << prefix
+        << "q4";
 }
 
 void writeFamily(std::ostream& out, const FamilyCounts& counts) {
-    out << ',' << counts.empty
-        << ',' << counts.q1
-        << ',' << counts.q2
-        << ',' << counts.qd
-        << ',' << counts.q3
-        << ',' << counts.q4;
+    out << ',' << counts.empty << ',' << counts.q1 << ',' << counts.q2 << ',' << counts.qd << ',' << counts.q3 << ',' << counts.q4;
 }
 
 void writeStateHeader(std::ostream& out, const std::string& prefix) {
@@ -205,11 +192,8 @@ void writeState(std::ostream& out, const StateHistogram& histogram) {
     }
 }
 
-void writeNodeCsv(
-    const WeightedMorphologicalTree<std::uint8_t>& weighted,
-    const std::filesystem::path& path,
-    const std::vector<FamilyCounts>& familyDeltas,
-    const std::vector<FamilyCounts>& familyCounts) {
+void writeNodeCsv(const WeightedMorphologicalTree<std::uint8_t>& weighted, const std::filesystem::path& path, const std::vector<FamilyCounts>& familyDeltas,
+                  const std::vector<FamilyCounts>& familyCounts) {
     const MorphologicalTree& tree = weighted.topology();
     auto out = openCsv(path);
     out << "node,parent,altitude,direct_proper_parts";
@@ -218,21 +202,15 @@ void writeNodeCsv(
     out << '\n';
 
     for (NodeId nodeId : tree.getAliveNodeIds()) {
-        out << nodeId
-            << ',' << tree.getNodeParent(nodeId)
-            << ',' << static_cast<int>(weighted.getAltitude(nodeId))
-            << ',' << tree.getNumProperParts(nodeId);
+        out << nodeId << ',' << tree.getNodeParent(nodeId) << ',' << static_cast<int>(weighted.getAltitude(nodeId)) << ',' << tree.getNumProperParts(nodeId);
         writeFamily(out, familyDeltas[static_cast<std::size_t>(nodeId)]);
         writeFamily(out, familyCounts[static_cast<std::size_t>(nodeId)]);
         out << '\n';
     }
 }
 
-void writeStateCsv(
-    const MorphologicalTree& tree,
-    const std::filesystem::path& path,
-    const std::vector<StateHistogram>& stateDeltas,
-    const std::vector<StateHistogram>& stateCounts) {
+void writeStateCsv(const MorphologicalTree& tree, const std::filesystem::path& path, const std::vector<StateHistogram>& stateDeltas,
+                   const std::vector<StateHistogram>& stateCounts) {
     auto out = openCsv(path);
     out << "node,parent";
     writeStateHeader(out, "delta_");
@@ -247,11 +225,8 @@ void writeStateCsv(
     }
 }
 
-void writeProperPartCsv(
-    const WeightedMorphologicalTree<std::uint8_t>& weighted,
-    const std::filesystem::path& path,
-    const std::vector<FamilyCounts>& projectedDeltas,
-    const std::vector<FamilyCounts>& projectedCounts) {
+void writeProperPartCsv(const WeightedMorphologicalTree<std::uint8_t>& weighted, const std::filesystem::path& path,
+                        const std::vector<FamilyCounts>& projectedDeltas, const std::vector<FamilyCounts>& projectedCounts) {
     const MorphologicalTree& tree = weighted.topology();
     auto out = openCsv(path);
     out << "proper_part,row,col,owner,owner_altitude";
@@ -260,13 +235,9 @@ void writeProperPartCsv(
     out << '\n';
 
     for (NodeId properPart = 0; properPart < tree.getNumTotalProperParts(); ++properPart) {
-        const auto [row, col] = ImageUtils::to2D(properPart, tree.getNumColsOfImage());
+        const auto [row, col] = ImageUtils::to2D(properPart, tree.getNumColsOfGridDomain2D());
         const NodeId owner = tree.getProperPartOwner(properPart);
-        out << properPart
-            << ',' << row
-            << ',' << col
-            << ',' << owner
-            << ',' << static_cast<int>(weighted.getAltitude(owner));
+        out << properPart << ',' << row << ',' << col << ',' << owner << ',' << static_cast<int>(weighted.getAltitude(owner));
         writeFamily(out, projectedDeltas[static_cast<std::size_t>(properPart)]);
         writeFamily(out, projectedCounts[static_cast<std::size_t>(properPart)]);
         out << '\n';
@@ -278,26 +249,18 @@ void writeNodeSupportCsv(const MorphologicalTree& tree, const std::filesystem::p
     out << "node,proper_part,row,col,direct_owner\n";
     for (NodeId nodeId : tree.getAliveNodeIds()) {
         for (NodeId properPart : tree.getConnectedComponent(nodeId)) {
-            const auto [row, col] = ImageUtils::to2D(properPart, tree.getNumColsOfImage());
-            out << nodeId
-                << ',' << properPart
-                << ',' << row
-                << ',' << col
-                << ',' << tree.getProperPartOwner(properPart)
-                << '\n';
+            const auto [row, col] = ImageUtils::to2D(properPart, tree.getNumColsOfGridDomain2D());
+            out << nodeId << ',' << properPart << ',' << row << ',' << col << ',' << tree.getProperPartOwner(properPart) << '\n';
         }
     }
 }
 
-void writeMetadata(
-    const WeightedMorphologicalTree<std::uint8_t>& weighted,
-    const Options& options,
-    const std::filesystem::path& path) {
+void writeMetadata(const WeightedMorphologicalTree<std::uint8_t>& weighted, const Options& options, const std::filesystem::path& path) {
     const MorphologicalTree& tree = weighted.topology();
     auto out = openCsv(path);
     out << "key,value\n";
-    out << "rows," << tree.getNumRowsOfImage() << '\n';
-    out << "cols," << tree.getNumColsOfImage() << '\n';
+    out << "rows," << tree.getNumRowsOfGridDomain2D() << '\n';
+    out << "cols," << tree.getNumColsOfGridDomain2D() << '\n';
     out << "num_proper_parts," << tree.getNumTotalProperParts() << '\n';
     out << "num_internal_node_slots," << tree.getNumInternalNodeSlots() << '\n';
     out << "num_alive_nodes," << tree.getNumNodes() << '\n';
@@ -329,8 +292,7 @@ int main(int argc, char** argv) {
         writeProperPartCsv(weighted, options.outDir / "proper_part_bitquad_projection.csv", projectedDeltas, projectedCounts);
         writeNodeSupportCsv(tree, options.outDir / "node_support.csv");
 
-        std::cout << "Wrote Tree-of-Shapes bitquad projection CSV files to "
-                  << options.outDir << '\n';
+        std::cout << "Wrote Tree-of-Shapes bitquad projection CSV files to " << options.outDir << '\n';
         return 0;
     } catch (const std::exception& ex) {
         std::cerr << "error: " << ex.what() << '\n';

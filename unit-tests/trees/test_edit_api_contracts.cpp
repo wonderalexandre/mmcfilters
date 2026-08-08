@@ -12,64 +12,48 @@ using namespace mmcfilters::unit_tests;
 namespace {
 
 template <class T>
-concept HasPublicTree = requires(T& value) {
-    value.tree;
-};
+concept HasPublicTree = requires(T& value) { value.tree; };
 
 template <class T>
-concept HasPublicTreeUnderscore = requires(T& value) {
-    value.tree_;
-};
+concept HasPublicTreeUnderscore = requires(T& value) { value.tree_; };
 
 template <class T>
-concept HasPublicAltitudeUnderscore = requires(T& value) {
-    value.altitude_;
-};
+concept HasPublicAltitudeUnderscore = requires(T& value) { value.altitude_; };
 
 template <class T>
-concept HasPublicCreateDetachedNode = requires(T& value) {
-    value.createDetachedNode();
-};
+concept HasPublicCreateDetachedNode = requires(T& value) { value.createDetachedNode(); };
 
 template <class T>
-concept HasPublicAttachNode = requires(T& value, NodeId parentId, NodeId nodeId) {
-    value.attachNode(parentId, nodeId);
-};
+concept HasPublicAttachNode = requires(T& value, NodeId parentId, NodeId nodeId) { value.attachNode(parentId, nodeId); };
 
 template <class T>
-concept HasPublicDetachNode = requires(T& value, NodeId nodeId) {
-    value.detachNode(nodeId);
-};
+concept HasPublicDetachNode = requires(T& value, NodeId nodeId) { value.detachNode(nodeId); };
 
 template <class T>
-concept HasPublicMoveNode = requires(T& value, NodeId nodeId, NodeId parentId) {
-    value.moveNode(nodeId, parentId);
-};
+concept HasPublicMoveNode = requires(T& value, NodeId nodeId, NodeId parentId) { value.moveNode(nodeId, parentId); };
 
 template <class T>
-concept HasPublicMoveChildren = requires(T& value, NodeId parentId, NodeId sourceId) {
-    value.moveChildren(parentId, sourceId);
-};
+concept HasPublicMoveChildren = requires(T& value, NodeId parentId, NodeId sourceId) { value.moveChildren(parentId, sourceId); };
 
 template <class T>
-concept HasPublicMoveProperPart = requires(T& value, NodeId targetId, NodeId sourceId, NodeId properPartId) {
-    value.moveProperPart(targetId, sourceId, properPartId);
-};
+concept HasPublicMoveProperPart =
+    requires(T& value, NodeId targetId, NodeId sourceId, NodeId properPartId) { value.moveProperPart(targetId, sourceId, properPartId); };
 
 template <class T>
-concept HasPublicMoveProperParts = requires(T& value, NodeId targetId, NodeId sourceId) {
-    value.moveProperParts(targetId, sourceId);
-};
+concept HasPublicMoveProperParts = requires(T& value, NodeId targetId, NodeId sourceId) { value.moveProperParts(targetId, sourceId); };
 
 template <class T>
-concept WeightedTopologyAllowsEdit = requires(T& weighted) {
-    weighted.topology().edit();
-};
+concept WeightedTopologyAllowsEdit = requires(T& weighted) { weighted.topology().edit(); };
 
 template <class T>
-concept WeightedTopologyAllowsPrune = requires(T& weighted, NodeId nodeId) {
-    weighted.topology().pruneNode(nodeId);
-};
+concept WeightedTopologyAllowsPrune = requires(T& weighted, NodeId nodeId) { weighted.topology().pruneNode(nodeId); };
+
+template <class T>
+concept HasPublicUncheckedAltitude = requires(T& weighted, NodeId nodeId, std::uint8_t altitude) { weighted.setAltitudeUnchecked(nodeId, altitude); };
+
+template <class T>
+concept HasPublicUncheckedAltitudeBuffer =
+    requires(T& weighted, AltitudeBuffer<std::uint8_t> altitude) { weighted.setAltitudeBufferUnchecked(std::move(altitude)); };
 
 static_assert(!std::is_constructible_v<TreeEditor, MorphologicalTree&>);
 static_assert(!std::is_constructible_v<WeightedTreeEditor<std::uint8_t>, WeightedMorphologicalTree<std::uint8_t>&>);
@@ -81,12 +65,14 @@ static_assert(!std::is_base_of_v<MorphologicalTree, WeightedMorphologicalTree<st
 static_assert(!std::is_convertible_v<WeightedMorphologicalTree<std::uint8_t>&, MorphologicalTree&>);
 static_assert(std::is_same_v<decltype(std::declval<WeightedMorphologicalTree<std::uint8_t>&>().topology()), const MorphologicalTree&>);
 static_assert(std::is_same_v<decltype(std::declval<const WeightedMorphologicalTree<std::uint8_t>&>().topology()), const MorphologicalTree&>);
-static_assert(std::is_same_v<decltype(std::declval<const WeightedMorphologicalTree<std::uint8_t>&>().getAltitudeBuffer()), const AltitudeBuffer<std::uint8_t>&>);
+static_assert(
+    std::is_same_v<decltype(std::declval<const WeightedMorphologicalTree<std::uint8_t>&>().getAltitudeBuffer()), const AltitudeBuffer<std::uint8_t>&>);
 
 static_assert(std::is_invocable_r_v<void, decltype(&MorphologicalTree::pruneNode), MorphologicalTree&, NodeId>);
 static_assert(std::is_invocable_r_v<void, decltype(&MorphologicalTree::mergeNodeIntoParent), MorphologicalTree&, NodeId>);
 static_assert(std::is_invocable_r_v<void, decltype(&WeightedMorphologicalTree<std::uint8_t>::pruneNode), WeightedMorphologicalTree<std::uint8_t>&, NodeId>);
-static_assert(std::is_invocable_r_v<void, decltype(&WeightedMorphologicalTree<std::uint8_t>::mergeNodeIntoParent), WeightedMorphologicalTree<std::uint8_t>&, NodeId>);
+static_assert(
+    std::is_invocable_r_v<void, decltype(&WeightedMorphologicalTree<std::uint8_t>::mergeNodeIntoParent), WeightedMorphologicalTree<std::uint8_t>&, NodeId>);
 static_assert(std::is_invocable_r_v<void, decltype(&WeightedTreeEditor<std::uint8_t>::pruneNode), WeightedTreeEditor<std::uint8_t>&, NodeId>);
 static_assert(std::is_invocable_r_v<void, decltype(&WeightedTreeEditor<std::uint8_t>::mergeNodeIntoParent), WeightedTreeEditor<std::uint8_t>&, NodeId>);
 
@@ -109,6 +95,8 @@ static_assert(!HasPublicMoveProperPart<WeightedMorphologicalTree<std::uint8_t>>)
 static_assert(!HasPublicMoveProperParts<WeightedMorphologicalTree<std::uint8_t>>);
 static_assert(!WeightedTopologyAllowsEdit<WeightedMorphologicalTree<std::uint8_t>>);
 static_assert(!WeightedTopologyAllowsPrune<WeightedMorphologicalTree<std::uint8_t>>);
+static_assert(!HasPublicUncheckedAltitude<WeightedMorphologicalTree<std::uint8_t>>);
+static_assert(!HasPublicUncheckedAltitudeBuffer<WeightedMorphologicalTree<std::uint8_t>>);
 
 } // namespace
 
@@ -117,30 +105,69 @@ int main() {
         auto tree = makeComponentTree(makeComponentTreeFixture(), true);
         auto editor = tree->edit();
 
+        const NodeId root = tree->getRoot();
+        const NodeId formerChild = tree->getFirstChild(root);
         const NodeId insertedNode = editor.createDetachedNode();
-        editor.attach(tree->getRoot(), insertedNode);
+        editor.attach(root, insertedNode);
+        requireThrows<std::runtime_error>([&]() { editor.commit(); }, "TreeEditor commit must reject an attached node with empty subtree support");
+        editor.reparent(formerChild, insertedNode);
         editor.commit();
 
-        requireEqual(tree->getNodeParent(insertedNode), tree->getRoot(), "TreeEditor must be the topology edit entrypoint");
+        requireEqual(tree->getNodeParent(insertedNode), root, "TreeEditor must be the topology edit entrypoint");
+        require(tree->isStructuralNode(insertedNode), "inserted hierarchy-only node must be derived as structural");
     }
 
     {
         auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), false);
+        auto spacedAltitude = weighted->getAltitudeBuffer();
+        for (auto& value : spacedAltitude) {
+            value = static_cast<std::uint8_t>(value * 2);
+        }
+        weighted->setAltitudeBuffer(std::move(spacedAltitude));
         auto editor = weighted->edit();
 
         const NodeId root = weighted->topology().getRoot();
+        const NodeId formerChild = weighted->topology().getFirstChild(root);
         const NodeId insertedNode = editor.createDetachedNode(static_cast<std::uint8_t>(weighted->getAltitude(root) + 1));
+        editor.reparent(formerChild, insertedNode);
         editor.attach(root, insertedNode);
 
-        requireThrows<std::runtime_error>(
-            [&]() { editor.commit(); },
-            "WeightedTreeEditor<std::uint8_t> commit must reject non-monotone altitude after topology validation");
+        requireThrows<std::runtime_error>([&]() { editor.commit(); },
+                                          "WeightedTreeEditor<std::uint8_t> commit must reject non-monotone altitude after topology validation");
         require(weighted->topology().isEditing(), "failed weighted commit must leave the edit session open");
 
-        editor.setNodeAltitude(insertedNode, weighted->getAltitude(root));
+        editor.setNodeAltitude(insertedNode, static_cast<std::uint8_t>(weighted->getAltitude(root) - 1));
         const TreeValidationResult repaired = editor.validateAndCommit();
         require(repaired.ok, "WeightedTreeEditor<std::uint8_t> validateAndCommit must accept repaired altitude monotonicity");
         require(!weighted->topology().isEditing(), "successful weighted validateAndCommit must close the edit session");
+    }
+
+    {
+        auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), false);
+        auto spacedAltitude = weighted->getAltitudeBuffer();
+        for (auto& value : spacedAltitude) {
+            value = static_cast<std::uint8_t>(value * 2);
+        }
+        weighted->setAltitudeBuffer(std::move(spacedAltitude));
+        auto editor = weighted->edit();
+
+        const NodeId root = weighted->topology().getRoot();
+        const NodeId formerChild = weighted->topology().getFirstChild(root);
+        const NodeId insertedNode = editor.createDetachedNode(static_cast<std::uint8_t>(weighted->getAltitude(root) + 1));
+        editor.reparent(formerChild, insertedNode);
+        editor.attach(root, insertedNode);
+
+        requireThrows<std::runtime_error>([&] { static_cast<void>(editor.proveIncremental()); },
+                                          "incremental weighted proof must reject non-monotone touched arcs");
+
+        editor.setNodeAltitude(insertedNode, static_cast<std::uint8_t>(weighted->getAltitude(root) - 1));
+        auto proof = editor.proveIncremental();
+        require(!proof.usedCompleteValidation(), "supported weighted edit must use delta validation");
+        editor.commit(std::move(proof));
+
+        const auto& statistics = weighted->topology().getEditValidationStatistics();
+        requireEqual(statistics.incrementalValidationCommits, std::size_t{1}, "weighted incremental proof commit count");
+        requireEqual(statistics.completeValidationCommits, std::size_t{0}, "weighted incremental proof must avoid complete commit validation");
     }
 
     return 0;

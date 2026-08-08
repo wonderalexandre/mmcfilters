@@ -19,14 +19,19 @@ namespace detail {
  * control and documentation of construction ownership.
  */
 class MorphologicalTreeConstructionTag {
-public:
+  public:
     /**
      * @brief Copying is allowed so authorized construction code can forward the token.
      */
     constexpr MorphologicalTreeConstructionTag(const MorphologicalTreeConstructionTag&) noexcept = default;
+    /**
+     * @brief Assigns the supplied object state.
+     *
+     * @return Reference to the assigned object.
+     */
     constexpr MorphologicalTreeConstructionTag& operator=(const MorphologicalTreeConstructionTag&) noexcept = default;
 
-private:
+  private:
     /**
      * @brief Private default construction keeps tag creation inside the factory.
      */

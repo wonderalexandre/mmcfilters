@@ -30,7 +30,7 @@ namespace mmcfilters::attributes::computers {
  *   `CONTOUR_SIDE_SOUTH`: directional exposed-side counters.
  */
 class ContourSideAttributeComputer {
-public:
+  public:
     /// Family name used in dependency-plan diagnostics.
     static constexpr std::string_view familyName = "contour-side";
 
@@ -43,13 +43,8 @@ public:
     /**
      * @brief Canonical list of scalar contour attributes materialized by this computer.
      */
-    inline static constexpr std::array<Attribute, 6> producedAttributes{
-        CONTOUR_PIXELS,
-        CONTOUR_PERIMETER,
-        CONTOUR_SIDE_NORTH,
-        CONTOUR_SIDE_WEST,
-        CONTOUR_SIDE_EAST,
-        CONTOUR_SIDE_SOUTH};
+    inline static constexpr std::array<Attribute, 6> producedAttributes{CONTOUR_PIXELS,    CONTOUR_PERIMETER, CONTOUR_SIDE_NORTH,
+                                                                        CONTOUR_SIDE_WEST, CONTOUR_SIDE_EAST, CONTOUR_SIDE_SOUTH};
 
     /**
      * @brief Computes requested contour-side scalar attributes for live nodes.
@@ -58,49 +53,43 @@ public:
      * The output buffer is indexed by dense internal node id and interpreted by
      * `context.attrNames`. The method computes the local-event contour-side
      * counts once, then projects only the requested scalar columns. Altitude and
-     * dependencies are ignored because contour-side counts are topology and
-     * image-domain support descriptors.
+     * dependencies are ignored because contour-side counts depend only on
+     * topology and regular-grid support.
+     *
+     * @param context Operation context or diagnostic label.
+     */
+    template <std::floating_point Real> static void compute(const AttributeComputeContext<Real>& context) {
+        computeImpl(context.tree, context.buffer, context.attrNames, context.requestedAttributes);
+    }
+
+  private:
+    /**
+     * @brief Computes the requested attribute values into the output buffer.
+     *
+     * @param tree Tree topology used by the operation.
+     * @param buffer Buffer read or written by the operation.
+     * @param attrNames Layout mapping attributes to buffer columns.
+     * @param requestedAttributes Requested attribute subset.
      */
     template <std::floating_point Real>
-    static void compute(const AttributeComputeContext<Real>& context) {
-        computeImpl(
-            context.tree,
-            context.buffer,
-            context.attrNames,
-            context.requestedAttributes);
-    }
-
-private:
-    template <std::floating_point Real>
-    static void computeImpl(
-        const MorphologicalTree& tree,
-        std::span<Real> buffer,
-        const AttributeNames& attrNames,
-        std::span<const Attribute> requestedAttributes) {
+    static void computeImpl(const MorphologicalTree& tree, std::span<Real> buffer, const AttributeNames& attrNames,
+                            std::span<const Attribute> requestedAttributes) {
         const auto sideCounts = detail::ContourSideLocalEventComputation::computeContourSideCounts(tree);
-        detail::ContourSideAttributeMaterialization::materializeAttributesFromContourSideCounts(
-            tree,
-            sideCounts,
-            buffer,
-            attrNames,
-            requestedAttributes);
+        detail::ContourSideAttributeMaterialization::materializeAttributesFromContourSideCounts(tree, sideCounts, buffer, attrNames, requestedAttributes);
     }
 
-public:
+  public:
     /**
      * @brief Materializes contour-side attributes for one-pixel unit supports.
      *
      * A one-pixel unit support contributes one contour pixel and four exposed
      * sides, one in each cardinal direction.
+     *
+     * @param context Operation context or diagnostic label.
      */
-    template <std::floating_point Real>
-    static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
-        detail::ContourSideAttributeMaterialization::materializeUnitContourSideAttributes(
-            context.tree,
-            context.unitProperParts,
-            context.buffer,
-            context.attrNames,
-            context.requestedAttributes);
+    template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
+        detail::ContourSideAttributeMaterialization::materializeUnitContourSideAttributes(context.tree, context.unitProperParts, context.buffer,
+                                                                                          context.attrNames, context.requestedAttributes);
     }
 };
 

@@ -27,9 +27,7 @@ namespace {
 #define MMCFILTERS_TEST_DATA_DIR "dat"
 #endif
 
-ImageUInt8Ptr makeConstantImage(int rows, int cols, std::uint8_t value) {
-    return ImageUInt8::create(rows, cols, value);
-}
+ImageUInt8Ptr makeConstantImage(int rows, int cols, std::uint8_t value) { return ImageUInt8::create(rows, cols, value); }
 
 ImageUInt8Ptr makeConcentricImage(bool brightCenter) {
     constexpr int rows = 8;
@@ -125,8 +123,7 @@ ImageUInt8Ptr makeCheckerboardImage() {
     auto image = ImageUInt8::create(rows, cols);
     for (int row = 0; row < rows; ++row) {
         for (int col = 0; col < cols; ++col) {
-            (*image)[ImageUtils::to1D(row, col, cols)] =
-                ((row + col) % 2 == 0) ? static_cast<std::uint8_t>(220) : static_cast<std::uint8_t>(20);
+            (*image)[ImageUtils::to1D(row, col, cols)] = ((row + col) % 2 == 0) ? static_cast<std::uint8_t>(220) : static_cast<std::uint8_t>(20);
         }
     }
     return image;
@@ -182,15 +179,13 @@ ImageUInt8Ptr loadPgmAsSampledUInt8(const std::filesystem::path& path, int targe
             if (maxValue < 256) {
                 char value = '\0';
                 input.get(value);
-                source[static_cast<std::size_t>(index)] =
-                    static_cast<unsigned char>(value);
+                source[static_cast<std::size_t>(index)] = static_cast<unsigned char>(value);
             } else {
                 char high = '\0';
                 char low = '\0';
                 input.get(high);
                 input.get(low);
-                source[static_cast<std::size_t>(index)] =
-                    (static_cast<unsigned char>(high) << 8) | static_cast<unsigned char>(low);
+                source[static_cast<std::size_t>(index)] = (static_cast<unsigned char>(high) << 8) | static_cast<unsigned char>(low);
             }
             if (!input) {
                 throw std::runtime_error("Truncated PGM pixel data: " + path.string());
@@ -213,8 +208,7 @@ ImageUInt8Ptr loadPgmAsSampledUInt8(const std::filesystem::path& path, int targe
             const int sourceCol = col * cols / outCols;
             const int raw = source[static_cast<std::size_t>(ImageUtils::to1D(sourceRow, sourceCol, cols))];
             const int scaled = (raw * 255 + (maxValue / 2)) / maxValue;
-            (*output)[ImageUtils::to1D(row, col, outCols)] =
-                static_cast<std::uint8_t>(std::clamp(scaled, 0, 255));
+            (*output)[ImageUtils::to1D(row, col, outCols)] = static_cast<std::uint8_t>(std::clamp(scaled, 0, 255));
         }
     }
     return output;
@@ -231,33 +225,18 @@ std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> makeWeightedTree(const 
     return makeWeightedComponentTree(fixture.image, fixture.isMaxTree, fixture.adjacencyRadius);
 }
 
-std::string treeKindLabel(bool isMaxTree) {
-    return isMaxTree ? "max-tree" : "min-tree";
-}
+std::string treeKindLabel(bool isMaxTree) { return isMaxTree ? "max-tree" : "min-tree"; }
 
 template <std::floating_point Real>
-void requireAllAttributesAreFinite(
-    const NumericFixture& fixture,
-    const AttributeNames& names,
-    std::span<const Real> values,
-    int numRows,
-    const std::string& outputSpaceLabel,
-    std::unordered_map<Attribute, bool>& observedFiniteValues) {
+void requireAllAttributesAreFinite(const NumericFixture& fixture, const AttributeNames& names, std::span<const Real> values, int numRows,
+                                   const std::string& outputSpaceLabel, std::unordered_map<Attribute, bool>& observedFiniteValues) {
     const std::vector<Attribute>& allAttributes = ATTRIBUTE_GROUPS.at(AttributeGroup::ALL);
 
-    requireEqual(
-        names.NUM_ATTRIBUTES,
-        static_cast<int>(allAttributes.size()),
-        fixture.label + " " + outputSpaceLabel + " ALL group stride");
-    requireEqual(
-        values.size(),
-        static_cast<std::size_t>(numRows) * allAttributes.size(),
-        fixture.label + " " + outputSpaceLabel + " ALL group buffer size");
+    requireEqual(names.NUM_ATTRIBUTES, static_cast<int>(allAttributes.size()), fixture.label + " " + outputSpaceLabel + " ALL group stride");
+    requireEqual(values.size(), static_cast<std::size_t>(numRows) * allAttributes.size(), fixture.label + " " + outputSpaceLabel + " ALL group buffer size");
 
     for (Attribute attribute : allAttributes) {
-        require(
-            names.contains(attribute),
-            fixture.label + " " + outputSpaceLabel + " missing attribute " + AttributeNames::toString(attribute));
+        require(names.contains(attribute), fixture.label + " " + outputSpaceLabel + " missing attribute " + AttributeNames::toString(attribute));
     }
 
     for (int row = 0; row < numRows; ++row) {
@@ -269,21 +248,15 @@ void requireAllAttributesAreFinite(
             }
 
             std::ostringstream message;
-            message << fixture.label << " " << outputSpaceLabel
-                    << " " << treeKindLabel(fixture.isMaxTree)
-                    << " radius=" << fixture.adjacencyRadius
-                    << " row=" << row
-                    << " attribute=" << AttributeNames::toString(attribute)
-                    << " produced a non-finite value " << value;
+            message << fixture.label << " " << outputSpaceLabel << " " << treeKindLabel(fixture.isMaxTree) << " radius=" << fixture.adjacencyRadius
+                    << " row=" << row << " attribute=" << AttributeNames::toString(attribute) << " produced a non-finite value " << value;
             throw std::runtime_error(message.str());
         }
     }
 }
 
 template <std::floating_point Real>
-void requireAllAttributesAreFiniteOnInternalNodes(
-    const NumericFixture& fixture,
-    std::unordered_map<Attribute, bool>& observedFiniteValues) {
+void requireAllAttributesAreFiniteOnInternalNodes(const NumericFixture& fixture, std::unordered_map<Attribute, bool>& observedFiniteValues) {
     const auto weighted = makeWeightedTree(fixture);
     const MorphologicalTree& tree = weighted->topology();
     const std::vector<Attribute>& allAttributes = ATTRIBUTE_GROUPS.at(AttributeGroup::ALL);
@@ -301,52 +274,28 @@ void requireAllAttributesAreFiniteOnInternalNodes(
             }
 
             std::ostringstream message;
-            message << fixture.label << " internal "
-                    << treeKindLabel(fixture.isMaxTree)
-                    << " radius=" << fixture.adjacencyRadius
-                    << " node=" << nodeId
-                    << " attribute=" << AttributeNames::toString(attribute)
-                    << " produced a non-finite value " << value;
+            message << fixture.label << " internal " << treeKindLabel(fixture.isMaxTree) << " radius=" << fixture.adjacencyRadius << " node=" << nodeId
+                    << " attribute=" << AttributeNames::toString(attribute) << " produced a non-finite value " << value;
             throw std::runtime_error(message.str());
         }
     }
 }
 
 template <std::floating_point Real>
-void requireAllAttributesAreFiniteInExportedHigraSpace(
-    const NumericFixture& fixture,
-    std::unordered_map<Attribute, bool>& observedFiniteValues) {
+void requireAllAttributesAreFiniteInExportedHigraSpace(const NumericFixture& fixture, std::unordered_map<Attribute, bool>& observedFiniteValues) {
     const auto weighted = makeWeightedTree(fixture);
     const auto [parent, altitude] = weighted->exportHigraHierarchy();
     auto imported = MorphologicalTreeFactory::createFromHigraParent(
-        std::span<const NodeId>(parent),
-        std::span<const std::uint8_t>(altitude),
-        weighted->topology().getNumRowsOfImage(),
-        weighted->topology().getNumColsOfImage(),
-        fixture.isMaxTree ? MorphologicalTreeKind::MAX_TREE : MorphologicalTreeKind::MIN_TREE,
-        AdjacencyRelation(
-            weighted->topology().getNumRowsOfImage(),
-            weighted->topology().getNumColsOfImage(),
-            fixture.adjacencyRadius));
+        std::span<const NodeId>(parent), std::span<const std::uint8_t>(altitude), weighted->topology().getNumRowsOfGridDomain2D(),
+        weighted->topology().getNumColsOfGridDomain2D(), fixture.isMaxTree ? MorphologicalTreeKind::MAX_TREE : MorphologicalTreeKind::MIN_TREE,
+        RegularGridAdjacency2D(weighted->topology().getNumRowsOfGridDomain2D(), weighted->topology().getNumColsOfGridDomain2D(), fixture.adjacencyRadius));
 
-    const auto computed = AttributeComputation::computeAttributes<Real>(
-        imported,
-        {AttributeGroup::ALL},
-        NodeIdSpace::HIGRA);
-    requireAllAttributesAreFinite<Real>(
-        fixture,
-        computed.attributeNames(),
-        computed.values(),
-        imported.topology().getNodeIdSpaceSize(NodeIdSpace::HIGRA),
-        "exported-higra",
-        observedFiniteValues);
+    const auto computed = AttributeComputation::computeAttributes<Real>(imported, {AttributeGroup::ALL}, NodeIdSpace::HIGRA);
+    requireAllAttributesAreFinite<Real>(fixture, computed.attributeNames(), computed.values(), imported.topology().getNodeIdSpaceSize(NodeIdSpace::HIGRA),
+                                        "exported-higra", observedFiniteValues);
 }
 
-void addTreeCases(
-    std::vector<NumericFixture>& fixtures,
-    const std::string& label,
-    ImageUInt8Ptr image,
-    std::span<const double> radii) {
+void addTreeCases(std::vector<NumericFixture>& fixtures, const std::string& label, ImageUInt8Ptr image, std::span<const double> radii) {
     for (double radius : radii) {
         fixtures.push_back({label + "-max-r" + std::to_string(radius), image, true, radius});
         fixtures.push_back({label + "-min-r" + std::to_string(radius), image, false, radius});
@@ -390,9 +339,8 @@ int main() {
     }
 
     for (Attribute attribute : allAttributes) {
-        require(
-            observedFiniteValues.at(attribute),
-            "attribute " + AttributeNames::toString(attribute) + " must have at least one finite value across numeric fixtures");
+        require(observedFiniteValues.at(attribute),
+                "attribute " + AttributeNames::toString(attribute) + " must have at least one finite value across numeric fixtures");
     }
 
     return 0;

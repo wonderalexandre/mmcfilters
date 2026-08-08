@@ -39,9 +39,12 @@ struct ExportedHigraLayout {
 
 /**
  * @brief Reads an altitude from a dense internal-node buffer with bounds checks.
+ *
+ * @param altitude Altitude data indexed by node identifier.
+ * @param nodeId Identifier of the node used by the operation.
+ * @return The requested altitude from a dense internal-node buffer with bounds checks.
  */
-template<AltitudeValue T>
-inline T exportedHigraAltitudeAt(std::span<const T> altitude, NodeId nodeId) {
+template <AltitudeValue T> inline T exportedHigraAltitudeAt(std::span<const T> altitude, NodeId nodeId) {
     if (nodeId < 0 || static_cast<size_t>(nodeId) >= altitude.size()) {
         throw std::invalid_argument("Altitude access requires a valid internal NodeId.");
     }
@@ -54,16 +57,27 @@ inline T exportedHigraAltitudeAt(std::span<const T> altitude, NodeId nodeId) {
  * @details
  * The layout follows the Higra convention used by the public export API: leaves
  * occupy `[0, numProperParts)` and live internal nodes occupy the remaining ids.
- * Internal nodes are sorted by altitude direction, with post-order time as the
- * deterministic tie-breaker. The function only computes the id mapping; callers
- * remain responsible for filling parent, altitude, or attribute buffers.
+ * Globally monotone hierarchies are sorted by altitude direction, with
+ * post-order time as the deterministic tie-breaker. For an unconstrained
+ * hierarchy, no single altitude direction can order every mixed-polarity
+ * branch, so nodes are ordered directly by post-order. Both policies guarantee
+ * that every non-root internal node is emitted before its parent, as required
+ * by the compact Higra tree layout. The function only computes the id mapping;
+ * callers remain responsible for filling parent, altitude, or attribute
+ * buffers.
  *
+ * @param tree Tree topology used by the operation.
+ * @param altitude Altitude data indexed by node identifier.
+ * @return The computed compact Higra node-id layout for a live rooted tree.
+ *
+ * @throws std::logic_error when an edit session is active.
  * @throws std::runtime_error when the topology is not one connected rooted live
  * component or when the altitude buffer does not cover the dense internal-node
  * domain.
+ *
  */
-template<AltitudeValue T>
-inline ExportedHigraLayout computeExportedHigraLayout(const MorphologicalTree& tree, std::span<const T> altitude) {
+template <AltitudeValue T> inline ExportedHigraLayout computeExportedHigraLayout(const MorphologicalTree& tree, std::span<const T> altitude) {
+    tree.requireNotEditing("Higra hierarchy export");
     if (altitude.size() != static_cast<size_t>(tree.getNumInternalNodeSlots())) {
         throw std::runtime_error("Altitude buffer size must match the dense internal-node domain.");
     }
@@ -87,38 +101,13 @@ inline ExportedHigraLayout computeExportedHigraLayout(const MorphologicalTree& t
     const NodeId numVertices = numLeaves + numAliveNodes;
     auto sortedNodes = exportedNodes;
 
-    bool sortAscendingAltitude = true;
-    switch (tree.getTreeType()) {
-        case MorphologicalTreeKind::MAX_TREE:
-            sortAscendingAltitude = false;
-            break;
-        case MorphologicalTreeKind::MIN_TREE:
-            sortAscendingAltitude = true;
-            break;
-        case MorphologicalTreeKind::TREE_OF_SHAPES:
-        case MorphologicalTreeKind::SELF_DUAL_RESIDUAL_TREE:
-            for (NodeId nodeId : sortedNodes) {
-                if (tree.isRoot(nodeId)) {
-                    continue;
-                }
-
-                const NodeId parentNodeId = tree.getNodeParent(nodeId);
-                if (parentNodeId == InvalidNode || !tree.isAlive(parentNodeId)) {
-                    throw std::runtime_error("Cannot export a node whose parent is not part of the rooted alive component.");
-                }
-                if (exportedHigraAltitudeAt(altitude, nodeId) > exportedHigraAltitudeAt(altitude, parentNodeId)) {
-                    sortAscendingAltitude = false;
-                }
-            }
-            break;
-        default:
-            throw std::invalid_argument("Unsupported tree type for compact Higra export.");
-    }
-
-    std::stable_sort(
-        sortedNodes.begin(),
-        sortedNodes.end(),
-        [&](NodeId lhs, NodeId rhs) {
+    const AltitudeOrder altitudeOrder = tree.getAltitudeOrder();
+    if (altitudeOrder == AltitudeOrder::UNCONSTRAINED) {
+        std::stable_sort(sortedNodes.begin(), sortedNodes.end(),
+                         [&](NodeId lhs, NodeId rhs) { return tree.getNodeTimePostOrder(lhs) < tree.getNodeTimePostOrder(rhs); });
+    } else {
+        const bool sortAscendingAltitude = altitudeOrder == AltitudeOrder::DECREASING_FROM_ROOT;
+        std::stable_sort(sortedNodes.begin(), sortedNodes.end(), [&](NodeId lhs, NodeId rhs) {
             const T altL = exportedHigraAltitudeAt(altitude, lhs);
             const T altR = exportedHigraAltitudeAt(altitude, rhs);
             if (altL != altR) {
@@ -126,6 +115,7 @@ inline ExportedHigraLayout computeExportedHigraLayout(const MorphologicalTree& t
             }
             return tree.getNodeTimePostOrder(lhs) < tree.getNodeTimePostOrder(rhs);
         });
+    }
 
     std::vector<NodeId> nodeToHigra(static_cast<size_t>(tree.getNumInternalNodeSlots()), InvalidNode);
     for (NodeId i = 0; i < numAliveNodes; ++i) {

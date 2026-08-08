@@ -5,6 +5,7 @@
 #include "../trees/detail/ProperPartEntryNode.hpp"
 #include "../trees/detail/TreeTraversalDetail.hpp"
 #include "../utils/Common.hpp"
+#include "../utils/Image.hpp"
 #include "detail/ContourTraceDeltaStore.hpp"
 #include "detail/PendingPixelLists.hpp"
 
@@ -17,7 +18,6 @@
 #include <cstdint>
 #include <iterator>
 #include <limits>
-#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -28,20 +28,12 @@ namespace mmcfilters {
 /**
  * @brief Oriented side of one support pixel used as a boundary trace edge.
  */
-enum class ContourTraceSide : uint8_t {
-    North = 0,
-    West = 1,
-    East = 2,
-    South = 3
-};
+enum class ContourTraceSide : uint8_t { North = 0, West = 1, East = 2, South = 3 };
 
 /**
  * @brief Geometric class of a traced boundary loop.
  */
-enum class ContourLoopKind : uint8_t {
-    External,
-    Internal
-};
+enum class ContourLoopKind : uint8_t { External, Internal };
 
 /**
  * @brief One unpacked boundary edge attached to a support pixel.
@@ -81,73 +73,80 @@ struct ContourTraceLoop {
  * loops have negative doubled signed area.
  */
 class ContourTraceComputation {
-public:
-    /// Compact storage for local contour additions and removals.
+  private:
+    /** @brief Defines the `LocalTraceDeltas` alias used by the component. */
     using LocalTraceDeltas = detail::ContourTraceDeltaStore;
 
+  public:
     /**
      * @brief Packs one pixel-side edge into a compact integer id.
+     *
+     * @param pixel Pixel identifier used by the operation.
+     * @param side Side selected by the operation.
+     * @return The packed pixel-side edge into a compact integer id.
      */
-    [[nodiscard]] static int packEdge(int pixel, ContourTraceSide side) {
-        return (4 * pixel) + static_cast<int>(side);
-    }
+    [[nodiscard]] static int packEdge(int pixel, ContourTraceSide side) { return (4 * pixel) + static_cast<int>(side); }
 
     /**
      * @brief Unpacks one compact edge id.
+     *
+     * @param packedEdge Packed boundary-edge identifier.
+     * @return The unpacked compact edge id.
      */
     [[nodiscard]] static ContourTraceEdge unpackEdge(int packedEdge) {
         if (packedEdge < 0) {
             return {};
         }
         const int side = packedEdge & 3;
-        return ContourTraceEdge{
-            packedEdge / 4,
-            static_cast<ContourTraceSide>(side)};
+        return ContourTraceEdge{packedEdge / 4, static_cast<ContourTraceSide>(side)};
     }
 
     /**
      * @brief Lazy result for side-level contour traces.
      */
     struct IncrementalContourTraces {
-    private:
+      private:
         friend class ContourTraceComputation;
 
-        enum class Direction : uint8_t {
-            North = 0,
-            East = 1,
-            South = 2,
-            West = 3
-        };
+        /** @brief Enumerates the supported direction values. */
+        enum class Direction : uint8_t { North = 0, East = 1, South = 2, West = 3 };
 
-        enum class TraceAdjacencyMode : uint8_t {
-            Dense,
-            Sparse
-        };
+        /** @brief Enumerates the supported trace adjacency mode values. */
+        enum class TraceAdjacencyMode : uint8_t { Dense, Sparse };
 
+        /** @brief Stores one oriented contour edge and its accumulated geometry. */
         struct DirectedEdge {
+            /** @brief Stores the packed edge. */
             int packedEdge = -1;
+            /** @brief Stores the start vertex. */
             int startVertex = -1;
+            /** @brief Stores the end vertex. */
             int endVertex = -1;
+            /** @brief Stores the direction. */
             Direction direction = Direction::North;
+            /** @brief Stores the signed area2. */
             int signedArea2 = 0;
 
+            /**
+             * @brief Constructs a default `DirectedEdge`.
+             */
             DirectedEdge() = default;
 
-            DirectedEdge(
-                int packedEdge,
-                int startVertex,
-                int endVertex,
-                Direction direction,
-                int signedArea2)
-                : packedEdge(packedEdge),
-                  startVertex(startVertex),
-                  endVertex(endVertex),
-                  direction(direction),
-                  signedArea2(signedArea2) {}
+            /**
+             * @brief Constructs `DirectedEdge` from the supplied inputs.
+             *
+             * @param packedEdge Packed boundary-edge identifier.
+             * @param startVertex Starting vertex identifier.
+             * @param endVertex Terminal vertex of the traced directed edge.
+             * @param direction Direction code of the traced edge.
+             * @param signedArea2 Twice the signed area accumulated for the loop.
+             */
+            DirectedEdge(int packedEdge, int startVertex, int endVertex, Direction direction, int signedArea2)
+                : packedEdge(packedEdge), startVertex(startVertex), endVertex(endVertex), direction(direction), signedArea2(signedArea2) {}
         };
 
 #ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
-    public:
+      public:
         struct TraceProfileStats {
             std::size_t nodesTraced = 0;
             std::size_t edgesTraced = 0;
@@ -174,77 +173,111 @@ public:
             std::int64_t releaseScratchNs = 0;
         };
 
-    private:
+      private:
         mutable TraceProfileStats* activeTraceProfile_ = nullptr;
 #endif
 
+        /** @brief References the tree used by the component. */
         const MorphologicalTree& tree;
+        /** @brief Stores the tree mutation version. */
         std::size_t treeMutationVersion_ = 0;
+        /** @brief Stores the local deltas. */
         mutable LocalTraceDeltas localDeltas_;
 
+        /** @brief Stores the cached edge values. */
         mutable std::vector<int> cachedEdgeValues_;
+        /** @brief Stores the cached edge offset. */
         mutable std::vector<uint32_t> cachedEdgeOffset_;
+        /** @brief Stores the cached edge size. */
         mutable std::vector<uint32_t> cachedEdgeSize_;
+        /** @brief Stores the cached edge ready. */
         mutable std::vector<uint8_t> cachedEdgeReady_;
+        /** @brief Stores the cached edge ready count. */
         mutable std::size_t cachedEdgeReadyCount_ = 0;
 
+        /** @brief Stores the cached loop infos. */
         mutable std::vector<ContourTraceLoop> cachedLoopInfos_;
+        /** @brief Stores the cached loop info offset. */
         mutable std::vector<uint32_t> cachedLoopInfoOffset_;
+        /** @brief Stores the cached loop info size. */
         mutable std::vector<uint32_t> cachedLoopInfoSize_;
+        /** @brief Stores the cached loop ready. */
         mutable std::vector<uint8_t> cachedLoopReady_;
+        /** @brief Stores the cached loop ready count. */
         mutable std::size_t cachedLoopReadyCount_ = 0;
+        /** @brief Stores the cached loop edge count. */
         mutable std::size_t cachedLoopEdgeCount_ = 0;
 
+        /** @brief Stores the edge mark. */
         mutable std::vector<uint16_t> edgeMark_;
+        /** @brief Stores the mark generation. */
         mutable uint16_t markGeneration_ = 1;
+        /** @brief Indicates whether edge-materialization scratch storage was released. */
         mutable bool edgeMaterializationScratchReleased_ = false;
 
+        /** @brief Stores the trace directed edges. */
         mutable std::vector<DirectedEdge> traceDirectedEdges_;
+        /** @brief Stores the trace outgoing head. */
         mutable std::vector<int> traceOutgoingHead_;
+        /** @brief Stores the trace outgoing next. */
         mutable std::vector<int> traceOutgoingNext_;
+        /** @brief Stores the trace touched vertices. */
         mutable std::vector<int> traceTouchedVertices_;
+        /** @brief Stores the trace sparse vertex keys. */
         mutable std::vector<int> traceSparseVertexKeys_;
+        /** @brief Stores the trace sparse outgoing head. */
         mutable std::vector<int> traceSparseOutgoingHead_;
+        /** @brief Stores the trace sparse slot generation. */
         mutable std::vector<uint32_t> traceSparseSlotGeneration_;
+        /** @brief Stores the trace sparse touched slots. */
         mutable std::vector<int> traceSparseTouchedSlots_;
+        /** @brief Stores the trace sparse generation. */
         mutable uint32_t traceSparseGeneration_ = 1;
+        /** @brief Stores the node local loop trace count. */
         mutable std::size_t nodeLocalLoopTraceCount_ = 0;
+        /** @brief Stores the trace visited generation. */
         mutable std::vector<uint32_t> traceVisitedGeneration_;
+        /** @brief Stores the trace visit generation. */
         mutable uint32_t traceVisitGeneration_ = 1;
+        /** @brief Stores the trace node loop edges. */
         mutable std::vector<int> traceNodeLoopEdges_;
+        /** @brief Stores the trace node loops. */
         mutable std::vector<ContourTraceLoop> traceNodeLoops_;
+        /** @brief Indicates whether trace-construction scratch storage was released. */
         mutable bool traceScratchReleased_ = false;
 
-        IncrementalContourTraces(
-            const MorphologicalTree& tree,
-            LocalTraceDeltas localDeltas,
-            int capacityHint)
-            : tree(tree),
-              treeMutationVersion_(tree.getMutationVersion()),
-              localDeltas_(std::move(localDeltas)),
+        /**
+         * @brief Constructs `IncrementalContourTraces` from the supplied inputs.
+         *
+         * @param tree Tree topology used by the operation.
+         * @param localDeltas Local contour deltas to append to the trace store.
+         * @param capacityHint Estimated number of entries used to reserve storage.
+         */
+        IncrementalContourTraces(const MorphologicalTree& tree, LocalTraceDeltas localDeltas, int capacityHint)
+            : tree(tree), treeMutationVersion_(tree.getMutationVersion()), localDeltas_(std::move(localDeltas)),
               cachedEdgeOffset_(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0),
               cachedEdgeSize_(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0),
               cachedEdgeReady_(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0),
               cachedLoopInfoOffset_(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0),
               cachedLoopInfoSize_(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0),
               cachedLoopReady_(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0),
-              edgeMark_(static_cast<std::size_t>(4 * tree.getNumRowsOfImage() * tree.getNumColsOfImage()), 0) {
+              edgeMark_(static_cast<std::size_t>(4 * tree.getNumRowsOfGridDomain2D() * tree.getNumColsOfGridDomain2D()), 0) {
             if (capacityHint > 0) {
                 cachedEdgeValues_.reserve(static_cast<std::size_t>(capacityHint));
             }
         }
 
-    public:
+      public:
         /**
          * @brief Immutable range over unpacked boundary edges.
          */
         class EdgeRange {
-        public:
+          public:
             /**
              * @brief Forward iterator that unpacks boundary edges on dereference.
              */
             class iterator {
-            public:
+              public:
                 /// Standard category for a multi-pass forward iterator.
                 using iterator_category = std::forward_iterator_tag;
                 /// Unpacked edge value yielded by dereference.
@@ -264,25 +297,22 @@ public:
                 /**
                  * @brief Creates an iterator over a packed-edge buffer position.
                  *
-                 * @param values Packed-edge buffer traversed by the iterator.
-                 * @param index Zero-based position in the buffer.
+                 * @param values Values read or written by the operation.
+                 * @param index Zero-based index used by the operation.
                  */
-                iterator(const std::vector<int>* values, std::size_t index)
-                    : values_(values), index_(index) {}
+                iterator(const std::vector<int>* values, std::size_t index) : values_(values), index_(index) {}
 
                 /**
                  * @brief Returns the unpacked edge at the current position.
                  *
-                 * @return Unpacked edge at the current position.
+                 * @return The unpacked edge at the current position.
                  */
-                value_type operator*() const {
-                    return ContourTraceComputation::unpackEdge((*values_)[index_]);
-                }
+                value_type operator*() const { return ContourTraceComputation::unpackEdge((*values_)[index_]); }
 
                 /**
                  * @brief Advances to the next packed edge.
                  *
-                 * @return Reference to the advanced iterator.
+                 * @return Reference to the resulting object.
                  */
                 iterator& operator++() {
                     ++index_;
@@ -301,17 +331,15 @@ public:
                 }
 
                 /// Compares the backing buffer and position.
-                friend bool operator==(const iterator& lhs, const iterator& rhs) {
-                    return lhs.values_ == rhs.values_ && lhs.index_ == rhs.index_;
-                }
+                friend bool operator==(const iterator& lhs, const iterator& rhs) { return lhs.values_ == rhs.values_ && lhs.index_ == rhs.index_; }
 
                 /// Returns true when two iterator positions differ.
-                friend bool operator!=(const iterator& lhs, const iterator& rhs) {
-                    return !(lhs == rhs);
-                }
+                friend bool operator!=(const iterator& lhs, const iterator& rhs) { return !(lhs == rhs); }
 
-            private:
+              private:
+                /** @brief Stores the values. */
                 const std::vector<int>* values_ = nullptr;
+                /** @brief Stores the index. */
                 std::size_t index_ = 0;
             };
 
@@ -323,52 +351,46 @@ public:
             /**
              * @brief Creates a view over `size` packed edges starting at `offset`.
              *
-             * @param values Packed-edge buffer viewed by the range.
-             * @param offset First position in the buffer.
-             * @param size Number of edges in the range.
+             * @param values Values read or written by the operation.
+             * @param offset Offset into the underlying storage.
+             * @param size Number represented by `size`.
              */
-            EdgeRange(const std::vector<int>* values, std::size_t offset, std::size_t size)
-                : values_(values), offset_(offset), size_(size) {}
+            EdgeRange(const std::vector<int>* values, std::size_t offset, std::size_t size) : values_(values), offset_(offset), size_(size) {}
 
             /**
              * @brief Returns an iterator to the first edge.
              *
-             * @return Iterator to the first edge.
+             * @return An iterator to the first edge.
              */
-            iterator begin() const {
-                return iterator(values_, offset_);
-            }
+            iterator begin() const { return iterator(values_, offset_); }
 
             /**
              * @brief Returns the exclusive end iterator.
              *
-             * @return Exclusive end iterator.
+             * @return The exclusive end iterator.
              */
-            iterator end() const {
-                return iterator(values_, offset_ + size_);
-            }
+            iterator end() const { return iterator(values_, offset_ + size_); }
 
             /**
              * @brief Returns whether the range contains no edges.
              *
-             * @return `true` when the range is empty.
+             * @return Whether the range contains no edges.
              */
-            [[nodiscard]] bool empty() const noexcept {
-                return size_ == 0;
-            }
+            [[nodiscard]] bool empty() const noexcept { return size_ == 0; }
 
             /**
              * @brief Returns the number of edges in the range.
              *
-             * @return Number of edges in the range.
+             * @return The number of edges in the range.
              */
-            [[nodiscard]] std::size_t size() const noexcept {
-                return size_;
-            }
+            [[nodiscard]] std::size_t size() const noexcept { return size_; }
 
-        private:
+          private:
+            /** @brief Stores the values. */
             const std::vector<int>* values_ = nullptr;
+            /** @brief Stores the offset. */
             std::size_t offset_ = 0;
+            /** @brief Stores the size. */
             std::size_t size_ = 0;
         };
 
@@ -402,51 +424,44 @@ public:
             stats.traceDenseOutgoingSlots = traceOutgoingHead_.capacity();
             stats.traceSparseOutgoingSlots = traceSparseVertexKeys_.capacity();
             stats.approxAllocatedBytes =
-                localDeltas_.addValues.capacity() * sizeof(int) +
-                localDeltas_.removeValues.capacity() * sizeof(int) +
-                localDeltas_.addSpans.capacity() * sizeof(LocalTraceDeltas::Span) +
-                localDeltas_.removeSpans.capacity() * sizeof(LocalTraceDeltas::Span) +
-                cachedEdgeValues_.capacity() * sizeof(int) +
-                cachedEdgeOffset_.capacity() * sizeof(uint32_t) +
-                cachedEdgeSize_.capacity() * sizeof(uint32_t) +
-                cachedEdgeReady_.capacity() * sizeof(uint8_t) +
-                cachedLoopInfos_.capacity() * sizeof(ContourTraceLoop) +
-                cachedLoopInfoOffset_.capacity() * sizeof(uint32_t) +
-                cachedLoopInfoSize_.capacity() * sizeof(uint32_t) +
-                cachedLoopReady_.capacity() * sizeof(uint8_t) +
-                edgeMark_.capacity() * sizeof(uint16_t) +
-                traceDirectedEdges_.capacity() * sizeof(DirectedEdge) +
-                traceOutgoingHead_.capacity() * sizeof(int) +
-                traceOutgoingNext_.capacity() * sizeof(int) +
-                traceTouchedVertices_.capacity() * sizeof(int) +
-                traceSparseVertexKeys_.capacity() * sizeof(int) +
-                traceSparseOutgoingHead_.capacity() * sizeof(int) +
-                traceSparseSlotGeneration_.capacity() * sizeof(uint32_t) +
-                traceSparseTouchedSlots_.capacity() * sizeof(int) +
-                traceVisitedGeneration_.capacity() * sizeof(uint32_t) +
-                traceNodeLoopEdges_.capacity() * sizeof(int) +
-                traceNodeLoops_.capacity() * sizeof(ContourTraceLoop);
+                localDeltas_.addValues.capacity() * sizeof(int) + localDeltas_.removeValues.capacity() * sizeof(int) +
+                localDeltas_.addSpans.capacity() * sizeof(LocalTraceDeltas::Span) + localDeltas_.removeSpans.capacity() * sizeof(LocalTraceDeltas::Span) +
+                cachedEdgeValues_.capacity() * sizeof(int) + cachedEdgeOffset_.capacity() * sizeof(uint32_t) + cachedEdgeSize_.capacity() * sizeof(uint32_t) +
+                cachedEdgeReady_.capacity() * sizeof(uint8_t) + cachedLoopInfos_.capacity() * sizeof(ContourTraceLoop) +
+                cachedLoopInfoOffset_.capacity() * sizeof(uint32_t) + cachedLoopInfoSize_.capacity() * sizeof(uint32_t) +
+                cachedLoopReady_.capacity() * sizeof(uint8_t) + edgeMark_.capacity() * sizeof(uint16_t) +
+                traceDirectedEdges_.capacity() * sizeof(DirectedEdge) + traceOutgoingHead_.capacity() * sizeof(int) +
+                traceOutgoingNext_.capacity() * sizeof(int) + traceTouchedVertices_.capacity() * sizeof(int) + traceSparseVertexKeys_.capacity() * sizeof(int) +
+                traceSparseOutgoingHead_.capacity() * sizeof(int) + traceSparseSlotGeneration_.capacity() * sizeof(uint32_t) +
+                traceSparseTouchedSlots_.capacity() * sizeof(int) + traceVisitedGeneration_.capacity() * sizeof(uint32_t) +
+                traceNodeLoopEdges_.capacity() * sizeof(int) + traceNodeLoops_.capacity() * sizeof(ContourTraceLoop);
             return stats;
         }
 #endif
 
         /**
          * @brief Returns unordered materialized boundary edges for one node.
+         *
+         * @param node Node identifier used by the operation.
+         * @return Unordered materialized boundary edges for one node.
          */
         [[nodiscard]] EdgeRange getEdges(NodeId node) const {
             requireStableTree("IncrementalContourTraces::getEdges");
             requireLiveTraceNode(node, "IncrementalContourTraces::getEdges");
             ensureEdgesMaterialized(node);
-            return EdgeRange(
-                &cachedEdgeValues_,
-                cachedEdgeOffset_[static_cast<std::size_t>(node)],
-                cachedEdgeSize_[static_cast<std::size_t>(node)]);
+            return EdgeRange(&cachedEdgeValues_, cachedEdgeOffset_[static_cast<std::size_t>(node)], cachedEdgeSize_[static_cast<std::size_t>(node)]);
         }
 
         /**
-         * @brief Returns loop metadata for one node.
+         * @brief Returns an owning copy of the loop metadata for one node.
+         *
+         * The returned vector remains valid when later lazy queries materialize
+         * loops for other nodes.
+         *
+         * @param node Node identifier used by the operation.
+         * @return An owning copy of the loop metadata for one node.
          */
-        [[nodiscard]] std::span<const ContourTraceLoop> getLoops(NodeId node) const {
+        [[nodiscard]] std::vector<ContourTraceLoop> getLoops(NodeId node) const {
             requireStableTree("IncrementalContourTraces::getLoops");
             requireLiveTraceNode(node, "IncrementalContourTraces::getLoops");
             ensureNodeLoopsMaterialized(node);
@@ -455,11 +470,15 @@ public:
             if (size == 0) {
                 return {};
             }
-            return std::span<const ContourTraceLoop>(cachedLoopInfos_.data() + offset, size);
+            return std::vector<ContourTraceLoop>(cachedLoopInfos_.begin() + static_cast<std::ptrdiff_t>(offset),
+                                                 cachedLoopInfos_.begin() + static_cast<std::ptrdiff_t>(offset + size));
         }
 
         /**
          * @brief Returns the ordered edges belonging to one loop.
+         *
+         * @param loop Contour loop descriptor.
+         * @return The ordered edges belonging to one loop.
          */
         [[nodiscard]] EdgeRange getLoopEdges(const ContourTraceLoop& loop) const {
             requireStableTree("IncrementalContourTraces::getLoopEdges");
@@ -480,9 +499,9 @@ public:
         }
 
         /**
-         * @brief Returns whether every live node has a traced-loop cache.
+         * @brief Returns whether loop traces are materialized for every live node.
          *
-         * @return `true` when all live nodes have been traced.
+         * @return Whether loop traces are materialized for every live node.
          */
         [[nodiscard]] bool isMaterialized() const {
             requireStableTree("IncrementalContourTraces::isMaterialized");
@@ -495,10 +514,10 @@ public:
         }
 
         /**
-         * @brief Returns whether the boundary edges of one node are cached.
+         * @brief Returns whether packed boundary edges are materialized for `node`.
          *
-         * @param node Node whose edge cache is queried.
-         * @return `true` when the node's boundary edges are cached.
+         * @param node Node identifier used by the operation.
+         * @return Whether packed boundary edges are materialized for node.
          */
         [[nodiscard]] bool isEdgeMaterialized(NodeId node) const {
             requireStableTree("IncrementalContourTraces::isEdgeMaterialized");
@@ -507,10 +526,10 @@ public:
         }
 
         /**
-         * @brief Returns whether the boundary loops of one node are cached.
+         * @brief Returns whether ordered loops are materialized for `node`.
          *
-         * @param node Node whose loop cache is queried.
-         * @return `true` when the node's boundary loops are cached.
+         * @param node Node identifier used by the operation.
+         * @return Whether ordered loops are materialized for node.
          */
         [[nodiscard]] bool isNodeTraced(NodeId node) const {
             requireStableTree("IncrementalContourTraces::isNodeTraced");
@@ -535,17 +554,33 @@ public:
         }
 #endif
 
-    private:
-        void requireStableTree(const char* context) const {
-            tree.requireMutationVersion(treeMutationVersion_, context);
-        }
+      private:
+        /**
+         * @brief Validates stable tree.
+         *
+         * @param context Operation name used in diagnostics.
+         */
+        void requireStableTree(const char* context) const { tree.requireMutationVersion(treeMutationVersion_, context); }
 
+        /**
+         * @brief Validates live trace node.
+         *
+         * @param node Node identifier used by the operation.
+         * @param context Operation name used in diagnostics.
+         */
         void requireLiveTraceNode(NodeId node, const char* context) const {
             if (!tree.isAlive(node)) {
                 throw std::invalid_argument(std::string(context) + " requires a live internal NodeId.");
             }
         }
 
+        /**
+         * @brief Checks and converts u32.
+         *
+         * @param value Value used by the operation.
+         * @param context Operation name used in diagnostics.
+         * @return Owned native hierarchy storage.
+         */
         static uint32_t checkedU32(std::size_t value, const char* context) {
             if (value > static_cast<std::size_t>(std::numeric_limits<uint32_t>::max())) {
                 throw std::overflow_error(std::string(context) + " exceeds uint32_t.");
@@ -553,33 +588,40 @@ public:
             return static_cast<uint32_t>(value);
         }
 
-        template <class T>
-        static void releaseVector(std::vector<T>& values) {
-            std::vector<T>().swap(values);
-        }
+        /**
+         * @brief Releases vector.
+         *
+         * @param values Values read or written by the operation.
+         */
+        template <class T> static void releaseVector(std::vector<T>& values) { std::vector<T>().swap(values); }
 
 #ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
         using TraceProfileClock = std::chrono::steady_clock;
 
-        [[nodiscard]] static TraceProfileClock::time_point traceProfileNow() {
-            return TraceProfileClock::now();
-        }
+        [[nodiscard]] static TraceProfileClock::time_point traceProfileNow() { return TraceProfileClock::now(); }
 
-        static std::int64_t traceProfileElapsedNs(
-            TraceProfileClock::time_point start,
-            TraceProfileClock::time_point end) {
+        static std::int64_t traceProfileElapsedNs(TraceProfileClock::time_point start, TraceProfileClock::time_point end) {
             return std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
         }
 #endif
 
-        [[nodiscard]] bool allEdgesMaterialized() const {
-            return cachedEdgeReadyCount_ == static_cast<std::size_t>(tree.getNumNodes());
-        }
+        /**
+         * @brief Checks whether the edge representation is cached for every tree node.
+         *
+         * @return True when the documented condition holds; otherwise false.
+         */
+        [[nodiscard]] bool allEdgesMaterialized() const { return cachedEdgeReadyCount_ == static_cast<std::size_t>(tree.getNumNodes()); }
 
-        [[nodiscard]] bool allLoopsMaterialized() const {
-            return cachedLoopReadyCount_ == static_cast<std::size_t>(tree.getNumNodes());
-        }
+        /**
+         * @brief Checks whether the loop representation is cached for every tree node.
+         *
+         * @return True when the documented condition holds; otherwise false.
+         */
+        [[nodiscard]] bool allLoopsMaterialized() const { return cachedLoopReadyCount_ == static_cast<std::size_t>(tree.getNumNodes()); }
 
+        /**
+         * @brief Releases edge materialization scratch if complete.
+         */
         void releaseEdgeMaterializationScratchIfComplete() const {
             if (edgeMaterializationScratchReleased_ || !allEdgesMaterialized()) {
                 return;
@@ -591,6 +633,9 @@ public:
             edgeMaterializationScratchReleased_ = true;
         }
 
+        /**
+         * @brief Releases sparse trace outgoing scratch.
+         */
         void releaseSparseTraceOutgoingScratch() const {
             releaseVector(traceSparseVertexKeys_);
             releaseVector(traceSparseOutgoingHead_);
@@ -599,6 +644,9 @@ public:
             traceSparseGeneration_ = 1;
         }
 
+        /**
+         * @brief Releases trace scratch if complete.
+         */
         void releaseTraceScratchIfComplete() const {
             if (traceScratchReleased_ || !allLoopsMaterialized()) {
                 return;
@@ -618,6 +666,9 @@ public:
             traceScratchReleased_ = true;
         }
 
+        /**
+         * @brief Advances mark generation.
+         */
         void nextMarkGeneration() const {
             ++markGeneration_;
             if (markGeneration_ == 0) {
@@ -626,6 +677,12 @@ public:
             }
         }
 
+        /**
+         * @brief Adds if unmarked.
+         *
+         * @param values Values read or written by the operation.
+         * @param packedEdge Packed boundary-edge identifier.
+         */
         void addIfUnmarked(std::vector<int>& values, int packedEdge) const {
             if (packedEdge < 0 || packedEdge >= static_cast<int>(edgeMark_.size())) {
                 return;
@@ -636,20 +693,43 @@ public:
             }
         }
 
+        /**
+         * @brief Removes if marked.
+         *
+         * @param packedEdge Packed boundary-edge identifier.
+         */
         void removeIfMarked(int packedEdge) const {
             if (packedEdge >= 0 && packedEdge < static_cast<int>(edgeMark_.size())) {
                 edgeMark_[static_cast<std::size_t>(packedEdge)] = 0;
             }
         }
 
+        /**
+         * @brief Returns an iterator to the first cached edge of a node.
+         *
+         * @param node Node identifier used by the operation.
+         * @return Values produced by the operation.
+         */
         std::vector<int>::const_iterator cachedEdgeBegin(NodeId node) const {
             return cachedEdgeValues_.begin() + static_cast<std::ptrdiff_t>(cachedEdgeOffset_[static_cast<std::size_t>(node)]);
         }
 
+        /**
+         * @brief Returns an iterator past the last cached edge of a node.
+         *
+         * @param node Node identifier used by the operation.
+         * @return Values produced by the operation.
+         */
         std::vector<int>::const_iterator cachedEdgeEnd(NodeId node) const {
             return cachedEdgeBegin(node) + static_cast<std::ptrdiff_t>(cachedEdgeSize_[static_cast<std::size_t>(node)]);
         }
 
+        /**
+         * @brief Stores the materialized edge sequence for a node in the shared cache.
+         *
+         * @param node Node identifier used by the operation.
+         * @param values Values read or written by the operation.
+         */
         void commitMaterializedEdges(NodeId node, const std::vector<int>& values) const {
             cachedEdgeOffset_[static_cast<std::size_t>(node)] = checkedU32(cachedEdgeValues_.size(), "cached trace edge offset");
             cachedEdgeSize_[static_cast<std::size_t>(node)] = checkedU32(values.size(), "cached trace edge size");
@@ -661,6 +741,11 @@ public:
             }
         }
 
+        /**
+         * @brief Ensures edges materialized.
+         *
+         * @param root Root node of the operation.
+         */
         void ensureEdgesMaterialized(NodeId root) const {
             requireStableTree("IncrementalContourTraces::ensureEdgesMaterialized");
             requireLiveTraceNode(root, "IncrementalContourTraces::ensureEdgesMaterialized");
@@ -723,75 +808,87 @@ public:
             releaseEdgeMaterializationScratchIfComplete();
         }
 
-        static int vertexId(int row, int col, int numVertexCols) {
-            return (row * numVertexCols) + col;
-        }
+        /**
+         * @brief Computes the row-major identifier of a grid vertex.
+         *
+         * @param row Zero-based row coordinate.
+         * @param col Zero-based column coordinate.
+         * @param numVertexCols Count represented by `numVertexCols`.
+         * @return Row-major vertex identifier.
+         */
+        static int vertexId(int row, int col, int numVertexCols) { return (row * numVertexCols) + col; }
 
+        /** @brief Stores signed geometric measurements for one oriented contour. */
         struct OrientedGeometry {
+            /** @brief Stores the start vertex. */
             int startVertex = -1;
+            /** @brief Stores the end vertex. */
             int endVertex = -1;
+            /** @brief Stores the direction. */
             Direction direction = Direction::North;
+            /** @brief Stores the signed area2. */
             int signedArea2 = 0;
         };
 
+        /**
+         * @brief Computes the oriented geometry accumulated by a traced loop.
+         *
+         * @param packedEdge Packed boundary-edge identifier.
+         * @return Oriented endpoints, direction, and signed-area contribution.
+         */
         OrientedGeometry orientedGeometry(int packedEdge) const {
             const ContourTraceEdge edge = ContourTraceComputation::unpackEdge(packedEdge);
-            const int cols = tree.getNumColsOfImage();
+            const int cols = tree.getNumColsOfGridDomain2D();
             const int numVertexCols = cols + 1;
             const auto [row, col] = ImageUtils::to2D(edge.pixel, cols);
 
             switch (edge.side) {
-                case ContourTraceSide::North:
-                    return {
-                        vertexId(row, col, numVertexCols),
-                        vertexId(row, col + 1, numVertexCols),
-                        Direction::East,
-                        -row};
-                case ContourTraceSide::East:
-                    return {
-                        vertexId(row, col + 1, numVertexCols),
-                        vertexId(row + 1, col + 1, numVertexCols),
-                        Direction::South,
-                        col + 1};
-                case ContourTraceSide::South:
-                    return {
-                        vertexId(row + 1, col + 1, numVertexCols),
-                        vertexId(row + 1, col, numVertexCols),
-                        Direction::West,
-                        row + 1};
-                case ContourTraceSide::West:
-                    return {
-                        vertexId(row + 1, col, numVertexCols),
-                        vertexId(row, col, numVertexCols),
-                        Direction::North,
-                        -col};
+            case ContourTraceSide::North:
+                return {vertexId(row, col, numVertexCols), vertexId(row, col + 1, numVertexCols), Direction::East, -row};
+            case ContourTraceSide::East:
+                return {vertexId(row, col + 1, numVertexCols), vertexId(row + 1, col + 1, numVertexCols), Direction::South, col + 1};
+            case ContourTraceSide::South:
+                return {vertexId(row + 1, col + 1, numVertexCols), vertexId(row + 1, col, numVertexCols), Direction::West, row + 1};
+            case ContourTraceSide::West:
+                return {vertexId(row + 1, col, numVertexCols), vertexId(row, col, numVertexCols), Direction::North, -col};
             }
             throw std::runtime_error("Invalid contour trace side.");
         }
 
+        /**
+         * @brief Returns priority.
+         *
+         * @param incoming Incoming trace direction.
+         * @param outgoing Outgoing trace direction.
+         * @return Priority.
+         */
         static int turnPriority(Direction incoming, Direction outgoing) {
+            const int turn = (static_cast<int>(outgoing) - static_cast<int>(incoming) + 4) & 3;
             static constexpr std::array<int, 4> priorities{
                 1, // straight
                 0, // right
                 3, // back
                 2  // left
             };
-            const int turn = (static_cast<int>(outgoing) - static_cast<int>(incoming) + 4) & 3;
             return priorities[static_cast<std::size_t>(turn)];
         }
 
-        static int chooseNextEdge(
-            const DirectedEdge& current,
-            int outgoingHead,
-            const std::vector<DirectedEdge>& directedEdges,
-            const std::vector<int>& outgoingNext,
-            const std::vector<uint32_t>& visitedGeneration,
-            uint32_t visitGeneration
+        /**
+         * @brief Chooses next edge.
+         *
+         * @param current Current item in the traversal or local event.
+         * @param outgoingHead Head indices of each vertex outgoing-edge list.
+         * @param directedEdges Directed edges that form the traced contour graph.
+         * @param outgoingNext Next-edge links for the outgoing adjacency lists.
+         * @param visitedGeneration Generation marks used to identify visited directed edges.
+         * @param visitGeneration Active visit-mark generation.
+         * @return Selected next edge.
+         */
+        static int chooseNextEdge(const DirectedEdge& current, int outgoingHead, const std::vector<DirectedEdge>& directedEdges,
+                                  const std::vector<int>& outgoingNext, const std::vector<uint32_t>& visitedGeneration, uint32_t visitGeneration
 #ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
-            ,
-            std::size_t& candidateScans,
-            std::size_t& visitedSkips,
-            std::size_t& unvisitedCandidates
+                                  ,
+                                  std::size_t& candidateScans, std::size_t& visitedSkips, std::size_t& unvisitedCandidates
 #endif
         ) {
             int best = -1;
@@ -809,11 +906,9 @@ public:
 #ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
                 ++unvisitedCandidates;
 #endif
-                const int priority = turnPriority(
-                    current.direction,
-                    directedEdges[static_cast<std::size_t>(candidate)].direction);
-                if (priority < bestPriority ||
-                    (priority == bestPriority && directedEdges[static_cast<std::size_t>(candidate)].packedEdge < directedEdges[static_cast<std::size_t>(best)].packedEdge)) {
+                const int priority = turnPriority(current.direction, directedEdges[static_cast<std::size_t>(candidate)].direction);
+                if (priority < bestPriority || (priority == bestPriority && directedEdges[static_cast<std::size_t>(candidate)].packedEdge <
+                                                                                directedEdges[static_cast<std::size_t>(best)].packedEdge)) {
                     best = candidate;
                     bestPriority = priority;
                 }
@@ -821,6 +916,9 @@ public:
             return best;
         }
 
+        /**
+         * @brief Resets trace outgoing heads.
+         */
         void resetTraceOutgoingHeads() const {
             for (int vertex : traceTouchedVertices_) {
                 const auto vertexIndex = static_cast<std::size_t>(vertex);
@@ -829,10 +927,18 @@ public:
             traceTouchedVertices_.clear();
         }
 
+        /**
+         * @brief Returns vertex count.
+         *
+         * @return Vertex count.
+         */
         [[nodiscard]] std::size_t imageVertexCount() const {
-            return static_cast<std::size_t>((tree.getNumRowsOfImage() + 1) * (tree.getNumColsOfImage() + 1));
+            return static_cast<std::size_t>((tree.getNumRowsOfGridDomain2D() + 1) * (tree.getNumColsOfGridDomain2D() + 1));
         }
 
+        /**
+         * @brief Ensures trace outgoing head storage.
+         */
         void ensureTraceOutgoingHeadStorage() const {
             if (!traceOutgoingHead_.empty()) {
                 return;
@@ -840,6 +946,12 @@ public:
             traceOutgoingHead_.assign(imageVertexCount(), -1);
         }
 
+        /**
+         * @brief Advances power of two at least.
+         *
+         * @param value Value used by the operation.
+         * @return Smallest power of two greater than or equal to `value`.
+         */
         static std::size_t nextPowerOfTwoAtLeast(std::size_t value) {
             std::size_t result = 1;
             while (result < value) {
@@ -848,33 +960,52 @@ public:
             return result;
         }
 
+        /**
+         * @brief Returns outgoing table size.
+         *
+         * @param edgeCount Number of boundary edges.
+         * @return Outgoing table size.
+         */
         static std::size_t sparseOutgoingTableSize(std::size_t edgeCount) {
             const std::size_t target = std::max<std::size_t>(2, (2 * edgeCount) + 1);
             return nextPowerOfTwoAtLeast(target);
         }
 
+        /**
+         * @brief Returns node local trace limit.
+         *
+         * @return Node local trace limit.
+         */
         static constexpr std::size_t sparseNodeLocalTraceLimit() {
             // Keep sparse adjacency for interactive point queries, then switch
             // to dense storage before random all-node access pays hash overhead.
             return 8;
         }
 
-        [[nodiscard]] bool shouldUseSparseTraceAdjacency(
-            std::size_t edgeCount,
-            bool streamLoopInfosDirectly) const {
+        /**
+         * @brief Tests whether use sparse trace adjacency holds.
+         *
+         * @param edgeCount Number of boundary edges.
+         * @param streamLoopInfosDirectly Whether loop descriptors are streamed directly.
+         * @return True when use sparse trace adjacency; otherwise false.
+         */
+        [[nodiscard]] bool shouldUseSparseTraceAdjacency(std::size_t edgeCount, bool streamLoopInfosDirectly) const {
             if (streamLoopInfosDirectly || !traceOutgoingHead_.empty()) {
                 return false;
             }
             if (nodeLocalLoopTraceCount_ >= sparseNodeLocalTraceLimit()) {
                 return false;
             }
-            const std::size_t sparseBytes =
-                sparseOutgoingTableSize(edgeCount) *
-                ((2 * sizeof(int)) + sizeof(uint32_t));
+            const std::size_t sparseBytes = sparseOutgoingTableSize(edgeCount) * ((2 * sizeof(int)) + sizeof(uint32_t));
             const std::size_t denseBytes = imageVertexCount() * sizeof(int);
             return sparseBytes < denseBytes;
         }
 
+        /**
+         * @brief Prepares sparse trace outgoing heads.
+         *
+         * @param edgeCount Number of boundary edges.
+         */
         void prepareSparseTraceOutgoingHeads(std::size_t edgeCount) const {
             const std::size_t tableSize = sparseOutgoingTableSize(edgeCount);
             if (traceSparseVertexKeys_.size() != tableSize) {
@@ -891,11 +1022,23 @@ public:
             }
         }
 
+        /**
+         * @brief Computes the sparse-table slot for a trace vertex.
+         *
+         * @param vertex Image-grid vertex identifier.
+         * @return Sparse-table slot selected for the vertex.
+         */
         [[nodiscard]] std::size_t sparseTraceSlot(int vertex) const {
             const auto hash = static_cast<uint32_t>(vertex) * uint32_t{2654435761u};
             return static_cast<std::size_t>(hash) & (traceSparseVertexKeys_.size() - 1);
         }
 
+        /**
+         * @brief Returns trace outgoing head.
+         *
+         * @param vertex Image-grid vertex identifier.
+         * @return Trace outgoing head.
+         */
         [[nodiscard]] int sparseTraceOutgoingHead(int vertex) const {
             std::size_t slot = sparseTraceSlot(vertex);
             while (traceSparseSlotGeneration_[slot] == traceSparseGeneration_) {
@@ -907,6 +1050,12 @@ public:
             return -1;
         }
 
+        /**
+         * @brief Finds or inserts a vertex in the sparse trace table.
+         *
+         * @param vertex Image-grid vertex identifier.
+         * @return Slot containing the existing or newly inserted vertex.
+         */
         [[nodiscard]] std::size_t findOrInsertSparseTraceVertex(int vertex) const {
             std::size_t slot = sparseTraceSlot(vertex);
             while (traceSparseSlotGeneration_[slot] == traceSparseGeneration_) {
@@ -923,8 +1072,13 @@ public:
             return slot;
         }
 
-        template <TraceAdjacencyMode Mode>
-        [[nodiscard]] int traceOutgoingHead(int vertex) const {
+        /**
+         * @brief Returns the first outgoing directed edge of a trace vertex.
+         *
+         * @param vertex Image-grid vertex identifier.
+         * @return Directed-edge index at the head of the vertex list, or the empty sentinel.
+         */
+        template <TraceAdjacencyMode Mode> [[nodiscard]] int traceOutgoingHead(int vertex) const {
             if constexpr (Mode == TraceAdjacencyMode::Sparse) {
                 return sparseTraceOutgoingHead(vertex);
             } else {
@@ -932,8 +1086,12 @@ public:
             }
         }
 
-        template <TraceAdjacencyMode Mode>
-        void prepareTraceAdjacency(std::size_t edgeCount) const {
+        /**
+         * @brief Prepares trace adjacency.
+         *
+         * @param edgeCount Number of boundary edges.
+         */
+        template <TraceAdjacencyMode Mode> void prepareTraceAdjacency(std::size_t edgeCount) const {
             if constexpr (Mode == TraceAdjacencyMode::Sparse) {
                 prepareSparseTraceOutgoingHeads(edgeCount);
             } else {
@@ -945,17 +1103,22 @@ public:
             }
         }
 
-        template <TraceAdjacencyMode Mode>
-        void resetTraceAdjacency() const {
+        /**
+         * @brief Resets trace adjacency.
+         */
+        template <TraceAdjacencyMode Mode> void resetTraceAdjacency() const {
             if constexpr (Mode == TraceAdjacencyMode::Dense) {
                 resetTraceOutgoingHeads();
             }
         }
 
-        template <TraceAdjacencyMode Mode>
-        void pushTraceOutgoingEdge(
-            int startVertex,
-            int edgeIndex) const {
+        /**
+         * @brief Pushes trace outgoing edge.
+         *
+         * @param startVertex Starting vertex identifier.
+         * @param edgeIndex Boundary-edge index.
+         */
+        template <TraceAdjacencyMode Mode> void pushTraceOutgoingEdge(int startVertex, int edgeIndex) const {
             if constexpr (Mode == TraceAdjacencyMode::Sparse) {
                 const std::size_t slot = findOrInsertSparseTraceVertex(startVertex);
                 traceOutgoingNext_.push_back(traceSparseOutgoingHead_[slot]);
@@ -970,6 +1133,11 @@ public:
             }
         }
 
+        /**
+         * @brief Advances trace visit generation.
+         *
+         * @param edgeCount Number of boundary edges.
+         */
         void nextTraceVisitGeneration(std::size_t edgeCount) const {
             if (traceVisitedGeneration_.size() < edgeCount) {
                 traceVisitedGeneration_.resize(edgeCount, 0);
@@ -981,14 +1149,26 @@ public:
             }
         }
 
-        [[nodiscard]] bool isTraceVisited(int edgeIndex) const {
-            return traceVisitedGeneration_[static_cast<std::size_t>(edgeIndex)] == traceVisitGeneration_;
-        }
+        /**
+         * @brief Tests whether trace visited holds.
+         *
+         * @param edgeIndex Boundary-edge index.
+         * @return True when trace visited; otherwise false.
+         */
+        [[nodiscard]] bool isTraceVisited(int edgeIndex) const { return traceVisitedGeneration_[static_cast<std::size_t>(edgeIndex)] == traceVisitGeneration_; }
 
-        void markTraceVisited(int edgeIndex) const {
-            traceVisitedGeneration_[static_cast<std::size_t>(edgeIndex)] = traceVisitGeneration_;
-        }
+        /**
+         * @brief Marks trace visited.
+         *
+         * @param edgeIndex Boundary-edge index.
+         */
+        void markTraceVisited(int edgeIndex) const { traceVisitedGeneration_[static_cast<std::size_t>(edgeIndex)] = traceVisitGeneration_; }
 
+        /**
+         * @brief Reserves loop-metadata storage for a complete-tree trace.
+         *
+         * @param root Root node of the operation.
+         */
         void reserveLoopInfoCapacityForGlobalTrace(NodeId root) const {
             std::size_t pendingNonEmptyNodes = 0;
             std::size_t pendingEdgeCount = 0;
@@ -1015,16 +1195,25 @@ public:
             }
         }
 
+        /**
+         * @brief Tests whether reuse edge segment for loops holds.
+         *
+         * @param node Node identifier used by the operation.
+         * @return True when reuse edge segment for loops; otherwise false.
+         */
         bool canReuseEdgeSegmentForLoops(NodeId node) const {
             if (tree.isRoot(node)) {
                 return true;
             }
             const NodeId parent = tree.getNodeParent(node);
-            return parent == InvalidNode ||
-                   parent == node ||
-                   cachedEdgeReady_[static_cast<std::size_t>(parent)] != 0;
+            return parent == InvalidNode || parent == node || cachedEdgeReady_[static_cast<std::size_t>(parent)] != 0;
         }
 
+        /**
+         * @brief Ensures node loops materialized.
+         *
+         * @param node Node identifier used by the operation.
+         */
         void ensureNodeLoopsMaterialized(NodeId node) const {
             requireStableTree("IncrementalContourTraces::ensureNodeLoopsMaterialized");
             requireLiveTraceNode(node, "IncrementalContourTraces::ensureNodeLoopsMaterialized");
@@ -1035,6 +1224,11 @@ public:
             traceNodeLoops(node, false);
         }
 
+        /**
+         * @brief Ensures loops materialized.
+         *
+         * @param root Root node of the operation.
+         */
         void ensureLoopsMaterialized(NodeId root) const {
             requireStableTree("IncrementalContourTraces::ensureLoopsMaterialized");
             requireLiveTraceNode(root, "IncrementalContourTraces::ensureLoopsMaterialized");
@@ -1062,6 +1256,12 @@ public:
             }
         }
 
+        /**
+         * @brief Traces and caches all contour loops associated with a tree node.
+         *
+         * @param node Node identifier used by the operation.
+         * @param streamLoopInfosDirectly Whether loop descriptors are streamed directly.
+         */
         void traceNodeLoops(NodeId node, bool streamLoopInfosDirectly) const {
             const std::size_t edgeCount = static_cast<std::size_t>(cachedEdgeSize_[static_cast<std::size_t>(node)]);
             const bool useSparseAdjacency = shouldUseSparseTraceAdjacency(edgeCount, streamLoopInfosDirectly);
@@ -1069,23 +1269,20 @@ public:
                 ++nodeLocalLoopTraceCount_;
             }
             if (useSparseAdjacency) {
-                traceNodeLoopsWithAdjacency<TraceAdjacencyMode::Sparse>(
-                    node,
-                    streamLoopInfosDirectly,
-                    edgeCount);
+                traceNodeLoopsWithAdjacency<TraceAdjacencyMode::Sparse>(node, streamLoopInfosDirectly, edgeCount);
             } else {
-                traceNodeLoopsWithAdjacency<TraceAdjacencyMode::Dense>(
-                    node,
-                    streamLoopInfosDirectly,
-                    edgeCount);
+                traceNodeLoopsWithAdjacency<TraceAdjacencyMode::Dense>(node, streamLoopInfosDirectly, edgeCount);
             }
         }
 
-        template <TraceAdjacencyMode Mode>
-        void traceNodeLoopsWithAdjacency(
-            NodeId node,
-            bool streamLoopInfosDirectly,
-            std::size_t edgeCount) const {
+        /**
+         * @brief Traces a node contour using the supplied adjacency representation.
+         *
+         * @param node Node identifier used by the operation.
+         * @param streamLoopInfosDirectly Whether loop descriptors are streamed directly.
+         * @param edgeCount Number of boundary edges.
+         */
+        template <TraceAdjacencyMode Mode> void traceNodeLoopsWithAdjacency(NodeId node, bool streamLoopInfosDirectly, std::size_t edgeCount) const {
             prepareTraceAdjacency<Mode>(edgeCount);
 #ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
             const auto buildAdjacencyStart = traceProfileNow();
@@ -1111,12 +1308,7 @@ public:
             for (auto it = cachedEdgeBegin(node); it != cachedEdgeEnd(node); ++it) {
                 const OrientedGeometry geometry = orientedGeometry(*it);
                 const int edgeIndex = static_cast<int>(traceDirectedEdges_.size());
-                traceDirectedEdges_.emplace_back(
-                    *it,
-                    geometry.startVertex,
-                    geometry.endVertex,
-                    geometry.direction,
-                    geometry.signedArea2);
+                traceDirectedEdges_.emplace_back(*it, geometry.startVertex, geometry.endVertex, geometry.direction, geometry.signedArea2);
                 pushTraceOutgoingEdge<Mode>(geometry.startVertex, edgeIndex);
             }
 #ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
@@ -1125,8 +1317,7 @@ public:
             if constexpr (Mode == TraceAdjacencyMode::Dense) {
                 for (int vertex : traceTouchedVertices_) {
                     std::size_t degree = 0;
-                    for (int candidate = traceOutgoingHead_[static_cast<std::size_t>(vertex)];
-                         candidate != -1;
+                    for (int candidate = traceOutgoingHead_[static_cast<std::size_t>(vertex)]; candidate != -1;
                          candidate = traceOutgoingNext_[static_cast<std::size_t>(candidate)]) {
                         ++degree;
                     }
@@ -1145,9 +1336,7 @@ public:
                 for (int touchedSlot : traceSparseTouchedSlots_) {
                     std::size_t degree = 0;
                     const auto slot = static_cast<std::size_t>(touchedSlot);
-                    for (int candidate = traceSparseOutgoingHead_[slot];
-                         candidate != -1;
-                         candidate = traceOutgoingNext_[static_cast<std::size_t>(candidate)]) {
+                    for (int candidate = traceSparseOutgoingHead_[slot]; candidate != -1; candidate = traceOutgoingNext_[static_cast<std::size_t>(candidate)]) {
                         ++degree;
                     }
                     if (degree == 0) {
@@ -1232,18 +1421,10 @@ public:
 #ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
                             ++nodeAmbiguousSuccessorSteps;
 #endif
-                            current = chooseNextEdge(
-                                edge,
-                                outgoingHead,
-                                traceDirectedEdges_,
-                                traceOutgoingNext_,
-                                traceVisitedGeneration_,
-                                traceVisitGeneration_
+                            current = chooseNextEdge(edge, outgoingHead, traceDirectedEdges_, traceOutgoingNext_, traceVisitedGeneration_, traceVisitGeneration_
 #ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
-                                ,
-                                nodeSuccessorCandidateScans,
-                                nodeSuccessorVisitedSkips,
-                                nodeSuccessorUnvisitedCandidates
+                                                     ,
+                                                     nodeSuccessorCandidateScans, nodeSuccessorVisitedSkips, nodeSuccessorUnvisitedCandidates
 #endif
                             );
 #ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
@@ -1259,20 +1440,13 @@ public:
                         continue;
                     }
 
-                    const ContourLoopKind kind =
-                        signedArea2 >= 0 ? ContourLoopKind::External : ContourLoopKind::Internal;
+                    const ContourLoopKind kind = signedArea2 >= 0 ? ContourLoopKind::External : ContourLoopKind::Internal;
                     if (streamLoopInfosDirectly) {
-                        cachedLoopInfos_.push_back(ContourTraceLoop{
-                            kind,
-                            checkedU32(globalEdgeOffset + loopEdgeOffset, "global loop edge offset"),
-                            checkedU32(loopEdgeCount, "loop edge count"),
-                            signedArea2});
+                        cachedLoopInfos_.push_back(ContourTraceLoop{kind, checkedU32(globalEdgeOffset + loopEdgeOffset, "global loop edge offset"),
+                                                                    checkedU32(loopEdgeCount, "loop edge count"), signedArea2});
                     } else {
-                        traceNodeLoops_.push_back(ContourTraceLoop{
-                            kind,
-                            checkedU32(loopEdgeOffset, "local loop edge offset"),
-                            checkedU32(loopEdgeCount, "loop edge count"),
-                            signedArea2});
+                        traceNodeLoops_.push_back(ContourTraceLoop{kind, checkedU32(loopEdgeOffset, "local loop edge offset"),
+                                                                   checkedU32(loopEdgeCount, "loop edge count"), signedArea2});
                     }
                 }
             } catch (...) {
@@ -1301,10 +1475,7 @@ public:
             const auto commitEdgesStart = traceProfileNow();
 #endif
             if (reuseEdgeSegment) {
-                std::copy(
-                    traceNodeLoopEdges_.begin(),
-                    traceNodeLoopEdges_.end(),
-                    cachedEdgeValues_.begin() + static_cast<std::ptrdiff_t>(globalEdgeOffset));
+                std::copy(traceNodeLoopEdges_.begin(), traceNodeLoopEdges_.end(), cachedEdgeValues_.begin() + static_cast<std::ptrdiff_t>(globalEdgeOffset));
             } else {
                 cachedEdgeValues_.insert(cachedEdgeValues_.end(), traceNodeLoopEdges_.begin(), traceNodeLoopEdges_.end());
             }
@@ -1322,8 +1493,7 @@ public:
             }
 
             cachedLoopInfoOffset_[static_cast<std::size_t>(node)] = checkedU32(loopInfoOffset, "loop info offset");
-            cachedLoopInfoSize_[static_cast<std::size_t>(node)] =
-                checkedU32(cachedLoopInfos_.size() - loopInfoOffset, "loop info size");
+            cachedLoopInfoSize_[static_cast<std::size_t>(node)] = checkedU32(cachedLoopInfos_.size() - loopInfoOffset, "loop info size");
             const auto index = static_cast<std::size_t>(node);
             if (!cachedLoopReady_[index]) {
                 cachedLoopReady_[index] = 1;
@@ -1343,8 +1513,7 @@ public:
                 activeTraceProfile_->outgoingVertices += nodeOutgoingVertices;
                 activeTraceProfile_->singleOutgoingVertices += nodeSingleOutgoingVertices;
                 activeTraceProfile_->multiOutgoingVertices += nodeMultiOutgoingVertices;
-                activeTraceProfile_->maxOutgoingDegree =
-                    std::max(activeTraceProfile_->maxOutgoingDegree, nodeMaxOutgoingDegree);
+                activeTraceProfile_->maxOutgoingDegree = std::max(activeTraceProfile_->maxOutgoingDegree, nodeMaxOutgoingDegree);
                 activeTraceProfile_->closedLoopStops += nodeClosedLoopStops;
                 activeTraceProfile_->missingOutgoingStops += nodeMissingOutgoingStops;
                 activeTraceProfile_->singleSuccessorSteps += nodeSingleSuccessorSteps;
@@ -1354,8 +1523,7 @@ public:
                 activeTraceProfile_->successorCandidateScans += nodeSuccessorCandidateScans;
                 activeTraceProfile_->successorVisitedSkips += nodeSuccessorVisitedSkips;
                 activeTraceProfile_->successorUnvisitedCandidates += nodeSuccessorUnvisitedCandidates;
-                activeTraceProfile_->profileCountersNs +=
-                    traceProfileElapsedNs(profileCountersStart, profileCountersEnd);
+                activeTraceProfile_->profileCountersNs += traceProfileElapsedNs(profileCountersStart, profileCountersEnd);
                 activeTraceProfile_->buildAdjacencyNs += traceProfileElapsedNs(buildAdjacencyStart, buildAdjacencyEnd);
                 activeTraceProfile_->walkLoopsNs += traceProfileElapsedNs(walkLoopsStart, walkLoopsEnd);
                 activeTraceProfile_->resetOutgoingNs += traceProfileElapsedNs(resetOutgoingStart, resetOutgoingEnd);
@@ -1367,37 +1535,52 @@ public:
         }
     };
 
-private:
+  private:
+    /** @brief Defines the `PendingEdgeLists` alias used by the component. */
     using PendingEdgeLists = detail::PendingPixelLists;
 
+    /** @brief Owns the trace deltas extracted from an incremental contour computation. */
     struct ExtractedTraceDeltas {
+        /** @brief Stores the deltas. */
         LocalTraceDeltas deltas;
+        /** @brief Stores the capacity hint. */
         int capacityHint = 0;
     };
 
-    static int neighborPixel(
-        const MorphologicalTree& tree,
-        int pixel,
-        ContourTraceSide side) {
-        const int rows = tree.getNumRowsOfImage();
-        const int cols = tree.getNumColsOfImage();
+    /**
+     * @brief Returns the neighboring pixel reached in the requested direction.
+     *
+     * @param tree Tree topology used by the operation.
+     * @param pixel Pixel identifier used by the operation.
+     * @param side Contour or boundary side.
+     * @return Identifier of the neighboring pixel.
+     */
+    static int neighborPixel(const MorphologicalTree& tree, int pixel, ContourTraceSide side) {
+        const int rows = tree.getNumRowsOfGridDomain2D();
+        const int cols = tree.getNumColsOfGridDomain2D();
         const auto [row, col] = ImageUtils::to2D(pixel, cols);
 
         switch (side) {
-            case ContourTraceSide::North:
-                return row == 0 ? -1 : ImageUtils::to1D(row - 1, col, cols);
-            case ContourTraceSide::West:
-                return col == 0 ? -1 : ImageUtils::to1D(row, col - 1, cols);
-            case ContourTraceSide::East:
-                return col == cols - 1 ? -1 : ImageUtils::to1D(row, col + 1, cols);
-            case ContourTraceSide::South:
-                return row == rows - 1 ? -1 : ImageUtils::to1D(row + 1, col, cols);
+        case ContourTraceSide::North:
+            return row == 0 ? -1 : ImageUtils::to1D(row - 1, col, cols);
+        case ContourTraceSide::West:
+            return col == 0 ? -1 : ImageUtils::to1D(row, col - 1, cols);
+        case ContourTraceSide::East:
+            return col == cols - 1 ? -1 : ImageUtils::to1D(row, col + 1, cols);
+        case ContourTraceSide::South:
+            return row == rows - 1 ? -1 : ImageUtils::to1D(row + 1, col, cols);
         }
         return -1;
     }
 
+    /**
+     * @brief Extracts trace deltas impl.
+     *
+     * @param tree Tree topology used by the operation.
+     * @return Extracted trace deltas impl.
+     */
     [[nodiscard]] static ExtractedTraceDeltas extractTraceDeltasImpl(const MorphologicalTree& tree) {
-        if (tree.getNumRowsOfImage() <= 0 || tree.getNumColsOfImage() <= 0) {
+        if (tree.getNumRowsOfGridDomain2D() <= 0 || tree.getNumColsOfGridDomain2D() <= 0) {
             throw std::invalid_argument("Contour trace extraction requires a non-empty image domain.");
         }
         if (!tree.isAlive(tree.getRoot())) {
@@ -1405,24 +1588,18 @@ private:
         }
 
         const int numNodes = tree.getNumInternalNodeSlots();
-        const int totalPixels = tree.getNumRowsOfImage() * tree.getNumColsOfImage();
+        const int totalPixels = tree.getNumRowsOfGridDomain2D() * tree.getNumColsOfGridDomain2D();
         const int totalPackedEdges = 4 * totalPixels;
         const int capacityHint = std::max(totalPixels, 1);
 
         PendingEdgeLists localEdgeAdditions(numNodes, capacityHint);
         PendingEdgeLists localEdgeRemovals(numNodes, capacityHint);
 
-        static constexpr std::array<ContourTraceSide, 4> sides{
-            ContourTraceSide::North,
-            ContourTraceSide::West,
-            ContourTraceSide::East,
-            ContourTraceSide::South};
+        static constexpr std::array<ContourTraceSide, 4> sides{ContourTraceSide::North, ContourTraceSide::West, ContourTraceSide::East,
+                                                               ContourTraceSide::South};
 
         detail::traversePostOrder(
-            tree,
-            tree.getRoot(),
-            [](NodeId) -> void {},
-            [](NodeId, NodeId) -> void {},
+            tree, tree.getRoot(), [](NodeId) -> void {}, [](NodeId, NodeId) -> void {},
             [&](NodeId nodeId) {
                 for (int pixel : tree.getProperParts(nodeId)) {
                     for (ContourTraceSide side : sides) {
@@ -1444,41 +1621,27 @@ private:
                 }
             });
 
-        return {
-            LocalTraceDeltas::fromPendingEdgeLists(localEdgeAdditions, localEdgeRemovals, totalPackedEdges),
-            capacityHint
-        };
+        return {LocalTraceDeltas::fromPendingEdgeLists(localEdgeAdditions, localEdgeRemovals, totalPackedEdges), capacityHint};
     }
 
-public:
-    /**
-     * @brief Extracts compact local boundary-edge additions/removals.
-     */
-    [[nodiscard]] static LocalTraceDeltas extractTraceDeltas(const MorphologicalTree& tree) {
-        ExtractedTraceDeltas extracted = extractTraceDeltasImpl(tree);
-        return std::move(extracted.deltas);
-    }
-
-    template<AltitudeValue T>
-    /**
-     * @brief Extracts compact local boundary-edge additions/removals from a weighted view.
-     */
-    [[nodiscard]] static LocalTraceDeltas extractTraceDeltas(const WeightedTreeView<T>& tree) {
-        tree.requireTopologyUnchanged("ContourTraceComputation::extractTraceDeltas");
-        return extractTraceDeltas(tree.topology());
-    }
-
+  public:
     /**
      * @brief Runs incremental side-level contour extraction and returns lazy traces.
+     *
+     * @param tree Tree topology used by the operation.
+     * @return Result produced by running incremental side-level contour extraction and returns lazy traces.
      */
     [[nodiscard]] static IncrementalContourTraces extract(const MorphologicalTree& tree) {
         ExtractedTraceDeltas extracted = extractTraceDeltasImpl(tree);
         return IncrementalContourTraces(tree, std::move(extracted.deltas), extracted.capacityHint);
     }
 
-    template<AltitudeValue T>
+    template <AltitudeValue T>
     /**
      * @brief Runs incremental side-level contour extraction on a weighted view.
+     *
+     * @param tree Tree topology used by the operation.
+     * @return Result produced by running incremental side-level contour extraction on a weighted view.
      */
     [[nodiscard]] static IncrementalContourTraces extract(const WeightedTreeView<T>& tree) {
         tree.requireTopologyUnchanged("ContourTraceComputation::extract");

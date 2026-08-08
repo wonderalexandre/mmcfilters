@@ -16,21 +16,13 @@ using namespace mmcfilters::unit_tests;
 namespace {
 
 ImageUInt8Ptr makeCasfFixture() {
-    return makeImage(
-        6,
-        6,
-        {
-            2, 2, 2, 2, 1, 1,
-            2, 5, 5, 2, 3, 1,
-            2, 5, 6, 2, 3, 1,
-            2, 5, 5, 2, 3, 1,
-            3, 3, 3, 3, 3, 1,
-            2, 2, 2, 1, 1, 1,
-        });
+    return makeImage(6, 6,
+                     {
+                         2, 2, 2, 2, 1, 1, 2, 5, 5, 2, 3, 1, 2, 5, 6, 2, 3, 1, 2, 5, 5, 2, 3, 1, 3, 3, 3, 3, 3, 1, 2, 2, 2, 1, 1, 1,
+                     });
 }
 
-template<class T>
-ImagePtr<T> makeTypedCasfFixture(std::initializer_list<T> values) {
+template <class T> ImagePtr<T> makeTypedCasfFixture(std::initializer_list<T> values) {
     requireEqual(static_cast<int>(values.size()), 36, "typed CASF fixture buffer size");
     auto image = Image<T>::create(6, 6);
     int index = 0;
@@ -40,8 +32,7 @@ ImagePtr<T> makeTypedCasfFixture(std::initializer_list<T> values) {
     return image;
 }
 
-template<class T>
-void requireValidWeightedTree(const WeightedMorphologicalTree<T>& tree, const std::string& label) {
+template <class T> void requireValidWeightedTree(const WeightedMorphologicalTree<T>& tree, const std::string& label) {
     tree.topology().validateConnectedRootedTree();
     tree.validateMonotoneAltitude();
     require(tree.topology().getRoot() != InvalidNode, label + " must keep a valid root");
@@ -69,6 +60,13 @@ void test_positive_threshold_keeps_exportable_trees() {
     requireValidWeightedTree(casf.minTree(), "CASF min-tree after positive threshold");
     requireValidWeightedTree(casf.maxTree(), "CASF max-tree after positive threshold");
 
+    const auto& minValidation = casf.minTree().topology().getEditValidationStatistics();
+    const auto& maxValidation = casf.maxTree().topology().getEditValidationStatistics();
+    requireEqual(minValidation.completeValidationCommits + maxValidation.completeValidationCommits, std::size_t{0},
+                 "CASF hot updates must not use complete commit validation");
+    require(minValidation.incrementalValidationCommits + maxValidation.incrementalValidationCommits > 0,
+            "CASF positive threshold must publish through incremental edit proofs");
+
     const auto [minParent, minAltitude] = casf.exportMinTree();
     const auto [maxParent, maxAltitude] = casf.exportMaxTree();
 
@@ -92,12 +90,8 @@ void test_bounding_box_attribute_path_executes() {
 
 void test_int32_casf_keeps_typed_altitude_state() {
     const auto image = makeTypedCasfFixture<std::int32_t>({
-        -20, -20, -20, -20, 400, 400,
-        -20, 120, 120, -20, 300, 400,
-        -20, 120, 900, -20, 300, 400,
-        -20, 120, 120, -20, 300, 400,
-        300, 300, 300, 300, 300, 400,
-        -10, -10, -10, 400, 400, 400,
+        -20, -20, -20, -20, 400, 400, -20, 120, 120, -20, 300, 400, -20, 120, 900, -20, 300, 400,
+        -20, 120, 120, -20, 300, 400, 300, 300, 300, 300, 300, 400, -10, -10, -10, 400, 400, 400,
     });
     CasfComponentTrees<std::int32_t> casf(image, CasfComponentTreesAttribute::AREA);
 
@@ -119,12 +113,8 @@ void test_int32_casf_keeps_typed_altitude_state() {
 
 void test_float_casf_uses_sparse_altitude_backend() {
     const auto image = makeTypedCasfFixture<float>({
-        0.20f, 0.20f, 0.20f, 0.20f, 1.10f, 1.10f,
-        0.20f, 0.55f, 0.55f, 0.20f, 0.80f, 1.10f,
-        0.20f, 0.55f, 1.35f, 0.20f, 0.80f, 1.10f,
-        0.20f, 0.55f, 0.55f, 0.20f, 0.80f, 1.10f,
-        0.80f, 0.80f, 0.80f, 0.80f, 0.80f, 1.10f,
-        0.25f, 0.25f, 0.25f, 1.10f, 1.10f, 1.10f,
+        0.20f, 0.20f, 0.20f, 0.20f, 1.10f, 1.10f, 0.20f, 0.55f, 0.55f, 0.20f, 0.80f, 1.10f, 0.20f, 0.55f, 1.35f, 0.20f, 0.80f, 1.10f,
+        0.20f, 0.55f, 0.55f, 0.20f, 0.80f, 1.10f, 0.80f, 0.80f, 0.80f, 0.80f, 0.80f, 1.10f, 0.25f, 0.25f, 0.25f, 1.10f, 1.10f, 1.10f,
     });
     static_assert(!DualMinMaxTreeIncrementalFilter<float>::usesDenseLevelBackend());
 

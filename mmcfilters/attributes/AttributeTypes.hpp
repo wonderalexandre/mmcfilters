@@ -127,47 +127,67 @@ struct AttributeKey {
      * A zero delta denotes the current node. Negative deltas refer to ancestor
      * samples and positive deltas refer to descendant samples in delta-aware
      * layouts.
+     *
+     * @param a Attribute component of the composite key.
+     * @param d Delta component of the composite key.
      */
     AttributeKey(Attribute a, int d = 0) : attr(a), delta(d) {}
 
     /**
      * @brief Returns true when both the attribute and delta offset match.
+     *
+     * @param other Object to compare with or transfer from.
+     * @return True when both the attribute and delta offset match.
      */
-    bool operator==(const AttributeKey& other) const {
-        return attr == other.attr && delta == other.delta;
-    }
+    bool operator==(const AttributeKey& other) const { return attr == other.attr && delta == other.delta; }
 };
 
 } // namespace mmcfilters
 
 namespace std {
-    template <>
-    struct hash<mmcfilters::AttributeGroup> {
-        std::size_t operator()(const mmcfilters::AttributeGroup& group) const noexcept {
-            return static_cast<std::size_t>(group);
-        }
-    };
+/** @brief Provides standard-library hashing for `mmcfilters::AttributeGroup`. */
+template <> struct hash<mmcfilters::AttributeGroup> {
+    /**
+     * @brief Applies the function-call operator.
+     *
+     * @param group Attribute group whose metadata is requested.
+     * @return Hash value for the supplied key.
+     */
+    std::size_t operator()(const mmcfilters::AttributeGroup& group) const noexcept { return static_cast<std::size_t>(group); }
+};
 
-    template <>
-    struct hash<mmcfilters::Attribute> {
-        std::size_t operator()(const mmcfilters::Attribute& attr) const noexcept {
-            return static_cast<std::size_t>(attr);
-        }
-    };
+/** @brief Provides standard-library hashing for `mmcfilters::Attribute`. */
+template <> struct hash<mmcfilters::Attribute> {
+    /**
+     * @brief Applies the function-call operator.
+     *
+     * @param attr Attribute requested by the operation.
+     * @return Hash value for the supplied key.
+     */
+    std::size_t operator()(const mmcfilters::Attribute& attr) const noexcept { return static_cast<std::size_t>(attr); }
+};
 
-    template <>
-    struct hash<mmcfilters::AttributeOrGroup> {
-        std::size_t operator()(const mmcfilters::AttributeOrGroup& attr) const {
-            return std::visit([](auto&& a) -> std::size_t {
-                return std::hash<std::decay_t<decltype(a)>>{}(a);
-            }, attr);
-        }
-    };
+/** @brief Provides standard-library hashing for `mmcfilters::AttributeOrGroup`. */
+template <> struct hash<mmcfilters::AttributeOrGroup> {
+    /**
+     * @brief Applies the function-call operator.
+     *
+     * @param attr Attribute requested by the operation.
+     * @return Hash value for the supplied key.
+     */
+    std::size_t operator()(const mmcfilters::AttributeOrGroup& attr) const {
+        return std::visit([](auto&& a) -> std::size_t { return std::hash<std::decay_t<decltype(a)>>{}(a); }, attr);
+    }
+};
 
-    template <>
-    struct hash<mmcfilters::AttributeKey> {
-        std::size_t operator()(const mmcfilters::AttributeKey& k) const {
-            return std::hash<int>()(static_cast<int>(k.attr)) ^ (std::hash<int>()(k.delta) << 1);
-        }
-    };
-}
+/** @brief Provides standard-library hashing for `mmcfilters::AttributeKey`. */
+template <> struct hash<mmcfilters::AttributeKey> {
+    /**
+     * @brief Applies the function-call operator.
+     *
+     * @param k Key whose hash value is computed.
+     * @return Hash value for the supplied key.
+     */
+    std::size_t operator()(const mmcfilters::AttributeKey& k) const { return std::hash<int>()(static_cast<int>(k.attr)) ^ (std::hash<int>()(k.delta) << 1); }
+};
+} // namespace std

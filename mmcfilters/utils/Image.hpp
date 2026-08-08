@@ -33,27 +33,37 @@ namespace mmcfilters {
  *
  * @tparam PixelType Pixel scalar type, such as `uint8_t`, `int32_t`, or `float`.
  */
-template <typename PixelType>
-class Image {
-    private:
-        int numRows;
-        int numCols;
-        std::shared_ptr<PixelType[]> data;
-        using Ptr = std::shared_ptr<Image<PixelType>>;
+template <typename PixelType> class Image {
+  private:
+    /** @brief Stores the num rows. */
+    int numRows;
+    /** @brief Stores the num cols. */
+    int numCols;
+    /** @brief Stores the data. */
+    std::shared_ptr<PixelType[]> data;
+    /** @brief Defines the `Ptr` alias used by the component. */
+    using Ptr = std::shared_ptr<Image<PixelType>>;
 
-        static std::size_t checkedSize(int rows, int cols) {
-            if (rows <= 0 || cols <= 0) {
-                throw std::invalid_argument("Image dimensions must be positive.");
-            }
-            const auto rowCount = static_cast<std::size_t>(rows);
-            const auto colCount = static_cast<std::size_t>(cols);
-            if (rowCount > static_cast<std::size_t>(std::numeric_limits<int>::max()) / colCount) {
-                throw std::overflow_error("Image dimensions exceed the supported int-indexed size.");
-            }
-            return rowCount * colCount;
+    /**
+     * @brief Checks and converts size.
+     *
+     * @param rows Number of rows in the domain.
+     * @param cols Number of columns in the domain.
+     * @return Validated number of pixels in the image.
+     */
+    static std::size_t checkedSize(int rows, int cols) {
+        if (rows <= 0 || cols <= 0) {
+            throw std::invalid_argument("Image dimensions must be positive.");
         }
-        
-    public:
+        const auto rowCount = static_cast<std::size_t>(rows);
+        const auto colCount = static_cast<std::size_t>(cols);
+        if (rowCount > static_cast<std::size_t>(std::numeric_limits<int>::max()) / colCount) {
+            throw std::overflow_error("Image dimensions exceed the supported int-indexed size.");
+        }
+        return rowCount * colCount;
+    }
+
+  public:
     /// Pixel scalar type stored by this image.
     using Type = PixelType;
 
@@ -65,7 +75,7 @@ class Image {
      * @throws std::invalid_argument If either dimension is not positive.
      * @throws std::overflow_error If `rows * cols` exceeds the supported size.
      */
-    Image(int rows, int cols): numRows(rows), numCols(cols), data(new PixelType[checkedSize(rows, cols)], std::default_delete<PixelType[]>()) {}
+    Image(int rows, int cols) : numRows(rows), numCols(cols), data(new PixelType[checkedSize(rows, cols)], std::default_delete<PixelType[]>()) {}
 
     /**
      * @brief Creates an owned image with uninitialised pixel values.
@@ -76,9 +86,7 @@ class Image {
      * @throws std::invalid_argument If either dimension is not positive.
      * @throws std::overflow_error If `rows * cols` exceeds the supported size.
      */
-    [[nodiscard]] static Ptr create(int rows, int cols) {
-        return std::make_shared<Image>(rows, cols);
-    }
+    [[nodiscard]] static Ptr create(int rows, int cols) { return std::make_shared<Image>(rows, cols); }
 
     /**
      * @brief Creates an owned image and fills every pixel with `initValue`.
@@ -139,15 +147,14 @@ class Image {
         return img;
     }
 
-
     /**
      * @brief Fills every pixel with `value`.
      *
      * Complexity: O(rows * cols).
+     *
+     * @param value Value used by the operation.
      */
-    void fill(PixelType value) {
-        std::fill_n(data.get(), numRows * numCols, value);
-    }
+    void fill(PixelType value) { std::fill_n(data.get(), numRows * numCols, value); }
 
     /**
      * @brief Returns true when shape and pixel values match `other`.
@@ -187,29 +194,39 @@ class Image {
      * The returned pointer shares the same ownership/lifetime policy as this
      * image: either owning storage, externally wrapped storage, or adopted raw
      * storage.
+     *
+     * @return The shared pointer that owns or wraps the raw buffer.
      */
-    std::shared_ptr<PixelType[]> rawDataPtr(){ return data; }
+    std::shared_ptr<PixelType[]> rawDataPtr() { return data; }
 
     /**
      * @brief Returns a mutable pointer to the contiguous row-major buffer.
      *
      * The pointer remains valid while the image object and its shared buffer are
      * alive and no external owner invalidates externally wrapped memory.
+     *
+     * @return A mutable pointer to the contiguous row-major buffer.
      */
     PixelType* rawData() { return data.get(); }
 
     /**
      * @brief Returns the number of image rows.
+     *
+     * @return The number of image rows.
      */
     int getNumRows() const { return numRows; }
 
     /**
      * @brief Returns the number of image columns.
+     *
+     * @return The number of image columns.
      */
     int getNumCols() const { return numCols; }
 
     /**
      * @brief Returns the total number of pixels.
+     *
+     * @return The total number of pixels.
      */
     int getSize() const { return numRows * numCols; }
 
@@ -218,6 +235,9 @@ class Image {
      *
      * `index` is interpreted in row-major order as `row * getNumCols() + col`.
      * The operator does not perform bounds checking.
+     *
+     * @param index Zero-based index used by the operation.
+     * @return Mutable linear access to pixel index.
      */
     PixelType& operator[](int index) { return data[index]; }
 
@@ -226,10 +246,11 @@ class Image {
      *
      * `index` is interpreted in row-major order as `row * getNumCols() + col`.
      * The operator does not perform bounds checking.
+     *
+     * @param index Zero-based index used by the operation.
+     * @return Immutable linear access to pixel index.
      */
     const PixelType& operator[](int index) const { return data[index]; }
-
-
 };
 
 /// 8-bit unsigned image container.
@@ -249,9 +270,7 @@ using ImageFloatPtr = std::shared_ptr<ImageFloat>;
 /**
  * @brief Shared pointer alias for an image with arbitrary pixel type.
  */
-template <typename PixelType>
-using ImagePtr = std::shared_ptr<Image<PixelType>>;
-
+template <typename PixelType> using ImagePtr = std::shared_ptr<Image<PixelType>>;
 
 /**
  * @brief Utility functions for basic image conversion and manipulation.
@@ -259,8 +278,8 @@ using ImagePtr = std::shared_ptr<Image<PixelType>>;
  * Groups helpers for converting between 1D/2D coordinates and for generating
  * colour visualisations from integer labels.
  */
-class ImageUtils{
-public:
+class ImageUtils {
+  public:
     /**
      * @brief Converts `(row, col)` to a row-major linear index.
      *
@@ -269,9 +288,7 @@ public:
      * @param numCols Number of columns in the image domain.
      * @return Linear index `row * numCols + col`.
      */
-    inline static int to1D(int row, int col, int numCols) noexcept{
-        return row * numCols + col;
-    }
+    inline static int to1D(int row, int col, int numCols) noexcept { return row * numCols + col; }
 
     /**
      * @brief Converts a row-major linear index to `(row, col)`.
@@ -299,10 +316,10 @@ public:
      * @return RGB visualisation encoded as an image with `numColsOfImage * 3`
      * columns.
      */
-    [[nodiscard]] static ImageUInt8Ptr createRandomColor(int* img, int numRowsOfImage, int numColsOfImage){
+    [[nodiscard]] static ImageUInt8Ptr createRandomColor(int* img, int numRowsOfImage, int numColsOfImage) {
         int max = 0;
         int sizeImage = numColsOfImage * numRowsOfImage;
-        for (int i = 0; i < sizeImage; i++){
+        for (int i = 0; i < sizeImage; i++) {
             if (img[i] > max)
                 max = img[i];
         }
@@ -313,29 +330,27 @@ public:
         r[0] = 0;
         g[0] = 0;
         r[0] = 0;
-        for (int i = 1; i <= max; i++){
+        for (int i = 1; i <= max; i++) {
             r[i] = rand() % 256;
             g[i] = rand() % 256;
             b[i] = rand() % 256;
         }
-        
+
         int sizeOutput = sizeImage * 3; // [(R,G,B), (R,G,B), ...]
         ImageUInt8Ptr outImage = ImageUInt8::create(numRowsOfImage, numColsOfImage * 3);
-        
+
         auto output = outImage->rawData();
-            // Initialise with zero.
+        // Initialise with zero.
         std::fill_n(output, sizeOutput, 0);
 
-        for (int pidx = 0; pidx < sizeImage; pidx++){
+        for (int pidx = 0; pidx < sizeImage; pidx++) {
             int cpidx = pidx * 3; // (coloured) for 3 channels
-            output[cpidx]     = r[img[pidx]];
+            output[cpidx] = r[img[pidx]];
             output[cpidx + 1] = g[img[pidx]];
             output[cpidx + 2] = b[img[pidx]];
         }
         return outImage;
     }
-
-
 };
 
-}
+} // namespace mmcfilters

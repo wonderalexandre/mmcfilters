@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import gc
 import importlib.util
 import pathlib
 import sys
@@ -41,6 +42,14 @@ def require(condition: bool, message: str):
         raise RuntimeError(message)
 
 
+def require_raises(callback, message: str):
+    try:
+        callback()
+    except (TypeError, ValueError):
+        return
+    raise RuntimeError(message)
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: test_python_contour_traces.py <build-dir>")
@@ -49,6 +58,10 @@ def main() -> int:
     require(hasattr(mmcfilters, "ContourTraceComputation"), "package must expose ContourTraceComputation")
     require(hasattr(mmcfilters, "ContourLoopKind"), "package must expose ContourLoopKind")
     require(hasattr(mmcfilters, "ContourTraceSide"), "package must expose ContourTraceSide")
+    require_raises(
+        lambda: mmcfilters.ContourTraceComputation.extraction(None),
+        "contour trace extraction must reject None",
+    )
 
     image = np.array(
         [
@@ -63,7 +76,17 @@ def main() -> int:
     ring_nodes = [node for node, value in enumerate(area.tolist()) if int(value) == 8]
     require(len(ring_nodes) == 1, "ring fixture must expose one area-8 node")
 
+    tree_reference_count = sys.getrefcount(tree)
     traces = mmcfilters.ContourTraceComputation.extraction(tree)
+    require(
+        sys.getrefcount(tree) > tree_reference_count,
+        "ContourTraces must retain a strong reference to its source tree",
+    )
+    del tree
+    gc.collect()
+
+    # ContourTraces borrows the topology internally, so its Python binding must
+    # keep the source tree alive for every lazy query.
     require(traces.isMaterialized is False, "traces must start without global materialization")
     edges = traces.getEdges(ring_nodes[0])
     require(len(edges) == 16, "ring trace edge count")

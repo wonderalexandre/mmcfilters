@@ -49,6 +49,27 @@ def require_raises(fn, message: str):
     raise RuntimeError(message)
 
 
+def require_radius_rejected(fn, radius: float, context: str):
+    if not np.isfinite(radius):
+        expected_reason = "radius must be finite"
+    elif radius < 1.0:
+        expected_reason = "radius must be at least 1.0"
+    else:
+        expected_reason = "radius exceeds the supported integer stencil range"
+    try:
+        fn(radius)
+    except ValueError as exc:
+        error = str(exc)
+        require(context in error, f"{context} radius error must identify the entrypoint: {error}")
+        require(expected_reason in error, f"{context} radius error must explain the invalid value: {error}")
+        return
+    except Exception as exc:
+        raise RuntimeError(
+            f"{context} invalid radius must raise ValueError, got {type(exc).__name__}: {exc}"
+        ) from exc
+    raise RuntimeError(f"{context} must reject radius={radius!r}")
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: test_python_filter_wrappers.py <build-dir>")
@@ -67,16 +88,39 @@ def main() -> int:
         dtype=np.uint8,
     )
 
+    invalid_radii = (
+        float("nan"),
+        float("inf"),
+        float("-inf"),
+        -1.0,
+        0.0,
+        0.5,
+        float(np.nextafter(np.float64(1.0), np.float64(0.0))),
+        float(np.finfo(np.float64).max),
+    )
+    factory_radius_entrypoints = (
+        (
+            "MorphologicalTreeFactory.createMaxTree",
+            lambda radius: mmcfilters.MorphologicalTreeFactory.createMaxTree(image, radius=radius),
+        ),
+        (
+            "MorphologicalTreeFactory.createMinTree",
+            lambda radius: mmcfilters.MorphologicalTreeFactory.createMinTree(image, radius=radius),
+        ),
+    )
+    for context, entrypoint in factory_radius_entrypoints:
+        for radius in invalid_radii:
+            require_radius_rejected(entrypoint, radius, context)
+
     weighted = mmcfilters.MorphologicalTreeFactory.createMaxTree(image)
     weighted_reconstruction = weighted.reconstructionImage()
 
-    adjacency = mmcfilters.AdjacencyRelation(4, 4, 1.5)
-    require(adjacency.size == 9, "AdjacencyRelation stencil size")
-    require(type(adjacency.getAdjPixels(1, 1)).__name__ == "AdjacencyRelation", "AdjacencyRelation getAdjPixels return type")
-
-    require_raises(
-        lambda: mmcfilters.MorphologicalTree(image, True),
-        "direct MorphologicalTree construction should not be public",
+    adjacency = mmcfilters.RegularGridAdjacency2D(4, 4, 1.5)
+    require(adjacency.size == 9, "RegularGridAdjacency2D stencil size")
+    require(
+        set(adjacency.neighborIndices(1, 1))
+        == {0, 1, 2, 4, 6, 8, 9, 10},
+        "RegularGridAdjacency2D neighbor index traversal",
     )
 
     keep_all = [True] * weighted.numInternalNodeSlots
@@ -145,16 +189,19 @@ def main() -> int:
 
     weighted_level_attr = mmcfilters.Attribute.computeSingleAttribute(weighted, mmcfilters.Attribute.LEVEL)
     weighted_level_attr64 = mmcfilters.Attribute.computeSingleAttribute(weighted, mmcfilters.Attribute.LEVEL, dtype=np.float64)
-    require(np.array_equal(weighted_filters.filteringByExtinction(weighted_level_attr, 1024), weighted_reconstruction), "weighted AttributeFilters extinction filtering keep-all")
-    require(np.array_equal(weighted_filters.filteringByExtinction(weighted_level_attr64, 1024), weighted_reconstruction), "weighted AttributeFilters extinction filtering float64")
-    require(weighted_filters.saliencyMapByExtinction(weighted_level_attr, 1024).shape == (4, 4), "weighted AttributeFilters extinction saliency shape")
-    saliency64 = weighted_filters.saliencyMapByExtinction(weighted_level_attr64, 1024)
-    require(saliency64.shape == (4, 4), "weighted AttributeFilters extinction float64 saliency shape")
-    require(saliency64.dtype == np.float64, "weighted AttributeFilters extinction float64 saliency dtype")
-    require_raises(lambda: weighted_filters.filteringByExtinction(np.array([1.0], dtype=np.float32), 1), "weighted filteringByExtinction must reject short attribute buffer")
-    require_raises(lambda: weighted_filters.saliencyMapByExtinction(np.array([1.0], dtype=np.float32), 1), "weighted saliencyMapByExtinction must reject short attribute buffer")
-    require_raises(lambda: weighted_filters.filteringByExtinction(weighted_level_attr, -1), "weighted filteringByExtinction must reject negative keep count")
-    require_raises(lambda: weighted_filters.saliencyMapByExtinction(weighted_level_attr, -1), "weighted saliencyMapByExtinction must reject negative keep count")
+    keep_all_policy = mmcfilters.ExtinctionSelectionPolicy.byTopK(1024)
+    keep_one_policy = mmcfilters.ExtinctionSelectionPolicy.byTopK(1)
+    rank_contours = mmcfilters.ExtinctionContourScorePolicy.RankScore
+    require(np.array_equal(weighted_filters.filteringByExtinction(weighted_level_attr, keep_all_policy), weighted_reconstruction), "weighted AttributeFilters extinction filtering keep-all")
+    require(np.array_equal(weighted_filters.filteringByExtinction(weighted_level_attr64, keep_all_policy), weighted_reconstruction), "weighted AttributeFilters extinction filtering float64")
+    require(weighted_filters.contourMapByExtinction(weighted_level_attr, keep_all_policy, rank_contours).shape == (4, 4), "weighted AttributeFilters extinction contour shape")
+    contours64 = weighted_filters.contourMapByExtinction(weighted_level_attr64, keep_all_policy, rank_contours)
+    require(contours64.shape == (4, 4), "weighted AttributeFilters extinction float64 contour shape")
+    require(contours64.dtype == np.float64, "weighted AttributeFilters extinction float64 contour dtype")
+    require_raises(lambda: weighted_filters.filteringByExtinction(np.array([1.0], dtype=np.float32), keep_one_policy), "weighted filteringByExtinction must reject short attribute buffer")
+    require_raises(lambda: weighted_filters.contourMapByExtinction(np.array([1.0], dtype=np.float32), keep_one_policy, rank_contours), "weighted contourMapByExtinction must reject short attribute buffer")
+    require_raises(lambda: weighted_filters.filteringByExtinction(weighted_level_attr, mmcfilters.ExtinctionSelectionPolicy.byTopK(-1)), "weighted filteringByExtinction must reject negative keep count")
+    require_raises(lambda: weighted_filters.contourMapByExtinction(weighted_level_attr, mmcfilters.ExtinctionSelectionPolicy.byTopK(-1), rank_contours), "weighted contourMapByExtinction must reject negative keep count")
     require(
         not hasattr(mmcfilters, "AttributeOpeningPrimitivesFamily"),
         "AttributeOpeningPrimitivesFamily must not be exported in the Python API",
@@ -184,19 +231,43 @@ def main() -> int:
     tos_keep_all = [True] * tos.numInternalNodeSlots
     require(tos_filters.getAdaptiveCriterionByDepth(tos_keep_all, 1) == [False] * tos.numInternalNodeSlots, "ToS depth adaptive criterion on all-true input")
     depth_computer = mmcfilters.DepthStableRegionComputer(tos)
+    require_raises(lambda: depth_computer.getVariation(0), "DepthStableRegionComputer variation requires computation")
+    require_raises(lambda: depth_computer.getVariations(), "DepthStableRegionComputer variation buffer requires computation")
+    require_raises(lambda: depth_computer.getNumNodes(), "DepthStableRegionComputer selected count requires computation")
+    require_raises(
+        lambda: depth_computer.nodeWithMinimumVariationInWindow(0),
+        "DepthStableRegionComputer minimum requires computation",
+    )
+    require_raises(
+        lambda: depth_computer.ascendantInStabilityWindow(0),
+        "DepthStableRegionComputer ascendant requires computation",
+    )
+    require_raises(
+        lambda: depth_computer.descendantInStabilityWindow(0),
+        "DepthStableRegionComputer descendant requires computation",
+    )
     depth_mask = depth_computer.computeByDepth(1)
     require(depth_mask.shape == (tos.numInternalNodeSlots,), "DepthStableRegionComputer mask shape")
     require(depth_mask.dtype == np.uint8, "DepthStableRegionComputer mask dtype")
     depth_variations = depth_computer.getVariations()
     require(depth_variations.shape == (tos.numInternalNodeSlots,), "DepthStableRegionComputer variation shape")
     require(depth_variations.dtype == np.float32, "DepthStableRegionComputer default variation dtype")
-    require(abs(depth_computer.getVariation(2) - float(depth_variations[2])) < 1e-6, "DepthStableRegionComputer getVariation")
+    for node_id in tos.aliveNodeIds:
+        require(
+            np.isclose(
+                depth_computer.getVariation(node_id),
+                float(depth_variations[node_id]),
+                atol=1e-6,
+                equal_nan=True,
+            ),
+            "DepthStableRegionComputer getVariation",
+        )
     require_raises(lambda: depth_computer.computeByDepth(0), "DepthStableRegionComputer must reject zero depth delta")
     depth_computer64 = mmcfilters.DepthStableRegionComputer(tos, tos_area.astype(np.float64))
     depth_computer64.computeByDepth(1)
     require(depth_computer64.getVariations().dtype == np.float64, "DepthStableRegionComputer float64 variation dtype")
     require_raises(lambda: mmcfilters.ExtinctionValues(tos, tos_area), "ToS ExtinctionValues must be rejected")
-    require_raises(lambda: tos_filters.filteringByExtinction(tos_area, 1), "ToS AttributeFilters extinction filtering must be rejected")
+    require_raises(lambda: tos_filters.filteringByExtinction(tos_area, keep_one_policy), "ToS AttributeFilters extinction filtering must be rejected")
     tos_uao = mmcfilters.UltimateAttributeOpening(tos, tos_area)
     require_raises(lambda: tos_uao.executeWithMSER(int(tos.numRows), 1), "ToS UltimateAttributeOpening must reject altitude MSER")
     tos_uao.executeWithDepthStability(int(tos.numRows), 1)
@@ -216,15 +287,36 @@ def main() -> int:
 
     weighted_extinction = mmcfilters.ExtinctionValues(weighted, weighted_level_attr)
     weighted_extinction64 = mmcfilters.ExtinctionValues(weighted, weighted_level_attr64)
-    require(np.array_equal(weighted_extinction.filtering(1024), weighted_reconstruction), "weighted ExtinctionValues filtering keep-all")
-    require(np.array_equal(weighted_extinction64.filtering(1024), weighted_reconstruction), "weighted ExtinctionValues float64 filtering keep-all")
-    require(weighted_extinction.saliencyMap(1024).shape == (4, 4), "weighted ExtinctionValues saliency shape")
-    require(weighted_extinction64.saliencyMap(1024).dtype == np.float64, "weighted ExtinctionValues float64 saliency dtype")
-    require_raises(lambda: weighted_extinction.filtering(-1), "weighted ExtinctionValues filtering must reject negative keep count")
-    require_raises(lambda: weighted_extinction.saliencyMap(-1), "weighted ExtinctionValues saliency must reject negative keep count")
+    require(np.array_equal(weighted_extinction.filtering(keep_all_policy), weighted_reconstruction), "weighted ExtinctionValues filtering keep-all")
+    require(np.array_equal(weighted_extinction64.filtering(keep_all_policy), weighted_reconstruction), "weighted ExtinctionValues float64 filtering keep-all")
+    dominant_threshold = float(weighted_extinction.getRegionalExtrema()[0][2])
+    below_all_policy = mmcfilters.ExtinctionSelectionPolicy.byThreshold(-1.0)
+    dominant_policy = mmcfilters.ExtinctionSelectionPolicy.byThreshold(dominant_threshold)
+    require(
+        np.array_equal(weighted_extinction.filtering(below_all_policy), weighted_reconstruction),
+        "weighted ExtinctionValues threshold below all extinctions keeps all extrema",
+    )
+    require(
+        np.array_equal(weighted_extinction.filtering(dominant_policy), weighted_extinction.filtering(keep_one_policy)),
+        "weighted ExtinctionValues threshold at dominant extinction keeps strongest extremum",
+    )
+    require(
+        np.array_equal(weighted_filters.filteringByExtinction(weighted_level_attr, dominant_policy), weighted_extinction.filtering(keep_one_policy)),
+        "weighted AttributeFilters threshold extinction filtering",
+    )
+    require(weighted_extinction.contourMap(keep_all_policy, rank_contours).shape == (4, 4), "weighted ExtinctionValues contour shape")
+    require(weighted_extinction64.contourMap(keep_all_policy, rank_contours).dtype == np.float64, "weighted ExtinctionValues float64 contour dtype")
+    require_raises(lambda: weighted_extinction.filtering(mmcfilters.ExtinctionSelectionPolicy.byTopK(-1)), "weighted ExtinctionValues filtering must reject negative keep count")
+    require_raises(lambda: weighted_extinction.filtering(mmcfilters.ExtinctionSelectionPolicy.byThreshold(np.nan)), "weighted ExtinctionValues threshold filtering must reject NaN")
+    require_raises(lambda: weighted_filters.filteringByExtinction(weighted_level_attr, mmcfilters.ExtinctionSelectionPolicy.byThreshold(np.nan)), "weighted AttributeFilters threshold extinction filtering must reject NaN")
+    require_raises(lambda: weighted_extinction.contourMap(mmcfilters.ExtinctionSelectionPolicy.byTopK(-1), rank_contours), "weighted ExtinctionValues contour must reject negative keep count")
     require_raises(
         lambda: mmcfilters.ExtinctionValues(weighted, np.array([1.0], dtype=np.float32)),
         "weighted ExtinctionValues must reject short attribute buffer",
+    )
+    require_raises(
+        lambda: weighted_filters.filteringByExtinction(np.array([1.0], dtype=np.float32), dominant_policy),
+        "weighted AttributeFilters threshold extinction filtering must reject short attribute buffer",
     )
 
     stale_weighted = mmcfilters.MorphologicalTreeFactory.createMaxTree(image)
@@ -235,8 +327,8 @@ def main() -> int:
     stale_uao = mmcfilters.UltimateAttributeOpening(stale_weighted, stale_level_attr)
     stale_weighted.mergeNodeIntoParent(4)
     require_raises(lambda: stale_filters.filteringDirectRule(stale_keep_all), "AttributeFilters must reject use after topology mutation")
-    require_raises(lambda: stale_extinction.filtering(1024), "ExtinctionValues must reject filtering after topology mutation")
-    require_raises(lambda: stale_extinction.saliencyMap(1024), "ExtinctionValues must reject saliency after topology mutation")
+    require_raises(lambda: stale_extinction.filtering(keep_all_policy), "ExtinctionValues must reject filtering after topology mutation")
+    require_raises(lambda: stale_extinction.contourMap(keep_all_policy, rank_contours), "ExtinctionValues must reject contour after topology mutation")
     require_raises(lambda: stale_uao.execute(4), "UltimateAttributeOpening must reject execute after topology mutation")
 
     casf = mmcfilters.CasfComponentTrees(image, mmcfilters.CasfComponentTreesAttribute.AREA)

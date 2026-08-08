@@ -12,50 +12,87 @@ namespace mmcfilters {
  * traversals while keeping memory layout simple and allocation behaviour
  * predictable.
  */
-template <typename T>
-struct FastStack {
-private:
+template <typename T> struct FastStack {
+  private:
+    /** @brief Stores the data. */
     std::vector<T> data_;
 
-public:
+  public:
+    /**
+     * @brief Constructs an empty reusable stack.
+     */
     FastStack() = default;
 
     /**
      * @brief Creates an empty stack and reserves capacity for `n` elements.
+     *
+     * @param n Requested element count or capacity.
      */
-    explicit FastStack(size_t n) {
-        data_.reserve(n);
-    }
+    explicit FastStack(size_t n) { data_.reserve(n); }
 
-    /// Reserves storage to avoid future reallocations.
+    /**
+     * @brief Reserves storage to avoid future reallocations.
+     *
+     * @param n Requested element count or capacity.
+     */
     void reserve(size_t n) { data_.reserve(n); }
 
-    /// Clears the stack.
+    /**
+     * @brief Clears the stack.
+     */
     void clear() { data_.clear(); }
 
-    /// Returns whether the stack is empty.
+    /**
+     * @brief Returns whether the stack is empty.
+     *
+     * @return Whether the stack is empty.
+     */
     bool empty() const { return data_.empty(); }
 
-    /// Returns the number of stored elements.
+    /**
+     * @brief Returns the number of stored elements.
+     *
+     * @return The number of stored elements.
+     */
     size_t size() const { return data_.size(); }
 
-    /// Pushes an element on top of the stack.
+    /**
+     * @brief Pushes an element on top of the stack.
+     *
+     * @param value Value used by the operation.
+     */
     void push(const T& value) { data_.push_back(value); }
 
-    /// Pushes an element on top of the stack by moving it into storage.
+    /**
+     * @brief Pushes an element on top of the stack by moving it into storage.
+     *
+     * @param value Value used by the operation.
+     */
     void push(T&& value) { data_.push_back(std::move(value)); }
 
-    /// Removes and returns the top element.
+    /**
+     * @brief Removes and returns the top element.
+     *
+     * @return The removed top element.
+     */
     T pop() {
         T value = std::move(data_.back());
         data_.pop_back();
         return value;
     }
 
-    /// Returns the top element without removing it.
+    /**
+     * @brief Returns the top element without removing it.
+     *
+     * @return The top element without removing it.
+     */
     T& top() { return data_.back(); }
 
-    /// Returns the top element without removing it.
+    /**
+     * @brief Returns the top element without removing it.
+     *
+     * @return The top element without removing it.
+     */
     const T& top() const { return data_.back(); }
 };
-}
+} // namespace mmcfilters

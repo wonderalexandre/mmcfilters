@@ -20,13 +20,15 @@ namespace mmcfilters::detail {
  *   lowest common ancestor.
  *
  * Invalid proper parts or proper parts without an owner return `InvalidNode`.
+ *
+ * @param tree Tree topology used by the operation.
+ * @param anchorProperPart Proper-part data represented by `anchorProperPart`.
+ * @param sampleProperPart Proper-part data represented by `sampleProperPart`.
+ * @return The first ancestor where two proper-part samples share support.
  */
-inline NodeId properPartEntryNode(
-    const MorphologicalTree& tree,
-    int anchorProperPart,
-    int sampleProperPart) {
-    if (anchorProperPart < 0 || anchorProperPart >= tree.getNumTotalProperParts() ||
-        sampleProperPart < 0 || sampleProperPart >= tree.getNumTotalProperParts()) {
+inline NodeId properPartEntryNode(const MorphologicalTree& tree, int anchorProperPart, int sampleProperPart) {
+    if (anchorProperPart < 0 || anchorProperPart >= tree.getNumTotalProperParts() || sampleProperPart < 0 ||
+        sampleProperPart >= tree.getNumTotalProperParts()) {
         return InvalidNode;
     }
 

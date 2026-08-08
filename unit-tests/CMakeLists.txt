@@ -41,6 +41,10 @@ mmcfilters_add_unit_test(unit_altitude_traits
     utils/test_altitude_traits.cpp
 )
 
+mmcfilters_add_unit_test(unit_regular_grid_adjacency_2d
+    utils/test_regular_grid_adjacency_2d.cpp
+)
+
 mmcfilters_add_unit_test(unit_morphological_tree_build
     trees/test_morphological_tree_build.cpp
 )
@@ -81,16 +85,16 @@ mmcfilters_add_unit_test(unit_weighted_altitude_templates
     trees/test_weighted_altitude_templates.cpp
 )
 
+mmcfilters_add_unit_test(unit_min_max_residual_tree_factory
+    trees/sdrt/test_min_max_residual_tree_factory.cpp
+)
+
 mmcfilters_add_unit_test(unit_owner_state_contracts
     trees/test_owner_state_contracts.cpp
 )
 
 mmcfilters_add_unit_test(unit_component_tree_adjust
     trees/test_component_tree_adjust.cpp
-)
-
-mmcfilters_add_unit_test(unit_sdrt_builder
-    trees/sdrt/test_sdrt_builder.cpp
 )
 
 mmcfilters_add_unit_test(unit_morphological_tree_invariants

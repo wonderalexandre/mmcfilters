@@ -32,7 +32,8 @@ int main() {
     requireVectorEqual(collectNodeIds(maxTree->getDescendants(maxTree->getRoot())), {1, 2, 3, 4, 5}, "max-tree descendants iterator");
     requireVectorEqual(collectNodeIds(maxTree->getNodeSubtree(maxTree->getRoot())), {0, 1, 2, 3, 4, 5}, "max-tree subtree iterator");
     requireVectorEqual(collectNodeIds(maxTree->getConnectedComponent(3)), {0, 1, 4, 5, 6, 9, 10, 14}, "max-tree connected component iterator");
-    requireVectorEqual(collectNodeIds(maxTree->getConnectedComponent(maxTree->getRoot())), {15, 8, 12, 13, 2, 3, 7, 11, 0, 1, 4, 5, 6, 9, 10, 14}, "max-tree root connected component iterator");
+    requireVectorEqual(collectNodeIds(maxTree->getConnectedComponent(maxTree->getRoot())), {15, 8, 12, 13, 2, 3, 7, 11, 0, 1, 4, 5, 6, 9, 10, 14},
+                       "max-tree root connected component iterator");
     require(maxTree->getLowestCommonAncestor(5, 2) == 2, "max-tree LCA");
     require(maxTree->getLowestCommonAncestor(5, 2) == 2, "max-tree lazy cached LCA first query");
     require(maxTree->getLowestCommonAncestor(4, 5) == 4, "max-tree lazy cached LCA second query");
@@ -57,7 +58,8 @@ int main() {
     auto detachedNodeId = editor.createDetachedNode();
     require(detachedNodeId != InvalidNode, "detached node allocation for path traversal");
     requireVectorEqual(collectNodeIds(maxTree->getPathBetweenNodes(detachedNodeId, detachedNodeId)), {detachedNodeId}, "detached node path to itself");
-    requireVectorEqual(collectNodeIds(maxTree->getPathBetweenNodes(detachedNodeId, maxTree->getRoot())), {}, "detached node path to connected root should be empty");
+    requireVectorEqual(collectNodeIds(maxTree->getPathBetweenNodes(detachedNodeId, maxTree->getRoot())), {},
+                       "detached node path to connected root should be empty");
 
     return 0;
 }

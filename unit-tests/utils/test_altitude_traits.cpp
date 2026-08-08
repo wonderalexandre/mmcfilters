@@ -9,8 +9,7 @@
 
 using namespace mmcfilters;
 
-template<class T>
-void checkAltitudeSpanAlias() {
+template <class T> void checkAltitudeSpanAlias() {
     static_assert(AltitudeValue<T>);
     static_assert(std::is_same_v<AltitudeSpan<T>, std::span<const T>>);
 

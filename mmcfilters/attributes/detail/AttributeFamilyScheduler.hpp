@@ -13,38 +13,55 @@ namespace mmcfilters::detail {
 
 /**
  * @brief Tests membership in a scheduler-owned attribute list.
+ *
+ * @param attributes Attributes requested by the operation.
+ * @param attribute Attribute requested by the operation.
+ * @return True when the documented condition holds; otherwise false.
  */
-inline bool containsScheduledAttribute(std::span<const Attribute> attributes, Attribute attribute) noexcept
-{
+inline bool containsScheduledAttribute(std::span<const Attribute> attributes, Attribute attribute) noexcept {
     return std::find(attributes.begin(), attributes.end(), attribute) != attributes.end();
 }
 
-inline bool containsScheduledAttribute(const std::vector<Attribute>& attributes, Attribute attribute) noexcept
-{
+/**
+ * @brief Tests whether scheduled attribute holds.
+ *
+ * @param attributes Attributes requested by the operation.
+ * @param attribute Attribute requested by the operation.
+ * @return True when scheduled attribute; otherwise false.
+ */
+inline bool containsScheduledAttribute(const std::vector<Attribute>& attributes, Attribute attribute) noexcept {
     return containsScheduledAttribute(std::span<const Attribute>(attributes), attribute);
 }
 
 /**
  * @brief Appends `attribute` while preserving first-seen request order.
+ *
+ * @param attributes Attributes requested by the operation.
+ * @param attribute Attribute requested by the operation.
  */
-inline void appendScheduledAttributeOnce(std::vector<Attribute>& attributes, Attribute attribute)
-{
+inline void appendScheduledAttributeOnce(std::vector<Attribute>& attributes, Attribute attribute) {
     if (!containsScheduledAttribute(attributes, attribute)) {
         attributes.push_back(attribute);
     }
 }
 
-template <class Computer>
-inline attributes::computers::AttributeComputerFamily familyForAttributeWithComputer(Attribute attribute) noexcept
-{
-    return attributes::computers::producesAttribute<Computer>(attribute)
-        ? Computer::family
-        : attributes::computers::AttributeComputerFamily::Unsupported;
+/**
+ * @brief Returns the family associated with an attribute for one computer type.
+ *
+ * @param attribute Attribute requested by the operation.
+ * @return Matching computer family, or `None` when unsupported.
+ */
+template <class Computer> inline attributes::computers::AttributeComputerFamily familyForAttributeWithComputer(Attribute attribute) noexcept {
+    return attributes::computers::producesAttribute<Computer>(attribute) ? Computer::family : attributes::computers::AttributeComputerFamily::Unsupported;
 }
 
-template <class Computer, class... Rest>
-inline attributes::computers::AttributeComputerFamily familyForAttributeInComputers(Attribute attribute) noexcept
-{
+/**
+ * @brief Finds the family associated with an attribute across computer types.
+ *
+ * @param attribute Attribute requested by the operation.
+ * @return First matching computer family, or `None` when unsupported.
+ */
+template <class Computer, class... Rest> inline attributes::computers::AttributeComputerFamily familyForAttributeInComputers(Attribute attribute) noexcept {
     const attributes::computers::AttributeComputerFamily family = familyForAttributeWithComputer<Computer>(attribute);
     if (family != attributes::computers::AttributeComputerFamily::Unsupported) {
         return family;
@@ -56,28 +73,42 @@ inline attributes::computers::AttributeComputerFamily familyForAttributeInComput
     }
 }
 
-template <class Tuple>
-struct AttributeFamilyLookup;
+template <class Tuple> struct AttributeFamilyLookup;
 
-template <class... Computers>
-struct AttributeFamilyLookup<std::tuple<Computers...>> {
-    static attributes::computers::AttributeComputerFamily familyForAttribute(Attribute attribute) noexcept
-    {
+/**
+ * @brief Resolves attribute-computer families from a registered computer tuple.
+ *
+ * @tparam Computers Registered attribute-computer types searched by the lookup.
+ */
+template <class... Computers> struct AttributeFamilyLookup<std::tuple<Computers...>> {
+    /**
+     * @brief Returns the registered computer family for an attribute.
+     *
+     * @param attribute Attribute requested by the operation.
+     * @return Registered computer family, or `None` when unsupported.
+     */
+    static attributes::computers::AttributeComputerFamily familyForAttribute(Attribute attribute) noexcept {
         return familyForAttributeInComputers<Computers...>(attribute);
     }
 };
 
 /**
  * @brief Returns the unique family declared as producer of `attribute`.
+ *
+ * @param attribute Attribute requested by the operation.
+ * @return The unique family declared as producer of attribute.
  */
-inline attributes::computers::AttributeComputerFamily familyForAttribute(Attribute attribute) noexcept
-{
+inline attributes::computers::AttributeComputerFamily familyForAttribute(Attribute attribute) noexcept {
     return AttributeFamilyLookup<attributes::computers::RegisteredAttributeComputers>::familyForAttribute(attribute);
 }
 
-template <attributes::computers::AttributeComputerDomain Domain, class Computer>
-inline bool computerProducesAttributeInDomain(Attribute attribute) noexcept
-{
+/**
+ * @brief Checks whether a computer produces an attribute in the requested domain.
+ *
+ * @param attribute Attribute requested by the operation.
+ * @return True when the computer produces the attribute in the requested domain.
+ */
+template <attributes::computers::AttributeComputerDomain Domain, class Computer> inline bool computerProducesAttributeInDomain(Attribute attribute) noexcept {
     if constexpr (Computer::domain == Domain) {
         return attributes::computers::producesAttribute<Computer>(attribute);
     } else {
@@ -85,9 +116,14 @@ inline bool computerProducesAttributeInDomain(Attribute attribute) noexcept
     }
 }
 
+/**
+ * @brief Tests whether has computer domain in computers holds.
+ *
+ * @param attribute Attribute requested by the operation.
+ * @return True when has computer domain in computers; otherwise false.
+ */
 template <attributes::computers::AttributeComputerDomain Domain, class Computer, class... Rest>
-inline bool attributeHasComputerDomainInComputers(Attribute attribute) noexcept
-{
+inline bool attributeHasComputerDomainInComputers(Attribute attribute) noexcept {
     if (computerProducesAttributeInDomain<Domain, Computer>(attribute)) {
         return true;
     }
@@ -98,20 +134,31 @@ inline bool attributeHasComputerDomainInComputers(Attribute attribute) noexcept
     }
 }
 
-template <attributes::computers::AttributeComputerDomain Domain, class Tuple>
-struct AttributeComputerDomainLookup;
+template <attributes::computers::AttributeComputerDomain Domain, class Tuple> struct AttributeComputerDomainLookup;
 
-template <attributes::computers::AttributeComputerDomain Domain, class... Computers>
-struct AttributeComputerDomainLookup<Domain, std::tuple<Computers...>> {
-    static bool contains(Attribute attribute) noexcept
-    {
-        return attributeHasComputerDomainInComputers<Domain, Computers...>(attribute);
-    }
+/**
+ * @brief Tests a registered computer tuple for one attribute-computation domain.
+ *
+ * @tparam Domain Attribute-computation domain required by the lookup.
+ * @tparam Computers Registered attribute-computer types searched by the lookup.
+ */
+template <attributes::computers::AttributeComputerDomain Domain, class... Computers> struct AttributeComputerDomainLookup<Domain, std::tuple<Computers...>> {
+    /**
+     * @brief Tests whether contains holds.
+     *
+     * @param attribute Attribute requested by the operation.
+     * @return True when contains; otherwise false.
+     */
+    static bool contains(Attribute attribute) noexcept { return attributeHasComputerDomainInComputers<Domain, Computers...>(attribute); }
 };
 
-template <attributes::computers::AttributeComputerDomain Domain>
-inline bool attributeHasComputerDomain(Attribute attribute) noexcept
-{
+/**
+ * @brief Tests whether has computer domain holds.
+ *
+ * @param attribute Attribute requested by the operation.
+ * @return True when has computer domain; otherwise false.
+ */
+template <attributes::computers::AttributeComputerDomain Domain> inline bool attributeHasComputerDomain(Attribute attribute) noexcept {
     return AttributeComputerDomainLookup<Domain, attributes::computers::RegisteredAttributeComputers>::contains(attribute);
 }
 
@@ -125,73 +172,64 @@ inline bool attributeHasComputerDomain(Attribute attribute) noexcept
  * The returned order is dependency order for the current descriptor only. The
  * recursive closure builder expands nested dependencies before the consumer is
  * appended to the materialization list.
+ *
+ * @param attribute Attribute requested by the operation.
+ * @return Values produced by the operation.
  */
-inline std::vector<Attribute> dependenciesForAttribute(Attribute attribute)
-{
+inline std::vector<Attribute> dependenciesForAttribute(Attribute attribute) {
     switch (attribute) {
-        case RECTANGULARITY:
-        case RELATIVE_VOLUME:
-            return {AREA};
+    case RECTANGULARITY:
+    case RELATIVE_VOLUME:
+        return {AREA};
 
-        case MEAN_LEVEL:
-        case VARIANCE_LEVEL:
-            return {VOLUME, AREA};
+    case MEAN_LEVEL:
+    case VARIANCE_LEVEL:
+        return {VOLUME, AREA};
 
-        case HU_MOMENT_1:
-        case HU_MOMENT_2:
-        case HU_MOMENT_3:
-        case HU_MOMENT_4:
-        case HU_MOMENT_5:
-        case HU_MOMENT_6:
-        case HU_MOMENT_7:
-            return {
-                AREA,
-                CENTRAL_MOMENT_20,
-                CENTRAL_MOMENT_02,
-                CENTRAL_MOMENT_11,
-                CENTRAL_MOMENT_30,
-                CENTRAL_MOMENT_03,
-                CENTRAL_MOMENT_21,
-                CENTRAL_MOMENT_12};
+    case HU_MOMENT_1:
+    case HU_MOMENT_2:
+    case HU_MOMENT_3:
+    case HU_MOMENT_4:
+    case HU_MOMENT_5:
+    case HU_MOMENT_6:
+    case HU_MOMENT_7:
+        return {AREA, CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11, CENTRAL_MOMENT_30, CENTRAL_MOMENT_03, CENTRAL_MOMENT_21, CENTRAL_MOMENT_12};
 
-        case INERTIA:
-        case COMPACTNESS:
-        case ECCENTRICITY:
-        case LENGTH_MAJOR_AXIS:
-        case LENGTH_MINOR_AXIS:
-        case AXIS_ORIENTATION:
-        case CIRCULARITY:
-            return {
-                AREA,
-                CENTRAL_MOMENT_20,
-                CENTRAL_MOMENT_02,
-                CENTRAL_MOMENT_11};
+    case INERTIA:
+    case COMPACTNESS:
+    case ECCENTRICITY:
+    case LENGTH_MAJOR_AXIS:
+    case LENGTH_MINOR_AXIS:
+    case AXIS_ORIENTATION:
+    case CIRCULARITY:
+        return {AREA, CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11};
 
-        default:
-            return {};
+    default:
+        return {};
     }
 }
 
 /**
  * @brief Tests whether one descriptor directly consumes another descriptor.
+ *
+ * @param attribute Attribute requested by the operation.
+ * @param dependency Required dependent attribute.
+ * @return True if one descriptor directly consumes another descriptor; otherwise false.
  */
-inline bool attributeRequiresDependency(Attribute attribute, Attribute dependency)
-{
+inline bool attributeRequiresDependency(Attribute attribute, Attribute dependency) {
     const std::vector<Attribute> dependencies = dependenciesForAttribute(attribute);
     return containsScheduledAttribute(dependencies, dependency);
 }
 
 /**
  * @brief Tests whether any descriptor in `attributes` consumes `dependency`.
+ *
+ * @param attributes Attributes requested by the operation.
+ * @param dependency Required dependent attribute.
+ * @return True if any descriptor in attributes consumes dependency; otherwise false.
  */
-inline bool anyAttributeRequiresDependency(std::span<const Attribute> attributes, Attribute dependency)
-{
-    return std::any_of(
-        attributes.begin(),
-        attributes.end(),
-        [&](Attribute attribute) {
-            return attributeRequiresDependency(attribute, dependency);
-        });
+inline bool anyAttributeRequiresDependency(std::span<const Attribute> attributes, Attribute dependency) {
+    return std::any_of(attributes.begin(), attributes.end(), [&](Attribute attribute) { return attributeRequiresDependency(attribute, dependency); });
 }
 
 /**
@@ -201,12 +239,12 @@ inline bool anyAttributeRequiresDependency(std::span<const Attribute> attributes
  * Dependencies are appended before their consumer, so the final closure can be
  * traversed in materialization order. `visiting` is a recursion stack used only
  * for cycle detection.
+ *
+ * @param attribute Attribute requested by the operation.
+ * @param closure Dependency closure accumulated by the traversal.
+ * @param visiting Attributes on the current dependency traversal path.
  */
-inline void appendDependencyClosure(
-    Attribute attribute,
-    std::vector<Attribute>& closure,
-    std::vector<Attribute>& visiting)
-{
+inline void appendDependencyClosure(Attribute attribute, std::vector<Attribute>& closure, std::vector<Attribute>& visiting) {
     if (containsScheduledAttribute(closure, attribute)) {
         return;
     }
@@ -224,9 +262,11 @@ inline void appendDependencyClosure(
 
 /**
  * @brief Builds the dependency-closed materialization order for a request.
+ *
+ * @param requestedAttributes Attributes requested for materialization.
+ * @return The resulting dependency-closed materialization order for a request.
  */
-inline std::vector<Attribute> expandDependencyClosure(std::span<const Attribute> requestedAttributes)
-{
+inline std::vector<Attribute> expandDependencyClosure(std::span<const Attribute> requestedAttributes) {
     std::vector<Attribute> closure;
     std::vector<Attribute> visiting;
     for (Attribute attribute : requestedAttributes) {
@@ -256,51 +296,58 @@ struct AttributeComputationPlan {
 
     /**
      * @brief Tests whether `attribute` belongs to the public request.
+     *
+     * @param attribute Attribute requested by the operation.
+     * @return True if attribute belongs to the public request; otherwise false.
      */
-    [[nodiscard]] bool requests(Attribute attribute) const noexcept
-    {
-        return containsScheduledAttribute(requestedAttributes, attribute);
-    }
+    [[nodiscard]] bool requests(Attribute attribute) const noexcept { return containsScheduledAttribute(requestedAttributes, attribute); }
 
     /**
      * @brief Tests whether `attribute` will be computed by the plan.
+     *
+     * @param attribute Attribute requested by the operation.
+     * @return True if attribute will be computed by the plan; otherwise false.
      */
-    [[nodiscard]] bool materializes(Attribute attribute) const noexcept
-    {
-        return containsScheduledAttribute(materializedAttributes, attribute);
-    }
+    [[nodiscard]] bool materializes(Attribute attribute) const noexcept { return containsScheduledAttribute(materializedAttributes, attribute); }
 
     /**
      * @brief Tests whether `attribute` is an internal-only dependency.
+     *
+     * @param attribute Attribute requested by the operation.
+     * @return True if attribute is an internal-only dependency; otherwise false.
      */
-    [[nodiscard]] bool hides(Attribute attribute) const noexcept
-    {
-        return containsScheduledAttribute(hiddenDependencyAttributes, attribute);
-    }
+    [[nodiscard]] bool hides(Attribute attribute) const noexcept { return containsScheduledAttribute(hiddenDependencyAttributes, attribute); }
 
     /**
      * @brief Returns public requested attributes produced by `family`.
+     *
+     * @param family Attribute-computer family.
+     * @return Public requested attributes produced by family.
      */
-    [[nodiscard]] std::vector<Attribute> requestedForFamily(
-        attributes::computers::AttributeComputerFamily family) const
-    {
+    [[nodiscard]] std::vector<Attribute> requestedForFamily(attributes::computers::AttributeComputerFamily family) const {
         return attributesForFamily(requestedAttributes, family);
     }
 
     /**
      * @brief Returns requested and hidden attributes produced by `family`.
+     *
+     * @param family Attribute-computer family.
+     * @return Requested and hidden attributes produced by family.
      */
-    [[nodiscard]] std::vector<Attribute> materializedForFamily(
-        attributes::computers::AttributeComputerFamily family) const
-    {
+    [[nodiscard]] std::vector<Attribute> materializedForFamily(attributes::computers::AttributeComputerFamily family) const {
         return attributesForFamily(materializedAttributes, family);
     }
 
-private:
-    [[nodiscard]] static std::vector<Attribute> attributesForFamily(
-        const std::vector<Attribute>& attributes,
-        attributes::computers::AttributeComputerFamily family)
-    {
+  private:
+    /**
+     * @brief Checks whether any requested attribute belongs to a computer family.
+     *
+     * @param attributes Attributes requested by the operation.
+     * @param family Attribute family to schedule.
+     * @return True when at least one requested attribute belongs to `family`.
+     */
+    [[nodiscard]] static std::vector<Attribute> attributesForFamily(const std::vector<Attribute>& attributes,
+                                                                    attributes::computers::AttributeComputerFamily family) {
         std::vector<Attribute> filtered;
         for (Attribute attribute : attributes) {
             if (familyForAttribute(attribute) == family) {
@@ -317,9 +364,11 @@ private:
  * @details
  * Duplicate public requests are ignored after the first occurrence. Dependencies
  * are added recursively and marked hidden unless they were requested directly.
+ *
+ * @param requestedAttributes Attributes requested for materialization.
+ * @return The created computation plan from scalar attributes already expanded from groups.
  */
-inline AttributeComputationPlan makeAttributeComputationPlan(std::span<const Attribute> requestedAttributes)
-{
+inline AttributeComputationPlan makeAttributeComputationPlan(std::span<const Attribute> requestedAttributes) {
     AttributeComputationPlan plan;
     for (Attribute attribute : requestedAttributes) {
         appendScheduledAttributeOnce(plan.requestedAttributes, attribute);

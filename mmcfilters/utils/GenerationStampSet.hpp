@@ -39,15 +39,22 @@ struct GenerationStampSet {
     /// Current generation; zero is reserved for physically cleared slots.
     gen_t cur{1};
 
+    /**
+     * @brief Constructs a default `GenerationStampSet`.
+     */
     GenerationStampSet() = default;
 
     /**
      * @brief Creates a stamp set with `n` logical entries.
+     *
+     * @param n Requested element count or capacity.
      */
     explicit GenerationStampSet(size_t n) { resize(n); }
 
     /**
      * @brief Resizes the stamp buffer and physically clears all marks.
+     *
+     * @param newN New number of logical entries.
      */
     void resize(size_t newN) {
         n = newN;
@@ -58,26 +65,33 @@ struct GenerationStampSet {
 
     /**
      * @brief Marks `idx` in the current generation.
+     *
+     * @param idx Zero-based index used by the operation.
      */
-    inline void mark(size_t idx) noexcept {
-        stamp[idx] = cur;
-    }
+    inline void mark(size_t idx) noexcept { stamp[idx] = cur; }
 
     /**
      * @brief Returns true when `idx` is marked in the current generation.
+     *
+     * @param idx Zero-based index used by the operation.
+     * @return True when idx is marked in the current generation.
      */
-    inline bool isMarked(size_t idx) const noexcept {
-        return stamp[idx] == cur;
-    }
+    inline bool isMarked(size_t idx) const noexcept { return stamp[idx] == cur; }
 
-    /// Removes one mark from the current logical generation.
+    /**
+     * @brief Removes one mark from the current logical generation.
+     *
+     * @param idx Zero-based index used by the operation.
+     */
     inline void unmark(size_t idx) noexcept {
         if (stamp[idx] == cur) {
             stamp[idx] = 0;
         }
     }
 
-    /// Performs an O(1) logical reset by advancing the generation counter.
+    /**
+     * @brief Performs an O(1) logical reset by advancing the generation counter.
+     */
     void resetAll() {
         if (++cur == 0) {
             std::fill_n(stamp.get(), n, 0);
@@ -85,13 +99,19 @@ struct GenerationStampSet {
         }
     }
 
-    /// Performs an O(N) physical clear of the whole stamp buffer.
+    /**
+     * @brief Performs an O(N) physical clear of the whole stamp buffer.
+     */
     void clearAll() {
         std::fill_n(stamp.get(), n, 0);
         cur = 1;
     }
 
-    /// Returns the current generation counter.
+    /**
+     * @brief Returns the current generation counter.
+     *
+     * @return The current generation counter.
+     */
     gen_t generation() const noexcept { return cur; }
 };
 

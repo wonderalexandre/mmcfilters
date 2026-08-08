@@ -43,8 +43,7 @@ ImageUInt8Ptr makeBenchmarkImage(int rows, int cols) {
     for (int row = 0; row < rows; ++row) {
         for (int col = 0; col < cols; ++col) {
             const int idx = row * cols + col;
-            const int radial = (row - rows / 2) * (row - rows / 2) +
-                               (col - cols / 2) * (col - cols / 2);
+            const int radial = (row - rows / 2) * (row - rows / 2) + (col - cols / 2) * (col - cols / 2);
             const int waves = (row * 17) ^ (col * 31) ^ ((row + col) * 7);
             (*image)[idx] = static_cast<uint8_t>((radial / 113 + waves) & 0xff);
         }
@@ -52,8 +51,7 @@ ImageUInt8Ptr makeBenchmarkImage(int rows, int cols) {
     return image;
 }
 
-template <typename Fn>
-auto timedValue(Fn&& fn) {
+template <typename Fn> auto timedValue(Fn&& fn) {
     const auto start = std::chrono::steady_clock::now();
     auto value = fn();
     const auto end = std::chrono::steady_clock::now();
@@ -132,8 +130,7 @@ Options parseOptions(int argc, char** argv) {
                 throw std::invalid_argument("--radius must be positive.");
             }
         } else if (arg == "--help" || arg == "-h") {
-            std::cout
-                << "usage: mmcfilters_maxdist_benchmark [--sizes 128,256,512] [--repeats 3] [--radius 1.5]\n";
+            std::cout << "usage: mmcfilters_maxdist_benchmark [--sizes 128,256,512] [--repeats 3] [--radius 1.5]\n";
             std::exit(0);
         } else {
             throw std::invalid_argument("unknown argument: " + arg);
@@ -144,21 +141,13 @@ Options parseOptions(int argc, char** argv) {
 
 void runCase(int rows, int cols, bool isMaxTree, int repeats, double radius) {
     auto image = makeBenchmarkImage(rows, cols);
-    auto [tree, buildMs] = timedValue([&]() {
-        return isMaxTree
-            ? MorphologicalTreeFactory::createMaxTree(image, radius)
-            : MorphologicalTreeFactory::createMinTree(image, radius);
-    });
+    auto [tree, buildMs] = timedValue(
+        [&]() { return isMaxTree ? MorphologicalTreeFactory::createMaxTree(image, radius) : MorphologicalTreeFactory::createMinTree(image, radius); });
     const Measurement maxDist = measureMaxDist(tree, repeats);
 
-    std::cout << std::setw(5) << rows
-              << " x " << std::setw(5) << cols
-              << "  " << (isMaxTree ? "max" : "min")
-              << "  nodes=" << std::setw(8) << tree.topology().getNumNodes()
-              << "  build_ms=" << std::setw(10) << std::fixed << std::setprecision(3) << buildMs
-              << "  max_dist_ms/run=" << std::setw(10) << std::fixed << std::setprecision(3) << maxDist.msPerRun
-              << "  checksum=" << maxDist.checksum
-              << '\n';
+    std::cout << std::setw(5) << rows << " x " << std::setw(5) << cols << "  " << (isMaxTree ? "max" : "min") << "  nodes=" << std::setw(8)
+              << tree.topology().getNumNodes() << "  build_ms=" << std::setw(10) << std::fixed << std::setprecision(3) << buildMs
+              << "  max_dist_ms/run=" << std::setw(10) << std::fixed << std::setprecision(3) << maxDist.msPerRun << "  checksum=" << maxDist.checksum << '\n';
 }
 
 } // namespace
@@ -168,9 +157,7 @@ int main(int argc, char** argv) {
         const Options options = parseOptions(argc, argv);
 
         std::cout << "MAX_DIST benchmark\n"
-                  << "repeats=" << options.repeats
-                  << " radius=" << options.radius
-                  << "\n\n";
+                  << "repeats=" << options.repeats << " radius=" << options.radius << "\n\n";
 
         for (int size : options.sizes) {
             runCase(size, size, true, options.repeats, options.radius);

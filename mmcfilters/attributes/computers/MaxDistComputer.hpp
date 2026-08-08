@@ -40,28 +40,20 @@ namespace mmcfilters::attributes::computers::detail {
  * caller-owned attribute buffer layout.
  */
 class MaxDistAttributeKernel {
-public:
+  public:
     /**
-     * @brief Rejects tree kinds for which the altitude sweep is not defined.
+     * @brief Rejects hierarchies for which the altitude sweep is not defined.
      *
-     * @throws std::invalid_argument If the tree kind is not `MAX_TREE` or
-     * `MIN_TREE`.
+     * @param tree Tree topology used by the operation.
+     *
+     * @throws std::invalid_argument If the hierarchy has no globally monotone
+     * altitude-order capability.
+     *
      */
-    static void requireSupportedTreeKind(const MorphologicalTree& tree)
-    {
-        switch (tree.getTreeType()) {
-            case MorphologicalTreeKind::MAX_TREE:
-            case MorphologicalTreeKind::MIN_TREE:
-                return;
-            case MorphologicalTreeKind::TREE_OF_SHAPES:
-                throw std::invalid_argument(
-                    "MAX_DIST is currently defined only for MAX_TREE and MIN_TREE; TREE_OF_SHAPES is not supported.");
-            case MorphologicalTreeKind::SELF_DUAL_RESIDUAL_TREE:
-                throw std::invalid_argument(
-                    "MAX_DIST is currently defined only for MAX_TREE and MIN_TREE; SELF_DUAL_RESIDUAL_TREE is not supported.");
+    static void requireSupportedCapabilities(const MorphologicalTree& tree) {
+        if (tree.getAltitudeOrder() == AltitudeOrder::UNCONSTRAINED) {
+            throw std::invalid_argument("MAX_DIST requires a globally monotone altitude order.");
         }
-
-        throw std::invalid_argument("MAX_DIST received an unsupported morphological tree kind.");
     }
 
     /**
@@ -69,27 +61,26 @@ public:
      *
      * Floating-point altitudes must be finite because the level ordering and
      * contour tests require a total finite order.
+     *
+     * @param tree Tree topology used by the operation.
+     * @param altitude Altitude data indexed by node identifier.
+     * @return Values produced by the operation.
      */
-    template<std::floating_point Real, AltitudeValue T>
-    [[nodiscard]] static std::vector<Real> compute(
-        const MorphologicalTree& tree,
-        std::span<const T> altitude)
-    {
-        requireSupportedTreeKind(tree);
-        if (!tree.hasAdjacencyRelation()) {
-            throw std::invalid_argument("MAX_DIST requires an adjacency relation.");
+    template <std::floating_point Real, AltitudeValue T>
+    [[nodiscard]] static std::vector<Real> compute(const MorphologicalTree& tree, std::span<const T> altitude) {
+        requireSupportedCapabilities(tree);
+        if (!tree.hasUniformGridAdjacency2D()) {
+            throw std::invalid_argument("MAX_DIST requires uniform adjacency.");
         }
         TreeAltitudeAlgorithms::validateAltitudeBufferShape(tree, altitude);
         validateFiniteAltitude(altitude);
 
         std::vector<Real> maxDist(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), Real{0});
-        maxdist::EdtDIFT edtDIFT(tree.getNumRowsOfImage(), tree.getNumColsOfImage());
+        maxdist::EdtDIFT edtDIFT(tree.getNumRowsOfGridDomain2D(), tree.getNumColsOfGridDomain2D());
 
-        const ContourDeltaStore contourDeltas =
-            ::mmcfilters::ContoursComputedIncrementally::extractContourDeltas(tree);
+        const ContourDeltaStore contourDeltas = ::mmcfilters::ContoursComputedIncrementally::extractContourDeltas(tree);
         std::vector<std::vector<int>> contours(static_cast<std::size_t>(tree.getNumInternalNodeSlots()));
-        const std::size_t totalPixels = static_cast<std::size_t>(
-            tree.getNumRowsOfImage() * tree.getNumColsOfImage());
+        const std::size_t totalPixels = static_cast<std::size_t>(tree.getNumRowsOfGridDomain2D() * tree.getNumColsOfGridDomain2D());
         std::vector<std::uint8_t> removalMark(totalPixels, 0);
         std::vector<std::uint8_t> contourAdditionMark(totalPixels, 0);
 
@@ -97,22 +88,12 @@ public:
         std::size_t groupBegin = 0;
         while (groupBegin < sortedNodes.size()) {
             std::size_t groupEnd = groupBegin + 1;
-            while (groupEnd < sortedNodes.size() &&
-                   sameAltitude(altitude, sortedNodes[groupBegin], sortedNodes[groupEnd])) {
+            while (groupEnd < sortedNodes.size() && sameAltitude(altitude, sortedNodes[groupBegin], sortedNodes[groupEnd])) {
                 ++groupEnd;
             }
 
-            processLevel(
-                tree,
-                std::span<const NodeId>(
-                    sortedNodes.data() + static_cast<std::ptrdiff_t>(groupBegin),
-                    groupEnd - groupBegin),
-                contourDeltas,
-                edtDIFT,
-                contours,
-                removalMark,
-                contourAdditionMark,
-                maxDist);
+            processLevel(tree, std::span<const NodeId>(sortedNodes.data() + static_cast<std::ptrdiff_t>(groupBegin), groupEnd - groupBegin), contourDeltas,
+                         edtDIFT, contours, removalMark, contourAdditionMark, maxDist);
 
             groupBegin = groupEnd;
         }
@@ -120,15 +101,17 @@ public:
         return maxDist;
     }
 
-private:
+  private:
+    /** @brief Defines the `ContourDeltaStore` alias used by the component. */
     using ContourDeltaStore = ::mmcfilters::ContoursComputedIncrementally::LocalContourDeltas;
 
     /**
      * @brief True when an altitude value can participate in level ordering.
+     *
+     * @param value Value used by the operation.
+     * @return True when an altitude value can participate in level ordering; otherwise false.
      */
-    template<AltitudeValue T>
-    static bool isFiniteAltitude(T value) noexcept
-    {
+    template <AltitudeValue T> static bool isFiniteAltitude(T value) noexcept {
         if constexpr (std::is_floating_point_v<T>) {
             return std::isfinite(value);
         }
@@ -137,28 +120,36 @@ private:
 
     /**
      * @brief Rejects NaN or infinite floating-point altitude values.
+     *
+     * @param altitude Altitude data indexed by node identifier.
      */
-    template<AltitudeValue T>
-    static void validateFiniteAltitude(std::span<const T> altitude)
-    {
+    template <AltitudeValue T> static void validateFiniteAltitude(std::span<const T> altitude) {
         for (std::size_t index = 0; index < altitude.size(); ++index) {
             if (!isFiniteAltitude(altitude[index])) {
-                throw std::invalid_argument(
-                    "MAX_DIST requires finite altitude values; node " +
-                    std::to_string(index) + " has a non-finite altitude.");
+                throw std::invalid_argument("MAX_DIST requires finite altitude values; node " + std::to_string(index) + " has a non-finite altitude.");
             }
         }
     }
 
-    static void markPixels(std::span<const int> pixels, std::vector<std::uint8_t>& marks)
-    {
+    /**
+     * @brief Marks pixels.
+     *
+     * @param pixels Pixel identifiers used by the operation.
+     * @param marks Mark buffer updated by the operation.
+     */
+    static void markPixels(std::span<const int> pixels, std::vector<std::uint8_t>& marks) {
         for (int pixelId : pixels) {
             marks[static_cast<std::size_t>(pixelId)] = 1;
         }
     }
 
-    static void clearPixelMarks(std::span<const int> pixels, std::vector<std::uint8_t>& marks)
-    {
+    /**
+     * @brief Clears pixel marks.
+     *
+     * @param pixels Pixel identifiers used by the operation.
+     * @param marks Mark buffer updated by the operation.
+     */
+    static void clearPixelMarks(std::span<const int> pixels, std::vector<std::uint8_t>& marks) {
         for (int pixelId : pixels) {
             marks[static_cast<std::size_t>(pixelId)] = 0;
         }
@@ -170,14 +161,14 @@ private:
      *
      * The vector is ordered by the level sweep required by MAX_DIST: descending
      * for max-trees and ascending for min-trees. Stable sorting preserves
-     * post-order inside equal-altitude groups, so children are processed before
-     * parents when a tree contains flat parent-child levels.
+     * post-order among unrelated nodes that share an altitude; the declared
+     * ordered contracts already forbid equal altitudes on a parent-child arc.
+     *
+     * @param tree Tree topology used by the operation.
+     * @param altitude Altitude data indexed by node identifier.
+     * @return Values produced by the operation.
      */
-    template<AltitudeValue T>
-    [[nodiscard]] static std::vector<NodeId> sortedNodesByAltitude(
-        const MorphologicalTree& tree,
-        std::span<const T> altitude)
-    {
+    template <AltitudeValue T> [[nodiscard]] static std::vector<NodeId> sortedNodesByAltitude(const MorphologicalTree& tree, std::span<const T> altitude) {
         std::vector<NodeId> nodes;
         nodes.reserve(static_cast<std::size_t>(tree.getNumNodes()));
         for (NodeId nodeId : tree.getPostOrderNodes()) {
@@ -187,9 +178,7 @@ private:
         std::stable_sort(nodes.begin(), nodes.end(), [&](NodeId lhs, NodeId rhs) {
             const T lhsAltitude = TreeAltitudeAlgorithms::getAltitude(altitude, lhs);
             const T rhsAltitude = TreeAltitudeAlgorithms::getAltitude(altitude, rhs);
-            return tree.getTreeType() == MorphologicalTreeKind::MAX_TREE
-                ? lhsAltitude > rhsAltitude
-                : lhsAltitude < rhsAltitude;
+            return tree.getAltitudeOrder() == AltitudeOrder::INCREASING_FROM_ROOT ? lhsAltitude > rhsAltitude : lhsAltitude < rhsAltitude;
         });
 
         return nodes;
@@ -197,15 +186,14 @@ private:
 
     /**
      * @brief Tests whether two nodes belong to the same altitude group.
+     *
+     * @param altitude Altitude data indexed by node identifier.
+     * @param lhs Left-hand operand.
+     * @param rhs Right-hand operand.
+     * @return True if two nodes belong to the same altitude group; otherwise false.
      */
-    template<AltitudeValue T>
-    static bool sameAltitude(
-        std::span<const T> altitude,
-        NodeId lhs,
-        NodeId rhs)
-    {
-        return TreeAltitudeAlgorithms::getAltitude(altitude, lhs) ==
-               TreeAltitudeAlgorithms::getAltitude(altitude, rhs);
+    template <AltitudeValue T> static bool sameAltitude(std::span<const T> altitude, NodeId lhs, NodeId rhs) {
+        return TreeAltitudeAlgorithms::getAltitude(altitude, lhs) == TreeAltitudeAlgorithms::getAltitude(altitude, rhs);
     }
 
     /**
@@ -217,18 +205,20 @@ private:
      * opened as interior pixels otherwise. Only after all nodes in the level
      * group have been materialized does EdtDIFT propagate labels; this preserves
      * the simultaneous per-level sweep.
+     *
+     * @param tree Tree topology used by the operation.
+     * @param nodes Node identifiers processed by the operation.
+     * @param contourDeltas Compact local contour additions and removals.
+     * @param edtDIFT Distance-transform state updated by the sweep.
+     * @param contours Contour data used by the operation.
+     * @param removalMark Generation marks for pixels scheduled for removal.
+     * @param contourAdditionMark Generation marks for contour additions.
+     * @param maxDist Destination MAX_DIST values indexed by node.
      */
     template <std::floating_point Real>
-    static void processLevel(
-        const MorphologicalTree& tree,
-        std::span<const NodeId> nodes,
-        const ContourDeltaStore& contourDeltas,
-        maxdist::EdtDIFT& edtDIFT,
-        std::vector<std::vector<int>>& contours,
-        std::vector<std::uint8_t>& removalMark,
-        std::vector<std::uint8_t>& contourAdditionMark,
-        std::vector<Real>& maxDist)
-    {
+    static void processLevel(const MorphologicalTree& tree, std::span<const NodeId> nodes, const ContourDeltaStore& contourDeltas, maxdist::EdtDIFT& edtDIFT,
+                             std::vector<std::vector<int>>& contours, std::vector<std::uint8_t>& removalMark, std::vector<std::uint8_t>& contourAdditionMark,
+                             std::vector<Real>& maxDist) {
         if (nodes.empty()) {
             return;
         }
@@ -273,8 +263,7 @@ private:
                 if (contourAdditionMark[static_cast<std::size_t>(pixelId)]) {
                     nodeContour.push_back(pixelId);
                     edtDIFT.seed(pixelId);
-                }
-                else {
+                } else {
                     edtDIFT.open(pixelId);
                     edtDIFT.insertNeighborsPQueue(pixelId);
                 }
@@ -288,8 +277,7 @@ private:
         edtDIFT.run();
 
         for (NodeId nodeId : nodes) {
-            maxDist[static_cast<std::size_t>(nodeId)] =
-                static_cast<Real>(edtDIFT.maxBedt(contours[static_cast<std::size_t>(nodeId)]));
+            maxDist[static_cast<std::size_t>(nodeId)] = static_cast<Real>(edtDIFT.maxBedt(contours[static_cast<std::size_t>(nodeId)]));
         }
     }
 };
@@ -308,7 +296,7 @@ namespace mmcfilters::attributes::computers {
  * scalar column into the caller-owned buffer.
  */
 class MaxDistComputer {
-public:
+  public:
     /// Family name used in dependency-plan diagnostics.
     static constexpr std::string_view familyName = "max-dist";
 
@@ -325,11 +313,10 @@ public:
 
     /**
      * @brief Rejects tree kinds for which MAX_DIST is not defined.
+     *
+     * @param tree Tree topology used by the operation.
      */
-    static void requireSupportedTreeKind(const MorphologicalTree& tree)
-    {
-        detail::MaxDistAttributeKernel::requireSupportedTreeKind(tree);
-    }
+    static void requireSupportedTreeKind(const MorphologicalTree& tree) { detail::MaxDistAttributeKernel::requireSupportedCapabilities(tree); }
 
     /**
      * @brief Computes MAX_DIST and writes it into the requested output layout.
@@ -337,20 +324,18 @@ public:
      * @details
      * Requires max-tree or min-tree topology with adjacency metadata and a
      * dense typed altitude span. Floating-point altitude values must be finite.
+     *
+     * @param context Operation context or diagnostic label.
      */
-    template<std::floating_point Real, AltitudeValue T>
-    static void compute(const AltitudeAttributeComputeContext<Real, T>& context)
-    {
+    template <std::floating_point Real, AltitudeValue T> static void compute(const AltitudeAttributeComputeContext<Real, T>& context) {
         requireAttributeBufferShape(context.tree, context.buffer, context.attrNames);
         if (!requestsAttribute(context.requestedAttributes, MAX_DIST)) {
             return;
         }
 
-        const std::vector<Real> maxDist =
-            detail::MaxDistAttributeKernel::compute<Real>(context.tree, context.altitude);
+        const std::vector<Real> maxDist = detail::MaxDistAttributeKernel::compute<Real>(context.tree, context.altitude);
         for (NodeId nodeId : context.tree.getAliveNodeIds()) {
-            context.buffer[context.attrNames.linearIndex(nodeId, MAX_DIST)] =
-                maxDist[static_cast<std::size_t>(nodeId)];
+            context.buffer[context.attrNames.linearIndex(nodeId, MAX_DIST)] = maxDist[static_cast<std::size_t>(nodeId)];
         }
     }
 
@@ -359,10 +344,10 @@ public:
      *
      * A one-pixel support has no interior distance from its contour, so its
      * unit MAX_DIST value is zero.
+     *
+     * @param context Operation context or diagnostic label.
      */
-    template <std::floating_point Real, AltitudeValue T>
-    static void computeUnitRows(const AltitudeUnitAttributeComputeContext<Real, T>& context)
-    {
+    template <std::floating_point Real, AltitudeValue T> static void computeUnitRows(const AltitudeUnitAttributeComputeContext<Real, T>& context) {
         requireUnitAttributeBufferShape(context.tree, context.unitProperParts, context.buffer, context.attrNames);
         TreeAltitudeAlgorithms::validateAltitudeBufferShape(context.tree, context.altitude);
         if (!requestsAttribute(context.requestedAttributes, MAX_DIST)) {

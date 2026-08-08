@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../WeightedMorphologicalTree.hpp"
+#include "../../utils/Image.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -46,9 +47,8 @@ enum class BoundingBoxMeasure {
  * difference relative to the source algorithm and keeps the implementation
  * compatible with `WeightedMorphologicalTree<T>`.
  */
-template<AltitudeValue T>
-class DynamicTreeAttributeComputer {
-public:
+template <AltitudeValue T> class DynamicTreeAttributeComputer {
+  public:
     /// Dense per-node attribute buffer used by dynamic adjustment computers.
     using buffer_type = std::vector<double>;
 
@@ -180,18 +180,22 @@ public:
  * parent requires only its direct proper-part count and the cached values of
  * its direct children.
  */
-template<AltitudeValue T>
-class DynamicAreaAttributeComputer : public DynamicTreeAttributeComputer<T> {
-private:
+template <AltitudeValue T> class DynamicAreaAttributeComputer : public DynamicTreeAttributeComputer<T> {
+  private:
+    /** @brief Defines the `base_t` alias used by the component. */
     using base_t = DynamicTreeAttributeComputer<T>;
 
-public:
+  public:
     /// Dense per-node area buffer inherited from the dynamic attribute protocol.
     using buffer_type = typename base_t::buffer_type;
 
-public:
+  public:
     /**
      * @brief Initializes one node area from its direct proper-part count.
+     *
+     * @param nodeId Identifier of the node used by the operation.
+     * @param tree Tree topology used by the operation.
+     * @param buffer Buffer read or written by the operation.
      */
     void preProcessing(NodeId nodeId, const WeightedMorphologicalTree<T>& tree, buffer_type& buffer) const override {
         buffer[static_cast<size_t>(nodeId)] = static_cast<double>(tree.topology().getNumProperParts(nodeId));
@@ -199,6 +203,10 @@ public:
 
     /**
      * @brief Adds an already-current child area to its parent.
+     *
+     * @param parentId Identifier of the parent node.
+     * @param childId Identifier of the child node.
+     * @param buffer Buffer read or written by the operation.
      */
     void mergeProcessing(NodeId parentId, NodeId childId, const WeightedMorphologicalTree<T>&, buffer_type& buffer) const override {
         buffer[static_cast<size_t>(parentId)] += buffer[static_cast<size_t>(childId)];
@@ -227,24 +235,29 @@ public:
  * local-update structure of the Higra version while adapting coordinates to
  * this project's row-major image domain.
  */
-template<AltitudeValue T>
-class DynamicBoundingBoxAttributeComputer : public DynamicTreeAttributeComputer<T> {
-private:
+template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public DynamicTreeAttributeComputer<T> {
+  private:
+    /** @brief Defines the `base_t` alias used by the component. */
     using base_t = DynamicTreeAttributeComputer<T>;
 
-public:
+  public:
     /// Dense per-node bounding-box attribute buffer inherited from the dynamic protocol.
     using buffer_type = typename base_t::buffer_type;
 
-private:
+  private:
     /**
      * @brief Cached subtree box produced during the current bottom-up reduction.
      */
     struct BoxState {
+        /** @brief Stores the xmin. */
         int xmin = 0;
+        /** @brief Stores the xmax. */
         int xmax = -1;
+        /** @brief Stores the ymin. */
         int ymin = 0;
+        /** @brief Stores the ymax. */
         int ymax = -1;
+        /** @brief Indicates whether the old snapshot was empty. */
         bool empty = true;
     };
 
@@ -257,25 +270,41 @@ private:
      * rebuilt lazily before the next bottom-up reduction.
      */
     struct LocalBoxState {
+        /** @brief Stores the xmin. */
         int xmin = 0;
+        /** @brief Stores the xmax. */
         int xmax = -1;
+        /** @brief Stores the ymin. */
         int ymin = 0;
+        /** @brief Stores the ymax. */
         int ymax = -1;
+        /** @brief Stores the xmin count. */
         int xminCount = 0;
+        /** @brief Stores the xmax count. */
         int xmaxCount = 0;
+        /** @brief Stores the ymin count. */
         int yminCount = 0;
+        /** @brief Stores the ymax count. */
         int ymaxCount = 0;
+        /** @brief Stores the proper part count. */
         int properPartCount = 0;
+        /** @brief Indicates whether the new snapshot is empty. */
         bool empty = true;
+        /** @brief Indicates whether the node requires attribute recomputation. */
         bool dirty = true;
     };
 
+    /** @brief Stores the measure. */
     BoundingBoxMeasure measure_ = BoundingBoxMeasure::DIAGONAL_LENGTH;
+    /** @brief Stores the local. */
     mutable std::vector<LocalBoxState> local_;
+    /** @brief Stores the subtree. */
     mutable std::vector<BoxState> subtree_;
 
     /**
      * @brief Restores an empty local box and clears all extremum multiplicities.
+     *
+     * @param local Local state accumulated by the operation.
      */
     static void resetLocalBox(LocalBoxState& local) {
         local.xmin = 0;
@@ -292,6 +321,8 @@ private:
 
     /**
      * @brief Resets one node-local cache entry and marks it synchronized.
+     *
+     * @param nodeId Identifier of the node used by the operation.
      */
     void resetLocalSummary(NodeId nodeId) const {
         auto& local = local_[static_cast<size_t>(nodeId)];
@@ -301,6 +332,8 @@ private:
 
     /**
      * @brief Clears the subtree cache associated with one node.
+     *
+     * @param nodeId Identifier of the node used by the operation.
      */
     void resetSubtreeSummary(NodeId nodeId) const {
         auto& subtree = subtree_[static_cast<size_t>(nodeId)];
@@ -313,6 +346,10 @@ private:
 
     /**
      * @brief Enlarges a local box with one proper part and updates extremum counts.
+     *
+     * @param local Local state accumulated by the operation.
+     * @param pixelId Pixel identifier used by the operation.
+     * @param numCols Number of columns in the domain.
      */
     void expandLocalBoxWithPixel(LocalBoxState& local, NodeId pixelId, int numCols) const {
         const auto [y, x] = ImageUtils::to2D(pixelId, numCols);
@@ -360,11 +397,14 @@ private:
 
     /**
      * @brief Rebuilds the local summary from the current proper parts of the node.
+     *
+     * @param nodeId Identifier of the node used by the operation.
+     * @param tree Tree topology used by the operation.
      */
     void rebuildLocalBox(NodeId nodeId, const WeightedMorphologicalTree<T>& tree) const {
         auto& local = local_[static_cast<size_t>(nodeId)];
         resetLocalBox(local);
-        const int numCols = tree.topology().getNumColsOfImage();
+        const int numCols = tree.topology().getNumColsOfGridDomain2D();
         for (NodeId pixelId : tree.topology().getProperParts(nodeId)) {
             expandLocalBoxWithPixel(local, pixelId, numCols);
         }
@@ -377,6 +417,9 @@ private:
      * @details Dirty summaries are rebuilt lazily; clean summaries are also
      * rebuilt if their cached direct proper-part count no longer matches the
      * tree, which covers bulk moves.
+     *
+     * @param nodeId Identifier of the node used by the operation.
+     * @param tree Tree topology used by the operation.
      */
     void ensureLocalSummary(NodeId nodeId, const WeightedMorphologicalTree<T>& tree) const {
         auto& local = local_[static_cast<size_t>(nodeId)];
@@ -389,6 +432,8 @@ private:
 
     /**
      * @brief Initializes the subtree box from the current direct proper-part box.
+     *
+     * @param nodeId Identifier of the node used by the operation.
      */
     void copyLocalToSubtree(NodeId nodeId) const {
         const auto& local = local_[static_cast<size_t>(nodeId)];
@@ -402,6 +447,9 @@ private:
 
     /**
      * @brief Enlarges one subtree box with another already-current subtree box.
+     *
+     * @param target Destination object or value.
+     * @param source Source object or value.
      */
     static void mergeSubtreeStates(BoxState& target, const BoxState& source) {
         if (source.empty) {
@@ -420,6 +468,9 @@ private:
 
     /**
      * @brief Merges two direct-proper-part local boxes, including extremum counts.
+     *
+     * @param target Destination object or value.
+     * @param source Source object or value.
      */
     static void mergeLocalBoxes(LocalBoxState& target, const LocalBoxState& source) {
         if (source.empty) {
@@ -463,21 +514,23 @@ private:
         target.dirty = false;
     }
 
-public:
+  public:
     /**
      * @brief Creates a bounding-box computer returning the requested scalar measure.
      *
      * @param measure Scalar projection materialized from the accumulated
      * bounding-box state.
      */
-    explicit DynamicBoundingBoxAttributeComputer(BoundingBoxMeasure measure = BoundingBoxMeasure::DIAGONAL_LENGTH)
-        : measure_(measure) {}
+    explicit DynamicBoundingBoxAttributeComputer(BoundingBoxMeasure measure = BoundingBoxMeasure::DIAGONAL_LENGTH) : measure_(measure) {}
 
     /**
      * @brief Resizes public and auxiliary buffers to the current tree slot space.
      *
      * Auxiliary direct/local and subtree summaries are indexed by the same
      * dense internal node-id space as the public output buffer.
+     *
+     * @param tree Tree topology used by the operation.
+     * @param buffer Buffer read or written by the operation.
      */
     void resize(const WeightedMorphologicalTree<T>& tree, buffer_type& buffer) const override {
         base_t::resize(tree, buffer);
@@ -488,6 +541,9 @@ public:
 
     /**
      * @brief Initializes the subtree box of one node from its direct proper parts.
+     *
+     * @param nodeId Identifier of the node used by the operation.
+     * @param tree Tree topology used by the operation.
      */
     void preProcessing(NodeId nodeId, const WeightedMorphologicalTree<T>& tree, buffer_type&) const override {
         ensureLocalSummary(nodeId, tree);
@@ -496,6 +552,9 @@ public:
 
     /**
      * @brief Accumulates a child subtree box into its parent subtree box.
+     *
+     * @param parentId Identifier of the parent node.
+     * @param childId Identifier of the child node.
      */
     void mergeProcessing(NodeId parentId, NodeId childId, const WeightedMorphologicalTree<T>&, buffer_type&) const override {
         mergeSubtreeStates(subtree_[static_cast<size_t>(parentId)], subtree_[static_cast<size_t>(childId)]);
@@ -503,6 +562,9 @@ public:
 
     /**
      * @brief Converts the accumulated subtree box into the configured scalar measure.
+     *
+     * @param nodeId Identifier of the node used by the operation.
+     * @param buffer Buffer read or written by the operation.
      */
     void postProcessing(NodeId nodeId, const WeightedMorphologicalTree<T>&, buffer_type& buffer) const override {
         const auto& subtree = subtree_[static_cast<size_t>(nodeId)];
@@ -514,20 +576,24 @@ public:
         const double width = static_cast<double>(subtree.xmax - subtree.xmin + 1);
         const double height = static_cast<double>(subtree.ymax - subtree.ymin + 1);
         switch (measure_) {
-            case BoundingBoxMeasure::WIDTH:
-                buffer[static_cast<size_t>(nodeId)] = width;
-                break;
-            case BoundingBoxMeasure::HEIGHT:
-                buffer[static_cast<size_t>(nodeId)] = height;
-                break;
-            case BoundingBoxMeasure::DIAGONAL_LENGTH:
-                buffer[static_cast<size_t>(nodeId)] = std::sqrt(width * width + height * height);
-                break;
+        case BoundingBoxMeasure::WIDTH:
+            buffer[static_cast<size_t>(nodeId)] = width;
+            break;
+        case BoundingBoxMeasure::HEIGHT:
+            buffer[static_cast<size_t>(nodeId)] = height;
+            break;
+        case BoundingBoxMeasure::DIAGONAL_LENGTH:
+            buffer[static_cast<size_t>(nodeId)] = std::sqrt(width * width + height * height);
+            break;
         }
     }
 
     /**
      * @brief Updates local boxes after all proper parts move from `sourceId` to `targetId`.
+     *
+     * @param targetId Destination represented by `targetId`.
+     * @param sourceId Input represented by `sourceId`.
+     * @param tree Tree topology used by the operation.
      */
     void onMoveProperParts(NodeId targetId, NodeId sourceId, const WeightedMorphologicalTree<T>& tree) const override {
         ensureLocalSummary(targetId, tree);
@@ -541,6 +607,11 @@ public:
      * @details The target box is enlarged eagerly. The source box remains exact
      * unless the removed pixel exhausts one extremum; in that case the source
      * summary is marked dirty and rebuilt lazily.
+     *
+     * @param targetId Destination represented by `targetId`.
+     * @param sourceId Input represented by `sourceId`.
+     * @param pixelId Pixel identifier used by the operation.
+     * @param tree Tree topology used by the operation.
      */
     void onMoveProperPart(NodeId targetId, NodeId sourceId, NodeId pixelId, const WeightedMorphologicalTree<T>& tree) const override {
         ensureLocalSummary(targetId, tree);
@@ -548,7 +619,7 @@ public:
             ensureLocalSummary(sourceId, tree);
         }
 
-        const int numCols = tree.topology().getNumColsOfImage();
+        const int numCols = tree.topology().getNumColsOfGridDomain2D();
         expandLocalBoxWithPixel(local_[static_cast<size_t>(targetId)], pixelId, numCols);
         local_[static_cast<size_t>(targetId)].properPartCount += 1;
         local_[static_cast<size_t>(targetId)].dirty = false;
@@ -607,12 +678,13 @@ public:
 
     /**
      * @brief Clears auxiliary summaries associated with a released node slot.
+     *
+     * @param nodeId Identifier of the node used by the operation.
      */
     void onNodeRemoved(NodeId nodeId, const WeightedMorphologicalTree<T>&) const override {
         resetLocalSummary(nodeId);
         resetSubtreeSummary(nodeId);
     }
 };
-
 
 } // namespace mmcfilters::adjust

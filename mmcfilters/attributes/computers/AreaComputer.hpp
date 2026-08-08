@@ -32,7 +32,7 @@ namespace mmcfilters::attributes::computers {
  * as a foundational building block for the incremental attribute pipeline.
  */
 class AreaComputer {
-public:
+  public:
     /// Family name used in dependency-plan diagnostics.
     static constexpr std::string_view familyName = "area";
 
@@ -58,35 +58,34 @@ public:
      *
      * @param context Non-owning compute context whose layout contains `AREA`.
      */
-    template <std::floating_point Real>
-    static void compute(const AttributeComputeContext<Real>& context) {
+    template <std::floating_point Real> static void compute(const AttributeComputeContext<Real>& context) {
         computeImpl(context.tree, context.buffer, context.attrNames);
     }
 
-private:
-    template <std::floating_point Real>
-    static void computeImpl(const MorphologicalTree& tree, std::span<Real> buffer, const AttributeNames& attrNames) {
+  private:
+    /**
+     * @brief Computes the requested attribute values into the output buffer.
+     *
+     * @param tree Tree topology used by the operation.
+     * @param buffer Buffer read or written by the operation.
+     * @param attrNames Layout mapping attributes to buffer columns.
+     */
+    template <std::floating_point Real> static void computeImpl(const MorphologicalTree& tree, std::span<Real> buffer, const AttributeNames& attrNames) {
         auto indexOfArea = [&](NodeId nodeId) { return attrNames.linearIndex(nodeId, AREA); };
         ::mmcfilters::detail::traversePostOrder(
-            tree,
-            tree.getRoot(),
-            [&](NodeId nodeId) {
-                buffer[indexOfArea(nodeId)] = static_cast<Real>(tree.getNumProperParts(nodeId));
-            },
-            [&](NodeId parentNodeId, NodeId childNodeId) {
-                buffer[indexOfArea(parentNodeId)] += buffer[indexOfArea(childNodeId)];
-            },
-            [](NodeId) {});
+            tree, tree.getRoot(), [&](NodeId nodeId) { buffer[indexOfArea(nodeId)] = static_cast<Real>(tree.getNumProperParts(nodeId)); },
+            [&](NodeId parentNodeId, NodeId childNodeId) { buffer[indexOfArea(parentNodeId)] += buffer[indexOfArea(childNodeId)]; }, [](NodeId) {});
     }
 
-public:
+  public:
     /**
      * @brief Materializes `AREA` for one-pixel unit supports.
      *
      * Every exported unit proper part has area `1`.
+     *
+     * @param context Operation context or diagnostic label.
      */
-    template <std::floating_point Real>
-    static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
+    template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
         requireUnitAttributeBufferShape(context.tree, context.unitProperParts, context.buffer, context.attrNames);
         if (!requestsAttribute(context.requestedAttributes, AREA)) {
             return;
@@ -95,7 +94,6 @@ public:
             context.buffer[context.attrNames.linearIndex(leafIndex, AREA)] = Real{1};
         }
     }
-
 };
 
 } // namespace mmcfilters::attributes::computers

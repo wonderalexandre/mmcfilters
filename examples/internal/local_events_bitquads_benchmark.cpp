@@ -63,12 +63,12 @@ struct TreeOfShapesPolarityStats {
 
 std::string toString(ToSInterpolation interpolation) {
     switch (interpolation) {
-        case ToSInterpolation::SelfDual:
-            return "SelfDual";
-        case ToSInterpolation::Min4cMax8c:
-            return "Min4cMax8c";
-        case ToSInterpolation::Min8cMax4c:
-            return "Min8cMax4c";
+    case ToSInterpolation::SelfDual:
+        return "SelfDual";
+    case ToSInterpolation::Min4cMax8c:
+        return "Min4cMax8c";
+    case ToSInterpolation::Min8cMax4c:
+        return "Min8cMax4c";
     }
     throw std::invalid_argument("Unsupported ToS interpolation.");
 }
@@ -83,29 +83,19 @@ ToSInterpolation parseToSInterpolation(const std::string& value) {
     if (value == "Min8cMax4c") {
         return ToSInterpolation::Min8cMax4c;
     }
-    throw std::invalid_argument(
-        "Unsupported --tos-interpolation value: " + value +
-        ". Expected SelfDual, Min4cMax8c, or Min8cMax4c.");
+    throw std::invalid_argument("Unsupported --tos-interpolation value: " + value + ". Expected SelfDual, Min4cMax8c, or Min8cMax4c.");
 }
 
 std::string lowerExtension(const std::filesystem::path& path) {
     std::string extension = path.extension().string();
-    std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
+    std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return extension;
 }
 
 bool hasSupportedImageExtension(const std::filesystem::path& path) {
     const std::string extension = lowerExtension(path);
-    return extension == ".png" ||
-           extension == ".jpg" ||
-           extension == ".jpeg" ||
-           extension == ".bmp" ||
-           extension == ".pgm" ||
-           extension == ".ppm" ||
-           extension == ".tif" ||
-           extension == ".tiff";
+    return extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".bmp" || extension == ".pgm" || extension == ".ppm" ||
+           extension == ".tif" || extension == ".tiff";
 }
 
 ImageUInt8Ptr loadGrayscaleImage(const std::filesystem::path& path) {
@@ -165,8 +155,7 @@ ImageUInt8Ptr makePatternImage(int rows, int cols, const std::string& pattern) {
                 const int left = cols / 4;
                 const int right = cols - left - 1;
                 const bool inOuter = row >= top && row <= bottom && col >= left && col <= right;
-                const bool inInner = row > top + rows / 8 && row < bottom - rows / 8 &&
-                                     col > left + cols / 8 && col < right - cols / 8;
+                const bool inInner = row > top + rows / 8 && row < bottom - rows / 8 && col > left + cols / 8 && col < right - cols / 8;
                 value = inOuter && !inInner ? 240 : 30;
             } else if (pattern == "diagonal") {
                 value = std::abs(row - col) <= std::max(1, rows / 32) ? 220 : 40;
@@ -181,8 +170,7 @@ ImageUInt8Ptr makePatternImage(int rows, int cols, const std::string& pattern) {
     return image;
 }
 
-template <typename Fn>
-auto timed(Fn&& fn) {
+template <typename Fn> auto timed(Fn&& fn) {
     const auto start = std::chrono::steady_clock::now();
     auto result = fn();
     const auto end = std::chrono::steady_clock::now();
@@ -190,8 +178,7 @@ auto timed(Fn&& fn) {
     return std::pair{std::move(result), static_cast<double>(micros) / 1000.0};
 }
 
-template <typename Fn>
-Measurement measure(int repeats, Fn&& fn) {
+template <typename Fn> Measurement measure(int repeats, Fn&& fn) {
     std::uint64_t checksum = 0;
     const auto start = std::chrono::steady_clock::now();
     for (int i = 0; i < repeats; ++i) {
@@ -202,9 +189,7 @@ Measurement measure(int repeats, Fn&& fn) {
     return {static_cast<double>(micros) / static_cast<double>(repeats) / 1000.0, checksum};
 }
 
-double mib(std::size_t bytes) {
-    return static_cast<double>(bytes) / (1024.0 * 1024.0);
-}
+double mib(std::size_t bytes) { return static_cast<double>(bytes) / (1024.0 * 1024.0); }
 
 void printMemoryEstimate(const std::string& label, std::size_t bytes, int numNodes) {
     const double bytesPerNode = numNodes > 0 ? static_cast<double>(bytes) / static_cast<double>(numNodes) : 0.0;
@@ -235,8 +220,7 @@ std::uint64_t checksumLocalBitquads(const BitquadLocalEventComputation& computer
     return checksum;
 }
 
-std::uint64_t checksumBitquadFamilyCounts(
-    std::span<const BitquadFamilyCounts> bitquadFamilyCounts) {
+std::uint64_t checksumBitquadFamilyCounts(std::span<const BitquadFamilyCounts> bitquadFamilyCounts) {
     std::uint64_t checksum = 0;
     for (const auto& family : bitquadFamilyCounts) {
         checksum = mix(checksum, static_cast<std::uint64_t>(family.empty));
@@ -249,8 +233,7 @@ std::uint64_t checksumBitquadFamilyCounts(
     return checksum;
 }
 
-std::uint64_t checksumContourSideCounts(
-    std::span<const ContourSideCounts> counts) {
+std::uint64_t checksumContourSideCounts(std::span<const ContourSideCounts> counts) {
     std::uint64_t checksum = 0;
     for (const auto& count : counts) {
         checksum = mix(checksum, static_cast<std::uint64_t>(count.contourPixels));
@@ -279,63 +262,39 @@ AttributeNames makeDenseAttributeNames(const std::vector<Attribute>& attributes)
     return AttributeNames(std::move(offsets));
 }
 
-template<AltitudeValue T>
-std::uint64_t computeLocalScalarChecksum(
-    const MorphologicalTree& tree,
-    std::span<const T> altitude) {
+template <AltitudeValue T> std::uint64_t computeLocalScalarChecksum(const MorphologicalTree& tree, std::span<const T> altitude) {
     const auto attributes = runtimeProducedAttributes<BitquadAttributeComputer>();
     const AttributeNames names = makeDenseAttributeNames(attributes);
-    std::vector<float> buffer(
-        static_cast<std::size_t>(tree.getNumInternalNodeSlots()) *
-        static_cast<std::size_t>(names.NUM_ATTRIBUTES),
-        0.0f);
+    std::vector<float> buffer(static_cast<std::size_t>(tree.getNumInternalNodeSlots()) * static_cast<std::size_t>(names.NUM_ATTRIBUTES), 0.0f);
     BitquadAttributeComputer::compute(
-        AltitudeAttributeComputeContext<float, T>{
-            tree,
-            altitude,
-            std::span<float>(buffer),
-            names,
-            std::span<const Attribute>(attributes)});
+        AltitudeAttributeComputeContext<float, T>{tree, altitude, std::span<float>(buffer), names, std::span<const Attribute>(attributes)});
     return checksumFloatBuffer(buffer);
 }
 
 std::uint64_t computeLocalScalarChecksum(const MorphologicalTree& tree) {
     const auto attributes = runtimeProducedAttributes<BitquadAttributeComputer>();
     const AttributeNames names = makeDenseAttributeNames(attributes);
-    std::vector<float> buffer(
-        static_cast<std::size_t>(tree.getNumInternalNodeSlots()) *
-        static_cast<std::size_t>(names.NUM_ATTRIBUTES),
-        0.0f);
-    BitquadAttributeComputer::compute(
-        AttributeComputeContext<float>{
-            tree,
-            std::span<float>(buffer),
-            names,
-            std::span<const Attribute>(attributes)});
+    std::vector<float> buffer(static_cast<std::size_t>(tree.getNumInternalNodeSlots()) * static_cast<std::size_t>(names.NUM_ATTRIBUTES), 0.0f);
+    BitquadAttributeComputer::compute(AttributeComputeContext<float>{tree, std::span<float>(buffer), names, std::span<const Attribute>(attributes)});
     return checksumFloatBuffer(buffer);
 }
 
 void printMeasurement(const std::string& label, const Measurement& measurement) {
-    std::cout << "    " << std::left << std::setw(34) << label
-              << std::right << std::setw(10) << measurement.msPerRun << " ms/run"
+    std::cout << "    " << std::left << std::setw(34) << label << std::right << std::setw(10) << measurement.msPerRun << " ms/run"
               << " checksum=" << measurement.checksum << '\n';
 }
 
 void printTreeStats(const MorphologicalTree& tree, double buildMs) {
     std::cout << "    build=" << buildMs << " ms"
-              << " live_nodes=" << tree.getNumNodes()
-              << " slots=" << tree.getNumInternalNodeSlots()
-              << " proper_parts=" << tree.getNumTotalProperParts() << '\n';
+              << " live_nodes=" << tree.getNumNodes() << " slots=" << tree.getNumInternalNodeSlots() << " proper_parts=" << tree.getNumTotalProperParts()
+              << '\n';
 
     const int numNodes = tree.getNumInternalNodeSlots();
-    printMemoryEstimate("local 16-state histograms", static_cast<std::size_t>(numNodes) * sizeof(BitquadLocalEventComputation::BitquadStateHistogram), numNodes);
+    printMemoryEstimate("local 16-state histograms", static_cast<std::size_t>(numNodes) * sizeof(BitquadLocalEventComputation::BitquadStateHistogram),
+                        numNodes);
     printMemoryEstimate("local direct family counts", static_cast<std::size_t>(numNodes) * sizeof(BitquadFamilyCounts), numNodes);
     printMemoryEstimate("bitquad scalar buffer", static_cast<std::size_t>(numNodes) * 9 * sizeof(float), numNodes);
-    printMemoryEstimate(
-        "local contour side counts",
-        static_cast<std::size_t>(numNodes) *
-            sizeof(ContourSideCounts),
-        numNodes);
+    printMemoryEstimate("local contour side counts", static_cast<std::size_t>(numNodes) * sizeof(ContourSideCounts), numNodes);
 }
 
 TreeOfShapesPolarityStats computeTreeOfShapesPolarityStats(const WeightedMorphologicalTree<std::uint8_t>& weightedTree) {
@@ -364,60 +323,40 @@ TreeOfShapesPolarityStats computeTreeOfShapesPolarityStats(const WeightedMorphol
 void printTreeOfShapesPolicyStats(const WeightedMorphologicalTree<std::uint8_t>& weightedTree, ToSInterpolation interpolation) {
     const MorphologicalTree& tree = weightedTree.topology();
     const TreeOfShapesPolarityStats stats = computeTreeOfShapesPolarityStats(weightedTree);
-    std::cout << "    tos_interpolation=" << toString(interpolation)
-              << " min_radius=" << tree.getTreeOfShapesMinTreeAdjacencyRadius()
-              << " max_radius=" << tree.getTreeOfShapesMaxTreeAdjacencyRadius()
-              << " root_nodes=" << stats.rootNodes
-              << " min_nodes=" << stats.minTreeNodes
-              << " max_nodes=" << stats.maxTreeNodes
-              << " equal_altitude_edges=" << stats.equalAltitudeEdges << '\n';
+    std::cout << "    tos_interpolation=" << toString(interpolation) << " decreasing_radius=" << tree.getDecreasingGridAdjacency2D()->getRadius()
+              << " increasing_radius=" << tree.getIncreasingGridAdjacency2D()->getRadius() << " root_nodes=" << stats.rootNodes
+              << " min_nodes=" << stats.minTreeNodes << " max_nodes=" << stats.maxTreeNodes << " equal_altitude_edges=" << stats.equalAltitudeEdges << '\n';
 }
 
-void runComponentTreeCase(
-    const std::string& label,
-    const ImageUInt8Ptr& image,
-    bool isMaxTree,
-    double radius,
-    int repeats) {
-    auto [weightedTree, buildMs] = timed([&]() {
-        return isMaxTree
-            ? MorphologicalTreeFactory::createMaxTree(image, radius)
-            : MorphologicalTreeFactory::createMinTree(image, radius);
-    });
+void runComponentTreeCase(const std::string& label, const ImageUInt8Ptr& image, bool isMaxTree, double radius, int repeats) {
+    auto [weightedTree, buildMs] =
+        timed([&]() { return isMaxTree ? MorphologicalTreeFactory::createMaxTree(image, radius) : MorphologicalTreeFactory::createMinTree(image, radius); });
     const MorphologicalTree& tree = weightedTree.topology();
 
     std::cout << "\n  [" << label << "]\n";
     printTreeStats(tree, buildMs);
 
     printMeasurement("local histograms+families", measure(repeats, [&]() {
-        BitquadLocalEventComputation computer(tree);
-        return checksumLocalBitquads(computer);
-    }));
+                         BitquadLocalEventComputation computer(tree);
+                         return checksumLocalBitquads(computer);
+                     }));
 
     printMeasurement("local delta families", measure(repeats, [&]() {
-        const auto familyCounts = BitquadLocalEventComputation::computeBitquadFamilyCounts(tree);
-        return checksumBitquadFamilyCounts(familyCounts);
-    }));
+                         const auto familyCounts = BitquadLocalEventComputation::computeBitquadFamilyCounts(tree);
+                         return checksumBitquadFamilyCounts(familyCounts);
+                     }));
 
-    const Measurement localScalar = measure(repeats, [&]() {
-        return computeLocalScalarChecksum(tree);
-    });
+    const Measurement localScalar = measure(repeats, [&]() { return computeLocalScalarChecksum(tree); });
     printMeasurement("local delta scalar computer", localScalar);
 
     printMeasurement("local contour side counts", measure(repeats, [&]() {
-        const auto counts = ContourSideLocalEventComputation::computeContourSideCounts(tree);
-        return checksumContourSideCounts(counts);
-    }));
+                         const auto counts = ContourSideLocalEventComputation::computeContourSideCounts(tree);
+                         return checksumContourSideCounts(counts);
+                     }));
 }
 
-void runTreeOfShapesCase(
-    const std::string& label,
-    const ImageUInt8Ptr& image,
-    ToSInterpolation interpolation,
-    int repeats) {
-    auto [weightedTree, buildMs] = timed([&]() {
-        return MorphologicalTreeFactory::createTreeOfShapes(image, interpolation);
-    });
+void runTreeOfShapesCase(const std::string& label, const ImageUInt8Ptr& image, ToSInterpolation interpolation, int repeats) {
+    auto [weightedTree, buildMs] = timed([&]() { return MorphologicalTreeFactory::createTreeOfShapes(image, interpolation); });
     const MorphologicalTree& tree = weightedTree.topology();
 
     std::cout << "\n  [" << label << "]\n";
@@ -425,28 +364,25 @@ void runTreeOfShapesCase(
     printTreeOfShapesPolicyStats(weightedTree, interpolation);
 
     printMeasurement("local histograms+families", measure(repeats, [&]() {
-        BitquadLocalEventComputation computer(tree);
-        return checksumLocalBitquads(computer);
-    }));
+                         BitquadLocalEventComputation computer(tree);
+                         return checksumLocalBitquads(computer);
+                     }));
 
     printMeasurement("local delta families", measure(repeats, [&]() {
-        const auto familyCounts = BitquadLocalEventComputation::computeBitquadFamilyCounts(tree);
-        return checksumBitquadFamilyCounts(familyCounts);
-    }));
+                         const auto familyCounts = BitquadLocalEventComputation::computeBitquadFamilyCounts(tree);
+                         return checksumBitquadFamilyCounts(familyCounts);
+                     }));
 
-    printMeasurement("local delta scalar computer", measure(repeats, [&]() {
-        return computeLocalScalarChecksum(tree, weightedTree.altitudeSpan());
-    }));
+    printMeasurement("local delta scalar computer", measure(repeats, [&]() { return computeLocalScalarChecksum(tree, weightedTree.altitudeSpan()); }));
 
     printMeasurement("local contour side counts", measure(repeats, [&]() {
-        const auto counts = ContourSideLocalEventComputation::computeContourSideCounts(tree);
-        return checksumContourSideCounts(counts);
-    }));
+                         const auto counts = ContourSideLocalEventComputation::computeContourSideCounts(tree);
+                         return checksumContourSideCounts(counts);
+                     }));
 }
 
 void runImage(const Options& options, const std::string& label, const ImageUInt8Ptr& image) {
-    std::cout << "\n" << label << " domain=" << image->getNumRows() << "x" << image->getNumCols()
-              << " repeats=" << options.repeats << '\n';
+    std::cout << "\n" << label << " domain=" << image->getNumRows() << "x" << image->getNumCols() << " repeats=" << options.repeats << '\n';
 
     runComponentTreeCase("max-tree radius=1.0", image, true, 1.0, options.repeats);
     runComponentTreeCase("min-tree radius=1.0", image, false, 1.0, options.repeats);
@@ -533,9 +469,7 @@ Options parseOptions(int argc, char** argv) {
         options.tosInterpolations.push_back(ToSInterpolation::SelfDual);
     }
     std::sort(options.tosInterpolations.begin(), options.tosInterpolations.end());
-    options.tosInterpolations.erase(
-        std::unique(options.tosInterpolations.begin(), options.tosInterpolations.end()),
-        options.tosInterpolations.end());
+    options.tosInterpolations.erase(std::unique(options.tosInterpolations.begin(), options.tosInterpolations.end()), options.tosInterpolations.end());
     std::sort(options.imagePaths.begin(), options.imagePaths.end());
     options.imagePaths.erase(std::unique(options.imagePaths.begin(), options.imagePaths.end()), options.imagePaths.end());
     if (options.skipSynthetic && options.imagePaths.empty()) {
@@ -549,8 +483,7 @@ Options parseOptions(int argc, char** argv) {
 int main(int argc, char** argv) {
     const Options options = parseOptions(argc, argv);
 
-    std::cout << std::fixed << std::setprecision(3)
-              << "local event bitquad benchmark\n"
+    std::cout << std::fixed << std::setprecision(3) << "local event bitquad benchmark\n"
               << "usage: mmcfilters_local_events_bitquads_benchmark [rows] [cols] [repeats] [--tos] "
                  "[--tos-interpolation name] [--image path] [--image-dir dir] [--skip-synthetic]\n"
               << "memory numbers are type-size estimates, not process RSS\n";

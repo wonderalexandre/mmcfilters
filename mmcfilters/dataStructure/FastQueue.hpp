@@ -12,47 +12,88 @@ namespace mmcfilters {
  * elements in a single vector and advancing a read head during `pop()`.
  * Clearing the queue reuses the allocated storage.
  */
-template <typename T>
-struct FastQueue {
-private:
+template <typename T> struct FastQueue {
+  private:
+    /** @brief Stores the data. */
     std::vector<T> data_;
+    /** @brief Stores the head. */
     size_t head_ = 0;
 
-public:
+  public:
+    /**
+     * @brief Constructs an empty reusable queue.
+     */
     FastQueue() = default;
 
     /**
      * @brief Creates an empty queue and reserves capacity for `n` elements.
+     *
+     * @param n Requested element count or capacity.
      */
-    FastQueue(size_t n){
-        data_.reserve(n); 
-    } 
+    FastQueue(size_t n) { data_.reserve(n); }
 
-    /// Reserves storage to avoid future reallocations.
+    /**
+     * @brief Reserves storage to avoid future reallocations.
+     *
+     * @param n Requested element count or capacity.
+     */
     void reserve(size_t n) { data_.reserve(n); }
 
-    /// Clears the queue and resets the read head.
-    void clear() { data_.clear(); head_ = 0; }
+    /**
+     * @brief Clears the queue and resets the read head.
+     */
+    void clear() {
+        data_.clear();
+        head_ = 0;
+    }
 
-    /// Returns whether the queue is empty.
+    /**
+     * @brief Returns whether the queue is empty.
+     *
+     * @return Whether the queue is empty.
+     */
     bool empty() const { return head_ >= data_.size(); }
 
-    /// Returns the number of unread elements.
+    /**
+     * @brief Returns the number of unread elements.
+     *
+     * @return The number of unread elements.
+     */
     size_t size() const { return data_.size() - head_; }
 
-    /// Appends an element to the tail.
+    /**
+     * @brief Appends an element to the tail.
+     *
+     * @param value Value used by the operation.
+     */
     void push(const T& value) { data_.push_back(value); }
 
-    /// Appends an element to the tail by moving it into storage.
+    /**
+     * @brief Appends an element to the tail by moving it into storage.
+     *
+     * @param value Value used by the operation.
+     */
     void push(T&& value) { data_.push_back(std::move(value)); }
 
-    /// Removes and returns the next element.
+    /**
+     * @brief Removes and returns the next element.
+     *
+     * @return The removed next element.
+     */
     T pop() { return std::move(data_[head_++]); }
 
-    /// Returns the next element without removing it.
+    /**
+     * @brief Returns the next element without removing it.
+     *
+     * @return The next element without removing it.
+     */
     T& front() { return data_[head_]; }
 
-    /// Returns the next element without removing it.
+    /**
+     * @brief Returns the next element without removing it.
+     *
+     * @return The next element without removing it.
+     */
     const T& front() const { return data_[head_]; }
 };
-}
+} // namespace mmcfilters

@@ -1,7 +1,8 @@
 #include "ModuleBindings.hpp"
 
-#include "AttributeComputationPybind.hpp"
+#include "AttributeComputationBindings.hpp"
 
+#include "../mmcfilters/attributes/AttributeRegistry.hpp"
 #include "../mmcfilters/trees/WeightedMorphologicalTree.hpp"
 #include "../mmcfilters/utils/Common.hpp"
 
@@ -17,9 +18,21 @@ namespace mmcfilters::pybindings {
 
 namespace py = pybind11;
 
+namespace {
+
+struct AttributeBinding {};
+
+} // namespace
+
+/**
+ * @brief Registers attribute computation bindings in the Python module.
+ *
+ * @param m Python module receiving the bindings.
+ */
 void initAttributeComputation(py::module_& m) {
-    auto cls = py::class_<AttributeComputationPybind>(m, "Attribute", py::module_local(false),
-        R"doc(Attribute computation utilities based on dense node-id buffers.
+    auto cls =
+        py::class_<AttributeBinding>(m, "Attribute", py::module_local(false),
+                                     R"doc(Attribute computation utilities based on dense node-id buffers.
 
 Methods returning a single attribute return a 1D floating-point array indexed by
 the selected `NodeIdSpace`. Methods returning several attributes return
@@ -27,13 +40,12 @@ the selected `NodeIdSpace`. Methods returning several attributes return
 `values` is a 2D floating-point array with one row per output node. The optional
 `dtype` keyword accepts `np.float32` or `np.float64` and defaults to
 `np.float32`; it controls only the returned NumPy buffer dtype.)doc")
-        .def_static("computeAttributes", py::overload_cast<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, const std::vector<AttributeOrGroup>&, NodeIdSpace, py::object>(&AttributeComputationPybind::computeAttributesFromList),
-            py::arg("tree"),
-            py::arg("attributes"),
-            py::arg("outputSpace") = NodeIdSpace::MORPHOLOGICAL_TREE,
-            py::kw_only(),
-            py::arg("dtype") = py::none(),
-            R"doc(Compute one or more altitude-dependent attributes.
+            .def_static(
+                "computeAttributes",
+                py::overload_cast<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, const std::vector<AttributeOrGroup>&, NodeIdSpace, py::object>(
+                    &attribute_computation::computeAttributesFromList),
+                py::arg("tree"), py::arg("attributes"), py::arg("outputSpace") = NodeIdSpace::MORPHOLOGICAL_TREE, py::kw_only(), py::arg("dtype") = py::none(),
+                R"doc(Compute one or more altitude-dependent attributes.
 
 Parameters:
     tree: `WeightedMorphologicalTree` with uint8 altitudes.
@@ -44,64 +56,39 @@ Parameters:
 Returns:
     `(layout, values)` where `values.shape == (num_output_nodes, len(layout))`
     and `values.dtype` matches `dtype`.)doc")
-        .def_static("computeTopologyAttributes", py::overload_cast<MorphologicalTreePybindPtr, const std::vector<AttributeOrGroup>&, NodeIdSpace, py::object>(&AttributeComputationPybind::computeTopologyAttributesFromList),
-            py::arg("tree"),
-            py::arg("attributes"),
-            py::arg("outputSpace") = NodeIdSpace::MORPHOLOGICAL_TREE,
-            py::kw_only(),
-            py::arg("dtype") = py::none(),
-            R"doc(Compute topology/support-only attributes from an unweighted tree.
-
-Use this entry point for attributes that do not require altitude values, such as
-area and tree-topology descriptors.)doc")
-        .def_static("computeTopologyAttributes", py::overload_cast<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, const std::vector<AttributeOrGroup>&, NodeIdSpace, py::object>(&AttributeComputationPybind::computeTopologyAttributesFromList),
-            py::arg("tree"),
-            py::arg("attributes"),
-            py::arg("outputSpace") = NodeIdSpace::MORPHOLOGICAL_TREE,
-            py::kw_only(),
-            py::arg("dtype") = py::none(),
-            R"doc(Compute topology/support-only attributes from a weighted tree.
+            .def_static(
+                "computeTopologyAttributes",
+                py::overload_cast<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, const std::vector<AttributeOrGroup>&, NodeIdSpace, py::object>(
+                    &attribute_computation::computeTopologyAttributesFromList),
+                py::arg("tree"), py::arg("attributes"), py::arg("outputSpace") = NodeIdSpace::MORPHOLOGICAL_TREE, py::kw_only(), py::arg("dtype") = py::none(),
+                R"doc(Compute topology/support-only attributes from a weighted tree.
 
 The weighted tree is accepted for convenience, but altitude-dependent
 attributes must use `computeAttributes` or `computeSingleAttribute`.)doc")
-        .def_static("computeSingleAttribute", py::overload_cast<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, Attribute, NodeIdSpace, py::object>(&AttributeComputationPybind::computeSingleAttribute),
-            py::arg("tree"),
-            py::arg("attribute"),
-            py::arg("outputSpace") = NodeIdSpace::MORPHOLOGICAL_TREE,
-            py::kw_only(),
-            py::arg("dtype") = py::none(),
-            R"doc(Compute one altitude-dependent attribute.
+            .def_static("computeSingleAttribute",
+                        py::overload_cast<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, Attribute, NodeIdSpace, py::object>(
+                            &attribute_computation::computeSingleAttribute),
+                        py::arg("tree"), py::arg("attribute"), py::arg("outputSpace") = NodeIdSpace::MORPHOLOGICAL_TREE, py::kw_only(),
+                        py::arg("dtype") = py::none(),
+                        R"doc(Compute one altitude-dependent attribute.
 
 Returns a 1D array indexed by `outputSpace`. `dtype` controls the returned
 buffer dtype and accepts `np.float32` or `np.float64`; the default is
 `np.float32`.)doc")
-        .def_static("computeSingleTopologyAttribute", py::overload_cast<MorphologicalTreePybindPtr, Attribute, NodeIdSpace, py::object>(&AttributeComputationPybind::computeSingleTopologyAttribute),
-            py::arg("tree"),
-            py::arg("attribute"),
-            py::arg("outputSpace") = NodeIdSpace::MORPHOLOGICAL_TREE,
-            py::kw_only(),
-            py::arg("dtype") = py::none(),
-            R"doc(Compute one topology/support-only attribute from an unweighted tree.
+            .def_static("computeSingleTopologyAttribute",
+                        py::overload_cast<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, Attribute, NodeIdSpace, py::object>(
+                            &attribute_computation::computeSingleTopologyAttribute),
+                        py::arg("tree"), py::arg("attribute"), py::arg("outputSpace") = NodeIdSpace::MORPHOLOGICAL_TREE, py::kw_only(),
+                        py::arg("dtype") = py::none(),
+                        R"doc(Compute one topology/support-only attribute from a weighted tree.
 
 Returns a 1D floating-point array indexed by `outputSpace`.)doc")
-        .def_static("computeSingleTopologyAttribute", py::overload_cast<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, Attribute, NodeIdSpace, py::object>(&AttributeComputationPybind::computeSingleTopologyAttribute),
-            py::arg("tree"),
-            py::arg("attribute"),
-            py::arg("outputSpace") = NodeIdSpace::MORPHOLOGICAL_TREE,
-            py::kw_only(),
-            py::arg("dtype") = py::none(),
-            R"doc(Compute one topology/support-only attribute from a weighted tree.
-
-Returns a 1D floating-point array indexed by `outputSpace`.)doc")
-        .def_static("computeSingleAttributeWithDelta", py::overload_cast<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, Attribute, int, std::string, NodeIdSpace, py::object>(&AttributeComputationPybind::computeSingleAttributeWithDelta),
-            py::arg("tree"),
-            py::arg("attribute"),
-            py::arg("delta"),
-            py::arg("padding") = "last-padding",
-            py::arg("outputSpace") = NodeIdSpace::MORPHOLOGICAL_TREE,
-            py::kw_only(),
-            py::arg("dtype") = py::none(),
-            R"doc(Compute one attribute at ancestor/descendant delta offsets.
+            .def_static("computeSingleAttributeWithDelta",
+                        py::overload_cast<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, Attribute, int, std::string, NodeIdSpace, py::object>(
+                            &attribute_computation::computeSingleAttributeWithDelta),
+                        py::arg("tree"), py::arg("attribute"), py::arg("delta"), py::arg("padding") = "last-padding",
+                        py::arg("outputSpace") = NodeIdSpace::MORPHOLOGICAL_TREE, py::kw_only(), py::arg("dtype") = py::none(),
+                        R"doc(Compute one attribute at ancestor/descendant delta offsets.
 
 Parameters:
     delta: Non-negative neighbourhood radius. Columns cover `[-delta, delta]`.
@@ -112,15 +99,39 @@ Parameters:
 Returns:
     `(layout, values)` where layout keys include suffixes such as `_ASC_1`
     and `_DESC_1`.)doc")
-        .def_static("describe", &AttributeComputationPybind::describeAttribute,
-            py::arg("attribute"),
-            "Return the human-readable description of an attribute.")
-        .def_static("computeAttributeMapping", py::overload_cast<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, Attribute, py::object>(&AttributeComputationPybind::computeAttributeMapping),
-            py::arg("tree"),
-            py::arg("attribute"),
-            py::kw_only(),
-            py::arg("dtype") = py::none(),
-            R"doc(Compute an attribute and project it back to the image domain.
+            .def_static("describe", &attribute_computation::describeAttribute, py::arg("attribute"), "Return the human-readable description of an attribute.")
+            .def_static(
+                "requirements",
+                [](Attribute attribute) {
+                    const auto requirements = attributes::registry::capabilityRequirements(attribute);
+                    const char* adjacency = "none";
+                    switch (requirements.adjacency) {
+                    case attributes::registry::AttributeAdjacencyRequirement::NONE:
+                        adjacency = "none";
+                        break;
+                    case attributes::registry::AttributeAdjacencyRequirement::UNIFORM_OR_DIRECTIONAL:
+                        adjacency = "uniform-or-directional";
+                        break;
+                    case attributes::registry::AttributeAdjacencyRequirement::UNIFORM:
+                        adjacency = "uniform";
+                        break;
+                    }
+
+                    py::dict result;
+                    result["altitude"] = requirements.altitude;
+                    result["gridDomain2D"] = requirements.gridDomain2D;
+                    result["adjacency"] = adjacency;
+                    result["monotoneAltitudeOrder"] = requirements.monotoneAltitudeOrder;
+                    result["altitudeForDirectionalAdjacency"] = requirements.altitudeForDirectionalAdjacency;
+                    result["canonical4Or8Adjacency"] = requirements.canonical4Or8Adjacency;
+                    return result;
+                },
+                py::arg("attribute"), "Return the declared capability requirements of an attribute.")
+            .def_static("computeAttributeMapping",
+                        py::overload_cast<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, Attribute, py::object>(
+                            &attribute_computation::computeAttributeMapping),
+                        py::arg("tree"), py::arg("attribute"), py::kw_only(), py::arg("dtype") = py::none(),
+                        R"doc(Compute an attribute and project it back to the image domain.
 
 Returns a 2D floating-point array with the same shape as the tree image domain.)doc");
 

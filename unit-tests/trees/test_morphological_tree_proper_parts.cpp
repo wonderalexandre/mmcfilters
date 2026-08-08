@@ -17,7 +17,7 @@ std::vector<int> pixelsOfConnectedComponent(const MorphologicalTree& tree, NodeI
     return pixels;
 }
 
-}
+} // namespace
 
 int main() {
     auto image = makeComponentTreeFixture();

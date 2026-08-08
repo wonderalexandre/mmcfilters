@@ -20,13 +20,9 @@
 
 namespace {
 
-mmcfilters::ImageUInt8Ptr makeFixtureImage()
-{
+mmcfilters::ImageUInt8Ptr makeFixtureImage() {
     const std::vector<uint8_t> values = {
-        3, 3, 2, 2,
-        3, 4, 4, 2,
-        1, 4, 5, 2,
-        1, 1, 5, 0,
+        3, 3, 2, 2, 3, 4, 4, 2, 1, 4, 5, 2, 1, 1, 5, 0,
     };
 
     auto image = mmcfilters::ImageUInt8::create(4, 4);
@@ -36,15 +32,13 @@ mmcfilters::ImageUInt8Ptr makeFixtureImage()
     return image;
 }
 
-void require(bool condition, const char* message)
-{
+void require(bool condition, const char* message) {
     if (!condition) {
         throw std::runtime_error(message);
     }
 }
 
-mmcfilters::NodeId firstNonRootLeaf(const mmcfilters::MorphologicalTree& tree)
-{
+mmcfilters::NodeId firstNonRootLeaf(const mmcfilters::MorphologicalTree& tree) {
     for (mmcfilters::NodeId nodeId : tree.getLeaves()) {
         if (!tree.isRoot(nodeId)) {
             return nodeId;
@@ -53,8 +47,7 @@ mmcfilters::NodeId firstNonRootLeaf(const mmcfilters::MorphologicalTree& tree)
     throw std::runtime_error("fixture must expose at least one non-root leaf");
 }
 
-void safeMutatorExample()
-{
+void safeMutatorExample() {
     auto topologySource = mmcfilters::MorphologicalTreeFactory::createMaxTree(makeFixtureImage());
     auto tree = topologySource.topology().clone();
     const int nodesBeforePrune = tree.getNumNodes();
@@ -69,8 +62,7 @@ void safeMutatorExample()
     require(weighted.topology().getNumNodes() < nodesBeforeMerge, "weighted merge should update the owned topology");
 }
 
-void treeEditorExample()
-{
+void treeEditorExample() {
     auto topologySource = mmcfilters::MorphologicalTreeFactory::createMinTree(makeFixtureImage());
     auto tree = topologySource.topology().clone();
     auto editor = tree.edit();
@@ -84,14 +76,11 @@ void treeEditorExample()
     require(tree.getNodeParent(insertedNode) == 2, "TreeEditor should validate and commit the staged topology");
 }
 
-void weightedTreeEditorExample()
-{
+void weightedTreeEditorExample() {
     auto weighted = mmcfilters::MorphologicalTreeFactory::createMinTree(makeFixtureImage());
     auto editor = weighted.edit();
 
-    const std::uint8_t insertedAltitude = std::min(
-        weighted.getAltitude(2),
-        std::max(weighted.getAltitude(3), weighted.getAltitude(4)));
+    const std::uint8_t insertedAltitude = std::min(weighted.getAltitude(2), std::max(weighted.getAltitude(3), weighted.getAltitude(4)));
     const mmcfilters::NodeId insertedNode = editor.createDetachedNode(insertedAltitude);
 
     editor.reparent(3, insertedNode);
@@ -102,8 +91,7 @@ void weightedTreeEditorExample()
     require(weighted.getAltitude(insertedNode) == insertedAltitude, "WeightedTreeEditor<std::uint8_t> should preserve inserted altitude");
 }
 
-void rejectedWeightedCommitExample()
-{
+void rejectedWeightedCommitExample() {
     auto weighted = mmcfilters::MorphologicalTreeFactory::createMinTree(makeFixtureImage());
     auto editor = weighted.edit();
 
@@ -119,8 +107,7 @@ void rejectedWeightedCommitExample()
 
 } // namespace
 
-int main()
-{
+int main() {
     safeMutatorExample();
     treeEditorExample();
     weightedTreeEditorExample();

@@ -17,21 +17,13 @@
 
 namespace {
 
-void writePng(const std::filesystem::path& outputPath, const mmcfilters::ImageUInt8Ptr& image)
-{
-    if (!stbi_write_png(
-            outputPath.string().c_str(),
-            image->getNumCols(),
-            image->getNumRows(),
-            1,
-            image->rawData(),
-            0)) {
+void writePng(const std::filesystem::path& outputPath, const mmcfilters::ImageUInt8Ptr& image) {
+    if (!stbi_write_png(outputPath.string().c_str(), image->getNumCols(), image->getNumRows(), 1, image->rawData(), 0)) {
         throw std::runtime_error("Failed to write PNG file: " + outputPath.string());
     }
 }
 
-bool isContourPixel(int row, int col, int top, int left, int bottom, int right)
-{
+bool isContourPixel(int row, int col, int top, int left, int bottom, int right) {
     const bool inside = row >= top && row <= bottom && col >= left && col <= right;
     if (!inside) {
         return false;
@@ -41,11 +33,8 @@ bool isContourPixel(int row, int col, int top, int left, int bottom, int right)
 
 } // namespace
 
-int main(int argc, char** argv)
-{
-    const std::filesystem::path outputDir = argc > 1
-        ? std::filesystem::path(argv[1])
-        : std::filesystem::path("tmp/edt_dift_example");
+int main(int argc, char** argv) {
+    const std::filesystem::path outputDir = argc > 1 ? std::filesystem::path(argv[1]) : std::filesystem::path("tmp/edt_dift_example");
 
     std::filesystem::create_directories(outputDir);
 
@@ -83,10 +72,9 @@ int main(int argc, char** argv)
     writePng(binaryOutput, binaryImage);
     writePng(distanceOutput, distanceImage);
 
-    std::cout
-        << "Saved EdtDIFT example outputs to:\n"
-        << "  " << binaryOutput << "\n"
-        << "  " << distanceOutput << "\n";
+    std::cout << "Saved EdtDIFT example outputs to:\n"
+              << "  " << binaryOutput << "\n"
+              << "  " << distanceOutput << "\n";
 
     return 0;
 }

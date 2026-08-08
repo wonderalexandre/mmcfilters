@@ -21,7 +21,7 @@ namespace mmcfilters::attributes::computers::detail {
  * requested attributes and output buffers.
  */
 class ContourSideAttributeMaterialization {
-public:
+  public:
     /**
      * @brief Projects precomputed side counters into scalar contour attributes.
      *
@@ -30,16 +30,19 @@ public:
      * tests: callers can compute `ContourSideCounts` once, then write any
      * subset of scalar projections from the same dense node-slot buffer.
      *
+     * @param tree Tree topology used by the operation.
+     * @param sideCounts Contour-side counters.
+     * @param buffer Buffer read or written by the operation.
+     * @param attrNames Layout that maps attributes to buffer columns.
+     * @param requestedAttributes Attributes requested for materialization.
+     *
      * @throws std::invalid_argument If `sideCounts` does not cover every
      * internal node slot.
+     *
      */
     template <std::floating_point Real>
-    static void materializeAttributesFromContourSideCounts(
-        const MorphologicalTree& tree,
-        std::span<const ContourSideCounts> sideCounts,
-        std::span<Real> buffer,
-        const AttributeNames& attrNames,
-        std::span<const Attribute> requestedAttributes) {
+    static void materializeAttributesFromContourSideCounts(const MorphologicalTree& tree, std::span<const ContourSideCounts> sideCounts, std::span<Real> buffer,
+                                                           const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes) {
         const std::size_t numNodeSlots = static_cast<std::size_t>(tree.getNumInternalNodeSlots());
         if (sideCounts.size() < numNodeSlots) {
             throw std::invalid_argument("Local-event contour side counts do not cover all tree node slots.");
@@ -53,17 +56,8 @@ public:
         const bool computeSouth = requestsAttribute(requestedAttributes, CONTOUR_SIDE_SOUTH);
 
         for (NodeId nodeId : tree.getAliveNodeIds()) {
-            materializeNode(
-                nodeId,
-                sideCounts[static_cast<std::size_t>(nodeId)],
-                buffer,
-                attrNames,
-                computeContourPixels,
-                computeContourPerimeter,
-                computeNorth,
-                computeWest,
-                computeEast,
-                computeSouth);
+            materializeNode(nodeId, sideCounts[static_cast<std::size_t>(nodeId)], buffer, attrNames, computeContourPixels, computeContourPerimeter,
+                            computeNorth, computeWest, computeEast, computeSouth);
         }
     }
 
@@ -72,14 +66,16 @@ public:
      *
      * A one-pixel unit support contributes one contour pixel and four exposed
      * sides, one in each cardinal direction.
+     *
+     * @param tree Tree topology used by the operation.
+     * @param unitProperParts Proper-part data represented by `unitProperParts`.
+     * @param buffer Buffer read or written by the operation.
+     * @param attrNames Layout that maps attributes to buffer columns.
+     * @param requestedAttributes Attributes requested for materialization.
      */
     template <std::floating_point Real>
-    static void materializeUnitContourSideAttributes(
-        const MorphologicalTree& tree,
-        std::span<const NodeId> unitProperParts,
-        std::span<Real> buffer,
-        const AttributeNames& attrNames,
-        std::span<const Attribute> requestedAttributes) {
+    static void materializeUnitContourSideAttributes(const MorphologicalTree& tree, std::span<const NodeId> unitProperParts, std::span<Real> buffer,
+                                                     const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes) {
         requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
 
         const bool computeContourPixels = requestsAttribute(requestedAttributes, CONTOUR_PIXELS);
@@ -99,59 +95,47 @@ public:
         };
 
         for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
-            materializeNode(
-                leafIndex,
-                singleton,
-                buffer,
-                attrNames,
-                computeContourPixels,
-                computeContourPerimeter,
-                computeNorth,
-                computeWest,
-                computeEast,
-                computeSouth);
+            materializeNode(leafIndex, singleton, buffer, attrNames, computeContourPixels, computeContourPerimeter, computeNorth, computeWest, computeEast,
+                            computeSouth);
         }
     }
 
-private:
+  private:
     /**
      * @brief Writes the selected scalar projections for one output row.
+     *
+     * @param outputIndex Index represented by `outputIndex`.
+     * @param counts Counters used by the operation.
+     * @param buffer Buffer read or written by the operation.
+     * @param attrNames Layout that maps attributes to buffer columns.
+     * @param computeContourPixels Flag controlling compute contour pixels.
+     * @param computeContourPerimeter Flag controlling compute contour perimeter.
+     * @param computeNorth Flag controlling compute north.
+     * @param computeWest Flag controlling compute west.
+     * @param computeEast Flag controlling compute east.
+     * @param computeSouth Flag controlling compute south.
      */
     template <std::floating_point Real>
-    static void materializeNode(
-        NodeId outputIndex,
-        const ContourSideCounts& counts,
-        std::span<Real> buffer,
-        const AttributeNames& attrNames,
-        bool computeContourPixels,
-        bool computeContourPerimeter,
-        bool computeNorth,
-        bool computeWest,
-        bool computeEast,
-        bool computeSouth) {
+    static void materializeNode(NodeId outputIndex, const ContourSideCounts& counts, std::span<Real> buffer, const AttributeNames& attrNames,
+                                bool computeContourPixels, bool computeContourPerimeter, bool computeNorth, bool computeWest, bool computeEast,
+                                bool computeSouth) {
         if (computeContourPixels) {
-            buffer[attrNames.linearIndex(outputIndex, CONTOUR_PIXELS)] =
-                static_cast<Real>(counts.contourPixels);
+            buffer[attrNames.linearIndex(outputIndex, CONTOUR_PIXELS)] = static_cast<Real>(counts.contourPixels);
         }
         if (computeContourPerimeter) {
-            buffer[attrNames.linearIndex(outputIndex, CONTOUR_PERIMETER)] =
-                static_cast<Real>(counts.exposedSides);
+            buffer[attrNames.linearIndex(outputIndex, CONTOUR_PERIMETER)] = static_cast<Real>(counts.exposedSides);
         }
         if (computeNorth) {
-            buffer[attrNames.linearIndex(outputIndex, CONTOUR_SIDE_NORTH)] =
-                static_cast<Real>(counts.north);
+            buffer[attrNames.linearIndex(outputIndex, CONTOUR_SIDE_NORTH)] = static_cast<Real>(counts.north);
         }
         if (computeWest) {
-            buffer[attrNames.linearIndex(outputIndex, CONTOUR_SIDE_WEST)] =
-                static_cast<Real>(counts.west);
+            buffer[attrNames.linearIndex(outputIndex, CONTOUR_SIDE_WEST)] = static_cast<Real>(counts.west);
         }
         if (computeEast) {
-            buffer[attrNames.linearIndex(outputIndex, CONTOUR_SIDE_EAST)] =
-                static_cast<Real>(counts.east);
+            buffer[attrNames.linearIndex(outputIndex, CONTOUR_SIDE_EAST)] = static_cast<Real>(counts.east);
         }
         if (computeSouth) {
-            buffer[attrNames.linearIndex(outputIndex, CONTOUR_SIDE_SOUTH)] =
-                static_cast<Real>(counts.south);
+            buffer[attrNames.linearIndex(outputIndex, CONTOUR_SIDE_SOUTH)] = static_cast<Real>(counts.south);
         }
     }
 };

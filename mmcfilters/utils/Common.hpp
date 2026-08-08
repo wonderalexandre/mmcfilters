@@ -26,11 +26,17 @@ constexpr NodeId InvalidNode = -1;
 
 /**
  * @brief Returns true when `id` is not the invalid-node sentinel.
+ *
+ * @param id Identifier used by the operation.
+ * @return True when id is not the invalid-node sentinel.
  */
 inline bool isValidNode(NodeId id) noexcept { return id != InvalidNode; }
 
 /**
  * @brief Returns true when `id` is the invalid-node sentinel.
+ *
+ * @param id Identifier used by the operation.
+ * @return True when id is the invalid-node sentinel.
  */
 inline bool isInvalid(NodeId id) noexcept { return id == InvalidNode; }
 

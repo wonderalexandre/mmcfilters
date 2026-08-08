@@ -20,11 +20,13 @@ namespace mmcfilters {
  * carries no ownership or canonical-tree identity; operations that need owned
  * weighted state must receive a `WeightedMorphologicalTree<T>` instead.
  */
-template<AltitudeValue T>
-class WeightedTreeView {
-private:
+template <AltitudeValue T> class WeightedTreeView {
+  private:
+    /** @brief Stores the topology. */
     const MorphologicalTree* topology_ = nullptr;
+    /** @brief Stores the altitude. */
     AltitudeSpan<T> altitude_;
+    /** @brief Stores the topology mutation version. */
     std::size_t topologyMutationVersion_ = 0;
 
     /**
@@ -36,7 +38,7 @@ private:
         }
     }
 
-public:
+  public:
     /// Altitude scalar type borrowed by this view.
     using altitude_type = T;
 
@@ -45,6 +47,9 @@ public:
      *
      * The span must be indexed by the dense internal `NodeId` domain and remain
      * alive for the full lifetime of the view.
+     *
+     * @param topology Tree topology used by the operation.
+     * @param altitude Altitude data indexed by node identifier.
      */
     explicit WeightedTreeView(const MorphologicalTree& topology, AltitudeSpan<T> altitude)
         : topology_(&topology), altitude_(altitude), topologyMutationVersion_(topology.getMutationVersion()) {
@@ -56,6 +61,9 @@ public:
      *
      * This overload is equivalent to passing `std::span<const T>(altitude)` and
      * exists so `WeightedTreeView(tree, buffer)` deduces the altitude type.
+     *
+     * @param topology Tree topology used by the operation.
+     * @param altitude Altitude data indexed by node identifier.
      */
     explicit WeightedTreeView(const MorphologicalTree& topology, const AltitudeBuffer<T>& altitude)
         : topology_(&topology), altitude_(std::span<const T>(altitude)), topologyMutationVersion_(topology.getMutationVersion()) {
@@ -69,27 +77,30 @@ public:
 
     /**
      * @brief Returns the borrowed tree topology.
+     *
+     * @return The borrowed tree topology.
      */
-    [[nodiscard]] const MorphologicalTree& topology() const noexcept {
-        return *topology_;
-    }
+    [[nodiscard]] const MorphologicalTree& topology() const noexcept { return *topology_; }
 
     /**
      * @brief Returns the borrowed altitude span indexed by internal `NodeId`.
+     *
+     * @return The borrowed altitude span indexed by internal NodeId.
      */
-    [[nodiscard]] AltitudeSpan<T> altitude() const noexcept {
-        return altitude_;
-    }
+    [[nodiscard]] AltitudeSpan<T> altitude() const noexcept { return altitude_; }
 
     /**
      * @brief Throws if the borrowed topology changed since view construction.
+     *
+     * @param context Operation context or diagnostic label.
      */
-    void requireTopologyUnchanged(const char* context) const {
-        topology().requireMutationVersion(topologyMutationVersion_, context);
-    }
+    void requireTopologyUnchanged(const char* context) const { topology().requireMutationVersion(topologyMutationVersion_, context); }
 
     /**
      * @brief Returns the altitude associated with an internal node id.
+     *
+     * @param nodeId Identifier of the node used by the operation.
+     * @return The altitude associated with an internal node id.
      */
     [[nodiscard]] T getAltitude(NodeId nodeId) const {
         if (nodeId < 0 || static_cast<std::size_t>(nodeId) >= altitude_.size()) {
@@ -103,6 +114,9 @@ public:
      *
      * Root-like nodes, whose parent is invalid or themselves, use their own
      * altitude as residue.
+     *
+     * @param nodeId Identifier of the node used by the operation.
+     * @return The altitude difference between a live node and its parent.
      */
     [[nodiscard]] AltitudeDiff<T> getNodeResidue(NodeId nodeId) const {
         const MorphologicalTree& tree = topology();
@@ -113,8 +127,7 @@ public:
         if (parentNodeId == InvalidNode || parentNodeId == nodeId) {
             return static_cast<AltitudeDiff<T>>(getAltitude(nodeId));
         }
-        return static_cast<AltitudeDiff<T>>(getAltitude(nodeId)) -
-               static_cast<AltitudeDiff<T>>(getAltitude(parentNodeId));
+        return static_cast<AltitudeDiff<T>>(getAltitude(nodeId)) - static_cast<AltitudeDiff<T>>(getAltitude(parentNodeId));
     }
 };
 

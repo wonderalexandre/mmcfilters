@@ -11,9 +11,9 @@
  */
 
 #if defined(MMCFILTERS_ENABLE_ASSERTS)
-#  ifdef NDEBUG
-#    undef NDEBUG
-#  endif
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #endif
 
 #include <cassert>

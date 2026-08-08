@@ -16,14 +16,11 @@ namespace mmcfilters {
 namespace detail {
 
 /// True when `T` is an integral altitude type with safe 64-bit differences.
-template<class T>
-inline constexpr bool SupportedIntegralAltitude =
-    std::is_integral_v<std::remove_cv_t<T>> &&
-    sizeof(std::remove_cv_t<T>) < sizeof(std::int64_t);
+template <class T>
+inline constexpr bool SupportedIntegralAltitude = std::is_integral_v<std::remove_cv_t<T>> && sizeof(std::remove_cv_t<T>) < sizeof(std::int64_t);
 
 /// True when `T` is a floating-point altitude type.
-template<class T>
-inline constexpr bool SupportedFloatingAltitude = std::is_floating_point_v<std::remove_cv_t<T>>;
+template <class T> inline constexpr bool SupportedFloatingAltitude = std::is_floating_point_v<std::remove_cv_t<T>>;
 
 } // namespace detail
 
@@ -38,11 +35,9 @@ inline constexpr bool SupportedFloatingAltitude = std::is_floating_point_v<std::
  * arithmetic independent of the original image pixel type while preserving the
  * monotone ordering required by max-trees and min-trees.
  */
-template<class T>
+template <class T>
 concept AltitudeValue =
-    std::totally_ordered<T> &&
-    !std::is_same_v<std::remove_cv_t<T>, bool> &&
-    (detail::SupportedFloatingAltitude<T> || detail::SupportedIntegralAltitude<T>);
+    std::totally_ordered<T> && !std::is_same_v<std::remove_cv_t<T>, bool> && (detail::SupportedFloatingAltitude<T> || detail::SupportedIntegralAltitude<T>);
 
 /**
  * @brief Read-only contiguous view over node altitudes.
@@ -50,13 +45,17 @@ concept AltitudeValue =
  * The span is indexed by dense internal `NodeId`. Callers must provide at least
  * one value for every internal node slot in the associated topology.
  */
-template<AltitudeValue T>
-using AltitudeSpan = std::span<const T>;
+template <AltitudeValue T> using AltitudeSpan = std::span<const T>;
 
 namespace detail {
 
-template<AltitudeValue T>
-struct AltitudeDiffSelector {
+/**
+ * @brief Selects a safe difference type for an altitude type.
+ *
+ * @tparam T Altitude type whose safe arithmetic difference type is selected.
+ */
+template <AltitudeValue T> struct AltitudeDiffSelector {
+    /** @brief Defines the `type` alias used by the component. */
     using type = std::conditional_t<std::is_integral_v<T>, std::int64_t, T>;
 };
 
@@ -70,8 +69,7 @@ struct AltitudeDiffSelector {
  * Floating-point altitudes keep their own precision so callers can express
  * real-valued deltas such as `0.05f`.
  */
-template<AltitudeValue T>
-using AltitudeDiff = typename detail::AltitudeDiffSelector<T>::type;
+template <AltitudeValue T> using AltitudeDiff = typename detail::AltitudeDiffSelector<T>::type;
 
 /**
  * @brief Owning dense altitude buffer indexed by internal node id.
@@ -80,7 +78,6 @@ using AltitudeDiff = typename detail::AltitudeDiffSelector<T>::type;
  * may instead accept an `AltitudeSpan<T>` or `WeightedTreeView<T>` when the
  * topology and altitude storage have separate owners.
  */
-template<AltitudeValue T>
-using AltitudeBuffer = std::vector<T>;
+template <AltitudeValue T> using AltitudeBuffer = std::vector<T>;
 
 } // namespace mmcfilters

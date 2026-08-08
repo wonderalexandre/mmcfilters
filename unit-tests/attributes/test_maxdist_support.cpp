@@ -92,40 +92,22 @@ void requirePQueueAcceptsMaxBucketCost() {
 void requirePQueueRejectsOutOfDomainCost() {
     PQueue queue(5, 2);
     queue.setCost(0, 6);
-    requireThrows<std::out_of_range>(
-        [&]() { queue.insert(0); },
-        "PQueue insert must reject costs above the max bucket");
+    requireThrows<std::out_of_range>([&]() { queue.insert(0); }, "PQueue insert must reject costs above the max bucket");
 
     queue.setCost(1, -1);
-    requireThrows<std::out_of_range>(
-        [&]() { queue.insert(1); },
-        "PQueue insert must reject negative costs");
+    requireThrows<std::out_of_range>([&]() { queue.insert(1); }, "PQueue insert must reject negative costs");
 }
 
 void requirePQueueRejectsEmptyAccess() {
     PQueue queue(5, 2);
 
-    requireThrows<std::underflow_error>(
-        [&]() { (void)queue.minValue(); },
-        "PQueue minValue must reject empty queues");
-    requireThrows<std::underflow_error>(
-        [&]() { (void)queue.maxValue(); },
-        "PQueue maxValue must reject empty queues");
-    requireThrows<std::underflow_error>(
-        [&]() { (void)queue.minElemFIFO(); },
-        "PQueue minElemFIFO must reject empty queues");
-    requireThrows<std::underflow_error>(
-        [&]() { (void)queue.popMinFIFO(); },
-        "PQueue popMinFIFO must reject empty queues");
-    requireThrows<std::underflow_error>(
-        [&]() { (void)queue.popMaxFIFO(); },
-        "PQueue popMaxFIFO must reject empty queues");
-    requireThrows<std::underflow_error>(
-        [&]() { (void)queue.popMinLIFO(); },
-        "PQueue popMinLIFO must reject empty queues");
-    requireThrows<std::underflow_error>(
-        [&]() { (void)queue.popMaxLIFO(); },
-        "PQueue popMaxLIFO must reject empty queues");
+    requireThrows<std::underflow_error>([&]() { (void)queue.minValue(); }, "PQueue minValue must reject empty queues");
+    requireThrows<std::underflow_error>([&]() { (void)queue.maxValue(); }, "PQueue maxValue must reject empty queues");
+    requireThrows<std::underflow_error>([&]() { (void)queue.minElemFIFO(); }, "PQueue minElemFIFO must reject empty queues");
+    requireThrows<std::underflow_error>([&]() { (void)queue.popMinFIFO(); }, "PQueue popMinFIFO must reject empty queues");
+    requireThrows<std::underflow_error>([&]() { (void)queue.popMaxFIFO(); }, "PQueue popMaxFIFO must reject empty queues");
+    requireThrows<std::underflow_error>([&]() { (void)queue.popMinLIFO(); }, "PQueue popMinLIFO must reject empty queues");
+    requireThrows<std::underflow_error>([&]() { (void)queue.popMaxLIFO(); }, "PQueue popMaxLIFO must reject empty queues");
 }
 
 } // namespace

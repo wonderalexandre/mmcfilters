@@ -77,7 +77,7 @@ int main() {
 
         editor.moveProperPart(5, 4, 5);
         editor.moveProperParts(5, 4);
-        editor.commitUnchecked();
+        editor.commit();
         auto parent = exportFlatHigraHierarchy(*tree).first;
         auto rebuilt = makeTreeFromHigraParent(parent, 4, 4, true);
 
@@ -88,7 +88,8 @@ int main() {
         require(sourceNodeId != InvalidNode && sourceNodeId != targetNodeId, "rebuilt ownership-moved tree must keep the source above the target");
         requireVectorEqual(collectNodeIds(rebuilt->getChildren(sourceNodeId)), {targetNodeId}, "children after rebuilding ownership-moved tree");
         requireVectorEqual(collectNodeIds(rebuilt->getProperParts(sourceNodeId)), {}, "source proper parts after rebuilding ownership-moved tree");
-        requireVectorEqual(collectNodeIds(rebuilt->getProperParts(targetNodeId)), {5, 6, 9, 10, 14}, "target proper parts after rebuilding ownership-moved tree");
+        requireVectorEqual(collectNodeIds(rebuilt->getProperParts(targetNodeId)), {5, 6, 9, 10, 14},
+                           "target proper parts after rebuilding ownership-moved tree");
         requireEqual(rebuilt->getProperPartOwner(5), targetNodeId, "moved proper part must share the rebuilt target component");
         requireEqual(computeAreaViaAttributeFacade(*rebuilt, sourceNodeId), 5, "source subtree area after rebuilding ownership-moved tree");
         requireEqual(computeAreaViaAttributeFacade(*rebuilt, targetNodeId), 5, "target subtree area after rebuilding ownership-moved tree");
@@ -103,7 +104,7 @@ int main() {
         requireVectorEqual(collectNodeIds(tree->getChildren(3)), {}, "source children after moveChildren");
         requireVectorEqual(collectNodeIds(tree->getChildren(4)), {5}, "target children after moveChildren");
         requireEqual(tree->getNodeParent(5), 4, "moved child parent");
-        editor.commitUnchecked();
+        editor.commit();
     }
 
     {
@@ -113,9 +114,7 @@ int main() {
 
         editor.detach(5);
         requireEqual(tree->getNodeParent(5), 5, "detached node parent before rejected merge");
-        requireThrows<std::invalid_argument>(
-            [&]() { editor.mergeNodeIntoParent(5); },
-            "mergeNodeIntoParent must reject detached nodes");
+        requireThrows<std::invalid_argument>([&]() { editor.mergeNodeIntoParent(5); }, "mergeNodeIntoParent must reject detached nodes");
         require(tree->isAlive(5), "rejected detached merge must keep node alive");
         requireEqual(tree->getNodeParent(5), 5, "rejected detached merge must keep node detached");
     }
@@ -127,9 +126,7 @@ int main() {
 
         editor.detach(5);
         requireEqual(tree->getNodeParent(5), 5, "detached node parent before rejected prune");
-        requireThrows<std::invalid_argument>(
-            [&]() { editor.pruneNode(5); },
-            "pruneNode must reject detached nodes");
+        requireThrows<std::invalid_argument>([&]() { editor.pruneNode(5); }, "pruneNode must reject detached nodes");
         require(tree->isAlive(5), "rejected detached prune must keep node alive");
         requireEqual(tree->getNodeParent(5), 5, "rejected detached prune must keep node detached");
     }

@@ -2,6 +2,7 @@
 
 #include "DualMinMaxTreeIncrementalFilter.hpp"
 #include "../MorphologicalTreeFactory.hpp"
+#include "../../utils/Image.hpp"
 
 #include <memory>
 #include <stdexcept>
@@ -18,12 +19,7 @@ namespace mmcfilters::adjust {
  * attributes are computed from the image grid coordinates and expose three
  * scalar projections of the same cached box state.
  */
-enum class CasfComponentTreesAttribute {
-    AREA,
-    BOUNDING_BOX_WIDTH,
-    BOUNDING_BOX_HEIGHT,
-    BOUNDING_BOX_DIAGONAL
-};
+enum class CasfComponentTreesAttribute { AREA, BOUNDING_BOX_WIDTH, BOUNDING_BOX_HEIGHT, BOUNDING_BOX_DIAGONAL };
 
 /**
  * @brief Connected alternating sequential filter on paired component trees.
@@ -80,40 +76,56 @@ enum class CasfComponentTreesAttribute {
  * changes tree topology, proper-part ownership, altitude state, and dynamic
  * attribute buffers together.
  */
-template<AltitudeValue T>
-class CasfComponentTrees {
-private:
+template <AltitudeValue T> class CasfComponentTrees {
+  private:
+    /** @brief Defines the `tree_t` alias used by the component. */
     using tree_t = WeightedMorphologicalTree<T>;
+    /** @brief Defines the `image_ptr_t` alias used by the component. */
     using image_ptr_t = ImagePtr<T>;
+    /** @brief Defines the `attribute_computer_t` alias used by the component. */
     using attribute_computer_t = DynamicTreeAttributeComputer<T>;
 
-    AdjacencyRelation adjacency_;
+    /** @brief Stores the adjacency. */
+    RegularGridAdjacency2D adjacency_;
+    /** @brief Stores the min tree. */
     tree_t minTree_;
+    /** @brief Stores the max tree. */
     tree_t maxTree_;
+    /** @brief Stores the min attribute computer. */
     std::unique_ptr<attribute_computer_t> minAttributeComputer_;
+    /** @brief Stores the max attribute computer. */
     std::unique_ptr<attribute_computer_t> maxAttributeComputer_;
+    /** @brief Stores the adjust. */
     std::unique_ptr<DualMinMaxTreeIncrementalFilter<T>> adjust_;
+    /** @brief Stores the min attribute buffer. */
     std::vector<double> minAttributeBuffer_;
+    /** @brief Stores the max attribute buffer. */
     std::vector<double> maxAttributeBuffer_;
+    /** @brief Stores the prune candidate queue. */
     std::vector<NodeId> pruneCandidateQueue_;
+    /** @brief Stores the selected prune candidates. */
     std::vector<NodeId> selectedPruneCandidates_;
+    /** @brief Stores the attribute. */
     CasfComponentTreesAttribute attribute_ = CasfComponentTreesAttribute::AREA;
 
     /**
      * @brief Creates the incremental attribute computer matching the selected CASF attribute.
      * @details Area uses a scalar area computer. Bounding-box attributes reuse
      * the row-major image embedding already stored by `WeightedMorphologicalTree<T>`.
+     *
+     * @param attribute Attribute requested by the operation.
+     * @return The created incremental attribute computer matching the selected CASF attribute.
      */
     static std::unique_ptr<attribute_computer_t> makeAttributeComputer(CasfComponentTreesAttribute attribute) {
         switch (attribute) {
-            case CasfComponentTreesAttribute::AREA:
-                return std::make_unique<DynamicAreaAttributeComputer<T>>();
-            case CasfComponentTreesAttribute::BOUNDING_BOX_WIDTH:
-                return std::make_unique<DynamicBoundingBoxAttributeComputer<T>>(BoundingBoxMeasure::WIDTH);
-            case CasfComponentTreesAttribute::BOUNDING_BOX_HEIGHT:
-                return std::make_unique<DynamicBoundingBoxAttributeComputer<T>>(BoundingBoxMeasure::HEIGHT);
-            case CasfComponentTreesAttribute::BOUNDING_BOX_DIAGONAL:
-                return std::make_unique<DynamicBoundingBoxAttributeComputer<T>>(BoundingBoxMeasure::DIAGONAL_LENGTH);
+        case CasfComponentTreesAttribute::AREA:
+            return std::make_unique<DynamicAreaAttributeComputer<T>>();
+        case CasfComponentTreesAttribute::BOUNDING_BOX_WIDTH:
+            return std::make_unique<DynamicBoundingBoxAttributeComputer<T>>(BoundingBoxMeasure::WIDTH);
+        case CasfComponentTreesAttribute::BOUNDING_BOX_HEIGHT:
+            return std::make_unique<DynamicBoundingBoxAttributeComputer<T>>(BoundingBoxMeasure::HEIGHT);
+        case CasfComponentTreesAttribute::BOUNDING_BOX_DIAGONAL:
+            return std::make_unique<DynamicBoundingBoxAttributeComputer<T>>(BoundingBoxMeasure::DIAGONAL_LENGTH);
         }
         throw std::runtime_error("Unknown CASF component-tree attribute.");
     }
@@ -126,6 +138,11 @@ private:
      * node and stop descending below it. The root is never returned because
      * pruning the root would not define a valid half-step. Internal queue/output
      * buffers are reused across calls to avoid allocation in the threshold loop.
+     *
+     * @param tree Tree topology used by the operation.
+     * @param attribute Attribute requested by the operation.
+     * @param threshold Threshold applied by the operation.
+     * @return The selected maximal non-root pruning candidates whose attribute is below or equal to a threshold.
      */
     const std::vector<NodeId>& selectPruneCandidates(const tree_t& tree, const std::vector<double>& attribute, double threshold) {
         pruneCandidateQueue_.clear();
@@ -169,6 +186,8 @@ private:
      * min-tree update) and then the anti-extensive half-step (min-tree pruning
      * with max-tree update). This order matches the original component-tree CASF
      * schedule.
+     *
+     * @param threshold Threshold applied by the operation.
      */
     void applyFilterStep(double threshold) {
         const std::vector<NodeId> maxCandidates = selectPruneCandidates(maxTree_, maxAttributeBuffer_, threshold);
@@ -178,7 +197,7 @@ private:
         adjust_->pruneMinTreeAndUpdateMaxTree(minCandidates);
     }
 
-public:
+  public:
     /**
      * @brief Initializes the CASF state from the input image and the chosen attribute.
      * @param image Input gray-level image.
@@ -187,11 +206,8 @@ public:
      */
     CasfComponentTrees(image_ptr_t image, CasfComponentTreesAttribute attribute = CasfComponentTreesAttribute::AREA, double radius = 1.5)
         : adjacency_(image ? image->getNumRows() : 0, image ? image->getNumCols() : 0, radius),
-          minTree_(MorphologicalTreeFactory::createMinTree(image, radius)),
-          maxTree_(MorphologicalTreeFactory::createMaxTree(image, radius)),
-          minAttributeComputer_(makeAttributeComputer(attribute)),
-          maxAttributeComputer_(makeAttributeComputer(attribute)),
-          attribute_(attribute) {
+          minTree_(MorphologicalTreeFactory::createMinTree(image, radius)), maxTree_(MorphologicalTreeFactory::createMaxTree(image, radius)),
+          minAttributeComputer_(makeAttributeComputer(attribute)), maxAttributeComputer_(makeAttributeComputer(attribute)), attribute_(attribute) {
         if (!image || image->getNumRows() <= 0 || image->getNumCols() <= 0 || image->getSize() <= 0) {
             throw std::invalid_argument("CasfComponentTrees requires a non-empty image.");
         }
@@ -201,8 +217,7 @@ public:
         minAttributeComputer_->computeAttribute(minTree_, minAttributeBuffer_);
         maxAttributeComputer_->computeAttribute(maxTree_, maxAttributeBuffer_);
 
-        const size_t maxNodes = static_cast<size_t>(
-            std::max(minTree_.topology().getNumInternalNodeSlots(), maxTree_.topology().getNumInternalNodeSlots()));
+        const size_t maxNodes = static_cast<size_t>(std::max(minTree_.topology().getNumInternalNodeSlots(), maxTree_.topology().getNumInternalNodeSlots()));
         pruneCandidateQueue_.reserve(maxNodes);
         selectedPruneCandidates_.reserve(maxNodes);
     }
@@ -213,6 +228,9 @@ public:
      * Thresholds are applied to the current internal state. The object is
      * therefore stateful: successive non-empty calls continue filtering the
      * result of the previous ones.
+     *
+     * @param thresholds Thresholds evaluated by the filter.
+     * @return Image produced by the operation.
      */
     [[nodiscard]] image_ptr_t filter(const std::vector<double>& thresholds) {
         for (double threshold : thresholds) {
@@ -223,44 +241,44 @@ public:
 
     /**
      * @brief Returns the current min-tree state.
+     *
+     * @return The current min-tree state.
      */
-    [[nodiscard]] const tree_t& minTree() const noexcept {
-        return minTree_;
-    }
+    [[nodiscard]] const tree_t& minTree() const noexcept { return minTree_; }
 
     /**
      * @brief Returns the current max-tree state.
+     *
+     * @return The current max-tree state.
      */
-    [[nodiscard]] const tree_t& maxTree() const noexcept {
-        return maxTree_;
-    }
+    [[nodiscard]] const tree_t& maxTree() const noexcept { return maxTree_; }
 
     /**
      * @brief Returns the increasing attribute configured for this CASF instance.
+     *
+     * @return The increasing attribute configured for this CASF instance.
      */
-    [[nodiscard]] CasfComponentTreesAttribute attribute() const noexcept {
-        return attribute_;
-    }
+    [[nodiscard]] CasfComponentTreesAttribute attribute() const noexcept { return attribute_; }
 
     /**
      * @brief Exports the current min-tree as a compact static parent/altitude pair.
      * @details The pair follows the local `WeightedMorphologicalTree<T>`
      * export convention and can be compared with Higra-style static hierarchy
      * outputs in tests and benchmarks.
+     *
+     * @return The exported current min-tree as a compact static parent/altitude pair.
      */
-    [[nodiscard]] std::pair<std::vector<NodeId>, std::vector<T>> exportMinTree() const {
-        return minTree_.exportHigraHierarchy();
-    }
+    [[nodiscard]] std::pair<std::vector<NodeId>, std::vector<T>> exportMinTree() const { return minTree_.exportHigraHierarchy(); }
 
     /**
      * @brief Exports the current max-tree as a compact static parent/altitude pair.
      * @details The pair follows the local `WeightedMorphologicalTree<T>`
      * export convention and can be compared with Higra-style static hierarchy
      * outputs in tests and benchmarks.
+     *
+     * @return The exported current max-tree as a compact static parent/altitude pair.
      */
-    [[nodiscard]] std::pair<std::vector<NodeId>, std::vector<T>> exportMaxTree() const {
-        return maxTree_.exportHigraHierarchy();
-    }
+    [[nodiscard]] std::pair<std::vector<NodeId>, std::vector<T>> exportMaxTree() const { return maxTree_.exportHigraHierarchy(); }
 };
 
 } // namespace mmcfilters::adjust

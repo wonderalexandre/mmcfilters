@@ -19,7 +19,9 @@ struct ContourDeltaStore {
      * @brief Offset and length of one node slice in a flat value vector.
      */
     struct Span {
+        /** @brief Stores the offset. */
         uint32_t offset = 0;
+        /** @brief Stores the size. */
         uint32_t size = 0;
     };
 
@@ -32,41 +34,54 @@ struct ContourDeltaStore {
     /// Per-node spans into `removeValues`.
     std::vector<Span> removeSpans;
 
-    explicit ContourDeltaStore(int numNodes = 0)
-        : addSpans(static_cast<std::size_t>(numNodes)),
-          removeSpans(static_cast<std::size_t>(numNodes)) {}
+    /**
+     * @brief Constructs `ContourDeltaStore` from the supplied inputs.
+     *
+     * @param numNodes Number of internal nodes.
+     */
+    explicit ContourDeltaStore(int numNodes = 0) : addSpans(static_cast<std::size_t>(numNodes)), removeSpans(static_cast<std::size_t>(numNodes)) {}
 
-    /// @return Read-only local contour additions for `node`.
+    /**
+     * @brief Returns read-only local contour additions for node.
+     *
+     * @param node Node identifier used by the operation.
+     * @return Read-only local contour additions for `node`.
+     *
+     */
     std::span<const int> additions(NodeId node) const {
         const Span& span = addSpans[static_cast<std::size_t>(node)];
         if (span.size == 0) {
             return {};
         }
-        return std::span<const int>(
-            addValues.data() + span.offset,
-            static_cast<std::size_t>(span.size));
+        return std::span<const int>(addValues.data() + span.offset, static_cast<std::size_t>(span.size));
     }
 
-    /// @return Read-only local contour removals for `node`.
+    /**
+     * @brief Returns read-only local contour removals for node.
+     *
+     * @param node Node identifier used by the operation.
+     * @return Read-only local contour removals for `node`.
+     *
+     */
     std::span<const int> removals(NodeId node) const {
         const Span& span = removeSpans[static_cast<std::size_t>(node)];
         if (span.size == 0) {
             return {};
         }
-        return std::span<const int>(
-            removeValues.data() + span.offset,
-            static_cast<std::size_t>(span.size));
+        return std::span<const int>(removeValues.data() + span.offset, static_cast<std::size_t>(span.size));
     }
 
     /**
      * @brief Builds the persistent compact store from transient extraction lists.
      *
      * Each node list is appended once and deduplicated with generation marks.
+     *
+     * @param contours Contour data used by the operation.
+     * @param removals Values removed from the local representation.
+     * @param numPixels Number represented by `numPixels`.
+     * @return The resulting persistent compact store from transient extraction lists.
      */
-    static ContourDeltaStore fromPendingPixelLists(
-        const PendingPixelLists& contours,
-        const PendingPixelLists& removals,
-        int numPixels) {
+    static ContourDeltaStore fromPendingPixelLists(const PendingPixelLists& contours, const PendingPixelLists& removals, int numPixels) {
         const int numNodes = contours.numLists();
         ContourDeltaStore store(numNodes);
         store.addValues.reserve(contours.entryCount());
@@ -81,20 +96,31 @@ struct ContourDeltaStore {
         return store;
     }
 
-private:
-    static void appendCompacted(
-        const PendingPixelLists& lists,
-        NodeId node,
-        std::vector<int>& values,
-        Span& span,
-        std::vector<uint16_t>& pixelMark,
-        uint16_t& markGeneration) {
+  private:
+    /**
+     * @brief Appends one node contribution to the compact delta storage.
+     *
+     * @param lists Per-node lists that store the accumulated delta entries.
+     * @param node Node identifier used by the operation.
+     * @param values Values read or written by the operation.
+     * @param span Per-node span metadata written for the compact storage.
+     * @param pixelMark Generation-mark buffer used to avoid revisiting pixels.
+     * @param markGeneration Active mark generation.
+     */
+    static void appendCompacted(const PendingPixelLists& lists, NodeId node, std::vector<int>& values, Span& span, std::vector<uint16_t>& pixelMark,
+                                uint16_t& markGeneration) {
         nextMarkGeneration(pixelMark, markGeneration);
         span.offset = checkedU32(values.size(), "contour delta offset");
         lists.appendUniqueValues(node, values, pixelMark, markGeneration);
         span.size = checkedU32(values.size() - span.offset, "contour delta size");
     }
 
+    /**
+     * @brief Advances mark generation.
+     *
+     * @param pixelMark Generation-mark buffer used to avoid revisiting pixels.
+     * @param markGeneration Active mark generation.
+     */
     static void nextMarkGeneration(std::vector<uint16_t>& pixelMark, uint16_t& markGeneration) {
         ++markGeneration;
         if (markGeneration == 0) {
@@ -103,6 +129,13 @@ private:
         }
     }
 
+    /**
+     * @brief Checks and converts u32.
+     *
+     * @param value Value used by the operation.
+     * @param context Operation name used in diagnostics.
+     * @return Value converted to `uint32_t` after range validation.
+     */
     static uint32_t checkedU32(std::size_t value, const char* context) {
         if (value > static_cast<std::size_t>(std::numeric_limits<uint32_t>::max())) {
             throw std::overflow_error(std::string(context) + " exceeds uint32_t.");

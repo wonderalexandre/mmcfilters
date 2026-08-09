@@ -11,9 +11,9 @@ morphological hierarchies, computing node attributes, and applying connected
 filters and hierarchy operators. It provides a C++20 core and Python bindings.
 
 The library represents hierarchies as rooted trees over finite partial
-partitions. Image-domain component trees, Tree of Shapes hierarchies, and
-self-dual residual trees share the same topology model, with explicit proper-part
-ownership and optional regular-grid geometry and adjacency.
+partitions. All supported image-domain hierarchies use the same topology model,
+with explicit proper-part ownership and optional regular-grid geometry and
+adjacency.
 
 Use `mmcfilters` for experiments that require mutable tree topology, direct
 ownership of hierarchy state, incremental attributes, residual hierarchies, or
@@ -23,12 +23,13 @@ will often be the better choice.
 
 ## Main capabilities
 
-- construction of max-trees, min-trees, Tree of Shapes hierarchies, and
-  self-dual residual trees;
+- construction of max-trees, min-trees, trees of shapes, and self-dual
+  residual trees;
 - generic rooted hierarchies with safe local and staged edits;
-- gray-level, shape, moment, boundary, topology, and maximum-distance attributes;
-- attribute filters, extinction values, stability operators, saliency maps, and
-  Ultimate Attribute Opening;
+- a broad catalog of node attributes organized into gray-level, shape, moment,
+  boundary, and tree-topology groups;
+- a range of attribute-based filters and hierarchy operators, including pruning
+  and non-pruning strategies;
 - pixel contours and ordered geometric contour traces;
 - import, export, and attribute projection for Higra-style hierarchies;
 - typed altitude handling in C++ and a focused `np.uint8` Python API.
@@ -99,9 +100,9 @@ area = mmcfilters.Attribute.computeSingleTopologyAttribute(
     tree,
     mmcfilters.Attribute.AREA,
 )
-level = mmcfilters.Attribute.computeSingleAttribute(
+max_dist = mmcfilters.Attribute.computeSingleAttribute(
     tree,
-    mmcfilters.Attribute.LEVEL,
+    mmcfilters.Attribute.MAX_DIST,
 )
 reconstructed_image = tree.reconstructionImage()
 ```

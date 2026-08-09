@@ -63,7 +63,7 @@ tree_of_shapes = mmcfilters.MorphologicalTreeFactory.createTreeOfShapes(image)
 ```
 
 Max-trees declare `AltitudeOrder.INCREASING_FROM_ROOT`; min-trees declare
-`DECREASING_FROM_ROOT`. Tree of Shapes hierarchies and self-dual residual trees
+`DECREASING_FROM_ROOT`. Trees of shapes and self-dual residual trees
 declare `UNCONSTRAINED` because their altitudes do not have one global polarity.
 
 The residual-tree factories use a shared symmetric adjacency.

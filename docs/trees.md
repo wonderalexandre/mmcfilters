@@ -141,7 +141,7 @@ auto residual = MorphologicalTreeFactory::createSelfDualResidualTree(
     adjacency);
 ```
 
-### Tree of Shapes policies
+### Tree-of-shapes policies
 
 `TreeOfShapesProducerOptions` controls:
 

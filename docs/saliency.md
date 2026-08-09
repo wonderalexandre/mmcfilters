@@ -75,8 +75,8 @@ Use:
   altitude in `[0, 1]`.
 
 The normalized-altitude operation requires one global max-tree or min-tree
-polarity. A self-dual residual tree or Tree of Shapes may instead use a supplied
-non-decreasing structural or attribute valuation.
+polarity. A self-dual residual tree or a tree of shapes may instead use a
+supplied non-decreasing structural or attribute valuation.
 
 For component trees, `ComponentTreePartitionHierarchyAdapter` completes the
 partial-partition interpretation: pixel singletons form partition zero,

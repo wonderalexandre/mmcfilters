@@ -43,7 +43,7 @@ For an image domain with `rows * cols` proper parts:
 When exporting, proper parts are emitted in row-major order. Internal nodes are
 assigned compact node IDs from the live rooted tree. For max-trees and min-trees,
 the export order follows the tree altitude polarity with a deterministic
-post-order tie-breaker. Tree of Shapes hierarchies and other
+post-order tie-breaker. Trees of shapes and other
 `UNCONSTRAINED` hierarchies use deterministic post-order directly. Consequently,
 every non-root internal node appears before its parent even when one branch
 increases in altitude and another decreases.
@@ -116,8 +116,8 @@ C-contiguous `np.uint8` arrays. C++ accepts any type satisfying the public
 `AltitudeValue` contract.
 
 Max-tree and min-tree imports require adjacency metadata. In Python, pass
-`radius`; in C++, pass a `RegularGridAdjacency2D`. Tree of Shapes imports can omit
-component-tree adjacency.
+`radius`; in C++, pass a `RegularGridAdjacency2D`. Tree-of-shapes imports can
+omit component-tree adjacency.
 
 ## Preserved imported node IDs
 

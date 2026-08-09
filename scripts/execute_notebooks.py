@@ -14,8 +14,8 @@ from validate_notebooks import EXPECTED_NOTEBOOKS, NOTEBOOK_DIRECTORY
 
 
 SMOKE_NOTEBOOKS = (
-    "Saliency_Maps_Tutorial.ipynb",
-    "Hierarchy_Saliency_Map_Python_API.ipynb",
+    "Attribute_Filters.ipynb",
+    "Higra_Attribute_Interoperability.ipynb",
 )
 
 

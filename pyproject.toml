@@ -35,22 +35,11 @@ classifiers = [
   "Operating System :: POSIX :: Linux",
 ]
 
-[project.optional-dependencies]
-notebooks = [
-  "bokeh>=3.3",
-  "higra>=0.6.12",
-  "ipython>=8.12",
-  "jupyterlab>=4.0",
-  "matplotlib>=3.7",
-  "morphotreeviz",
-  "nbclient>=0.10",
-  "nbconvert>=7.10",
-  "nbformat>=5.10",
-  "opencv-python-headless>=4.8",
-  "pandas>=2.0",
-  "scikit-image>=0.21",
-  "scipy>=1.10",
-]
+[project.urls]
+Homepage = "https://github.com/wonderalexandre/MorphologicalAttributeFilters"
+Documentation = "https://wonderalexandre.github.io/MorphologicalAttributeFilters/"
+Repository = "https://github.com/wonderalexandre/MorphologicalAttributeFilters"
+Issues = "https://github.com/wonderalexandre/MorphologicalAttributeFilters/issues"
 
 [tool.setuptools_scm]
 # Write the tag-derived version into the Python package during builds.
@@ -86,7 +75,6 @@ include = [
   "/docs/**",
   "/examples/**",
   "/external/stb/**",
-  "/CHANGELOG.md",
   "/CMakeLists.txt",
   "/pyproject.toml",
   "/pybind11.cmake",
@@ -102,7 +90,6 @@ exclude = [
   "/dat/**",
   "/dist/**",
   "/notebooks/**",
-  "/docs/benchmarks/**",
   "/python/mmcfilters/__pycache__/**",
   "/python/mmcfilters/**/*.py[cod]",
   "**/.ipynb_checkpoints/**",

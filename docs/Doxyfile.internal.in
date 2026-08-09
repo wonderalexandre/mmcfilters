@@ -3,9 +3,7 @@ PROJECT_BRIEF          = "Internal contributor documentation"
 OUTPUT_DIRECTORY       = "@MMCFILTERS_DOCS_INTERNAL_DIR@"
 
 INPUT                  = "@MMCFILTERS_DOCS_SOURCE_DIR@/README.md" \
-                         "@MMCFILTERS_DOCS_SOURCE_DIR@/CHANGELOG.md" \
                          "@MMCFILTERS_DOCS_SOURCE_DIR@/docs" \
-                         "@MMCFILTERS_DOCS_SOURCE_DIR@/notebooks/README.md" \
                          "@MMCFILTERS_DOCS_SOURCE_DIR@/mmcfilters" \
                          "@MMCFILTERS_DOCS_SOURCE_DIR@/pybinds" \
                          "@MMCFILTERS_DOCS_SOURCE_DIR@/examples" \

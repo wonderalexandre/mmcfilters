@@ -97,6 +97,8 @@ jobs:
               raise SystemExit("missing NumPy dependency")
           if "numpy<2" in metadata or "numpy>=1.23,<2" in metadata:
               raise SystemExit("wheel metadata must not force NumPy below 2")
+          if "Provides-Extra: notebooks" in metadata:
+              raise SystemExit("notebook dependencies must not be exposed as a package extra")
           PY
 
       - name: Install wheel and run smoke test

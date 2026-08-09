@@ -1,0 +1,13 @@
+bokeh>=3.3
+higra>=0.6.12
+ipython>=8.12
+jupyterlab>=4.0
+matplotlib>=3.7
+morphotreeviz
+nbclient>=0.10
+nbconvert>=7.10
+nbformat>=5.10
+opencv-python-headless>=4.8
+pandas>=2.0
+scikit-image>=0.21
+scipy>=1.10

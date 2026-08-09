@@ -16,20 +16,18 @@ NOTEBOOK_DIRECTORY = REPOSITORY_ROOT / "notebooks"
 
 EXPECTED_NOTEBOOKS = (
     "Attribute_Filters.ipynb",
-    "Coins_Circularity_Contour_Saliency.ipynb",
     "Comparative_Morphological_Tree_Filtering.ipynb",
-    "Extinction_Values_Experiments.ipynb",
-    "Filter.ipynb",
-    "Hierarchy_Saliency_Map_Experiments.ipynb",
-    "Hierarchy_Saliency_Map_Python_API.ipynb",
-    "Higra_MaxDist_Filtering.ipynb",
+    "Higra_Attribute_Interoperability.ipynb",
     "MaxDistExample.ipynb",
-    "Saliency_Maps_Tutorial.ipynb",
-    "Shape_Space_Saliency_Xu.ipynb",
     "SimpleExamples.ipynb",
     "ToS_Contour_Example.ipynb",
     "UAO_Examples.ipynb",
 )
+
+LOCAL_ONLY_NOTEBOOKS = {
+    "Saliency_Maps_Tutorial.ipynb",
+    "Shape_Space_Saliency_Xu.ipynb",
+}
 
 FORBIDDEN_CONTENT = re.compile(
     r"_notebook_mmcfilters|load_local_mmcfilters|load_mmcfilters|"
@@ -103,7 +101,13 @@ def validate_notebook(path: Path) -> list[str]:
 
 
 def main() -> int:
-    present = tuple(sorted(path.name for path in NOTEBOOK_DIRECTORY.glob("*.ipynb")))
+    present = tuple(
+        sorted(
+            path.name
+            for path in NOTEBOOK_DIRECTORY.glob("*.ipynb")
+            if path.name not in LOCAL_ONLY_NOTEBOOKS
+        )
+    )
     expected = tuple(sorted(EXPECTED_NOTEBOOKS))
     failures: list[str] = []
 

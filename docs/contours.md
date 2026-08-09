@@ -1,24 +1,34 @@
-# Incremental Contours
+# Pixel contours
 
-`ContoursComputedIncrementally` stores compact per-node contour deltas during
-extraction and materializes final contours lazily when callers iterate them.
-It is the pixel-contour compatibility API. New geometry-sensitive contour work
-should use [Contour Traces](contour-traces.md), which represents oriented
-boundary edges and separates external and internal loops.
+`ContoursComputedIncrementally` represents each node boundary as a set of
+support-pixel IDs. Use it for compact pixel contours and compatibility with
+`CONTOUR_*` scalar attributes. Use [Contour traces](contour-traces.md) when an
+operation needs oriented sides, ordered loops, or external/internal separation.
 
-This document covers the public C++/Python API, benchmark interpretation, and
-internal design of `mmcfilters/contours/ContoursComputedIncrementally.hpp` and
-its helper storage types under `mmcfilters/contours/detail/`.
+## Contract
 
-For the underlying tree support and proper-part ownership model, see
-[Morphological Trees](trees.md).
+For a node, the contour contains every support pixel that exposes at least one
+side to the 4-neighbor complement. Pixel IDs are row-major indices in the
+tree's regular 2D proper-part domain.
 
-## Public API
+The side relation is fixed to 4-neighbor geometry, independently of the
+adjacency used to construct the morphological tree. This matches the public
+`CONTOUR_PIXELS` and `CONTOUR_PERIMETER` definitions.
 
-### C++
+Extraction requires:
+
+- a committed rooted topology;
+- a non-empty regular 2D proper-part domain;
+- one valid direct proper-part owner for every pixel.
+
+The result captures the tree mutation version and rejects reads after topology
+mutation.
+
+## C++ API
 
 ```cpp
-auto contours = ContoursComputedIncrementally::extractCompactContours(tree);
+auto contours =
+    ContoursComputedIncrementally::extractCompactContours(tree);
 
 for (int pixel : contours.getContour(nodeId)) {
     // use one contour pixel
@@ -26,323 +36,75 @@ for (int pixel : contours.getContour(nodeId)) {
 
 for (auto [nodeId, contour] : contours.contoursByNode()) {
     for (int pixel : contour) {
-        // use every node contour incrementally
+        // use every live-node contour
     }
 }
 ```
 
 `getContour(nodeId)` returns a cache-aware range. The first iteration
-materializes the requested subtree as needed; later iterations over already
-materialized nodes only scan cached contiguous values.
+materializes the requested subtree as needed; later iterations over an already
+materialized node scan cached contiguous values.
 
-`materializeAll()` is an explicit prefetch for workloads that will revisit many
-contours repeatedly. It is not required for ordinary iteration.
+`contoursByNode()` iterates live nodes and uses the same node-local
+materialization path. `materializeAll()` is an optional prefetch for workloads
+that will revisit many contours; it is not required for ordinary iteration.
 
-### Python
+## Python API
 
 ```python
 contours = mmcfilters.ContourComputation.extraction(tree)
 
-for pixel in contours.getContour(node_id):
-    pass
+root_contour = list(contours.getContour(tree.getRoot()))
 
 for node_id, contour in contours.contoursByNode():
-    for pixel in contour:
-        pass
+    pixels = list(contour)
 ```
 
-The Python API uses the same contour access names: `getContour(node_id)` for
-one node and `contoursByNode()` for all live nodes.
+Python uses `getContour(node_id)`, `contoursByNode()`, and `materializeAll()` with
+the same semantics as C++.
 
-## Benchmark
+## Materialization and lifetime
 
-Build examples and run:
+Extraction stores compact node-local changes. Accessing a node combines missing
+descendant results, applies the node's local additions and removals, and caches
+the final unique pixel set. Materializing one subtree does not require
+materializing unrelated branches.
 
-```bash
-cmake -S . -B build -DMMCFILTERS_BUILD_EXAMPLES=ON -DMMCFILTERS_BUILD_PYTHON=OFF
-cmake --build build --target mmcfilters_contour_benchmark
+A cached result references its source tree in C++. The source must therefore
+outlive contour access. Python keeps the source tree alive through the returned
+contour object.
 
-./build/examples/mmcfilters_contour_benchmark 1024 1024 3
-./build/examples/mmcfilters_contour_benchmark path/to/image.png 3
-```
+After a topology edit, create a new contour result. Altitude-only changes do not
+change support geometry; topology changes require a new result under the source
+tree's mutation contract.
 
-The benchmark reports Component Tree and Tree of Shapes timings for extraction,
-single-root access, full ordered iteration, full random-order iteration, and
-explicit `materializeAll()` prefetch plus iteration.
-
-## Internal Design
-
-### Design Goal
-
-The contour computation has two separate responsibilities:
-
-- extract local contour events for each tree node;
-- materialize final node contours only when a caller actually iterates them.
-
-The implementation avoids keeping two public access models. All contour reads go
-through `getContour(node)` or `contoursByNode()`, and both use the same
-incremental materialization path. `materializeAll()` is only an explicit prefetch
-for workloads that know they will visit many or all contours.
-
-### Files
-
-- `ContoursComputedIncrementally.hpp`
-  Public API, extraction traversal, lazy materialization, cache state, and
-  diagnostics.
-- `detail/PendingPixelLists.hpp`
-  Transient per-node linked lists backed by one reusable contiguous buffer.
-- `detail/ContourDeltaStore.hpp`
-  Persistent compact delta store with CSR-like spans for additions and removals.
-
-The `detail/` headers are implementation details. They should not be treated as
-stable public API.
-
-### Data Model
-
-After `extractCompactContours(tree)`, each node has two local delta lists:
-
-- additions: pixels that enter the node contour locally;
-- removals: pixels that must be removed from the contour accumulated from
-  descendants.
-
-These deltas are stored in `ContourDeltaStore`:
-
-```text
-addValues      = all compacted addition pixels
-addSpans[node] = offset/size into addValues
-
-removeValues      = all compacted removal pixels
-removeSpans[node] = offset/size into removeValues
-```
-
-The final materialized contour cache is stored separately:
-
-```text
-cachedContourValues_       = all materialized contour pixels
-cachedContourOffset_[node] = offset into cachedContourValues_
-cachedContourSize_[node]   = number of pixels for node
-cachedContourReady_[node]  = whether offset/size are valid
-```
-
-This keeps extraction compact and lets broad iteration become incremental:
-materializing one node also materializes any missing descendants in that
-subtree.
-
-### Extraction Pipeline
-
-`extractCompactContours(tree)` performs one post-order traversal of the tree.
-
-For each processed node:
-
-1. It consumes pending removals that have reached the node.
-2. It evaluates neighbor-pixel entry nodes with `detail::properPartEntryNode(...)`
-   and forwards removals to that ancestor when the event still belongs above
-   the current node.
-3. It scans the node proper parts in the image domain using 4-neighbour side
-   adjacency.
-4. It records local contour additions and local removals in `PendingPixelLists`.
-5. At the end of traversal, it compacts the transient lists into
-   `ContourDeltaStore`.
-
-The contour side adjacency is intentionally fixed to radius `1.0`, independently
-from the adjacency used to build the morphological tree. This follows the
-side-contour definition where exposed pixel sides are counted in the original
-image domain.
-
-### Materialization Pipeline
-
-`getContour(node)` returns a `ContourRange`. The range materializes its node on
-first `begin()`/`end()` use.
-
-Materialization is handled by `ensureSubtreeMaterialized(root)`:
-
-1. It walks the requested subtree in post-order with an explicit stack.
-2. Already materialized children are reused and not traversed again.
-3. For each missing node, it accumulates materialized child contours.
-4. It adds the node local additions.
-5. It applies the node local removals.
-6. It commits the resulting compact slice into `cachedContourValues_`.
-
-`contoursByNode()` is only an iterator over live nodes. It does not implement a
-second contour model; each yielded contour range still uses `getContour`'s
-materialization mechanism.
-
-`materializeAll()` calls the same path from the root. It is a prefetch command,
-not a different representation.
-
-### Scratch Marking
-
-Both delta compaction and contour materialization remove duplicates with a
-generation-marked pixel array:
-
-```text
-pixelMark[pixel] == currentGeneration means "present in the current temporary set"
-```
-
-The generation counter is `uint16_t` to reduce memory. When it wraps to zero, the
-whole mark buffer is cleared and the generation restarts from one. This makes the
-common reset path O(1) and keeps the rare wraparound path correct.
-
-The mark buffer is scratch state. It is not part of the materialized result.
-
-### Invariants
-
-The implementation relies on these invariants:
-
-- `localDeltas_` is immutable after extraction.
-- `cachedContourReady_[node] == 1` means `cachedContourOffset_[node]` and
-  `cachedContourSize_[node]` identify a valid slice in `cachedContourValues_`.
-- `getContour(node)` and `isContourMaterialized(node)` only accept live internal
-  node ids.
-- `PendingPixelLists` is transient. It is consumed or compacted before the
-  returned `IncrementalContours` object is created.
-- `ContourDeltaStore` stores compacted per-node deltas; duplicates inside one
-  node span are removed during compaction.
-- Pixel ids are image-domain linear indices. Invalid negative or out-of-domain
-  pixels are ignored when compacting or materializing.
-
-### Complexity
+## Complexity
 
 Let:
 
 - `P` be the number of image pixels;
 - `N` be the number of internal node slots;
-- `N_live` be the number of live internal nodes;
-- `C(S)` be the total number of cached contour values committed while
-  materializing a subtree `S`;
-- `M(S)` be the number of not-yet-materialized live nodes visited while
-  materializing a subtree `S`.
+- `M(S)` be the number of not-yet-materialized live nodes visited in subtree
+  `S`;
+- `C(S)` be the number of contour-pixel values committed while materializing
+  `S`.
 
-The implementation has transient pending-removal lists and compact local
-add/remove delta lists, but these internal counts are generated by the fixed
-4-neighbour side-contour stencil. For this implementation they are bounded by a
-constant factor of the number of pixel-side events, and therefore by `O(P)`.
-The formulas below fold those terms into `P`.
+With valid tree-query caches, extraction is `O(N + P)`. A cold tree may first
+pay linear ancestry preprocessing and, when queries for the lowest common
+ancestor (LCA) are required, `O(N log N)` preprocessing.
 
-Tree-query preprocessing is accounted separately because it belongs to
-`MorphologicalTree` caches and may already have been paid by another consumer:
+The public upper bound for first materialization of `S` is
+`O(M(S) + C(S) + P)`. The tighter output-sensitive form replaces `P` with the
+compact local changes read for that subtree. Accessing an already materialized
+node is `O(1)` before iteration; iterating its range is linear in that contour's
+size.
 
-```text
-T_tree_cache =
-  O(N)       if the preorder/postorder ancestry cache is stale
-  O(N log N) if an LCA query is needed and the Euler/RMQ LCA cache is stale
-  O(0)       if the required tree-query caches are already valid
-```
+Materialized storage is output-sensitive because each cached node owns its own
+contiguous contour slice.
 
-After these caches are valid, owner lookup, ancestry checks, and LCA queries are
-constant time for this algorithm's entry-node evaluations.
+## Related guides
 
-Extraction with valid tree-query caches:
-
-```text
-O(N + P)
-```
-
-The 4-neighbour contour adjacency is fixed, so the direct neighbour scan over
-owned proper parts is `O(P)`. Pending-removal propagation and final delta
-compaction add only linear fixed-stencil work. Therefore the cold-cache
-extraction bound is:
-
-```text
-O(T_tree_cache + N + P)
-```
-
-First materialization of a subtree:
-
-```text
-O(M(S) + C(S) + P)
-```
-
-This is a public upper bound that avoids exposing the internal local-delta
-count. A tighter output-sensitive reading replaces `P` by the number of compact
-local delta values read in the newly materialized part of `S`.
-
-Calling `getContour(node)` for an already materialized node is constant time.
-Iterating the returned range costs:
-
-```text
-O(contour_size(node))
-```
-
-Cold `materializeAll()`:
-
-```text
-O(N_live + C(all) + P)
-```
-
-The cost can be high for trees where many large contours are materialized,
-because the cache stores each node contour as its own contiguous slice.
-Since each cached contour is a subset of the image domain, `C(S)` is bounded by
-`M(S) * P`, and `C(all)` is bounded by `N_live * P`, but the output-sensitive
-form is usually more informative.
-
-### Space Usage
-
-Before materialization, dominant storage is:
-
-```text
-addValues + removeValues + addSpans + removeSpans + pixelMark_
-```
-
-After broad materialization, dominant storage is usually:
-
-```text
-cachedContourValues_
-```
-
-For large images, changing pixel ids from `int` to `uint16_t` is not generally
-valid because image-domain indices exceed 65535. `uint32_t` would have the same
-size as `int` on the supported platforms, so it does not materially reduce the
-main cache. The current memory reduction comes mainly from using `uint16_t` for
-the scratch mark buffer.
-
-### Benchmark Cases
-
-`examples/contour_benchmark.cpp` reports these workloads:
-
-- `extract only [extractCompactContours]`
-  Measures extraction and delta compaction without materializing final contours.
-- `extract + root via getContour(root)`
-  Measures extraction plus materializing the root subtree through normal access.
-- `extract + iterate all via getContour(node)`
-  Iterates every live node in tree order through `getContour`.
-- `extract + iterate all via contoursByNode()`
-  Uses the all-node range wrapper. It should be close to tree-order
-  `getContour`.
-- `extract + iterate all via getContour(node) random order`
-  Measures broad access when cache reuse is less aligned with tree order.
-- `extract + materializeAll() + iterate via getContour(node)`
-  Separates prefetch/materialization from later iteration.
-
-When the workload really needs all contours, `materializeAll()` is the clearest
-way to express that intent. When the workload may stop early or visit only a
-subtree, plain `getContour(node)` keeps the computation incremental.
-
-### Maintenance Notes
-
-Prefer preserving the single public access model:
-
-```cpp
-contours.getContour(node)
-contours.contoursByNode()
-contours.materializeAll()
-```
-
-Avoid reintroducing separate "on-demand" APIs unless they expose a genuinely
-different semantic contract. The current implementation already computes on
-demand and caches incrementally.
-
-If memory becomes the dominant problem, benchmark before changing storage. The
-largest post-materialization cost is usually the repeated materialized contour
-cache, not the delta store. Delta compression such as varint encoding may reduce
-memory, but it would add decoding cost and complicate random access; it should be
-guarded by benchmarks on Component Tree and Tree of Shapes.
-
-## Related Guides
-
-- [Morphological Trees](trees.md): tree support, proper-part ownership, and
-  dense `NodeId` domains.
-- [Attribute Catalog](attribute-catalog.md): public `CONTOUR_*` descriptors.
-- [Attributes](attributes.md): attribute result layouts.
-- [Python API Guide](python-api.md): Python contour access names and iteration
-  patterns.
+- [Contour traces](contour-traces.md): oriented boundary sides and loops.
+- [Morphological trees](trees.md): proper-part ownership and `NodeId` domains.
+- [Attribute catalog](attribute-catalog.md): `CONTOUR_*` attributes.
+- [Editing API](editing-api.md): lifetime after topology mutation.

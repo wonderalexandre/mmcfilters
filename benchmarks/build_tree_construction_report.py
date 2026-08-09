@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 
-DEFAULT_PREFIX = "tree-construction-comparison-icdar-first10-2026-08-04"
+DEFAULT_PREFIX = "tree-construction-comparison"
 COMPONENT_AND_TOS = {
     "tos_max4c_min8c",
     "tos_self_dual",

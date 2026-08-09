@@ -9,7 +9,7 @@ The attribute layer turns public attribute requests into dense per-node buffers.
 It handles:
 
 - scalar attributes and attribute groups;
-- topology-only and altitude-aware computation;
+- topology/support and altitude-aware computation;
 - shared intermediate quantities such as area and volume;
 - optional projection from internal `NodeId` space to public export layouts.
 
@@ -42,19 +42,19 @@ Main entry points:
 Use `AttributeComputation` for normal application code. Concrete computers are
 advanced extension components, not an alternate public orchestration path.
 
-For the descriptor list, see [Attribute Catalog](attribute-catalog.md). For the
+For the attribute list, see [Attribute catalog](attribute-catalog.md). For the
 tree ownership, altitude, and `NodeId` model that attribute buffers use, see
-[Morphological Trees](trees.md). For reconstruction operators that consume
+[Morphological trees](trees.md). For reconstruction operators that consume
 node-indexed attribute buffers, see
-[Attribute Filters, Extinction Values, And UAO](filters.md).
+[Filters and hierarchy operators](filters.md).
 
-## Tree Contracts
+## Tree contracts
 
-Topology-only requests may run on `MorphologicalTree`. Requests that read
+Topology/support requests may run on `MorphologicalTree`. Requests that read
 altitude must use `WeightedMorphologicalTree<T>` or `WeightedTreeView<T>`.
 
 The attribute layer relies on the tree contracts documented in
-[Morphological Trees](trees.md):
+[Morphological trees](trees.md):
 
 - `WeightedMorphologicalTree<T>` owns topology plus a dense altitude buffer.
 - `WeightedTreeView<T>` borrows topology plus an external altitude span.
@@ -63,16 +63,15 @@ The attribute layer relies on the tree contracts documented in
 - attributes requiring adjacency must check that adjacency metadata is present.
 
 Individual attributes may add stricter checks. For example, `MAX_DIST` requires
-max-tree or min-tree topology with adjacency metadata and rejects unsupported
-tree kinds explicitly.
+an altitude buffer, a regular 2D domain, uniform adjacency, and a globally
+monotone altitude order. Its descriptive tree kind is irrelevant.
 
-## Common C++ Usage Patterns
+## Common C++ usage patterns
 
 Choose the public entry point from the input contract:
 
 - use weighted computation when any requested attribute may read altitude;
-- use topology computation only when the request is explicitly support/topology
-  only;
+- use topology/support computation only when the request does not read altitude;
 - choose non-default output spaces only at API boundaries.
 
 Single altitude-aware attribute:
@@ -93,7 +92,7 @@ auto mapped64 = AttributeComputation::computeAttributeMapping<double>(weightedTr
 
 The `Real` argument selects the public result storage. The typed attribute
 facade computes through the same internal `double` pipeline and casts only when
-materializing the returned buffer. Integer-valued support descriptors are still
+materializing the returned buffer. Integer-valued support attributes are still
 counted discretely and then materialized in the requested real type.
 
 Several scalar attributes or groups in one coordinated request:
@@ -104,7 +103,7 @@ auto [names, values] = AttributeComputation::computeAttributes(
     std::vector<AttributeOrGroup>{AREA, LEVEL, AttributeGroup::GRAY_LEVEL});
 ```
 
-Topology-only attributes without requiring an altitude-bearing owner:
+Topology/support attributes without requiring an altitude-bearing weighted tree:
 
 ```cpp
 auto [names, values] = AttributeComputation::computeTopologyAttributes(
@@ -112,7 +111,7 @@ auto [names, values] = AttributeComputation::computeTopologyAttributes(
     std::vector<AttributeOrGroup>{AREA, BOX_WIDTH, BALANCE_NODE});
 ```
 
-Returning values in a preserved public node-id space, for a tree created by
+Returning values in a preserved public node ID space, for a tree created by
 `createFromHigraParent(...)` and not edited since import:
 
 ```cpp
@@ -147,7 +146,7 @@ auto exported = AttributeComputation::projectNodeValuesToExportedHigra(
     internal.values());
 ```
 
-## Python Surface
+## Python surface
 
 Python keeps a smaller public surface than C++:
 
@@ -157,15 +156,15 @@ Python keeps a smaller public surface than C++:
   `Attribute.computeAttributes(...)` are the weighted attribute entry points;
 - `Attribute.computeSingleTopologyAttribute(...)` and
   `Attribute.computeTopologyAttributes(...)` are the explicit
-  topology/support-only entry points;
+  topology/support entry points;
 - `NodeIdSpace` can be passed to the Python attribute methods when a preserved
-  output node-id space is needed;
+  output node ID space is needed;
 - attribute methods accept `dtype=np.float32` or `dtype=np.float64`; the default
   remains `np.float32`;
-- `AttributePipeline`, concrete C++ computers, local-event deltas, and bitquad
-  delta buffers are not Python API.
+- `AttributePipeline`, concrete C++ computers, and local-event storage are not
+  part of the Python API.
 
-Typical Python calls use the same weighted versus topology-only split:
+Typical Python calls use the same weighted versus topology/support split:
 
 ```python
 level_by_node = mmcfilters.Attribute.computeSingleAttribute(
@@ -182,32 +181,13 @@ topology_names, topology_values = mmcfilters.Attribute.computeTopologyAttributes
 )
 ```
 
-The `dtype` keyword selects the public result storage. Both `np.float32` and
-`np.float64` requests use the same internal `double` attribute pipeline; the
-only difference is the dtype of the returned NumPy buffer.
+The `dtype` keyword selects the returned NumPy storage. Both supported dtypes
+use the same internal `double` computation pipeline. Filtering helpers accept
+either dtype when the array satisfies their one-dimensional, contiguous buffer
+contract. See [Python API](python-api.md) for Python-specific examples and
+failure modes.
 
-```python
-area32 = mmcfilters.Attribute.computeSingleAttribute(
-    weighted_tree,
-    mmcfilters.Attribute.AREA,
-)
-area64 = mmcfilters.Attribute.computeSingleAttribute(
-    weighted_tree,
-    mmcfilters.Attribute.AREA,
-    dtype=np.float64,
-)
-names, values64 = mmcfilters.Attribute.computeAttributes(
-    weighted_tree,
-    [mmcfilters.Attribute.AREA, mmcfilters.Attribute.Group.GRAY_LEVEL],
-    dtype=np.float64,
-)
-```
-
-Python filtering helpers such as `AttributeFilters`, `ExtinctionValues`, and
-`UltimateAttributeOpening` consume both `np.float32` and `np.float64` attribute
-buffers, matching the dtype selected by the attribute computation call.
-
-## Result Layout And Output Spaces
+## Result layout and output spaces
 
 Attribute results are dense flat buffers interpreted by `AttributeNames`.
 The canonical internal layout is:
@@ -225,11 +205,11 @@ store the `NodeIdSpace` of the returned buffer. The default public computation
 type is `ComputedAttributeData<float>` or
 `ComputedAttributeDataWithDelta<float>`; selecting `Real=double` returns the
 corresponding `double` specialization. Public computation methods can request a
-different public node-id space, but projection always happens after the
+different public node ID space, but projection always happens after the
 internal pipeline has computed the result in `NodeIdSpace::MORPHOLOGICAL_TREE`.
 
-`NodeIdSpace::HIGRA` means the preserved imported Higra node-id domain. It is
-available only for trees imported from Higra whose original node-id space has
+`NodeIdSpace::HIGRA` means the preserved imported Higra node ID domain. It is
+available only for trees imported from Higra whose original node ID space has
 not been invalidated by edits. Direct projection to this space copies live
 internal-node rows and fills proper-part rows with unit-component values for
 the requested attributes.
@@ -239,17 +219,17 @@ For a compact Higra layout exported from the current tree, use
 helper emits the `[proper parts | live internal nodes]` layout produced by
 hierarchy export and fills unit proper-part rows through the responsible
 attribute computers. `computeAttributeMapping(...)` is the image-domain helper:
-each proper part receives the value stored at its owner node.
+each proper part receives the value stored at its proper-part owner.
 
-For the distinction between preserved imported Higra ids and exported compact
-Higra snapshots, see [Higra Interoperability](higra-interoperability.md).
+For the distinction between preserved imported Higra node IDs and exported
+compact Higra snapshots, see [Higra interoperability](higra-interoperability.md).
 
-## Numeric Stability Contract
+## Numeric stability contract
 
 Scalar attributes returned by the ordinary public attribute APIs are finite for
 valid live nodes and exported proper-part rows. This includes degenerate
 supports such as one-pixel components, line-like components, zero continuous
-BitQuads perimeter, and BitQuads configurations whose Euler estimate is zero.
+bitquad perimeter, and bitquad configurations whose Euler estimate is zero.
 
 The finite fallbacks are part of the public attribute contract:
 
@@ -277,9 +257,9 @@ API mode:
 - callers that provide non-finite floating-point altitudes are rejected by
   weighted-tree and altitude-validation code before attributes are computed.
 
-## Related Guides
+## Related guides
 
-- [Attribute Catalog](attribute-catalog.md): public scalar descriptors, groups,
+- [Attribute catalog](attribute-catalog.md): public scalar attributes, groups,
   and input contracts.
-- [Attribute Computer Architecture](attribute-computer-architecture.md):
+- [Attribute computer architecture](attribute-computer-architecture.md):
   contributor guide for adding or changing attribute computers.

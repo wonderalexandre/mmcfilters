@@ -245,6 +245,10 @@ jobs:
                   raise SystemExit(f"{wheel.name} is missing NumPy dependency")
               if "numpy<2" in metadata or "numpy>=1.23,<2" in metadata:
                   raise SystemExit(f"{wheel.name} forces NumPy below 2")
+              if "Provides-Extra: notebooks" in metadata:
+                  raise SystemExit(
+                      f"{wheel.name} must not expose notebook dependencies as a package extra"
+                  )
 
           print(f"checked {archives[0]} and {len(wheels)} wheels")
           PY

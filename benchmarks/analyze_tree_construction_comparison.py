@@ -37,7 +37,7 @@ EXPECTED_DIMENSIONS = {
     "720p": (720, 1280, 921_600),
     "1080p": (1080, 1920, 2_073_600),
 }
-DEFAULT_PREFIX = "tree-construction-comparison-icdar-first10-2026-08-04"
+DEFAULT_PREFIX = "tree-construction-comparison"
 
 PAIRWISE_COMPARISONS = (
     ("tos_self_dual", "tos_max4c_min8c"),

@@ -3,10 +3,7 @@ PROJECT_BRIEF          = "Public API documentation"
 OUTPUT_DIRECTORY       = "@MMCFILTERS_DOCS_PUBLIC_DIR@"
 
 INPUT                  = "@MMCFILTERS_DOCS_SOURCE_DIR@/README.md" \
-                         "@MMCFILTERS_DOCS_SOURCE_DIR@/CHANGELOG.md" \
                          "@MMCFILTERS_DOCS_SOURCE_DIR@/docs" \
-                         "@MMCFILTERS_DOCS_SOURCE_DIR@/examples/README.md" \
-                         "@MMCFILTERS_DOCS_SOURCE_DIR@/notebooks/README.md" \
                          "@MMCFILTERS_DOCS_SOURCE_DIR@/mmcfilters"
 USE_MDFILE_AS_MAINPAGE = "@MMCFILTERS_DOCS_SOURCE_DIR@/README.md"
 

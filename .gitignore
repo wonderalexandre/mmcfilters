@@ -7,6 +7,7 @@ __pycache__/
 *.dSYM/
 anaconda_projects/
 .vscode/
+.venv/
 .eggs/*
 dist/*
 downloads/*
@@ -19,6 +20,10 @@ Pipfile
 *.o
 **/.ipynb_checkpoints/
 notebooks/.virtual_documents/*
+/notebooks/Saliency_Maps_Tutorial.ipynb
+/notebooks/Shape_Space_Saliency_Xu.ipynb
+/benchmarks/results/
+/docs/benchmarks/
 /tests/build
 /tests/build
 mmcfilters.cpython-312-darwin.so

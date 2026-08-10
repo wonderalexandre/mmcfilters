@@ -2,6 +2,7 @@
 
 #include "MorphologicalTree.hpp"
 #include "../utils/Altitude.hpp"
+#include "../utils/Contract.hpp"
 
 #include <cstddef>
 #include <span>
@@ -33,9 +34,8 @@ template <AltitudeValue T> class WeightedTreeView {
      * @brief Validates that the altitude span covers every internal node slot.
      */
     void validateAltitudeBufferShape() const {
-        if (altitude_.size() != static_cast<std::size_t>(topology_->getNumInternalNodeSlots())) {
-            throw std::runtime_error("WeightedTreeView altitude size must match the dense internal-node domain.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(altitude_.size() == static_cast<std::size_t>(topology_->getNumInternalNodeSlots()),
+                                    throw std::runtime_error("WeightedTreeView altitude size must match the dense internal-node domain."));
     }
 
   public:
@@ -103,9 +103,8 @@ template <AltitudeValue T> class WeightedTreeView {
      * @return The altitude associated with an internal node id.
      */
     [[nodiscard]] T getAltitude(NodeId nodeId) const {
-        if (nodeId < 0 || static_cast<std::size_t>(nodeId) >= altitude_.size()) {
-            throw std::invalid_argument("WeightedTreeView::getAltitude requires a valid internal NodeId.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(nodeId >= 0 && static_cast<std::size_t>(nodeId) < altitude_.size(),
+                                    throw std::invalid_argument("WeightedTreeView::getAltitude requires a valid internal NodeId."));
         return altitude_[static_cast<std::size_t>(nodeId)];
     }
 
@@ -120,9 +119,7 @@ template <AltitudeValue T> class WeightedTreeView {
      */
     [[nodiscard]] AltitudeDiff<T> getNodeResidue(NodeId nodeId) const {
         const MorphologicalTree& tree = topology();
-        if (!tree.isAlive(nodeId)) {
-            throw std::invalid_argument("WeightedTreeView::getNodeResidue requires a live internal NodeId.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(tree.isAlive(nodeId), throw std::invalid_argument("WeightedTreeView::getNodeResidue requires a live internal NodeId."));
         const NodeId parentNodeId = tree.getNodeParent(nodeId);
         if (parentNodeId == InvalidNode || parentNodeId == nodeId) {
             return static_cast<AltitudeDiff<T>>(getAltitude(nodeId));

@@ -5,13 +5,15 @@
 #include "../trees/TreeAltitudeAlgorithms.hpp"
 #include "../trees/WeightedMorphologicalTree.hpp"
 #include "../trees/WeightedTreeView.hpp"
+#include "../trees/detail/CommittedTreeAccess.hpp"
 #include "../trees/detail/TreeTraversalDetail.hpp"
+#include "../utils/CommittedImageAccess.hpp"
+#include "../utils/Contract.hpp"
 #include "DepthStableRegionComputer.hpp"
 #include "MSERComputer.hpp"
 #include "detail/VariationMeasure.hpp"
 #include "detail/ViterbiDecision.hpp"
 
-#include <cassert>
 #include <cmath>
 #include <concepts>
 #include <memory>
@@ -21,6 +23,46 @@
 #include <vector>
 
 namespace mmcfilters {
+
+namespace detail::kernel {
+
+/**
+ * @brief Direct reconstruction after topology, altitude, criterion, and output domains were established.
+ * @param view Established weighted-tree view.
+ * @param criterion Established keep/remove decision indexed by node id.
+ * @param output Established output image with the tree grid dimensions.
+ */
+template <AltitudeValue T>
+inline void filterDirect(WeightedTreeView<T> view, const std::vector<bool>& criterion, ImagePtr<T> output) {
+    const MorphologicalTree& tree = view.topology();
+    const std::span<const T> altitude = view.altitude();
+    std::vector<T> mappedLevel(static_cast<std::size_t>(tree.getNumInternalNodeSlots()));
+    const NodeId root = tree.getRoot();
+    mappedLevel[static_cast<std::size_t>(root)] = altitude[static_cast<std::size_t>(root)];
+
+    std::stack<NodeId> stack;
+    stack.push(root);
+    while (!stack.empty()) {
+        const NodeId node = stack.top();
+        stack.pop();
+        for (NodeId child : CommittedTreeAccess::children(tree, node)) {
+            mappedLevel[static_cast<std::size_t>(child)] =
+                criterion[static_cast<std::size_t>(child)] ? altitude[static_cast<std::size_t>(child)] : mappedLevel[static_cast<std::size_t>(node)];
+            stack.push(child);
+        }
+    }
+
+    T* pixels = output->rawData();
+    for (NodeId node = 0; node < tree.getNumInternalNodeSlots(); ++node) {
+        if (CommittedTreeAccess::isAlive(tree, node)) {
+            for (int pixel : CommittedTreeAccess::properParts(tree, node)) {
+                pixels[pixel] = mappedLevel[static_cast<std::size_t>(node)];
+            }
+        }
+    }
+}
+
+} // namespace detail::kernel
 
 /**
  * @brief Family of attribute-based image filtering operators on morphological trees.
@@ -82,14 +124,14 @@ template <AltitudeValue T> class AttributeFilters {
      *
      * @return The active weighted-tree view.
      */
-    AltitudeView view() const { return weighted_ != nullptr ? weighted_->asView() : view_; }
+    AltitudeView view() const noexcept { return view_; }
 
     /**
      * @brief Validates stable tree.
      *
      * @param context Operation name used in diagnostics.
      */
-    void requireStableTree(const char* context) const { tree.requireMutationVersion(treeMutationVersion_, context); }
+    void requireStableTree(const char* context) const { MMCFILTERS_CONTRACT_CHECKED_ONLY(tree.requireMutationVersion(treeMutationVersion_, context)); }
 
     /**
      * @brief Validates attribute pointer.
@@ -98,9 +140,8 @@ template <AltitudeValue T> class AttributeFilters {
      * @param context Operation name used in diagnostics.
      */
     template <std::floating_point Real> static void requireAttributePointer(const Real* attribute, const char* context) {
-        if (attribute == nullptr) {
-            throw std::invalid_argument(std::string(context) + " requires a non-null attribute buffer.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(attribute != nullptr,
+                                    throw std::invalid_argument(std::string(context) + " requires a non-null attribute buffer."));
     }
 
     /**
@@ -111,9 +152,8 @@ template <AltitudeValue T> class AttributeFilters {
      * @param context Operation name used in diagnostics.
      */
     static void requireCriterionSize(const MorphologicalTree& tree, const std::vector<bool>& criterion, const char* context) {
-        if (criterion.size() != static_cast<std::size_t>(tree.getNumInternalNodeSlots())) {
-            throw std::invalid_argument(std::string(context) + " criterion size must match the internal node slot count.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(criterion.size() == static_cast<std::size_t>(tree.getNumInternalNodeSlots()),
+                                    throw std::invalid_argument(std::string(context) + " criterion size must match the internal node slot count."));
     }
 
     /**
@@ -124,9 +164,8 @@ template <AltitudeValue T> class AttributeFilters {
      * @param context Operation name used in diagnostics.
      */
     static void requireScoreSize(const MorphologicalTree& tree, const std::vector<float>& scores, const char* context) {
-        if (scores.size() != static_cast<std::size_t>(tree.getNumInternalNodeSlots())) {
-            throw std::invalid_argument(std::string(context) + " score size must match the internal node slot count.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(scores.size() == static_cast<std::size_t>(tree.getNumInternalNodeSlots()),
+                                    throw std::invalid_argument(std::string(context) + " score size must match the internal node slot count."));
     }
 
     /**
@@ -137,12 +176,9 @@ template <AltitudeValue T> class AttributeFilters {
      * @param context Operation name used in diagnostics.
      */
     template <typename TImagePtr> static void requireOutputImage(const MorphologicalTree& tree, const TImagePtr& image, const char* context) {
-        if (!image) {
-            throw std::invalid_argument(std::string(context) + " requires a non-null output image.");
-        }
-        if (image->getNumRows() != tree.getNumRowsOfGridDomain2D() || image->getNumCols() != tree.getNumColsOfGridDomain2D()) {
-            throw std::invalid_argument(std::string(context) + " output image shape must match the tree image domain.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(image != nullptr, throw std::invalid_argument(std::string(context) + " requires a non-null output image."));
+        MMCFILTERS_CONTRACT_REQUIRE(image->getNumRows() == tree.getNumRowsOfGridDomain2D() && image->getNumCols() == tree.getNumColsOfGridDomain2D(),
+                                    throw std::invalid_argument(std::string(context) + " output image shape must match the tree image domain."));
     }
 
     /**
@@ -152,7 +188,7 @@ template <AltitudeValue T> class AttributeFilters {
      * @param nodeId Identifier of the node used by the operation.
      * @return Altitude associated with the node.
      */
-    static T altitudeOf(const AltitudeView& view, NodeId nodeId) { return view.getAltitude(nodeId); }
+    static T altitudeOf(const AltitudeView& view, NodeId nodeId) noexcept { return view.altitude()[static_cast<std::size_t>(nodeId)]; }
 
     /**
      * @brief Computes the residue between the original and filtered values.
@@ -161,7 +197,16 @@ template <AltitudeValue T> class AttributeFilters {
      * @param nodeId Identifier of the node used by the operation.
      * @return Altitude residue associated with the node.
      */
-    static AltitudeDiff<T> residueOf(const AltitudeView& view, NodeId nodeId) { return view.getNodeResidue(nodeId); }
+    static AltitudeDiff<T> residueOf(const AltitudeView& view, NodeId nodeId) noexcept {
+        const MorphologicalTree& tree = view.topology();
+        const std::span<const T> altitude = view.altitude();
+        const NodeId parentNodeId = detail::CommittedTreeAccess::nodeParent(tree, nodeId);
+        if (parentNodeId == InvalidNode || parentNodeId == nodeId) {
+            return static_cast<AltitudeDiff<T>>(altitude[static_cast<std::size_t>(nodeId)]);
+        }
+        return static_cast<AltitudeDiff<T>>(altitude[static_cast<std::size_t>(nodeId)]) -
+               static_cast<AltitudeDiff<T>>(altitude[static_cast<std::size_t>(parentNodeId)]);
+    }
 
     /**
      * @brief Writes one node's direct proper parts only.
@@ -177,7 +222,7 @@ template <AltitudeValue T> class AttributeFilters {
      * @param value Value used by the operation.
      */
     template <typename TValue> static void writeProperParts(const MorphologicalTree& tree, NodeId nodeId, TValue* output, TValue value) {
-        for (int pixel : tree.getProperParts(nodeId)) {
+        for (int pixel : detail::CommittedTreeAccess::properParts(tree, nodeId)) {
             output[pixel] = value;
         }
     }
@@ -195,7 +240,7 @@ template <AltitudeValue T> class AttributeFilters {
      * @param value Value used by the operation.
      */
     template <typename TValue> static void writeSubtreeProperParts(const MorphologicalTree& tree, NodeId nodeId, TValue* output, TValue value) {
-        for (NodeId subtreeNodeId : tree.getNodeSubtree(nodeId)) {
+        for (NodeId subtreeNodeId : detail::CommittedTreeAccess::subtree(tree, nodeId)) {
             writeProperParts(tree, subtreeNodeId, output, value);
         }
     }
@@ -230,7 +275,7 @@ template <AltitudeValue T> class AttributeFilters {
         while (!stack.empty()) {
             const NodeId nodeId = stack.top();
             stack.pop();
-            for (NodeId childNodeId : tree.getChildren(nodeId)) {
+            for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, nodeId)) {
                 mapLevel[childNodeId] = mapLevel[nodeId] + (static_cast<float>(residueOf(view, childNodeId)) * prob[childNodeId]);
                 stack.push(childNodeId);
             }
@@ -270,7 +315,7 @@ template <AltitudeValue T> class AttributeFilters {
         while (!stack.empty()) {
             const NodeId nodeId = stack.top();
             stack.pop();
-            for (NodeId childNodeId : tree.getChildren(nodeId)) {
+            for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, nodeId)) {
                 mapLevel[childNodeId] =
                     criterion[childNodeId] ? static_cast<AltitudeDiff<T>>(mapLevel[nodeId] + residueOf(view, childNodeId)) : mapLevel[nodeId];
                 stack.push(childNodeId);
@@ -280,46 +325,6 @@ template <AltitudeValue T> class AttributeFilters {
         auto imgOutput = imgOutputPtr->rawData();
         for (NodeId nodeId : tree.getAliveNodeIds()) {
             writeProperParts(tree, nodeId, imgOutput, static_cast<T>(mapLevel[nodeId]));
-        }
-    }
-
-    /**
-     * @brief Direct reconstruction from a dense keep criterion.
-     *
-     * A kept node selects its own altitude. A rejected node does not remove its
-     * descendants; it only forwards the filtered parent level, so accepted
-     * descendants can still reintroduce their own levels.
-     *
-     * @param view Tree view used by the operation.
-     * @param criterion Per-node selection criterion.
-     * @param imgOutputPtr Output image receiving the reconstruction.
-     */
-    static void filteringByDirectRuleImpl(AltitudeView view, std::vector<bool>& criterion, ImagePtr<T> imgOutputPtr) {
-        const char* context = "AttributeFilters::filteringByDirectRule";
-        view.requireTopologyUnchanged(context);
-        const MorphologicalTree& tree = view.topology();
-        requireCriterionSize(tree, criterion, context);
-        requireOutputImage(tree, imgOutputPtr, context);
-        std::vector<T> mapLevel(static_cast<std::size_t>(tree.getNumInternalNodeSlots()));
-        const NodeId rootNodeId = tree.getRoot();
-        mapLevel[rootNodeId] = altitudeOf(view, rootNodeId);
-
-        // Direct filtering is path-local. Traverse root-to-leaf so every child
-        // sees the filtered level chosen for its parent.
-        std::stack<NodeId> stack;
-        stack.push(rootNodeId);
-        while (!stack.empty()) {
-            const NodeId nodeId = stack.top();
-            stack.pop();
-            for (NodeId childNodeId : tree.getChildren(nodeId)) {
-                mapLevel[childNodeId] = criterion[childNodeId] ? altitudeOf(view, childNodeId) : mapLevel[nodeId];
-                stack.push(childNodeId);
-            }
-        }
-
-        auto imgOutput = imgOutputPtr->rawData();
-        for (NodeId nodeId : tree.getAliveNodeIds()) {
-            writeProperParts(tree, nodeId, imgOutput, mapLevel[nodeId]);
         }
     }
 
@@ -349,7 +354,7 @@ template <AltitudeValue T> class AttributeFilters {
             const NodeId nodeId = stack.top();
             stack.pop();
             writeProperParts(tree, nodeId, imgOutput, altitudeOf(view, nodeId));
-            for (NodeId childNodeId : tree.getChildren(nodeId)) {
+            for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, nodeId)) {
                 if (criterion[childNodeId]) {
                     stack.push(childNodeId);
                 } else {
@@ -393,7 +398,7 @@ template <AltitudeValue T> class AttributeFilters {
             const NodeId nodeId = stack.top();
             stack.pop();
             writeProperParts(tree, nodeId, imgOutput, altitudeOf(view, nodeId));
-            for (NodeId childNodeId : tree.getChildren(nodeId)) {
+            for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, nodeId)) {
                 if (!criterion[childNodeId]) {
                     stack.push(childNodeId);
                 } else {
@@ -430,7 +435,7 @@ template <AltitudeValue T> class AttributeFilters {
             const NodeId nodeId = stack.top();
             stack.pop();
             writeProperParts(tree, nodeId, imgOutput, altitudeOf(view, nodeId));
-            for (NodeId childNodeId : tree.getChildren(nodeId)) {
+            for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, nodeId)) {
                 if (attribute[childNodeId] > threshold) {
                     stack.push(childNodeId);
                 } else {
@@ -480,7 +485,7 @@ template <AltitudeValue T> class AttributeFilters {
             const NodeId nodeId = stack.top();
             stack.pop();
             writeProperParts(tree, nodeId, imgOutput, altitudeOf(view, nodeId));
-            for (NodeId childNodeId : tree.getChildren(nodeId)) {
+            for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, nodeId)) {
                 if (!criterion[childNodeId]) {
                     stack.push(childNodeId);
                 } else {
@@ -625,7 +630,7 @@ template <AltitudeValue T> class AttributeFilters {
      * @param view Tree view used by the operation.
      */
     explicit AttributeFilters(AltitudeView view) : view_{view}, tree{view_.topology()}, treeMutationVersion_{tree.getMutationVersion()} {
-        view_.requireTopologyUnchanged("AttributeFilters");
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(view_.requireTopologyUnchanged("AttributeFilters"));
     }
 
     /**
@@ -700,8 +705,6 @@ template <AltitudeValue T> class AttributeFilters {
      * @return Image produced by the operation.
      */
     template <std::floating_point Real> [[nodiscard]] ImagePtr<T> filteringByPruningMin(const Real* attr, Real threshold) {
-        requireStableTree("AttributeFilters::filteringByPruningMin");
-        assert(attr != nullptr);
         ImagePtr<T> imgOutput = Image<T>::create(this->tree.getNumRowsOfGridDomain2D(), this->tree.getNumColsOfGridDomain2D());
         filteringByPruningMinAttributeImpl(view(), attr, threshold, imgOutput);
         return imgOutput;
@@ -729,8 +732,6 @@ template <AltitudeValue T> class AttributeFilters {
      * @return Image produced by the operation.
      */
     template <std::floating_point Real> [[nodiscard]] ImagePtr<T> filteringByPruningMax(const Real* attr, Real threshold) {
-        requireStableTree("AttributeFilters::filteringByPruningMax");
-        assert(attr != nullptr);
         ImagePtr<T> imgOutput = Image<T>::create(this->tree.getNumRowsOfGridDomain2D(), this->tree.getNumColsOfGridDomain2D());
         filteringByPruningMaxAttributeImpl(view(), attr, threshold, imgOutput);
         return imgOutput;
@@ -756,7 +757,7 @@ template <AltitudeValue T> class AttributeFilters {
         std::vector<bool> criterion = detail::computeViterbiKeepCriterion(tree, costs);
 
         ImagePtr<T> imgOutput = Image<T>::create(this->tree.getNumRowsOfGridDomain2D(), this->tree.getNumColsOfGridDomain2D());
-        filteringByDirectRuleImpl(view(), criterion, imgOutput);
+        detail::kernel::filterDirect(view(), criterion, imgOutput);
         return imgOutput;
     }
 
@@ -767,7 +768,6 @@ template <AltitudeValue T> class AttributeFilters {
      * @return Image produced by the operation.
      */
     [[nodiscard]] ImagePtr<T> filteringByPruningMin(std::vector<bool>& criterion) {
-        requireStableTree("AttributeFilters::filteringByPruningMin");
         ImagePtr<T> imgOutput = Image<T>::create(this->tree.getNumRowsOfGridDomain2D(), this->tree.getNumColsOfGridDomain2D());
         filteringByPruningMinCriterionImpl(view(), criterion, imgOutput);
         return imgOutput;
@@ -780,7 +780,6 @@ template <AltitudeValue T> class AttributeFilters {
      * @return Image produced by the operation.
      */
     [[nodiscard]] ImagePtr<T> filteringByPruningMax(std::vector<bool>& criterion) {
-        requireStableTree("AttributeFilters::filteringByPruningMax");
         ImagePtr<T> imgOutput = Image<T>::create(this->tree.getNumRowsOfGridDomain2D(), this->tree.getNumColsOfGridDomain2D());
         filteringByPruningMaxCriterionImpl(view(), criterion, imgOutput);
         return imgOutput;
@@ -797,8 +796,9 @@ template <AltitudeValue T> class AttributeFilters {
      */
     [[nodiscard]] ImagePtr<T> filteringByDirectRule(std::vector<bool>& criterion) {
         requireStableTree("AttributeFilters::filteringByDirectRule");
-        ImagePtr<T> imgOutput = Image<T>::create(this->tree.getNumRowsOfGridDomain2D(), this->tree.getNumColsOfGridDomain2D());
-        filteringByDirectRuleImpl(view(), criterion, imgOutput);
+        requireCriterionSize(tree, criterion, "AttributeFilters::filteringByDirectRule");
+        ImagePtr<T> imgOutput = detail::CommittedImageAccess::create<T>(this->tree.getNumRowsOfGridDomain2D(), this->tree.getNumColsOfGridDomain2D());
+        detail::kernel::filterDirect(view(), criterion, imgOutput);
         return imgOutput;
     }
 
@@ -812,7 +812,6 @@ template <AltitudeValue T> class AttributeFilters {
      * @return Image produced by the operation.
      */
     [[nodiscard]] ImagePtr<T> filteringBySubtractiveRule(std::vector<bool>& criterion) {
-        requireStableTree("AttributeFilters::filteringBySubtractiveRule");
         ImagePtr<T> imgOutput = Image<T>::create(this->tree.getNumRowsOfGridDomain2D(), this->tree.getNumColsOfGridDomain2D());
         filteringBySubtractiveRuleImpl(view(), criterion, imgOutput);
         return imgOutput;
@@ -828,7 +827,6 @@ template <AltitudeValue T> class AttributeFilters {
      * @return Image produced by the operation.
      */
     [[nodiscard]] ImageFloatPtr filteringBySubtractiveScoreRule(std::vector<float>& prob) {
-        requireStableTree("AttributeFilters::filteringBySubtractiveScoreRule");
         ImageFloatPtr imgOutput = ImageFloat::create(this->tree.getNumRowsOfGridDomain2D(), this->tree.getNumColsOfGridDomain2D());
         filteringBySubtractiveScoreRuleImpl(view(), prob, imgOutput);
         return imgOutput;
@@ -886,7 +884,10 @@ template <AltitudeValue T> class AttributeFilters {
      * @param imgOutputPtr Output image receiving the reconstruction.
      */
     static void filteringByDirectRule(const WeightedTreeView<T>& weighted, std::vector<bool>& criterion, ImagePtr<T> imgOutputPtr) {
-        filteringByDirectRuleImpl(weighted, criterion, imgOutputPtr);
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(weighted.requireTopologyUnchanged("AttributeFilters::filteringByDirectRule"));
+        requireCriterionSize(weighted.topology(), criterion, "AttributeFilters::filteringByDirectRule");
+        requireOutputImage(weighted.topology(), imgOutputPtr, "AttributeFilters::filteringByDirectRule");
+        detail::kernel::filterDirect(weighted, criterion, imgOutputPtr);
     }
 
     /**
@@ -897,7 +898,11 @@ template <AltitudeValue T> class AttributeFilters {
      * @param imgOutputPtr Output image receiving the reconstruction.
      */
     static void filteringByDirectRule(const WeightedMorphologicalTree<T>& weighted, std::vector<bool>& criterion, ImagePtr<T> imgOutputPtr) {
-        filteringByDirectRule(weighted.asView(), criterion, imgOutputPtr);
+        const AltitudeView view = weighted.asView();
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(view.requireTopologyUnchanged("AttributeFilters::filteringByDirectRule"));
+        requireCriterionSize(view.topology(), criterion, "AttributeFilters::filteringByDirectRule");
+        requireOutputImage(view.topology(), imgOutputPtr, "AttributeFilters::filteringByDirectRule");
+        detail::kernel::filterDirect(view, criterion, imgOutputPtr);
     }
 
     /**

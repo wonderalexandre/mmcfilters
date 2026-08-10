@@ -2,6 +2,7 @@
 
 #include "AttributeRegistry.hpp"
 #include "AttributeTypes.hpp"
+#include "../utils/Contract.hpp"
 
 #include <optional>
 #include <stdexcept>
@@ -66,9 +67,8 @@ class AttributeNamesWithDelta {
             for (std::size_t i = 0; i < attributes.size(); ++i) {
                 const AttributeKey key{attributes[i], d};
                 const auto [_, inserted] = map.emplace(key, offset++);
-                if (!inserted) {
-                    throw std::invalid_argument("AttributeNamesWithDelta::create received duplicate attribute " + toString(key));
-                }
+                MMCFILTERS_CONTRACT_REQUIRE(
+                    inserted, throw std::invalid_argument("AttributeNamesWithDelta::create received duplicate attribute " + toString(key)));
             }
         }
         return AttributeNamesWithDelta(std::move(map));
@@ -188,9 +188,8 @@ class AttributeNames {
         int i = 0;
         for (auto attr : attributes) {
             const auto [_, inserted] = map.emplace(attr, i++);
-            if (!inserted) {
-                throw std::invalid_argument("AttributeNames::fromList received duplicate attribute " + toString(attr));
-            }
+            MMCFILTERS_CONTRACT_REQUIRE(inserted,
+                                        throw std::invalid_argument("AttributeNames::fromList received duplicate attribute " + toString(attr)));
         }
         return AttributeNames(std::move(map));
     }
@@ -203,9 +202,7 @@ class AttributeNames {
      */
     [[nodiscard]] static AttributeNames fromGroup(AttributeGroup group) {
         auto it = ATTRIBUTE_GROUPS.find(group);
-        if (it == ATTRIBUTE_GROUPS.end()) {
-            throw std::invalid_argument("Unknown attribute group.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(it != ATTRIBUTE_GROUPS.end(), throw std::invalid_argument("Unknown attribute group."));
         return fromList(it->second);
     }
 

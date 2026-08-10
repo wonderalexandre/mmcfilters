@@ -36,6 +36,7 @@ set(MMCFILTERS_PUBLIC_HEADER_ENTRYPOINTS
     ${MMCFILTERS_ROOT}/trees/sdrt/SdrtTiePolicy.hpp
     ${MMCFILTERS_ROOT}/utils/Altitude.hpp
     ${MMCFILTERS_ROOT}/utils/Common.hpp
+    ${MMCFILTERS_ROOT}/utils/Contract.hpp
     ${MMCFILTERS_ROOT}/utils/Image.hpp
     ${MMCFILTERS_ROOT}/utils/RegularGridAdjacency2D.hpp
 )
@@ -110,6 +111,7 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/trees/adjust/DualMinMaxTreeIncrementalFilter.hpp
     ${MMCFILTERS_ROOT}/trees/adjust/DynamicTreeAttributeComputer.hpp
     ${MMCFILTERS_ROOT}/trees/detail/ComponentTreeProducerDetail.hpp
+    ${MMCFILTERS_ROOT}/trees/detail/CommittedTreeAccess.hpp
     ${MMCFILTERS_ROOT}/trees/detail/ComponentTreeUnionFind.hpp
     ${MMCFILTERS_ROOT}/trees/detail/HierarchyCapabilityValidation.hpp
     ${MMCFILTERS_ROOT}/trees/detail/HigraExportLayoutDetail.hpp
@@ -133,6 +135,9 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/utils/Altitude.hpp
     ${MMCFILTERS_ROOT}/utils/Assert.hpp
     ${MMCFILTERS_ROOT}/utils/Common.hpp
+    ${MMCFILTERS_ROOT}/utils/CommittedGridAccess.hpp
+    ${MMCFILTERS_ROOT}/utils/CommittedImageAccess.hpp
+    ${MMCFILTERS_ROOT}/utils/Contract.hpp
     ${MMCFILTERS_ROOT}/utils/GenerationStampSet.hpp
     ${MMCFILTERS_ROOT}/utils/Image.hpp
     ${MMCFILTERS_ROOT}/utils/RegularGridAdjacency2D.hpp

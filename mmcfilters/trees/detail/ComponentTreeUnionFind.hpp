@@ -3,6 +3,7 @@
 #include "../../utils/Common.hpp"
 #include "../../utils/Image.hpp"
 #include "../../utils/RegularGridAdjacency2D.hpp"
+#include "../../utils/CommittedGridAccess.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -45,10 +46,6 @@ class ComponentTreeUnionFind {
      */
     template <typename PixelType> [[nodiscard]] std::vector<int> sort(const ImagePtr<PixelType>& image) const {
         const int numPixels = image->getSize();
-        if (numPixels <= 0) {
-            throw std::invalid_argument("ComponentTreeUnionFind requires a non-empty image.");
-        }
-
         std::vector<int> orderedPixels(static_cast<std::size_t>(numPixels));
         const PixelType* values = image->rawData();
 
@@ -127,7 +124,7 @@ class ComponentTreeUnionFind {
             const int pixel = orderedPixels[static_cast<std::size_t>(index)];
             pixelParent[pixel] = pixel;
             unionParent[pixel] = pixel;
-            for (int neighbor : adjacency_->getNeighborIndices(pixel)) {
+            for (int neighbor : CommittedGridAccess::neighbors(*adjacency_, pixel)) {
                 if (unionParent[neighbor] == InvalidNode) {
                     continue;
                 }

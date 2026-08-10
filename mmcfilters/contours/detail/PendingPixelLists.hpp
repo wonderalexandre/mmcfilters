@@ -2,6 +2,7 @@
 
 #include "../../utils/Common.hpp"
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -84,9 +85,7 @@ struct PendingPixelLists {
     void appendUniqueValues(NodeId node, std::vector<int>& out, std::vector<uint16_t>& pixelMark, uint16_t markGeneration) const {
         for (int idx = head_[node]; idx != -1; idx = entries_[idx].next) {
             const int value = entries_[idx].value;
-            if (value < 0 || value >= static_cast<int>(pixelMark.size())) {
-                continue;
-            }
+            assert(value >= 0 && value < static_cast<int>(pixelMark.size()));
             if (pixelMark[static_cast<std::size_t>(value)] != markGeneration) {
                 pixelMark[static_cast<std::size_t>(value)] = markGeneration;
                 out.push_back(value);

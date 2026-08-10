@@ -37,13 +37,15 @@ void verifyClassicalMserContracts() {
     const MorphologicalTree& tree = linear.topology();
 
     MSERComputer<std::uint8_t> mser(linear);
-    requireThrows<std::logic_error>([&]() { static_cast<void>(mser.getVariation(0)); }, "MSER variation requires computation");
-    requireThrows<std::logic_error>([&]() { static_cast<void>(mser.getVariations()); }, "MSER variation buffer requires computation");
-    requireThrows<std::logic_error>([&]() { static_cast<void>(mser.getNumNodes()); }, "MSER selected count requires computation");
-    requireThrows<std::logic_error>([&]() { static_cast<void>(mser.nodeWithMinimumVariationInWindow(0)); }, "MSER minimum requires computation");
-    requireThrows<std::logic_error>([&]() { static_cast<void>(mser.ascendantInStabilityWindow(0)); }, "MSER ascendant requires computation");
-    requireThrows<std::logic_error>([&]() { static_cast<void>(mser.descendantInStabilityWindow(0)); }, "MSER descendant requires computation");
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(mser.computeMSER(0)); }, "MSERComputer must reject zero altitude delta");
+    if constexpr (contract::validationsEnabled) {
+        requireThrows<std::logic_error>([&]() { static_cast<void>(mser.getVariation(0)); }, "MSER variation requires computation");
+        requireThrows<std::logic_error>([&]() { static_cast<void>(mser.getVariations()); }, "MSER variation buffer requires computation");
+        requireThrows<std::logic_error>([&]() { static_cast<void>(mser.getNumNodes()); }, "MSER selected count requires computation");
+        requireThrows<std::logic_error>([&]() { static_cast<void>(mser.nodeWithMinimumVariationInWindow(0)); }, "MSER minimum requires computation");
+        requireThrows<std::logic_error>([&]() { static_cast<void>(mser.ascendantInStabilityWindow(0)); }, "MSER ascendant requires computation");
+        requireThrows<std::logic_error>([&]() { static_cast<void>(mser.descendantInStabilityWindow(0)); }, "MSER descendant requires computation");
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(mser.computeMSER(0)); }, "MSERComputer must reject zero altitude delta");
+    }
 
     const std::vector<uint8_t> flags = mser.computeMSER(1);
     const std::vector<float>& variation = mser.getVariations();
@@ -77,8 +79,10 @@ void verifyDepthStabilityContracts() {
     const MorphologicalTree& tree = tos.topology();
 
     requireThrows<std::invalid_argument>([&]() { MSERComputer<std::uint8_t> invalid(tos); }, "MSERComputer must reject unconstrained altitude order");
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(detail::computeDepthStabilityNeighborhood(tree, 0)); },
-                                         "depth stability must reject zero depth delta");
+    if constexpr (contract::validationsEnabled) {
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(detail::computeDepthStabilityNeighborhood(tree, 0)); },
+                                             "depth stability must reject zero depth delta");
+    }
 
     const detail::StabilityNeighborhood depth1 = detail::computeDepthStabilityNeighborhood(tree, 1);
     requireVectorEqual(depth1.ascendants, {2, 2, 3, InvalidNode}, "ToS depth-1 ascendants");
@@ -89,12 +93,14 @@ void verifyDepthStabilityContracts() {
     requireVectorEqual(depth2.descendants, {InvalidNode, InvalidNode, InvalidNode, 1}, "ToS depth-2 descendants");
 
     DepthStableRegionComputer<float> depthStability(tree);
-    requireThrows<std::logic_error>([&]() { static_cast<void>(depthStability.getVariation(0)); }, "depth variation requires computation");
-    requireThrows<std::logic_error>([&]() { static_cast<void>(depthStability.getVariations()); }, "depth variation buffer requires computation");
-    requireThrows<std::logic_error>([&]() { static_cast<void>(depthStability.getNumNodes()); }, "depth selected count requires computation");
-    requireThrows<std::logic_error>([&]() { static_cast<void>(depthStability.nodeWithMinimumVariationInWindow(0)); }, "depth minimum requires computation");
-    requireThrows<std::logic_error>([&]() { static_cast<void>(depthStability.ascendantInStabilityWindow(0)); }, "depth ascendant requires computation");
-    requireThrows<std::logic_error>([&]() { static_cast<void>(depthStability.descendantInStabilityWindow(0)); }, "depth descendant requires computation");
+    if constexpr (contract::validationsEnabled) {
+        requireThrows<std::logic_error>([&]() { static_cast<void>(depthStability.getVariation(0)); }, "depth variation requires computation");
+        requireThrows<std::logic_error>([&]() { static_cast<void>(depthStability.getVariations()); }, "depth variation buffer requires computation");
+        requireThrows<std::logic_error>([&]() { static_cast<void>(depthStability.getNumNodes()); }, "depth selected count requires computation");
+        requireThrows<std::logic_error>([&]() { static_cast<void>(depthStability.nodeWithMinimumVariationInWindow(0)); }, "depth minimum requires computation");
+        requireThrows<std::logic_error>([&]() { static_cast<void>(depthStability.ascendantInStabilityWindow(0)); }, "depth ascendant requires computation");
+        requireThrows<std::logic_error>([&]() { static_cast<void>(depthStability.descendantInStabilityWindow(0)); }, "depth descendant requires computation");
+    }
     (void)depthStability.computeByDepth(1);
     requireNear(depthStability.getVariations()[2], 0.5f, 1e-6f, "ToS depth stability uses topology-only area");
 

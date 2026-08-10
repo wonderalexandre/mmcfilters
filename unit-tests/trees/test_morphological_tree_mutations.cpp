@@ -11,10 +11,12 @@ int main() {
         auto image = makeComponentTreeFixture();
         auto tree = makeComponentTree(image, true);
 
-        requireThrows<std::invalid_argument>([&]() { tree->mergeNodeIntoParent(InvalidNode); }, "mergeNodeIntoParent must reject invalid NodeId");
-        requireThrows<std::invalid_argument>([&]() { tree->mergeNodeIntoParent(tree->getRoot()); }, "mergeNodeIntoParent must reject root");
-        requireThrows<std::invalid_argument>([&]() { tree->pruneNode(InvalidNode); }, "pruneNode must reject invalid NodeId");
-        requireThrows<std::invalid_argument>([&]() { tree->pruneNode(tree->getRoot()); }, "pruneNode must reject root");
+        if constexpr (contract::validationsEnabled) {
+            requireThrows<std::invalid_argument>([&]() { tree->mergeNodeIntoParent(InvalidNode); }, "mergeNodeIntoParent must reject invalid NodeId");
+            requireThrows<std::invalid_argument>([&]() { tree->mergeNodeIntoParent(tree->getRoot()); }, "mergeNodeIntoParent must reject root");
+            requireThrows<std::invalid_argument>([&]() { tree->pruneNode(InvalidNode); }, "pruneNode must reject invalid NodeId");
+            requireThrows<std::invalid_argument>([&]() { tree->pruneNode(tree->getRoot()); }, "pruneNode must reject root");
+        }
 
         const std::size_t versionBeforeMerge = tree->getMutationVersion();
         tree->mergeNodeIntoParent(5);
@@ -25,8 +27,10 @@ int main() {
         requireEqual(tree->getNumFreeNodeSlots(), 1, "free slots after merge");
         requireVectorEqual(collectNodeIds(tree->getChildren(4)), {}, "node 4 children after merge");
         requireVectorEqual(collectNodeIds(tree->getProperParts(4)), {5, 6, 9, 10, 14}, "node 4 proper parts after merge");
-        requireThrows<std::invalid_argument>([&]() { tree->mergeNodeIntoParent(5); }, "mergeNodeIntoParent must reject dead slot");
-        requireThrows<std::invalid_argument>([&]() { tree->pruneNode(5); }, "pruneNode must reject dead slot");
+        if constexpr (contract::validationsEnabled) {
+            requireThrows<std::invalid_argument>([&]() { tree->mergeNodeIntoParent(5); }, "mergeNodeIntoParent must reject dead slot");
+            requireThrows<std::invalid_argument>([&]() { tree->pruneNode(5); }, "pruneNode must reject dead slot");
+        }
 
         auto editor = tree->edit();
         const NodeId reusedNode = editor.createDetachedNode();

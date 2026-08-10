@@ -45,6 +45,18 @@ mmcfilters_add_unit_test(unit_regular_grid_adjacency_2d
     utils/test_regular_grid_adjacency_2d.cpp
 )
 
+mmcfilters_add_unit_test(unit_validation_boundaries
+    utils/test_validation_boundaries.cpp
+)
+
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_test(
+    NAME unit_validation_boundary_audit
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/audit_validation_boundaries.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/..
+)
+
 mmcfilters_add_unit_test(unit_morphological_tree_build
     trees/test_morphological_tree_build.cpp
 )

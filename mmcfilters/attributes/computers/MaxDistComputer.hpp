@@ -6,7 +6,10 @@
 #include "../../contours/ContoursComputedIncrementally.hpp"
 #include "../../trees/MorphologicalTree.hpp"
 #include "../../trees/TreeAltitudeAlgorithms.hpp"
+#include "../../trees/detail/CommittedTreeAccess.hpp"
+#include "../../trees/detail/TreeTraversalDetail.hpp"
 #include "../../utils/Common.hpp"
+#include "../../utils/Contract.hpp"
 
 #include "detail/maxdist/EdtDIFT.hpp"
 
@@ -25,6 +28,38 @@
 
 namespace mmcfilters::attributes::computers::detail {
 
+inline void requireMaxDistCapabilities(const MorphologicalTree& tree) {
+    if (tree.getAltitudeOrder() == AltitudeOrder::UNCONSTRAINED) {
+        throw std::invalid_argument("MAX_DIST requires a globally monotone altitude order.");
+    }
+}
+
+template <AltitudeValue T> inline bool isFiniteMaxDistAltitude(T value) noexcept {
+    if constexpr (std::is_floating_point_v<T>) {
+        return std::isfinite(value);
+    }
+    return true;
+}
+
+template <AltitudeValue T> inline void validateFiniteMaxDistAltitude(std::span<const T> altitude) {
+    for (std::size_t index = 0; index < altitude.size(); ++index) {
+        if (!isFiniteMaxDistAltitude(altitude[index])) {
+            throw std::invalid_argument("MAX_DIST requires finite altitude values; node " + std::to_string(index) + " has a non-finite altitude.");
+        }
+    }
+}
+
+template <AltitudeValue T> inline void validateMaxDistInput(const MorphologicalTree& tree, std::span<const T> altitude) {
+    requireMaxDistCapabilities(tree);
+    if (!tree.hasUniformGridAdjacency2D()) {
+        throw std::invalid_argument("MAX_DIST requires uniform adjacency.");
+    }
+    TreeAltitudeAlgorithms::validateAltitudeBufferShape(tree, altitude);
+    validateFiniteMaxDistAltitude(altitude);
+}
+
+namespace kernel {
+
 /**
  * @brief Internal MAX_DIST altitude-sweep kernel.
  *
@@ -39,23 +74,8 @@ namespace mmcfilters::attributes::computers::detail {
  * `MaxDistComputer` is responsible for projecting that vector into the
  * caller-owned attribute buffer layout.
  */
-class MaxDistAttributeKernel {
+class MaxDistAttribute {
   public:
-    /**
-     * @brief Rejects hierarchies for which the altitude sweep is not defined.
-     *
-     * @param tree Tree topology used by the operation.
-     *
-     * @throws std::invalid_argument If the hierarchy has no globally monotone
-     * altitude-order capability.
-     *
-     */
-    static void requireSupportedCapabilities(const MorphologicalTree& tree) {
-        if (tree.getAltitudeOrder() == AltitudeOrder::UNCONSTRAINED) {
-            throw std::invalid_argument("MAX_DIST requires a globally monotone altitude order.");
-        }
-    }
-
     /**
      * @brief Runs the complete MAX_DIST computation in dense node-id space.
      *
@@ -68,19 +88,13 @@ class MaxDistAttributeKernel {
      */
     template <std::floating_point Real, AltitudeValue T>
     [[nodiscard]] static std::vector<Real> compute(const MorphologicalTree& tree, std::span<const T> altitude) {
-        requireSupportedCapabilities(tree);
-        if (!tree.hasUniformGridAdjacency2D()) {
-            throw std::invalid_argument("MAX_DIST requires uniform adjacency.");
-        }
-        TreeAltitudeAlgorithms::validateAltitudeBufferShape(tree, altitude);
-        validateFiniteAltitude(altitude);
-
         std::vector<Real> maxDist(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), Real{0});
-        maxdist::EdtDIFT edtDIFT(tree.getNumRowsOfGridDomain2D(), tree.getNumColsOfGridDomain2D());
+        const GridDomain2D& domain = ::mmcfilters::detail::CommittedTreeAccess::gridDomain2D(tree);
+        maxdist::EdtDIFT edtDIFT(domain.rows, domain.cols);
 
-        const ContourDeltaStore contourDeltas = ::mmcfilters::ContoursComputedIncrementally::extractContourDeltas(tree);
+        const ContourDeltaStore contourDeltas = ::mmcfilters::detail::kernel::extractLocalContourDeltas(tree);
         std::vector<std::vector<int>> contours(static_cast<std::size_t>(tree.getNumInternalNodeSlots()));
-        const std::size_t totalPixels = static_cast<std::size_t>(tree.getNumRowsOfGridDomain2D() * tree.getNumColsOfGridDomain2D());
+        const std::size_t totalPixels = static_cast<std::size_t>(domain.rows * domain.cols);
         std::vector<std::uint8_t> removalMark(totalPixels, 0);
         std::vector<std::uint8_t> contourAdditionMark(totalPixels, 0);
 
@@ -104,32 +118,6 @@ class MaxDistAttributeKernel {
   private:
     /** @brief Defines the `ContourDeltaStore` alias used by the component. */
     using ContourDeltaStore = ::mmcfilters::ContoursComputedIncrementally::LocalContourDeltas;
-
-    /**
-     * @brief True when an altitude value can participate in level ordering.
-     *
-     * @param value Value used by the operation.
-     * @return True when an altitude value can participate in level ordering; otherwise false.
-     */
-    template <AltitudeValue T> static bool isFiniteAltitude(T value) noexcept {
-        if constexpr (std::is_floating_point_v<T>) {
-            return std::isfinite(value);
-        }
-        return true;
-    }
-
-    /**
-     * @brief Rejects NaN or infinite floating-point altitude values.
-     *
-     * @param altitude Altitude data indexed by node identifier.
-     */
-    template <AltitudeValue T> static void validateFiniteAltitude(std::span<const T> altitude) {
-        for (std::size_t index = 0; index < altitude.size(); ++index) {
-            if (!isFiniteAltitude(altitude[index])) {
-                throw std::invalid_argument("MAX_DIST requires finite altitude values; node " + std::to_string(index) + " has a non-finite altitude.");
-            }
-        }
-    }
 
     /**
      * @brief Marks pixels.
@@ -171,13 +159,12 @@ class MaxDistAttributeKernel {
     template <AltitudeValue T> [[nodiscard]] static std::vector<NodeId> sortedNodesByAltitude(const MorphologicalTree& tree, std::span<const T> altitude) {
         std::vector<NodeId> nodes;
         nodes.reserve(static_cast<std::size_t>(tree.getNumNodes()));
-        for (NodeId nodeId : tree.getPostOrderNodes()) {
-            nodes.push_back(nodeId);
-        }
+        ::mmcfilters::detail::kernel::traversePostOrder(
+            tree, tree.getRoot(), [](NodeId) {}, [](NodeId, NodeId) {}, [&](NodeId nodeId) { nodes.push_back(nodeId); });
 
         std::stable_sort(nodes.begin(), nodes.end(), [&](NodeId lhs, NodeId rhs) {
-            const T lhsAltitude = TreeAltitudeAlgorithms::getAltitude(altitude, lhs);
-            const T rhsAltitude = TreeAltitudeAlgorithms::getAltitude(altitude, rhs);
+            const T lhsAltitude = altitude[static_cast<std::size_t>(lhs)];
+            const T rhsAltitude = altitude[static_cast<std::size_t>(rhs)];
             return tree.getAltitudeOrder() == AltitudeOrder::INCREASING_FROM_ROOT ? lhsAltitude > rhsAltitude : lhsAltitude < rhsAltitude;
         });
 
@@ -193,7 +180,7 @@ class MaxDistAttributeKernel {
      * @return True if two nodes belong to the same altitude group; otherwise false.
      */
     template <AltitudeValue T> static bool sameAltitude(std::span<const T> altitude, NodeId lhs, NodeId rhs) {
-        return TreeAltitudeAlgorithms::getAltitude(altitude, lhs) == TreeAltitudeAlgorithms::getAltitude(altitude, rhs);
+        return altitude[static_cast<std::size_t>(lhs)] == altitude[static_cast<std::size_t>(rhs)];
     }
 
     /**
@@ -236,12 +223,12 @@ class MaxDistAttributeKernel {
 
             const auto additions = contourDeltas.additions(nodeId);
             std::size_t reserveSize = additions.size();
-            for (NodeId childNodeId : tree.getChildren(nodeId)) {
+            for (NodeId childNodeId : ::mmcfilters::detail::CommittedTreeAccess::children(tree, nodeId)) {
                 reserveSize += contours[static_cast<std::size_t>(childNodeId)].size();
             }
             nodeContour.reserve(reserveSize);
 
-            for (NodeId childNodeId : tree.getChildren(nodeId)) {
+            for (NodeId childNodeId : ::mmcfilters::detail::CommittedTreeAccess::children(tree, nodeId)) {
                 std::vector<int>& childContour = contours[static_cast<std::size_t>(childNodeId)];
                 for (int pixelId : childContour) {
                     if (!removalMark[static_cast<std::size_t>(pixelId)]) {
@@ -257,7 +244,7 @@ class MaxDistAttributeKernel {
             }
 
             markPixels(additions, contourAdditionMark);
-            for (int pixelId : tree.getProperParts(nodeId)) {
+            for (int pixelId : ::mmcfilters::detail::CommittedTreeAccess::properParts(tree, nodeId)) {
                 edtDIFT.addPixelToBinaryImage(pixelId);
 
                 if (contourAdditionMark[static_cast<std::size_t>(pixelId)]) {
@@ -281,6 +268,23 @@ class MaxDistAttributeKernel {
         }
     }
 };
+
+/**
+ * @brief Writes MAX_DIST after output, topology, altitude, and request domains were established.
+ * @param context Established tree, altitude span, MAX_DIST column, and output buffer.
+ */
+template <std::floating_point Real, AltitudeValue T> inline void computeMaxDist(const AltitudeAttributeComputeContext<Real, T>& context) {
+    const std::vector<Real> maxDist = MaxDistAttribute::compute<Real>(context.tree, context.altitude);
+    const int stride = context.attrNames.NUM_ATTRIBUTES;
+    const int offset = context.attrNames.indexMap.find(MAX_DIST)->second;
+    for (NodeId nodeId = 0; nodeId < context.tree.getNumInternalNodeSlots(); ++nodeId) {
+        if (::mmcfilters::detail::CommittedTreeAccess::isAlive(context.tree, nodeId)) {
+            context.buffer[static_cast<std::size_t>(nodeId * stride + offset)] = maxDist[static_cast<std::size_t>(nodeId)];
+        }
+    }
+}
+
+} // namespace kernel
 
 } // namespace mmcfilters::attributes::computers::detail
 
@@ -316,7 +320,7 @@ class MaxDistComputer {
      *
      * @param tree Tree topology used by the operation.
      */
-    static void requireSupportedTreeKind(const MorphologicalTree& tree) { detail::MaxDistAttributeKernel::requireSupportedCapabilities(tree); }
+    static void requireSupportedTreeKind(const MorphologicalTree& tree) { detail::requireMaxDistCapabilities(tree); }
 
     /**
      * @brief Computes MAX_DIST and writes it into the requested output layout.
@@ -328,15 +332,13 @@ class MaxDistComputer {
      * @param context Operation context or diagnostic label.
      */
     template <std::floating_point Real, AltitudeValue T> static void compute(const AltitudeAttributeComputeContext<Real, T>& context) {
-        requireAttributeBufferShape(context.tree, context.buffer, context.attrNames);
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(requireAttributeBufferShape(context.tree, context.buffer, context.attrNames);
+                                         detail::validateMaxDistInput(context.tree, context.altitude));
         if (!requestsAttribute(context.requestedAttributes, MAX_DIST)) {
             return;
         }
 
-        const std::vector<Real> maxDist = detail::MaxDistAttributeKernel::compute<Real>(context.tree, context.altitude);
-        for (NodeId nodeId : context.tree.getAliveNodeIds()) {
-            context.buffer[context.attrNames.linearIndex(nodeId, MAX_DIST)] = maxDist[static_cast<std::size_t>(nodeId)];
-        }
+        detail::kernel::computeMaxDist(context);
     }
 
     /**

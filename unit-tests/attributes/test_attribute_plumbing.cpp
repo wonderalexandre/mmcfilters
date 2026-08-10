@@ -7,6 +7,7 @@
 #include "mmcfilters/attributes/computers/VolumeComputer.hpp"
 #include "mmcfilters/attributes/detail/AttributeFamilyScheduler.hpp"
 #include "mmcfilters/attributes/detail/TopologyAttributeBackend.hpp"
+#include "mmcfilters/utils/Contract.hpp"
 
 #include <algorithm>
 #include <array>
@@ -226,8 +227,10 @@ int main() {
                 require(names.linearIndex(nodeIndex, attribute) < 6 * names.NUM_ATTRIBUTES, "AttributeNames dense linear index must stay within buffer bounds");
             }
         }
-        requireThrows<std::invalid_argument>([]() { static_cast<void>(AttributeNames::fromList({AREA, AREA, VOLUME})); },
-                                             "AttributeNames::fromList must reject duplicate attributes");
+        if constexpr (contract::validationsEnabled) {
+            requireThrows<std::invalid_argument>([]() { static_cast<void>(AttributeNames::fromList({AREA, AREA, VOLUME})); },
+                                                 "AttributeNames::fromList must reject duplicate attributes");
+        }
         auto grayLevelNames = AttributeNames::fromGroup(AttributeGroup::GRAY_LEVEL);
         requireEqual(grayLevelNames.NUM_ATTRIBUTES, 6, "GRAY_LEVEL AttributeNames count");
         requireEqual(grayLevelNames.getIndex(VOLUME), 0, "GRAY_LEVEL VOLUME index");
@@ -278,8 +281,10 @@ int main() {
         requireEqual(deltaNames.linearIndex(1, LEVEL, 2), 19, "LEVEL desc2 linear index");
         requireEqual(AttributeNamesWithDelta::toString(AREA, -2), std::string("AREA_ASC_2"), "AttributeNamesWithDelta asc label");
         requireEqual(AttributeNamesWithDelta::toString(LEVEL, 2), std::string("LEVEL_DESC_2"), "AttributeNamesWithDelta desc label");
-        requireThrows<std::invalid_argument>([]() { static_cast<void>(AttributeNamesWithDelta::create(1, {AREA, AREA})); },
-                                             "AttributeNamesWithDelta::create must reject duplicate attributes");
+        if constexpr (contract::validationsEnabled) {
+            requireThrows<std::invalid_argument>([]() { static_cast<void>(AttributeNamesWithDelta::create(1, {AREA, AREA})); },
+                                                 "AttributeNamesWithDelta::create must reject duplicate attributes");
+        }
     }
 
     {
@@ -432,16 +437,18 @@ int main() {
             AttributeComputeContext<float>{*tree, std::span<float>(widthBuffer), widthNames, std::span<const Attribute>(widthRequest)});
         requireEqual(widthBuffer[widthNames.linearIndex(tree->getRoot(), BOX_WIDTH)], 4.0f, "BOX_WIDTH context compute does not require AREA dependency");
 
-        const std::array<Attribute, 1> rectangularityRequest{RECTANGULARITY};
-        const AttributeNames rectangularityNames = AttributeNames::fromList({RECTANGULARITY});
-        std::vector<float> rectangularityBuffer(
-            static_cast<std::size_t>(tree->getNumInternalNodeSlots()) * static_cast<std::size_t>(rectangularityNames.NUM_ATTRIBUTES), 0.0f);
-        requireThrows<std::invalid_argument>(
-            [&]() {
-                BoundingBoxComputer::compute(AttributeComputeContext<float>{*tree, std::span<float>(rectangularityBuffer), rectangularityNames,
-                                                                            std::span<const Attribute>(rectangularityRequest)});
-            },
-            "RECTANGULARITY context compute must reject missing AREA dependency");
+        if constexpr (contract::validationsEnabled) {
+            const std::array<Attribute, 1> rectangularityRequest{RECTANGULARITY};
+            const AttributeNames rectangularityNames = AttributeNames::fromList({RECTANGULARITY});
+            std::vector<float> rectangularityBuffer(
+                static_cast<std::size_t>(tree->getNumInternalNodeSlots()) * static_cast<std::size_t>(rectangularityNames.NUM_ATTRIBUTES), 0.0f);
+            requireThrows<std::invalid_argument>(
+                [&]() {
+                    BoundingBoxComputer::compute(AttributeComputeContext<float>{*tree, std::span<float>(rectangularityBuffer), rectangularityNames,
+                                                                                std::span<const Attribute>(rectangularityRequest)});
+                },
+                "RECTANGULARITY context compute must reject missing AREA dependency");
+        }
     }
 
     {
@@ -456,16 +463,18 @@ int main() {
                                                                                      std::span<const Attribute>(volumeRequest)});
         requireEqual(volumeBuffer[volumeNames.linearIndex(tree.getRoot(), VOLUME)], 42.0f, "VOLUME context compute does not require AREA dependency");
 
-        const std::array<Attribute, 1> relativeVolumeRequest{RELATIVE_VOLUME};
-        const AttributeNames relativeVolumeNames = AttributeNames::fromList({RELATIVE_VOLUME});
-        std::vector<float> relativeVolumeBuffer(
-            static_cast<std::size_t>(tree.getNumInternalNodeSlots()) * static_cast<std::size_t>(relativeVolumeNames.NUM_ATTRIBUTES), 0.0f);
-        requireThrows<std::invalid_argument>(
-            [&]() {
-                VolumeComputer::compute(AltitudeAttributeComputeContext<float, std::uint8_t>{
-                    tree, altitude, std::span<float>(relativeVolumeBuffer), relativeVolumeNames, std::span<const Attribute>(relativeVolumeRequest)});
-            },
-            "RELATIVE_VOLUME context compute must reject missing AREA dependency");
+        if constexpr (contract::validationsEnabled) {
+            const std::array<Attribute, 1> relativeVolumeRequest{RELATIVE_VOLUME};
+            const AttributeNames relativeVolumeNames = AttributeNames::fromList({RELATIVE_VOLUME});
+            std::vector<float> relativeVolumeBuffer(
+                static_cast<std::size_t>(tree.getNumInternalNodeSlots()) * static_cast<std::size_t>(relativeVolumeNames.NUM_ATTRIBUTES), 0.0f);
+            requireThrows<std::invalid_argument>(
+                [&]() {
+                    VolumeComputer::compute(AltitudeAttributeComputeContext<float, std::uint8_t>{
+                        tree, altitude, std::span<float>(relativeVolumeBuffer), relativeVolumeNames, std::span<const Attribute>(relativeVolumeRequest)});
+                },
+                "RELATIVE_VOLUME context compute must reject missing AREA dependency");
+        }
 
         const std::array<Attribute, 1> levelRequest{LEVEL};
         const AttributeNames levelNames = AttributeNames::fromList({LEVEL});
@@ -484,35 +493,37 @@ int main() {
         require(grayHeightBuffer[grayHeightNames.linearIndex(tree.getRoot(), GRAY_HEIGHT)] >= 0.0f,
                 "GRAY_HEIGHT context compute does not require aggregate dependencies");
 
-        const std::array<Attribute, 1> meanRequest{MEAN_LEVEL};
-        const AttributeNames meanNames = AttributeNames::fromList({MEAN_LEVEL});
-        std::vector<float> meanBuffer(static_cast<std::size_t>(tree.getNumInternalNodeSlots()) * static_cast<std::size_t>(meanNames.NUM_ATTRIBUTES), 0.0f);
-        requireThrows<std::invalid_argument>(
-            [&]() {
-                GrayLevelStatsComputer::compute(AltitudeAttributeComputeContext<float, std::uint8_t>{tree, altitude, std::span<float>(meanBuffer), meanNames,
-                                                                                                     std::span<const Attribute>(meanRequest)});
-            },
-            "MEAN_LEVEL context compute must reject missing VOLUME and AREA dependencies");
+        if constexpr (contract::validationsEnabled) {
+            const std::array<Attribute, 1> meanRequest{MEAN_LEVEL};
+            const AttributeNames meanNames = AttributeNames::fromList({MEAN_LEVEL});
+            std::vector<float> meanBuffer(static_cast<std::size_t>(tree.getNumInternalNodeSlots()) * static_cast<std::size_t>(meanNames.NUM_ATTRIBUTES), 0.0f);
+            requireThrows<std::invalid_argument>(
+                [&]() {
+                    GrayLevelStatsComputer::compute(AltitudeAttributeComputeContext<float, std::uint8_t>{tree, altitude, std::span<float>(meanBuffer), meanNames,
+                                                                                                         std::span<const Attribute>(meanRequest)});
+                },
+                "MEAN_LEVEL context compute must reject missing VOLUME and AREA dependencies");
 
-        const std::array<Attribute, 1> huRequest{HU_MOMENT_1};
-        const AttributeNames huNames = AttributeNames::fromList({HU_MOMENT_1});
-        std::vector<float> huBuffer(static_cast<std::size_t>(tree.getNumInternalNodeSlots()) * static_cast<std::size_t>(huNames.NUM_ATTRIBUTES), 0.0f);
-        requireThrows<std::invalid_argument>(
-            [&]() {
-                HuMomentsComputer::compute(AttributeComputeContext<float>{tree, std::span<float>(huBuffer), huNames, std::span<const Attribute>(huRequest)});
-            },
-            "HU_MOMENT context compute must reject missing central moment and AREA dependencies");
+            const std::array<Attribute, 1> huRequest{HU_MOMENT_1};
+            const AttributeNames huNames = AttributeNames::fromList({HU_MOMENT_1});
+            std::vector<float> huBuffer(static_cast<std::size_t>(tree.getNumInternalNodeSlots()) * static_cast<std::size_t>(huNames.NUM_ATTRIBUTES), 0.0f);
+            requireThrows<std::invalid_argument>(
+                [&]() {
+                    HuMomentsComputer::compute(AttributeComputeContext<float>{tree, std::span<float>(huBuffer), huNames, std::span<const Attribute>(huRequest)});
+                },
+                "HU_MOMENT context compute must reject missing central moment and AREA dependencies");
 
-        const std::array<Attribute, 1> inertiaRequest{INERTIA};
-        const AttributeNames inertiaNames = AttributeNames::fromList({INERTIA});
-        std::vector<float> inertiaBuffer(static_cast<std::size_t>(tree.getNumInternalNodeSlots()) * static_cast<std::size_t>(inertiaNames.NUM_ATTRIBUTES),
-                                         0.0f);
-        requireThrows<std::invalid_argument>(
-            [&]() {
-                MomentBasedAttributeComputer::compute(
-                    AttributeComputeContext<float>{tree, std::span<float>(inertiaBuffer), inertiaNames, std::span<const Attribute>(inertiaRequest)});
-            },
-            "moment-based context compute must reject missing central moment and AREA dependencies");
+            const std::array<Attribute, 1> inertiaRequest{INERTIA};
+            const AttributeNames inertiaNames = AttributeNames::fromList({INERTIA});
+            std::vector<float> inertiaBuffer(
+                static_cast<std::size_t>(tree.getNumInternalNodeSlots()) * static_cast<std::size_t>(inertiaNames.NUM_ATTRIBUTES), 0.0f);
+            requireThrows<std::invalid_argument>(
+                [&]() {
+                    MomentBasedAttributeComputer::compute(
+                        AttributeComputeContext<float>{tree, std::span<float>(inertiaBuffer), inertiaNames, std::span<const Attribute>(inertiaRequest)});
+                },
+                "moment-based context compute must reject missing central moment and AREA dependencies");
+        }
     }
 
     return 0;

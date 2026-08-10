@@ -470,7 +470,7 @@ int main() {
         auto tree = makeComponentTree(image, isMaxtree);
         verifyTraceEdgesAgainstSupportMasks(*tree, isMaxtree ? "max-tree" : "min-tree");
 
-        if (isMaxtree) {
+        if (isMaxtree && contract::validationsEnabled) {
             auto staleTraces = ContourTraceComputation::extract(*tree);
             tree->mergeNodeIntoParent(4);
             requireThrows<std::logic_error>([&]() { static_cast<void>(staleTraces.isMaterialized()); },
@@ -488,7 +488,7 @@ int main() {
                                isMaxtree ? "max-tree traces via view" : "min-tree traces via view");
         }
 
-        if (isMaxtree) {
+        if (isMaxtree && contract::validationsEnabled) {
             auto staleWeighted = makeWeightedComponentTree(image, true);
             const auto staleView = staleWeighted->asView();
             staleWeighted->mergeNodeIntoParent(4);

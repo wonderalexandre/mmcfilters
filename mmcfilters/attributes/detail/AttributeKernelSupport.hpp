@@ -3,7 +3,9 @@
 #include "AttributeNumericPolicy.hpp"
 #include "../../trees/TreeAltitudeAlgorithms.hpp"
 #include "../../trees/WeightedMorphologicalTree.hpp"
+#include "../../trees/detail/CommittedTreeAccess.hpp"
 #include "../../utils/Common.hpp"
+#include "../../utils/Contract.hpp"
 #include "../AttributeNames.hpp"
 
 #include <algorithm>
@@ -299,6 +301,10 @@ template <std::floating_point Real, AltitudeValue T> struct AltitudeUnitAttribut
 
 template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, NodeId properPart);
 
+namespace detail::kernel {
+template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, NodeId properPart);
+}
+
 /**
  * @brief Validates a dense internal-node output buffer.
  *
@@ -317,6 +323,36 @@ inline void requireAttributeBufferShape(const MorphologicalTree& tree, std::span
     if (buffer.size() != expectedSize) {
         throw std::invalid_argument("Attribute output buffer size must match the dense internal-node domain and requested attributes.");
     }
+}
+
+/** @brief Validates that every requested scalar has an output column. */
+template <std::floating_point Real>
+inline void requireRequestedAttributeColumns(const AttributeComputeContext<Real>& context) {
+    for (Attribute attribute : context.requestedAttributes) {
+        if (!context.attrNames.contains(attribute)) {
+            throw std::invalid_argument("Requested attribute computation requires a matching output column.");
+        }
+    }
+}
+
+template <std::floating_point Real, AltitudeValue T>
+inline void requireRequestedAttributeColumns(const AltitudeAttributeComputeContext<Real, T>& context) {
+    for (Attribute attribute : context.requestedAttributes) {
+        if (!context.attrNames.contains(attribute)) {
+            throw std::invalid_argument("Requested attribute computation requires a matching output column.");
+        }
+    }
+}
+
+/** @brief Finds a valid dependency source after the caller established dependency storage. */
+template <std::floating_point Real>
+inline const DependencySourceT<Real>* findDependencySource(std::span<const DependencySourceT<Real>> sources, Attribute attribute) {
+    for (const DependencySourceT<Real>& source : sources) {
+        if (source.attrNames->contains(attribute)) {
+            return &source;
+        }
+    }
+    return nullptr;
 }
 
 /**
@@ -347,12 +383,13 @@ template <std::floating_point Real>
 inline void requireUnitAttributeBufferShape(const MorphologicalTree& tree, std::span<const NodeId> unitProperParts, std::span<Real> buffer,
                                             const AttributeNames& attrNames) {
     const std::size_t expectedSize = unitProperParts.size() * static_cast<std::size_t>(attrNames.NUM_ATTRIBUTES);
-    if (buffer.size() != expectedSize) {
-        throw std::invalid_argument("Unit-attribute buffer size must match the exported leaf domain and requested attributes.");
-    }
-    for (const NodeId properPart : unitProperParts) {
-        if (!tree.isProperPart(properPart)) {
-            throw std::invalid_argument("Unit-attribute computation requires valid proper-part ids.");
+    MMCFILTERS_CONTRACT_REQUIRE(buffer.size() == expectedSize,
+                                throw std::invalid_argument("Unit-attribute buffer size must match the exported leaf domain and requested attributes."));
+    if constexpr (contract::validationsEnabled) {
+        for (const NodeId properPart : unitProperParts) {
+            if (!tree.isProperPart(properPart)) {
+                throw std::invalid_argument("Unit-attribute computation requires valid proper-part ids.");
+            }
         }
     }
 }
@@ -365,16 +402,31 @@ inline void requireUnitAttributeBufferShape(const MorphologicalTree& tree, std::
  * @param properPart Proper-part data represented by `properPart`.
  * @return The requested typed altitude assigned to one unit proper part.
  */
+namespace detail::kernel {
+
+/**
+ * @brief Reads the typed altitude assigned to an established unit proper part.
+ * @param tree Established tree topology.
+ * @param altitudeView Established altitude span.
+ * @param properPart Established proper-part id.
+ * @return Altitude of the proper part owner.
+ */
+template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, NodeId properPart) {
+    const NodeId ownerNodeId = detail::CommittedTreeAccess::properPartOwner(tree, properPart);
+    return altitudeView[static_cast<std::size_t>(ownerNodeId)];
+}
+
+} // namespace detail::kernel
+
 template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, NodeId properPart) {
     TreeAltitudeAlgorithms::validateAltitudeBufferShape(tree, altitudeView);
-    if (!tree.isProperPart(properPart)) {
-        throw std::invalid_argument("Unit altitude computation requires a valid proper-part id.");
-    }
-    const NodeId ownerNodeId = tree.getProperPartOwner(properPart);
-    if (ownerNodeId == InvalidNode || !tree.isAlive(ownerNodeId)) {
+    MMCFILTERS_CONTRACT_REQUIRE(tree.isProperPart(properPart),
+                                throw std::invalid_argument("Unit altitude computation requires a valid proper-part id."));
+    const NodeId ownerNodeId = detail::CommittedTreeAccess::properPartOwner(tree, properPart);
+    if (ownerNodeId == InvalidNode || !detail::CommittedTreeAccess::isAlive(tree, ownerNodeId)) {
         throw std::runtime_error("Unit-attribute computation requires every proper part to have an alive owner.");
     }
-    return TreeAltitudeAlgorithms::getAltitude(altitudeView, ownerNodeId);
+    return altitudeView[static_cast<std::size_t>(ownerNodeId)];
 }
 
 } // namespace mmcfilters

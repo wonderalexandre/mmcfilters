@@ -1,7 +1,9 @@
 #pragma once
 
 #include "../MorphologicalTree.hpp"
+#include "CommittedTreeAccess.hpp"
 #include "../../utils/Common.hpp"
+#include "../../utils/Contract.hpp"
 
 namespace mmcfilters::detail {
 
@@ -26,25 +28,34 @@ namespace mmcfilters::detail {
  * @param sampleProperPart Proper-part data represented by `sampleProperPart`.
  * @return The first ancestor where two proper-part samples share support.
  */
+namespace kernel {
+
+/**
+ * @brief Finds the entry node for two established proper-part samples.
+ * @param tree Established tree topology and ownership domain.
+ * @param anchorProperPart Established anchor proper-part id.
+ * @param sampleProperPart Established sample proper-part id.
+ * @return First node whose support contains both samples.
+ */
 inline NodeId properPartEntryNode(const MorphologicalTree& tree, int anchorProperPart, int sampleProperPart) {
-    if (anchorProperPart < 0 || anchorProperPart >= tree.getNumTotalProperParts() || sampleProperPart < 0 ||
-        sampleProperPart >= tree.getNumTotalProperParts()) {
-        return InvalidNode;
-    }
+    const NodeId anchorOwner = CommittedTreeAccess::properPartOwner(tree, anchorProperPart);
+    const NodeId sampleOwner = CommittedTreeAccess::properPartOwner(tree, sampleProperPart);
 
-    const NodeId anchorOwner = tree.getProperPartOwner(anchorProperPart);
-    const NodeId sampleOwner = tree.getProperPartOwner(sampleProperPart);
-    if (anchorOwner == InvalidNode || sampleOwner == InvalidNode) {
-        return InvalidNode;
-    }
-
-    if (tree.isAncestor(anchorOwner, sampleOwner)) {
+    if (CommittedTreeAccess::isAncestor(tree, anchorOwner, sampleOwner)) {
         return anchorOwner;
     }
-    if (tree.isAncestor(sampleOwner, anchorOwner)) {
+    if (CommittedTreeAccess::isAncestor(tree, sampleOwner, anchorOwner)) {
         return sampleOwner;
     }
-    return tree.getLowestCommonAncestor(anchorOwner, sampleOwner);
+    return CommittedTreeAccess::lowestCommonAncestor(tree, anchorOwner, sampleOwner);
+}
+
+} // namespace kernel
+
+inline NodeId properPartEntryNode(const MorphologicalTree& tree, int anchorProperPart, int sampleProperPart) {
+    MMCFILTERS_CONTRACT_CHECKED_ONLY(if (anchorProperPart < 0 || anchorProperPart >= tree.getNumTotalProperParts() || sampleProperPart < 0 ||
+                                         sampleProperPart >= tree.getNumTotalProperParts()) { return InvalidNode; });
+    return kernel::properPartEntryNode(tree, anchorProperPart, sampleProperPart);
 }
 
 } // namespace mmcfilters::detail

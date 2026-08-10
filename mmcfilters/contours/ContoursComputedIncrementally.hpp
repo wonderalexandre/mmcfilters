@@ -55,13 +55,107 @@
 #include "../utils/Common.hpp"
 #include "../trees/MorphologicalTree.hpp"
 #include "../trees/WeightedTreeView.hpp"
+#include "../trees/detail/CommittedTreeAccess.hpp"
 #include "../trees/detail/ProperPartEntryNode.hpp"
 #include "../trees/detail/TreeTraversalDetail.hpp"
+#include "../utils/CommittedGridAccess.hpp"
+#include "../utils/Contract.hpp"
 #include "../utils/RegularGridAdjacency2D.hpp"
 #include "detail/PendingPixelLists.hpp"
 #include "detail/ContourDeltaStore.hpp"
 
 namespace mmcfilters {
+
+namespace detail::kernel {
+
+/** @brief Radius selecting four-neighbour side adjacency for contour kernels. */
+inline constexpr double ContourSideAdjacencyRadius = 1.0;
+
+/** @brief Compact contour deltas together with their expected materialization capacity. */
+struct ExtractedContourDeltas {
+    ContourDeltaStore deltas; ///< Per-node local contour additions and removals.
+    int capacityHint = 0;     ///< Initial capacity suggested for materialized contours.
+};
+
+/**
+ * @brief Extracts local contour deltas from an established tree and grid domain.
+ * @param tree Established tree topology and grid domain.
+ * @return Extracted deltas and capacity hint.
+ */
+inline ExtractedContourDeltas extractContourDeltas(const MorphologicalTree& tree) {
+    const int numNodes = tree.getNumInternalNodeSlots();
+    const GridDomain2D& domain = CommittedTreeAccess::gridDomain2D(tree);
+    const int totalPixels = domain.rows * domain.cols;
+    const int capacityHint = std::max(totalPixels / 4, 1);
+
+    PendingPixelLists localContourPixels(numNodes, capacityHint);
+    PendingPixelLists localRemovalPixels(numNodes, capacityHint);
+    PendingPixelLists pendingContourRemovals(numNodes, capacityHint);
+    std::vector<int> neighborCount(static_cast<std::size_t>(totalPixels), 0);
+    std::vector<int> removalBuffer;
+    removalBuffer.reserve(64);
+    RegularGridAdjacency2D adjacency = CommittedGridAccess::radiusAdjacency(domain.rows, domain.cols, ContourSideAdjacencyRadius);
+
+    traversePostOrder(
+        tree, tree.getRoot(), [](NodeId) {}, [](NodeId, NodeId) {},
+        [&](NodeId node) {
+            removalBuffer.clear();
+            pendingContourRemovals.consumeInto(node, removalBuffer);
+            for (int pixel : removalBuffer) {
+                bool removePixel = true;
+                for (int neighbor : CommittedGridAccess::neighbors(adjacency, pixel)) {
+                    const NodeId entry = properPartEntryNode(tree, pixel, neighbor);
+                    if (entry != node && CommittedTreeAccess::isAncestor(tree, entry, node)) {
+                        pendingContourRemovals.add(entry, pixel);
+                        removePixel = false;
+                    }
+                }
+                if (!CommittedGridAccess::isBoundary(adjacency, pixel) && removePixel) {
+                    localRemovalPixels.add(node, pixel);
+                }
+            }
+
+            for (int pixel : CommittedTreeAccess::properParts(tree, node)) {
+                if (CommittedGridAccess::isBoundary(adjacency, pixel)) {
+                    ++neighborCount[static_cast<std::size_t>(pixel)];
+                }
+
+                for (int neighbor : CommittedGridAccess::neighbors(adjacency, pixel)) {
+                    const NodeId neighborOwner = CommittedTreeAccess::properPartOwner(tree, neighbor);
+                    const NodeId entry = properPartEntryNode(tree, pixel, neighbor);
+                    if (entry != node) {
+                        ++neighborCount[static_cast<std::size_t>(pixel)];
+                        if (entry != neighborOwner) {
+                            pendingContourRemovals.add(entry, pixel);
+                        }
+                    } else if (node != neighborOwner && CommittedTreeAccess::isAncestor(tree, node, neighborOwner)) {
+                        --neighborCount[static_cast<std::size_t>(neighbor)];
+                        if (neighborCount[static_cast<std::size_t>(neighbor)] == 0) {
+                            localRemovalPixels.add(node, neighbor);
+                        }
+                    }
+                }
+
+                if (neighborCount[static_cast<std::size_t>(pixel)] > 0) {
+                    localContourPixels.add(node, pixel);
+                }
+            }
+        });
+
+    return {ContourDeltaStore::fromPendingPixelLists(localContourPixels, localRemovalPixels, totalPixels), capacityHint};
+}
+
+/**
+ * @brief Extracts only the compact local contour-delta store.
+ * @param tree Established tree topology and grid domain.
+ * @return Per-node local contour additions and removals.
+ */
+inline ContourDeltaStore extractLocalContourDeltas(const MorphologicalTree& tree) {
+    ExtractedContourDeltas extracted = extractContourDeltas(tree);
+    return std::move(extracted.deltas);
+}
+
+} // namespace detail::kernel
 
 /**
  * @brief Arena-based incremental contour extraction and aggregation for `MorphologicalTree`.
@@ -69,7 +163,7 @@ namespace mmcfilters {
 class ContoursComputedIncrementally {
   public:
     /// Radius of the 4-neighbour side-contour adjacency used by the algorithm.
-    static constexpr double ContourSideAdjacencyRadius = 1.0;
+    static constexpr double ContourSideAdjacencyRadius = detail::kernel::ContourSideAdjacencyRadius;
 
     /// Compact local contour additions/removals indexed by internal node id.
     using LocalContourDeltas = detail::ContourDeltaStore;
@@ -79,18 +173,6 @@ class ContoursComputedIncrementally {
     using PendingPixelLists = detail::PendingPixelLists;
     /** @brief Defines the `ContourDeltaStore` alias used by the component. */
     using ContourDeltaStore = LocalContourDeltas;
-
-    /**
-     * @brief Returns entry node.
-     *
-     * @param tree Tree topology used by the operation.
-     * @param anchorPixel Pixel that anchors the contour-side comparison.
-     * @param samplePixel Neighboring pixel sampled for the contour-side comparison.
-     * @return Entry node.
-     */
-    static NodeId contourEntryNode(const MorphologicalTree& tree, int anchorPixel, int samplePixel) {
-        return detail::properPartEntryNode(tree, anchorPixel, samplePixel);
-    }
 
   public:
     /**
@@ -621,100 +703,6 @@ class ContoursComputedIncrementally {
         }
     };
 
-  private:
-    /** @brief Owns the contour deltas extracted from an incremental computation. */
-    struct ExtractedContourDeltas {
-        /** @brief Stores the deltas. */
-        ContourDeltaStore deltas;
-        /** @brief Stores the capacity hint. */
-        int capacityHint = 0;
-    };
-
-    /**
-     * @brief Extracts contour deltas impl.
-     *
-     * @param tree Tree topology used by the operation.
-     * @return Extracted contour deltas impl.
-     */
-    [[nodiscard]] static ExtractedContourDeltas extractContourDeltasImpl(const MorphologicalTree& tree) {
-        if (tree.getNumRowsOfGridDomain2D() <= 0 || tree.getNumColsOfGridDomain2D() <= 0) {
-            throw std::invalid_argument("Contour extraction requires a non-empty image domain.");
-        }
-        if (!tree.isAlive(tree.getRoot())) {
-            throw std::invalid_argument("Contour extraction requires a live tree root.");
-        }
-
-        const int numNodes = tree.getNumInternalNodeSlots();
-        const int totalPixels = tree.getNumRowsOfGridDomain2D() * tree.getNumColsOfGridDomain2D();
-
-        const int capacityHint = std::max(totalPixels / 4, 1);
-        // Temporary lists for local deltas before final compaction.
-        PendingPixelLists localContourPixels(numNodes, capacityHint);
-        PendingPixelLists localRemovalPixels(numNodes, capacityHint);
-        // Temporary list carrying pixels to the correct ancestor before removal.
-        PendingPixelLists pendingContourRemovals(numNodes, capacityHint);
-
-        // Auxiliary counter used to detect when a pixel stops being a contour pixel.
-        std::vector<int> ncount(totalPixels, 0);
-        // Reused buffer for pixels that must be removed at this node.
-        std::vector<int> removalBuffer;
-        removalBuffer.reserve(64);
-        RegularGridAdjacency2D adj4(tree.getNumRowsOfGridDomain2D(), tree.getNumColsOfGridDomain2D(), ContourSideAdjacencyRadius);
-        detail::traversePostOrder(
-            tree, tree.getRoot(), [](NodeId) -> void {}, [](NodeId, NodeId) -> void {},
-            [&](NodeId nodePId) {
-                const NodeId nodeP = nodePId;
-                // Consume and process all pending removals for this node.
-                removalBuffer.clear();
-                pendingContourRemovals.consumeInto(nodeP, removalBuffer);
-                for (int p : removalBuffer) {
-                    bool isPixelToBeRemoved = true;
-                    for (int r : adj4.getNeighborIndices(p)) {
-                        const NodeId entry = contourEntryNode(tree, p, r);
-                        if (entry != InvalidNode && tree.isStrictAncestor(entry, nodePId)) {
-                            pendingContourRemovals.add(entry, p);
-                            isPixelToBeRemoved = false;
-                        }
-                    }
-                    if (!adj4.isGridBoundary(p) && isPixelToBeRemoved) {
-                        localRemovalPixels.add(nodeP, p);
-                    }
-                }
-
-                // Scan proper parts owned by the current node.
-                for (int p : tree.getProperParts(nodePId)) {
-                    if (adj4.isGridBoundary(p)) {
-                        ncount[p]++;
-                    }
-
-                    for (int q : adj4.getNeighborIndices(p)) {
-                        const NodeId nodeQId = tree.getProperPartOwner(q);
-                        const NodeId entry = contourEntryNode(tree, p, q);
-                        if (entry == InvalidNode) {
-                            continue;
-                        }
-                        if (entry != nodePId) {
-                            ncount[p]++;
-                            if (entry != nodeQId) {
-                                pendingContourRemovals.add(entry, p);
-                            }
-                        } else if (tree.isStrictAncestor(nodePId, nodeQId)) {
-                            ncount[q]--;
-                            if (ncount[q] == 0) {
-                                localRemovalPixels.add(nodeP, q);
-                            }
-                        }
-                    }
-
-                    if (ncount[p] > 0) {
-                        localContourPixels.add(nodeP, p);
-                    }
-                }
-            });
-
-        return {ContourDeltaStore::fromPendingPixelLists(localContourPixels, localRemovalPixels, totalPixels), capacityHint};
-    }
-
   public:
     /**
      * @brief Extracts compact local contour additions/removals without materializing aggregate contours.
@@ -727,10 +715,13 @@ class ContoursComputedIncrementally {
      * @return The extracted compact local contour additions/removals without materializing aggregate contours.
      */
     [[nodiscard]] static LocalContourDeltas extractContourDeltas(const MorphologicalTree& tree) {
-        ExtractedContourDeltas extracted = extractContourDeltasImpl(tree);
-        return std::move(extracted.deltas);
+        MMCFILTERS_CONTRACT_REQUIRE(tree.getNumRowsOfGridDomain2D() > 0 && tree.getNumColsOfGridDomain2D() > 0,
+                                    throw std::invalid_argument("Contour extraction requires a non-empty image domain."));
+        MMCFILTERS_CONTRACT_REQUIRE(tree.isAlive(tree.getRoot()), throw std::invalid_argument("Contour extraction requires a live tree root."));
+        return detail::kernel::extractLocalContourDeltas(tree);
     }
 
+  public:
     template <AltitudeValue T>
     /**
      * @brief Extracts compact local contour additions/removals from a weighted view.
@@ -739,8 +730,12 @@ class ContoursComputedIncrementally {
      * @return The extracted compact local contour additions/removals from a weighted view.
      */
     [[nodiscard]] static LocalContourDeltas extractContourDeltas(const WeightedTreeView<T>& tree) {
-        tree.requireTopologyUnchanged("ContoursComputedIncrementally::extractContourDeltas");
-        return extractContourDeltas(tree.topology());
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(tree.requireTopologyUnchanged("ContoursComputedIncrementally::extractContourDeltas"));
+        MMCFILTERS_CONTRACT_REQUIRE(tree.topology().getNumRowsOfGridDomain2D() > 0 && tree.topology().getNumColsOfGridDomain2D() > 0,
+                                    throw std::invalid_argument("Contour extraction requires a non-empty image domain."));
+        MMCFILTERS_CONTRACT_REQUIRE(tree.topology().isAlive(tree.topology().getRoot()),
+                                    throw std::invalid_argument("Contour extraction requires a live tree root."));
+        return detail::kernel::extractLocalContourDeltas(tree.topology());
     }
 
     /**
@@ -769,7 +764,10 @@ class ContoursComputedIncrementally {
      * @endcode
      */
     [[nodiscard]] static IncrementalContours extractCompactContours(const MorphologicalTree& tree) {
-        ExtractedContourDeltas extracted = extractContourDeltasImpl(tree);
+        MMCFILTERS_CONTRACT_REQUIRE(tree.getNumRowsOfGridDomain2D() > 0 && tree.getNumColsOfGridDomain2D() > 0,
+                                    throw std::invalid_argument("Contour extraction requires a non-empty image domain."));
+        MMCFILTERS_CONTRACT_REQUIRE(tree.isAlive(tree.getRoot()), throw std::invalid_argument("Contour extraction requires a live tree root."));
+        detail::kernel::ExtractedContourDeltas extracted = detail::kernel::extractContourDeltas(tree);
         return IncrementalContours(tree, std::move(extracted.deltas), extracted.capacityHint);
     }
 
@@ -781,8 +779,13 @@ class ContoursComputedIncrementally {
      * @return Result produced by running incremental contour computation on a weighted view.
      */
     [[nodiscard]] static IncrementalContours extractCompactContours(const WeightedTreeView<T>& tree) {
-        tree.requireTopologyUnchanged("ContoursComputedIncrementally::extractCompactContours");
-        return extractCompactContours(tree.topology());
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(tree.requireTopologyUnchanged("ContoursComputedIncrementally::extractCompactContours"));
+        MMCFILTERS_CONTRACT_REQUIRE(tree.topology().getNumRowsOfGridDomain2D() > 0 && tree.topology().getNumColsOfGridDomain2D() > 0,
+                                    throw std::invalid_argument("Contour extraction requires a non-empty image domain."));
+        MMCFILTERS_CONTRACT_REQUIRE(tree.topology().isAlive(tree.topology().getRoot()),
+                                    throw std::invalid_argument("Contour extraction requires a live tree root."));
+        detail::kernel::ExtractedContourDeltas extracted = detail::kernel::extractContourDeltas(tree.topology());
+        return IncrementalContours(tree.topology(), std::move(extracted.deltas), extracted.capacityHint);
     }
 };
 

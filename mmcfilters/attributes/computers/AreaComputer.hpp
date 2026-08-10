@@ -4,13 +4,43 @@
 #include "AttributeComputerFamily.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
 #include "../../trees/detail/TreeTraversalDetail.hpp"
+#include "../../trees/detail/CommittedTreeAccess.hpp"
+#include "../../utils/Contract.hpp"
 #include "../../trees/MorphologicalTree.hpp"
 
 #include <array>
 #include <concepts>
+#include <stdexcept>
 #include <string_view>
 
 namespace mmcfilters::attributes::computers {
+
+namespace detail {
+
+template <std::floating_point Real> inline void validateAreaContext(const AttributeComputeContext<Real>& context) {
+    requireAttributeBufferShape(context.tree, context.buffer, context.attrNames);
+    if (!context.attrNames.contains(AREA)) {
+        throw std::invalid_argument("AREA computation requires an AREA column in the output layout.");
+    }
+}
+
+namespace kernel {
+
+/** @brief Computes subtree area over an established tree. @param context Established tree, AREA column, and output buffer. */
+template <std::floating_point Real> inline void computeArea(const AttributeComputeContext<Real>& context) {
+    const int stride = context.attrNames.NUM_ATTRIBUTES;
+    const int offset = context.attrNames.indexMap.find(AREA)->second;
+    auto indexOfArea = [&](NodeId node) { return static_cast<std::size_t>(node * stride + offset); };
+    ::mmcfilters::detail::kernel::traversePostOrder(
+        context.tree, context.tree.getRoot(),
+        [&](NodeId node) {
+            context.buffer[indexOfArea(node)] = static_cast<Real>(::mmcfilters::detail::CommittedTreeAccess::numProperParts(context.tree, node));
+        },
+        [&](NodeId parent, NodeId child) { context.buffer[indexOfArea(parent)] += context.buffer[indexOfArea(child)]; }, [](NodeId) {});
+}
+
+} // namespace kernel
+} // namespace detail
 
 /**
  * @brief Computes the canonical subtree area attribute.
@@ -59,22 +89,8 @@ class AreaComputer {
      * @param context Non-owning compute context whose layout contains `AREA`.
      */
     template <std::floating_point Real> static void compute(const AttributeComputeContext<Real>& context) {
-        computeImpl(context.tree, context.buffer, context.attrNames);
-    }
-
-  private:
-    /**
-     * @brief Computes the requested attribute values into the output buffer.
-     *
-     * @param tree Tree topology used by the operation.
-     * @param buffer Buffer read or written by the operation.
-     * @param attrNames Layout mapping attributes to buffer columns.
-     */
-    template <std::floating_point Real> static void computeImpl(const MorphologicalTree& tree, std::span<Real> buffer, const AttributeNames& attrNames) {
-        auto indexOfArea = [&](NodeId nodeId) { return attrNames.linearIndex(nodeId, AREA); };
-        ::mmcfilters::detail::traversePostOrder(
-            tree, tree.getRoot(), [&](NodeId nodeId) { buffer[indexOfArea(nodeId)] = static_cast<Real>(tree.getNumProperParts(nodeId)); },
-            [&](NodeId parentNodeId, NodeId childNodeId) { buffer[indexOfArea(parentNodeId)] += buffer[indexOfArea(childNodeId)]; }, [](NodeId) {});
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(detail::validateAreaContext(context));
+        detail::kernel::computeArea(context);
     }
 
   public:

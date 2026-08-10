@@ -1,7 +1,9 @@
 #pragma once
 
 #include "../MorphologicalTree.hpp"
+#include "CommittedTreeAccess.hpp"
 #include "../../utils/Altitude.hpp"
+#include "../../utils/Contract.hpp"
 
 #include <algorithm>
 #include <numeric>
@@ -45,9 +47,8 @@ struct ExportedHigraLayout {
  * @return The requested altitude from a dense internal-node buffer with bounds checks.
  */
 template <AltitudeValue T> inline T exportedHigraAltitudeAt(std::span<const T> altitude, NodeId nodeId) {
-    if (nodeId < 0 || static_cast<size_t>(nodeId) >= altitude.size()) {
-        throw std::invalid_argument("Altitude access requires a valid internal NodeId.");
-    }
+    MMCFILTERS_CONTRACT_REQUIRE(nodeId >= 0 && static_cast<size_t>(nodeId) < altitude.size(),
+                                throw std::invalid_argument("Altitude access requires a valid internal NodeId."));
     return altitude[static_cast<size_t>(nodeId)];
 }
 
@@ -78,9 +79,8 @@ template <AltitudeValue T> inline T exportedHigraAltitudeAt(std::span<const T> a
  */
 template <AltitudeValue T> inline ExportedHigraLayout computeExportedHigraLayout(const MorphologicalTree& tree, std::span<const T> altitude) {
     tree.requireNotEditing("Higra hierarchy export");
-    if (altitude.size() != static_cast<size_t>(tree.getNumInternalNodeSlots())) {
-        throw std::runtime_error("Altitude buffer size must match the dense internal-node domain.");
-    }
+    MMCFILTERS_CONTRACT_REQUIRE(altitude.size() == static_cast<size_t>(tree.getNumInternalNodeSlots()),
+                                throw std::runtime_error("Altitude buffer size must match the dense internal-node domain."));
 
     if (tree.getRoot() == InvalidNode || !tree.isAlive(tree.getRoot())) {
         throw std::runtime_error("Cannot export a tree without a valid rooted component.");
@@ -88,7 +88,7 @@ template <AltitudeValue T> inline ExportedHigraLayout computeExportedHigraLayout
 
     std::vector<NodeId> exportedNodes;
     exportedNodes.reserve(static_cast<size_t>(tree.getNumNodes()));
-    for (NodeId nodeId : tree.getNodeSubtree(tree.getRoot())) {
+    for (NodeId nodeId : CommittedTreeAccess::subtree(tree, tree.getRoot())) {
         exportedNodes.push_back(nodeId);
     }
 
@@ -100,20 +100,26 @@ template <AltitudeValue T> inline ExportedHigraLayout computeExportedHigraLayout
     const NodeId numAliveNodes = static_cast<NodeId>(exportedNodes.size());
     const NodeId numVertices = numLeaves + numAliveNodes;
     auto sortedNodes = exportedNodes;
+    std::vector<int> postOrderRank(static_cast<size_t>(tree.getNumInternalNodeSlots()), 0);
+    int nextPostOrderRank = 0;
+    for (NodeId nodeId : tree.getPostOrderNodes()) {
+        postOrderRank[static_cast<size_t>(nodeId)] = nextPostOrderRank++;
+    }
 
     const AltitudeOrder altitudeOrder = tree.getAltitudeOrder();
     if (altitudeOrder == AltitudeOrder::UNCONSTRAINED) {
-        std::stable_sort(sortedNodes.begin(), sortedNodes.end(),
-                         [&](NodeId lhs, NodeId rhs) { return tree.getNodeTimePostOrder(lhs) < tree.getNodeTimePostOrder(rhs); });
+        std::stable_sort(sortedNodes.begin(), sortedNodes.end(), [&](NodeId lhs, NodeId rhs) {
+            return postOrderRank[static_cast<size_t>(lhs)] < postOrderRank[static_cast<size_t>(rhs)];
+        });
     } else {
         const bool sortAscendingAltitude = altitudeOrder == AltitudeOrder::DECREASING_FROM_ROOT;
         std::stable_sort(sortedNodes.begin(), sortedNodes.end(), [&](NodeId lhs, NodeId rhs) {
-            const T altL = exportedHigraAltitudeAt(altitude, lhs);
-            const T altR = exportedHigraAltitudeAt(altitude, rhs);
+            const T altL = altitude[static_cast<size_t>(lhs)];
+            const T altR = altitude[static_cast<size_t>(rhs)];
             if (altL != altR) {
                 return sortAscendingAltitude ? altL < altR : altL > altR;
             }
-            return tree.getNodeTimePostOrder(lhs) < tree.getNodeTimePostOrder(rhs);
+            return postOrderRank[static_cast<size_t>(lhs)] < postOrderRank[static_cast<size_t>(rhs)];
         });
     }
 

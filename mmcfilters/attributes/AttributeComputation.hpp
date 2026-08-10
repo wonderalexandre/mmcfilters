@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../utils/Image.hpp"
+#include "../utils/Contract.hpp"
 #include "../attributes/AttributeResultTypes.hpp"
 #include "../trees/MorphologicalTree.hpp"
 #include "../trees/WeightedMorphologicalTree.hpp"
@@ -480,13 +481,14 @@ inline ComputedAttributeData<Real> AttributeComputation::computeTopologyAttribut
 template <std::floating_point Real, AltitudeValue T>
 inline ComputedAttributeData<Real> AttributeComputation::computeSingleAttribute(const WeightedMorphologicalTree<T>& tree, AttributeOrGroup attrOrGroup,
                                                                                 NodeIdSpace outputSpace) {
-    return computeSingleAttribute<Real>(tree.asView(), attrOrGroup, outputSpace);
+    return detail::castComputedAttributeData<Real>(detail::materializeAttributes<double>(tree.topology(), tree.altitudeSpan(), {attrOrGroup}, outputSpace));
 }
 
 template <std::floating_point Real, AltitudeValue T>
 inline ComputedAttributeData<Real> AttributeComputation::computeSingleAttribute(const WeightedTreeView<T>& tree, AttributeOrGroup attrOrGroup,
                                                                                 NodeIdSpace outputSpace) {
-    return computeAttributesFromAltitudeSpan<Real>(tree, {attrOrGroup}, outputSpace);
+    MMCFILTERS_CONTRACT_CHECKED_ONLY(tree.requireTopologyUnchanged("AttributeComputation::computeSingleAttribute"));
+    return detail::castComputedAttributeData<Real>(detail::materializeAttributes<double>(tree.topology(), tree.altitude(), {attrOrGroup}, outputSpace));
 }
 
 template <std::floating_point Real, AltitudeValue T>
@@ -510,21 +512,21 @@ inline ComputedAttributeDataWithDelta<Real> AttributeComputation::computeSingleA
 template <std::floating_point Real, AltitudeValue T>
 inline ComputedAttributeData<Real> AttributeComputation::computeAttributes(const WeightedMorphologicalTree<T>& tree,
                                                                            const std::vector<AttributeOrGroup>& attributes, NodeIdSpace outputSpace) {
-    return computeAttributes<Real>(tree.asView(), attributes, outputSpace);
+    return detail::castComputedAttributeData<Real>(detail::materializeAttributes<double>(tree.topology(), tree.altitudeSpan(), attributes, outputSpace));
 }
 
 template <std::floating_point Real, AltitudeValue T>
 inline ComputedAttributeData<Real> AttributeComputation::computeAttributes(const WeightedTreeView<T>& tree, const std::vector<AttributeOrGroup>& attributes,
                                                                            NodeIdSpace outputSpace) {
-    tree.requireTopologyUnchanged("AttributeComputation::computeAttributes");
-    return computeAttributesFromAltitudeSpan<Real>(tree, attributes, outputSpace);
+    MMCFILTERS_CONTRACT_CHECKED_ONLY(tree.requireTopologyUnchanged("AttributeComputation::computeAttributes"));
+    return detail::castComputedAttributeData<Real>(detail::materializeAttributes<double>(tree.topology(), tree.altitude(), attributes, outputSpace));
 }
 
 template <std::floating_point Real, AltitudeValue T>
 inline ComputedAttributeData<Real> AttributeComputation::computeAttributesFromAltitudeSpan(const WeightedTreeView<T>& weighted,
                                                                                            const std::vector<AttributeOrGroup>& attributes,
                                                                                            NodeIdSpace outputSpace) {
-    weighted.requireTopologyUnchanged("AttributeComputation::computeAttributesFromAltitudeSpan");
+    MMCFILTERS_CONTRACT_CHECKED_ONLY(weighted.requireTopologyUnchanged("AttributeComputation::computeAttributesFromAltitudeSpan"));
     return detail::castComputedAttributeData<Real>(detail::materializeAttributes<double>(weighted.topology(), weighted.altitude(), attributes, outputSpace));
 }
 

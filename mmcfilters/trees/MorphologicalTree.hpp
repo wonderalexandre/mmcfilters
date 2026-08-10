@@ -4,6 +4,7 @@
 #include "../utils/Assert.hpp"
 #include "../utils/Altitude.hpp"
 #include "../utils/Common.hpp"
+#include "../utils/Contract.hpp"
 #include "../dataStructure/FastQueue.hpp"
 #include "HierarchySemantics.hpp"
 #include "ProperPartDomain.hpp"
@@ -29,6 +30,10 @@
 #include <vector>
 
 namespace mmcfilters {
+
+namespace detail {
+class CommittedTreeAccess;
+}
 
 /**
  * @brief Selects the node-id domain used by attribute buffers exposed to callers.
@@ -108,6 +113,7 @@ class MorphologicalTree {
   private:
     friend class TreeEditor;
     friend class MorphologicalTreeFactory;
+    friend class detail::CommittedTreeAccess;
 
     class LCAEulerRMQ; // Forward declaration for the LCA cache implementation.
 
@@ -174,10 +180,7 @@ class MorphologicalTree {
         std::vector<int> timePostOrder;
         /** @brief Indicates whether the cached preorder/postorder data is valid. */
         bool valid = false;
-
-        /**
-         * @brief Marks the cached traversal timestamps as stale.
-         */
+        /** @brief Marks the cached traversal timestamps as stale. */
         void invalidate() noexcept { valid = false; }
     };
     /** @brief Stores the pre post order cache. */
@@ -362,9 +365,7 @@ class MorphologicalTree {
      * @param context Operation context or diagnostic label.
      */
     inline void requireAliveNode(NodeId nodeId, const char* context) const {
-        if (!isAlive(nodeId)) {
-            throw std::invalid_argument(std::string(context) + " requires a live internal NodeId.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(isAlive(nodeId), throw std::invalid_argument(std::string(context) + " requires a live internal NodeId."));
     }
 
     /**
@@ -375,9 +376,7 @@ class MorphologicalTree {
      */
     inline void requireAliveNonRootNode(NodeId nodeId, const char* context) const {
         requireAliveNode(nodeId, context);
-        if (isRoot(nodeId)) {
-            throw std::invalid_argument(std::string(context) + " cannot target the root node.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(!isRoot(nodeId), throw std::invalid_argument(std::string(context) + " cannot target the root node."));
     }
 
     /**
@@ -594,8 +593,10 @@ class MorphologicalTree {
 
         int timer = 0;
         computeIncrementalAttributes(
-            const_cast<MorphologicalTree*>(this), getRoot(), [&](NodeId nodeId) -> void { prePostOrderCache_.timePreOrder[nodeId] = timer++; },
-            [&](NodeId, NodeId) -> void {}, [&](NodeId nodeId) -> void { prePostOrderCache_.timePostOrder[nodeId] = timer++; });
+            const_cast<MorphologicalTree*>(this), getRoot(),
+            [&](NodeId nodeId) -> void { prePostOrderCache_.timePreOrder[nodeId] = timer++; },
+            [&](NodeId, NodeId) -> void {},
+            [&](NodeId nodeId) -> void { prePostOrderCache_.timePostOrder[nodeId] = timer++; });
 
         prePostOrderCache_.valid = true;
     }
@@ -1418,9 +1419,8 @@ class MorphologicalTree {
      * @param context Operation context or diagnostic label.
      */
     void requireMutationVersion(std::size_t expectedVersion, const char* context) const {
-        if (mutationVersion_ != expectedVersion) {
-            throw std::logic_error(std::string(context) + " cannot be used after the referenced tree topology has changed.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(mutationVersion_ == expectedVersion,
+                                    throw std::logic_error(std::string(context) + " cannot be used after the referenced tree topology has changed."));
     }
 
     /**
@@ -1716,7 +1716,10 @@ class MorphologicalTree {
      * @return The live node that directly owns properPartId.
      */
     inline NodeId getProperPartOwner(NodeId properPartId) const {
-        return isProperPart(properPartId) ? properPartOwner_[static_cast<size_t>(properPartId)] : InvalidNode;
+        if constexpr (contract::validationsEnabled) {
+            return isProperPart(properPartId) ? properPartOwner_[static_cast<size_t>(properPartId)] : InvalidNode;
+        }
+        return properPartOwner_[static_cast<size_t>(properPartId)];
     }
 
     /**
@@ -1803,9 +1806,8 @@ class MorphologicalTree {
      * @param context Operation context or diagnostic label.
      */
     inline void requireNotEditing(const char* context) const {
-        if (isEditing()) {
-            throw std::logic_error(std::string(context) + " requires a committed MorphologicalTree; an edit session is still open.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(!isEditing(),
+                                    throw std::logic_error(std::string(context) + " requires a committed MorphologicalTree; an edit session is still open."));
     }
 
     /**

@@ -4,6 +4,7 @@
 #include "TreeAltitudeAlgorithms.hpp"
 #include "TreeEditor.hpp"
 #include "WeightedTreeView.hpp"
+#include "../utils/Contract.hpp"
 #include "../utils/Image.hpp"
 
 #include <memory>
@@ -256,9 +257,8 @@ template <AltitudeValue T> class WeightedMorphologicalTree {
      * @return One live node altitude from the dense buffer.
      */
     [[nodiscard]] T getAltitude(NodeId nodeId) const {
-        if (!tree_.isAlive(nodeId) || static_cast<size_t>(nodeId) >= altitude_.size()) {
-            throw std::invalid_argument("WeightedMorphologicalTree::getAltitude requires a live internal NodeId.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(tree_.isAlive(nodeId) && static_cast<size_t>(nodeId) < altitude_.size(),
+                                    throw std::invalid_argument("WeightedMorphologicalTree::getAltitude requires a live internal NodeId."));
         return altitude_[static_cast<size_t>(nodeId)];
     }
 

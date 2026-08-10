@@ -117,15 +117,17 @@ template <class T> void checkGenericStaticAltitudeAccess(const WeightedMorpholog
     require(TreeAltitudeAlgorithms::getAltitude(view, sampleNodeId) == altitude[static_cast<std::size_t>(sampleNodeId)],
             "templated getAltitude must preserve the altitude value type");
 
-    requireThrows<std::runtime_error>(
-        [&]() {
-            const std::vector<T> wrongSize(static_cast<std::size_t>(tree.getNumInternalNodeSlots() - 1), T{});
-            TreeAltitudeAlgorithms::validateAltitudeBufferShape(tree, std::span<const T>(wrongSize));
-        },
-        "templated validateAltitudeBufferShape must reject wrong size");
+    if constexpr (contract::validationsEnabled) {
+        requireThrows<std::runtime_error>(
+            [&]() {
+                const std::vector<T> wrongSize(static_cast<std::size_t>(tree.getNumInternalNodeSlots() - 1), T{});
+                TreeAltitudeAlgorithms::validateAltitudeBufferShape(tree, std::span<const T>(wrongSize));
+            },
+            "templated validateAltitudeBufferShape must reject wrong size");
 
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(TreeAltitudeAlgorithms::getAltitude(view, InvalidNode)); },
-                                         "templated getAltitude must reject invalid node ids");
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(TreeAltitudeAlgorithms::getAltitude(view, InvalidNode)); },
+                                             "templated getAltitude must reject invalid node ids");
+    }
 }
 
 template <class T> void checkWeightedTreeViewContract(const WeightedMorphologicalTree<std::uint8_t>& weighted, NodeId sampleNodeId, const std::string& label) {
@@ -168,14 +170,16 @@ template <class T> void checkWeightedTreeViewContract(const WeightedMorphologica
         }
     }
 
-    requireThrows<std::runtime_error>(
-        [&]() {
-            const std::vector<T> wrongSize(static_cast<std::size_t>(tree.getNumInternalNodeSlots() - 1), T{});
-            static_cast<void>(WeightedTreeView<T>(tree, std::span<const T>(wrongSize)));
-        },
-        label + " view must reject wrong altitude size");
+    if constexpr (contract::validationsEnabled) {
+        requireThrows<std::runtime_error>(
+            [&]() {
+                const std::vector<T> wrongSize(static_cast<std::size_t>(tree.getNumInternalNodeSlots() - 1), T{});
+                static_cast<void>(WeightedTreeView<T>(tree, std::span<const T>(wrongSize)));
+            },
+            label + " view must reject wrong altitude size");
 
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(view.getAltitude(InvalidNode)); }, label + " view must reject invalid node ids");
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(view.getAltitude(InvalidNode)); }, label + " view must reject invalid node ids");
+    }
 }
 
 void requireComputedAttributesNear(const ComputedAttributeData<float>& actual, const ComputedAttributeData<float>& expected, const MorphologicalTree& tree,
@@ -597,16 +601,19 @@ template <class T> void checkGenericAltitudeDelta(const WeightedMorphologicalTre
     requireEqual(detail::findAscendantByAltitudeDelta(tree, view, sampleNodeId, static_cast<AltitudeDiff<T>>(2)),
                  baseline.first[static_cast<std::size_t>(sampleNodeId)], label + " generic findAscendantByAltitudeDelta");
 
-    requireThrows<std::runtime_error>(
-        [&]() {
-            const std::vector<T> wrongSize(static_cast<std::size_t>(tree.getNumInternalNodeSlots() - 1), T{});
-            static_cast<void>(detail::computeAscendantsAndDescendantsByAltitude(tree, std::span<const T>(wrongSize), static_cast<AltitudeDiff<T>>(2)));
-        },
-        label + " generic delta must reject wrong altitude size");
+    if constexpr (contract::validationsEnabled) {
+        requireThrows<std::runtime_error>(
+            [&]() {
+                const std::vector<T> wrongSize(static_cast<std::size_t>(tree.getNumInternalNodeSlots() - 1), T{});
+                static_cast<void>(detail::computeAscendantsAndDescendantsByAltitude(tree, std::span<const T>(wrongSize),
+                                                                                     static_cast<AltitudeDiff<T>>(2)));
+            },
+            label + " generic delta must reject wrong altitude size");
 
-    requireThrows<std::invalid_argument>(
-        [&]() { static_cast<void>(detail::findAscendantByAltitudeDelta(tree, view, InvalidNode, static_cast<AltitudeDiff<T>>(2))); },
-        label + " generic delta must reject invalid node ids");
+        requireThrows<std::invalid_argument>(
+            [&]() { static_cast<void>(detail::findAscendantByAltitudeDelta(tree, view, InvalidNode, static_cast<AltitudeDiff<T>>(2))); },
+            label + " generic delta must reject invalid node ids");
+    }
 }
 
 template <class T> void checkTypedOwnerDeltaAttributeApi(const std::string& label) {
@@ -650,17 +657,19 @@ template <class T> void checkTypedOwnerDeltaAttributeApi(const std::string& labe
     }
     require(foundAscendantSample, label + " typed delta fixture must contain an ascendant sample");
 
-    requireThrows<std::invalid_argument>(
-        [&]() { static_cast<void>(AttributeComputation::computeSingleAttributeWithDelta(typed, AREA, deltaStep, -1, "last-padding")); },
-        label + " typed delta must reject negative radius");
-
-    if constexpr (std::is_floating_point_v<T>) {
+    if constexpr (contract::validationsEnabled) {
         requireThrows<std::invalid_argument>(
-            [&]() {
-                static_cast<void>(
-                    AttributeComputation::computeSingleAttributeWithDelta(typed, AREA, std::numeric_limits<AltitudeDiff<T>>::quiet_NaN(), 1, "last-padding"));
-            },
-            label + " typed delta must reject non-finite floating delta step");
+            [&]() { static_cast<void>(AttributeComputation::computeSingleAttributeWithDelta(typed, AREA, deltaStep, -1, "last-padding")); },
+            label + " typed delta must reject negative radius");
+
+        if constexpr (std::is_floating_point_v<T>) {
+            requireThrows<std::invalid_argument>(
+                [&]() {
+                    static_cast<void>(AttributeComputation::computeSingleAttributeWithDelta(
+                        typed, AREA, std::numeric_limits<AltitudeDiff<T>>::quiet_NaN(), 1, "last-padding"));
+                },
+                label + " typed delta must reject non-finite floating delta step");
+        }
     }
 }
 
@@ -675,8 +684,11 @@ template <class T> void checkGenericVolumeKernel(const WeightedMorphologicalTree
     std::vector<float> genericBuffer(static_cast<std::size_t>(tree.getNumInternalNodeSlots()) * static_cast<std::size_t>(volumeNames.NUM_ATTRIBUTES), 0.0f);
 
     const std::vector<T> equivalentAltitude = makeEquivalentAltitude<T>(weighted);
-    mmcfilters::attributes::computers::detail::computeVolumeAttributeKernel(tree, std::span<const T>(equivalentAltitude), std::span<float>(genericBuffer),
-                                                                            volumeNames, requested, std::span<const DependencySourceT<float>>(dependencies));
+    const auto equivalentContext = AltitudeAttributeComputeContext<float, T>{tree, std::span<const T>(equivalentAltitude), std::span<float>(genericBuffer),
+                                                                             volumeNames, requested,
+                                                                             std::span<const DependencySourceT<float>>(dependencies)};
+    const auto volumeRequest = mmcfilters::attributes::computers::detail::VolumeRequest::from(requested);
+    mmcfilters::attributes::computers::detail::kernel::computeVolume(equivalentContext, volumeRequest, &dependencies[0]);
 
     for (NodeId nodeId : tree.getAliveNodeIds()) {
         requireNear(genericBuffer[volumeNames.linearIndex(nodeId, VOLUME)], baseline.second[baseline.first.linearIndex(nodeId, VOLUME)], 1.0e-5f,
@@ -688,9 +700,10 @@ template <class T> void checkGenericVolumeKernel(const WeightedMorphologicalTree
     if constexpr (std::is_floating_point_v<T>) {
         std::vector<float> fractionalBuffer(genericBuffer.size(), 0.0f);
         const std::vector<T> fractionalAltitude = makeGenericAltitude<T>(weighted);
-        mmcfilters::attributes::computers::detail::computeVolumeAttributeKernel(tree, std::span<const T>(fractionalAltitude),
-                                                                                std::span<float>(fractionalBuffer), volumeNames, requested,
-                                                                                std::span<const DependencySourceT<float>>(dependencies));
+        const auto fractionalContext = AltitudeAttributeComputeContext<float, T>{
+            tree, std::span<const T>(fractionalAltitude), std::span<float>(fractionalBuffer), volumeNames, requested,
+            std::span<const DependencySourceT<float>>(dependencies)};
+        mmcfilters::attributes::computers::detail::kernel::computeVolume(fractionalContext, volumeRequest, &dependencies[0]);
 
         for (NodeId nodeId : tree.getAliveNodeIds()) {
             const float area = areaComputed.second[areaComputed.first.linearIndex(nodeId, AREA)];
@@ -716,9 +729,11 @@ template <class T> void checkGenericGrayLevelStatsKernel(const WeightedMorpholog
     std::vector<float> genericBuffer(static_cast<std::size_t>(tree.getNumInternalNodeSlots()) * static_cast<std::size_t>(grayNames.NUM_ATTRIBUTES), 0.0f);
 
     const std::vector<T> equivalentAltitude = makeEquivalentAltitude<T>(weighted);
-    mmcfilters::attributes::computers::detail::computeGrayLevelStatsAttributeKernel(tree, std::span<const T>(equivalentAltitude),
-                                                                                    std::span<float>(genericBuffer), grayNames, requested,
-                                                                                    std::span<const DependencySourceT<float>>(dependencies));
+    const auto equivalentContext = AltitudeAttributeComputeContext<float, T>{tree, std::span<const T>(equivalentAltitude), std::span<float>(genericBuffer),
+                                                                             grayNames, requested,
+                                                                             std::span<const DependencySourceT<float>>(dependencies)};
+    const auto grayRequest = mmcfilters::attributes::computers::detail::GrayLevelStatsRequest::from(requested);
+    mmcfilters::attributes::computers::detail::kernel::computeGrayLevelStats(equivalentContext, grayRequest, &dependencies[0], &dependencies[1]);
 
     for (NodeId nodeId : tree.getAliveNodeIds()) {
         for (Attribute attribute : requested) {
@@ -734,16 +749,20 @@ template <class T> void checkGenericGrayLevelStatsKernel(const WeightedMorpholog
         std::vector<float> fractionalVolumeBuffer(
             static_cast<std::size_t>(tree.getNumInternalNodeSlots()) * static_cast<std::size_t>(volumeNames.NUM_ATTRIBUTES), 0.0f);
         const std::vector<T> fractionalAltitude = makeGenericAltitude<T>(weighted);
-        mmcfilters::attributes::computers::detail::computeVolumeAttributeKernel(tree, std::span<const T>(fractionalAltitude),
-                                                                                std::span<float>(fractionalVolumeBuffer), volumeNames, volumeRequested,
-                                                                                std::span<const DependencySourceT<float>>(volumeDependencies));
+        const auto fractionalVolumeContext = AltitudeAttributeComputeContext<float, T>{
+            tree, std::span<const T>(fractionalAltitude), std::span<float>(fractionalVolumeBuffer), volumeNames, volumeRequested,
+            std::span<const DependencySourceT<float>>(volumeDependencies)};
+        const auto fractionalVolumeRequest = mmcfilters::attributes::computers::detail::VolumeRequest::from(volumeRequested);
+        mmcfilters::attributes::computers::detail::kernel::computeVolume(fractionalVolumeContext, fractionalVolumeRequest, &volumeDependencies[0]);
 
         const std::array<DependencySourceT<float>, 2> fractionalDependencies{
             {DependencySourceT<float>{&volumeNames, fractionalVolumeBuffer.data()}, DependencySourceT<float>{&areaComputed.first, areaComputed.second.data()}}};
         std::vector<float> fractionalGrayBuffer(genericBuffer.size(), 0.0f);
-        mmcfilters::attributes::computers::detail::computeGrayLevelStatsAttributeKernel(tree, std::span<const T>(fractionalAltitude),
-                                                                                        std::span<float>(fractionalGrayBuffer), grayNames, requested,
-                                                                                        std::span<const DependencySourceT<float>>(fractionalDependencies));
+        const auto fractionalGrayContext = AltitudeAttributeComputeContext<float, T>{
+            tree, std::span<const T>(fractionalAltitude), std::span<float>(fractionalGrayBuffer), grayNames, requested,
+            std::span<const DependencySourceT<float>>(fractionalDependencies)};
+        mmcfilters::attributes::computers::detail::kernel::computeGrayLevelStats(fractionalGrayContext, grayRequest, &fractionalDependencies[0],
+                                                                                 &fractionalDependencies[1]);
 
         for (NodeId nodeId : tree.getAliveNodeIds()) {
             requireNear(fractionalGrayBuffer[grayNames.linearIndex(nodeId, LEVEL)], baseline.second[baseline.first.linearIndex(nodeId, LEVEL)] + 0.25f, 1.0e-5f,
@@ -867,12 +886,14 @@ void checkAttributePipelineMaxDistAndRejectsInvalidInputs(const WeightedMorpholo
     requireComputedAttributesNear(maxDistFromInt32AltitudeSpan, baselineMaxDist, tree, {MAX_DIST},
                                   "altitude-span attribute API must support MAX_DIST with int32 altitude");
 
-    requireThrows<std::runtime_error>(
-        [&]() {
-            const std::vector<float> wrongSize(static_cast<std::size_t>(tree.getNumInternalNodeSlots() - 1), 0.0f);
-            static_cast<void>(WeightedTreeView<float>(tree, std::span<const float>(wrongSize)));
-        },
-        "weighted view API must reject wrong altitude size");
+    if constexpr (contract::validationsEnabled) {
+        requireThrows<std::runtime_error>(
+            [&]() {
+                const std::vector<float> wrongSize(static_cast<std::size_t>(tree.getNumInternalNodeSlots() - 1), 0.0f);
+                static_cast<void>(WeightedTreeView<float>(tree, std::span<const float>(wrongSize)));
+            },
+            "weighted view API must reject wrong altitude size");
+    }
 }
 
 int main() {
@@ -923,7 +944,9 @@ int main() {
     checkTypedOwnerDeltaAttributeApi<std::int32_t>("int32 owner");
     checkTypedOwnerDeltaAttributeApi<float>("float owner");
     checkTypedHigraImportFactory(image);
-    checkFiniteFloatAltitudeValidation(image);
+    if constexpr (contract::validationsEnabled) {
+        checkFiniteFloatAltitudeValidation(image);
+    }
 
     return 0;
 }

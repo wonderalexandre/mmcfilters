@@ -17,6 +17,7 @@
 #include "../../trees/TreeAltitudeAlgorithms.hpp"
 #include "../../utils/Altitude.hpp"
 #include "../../utils/Common.hpp"
+#include "../../utils/Contract.hpp"
 
 #include <cmath>
 #include <concepts>
@@ -45,9 +46,8 @@ namespace mmcfilters::detail {
  *
  */
 inline void validateDeltaPaddingStrategy(const std::string& padding) {
-    if (padding != "last-padding" && padding != "nan-padding" && padding != "null-padding" && padding != "zero-padding") {
-        throw std::invalid_argument("Unknown padding strategy.");
-    }
+    MMCFILTERS_CONTRACT_REQUIRE(padding == "last-padding" || padding == "nan-padding" || padding == "null-padding" || padding == "zero-padding",
+                                throw std::invalid_argument("Unknown padding strategy."));
 }
 
 /**
@@ -60,9 +60,8 @@ inline void validateDeltaPaddingStrategy(const std::string& padding) {
  * @throws std::invalid_argument If `radius` is negative.
  */
 inline void validateDeltaRadius(int radius, const char* context) {
-    if (radius < 0) {
-        throw std::invalid_argument(std::string(context) + " requires a non-negative radius.");
-    }
+    MMCFILTERS_CONTRACT_REQUIRE(radius >= 0,
+                                throw std::invalid_argument(std::string(context) + " requires a non-negative radius."));
 }
 
 /**
@@ -213,7 +212,7 @@ materializeSingleAttributeWithTypedDelta(const MorphologicalTree& tree, std::spa
                 const int outIdx = attributeNamesDelta.linearIndex(nodeIndex, attribute, +d);
                 const int refIdx = attributeNamesDelta.linearIndex(nodeIndex, attribute, +(d - 1));
 
-                if (tree.isLeaf(nodeIndex) || std::isnan(attrsDelta[static_cast<size_t>(outIdx)])) {
+                if (CommittedTreeAccess::numChildren(tree, nodeIndex) == 0 || std::isnan(attrsDelta[static_cast<size_t>(outIdx)])) {
                     if (padding == "last-padding") {
                         attrsDelta[static_cast<size_t>(outIdx)] = attrsDelta[static_cast<size_t>(refIdx)];
                     } else {

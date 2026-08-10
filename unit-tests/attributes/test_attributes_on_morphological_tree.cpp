@@ -1,6 +1,7 @@
 #include "support/TestSupport.hpp"
 
 #include "mmcfilters/attributes/AttributeComputation.hpp"
+#include "mmcfilters/utils/Contract.hpp"
 
 #include <algorithm>
 #include <array>
@@ -359,9 +360,11 @@ int main() {
                          isMaxtree ? "max-tree MAX_DIST regression" : "min-tree MAX_DIST regression");
         }
 
-        auto unweighted = makeComponentTree(image, isMaxtree);
-        requireThrows<std::invalid_argument>([&]() { (void)AttributeComputation::computeSingleTopologyAttribute(*unweighted, MAX_DIST); },
-                                             isMaxtree ? "max-tree MAX_DIST requires explicit altitude" : "min-tree MAX_DIST requires explicit altitude");
+        if constexpr (contract::validationsEnabled) {
+            auto unweighted = makeComponentTree(image, isMaxtree);
+            requireThrows<std::invalid_argument>([&]() { (void)AttributeComputation::computeSingleTopologyAttribute(*unweighted, MAX_DIST); },
+                                                 isMaxtree ? "max-tree MAX_DIST requires explicit altitude" : "min-tree MAX_DIST requires explicit altitude");
+        }
 
         std::vector<int> shiftedAltitude;
         shiftedAltitude.reserve(weighted->getAltitudeBuffer().size());
@@ -380,7 +383,7 @@ int main() {
         requireBalanceMatchesTopologyOracle(tree, isMaxtree ? "max-tree balance" : "min-tree balance");
     }
 
-    {
+    if constexpr (contract::validationsEnabled) {
         auto treeOfShapes = makeWeightedTreeOfShapes(image, ToSInterpolation::SelfDual);
         requireThrowsContaining<std::invalid_argument>([&]() { (void)AttributeComputation::computeSingleAttribute(*treeOfShapes, MAX_DIST); },
                                                        "globally monotone altitude order",
@@ -493,20 +496,23 @@ int main() {
         requireNear(deltaNullBuffer[deltaNullNames.linearIndex(5, AREA, 0)], 2.0f, 1e-6f, "delta null-padding leaf center");
         require(std::isnan(deltaNullBuffer[deltaNullNames.linearIndex(5, AREA, 1)]), "delta null-padding leaf missing desc");
 
-        bool invalidPaddingRejected = false;
-        try {
-            (void)AttributeComputation::computeSingleAttributeWithDelta(*weightedForDelta, AREA, AltitudeDiff<std::uint8_t>{1}, 1, "unsupported-padding");
-        } catch (const std::invalid_argument&) {
-            invalidPaddingRejected = true;
-        }
-        require(invalidPaddingRejected, "delta invalid padding must throw");
+        if constexpr (contract::validationsEnabled) {
+            bool invalidPaddingRejected = false;
+            try {
+                (void)AttributeComputation::computeSingleAttributeWithDelta(*weightedForDelta, AREA, AltitudeDiff<std::uint8_t>{1}, 1,
+                                                                            "unsupported-padding");
+            } catch (const std::invalid_argument&) {
+                invalidPaddingRejected = true;
+            }
+            require(invalidPaddingRejected, "delta invalid padding must throw");
 
-        requireThrows<std::invalid_argument>(
-            [&]() {
-                static_cast<void>(
-                    AttributeComputation::computeSingleAttributeWithDelta(*weightedForDelta, AREA, AltitudeDiff<std::uint8_t>{1}, -1, "last-padding"));
-            },
-            "delta negative radius must throw");
+            requireThrows<std::invalid_argument>(
+                [&]() {
+                    static_cast<void>(
+                        AttributeComputation::computeSingleAttributeWithDelta(*weightedForDelta, AREA, AltitudeDiff<std::uint8_t>{1}, -1, "last-padding"));
+                },
+                "delta negative radius must throw");
+        }
     }
 
     {

@@ -7,6 +7,7 @@
 #include "../trees/TreeAltitudeAlgorithms.hpp"
 #include "../trees/WeightedMorphologicalTree.hpp"
 #include "../utils/Common.hpp"
+#include "../utils/Contract.hpp"
 #include "detail/VariationMeasure.hpp"
 
 #include <cassert>
@@ -101,9 +102,7 @@ template <AltitudeValue T, std::floating_point Real = float> class MSERComputer 
      * @param context Public operation requesting computed state.
      */
     void requireComputed(const char* context) const {
-        if (!hasComputed_) {
-            throw std::logic_error(std::string(context) + " requires computeMSER to run first.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(hasComputed_, throw std::logic_error(std::string(context) + " requires computeMSER to run first."));
     }
 
     /**
@@ -113,9 +112,8 @@ template <AltitudeValue T, std::floating_point Real = float> class MSERComputer 
      * @param attr Attribute requested by the operation.
      */
     static void validateOwnedAttributeSize(const MorphologicalTree& tree, const std::vector<Real>& attr) {
-        if (attr.size() != static_cast<std::size_t>(tree.getNumInternalNodeSlots())) {
-            throw std::invalid_argument("MSERComputer attribute size must match the internal node slot count.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(attr.size() == static_cast<std::size_t>(tree.getNumInternalNodeSlots()),
+                                    throw std::invalid_argument("MSERComputer attribute size must match the internal node slot count."));
     }
 
     /**
@@ -155,9 +153,9 @@ template <AltitudeValue T, std::floating_point Real = float> class MSERComputer 
      * @param attr_increasing Attribute information represented by `attr_increasing`.
      */
     MSERComputer(const WeightedMorphologicalTree<T>& weighted, const Real* attr_increasing) : MSERComputer(weighted, attr_increasing, {}) {
-        if (attr_increasing == nullptr) {
-            throw std::invalid_argument("MSERComputer requires a non-null attribute buffer for the raw-pointer constructor.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(
+            attr_increasing != nullptr,
+            throw std::invalid_argument("MSERComputer requires a non-null attribute buffer for the raw-pointer constructor."));
     }
 
     /**

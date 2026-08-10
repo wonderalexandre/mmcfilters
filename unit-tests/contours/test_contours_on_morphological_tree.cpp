@@ -131,7 +131,7 @@ int main() {
         auto tree = makeComponentTree(image, isMaxtree);
         verifyContoursAgainstSupportMasks(*tree, isMaxtree ? "max-tree" : "min-tree");
 
-        if (isMaxtree) {
+        if (isMaxtree && contract::validationsEnabled) {
             auto staleContours = ContoursComputedIncrementally::extractCompactContours(*tree);
             tree->mergeNodeIntoParent(4);
             requireThrows<std::logic_error>([&]() { static_cast<void>(staleContours.isMaterialized()); },
@@ -151,7 +151,7 @@ int main() {
         auto topologyContours = ContoursComputedIncrementally::extractCompactContours(weighted->topology());
         auto viewContours = ContoursComputedIncrementally::extractCompactContours(weighted->asView());
         auto int16ViewContours = ContoursComputedIncrementally::extractCompactContours(int16View);
-        if (isMaxtree) {
+        if (isMaxtree && contract::validationsEnabled) {
             auto staleWeighted = makeWeightedComponentTree(image, true);
             const auto staleView = staleWeighted->asView();
             staleWeighted->mergeNodeIntoParent(4);

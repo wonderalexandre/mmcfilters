@@ -4,8 +4,10 @@
 #include "AttributeComputerFamily.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
 #include "../../trees/detail/TreeTraversalDetail.hpp"
+#include "../../trees/detail/CommittedTreeAccess.hpp"
 #include "../../trees/TreeAltitudeAlgorithms.hpp"
 #include "../../utils/Altitude.hpp"
+#include "../../utils/Contract.hpp"
 
 #include <algorithm>
 #include <array>
@@ -91,60 +93,73 @@ struct GrayLevelStatsRequest {
  * @param requestedAttributes Requested subset of grey-level descriptors.
  * @param dependencySources Required dependency buffers for aggregate statistics.
  */
-template <std::floating_point Real, AltitudeValue T>
-void computeGrayLevelStatsAttributeKernel(const MorphologicalTree& tree, std::span<const T> altitude, std::span<Real> buffer, const AttributeNames& attrNames,
-                                          std::span<const Attribute> requestedAttributes, std::span<const DependencySourceT<Real>> dependencySources) {
-    TreeAltitudeAlgorithms::validateAltitudeBufferShape(tree, altitude);
+namespace kernel {
 
-    const GrayLevelStatsRequest request = GrayLevelStatsRequest::from(requestedAttributes);
+/**
+ * @brief Computes requested gray-level statistics from established altitude and dependency domains.
+ * @param context Established tree, altitude span, output layout, and output buffer.
+ * @param request Gray-level columns to materialize.
+ * @param volumeDependency Optional established volume dependency.
+ * @param areaDependency Optional established area dependency.
+ */
+template <std::floating_point Real, AltitudeValue T>
+void computeGrayLevelStats(const AltitudeAttributeComputeContext<Real, T>& context, const GrayLevelStatsRequest& request,
+                           const DependencySourceT<Real>* volumeDependency, const DependencySourceT<Real>* areaDependency) {
     if (!request.any()) {
         return;
     }
 
     const bool needsAggregateDependencies = request.needsAggregateDependencies();
-
-    auto indexOfMean = [&](NodeId idx) { return attrNames.linearIndex(idx, MEAN_LEVEL); };
-    auto indexOfLevel = [&](NodeId idx) { return attrNames.linearIndex(idx, LEVEL); };
-    auto indexOfVariance = [&](NodeId idx) { return attrNames.linearIndex(idx, VARIANCE_LEVEL); };
-    auto indexOfGrayHeight = [&](NodeId idx) { return attrNames.linearIndex(idx, GRAY_HEIGHT); };
-
-    const DependencyResolver<Real> dependencies{dependencySources};
-    const DependencySourceT<Real>* dependencyVol = needsAggregateDependencies ? &dependencies.require(VOLUME) : nullptr;
-    const DependencySourceT<Real>* dependencyArea = needsAggregateDependencies ? &dependencies.require(AREA) : nullptr;
-    auto indexOfVol = [&](NodeId idx) { return dependencyVol->attrNames->linearIndex(idx, VOLUME); };
-    auto indexOfArea = [&](NodeId idx) { return dependencyArea->attrNames->linearIndex(idx, AREA); };
+    const int stride = context.attrNames.NUM_ATTRIBUTES;
+    const auto offsetOf = [&](Attribute attribute) { return context.attrNames.indexMap.find(attribute)->second; };
+    const int meanOffset = request.meanLevel ? offsetOf(MEAN_LEVEL) : 0;
+    const int levelOffset = request.level ? offsetOf(LEVEL) : 0;
+    const int varianceOffset = request.varianceLevel ? offsetOf(VARIANCE_LEVEL) : 0;
+    const int grayHeightOffset = request.grayHeight ? offsetOf(GRAY_HEIGHT) : 0;
+    auto indexOfMean = [&](NodeId node) { return static_cast<std::size_t>(node * stride + meanOffset); };
+    auto indexOfLevel = [&](NodeId node) { return static_cast<std::size_t>(node * stride + levelOffset); };
+    auto indexOfVariance = [&](NodeId node) { return static_cast<std::size_t>(node * stride + varianceOffset); };
+    auto indexOfGrayHeight = [&](NodeId node) { return static_cast<std::size_t>(node * stride + grayHeightOffset); };
+    const int volumeStride = volumeDependency != nullptr ? volumeDependency->attrNames->NUM_ATTRIBUTES : 0;
+    const int volumeOffset = volumeDependency != nullptr ? volumeDependency->attrNames->indexMap.find(VOLUME)->second : 0;
+    const int areaStride = areaDependency != nullptr ? areaDependency->attrNames->NUM_ATTRIBUTES : 0;
+    const int areaOffset = areaDependency != nullptr ? areaDependency->attrNames->indexMap.find(AREA)->second : 0;
+    auto indexOfVolume = [&](NodeId node) { return static_cast<std::size_t>(node * volumeStride + volumeOffset); };
+    auto indexOfArea = [&](NodeId node) { return static_cast<std::size_t>(node * areaStride + areaOffset); };
 
     std::vector<double> sumGrayLevelSquare;
     if (request.varianceLevel) {
-        sumGrayLevelSquare.assign(tree.getNumInternalNodeSlots(), 0.0);
+        sumGrayLevelSquare.assign(context.tree.getNumInternalNodeSlots(), 0.0);
     }
     std::vector<Real> subtreeMinAltitude;
     std::vector<Real> subtreeMaxAltitude;
     if (request.grayHeight) {
-        subtreeMinAltitude.assign(tree.getNumInternalNodeSlots(), Real{0});
-        subtreeMaxAltitude.assign(tree.getNumInternalNodeSlots(), Real{0});
+        subtreeMinAltitude.assign(context.tree.getNumInternalNodeSlots(), Real{0});
+        subtreeMaxAltitude.assign(context.tree.getNumInternalNodeSlots(), Real{0});
     }
 
-    ::mmcfilters::detail::traversePostOrder(
-        tree, tree.getRoot(),
+    ::mmcfilters::detail::kernel::traversePostOrder(
+        context.tree, context.tree.getRoot(),
         [&](NodeId nodeId) {
-            const NodeId node = detail::grayStatsSlotOf(tree, nodeId);
-            const T nodeAltitude = TreeAltitudeAlgorithms::getAltitude(altitude, nodeId);
+            const NodeId node = detail::grayStatsSlotOf(context.tree, nodeId);
+            const T nodeAltitude = context.altitude[static_cast<std::size_t>(nodeId)];
             const Real nodeAltitudeAsReal = static_cast<Real>(nodeAltitude);
             if (request.varianceLevel) {
                 const double nodeAltitudeAsDouble = static_cast<double>(nodeAltitude);
-                sumGrayLevelSquare[node] = static_cast<double>(tree.getNumProperParts(nodeId)) * nodeAltitudeAsDouble * nodeAltitudeAsDouble;
+                sumGrayLevelSquare[static_cast<std::size_t>(node)] =
+                    static_cast<double>(::mmcfilters::detail::CommittedTreeAccess::numProperParts(context.tree, nodeId)) * nodeAltitudeAsDouble *
+                    nodeAltitudeAsDouble;
             }
             if (request.level)
-                buffer[indexOfLevel(node)] = nodeAltitudeAsReal;
+                context.buffer[indexOfLevel(node)] = nodeAltitudeAsReal;
             if (request.grayHeight) {
                 subtreeMinAltitude[node] = nodeAltitudeAsReal;
                 subtreeMaxAltitude[node] = nodeAltitudeAsReal;
             }
         },
         [&](NodeId parentNodeId, NodeId childNodeId) {
-            const NodeId parent = detail::grayStatsSlotOf(tree, parentNodeId);
-            const NodeId child = detail::grayStatsSlotOf(tree, childNodeId);
+            const NodeId parent = detail::grayStatsSlotOf(context.tree, parentNodeId);
+            const NodeId child = detail::grayStatsSlotOf(context.tree, childNodeId);
             if (request.varianceLevel)
                 sumGrayLevelSquare[parent] += sumGrayLevelSquare[child];
             if (request.grayHeight) {
@@ -153,22 +168,51 @@ void computeGrayLevelStatsAttributeKernel(const MorphologicalTree& tree, std::sp
             }
         },
         [&](NodeId nodeId) {
-            const NodeId node = detail::grayStatsSlotOf(tree, nodeId);
-            Real area = needsAggregateDependencies ? dependencyArea->buffer[indexOfArea(node)] : Real{0};
+            const NodeId node = detail::grayStatsSlotOf(context.tree, nodeId);
+            Real area = needsAggregateDependencies ? areaDependency->buffer[indexOfArea(node)] : Real{0};
             if (request.meanLevel)
-                buffer[indexOfMean(node)] = ::mmcfilters::attributes::numeric::safeDivide(dependencyVol->buffer[indexOfVol(node)], area);
+                context.buffer[indexOfMean(node)] =
+                    ::mmcfilters::attributes::numeric::safeDivide(volumeDependency->buffer[indexOfVolume(node)], area);
             if (request.varianceLevel) {
-                Real meanGrayLevel = ::mmcfilters::attributes::numeric::safeDivide(dependencyVol->buffer[indexOfVol(node)], area);
-                double meanGrayLevelSquare = ::mmcfilters::attributes::numeric::safeDivide(sumGrayLevelSquare[node], static_cast<double>(area));
+                Real meanGrayLevel = ::mmcfilters::attributes::numeric::safeDivide(volumeDependency->buffer[indexOfVolume(node)], area);
+                double meanGrayLevelSquare =
+                    ::mmcfilters::attributes::numeric::safeDivide(sumGrayLevelSquare[static_cast<std::size_t>(node)], static_cast<double>(area));
                 Real var = static_cast<Real>(meanGrayLevelSquare - (static_cast<double>(meanGrayLevel) * static_cast<double>(meanGrayLevel)));
-                buffer[indexOfVariance(node)] = ::mmcfilters::attributes::numeric::clampNonNegative(var);
+                context.buffer[indexOfVariance(node)] = ::mmcfilters::attributes::numeric::clampNonNegative(var);
             }
             if (request.grayHeight) {
-                const Real nodeAltitude = static_cast<Real>(TreeAltitudeAlgorithms::getAltitude(altitude, nodeId));
-                buffer[indexOfGrayHeight(node)] =
+                const Real nodeAltitude = static_cast<Real>(context.altitude[static_cast<std::size_t>(nodeId)]);
+                context.buffer[indexOfGrayHeight(node)] =
                     std::max(std::abs(nodeAltitude - subtreeMinAltitude[node]), std::abs(subtreeMaxAltitude[node] - nodeAltitude));
             }
         });
+}
+
+} // namespace kernel
+
+template <std::floating_point Real>
+inline const DependencySourceT<Real>* findGrayDependency(std::span<const DependencySourceT<Real>> sources, Attribute attribute) {
+    for (const DependencySourceT<Real>& source : sources) {
+        if (source.attrNames->contains(attribute)) {
+            return &source;
+        }
+    }
+    return nullptr;
+}
+
+template <std::floating_point Real, AltitudeValue T>
+inline void validateGrayLevelStatsContext(const AltitudeAttributeComputeContext<Real, T>& context, const GrayLevelStatsRequest& request) {
+    requireAttributeBufferShape(context.tree, context.buffer, context.attrNames);
+    TreeAltitudeAlgorithms::validateAltitudeBufferShape(context.tree, context.altitude);
+    const auto requireColumn = [&](bool requested, Attribute attribute, const char* name) {
+        if (requested && !context.attrNames.contains(attribute)) {
+            throw std::invalid_argument(std::string(name) + " computation requires a matching output column.");
+        }
+    };
+    requireColumn(request.level, LEVEL, "LEVEL");
+    requireColumn(request.meanLevel, MEAN_LEVEL, "MEAN_LEVEL");
+    requireColumn(request.varianceLevel, VARIANCE_LEVEL, "VARIANCE_LEVEL");
+    requireColumn(request.grayHeight, GRAY_HEIGHT, "GRAY_HEIGHT");
 }
 
 } // namespace detail
@@ -223,9 +267,20 @@ class GrayLevelStatsComputer {
      * @param context Operation context or diagnostic label.
      */
     template <std::floating_point Real, AltitudeValue T> static void compute(const AltitudeAttributeComputeContext<Real, T>& context) {
-        requireAttributeBufferShape(context.tree, context.buffer, context.attrNames);
-        detail::computeGrayLevelStatsAttributeKernel(context.tree, context.altitude, context.buffer, context.attrNames, context.requestedAttributes,
-                                                     context.dependencySources);
+        const detail::GrayLevelStatsRequest request = detail::GrayLevelStatsRequest::from(context.requestedAttributes);
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(detail::validateGrayLevelStatsContext(context, request));
+        const DependencySourceT<Real>* volumeDependency = nullptr;
+        const DependencySourceT<Real>* areaDependency = nullptr;
+        if (request.needsAggregateDependencies()) {
+            if constexpr (contract::validationsEnabled) {
+                volumeDependency = &context.dependencies.require(VOLUME);
+                areaDependency = &context.dependencies.require(AREA);
+            } else {
+                volumeDependency = detail::findGrayDependency(context.dependencySources, VOLUME);
+                areaDependency = detail::findGrayDependency(context.dependencySources, AREA);
+            }
+        }
+        detail::kernel::computeGrayLevelStats(context, request, volumeDependency, areaDependency);
     }
 
     /**
@@ -248,7 +303,9 @@ class GrayLevelStatsComputer {
         for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitProperParts.size()); ++leafIndex) {
             const NodeId properPart = context.unitProperParts[static_cast<size_t>(leafIndex)];
             const Real altitudeValue =
-                (request.level || request.meanLevel) ? static_cast<Real>(unitAltitude(context.tree, context.altitude, properPart)) : Real{0};
+                (request.level || request.meanLevel)
+                    ? static_cast<Real>(::mmcfilters::detail::kernel::unitAltitude(context.tree, context.altitude, properPart))
+                    : Real{0};
 
             if (request.level) {
                 context.buffer[context.attrNames.linearIndex(leafIndex, LEVEL)] = altitudeValue;

@@ -151,12 +151,14 @@ int main() {
         requireEqual(projectedUnitValues[unitProjectionNames.linearIndex(sampleProperPart, BOX_ROW_MIN)], static_cast<float>(sampleRow),
                      "exported-Higra unit BOX_ROW_MIN must use the proper-part row");
 
-        requireThrows<std::invalid_argument>(
-            [&]() {
-                const std::vector<float> invalidValues{1.0f};
-                static_cast<void>(AttributeComputation::projectNodeValuesToExportedHigra(*weighted, maxDistNames, invalidValues));
-            },
-            "exported-Higra projection must reject invalid node-value size");
+        if constexpr (contract::validationsEnabled) {
+            requireThrows<std::invalid_argument>(
+                [&]() {
+                    const std::vector<float> invalidValues{1.0f};
+                    static_cast<void>(AttributeComputation::projectNodeValuesToExportedHigra(*weighted, maxDistNames, invalidValues));
+                },
+                "exported-Higra projection must reject invalid node-value size");
+        }
 
         roundtrip.setAltitude(importedSampleNodeId, static_cast<std::uint8_t>(importedSampleAltitude + 4));
         auto reimported = MorphologicalTreeFactory::createFromHigraParent(std::span<const NodeId>(higraParent), std::span<const std::uint8_t>(higraAltitude), 4,
@@ -384,22 +386,28 @@ int main() {
         auto editor = weighted->edit();
         editor.detach(3);
 
-        requireThrows<std::logic_error>([&] { static_cast<void>(weighted->exportHigraHierarchy()); }, "Higra export must reject a staged topology");
-        requireThrows<std::logic_error>(
-            [&] {
-                WeightedMorphologicalTree<std::uint8_t> moved(std::move(*weighted));
-                static_cast<void>(moved);
-            },
-            "weighted move construction must reject an active editor");
-        requireVectorEqual(weighted->getAltitudeBuffer(), originalAltitude, "rejected weighted move must preserve altitude ownership");
-        require(weighted->topology().isEditing(), "rejected weighted move must preserve the edit session");
+        if constexpr (contract::validationsEnabled) {
+            requireThrows<std::logic_error>([&] { static_cast<void>(weighted->exportHigraHierarchy()); }, "Higra export must reject a staged topology");
+        }
+        if constexpr (contract::validationsEnabled) {
+            requireThrows<std::logic_error>(
+                [&] {
+                    WeightedMorphologicalTree<std::uint8_t> moved(std::move(*weighted));
+                    static_cast<void>(moved);
+                },
+                "weighted move construction must reject an active editor");
+            requireVectorEqual(weighted->getAltitudeBuffer(), originalAltitude, "rejected weighted move must preserve altitude ownership");
+            require(weighted->topology().isEditing(), "rejected weighted move must preserve the edit session");
 
-        auto assignmentTarget = makeWeightedComponentTree(makeComponentTreeFixture(), false);
-        const auto targetAltitude = assignmentTarget->getAltitudeBuffer();
-        requireThrows<std::logic_error>([&] { *assignmentTarget = std::move(*weighted); }, "weighted move assignment must reject an active source editor");
-        requireVectorEqual(assignmentTarget->getAltitudeBuffer(), targetAltitude, "rejected weighted move assignment must preserve destination altitude");
-        assignmentTarget->topology().validateConnectedRootedTree();
-        require(weighted->topology().isEditing(), "rejected weighted move assignment must preserve the source editor");
+            auto assignmentTarget = makeWeightedComponentTree(makeComponentTreeFixture(), false);
+            const auto targetAltitude = assignmentTarget->getAltitudeBuffer();
+            requireThrows<std::logic_error>([&] { *assignmentTarget = std::move(*weighted); },
+                                            "weighted move assignment must reject an active source editor");
+            requireVectorEqual(assignmentTarget->getAltitudeBuffer(), targetAltitude,
+                               "rejected weighted move assignment must preserve destination altitude");
+            assignmentTarget->topology().validateConnectedRootedTree();
+            require(weighted->topology().isEditing(), "rejected weighted move assignment must preserve the source editor");
+        }
 
         editor.rollback();
         WeightedMorphologicalTree<std::uint8_t> moved(std::move(*weighted));

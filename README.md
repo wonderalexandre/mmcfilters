@@ -69,6 +69,48 @@ find_package(mmcfilters CONFIG REQUIRED)
 target_link_libraries(my_target PRIVATE mmcfilters::core)
 ```
 
+## Scientific benchmark builds
+
+Defensive validation is selected at compile time without changing the public
+C++ API. `CHECKED` is the default for normal use. For controlled benchmarks in
+which every input domain is established by the experiment, configure an
+independent `UNCHECKED` build:
+
+```bash
+cmake -S . -B build-checked \
+  -DMMCFILTERS_BUILD_PYTHON=OFF \
+  -DMMCFILTERS_BUILD_BENCHMARKS=ON \
+  -DMMCFILTERS_CONTRACT_MODE=CHECKED
+
+cmake -S . -B build-unchecked \
+  -DMMCFILTERS_BUILD_PYTHON=OFF \
+  -DMMCFILTERS_BUILD_BENCHMARKS=ON \
+  -DMMCFILTERS_CONTRACT_MODE=UNCHECKED
+
+cmake --build build-unchecked \
+  --target mmcfilters_scientific_pipeline_benchmark
+```
+
+`UNCHECKED` removes caller-contract diagnostics; invalid ids, shapes, pointers,
+or domains then violate preconditions and may cause undefined behaviour. Both
+algorithms in a scientific comparison must use the same contract mode. Internal
+kernels use committed tree/grid/image access after one public boundary, so they
+do not repeat per-node or per-pixel validation even in a `CHECKED` build.
+
+Validation-free execution cores follow one structural convention: they live in
+a `detail::kernel` namespace and keep short operation names such as
+`computeArea`, `filterDirect`, or `traversePostOrder`. Public functions retain
+their existing names and validate before entering a kernel. Code named `Impl`
+does not implicitly receive this guarantee. The validation-boundary audit
+rejects contract checks, defensive public accessors, and explicit exceptions
+inside every `detail::kernel` namespace.
+
+The complete classification of caller contracts, scientific capabilities,
+structural invariants, established kernel preconditions, and redundant checks
+is documented in [Validation boundaries](docs/validation-boundaries.md).
+Named, checksum-pinned benchmark workloads are provided in
+[`benchmarks/workloads/scientific-api.ini`](benchmarks/workloads/scientific-api.ini).
+
 ## Quick start
 
 ```python

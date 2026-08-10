@@ -3,11 +3,85 @@
 #include "ContourSideAttributeData.hpp"
 #include "../../../localEvents/EventEngine.hpp"
 
+#include <array>
 #include <cstdint>
 #include <span>
 #include <vector>
 
 namespace mmcfilters::attributes::computers::detail {
+
+namespace kernel {
+
+/** @brief Event-engine policy that accumulates directional contour-side deltas. */
+struct ContourSideCountPolicy {
+    /** @brief Per-node accumulator used by the event engine. */
+    using Bucket = ContourSideCounts;
+
+    /** @brief Converts a local visibility state into side counts. @param state Five-sample local state. @return Counts represented by the state. */
+    static Bucket value(uint32_t state) {
+        Bucket counts;
+        if ((state & uint32_t{1}) == 0) {
+            return counts;
+        }
+        counts.north = (state & (uint32_t{1} << 1)) == 0 ? 1 : 0;
+        counts.west = (state & (uint32_t{1} << 2)) == 0 ? 1 : 0;
+        counts.east = (state & (uint32_t{1} << 3)) == 0 ? 1 : 0;
+        counts.south = (state & (uint32_t{1} << 4)) == 0 ? 1 : 0;
+        counts.exposedSides = counts.north + counts.west + counts.east + counts.south;
+        counts.contourPixels = counts.exposedSides > 0 ? 1 : 0;
+        return counts;
+    }
+
+    /** @brief Adds an initial local state. @param bucket Accumulator to update. @param state Initial local state. */
+    void applyInitial(Bucket& bucket, uint32_t state) const { addAssign(bucket, value(state)); }
+    /**
+     * @brief Applies one local-state transition.
+     * @param bucket Accumulator to update.
+     * @param oldState State before the transition.
+     * @param newState State after the transition.
+     */
+    void applyTransition(Bucket& bucket, uint32_t oldState, uint32_t newState) const { addDelta(bucket, value(newState), value(oldState)); }
+    /** @brief Merges a child accumulator into its parent. @param parent Parent accumulator. @param child Child accumulator. */
+    void merge(Bucket& parent, const Bucket& child) const { addAssign(parent, child); }
+
+  private:
+    /** @brief Adds one side-count bucket to another. @param target Accumulator to update. @param source Counts to add. */
+    static void addAssign(Bucket& target, const Bucket& source) {
+        target.contourPixels += source.contourPixels;
+        target.exposedSides += source.exposedSides;
+        target.north += source.north;
+        target.west += source.west;
+        target.east += source.east;
+        target.south += source.south;
+    }
+
+    /**
+     * @brief Adds the difference between two local side-count states.
+     * @param target Accumulator to update.
+     * @param current Counts after the transition.
+     * @param previous Counts before the transition.
+     */
+    static void addDelta(Bucket& target, const Bucket& current, const Bucket& previous) {
+        target.contourPixels += current.contourPixels - previous.contourPixels;
+        target.exposedSides += current.exposedSides - previous.exposedSides;
+        target.north += current.north - previous.north;
+        target.west += current.west - previous.west;
+        target.east += current.east - previous.east;
+        target.south += current.south - previous.south;
+    }
+};
+
+/**
+ * @brief Computes per-node contour-side counts through the established event kernel.
+ * @param tree Established tree topology and grid domain.
+ * @return Per-node directional contour-side counts.
+ */
+inline std::vector<ContourSideCounts> computeContourSideCounts(const MorphologicalTree& tree) {
+    constexpr std::array<local_events::WindowOffset, 5> contourWindow{{{0, 0}, {-1, 0}, {0, -1}, {0, 1}, {1, 0}}};
+    return local_events::detail::kernel::computeWithPolicy(tree, std::span<const local_events::WindowOffset>(contourWindow), ContourSideCountPolicy{});
+}
+
+} // namespace kernel
 
 /**
  * @brief Side-contour counters computed through local entry events.
@@ -38,94 +112,6 @@ class ContourSideLocalEventComputation {
     /** @brief Defines the `ContourSideCounts` alias used by the component. */
     using ContourSideCounts = ::mmcfilters::attributes::computers::detail::ContourSideCounts;
 
-  private:
-    /**
-     * @brief Policy that accumulates contour-side counters directly.
-     */
-    struct ContourSideCountPolicy {
-        /** @brief Defines the `Bucket` alias used by the component. */
-        using Bucket = ContourSideCounts;
-
-        /**
-         * @brief Returns the contour-side contribution of one five-bit state.
-         *
-         * @param state State read or updated by the operation.
-         * @return The contour-side contribution of one five-bit state.
-         */
-        static Bucket value(uint32_t state) {
-            Bucket counts;
-            const bool anchorVisible = (state & uint32_t{1}) != 0;
-            if (!anchorVisible) {
-                return counts;
-            }
-
-            counts.north = (state & (uint32_t{1} << 1)) == 0 ? 1 : 0;
-            counts.west = (state & (uint32_t{1} << 2)) == 0 ? 1 : 0;
-            counts.east = (state & (uint32_t{1} << 3)) == 0 ? 1 : 0;
-            counts.south = (state & (uint32_t{1} << 4)) == 0 ? 1 : 0;
-            counts.exposedSides = counts.north + counts.west + counts.east + counts.south;
-            counts.contourPixels = counts.exposedSides > 0 ? 1 : 0;
-            return counts;
-        }
-
-        /**
-         * @brief Adds the initial local-state contribution for one anchor.
-         *
-         * @param bucket Bucket read or updated by the operation.
-         * @param state State read or updated by the operation.
-         */
-        void applyInitial(Bucket& bucket, uint32_t state) const { addAssign(bucket, value(state)); }
-
-        /**
-         * @brief Applies the difference between consecutive local states.
-         *
-         * @param bucket Bucket read or updated by the operation.
-         * @param oldState Local state before the transition.
-         * @param newState Local state after the transition.
-         */
-        void applyTransition(Bucket& bucket, uint32_t oldState, uint32_t newState) const { addDelta(bucket, value(newState), value(oldState)); }
-
-        /**
-         * @brief Accumulates child side counters into the parent support.
-         *
-         * @param parent Parent node used by the operation.
-         * @param child Child node used by the operation.
-         */
-        void merge(Bucket& parent, const Bucket& child) const { addAssign(parent, child); }
-
-      private:
-        /**
-         * @brief Adds a source contour-side accumulator into a destination accumulator.
-         *
-         * @param target Destination value or object.
-         * @param source Source value or object.
-         */
-        static void addAssign(Bucket& target, const Bucket& source) {
-            target.contourPixels += source.contourPixels;
-            target.exposedSides += source.exposedSides;
-            target.north += source.north;
-            target.west += source.west;
-            target.east += source.east;
-            target.south += source.south;
-        }
-
-        /**
-         * @brief Adds delta.
-         *
-         * @param target Destination value or object.
-         * @param current Current item in the traversal or local event.
-         * @param previous Previous item in the local event sequence.
-         */
-        static void addDelta(Bucket& target, const Bucket& current, const Bucket& previous) {
-            target.contourPixels += current.contourPixels - previous.contourPixels;
-            target.exposedSides += current.exposedSides - previous.exposedSides;
-            target.north += current.north - previous.north;
-            target.west += current.west - previous.west;
-            target.east += current.east - previous.east;
-            target.south += current.south - previous.south;
-        }
-    };
-
   public:
     /**
      * @brief Computes side-contour counters for every internal node slot.
@@ -134,11 +120,9 @@ class ContourSideLocalEventComputation {
      * @return The computed side-contour counters for every internal node slot.
      */
     [[nodiscard]] static std::vector<ContourSideCounts> computeContourSideCounts(const MorphologicalTree& tree) {
-        const std::vector<WindowOffset> contourWindow = {
-            {0, 0}, {-1, 0}, {0, -1}, {0, 1}, {1, 0},
-        };
-
-        return local_events::EventEngine::computeWithPolicy(tree, contourWindow, ContourSideCountPolicy{});
+        constexpr std::array<WindowOffset, 5> contourWindow{{{0, 0}, {-1, 0}, {0, -1}, {0, 1}, {1, 0}}};
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(local_events::detail::validateEventEngineInput(tree, contourWindow));
+        return kernel::computeContourSideCounts(tree);
     }
 
     /**

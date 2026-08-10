@@ -106,8 +106,10 @@ int main() {
     auto [explicitTopologyNames, explicitTopologyBuffer] = AttributeComputation::computeTopologyAttributes(tree, {AREA, BOX_WIDTH});
     requireEqual(explicitTopologyBuffer[explicitTopologyNames.linearIndex(0, AREA)], 16.0f,
                  "explicit topology attribute facade must compute AREA without altitude");
-    requireThrows([&]() { (void)AttributeComputation::computeSingleTopologyAttribute(tree, LEVEL); },
-                  "explicit topology attribute facade must reject altitude-dependent attributes");
+    if constexpr (contract::validationsEnabled) {
+        requireThrows([&]() { (void)AttributeComputation::computeSingleTopologyAttribute(tree, LEVEL); },
+                      "explicit topology attribute facade must reject altitude-dependent attributes");
+    }
 
     requireThrows([&]() { (void)AttributeComputation::computeSingleAttribute(*weighted, AREA, NodeIdSpace::HIGRA); },
                   "image-built or edited tree must reject Higra-space attribute projection");

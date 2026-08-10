@@ -13,7 +13,13 @@
 #include <utility>
 #include <vector>
 
+#include "Contract.hpp"
+
 namespace mmcfilters {
+
+namespace detail {
+class CommittedGridAccess;
+}
 
 /**
  * @brief Integer displacement in a row-major regular 2D grid.
@@ -51,7 +57,9 @@ enum class RegularGridAdjacencyShape { EuclideanDisk, StructuringElement };
  */
 class RegularGridAdjacency2D {
   private:
+    friend class detail::CommittedGridAccess;
     struct StructuringElementTag {};
+    struct EstablishedRadiusTag {};
 
     /** @brief Stores the num cols. */
     int numCols;
@@ -80,9 +88,23 @@ class RegularGridAdjacency2D {
      * @param cols Number of columns in the domain.
      */
     static void requireDomainDimensions(int rows, int cols) {
-        if (rows < 0 || cols < 0) {
-            throw std::invalid_argument("RegularGridAdjacency2D grid dimensions must be non-negative.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(rows >= 0 && cols >= 0, throw std::invalid_argument("RegularGridAdjacency2D grid dimensions must be non-negative."));
+    }
+
+    /**
+     * @brief Validates a radius adjacency domain and radius.
+     * @param rows Number of grid rows.
+     * @param cols Number of grid columns.
+     * @param radius Requested neighborhood radius.
+     * @return Validated radius.
+     */
+    static double checkedRadiusParameters(int rows, int cols, double radius) {
+        requireDomainDimensions(rows, cols);
+        const double maxSafeRadius = (std::sqrt(static_cast<double>(std::numeric_limits<int>::max())) - 1.0) / 2.0;
+        MMCFILTERS_CONTRACT_REQUIRE(
+            std::isfinite(radius) && radius >= 0.0 && radius <= maxSafeRadius,
+            throw std::invalid_argument("RegularGridAdjacency2D radius must be finite, non-negative, and representable by the integer stencil."));
+        return radius;
     }
 
     /**
@@ -227,9 +249,7 @@ class RegularGridAdjacency2D {
      * @param col Zero-based column coordinate.
      */
     void requireCoordinates(int row, int col) const {
-        if (row < 0 || row >= numRows || col < 0 || col >= numCols) {
-            throw std::out_of_range("Index out of bounds.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(row >= 0 && row < numRows && col >= 0 && col < numCols, throw std::out_of_range("Index out of bounds."));
     }
 
     /**
@@ -239,9 +259,7 @@ class RegularGridAdjacency2D {
      */
     void requireLinearIndex(int index) const {
         const std::int64_t domainSize = static_cast<std::int64_t>(numRows) * static_cast<std::int64_t>(numCols);
-        if (index < 0 || static_cast<std::int64_t>(index) >= domainSize) {
-            throw std::out_of_range("Index out of bounds.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(index >= 0 && static_cast<std::int64_t>(index) < domainSize, throw std::out_of_range("Index out of bounds."));
     }
 
   public:
@@ -253,12 +271,18 @@ class RegularGridAdjacency2D {
      * @param radius Radius of the neighbourhood stencil. `1.0` gives 4-connectivity
      * and `1.5` gives 8-connectivity on the integer grid.
      */
-    RegularGridAdjacency2D(int numRows, int numCols, double radius) {
-        requireDomainDimensions(numRows, numCols);
-        const double maxSafeRadius = (std::sqrt(static_cast<double>(std::numeric_limits<int>::max())) - 1.0) / 2.0;
-        if (!std::isfinite(radius) || radius < 0.0 || radius > maxSafeRadius) {
-            throw std::invalid_argument("RegularGridAdjacency2D radius must be finite, non-negative, and representable by the integer stencil.");
-        }
+    RegularGridAdjacency2D(int numRows, int numCols, double radius)
+        : RegularGridAdjacency2D(numRows, numCols, checkedRadiusParameters(numRows, numCols, radius), EstablishedRadiusTag{}) {}
+
+  private:
+    /**
+     * @brief Builds a radius stencil after its parameters were established.
+     * @param numRows Established grid row count.
+     * @param numCols Established grid column count.
+     * @param radius Established finite radius.
+     * @param tag Proof tag selecting the validation-free constructor.
+     */
+    RegularGridAdjacency2D(int numRows, int numCols, double radius, [[maybe_unused]] EstablishedRadiusTag tag) {
         this->numRows = numRows;
         this->numCols = numCols;
         this->radius = radius;
@@ -373,6 +397,7 @@ class RegularGridAdjacency2D {
         buildForwardOffsetIndices();
     }
 
+  public:
     /**
      * @brief Builds adjacency induced by a symmetric structuring element.
      *

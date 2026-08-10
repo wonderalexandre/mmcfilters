@@ -121,13 +121,17 @@ int main() {
         keep = detail::computeViterbiKeepCriterion(chain.topology(), costs, preserveTies);
         require(keep[0] && keep[1] && keep[2], "Viterbi preserve tie-break must keep the full chain");
 
-        std::vector<float> nanAttr = {1.0f, std::numeric_limits<float>::quiet_NaN(), 1.0f};
-        requireThrows<std::invalid_argument>([&]() { static_cast<void>(filters.filteringByViterbiRule(nanAttr.data(), 1.0f)); },
-                                             "Viterbi rule must reject NaN attributes");
-        requireThrows<std::invalid_argument>([&]() { static_cast<void>(filters.filteringByViterbiRule(attr.data(), std::numeric_limits<float>::quiet_NaN())); },
-                                             "Viterbi rule must reject NaN thresholds");
-        requireThrows<std::invalid_argument>([&]() { static_cast<void>(filters.filteringByViterbiRule(static_cast<const float*>(nullptr), 1.0f)); },
-                                             "Viterbi rule must reject null attribute buffers");
+        if constexpr (contract::validationsEnabled) {
+            std::vector<float> nanAttr = {1.0f, std::numeric_limits<float>::quiet_NaN(), 1.0f};
+            requireThrows<std::invalid_argument>([&]() { static_cast<void>(filters.filteringByViterbiRule(nanAttr.data(), 1.0f)); },
+                                                 "Viterbi rule must reject NaN attributes");
+            requireThrows<std::invalid_argument>(
+                [&]() { static_cast<void>(filters.filteringByViterbiRule(attr.data(), std::numeric_limits<float>::quiet_NaN())); },
+                "Viterbi rule must reject NaN thresholds");
+            requireThrows<std::invalid_argument>(
+                [&]() { static_cast<void>(filters.filteringByViterbiRule(static_cast<const float*>(nullptr), 1.0f)); },
+                "Viterbi rule must reject null attribute buffers");
+        }
     }
 
     {
@@ -153,42 +157,47 @@ int main() {
             std::vector<bool> shortCriterion(1, true);
             std::vector<float> shortScores(1, 0.0f);
             auto wrongShape = ImageUInt8::create(1, 1, 0);
-            requireThrows<std::invalid_argument>([&]() { static_cast<void>(weightedFilters.filteringByDirectRule(shortCriterion)); },
-                                                 "AttributeFilters<std::uint8_t> object must reject short criterion");
-            requireThrows<std::invalid_argument>([&]() { static_cast<void>(weightedFilters.filteringBySubtractiveScoreRule(shortScores)); },
-                                                 "AttributeFilters<std::uint8_t> object must reject short score buffer");
-            requireThrows<std::invalid_argument>([&]() { AttributeFilters<std::uint8_t>::filteringByDirectRule(*weighted, keepAll, wrongShape); },
-                                                 "AttributeFilters<std::uint8_t> static direct rule must reject wrong output image shape");
-            requireThrows<std::invalid_argument>([&]() { AttributeFilters<std::uint8_t>::filteringByDirectRule(weightedView, keepAll, wrongShape); },
-                                                 "AttributeFilters<std::uint8_t> view direct rule must reject wrong output image shape");
-            requireThrows<std::invalid_argument>(
-                [&]() { AttributeFilters<std::uint8_t>::filteringByPruningMin(*weighted, static_cast<const float*>(nullptr), 1.0f, wrongShape); },
-                "AttributeFilters<std::uint8_t> static pruning must reject null attribute pointer");
+            if constexpr (contract::validationsEnabled) {
+                requireThrows<std::invalid_argument>([&]() { static_cast<void>(weightedFilters.filteringByDirectRule(shortCriterion)); },
+                                                     "AttributeFilters<std::uint8_t> object must reject short criterion");
+                requireThrows<std::invalid_argument>([&]() { static_cast<void>(weightedFilters.filteringBySubtractiveScoreRule(shortScores)); },
+                                                     "AttributeFilters<std::uint8_t> object must reject short score buffer");
+                requireThrows<std::invalid_argument>([&]() { AttributeFilters<std::uint8_t>::filteringByDirectRule(*weighted, keepAll, wrongShape); },
+                                                     "AttributeFilters<std::uint8_t> static direct rule must reject wrong output image shape");
+                requireThrows<std::invalid_argument>([&]() { AttributeFilters<std::uint8_t>::filteringByDirectRule(weightedView, keepAll, wrongShape); },
+                                                     "AttributeFilters<std::uint8_t> view direct rule must reject wrong output image shape");
+                requireThrows<std::invalid_argument>(
+                    [&]() { AttributeFilters<std::uint8_t>::filteringByPruningMin(*weighted, static_cast<const float*>(nullptr), 1.0f, wrongShape); },
+                    "AttributeFilters<std::uint8_t> static pruning must reject null attribute pointer");
+            }
 
-            auto staleWeighted = makeWeightedComponentTree(image, true);
-            auto [staleNames, staleAttr] = AttributeComputation::computeSingleAttribute(*staleWeighted, LEVEL);
-            (void)staleNames;
-            AttributeFilters<std::uint8_t> staleFilters(*staleWeighted);
-            UltimateAttributeOpening<std::uint8_t> staleUao(*staleWeighted, staleAttr);
-            std::vector<bool> staleKeepAll(staleWeighted->topology().getNumInternalNodeSlots(), true);
-            staleWeighted->mergeNodeIntoParent(4);
-            requireThrows<std::logic_error>([&]() { static_cast<void>(staleFilters.filteringByDirectRule(staleKeepAll)); },
-                                            "AttributeFilters<std::uint8_t> object must reject use after topology mutation");
-            requireThrows<std::logic_error>([&]() { staleUao.execute(4); },
-                                            "UltimateAttributeOpening<std::uint8_t> execute must reject use after topology mutation");
-            requireThrows<std::logic_error>([&]() { static_cast<void>(staleUao.getMaxContrastImage()); },
-                                            "UltimateAttributeOpening<std::uint8_t> output must reject use after topology mutation");
+            if constexpr (contract::validationsEnabled) {
+                auto staleWeighted = makeWeightedComponentTree(image, true);
+                auto [staleNames, staleAttr] = AttributeComputation::computeSingleAttribute(*staleWeighted, LEVEL);
+                (void)staleNames;
+                AttributeFilters<std::uint8_t> staleFilters(*staleWeighted);
+                UltimateAttributeOpening<std::uint8_t> staleUao(*staleWeighted, staleAttr);
+                std::vector<bool> staleKeepAll(staleWeighted->topology().getNumInternalNodeSlots(), true);
+                staleWeighted->mergeNodeIntoParent(4);
+                requireThrows<std::logic_error>([&]() { static_cast<void>(staleFilters.filteringByDirectRule(staleKeepAll)); },
+                                                "AttributeFilters<std::uint8_t> object must reject use after topology mutation");
+                requireThrows<std::logic_error>([&]() { staleUao.execute(4); },
+                                                "UltimateAttributeOpening<std::uint8_t> execute must reject use after topology mutation");
+                requireThrows<std::logic_error>([&]() { static_cast<void>(staleUao.getMaxContrastImage()); },
+                                                "UltimateAttributeOpening<std::uint8_t> output must reject use after topology mutation");
 
-            auto staleViewWeighted = makeWeightedComponentTree(image, true);
-            const auto staleView = staleViewWeighted->asView();
-            std::vector<bool> staleViewKeepAll(staleViewWeighted->topology().getNumInternalNodeSlots(), true);
-            auto staleViewOutput =
-                ImageUInt8::create(staleViewWeighted->topology().getNumRowsOfGridDomain2D(), staleViewWeighted->topology().getNumColsOfGridDomain2D(), 0);
-            staleViewWeighted->mergeNodeIntoParent(4);
-            requireThrows<std::logic_error>([&]() { AttributeFilters<std::uint8_t>::filteringByDirectRule(staleView, staleViewKeepAll, staleViewOutput); },
-                                            "AttributeFilters<std::uint8_t> static view API must reject stale WeightedTreeView");
-            requireThrows<std::logic_error>([&]() { static_cast<void>(AttributeComputation::computeSingleAttribute(staleView, LEVEL)); },
-                                            "AttributeComputation must reject stale WeightedTreeView");
+                auto staleViewWeighted = makeWeightedComponentTree(image, true);
+                const auto staleView = staleViewWeighted->asView();
+                std::vector<bool> staleViewKeepAll(staleViewWeighted->topology().getNumInternalNodeSlots(), true);
+                auto staleViewOutput = ImageUInt8::create(staleViewWeighted->topology().getNumRowsOfGridDomain2D(),
+                                                         staleViewWeighted->topology().getNumColsOfGridDomain2D(), 0);
+                staleViewWeighted->mergeNodeIntoParent(4);
+                requireThrows<std::logic_error>(
+                    [&]() { AttributeFilters<std::uint8_t>::filteringByDirectRule(staleView, staleViewKeepAll, staleViewOutput); },
+                    "AttributeFilters<std::uint8_t> static view API must reject stale WeightedTreeView");
+                requireThrows<std::logic_error>([&]() { static_cast<void>(AttributeComputation::computeSingleAttribute(staleView, LEVEL)); },
+                                                "AttributeComputation must reject stale WeightedTreeView");
+            }
         }
 
         auto directViaObject = weightedFilters.filteringByDirectRule(keepAll);
@@ -412,7 +421,7 @@ int main() {
         requireVectorEqual(collectImageValues(pruningMaxAttr64), collectImageValues(pruningMaxAttrWeighted),
                            isMaxtree ? "weighted max-tree pruning-max double attr" : "weighted min-tree pruning-max double attr");
 
-        if (isMaxtree) {
+        if (isMaxtree && contract::validationsEnabled) {
             requireThrows<std::invalid_argument>([&]() { UltimateAttributeOpening<std::uint8_t> invalidUao(*weighted, std::vector<float>{1.0f}); },
                                                  "UltimateAttributeOpening<std::uint8_t> must reject short vector attribute buffer");
         }
@@ -571,7 +580,7 @@ int main() {
         requireThrows<std::logic_error>([&]() { viewUao.executeWithMSER(static_cast<int>(maxCriterion), 1); },
                                         isMaxtree ? "weighted max-tree UAO view object must reject MSER"
                                                   : "weighted min-tree UAO view object must reject MSER");
-        if (isMaxtree) {
+        if (isMaxtree && contract::validationsEnabled) {
             requireThrows<std::invalid_argument>([&]() { weightedUao.execute(static_cast<int>(maxCriterion), std::vector<uint8_t>{true}); },
                                                  "UltimateAttributeOpening<std::uint8_t> must reject short selectedForFiltering buffer");
         }

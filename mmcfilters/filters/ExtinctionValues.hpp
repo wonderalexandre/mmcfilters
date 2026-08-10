@@ -3,12 +3,14 @@
 #include "../trees/TreeAltitudeAlgorithms.hpp"
 #include "../trees/WeightedMorphologicalTree.hpp"
 #include "../trees/WeightedTreeView.hpp"
+#include "../trees/detail/CommittedTreeAccess.hpp"
 #include "../trees/detail/HierarchyCapabilityValidation.hpp"
 #include "../trees/saliency/HierarchySaliencyMapValidation.hpp"
 #include "../trees/saliency/HierarchySaliencyMap.hpp"
 #include "../trees/saliency/HierarchicalWatershedSaliency.hpp"
 #include "../utils/Image.hpp"
 #include "../utils/Common.hpp"
+#include "../utils/Contract.hpp"
 #include "../contours/ContoursComputedIncrementally.hpp"
 
 #include <algorithm>
@@ -226,9 +228,8 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
      * @throws std::invalid_argument If `attr` is null.
      */
     static void requireAttributePointer(const Real* attr, const char* context) {
-        if (attr == nullptr) {
-            throw std::invalid_argument(std::string(context) + " requires a non-null attribute buffer.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(attr != nullptr,
+                                    throw std::invalid_argument(std::string(context) + " requires a non-null attribute buffer."));
     }
 
     /**
@@ -242,9 +243,8 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
      * slot count of `tree`.
      */
     static const Real* requireAttributeBuffer(const MorphologicalTree& tree, const std::vector<Real>& attr, const char* context) {
-        if (attr.size() != static_cast<std::size_t>(tree.getNumInternalNodeSlots())) {
-            throw std::invalid_argument(std::string(context) + " attribute size must match the internal node slot count.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(attr.size() == static_cast<std::size_t>(tree.getNumInternalNodeSlots()),
+                                    throw std::invalid_argument(std::string(context) + " attribute size must match the internal node slot count."));
         return attr.data();
     }
 
@@ -258,7 +258,9 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
      * @param nodeId Dense internal node id to read.
      * @return Altitude value associated with `nodeId`.
      */
-    static T altitudeOf(const AltitudeView& view, NodeId nodeId) { return view.getAltitude(nodeId); }
+    static T altitudeOf(const AltitudeView& view, NodeId nodeId) noexcept {
+        return view.altitude()[static_cast<std::size_t>(nodeId)];
+    }
 
     /**
      * @brief Collects regional extrema candidates for component-tree extinction.
@@ -292,9 +294,8 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
      * @throws std::invalid_argument If `extremaToKeep` is negative.
      */
     static void requireNonNegativeExtremaToKeep(int extremaToKeep, const char* context) {
-        if (extremaToKeep < 0) {
-            throw std::invalid_argument(std::string(context) + " requires a non-negative extremaToKeep value.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(extremaToKeep >= 0,
+                                    throw std::invalid_argument(std::string(context) + " requires a non-negative extremaToKeep value."));
     }
 
     /**
@@ -305,9 +306,8 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
      * @throws std::invalid_argument If `threshold` is NaN or infinite.
      */
     static void requireFiniteThreshold(Real threshold, const char* context) {
-        if (!std::isfinite(threshold)) {
-            throw std::invalid_argument(std::string(context) + " requires a finite extinction threshold.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(std::isfinite(threshold),
+                                    throw std::invalid_argument(std::string(context) + " requires a finite extinction threshold."));
     }
 
     /**
@@ -373,7 +373,7 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
 
         for (NodeId nodeId : tree.getPostOrderNodes()) {
             Real& nodeValue = extinctionValueAttribute_[static_cast<std::size_t>(nodeId)];
-            for (NodeId childId : tree.getChildren(nodeId)) {
+            for (NodeId childId : detail::CommittedTreeAccess::children(tree, nodeId)) {
                 const Real childValue = extinctionValueAttribute_[static_cast<std::size_t>(childId)];
                 if (nodeValue < childValue) {
                     nodeValue = childValue;
@@ -461,7 +461,7 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
         const AltitudeView altitudeView = view();
         for (NodeId nodeId : tree.getPostOrderNodes()) {
             if (!tree.isRoot(nodeId) && criterion[static_cast<std::size_t>(nodeId)]) {
-                criterion[static_cast<std::size_t>(tree.getNodeParent(nodeId))] = true;
+                criterion[static_cast<std::size_t>(detail::CommittedTreeAccess::nodeParent(tree, nodeId))] = true;
             }
         }
 
@@ -473,15 +473,15 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
             const NodeId nodeId = stack.top();
             stack.pop();
             const T level = altitudeOf(altitudeView, nodeId);
-            for (int pixel : tree.getProperParts(nodeId)) {
+            for (int pixel : detail::CommittedTreeAccess::properParts(tree, nodeId)) {
                 imgOutput[pixel] = level;
             }
-            for (NodeId childNodeId : tree.getChildren(nodeId)) {
+            for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, nodeId)) {
                 if (criterion[static_cast<std::size_t>(childNodeId)]) {
                     stack.push(childNodeId);
                 } else {
-                    for (NodeId subtreeNodeId : tree.getNodeSubtree(childNodeId)) {
-                        for (int pixel : tree.getProperParts(subtreeNodeId)) {
+                    for (NodeId subtreeNodeId : detail::CommittedTreeAccess::subtree(tree, childNodeId)) {
+                        for (int pixel : detail::CommittedTreeAccess::properParts(tree, subtreeNodeId)) {
                             imgOutput[pixel] = level;
                         }
                     }
@@ -538,11 +538,11 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
         for (NodeId leafNodeId : leaves) {
             Real extinction = dominantExtremumSentinel();
             NodeId cutoffNodeId = leafNodeId;
-            NodeId parentNodeId = this->tree.getNodeParent(cutoffNodeId);
+            NodeId parentNodeId = detail::CommittedTreeAccess::nodeParent(this->tree, cutoffNodeId);
             bool flag = true;
             while (flag && !this->tree.isRoot(cutoffNodeId)) {
-                if (this->tree.getNumChildren(parentNodeId) > 1) {
-                    for (NodeId sonNodeId : this->tree.getChildren(parentNodeId)) {
+                if (detail::CommittedTreeAccess::numChildren(this->tree, parentNodeId) > 1) {
+                    for (NodeId sonNodeId : detail::CommittedTreeAccess::children(this->tree, parentNodeId)) {
                         if (flag) {
                             if (visited[sonNodeId] && sonNodeId != cutoffNodeId && attr[sonNodeId] == attr[cutoffNodeId]) {
                                 flag = false;
@@ -555,7 +555,7 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
                 }
                 if (flag) {
                     cutoffNodeId = parentNodeId;
-                    parentNodeId = this->tree.getNodeParent(cutoffNodeId);
+                    parentNodeId = detail::CommittedTreeAccess::nodeParent(this->tree, cutoffNodeId);
                 }
             }
             if (!this->tree.isRoot(cutoffNodeId)) {

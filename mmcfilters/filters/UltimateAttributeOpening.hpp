@@ -4,6 +4,8 @@
 #include "../utils/Common.hpp"
 #include "../trees/WeightedMorphologicalTree.hpp"
 #include "../trees/WeightedTreeView.hpp"
+#include "../trees/detail/CommittedTreeAccess.hpp"
+#include "../utils/Contract.hpp"
 #include "DepthStableRegionComputer.hpp"
 #include "MSERComputer.hpp"
 
@@ -85,7 +87,9 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
      * @param nodeId Identifier of the node used by the operation.
      * @return Altitude associated with the node.
      */
-    static T altitudeOf(const AltitudeView& view, NodeId nodeId) { return view.getAltitude(nodeId); }
+    static T altitudeOf(const AltitudeView& view, NodeId nodeId) noexcept {
+        return view.altitude()[static_cast<std::size_t>(nodeId)];
+    }
 
     /**
      * @brief Validates attribute pointer.
@@ -94,9 +98,8 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
      * @param context Operation name used in diagnostics.
      */
     static void requireAttributePointer(const Real* attr, const char* context) {
-        if (attr == nullptr) {
-            throw std::invalid_argument(std::string(context) + " requires a non-null attribute buffer.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(attr != nullptr,
+                                    throw std::invalid_argument(std::string(context) + " requires a non-null attribute buffer."));
     }
 
     /**
@@ -108,9 +111,8 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
      * @return Pointer to the resulting object.
      */
     static const Real* requireAttributeBuffer(const MorphologicalTree& tree, const std::vector<Real>& attr, const char* context) {
-        if (attr.size() != static_cast<std::size_t>(tree.getNumInternalNodeSlots())) {
-            throw std::invalid_argument(std::string(context) + " attribute size must match the internal node slot count.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(attr.size() == static_cast<std::size_t>(tree.getNumInternalNodeSlots()),
+                                    throw std::invalid_argument(std::string(context) + " attribute size must match the internal node slot count."));
         return attr.data();
     }
 
@@ -140,7 +142,7 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
      * @param isCalculateResidue Flag controlling is calculate residue.
      */
     void computeUAO(const AltitudeView& view, NodeId currentNodeId, AltitudeDiff<T> altitudeNodeNotInNR, bool qPropag, bool isCalculateResidue) {
-        const NodeId parentNodeId = tree.getNodeParent(currentNodeId);
+        const NodeId parentNodeId = detail::CommittedTreeAccess::nodeParent(tree, currentNodeId);
         const AltitudeDiff<T> altitudeNodeInNR = static_cast<AltitudeDiff<T>>(altitudeOf(view, currentNodeId));
         bool flagPropag = false;
         T contrast = T{};
@@ -168,7 +170,7 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
             }
         }
 
-        for (NodeId childNodeId : tree.getChildren(currentNodeId)) {
+        for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, currentNodeId)) {
             this->computeUAO(view, childNodeId, altitudeNodeNotInNR, flagPropag, isCalculateResidue);
         }
     }
@@ -191,7 +193,7 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
 
         const NodeId rootNodeId = tree.getRoot();
         const AltitudeDiff<T> level = static_cast<AltitudeDiff<T>>(altitudeOf(altitudeView, rootNodeId));
-        for (NodeId childNodeId : tree.getChildren(rootNodeId)) {
+        for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, rootNodeId)) {
             computeUAO(altitudeView, childNodeId, level, false, false);
         }
     }
@@ -203,7 +205,7 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
      * @return True when selected for pruning; otherwise false.
      */
     bool isSelectedForPruning(NodeId currentNodeId) const {
-        const NodeId parentNodeId = tree.getNodeParent(currentNodeId);
+        const NodeId parentNodeId = detail::CommittedTreeAccess::nodeParent(tree, currentNodeId);
         if (parentNodeId == InvalidNode) {
             return false;
         }
@@ -226,7 +228,7 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
                 return true;
             }
 
-            for (NodeId childNodeId : tree.getChildren(nodeId)) {
+            for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, nodeId)) {
                 if (this->attrs_increasing[childNodeId] == this->attrs_increasing[nodeId]) {
                     stack.push(childNodeId);
                 }
@@ -360,9 +362,9 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
      */
     void execute(Real maxCriterion, const std::vector<uint8_t>& selectedForFiltering) {
         requireStableTree("UltimateAttributeOpening::execute");
-        if (selectedForFiltering.size() != static_cast<std::size_t>(this->tree.getNumInternalNodeSlots())) {
-            throw std::invalid_argument("UltimateAttributeOpening::execute selectedForFiltering size must match the internal node slot count.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(
+            selectedForFiltering.size() == static_cast<std::size_t>(this->tree.getNumInternalNodeSlots()),
+            throw std::invalid_argument("UltimateAttributeOpening::execute selectedForFiltering size must match the internal node slot count."));
         executeImpl(maxCriterion, selectedForFiltering);
     }
 
@@ -415,7 +417,7 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
         auto out = imgOut->rawData();
 
         for (int pidx = 0; pidx < size; pidx++) {
-            out[pidx] = this->maxContrastLUT[tree.getProperPartOwner(pidx)];
+            out[pidx] = this->maxContrastLUT[detail::CommittedTreeAccess::properPartOwner(tree, pidx)];
         }
         return imgOut;
     }
@@ -433,7 +435,7 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
         auto out = imgOut->rawData();
 
         for (int pidx = 0; pidx < size; pidx++) {
-            out[pidx] = this->associatedIndexLUT[tree.getProperPartOwner(pidx)];
+            out[pidx] = this->associatedIndexLUT[detail::CommittedTreeAccess::properPartOwner(tree, pidx)];
         }
         return imgOut;
     }
@@ -445,7 +447,6 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
      * @throws std::logic_error If the tree topology changed after construction.
      */
     [[nodiscard]] ImageUInt8Ptr getAssociatedColorImage() const {
-        requireStableTree("UltimateAttributeOpening::getAssociatedColorImage");
         return ImageUtils::createRandomColor(this->getAssociatedImage()->rawData(), this->tree.getNumRowsOfGridDomain2D(),
                                              this->tree.getNumColsOfGridDomain2D());
     }

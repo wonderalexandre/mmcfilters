@@ -16,6 +16,7 @@
 #include "../../trees/TreeAltitudeAlgorithms.hpp"
 #include "../../utils/Altitude.hpp"
 #include "../../utils/Common.hpp"
+#include "../../utils/Contract.hpp"
 
 #include <algorithm>
 #include <array>
@@ -95,6 +96,16 @@ inline bool containsAltitudeDependentAttribute(std::span<const Attribute> attrib
     return std::any_of(attributes.begin(), attributes.end(), [](Attribute attribute) { return requiresAltitudeForAttributePipeline(attribute); });
 }
 
+/** @brief Builds a scalar layout after request expansion established uniqueness. */
+inline AttributeNames makeAttributeNamesForExpandedRequest(std::span<const Attribute> attributes) {
+    std::unordered_map<Attribute, int> offsets;
+    offsets.reserve(attributes.size());
+    for (std::size_t index = 0; index < attributes.size(); ++index) {
+        offsets.emplace(attributes[index], static_cast<int>(index));
+    }
+    return AttributeNames(std::move(offsets));
+}
+
 /**
  * @brief Executes an altitude-aware attribute plan into the caller result buffer.
  *
@@ -125,11 +136,12 @@ inline void executeAttributeComputationPlan(const MorphologicalTree& tree, std::
     DependencySourceT<Real> areaSource{};
     if (plan.materializes(AREA)) {
         if (plan.requests(AREA)) {
-            attributes::computers::AreaComputer::compute(AttributeComputeContext<Real>{tree, resultBuffer, resultNames, std::span<const Attribute>{}});
+            attributes::computers::detail::kernel::computeArea(
+                AttributeComputeContext<Real>{tree, resultBuffer, resultNames, std::span<const Attribute>{}});
             areaSource = DependencySourceT<Real>{&resultNames, resultBuffer.data()};
         } else {
             areaBuffer.assign(static_cast<std::size_t>(numNodes), Real{0});
-            attributes::computers::AreaComputer::compute(
+            attributes::computers::detail::kernel::computeArea(
                 AttributeComputeContext<Real>{tree, std::span<Real>(areaBuffer), areaNames, std::span<const Attribute>{}});
             areaSource = DependencySourceT<Real>{&areaNames, areaBuffer.data()};
         }
@@ -158,8 +170,11 @@ inline void executeAttributeComputationPlan(const MorphologicalTree& tree, std::
         const std::span<const DependencySourceT<Real>> volumeDependencySpan =
             needsAreaForVolume ? std::span<const DependencySourceT<Real>>(volumeDependencies) : std::span<const DependencySourceT<Real>>();
 
-        ::mmcfilters::attributes::computers::VolumeComputer::compute(AltitudeAttributeComputeContext<Real, T>{
-            tree, altitude, volumeBuffer, *volumeNames, std::span<const Attribute>(volumeAttributes), volumeDependencySpan});
+        const auto volumeContext = AltitudeAttributeComputeContext<Real, T>{
+            tree, altitude, volumeBuffer, *volumeNames, std::span<const Attribute>(volumeAttributes), volumeDependencySpan};
+        const auto volumeRequest = ::mmcfilters::attributes::computers::detail::VolumeRequest::from(volumeContext.requestedAttributes);
+        const DependencySourceT<Real>* areaDependency = needsAreaForVolume ? &volumeDependencies[0] : nullptr;
+        ::mmcfilters::attributes::computers::detail::kernel::computeVolume(volumeContext, volumeRequest, areaDependency);
 
         if (!canWriteVolumeDirectly) {
             for (Attribute attribute : volumeAttributes) {
@@ -183,13 +198,17 @@ inline void executeAttributeComputationPlan(const MorphologicalTree& tree, std::
         const std::span<const DependencySourceT<Real>> grayDependencySpan =
             needsGrayAggregateDependencies ? std::span<const DependencySourceT<Real>>(grayDependencies) : std::span<const DependencySourceT<Real>>();
 
-        ::mmcfilters::attributes::computers::GrayLevelStatsComputer::compute(AltitudeAttributeComputeContext<Real, T>{
-            tree, altitude, std::span<Real>(resultBuffer), resultNames, std::span<const Attribute>(grayAttributes), grayDependencySpan});
+        const auto grayContext = AltitudeAttributeComputeContext<Real, T>{
+            tree, altitude, std::span<Real>(resultBuffer), resultNames, std::span<const Attribute>(grayAttributes), grayDependencySpan};
+        const auto grayRequest = ::mmcfilters::attributes::computers::detail::GrayLevelStatsRequest::from(grayContext.requestedAttributes);
+        const DependencySourceT<Real>* volumeDependency = needsGrayAggregateDependencies ? &grayDependencies[0] : nullptr;
+        const DependencySourceT<Real>* grayAreaDependency = needsGrayAggregateDependencies ? &grayDependencies[1] : nullptr;
+        ::mmcfilters::attributes::computers::detail::kernel::computeGrayLevelStats(grayContext, grayRequest, volumeDependency, grayAreaDependency);
     }
 
     const std::vector<Attribute> maxDistAttributes = plan.requestedForFamily(attributes::computers::AttributeComputerFamily::MaxDist);
     if (!maxDistAttributes.empty()) {
-        ::mmcfilters::attributes::computers::MaxDistComputer::compute(
+        ::mmcfilters::attributes::computers::detail::kernel::computeMaxDist(
             AltitudeAttributeComputeContext<Real, T>{tree, altitude, resultBuffer, resultNames, std::span<const Attribute>(maxDistAttributes)});
     }
 
@@ -216,22 +235,22 @@ inline void executeAttributeComputationPlan(const MorphologicalTree& tree, std::
 template <std::floating_point Real = float>
 inline ComputedAttributeData<Real> materializeAttributesWithoutAltitude(const MorphologicalTree& tree, const std::vector<AttributeOrGroup>& attributes,
                                                                         NodeIdSpace outputSpace) {
-    tree.requireNotEditing("AttributeComputation::computeAttributes");
-
     const std::vector<Attribute> requestedAttributes = expandAttributePipelineAttributes(attributes);
     const std::span<const Attribute> requestedSpan(requestedAttributes);
-    validateAttributeCapabilities(tree, requestedSpan, false, "AttributeComputation");
-    if (containsAltitudeDependentAttribute(requestedSpan)) {
-        throw std::invalid_argument("Requested attributes require altitude data. Use a WeightedMorphologicalTree<T>, WeightedTreeView, or the overload that "
-                                    "receives an altitude buffer.");
-    }
+    MMCFILTERS_CONTRACT_CHECKED_ONLY(tree.requireNotEditing("AttributeComputation::computeAttributes");
+                                     validateAttributeCapabilities(tree, requestedSpan, false, "AttributeComputation");
+                                     if (containsAltitudeDependentAttribute(requestedSpan)) {
+                                         throw std::invalid_argument(
+                                             "Requested attributes require altitude data. Use a WeightedMorphologicalTree<T>, WeightedTreeView, or the overload "
+                                             "that receives an altitude buffer.");
+                                     });
 
-    const AttributeNames resultNames = AttributeNames::fromList(requestedAttributes);
+    const AttributeNames resultNames = makeAttributeNamesForExpandedRequest(requestedAttributes);
     std::vector<Real> resultBuffer = makeAttributeValueBuffer<Real>(tree, resultNames);
 
     DependencyMapT<Real> topologyOnlyDependencies;
     if (containsAttribute(requestedSpan, AREA)) {
-        attributes::computers::AreaComputer::compute(
+        attributes::computers::detail::kernel::computeArea(
             AttributeComputeContext<Real>{tree, std::span<Real>(resultBuffer), resultNames, std::span<const Attribute>{}});
         topologyOnlyDependencies[AREA] = ComputedAttributeViewT<Real>{&resultNames, resultBuffer.data(), NodeIdSpace::MORPHOLOGICAL_TREE};
     }
@@ -258,14 +277,9 @@ inline ComputedAttributeData<Real> materializeAttributesWithoutAltitude(const Mo
  * @return The materialized mixed topology/altitude request from a typed altitude span.
  */
 template <std::floating_point Real = float, AltitudeValue T>
-inline ComputedAttributeData<Real> materializeAttributes(const MorphologicalTree& tree, std::span<const T> altitude,
-                                                         const std::vector<AttributeOrGroup>& attributes, NodeIdSpace outputSpace) {
-    tree.requireNotEditing("AttributeComputation::computeAttributesFromAltitudeSpan");
-    TreeAltitudeAlgorithms::validateAltitudeBufferShape(tree, altitude);
-
-    const std::vector<Attribute> requestedAttributes = expandAttributePipelineAttributes(attributes);
-    validateAttributeCapabilities(tree, std::span<const Attribute>(requestedAttributes), true, "AttributeComputation");
-    const AttributeNames resultNames = AttributeNames::fromList(requestedAttributes);
+inline ComputedAttributeData<Real> materializeAttributesForExpandedRequest(const MorphologicalTree& tree, std::span<const T> altitude,
+                                                                           const std::vector<Attribute>& requestedAttributes, NodeIdSpace outputSpace) {
+    const AttributeNames resultNames = makeAttributeNamesForExpandedRequest(requestedAttributes);
     std::vector<Real> resultBuffer = makeAttributeValueBuffer<Real>(tree, resultNames);
     const AttributeComputationPlan plan = makeAttributeComputationPlan(std::span<const Attribute>(requestedAttributes));
 
@@ -273,6 +287,22 @@ inline ComputedAttributeData<Real> materializeAttributes(const MorphologicalTree
 
     return projectComputedDataToNodeIdSpace(
         tree, altitude, ComputedAttributeData<Real>{std::move(resultNames), std::move(resultBuffer), NodeIdSpace::MORPHOLOGICAL_TREE}, outputSpace);
+}
+
+/**
+ * @brief Validates a public weighted request once and enters the established pipeline.
+ */
+template <std::floating_point Real = float, AltitudeValue T>
+inline ComputedAttributeData<Real> materializeAttributes(const MorphologicalTree& tree, std::span<const T> altitude,
+                                                         const std::vector<AttributeOrGroup>& attributes, NodeIdSpace outputSpace) {
+    const std::vector<Attribute> requestedAttributes = expandAttributePipelineAttributes(attributes);
+    MMCFILTERS_CONTRACT_CHECKED_ONLY(tree.requireNotEditing("AttributeComputation::computeAttributesFromAltitudeSpan");
+                                     TreeAltitudeAlgorithms::validateAltitudeBufferShape(tree, altitude);
+                                     validateAttributeCapabilities(tree, std::span<const Attribute>(requestedAttributes), true, "AttributeComputation");
+                                     if (containsAttribute(std::span<const Attribute>(requestedAttributes), MAX_DIST)) {
+                                         ::mmcfilters::attributes::computers::detail::validateFiniteMaxDistAltitude(altitude);
+                                     });
+    return materializeAttributesForExpandedRequest<Real, T>(tree, altitude, requestedAttributes, outputSpace);
 }
 
 } // namespace mmcfilters::detail

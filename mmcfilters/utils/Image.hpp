@@ -14,7 +14,13 @@
 #include <limits>
 #include <stdexcept>
 
+#include "Contract.hpp"
+
 namespace mmcfilters {
+
+namespace detail {
+class CommittedImageAccess;
+}
 
 /**
  * @brief Generic row-major 2D image with contiguous storage and shared ownership.
@@ -35,6 +41,8 @@ namespace mmcfilters {
  */
 template <typename PixelType> class Image {
   private:
+    friend class detail::CommittedImageAccess;
+    struct EstablishedDimensionsTag {};
     /** @brief Stores the num rows. */
     int numRows;
     /** @brief Stores the num cols. */
@@ -52,16 +60,23 @@ template <typename PixelType> class Image {
      * @return Validated number of pixels in the image.
      */
     static std::size_t checkedSize(int rows, int cols) {
-        if (rows <= 0 || cols <= 0) {
-            throw std::invalid_argument("Image dimensions must be positive.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(rows > 0 && cols > 0, throw std::invalid_argument("Image dimensions must be positive."));
         const auto rowCount = static_cast<std::size_t>(rows);
         const auto colCount = static_cast<std::size_t>(cols);
-        if (rowCount > static_cast<std::size_t>(std::numeric_limits<int>::max()) / colCount) {
-            throw std::overflow_error("Image dimensions exceed the supported int-indexed size.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(rowCount <= static_cast<std::size_t>(std::numeric_limits<int>::max()) / colCount,
+                                    throw std::overflow_error("Image dimensions exceed the supported int-indexed size."));
         return rowCount * colCount;
     }
+
+    /**
+     * @brief Allocates storage after dimensions were established by a dominating boundary.
+     * @param rows Established positive row count.
+     * @param cols Established positive column count.
+     * @param tag Proof tag selecting the validation-free constructor.
+     */
+    Image(int rows, int cols, [[maybe_unused]] EstablishedDimensionsTag tag)
+        : numRows(rows), numCols(cols),
+          data(new PixelType[static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols)], std::default_delete<PixelType[]>()) {}
 
   public:
     /// Pixel scalar type stored by this image.
@@ -118,9 +133,7 @@ template <typename PixelType> class Image {
      * @throws std::overflow_error If `rows * cols` exceeds the supported size.
      */
     [[nodiscard]] static Ptr fromExternal(PixelType* rawPtr, int rows, int cols) {
-        if (rawPtr == nullptr) {
-            throw std::invalid_argument("Image::fromExternal requires a non-null raw pointer.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(rawPtr != nullptr, throw std::invalid_argument("Image::fromExternal requires a non-null raw pointer."));
         auto img = create(rows, cols);
         img->data = std::shared_ptr<PixelType[]>(rawPtr, [](PixelType*) {
             // Empty deleter: the wrapper does not release external memory.
@@ -139,9 +152,7 @@ template <typename PixelType> class Image {
      * @throws std::overflow_error If `rows * cols` exceeds the supported size.
      */
     [[nodiscard]] static Ptr fromRaw(PixelType* rawPtr, int rows, int cols) {
-        if (rawPtr == nullptr) {
-            throw std::invalid_argument("Image::fromRaw requires a non-null raw pointer.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(rawPtr != nullptr, throw std::invalid_argument("Image::fromRaw requires a non-null raw pointer."));
         auto img = create(rows, cols);
         img->data = std::shared_ptr<PixelType[]>(rawPtr, std::default_delete<PixelType[]>());
         return img;

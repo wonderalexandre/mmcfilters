@@ -4,6 +4,7 @@
 #include "../trees/detail/TreeStabilityNeighborhood.hpp"
 #include "../trees/MorphologicalTree.hpp"
 #include "../utils/Common.hpp"
+#include "../utils/Contract.hpp"
 #include "detail/VariationMeasure.hpp"
 
 #include <concepts>
@@ -79,9 +80,7 @@ template <std::floating_point Real = float> class DepthStableRegionComputer {
      * @param context Public operation requesting computed state.
      */
     void requireComputed(const char* context) const {
-        if (!hasComputed_) {
-            throw std::logic_error(std::string(context) + " requires computeByDepth to run first.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(hasComputed_, throw std::logic_error(std::string(context) + " requires computeByDepth to run first."));
     }
 
     /**
@@ -91,9 +90,8 @@ template <std::floating_point Real = float> class DepthStableRegionComputer {
      * @param attr Attribute requested by the operation.
      */
     static void validateOwnedAttributeSize(const MorphologicalTree& tree, const std::vector<Real>& attr) {
-        if (attr.size() != static_cast<std::size_t>(tree.getNumInternalNodeSlots())) {
-            throw std::invalid_argument("DepthStableRegionComputer attribute size must match the internal node slot count.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(attr.size() == static_cast<std::size_t>(tree.getNumInternalNodeSlots()),
+                                    throw std::invalid_argument("DepthStableRegionComputer attribute size must match the internal node slot count."));
     }
 
     /**
@@ -127,9 +125,9 @@ template <std::floating_point Real = float> class DepthStableRegionComputer {
      * @param attr Attribute requested by the operation.
      */
     DepthStableRegionComputer(const MorphologicalTree& tree, const Real* attr) : DepthStableRegionComputer(tree, attr, {}) {
-        if (attr == nullptr) {
-            throw std::invalid_argument("DepthStableRegionComputer requires a non-null attribute buffer for the raw-pointer constructor.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(
+            attr != nullptr,
+            throw std::invalid_argument("DepthStableRegionComputer requires a non-null attribute buffer for the raw-pointer constructor."));
     }
 
     /**

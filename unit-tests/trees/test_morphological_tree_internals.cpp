@@ -412,17 +412,20 @@ int main() {
         requireNear(grayBuffer[grayNames.linearIndex(2, GRAY_HEIGHT)], 0.0f, 1.0e-6f, "unconstrained gray height leaf two");
 
         requireThrows([&weighted] { static_cast<void>(weighted.reconstructionImage()); }, "image reconstruction must require explicit 2D domain metadata");
-        requireThrows([&weighted] { static_cast<void>(AttributeComputation::computeSingleAttribute(weighted, BOX_WIDTH)); },
-                      "geometric attributes must require explicit 2D domain metadata");
+        if constexpr (contract::validationsEnabled) {
+            requireThrows([&weighted] { static_cast<void>(AttributeComputation::computeSingleAttribute(weighted, BOX_WIDTH)); },
+                          "geometric attributes must require explicit 2D domain metadata");
 
-        bool namedCapabilityDiagnostic = false;
-        try {
-            static_cast<void>(AttributeComputation::computeSingleAttribute(weighted, BOX_WIDTH));
-        } catch (const std::invalid_argument& error) {
-            const std::string message = error.what();
-            namedCapabilityDiagnostic = message.find("BOX_WIDTH") != std::string::npos && message.find("regular 2D proper-part domain") != std::string::npos;
+            bool namedCapabilityDiagnostic = false;
+            try {
+                static_cast<void>(AttributeComputation::computeSingleAttribute(weighted, BOX_WIDTH));
+            } catch (const std::invalid_argument& error) {
+                const std::string message = error.what();
+                namedCapabilityDiagnostic =
+                    message.find("BOX_WIDTH") != std::string::npos && message.find("regular 2D proper-part domain") != std::string::npos;
+            }
+            require(namedCapabilityDiagnostic, "capability diagnostics must name the attribute and missing contract");
         }
-        require(namedCapabilityDiagnostic, "capability diagnostics must name the attribute and missing contract");
     }
 
     {
@@ -494,8 +497,10 @@ int main() {
         auto misleadingDescriptor = MorphologicalTreeFactory::createFromNativeTopology(
             std::span<const NodeId>(nodeParent), std::span<const NodeId>(properPartOwner), std::span<const std::uint8_t>(altitude), 0, 1, 2,
             HierarchySemantics{MorphologicalTreeKind::MAX_TREE, AltitudeOrder::UNCONSTRAINED, UniformGridAdjacency2D{RegularGridAdjacency2D(1, 2, 1.5)}});
-        requireThrows([&misleadingDescriptor] { static_cast<void>(AttributeComputation::computeSingleAttribute(misleadingDescriptor, MAX_DIST)); },
-                      "MAX_DIST must reject a missing altitude-order capability even when the descriptor says max-tree");
+        if constexpr (contract::validationsEnabled) {
+            requireThrows([&misleadingDescriptor] { static_cast<void>(AttributeComputation::computeSingleAttribute(misleadingDescriptor, MAX_DIST)); },
+                          "MAX_DIST must reject a missing altitude-order capability even when the descriptor says max-tree");
+        }
     }
 
     {
@@ -634,12 +639,14 @@ int main() {
             },
             "Higra import must reject altitude buffers with the wrong size");
 
-        requireThrows(
-            [] {
-                auto weighted = MorphologicalTreeFactory::createMaxTree(makeComponentTreeFixture());
-                static_cast<void>(weighted.getAltitude(999));
-            },
-            "weighted altitude access must reject invalid node ids");
+        if constexpr (contract::validationsEnabled) {
+            requireThrows(
+                [] {
+                    auto weighted = MorphologicalTreeFactory::createMaxTree(makeComponentTreeFixture());
+                    static_cast<void>(weighted.getAltitude(999));
+                },
+                "weighted altitude access must reject invalid node ids");
+        }
     }
 
     return 0;

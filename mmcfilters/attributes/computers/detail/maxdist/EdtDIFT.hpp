@@ -7,6 +7,8 @@
 #include <string>
 
 #include "../../../../utils/Image.hpp"
+#include "../../../../utils/CommittedGridAccess.hpp"
+#include "../../../../utils/CommittedImageAccess.hpp"
 #include "../../../../utils/RegularGridAdjacency2D.hpp"
 #include "PQueue.hpp"
 #include "Geometry.hpp"
@@ -414,9 +416,13 @@ class EdtDIFT {
      * @param ncols Number of columns in the domain.
      */
     EdtDIFT(int nrows, int ncols)
-        : bin_{nrows, ncols}, root_{nrows, ncols}, Bedt_{nrows, ncols}, adjMap_{nrows, ncols}, O_{nrows, ncols},
-          Q_{detail::square(static_cast<int>(std::min(ncols, nrows) / 2.0 + 1)), nrows * ncols}, adj4_{nrows, ncols, 1.0}, domain_{ncols, nrows},
-          stack_(nrows * ncols) {
+        : bin_{::mmcfilters::detail::CommittedImageAccess::createValue<std::uint8_t>(nrows, ncols)},
+          root_{::mmcfilters::detail::CommittedImageAccess::createValue<int>(nrows, ncols)},
+          Bedt_{::mmcfilters::detail::CommittedImageAccess::createValue<int>(nrows, ncols)},
+          adjMap_{::mmcfilters::detail::CommittedImageAccess::createValue<std::uint8_t>(nrows, ncols)},
+          O_{::mmcfilters::detail::CommittedImageAccess::createValue<std::uint8_t>(nrows, ncols)},
+          Q_{detail::square(static_cast<int>(std::min(ncols, nrows) / 2.0 + 1)), nrows * ncols},
+          adj4_{::mmcfilters::detail::CommittedGridAccess::radiusAdjacency(nrows, ncols, 1.0)}, domain_{ncols, nrows}, stack_(nrows * ncols) {
         bin_.fill(0);
         root_.fill(0);
         Bedt_.fill(0);
@@ -490,7 +496,7 @@ class EdtDIFT {
      * @param pidx Row-major pixel index used by the operation.
      */
     void insertNeighborsPQueue(int pidx) {
-        for (int qidx : adj4_.getNeighborIndices(pidx)) {
+        for (int qidx : ::mmcfilters::detail::CommittedGridAccess::neighbors(adj4_, pidx)) {
             if (bin_[qidx] > 0 && Q_.cost(qidx) != PQueue::PINF && Q_.state(qidx) != PQueue::State::QUEUED) {
                 Q_.setState(qidx, PQueue::State::NOT_PROCESSED);
                 Q_.insert(qidx);

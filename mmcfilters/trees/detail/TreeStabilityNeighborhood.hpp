@@ -3,8 +3,10 @@
 #include "TreeAltitudeDeltaNeighborhood.hpp"
 #include "HierarchyCapabilityValidation.hpp"
 #include "../MorphologicalTree.hpp"
+#include "CommittedTreeAccess.hpp"
 #include "../../utils/Altitude.hpp"
 #include "../../utils/Common.hpp"
+#include "../../utils/Contract.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -38,9 +40,8 @@ struct StabilityNeighborhood {
  * @param context Operation context or diagnostic label.
  */
 inline void validatePositiveDepthDelta(int depthDelta, const char* context) {
-    if (depthDelta <= 0) {
-        throw std::invalid_argument(std::string(context) + " requires a positive depth delta.");
-    }
+    MMCFILTERS_CONTRACT_REQUIRE(depthDelta > 0,
+                                throw std::invalid_argument(std::string(context) + " requires a positive depth delta."));
 }
 
 /**
@@ -51,13 +52,11 @@ inline void validatePositiveDepthDelta(int depthDelta, const char* context) {
  */
 template <AltitudeValue T> inline void validatePositiveAltitudeDelta(AltitudeDiff<T> delta, const char* context) {
     if constexpr (std::is_floating_point_v<AltitudeDiff<T>>) {
-        if (!std::isfinite(delta)) {
-            throw std::invalid_argument(std::string(context) + " requires a finite altitude delta.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(std::isfinite(delta),
+                                    throw std::invalid_argument(std::string(context) + " requires a finite altitude delta."));
     }
-    if (delta <= AltitudeDiff<T>{}) {
-        throw std::invalid_argument(std::string(context) + " requires a positive altitude delta.");
-    }
+    MMCFILTERS_CONTRACT_REQUIRE(delta > AltitudeDiff<T>{},
+                                throw std::invalid_argument(std::string(context) + " requires a positive altitude delta."));
 }
 
 /**
@@ -77,6 +76,97 @@ inline void updateBestAreaCandidate(const std::vector<int32_t>& areaByNode, Node
     }
 }
 
+namespace kernel {
+
+/**
+ * @brief Validation-free altitude ascendant search over an established tree and altitude domain.
+ * @param tree Established tree topology.
+ * @param altitude Established altitude span.
+ * @param nodeId Established live node.
+ * @param delta Positive altitude distance.
+ * @return First strict ancestor reaching the distance, or InvalidNode.
+ */
+template <AltitudeValue T>
+inline NodeId findStrictAscendantByAltitudeDelta(const MorphologicalTree& tree, std::span<const T> altitude, NodeId nodeId,
+                                                 AltitudeDiff<T> delta) {
+    const AltitudeDiff<T> nodeAltitude = static_cast<AltitudeDiff<T>>(altitude[static_cast<std::size_t>(nodeId)]);
+    NodeId currentNodeId = nodeId;
+    const NodeId root = tree.getRoot();
+    while (currentNodeId != root) {
+        currentNodeId = CommittedTreeAccess::nodeParent(tree, currentNodeId);
+        if (currentNodeId == InvalidNode) {
+            return InvalidNode;
+        }
+
+        const AltitudeDiff<T> currentAltitude = static_cast<AltitudeDiff<T>>(altitude[static_cast<std::size_t>(currentNodeId)]);
+        if (tree.getAltitudeOrder() == AltitudeOrder::INCREASING_FROM_ROOT) {
+            if (nodeAltitude - currentAltitude >= delta) {
+                return currentNodeId;
+            }
+        } else if (currentAltitude - nodeAltitude >= delta) {
+            return currentNodeId;
+        }
+    }
+    return InvalidNode;
+}
+
+/**
+ * @brief Validation-free depth ascendant search over an established live-node domain.
+ * @param tree Established tree topology.
+ * @param nodeId Established live node.
+ * @param depthDelta Positive edge distance.
+ * @return Ancestor at the requested distance, or InvalidNode.
+ */
+inline NodeId findAscendantByDepthDelta(const MorphologicalTree& tree, NodeId nodeId, int depthDelta) {
+    NodeId currentNodeId = nodeId;
+    for (int depth = 0; depth < depthDelta; ++depth) {
+        if (currentNodeId == tree.getRoot()) {
+            return InvalidNode;
+        }
+        currentNodeId = CommittedTreeAccess::nodeParent(tree, currentNodeId);
+        if (currentNodeId == InvalidNode) {
+            return InvalidNode;
+        }
+    }
+    return currentNodeId;
+}
+
+/**
+ * @brief Validation-free depth-descendant computation over an established tree domain.
+ * @param tree Established tree topology.
+ * @param depthDelta Positive edge distance.
+ * @param areaByNode Established area values used for deterministic selection.
+ * @return Largest-area descendant at the requested depth for every node.
+ */
+inline std::vector<NodeId> computeDepthDescendants(const MorphologicalTree& tree, int depthDelta, const std::vector<int32_t>& areaByNode) {
+    std::vector<NodeId> previous(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), InvalidNode);
+    const NodeId numSlots = tree.getNumInternalNodeSlots();
+    for (NodeId nodeId = 0; nodeId < numSlots; ++nodeId) {
+        if (CommittedTreeAccess::isAlive(tree, nodeId)) {
+            previous[static_cast<std::size_t>(nodeId)] = nodeId;
+        }
+    }
+
+    std::vector<NodeId> current(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), InvalidNode);
+    for (int depth = 1; depth <= depthDelta; ++depth) {
+        std::fill(current.begin(), current.end(), InvalidNode);
+        for (NodeId nodeId = 0; nodeId < numSlots; ++nodeId) {
+            if (!CommittedTreeAccess::isAlive(tree, nodeId)) {
+                continue;
+            }
+            NodeId bestNode = InvalidNode;
+            for (NodeId childId : CommittedTreeAccess::children(tree, nodeId)) {
+                updateBestAreaCandidate(areaByNode, bestNode, previous[static_cast<std::size_t>(childId)]);
+            }
+            current[static_cast<std::size_t>(nodeId)] = bestNode;
+        }
+        previous.swap(current);
+    }
+    return previous;
+}
+
+} // namespace kernel
+
 /**
  * @brief Finds the first ancestor that reaches a positive altitude distance.
  *
@@ -95,28 +185,9 @@ inline NodeId findStrictAscendantByAltitudeDelta(const MorphologicalTree& tree, 
     validateAttributeDeltaAltitudeBufferShape(tree, altitude);
     validateGlobalMonotoneAltitudeOrder(tree, "findStrictAscendantByAltitudeDelta");
     validatePositiveAltitudeDelta<T>(delta, "findStrictAscendantByAltitudeDelta");
-    if (!tree.isAlive(nodeId)) {
-        throw std::invalid_argument("Strict altitude ascendant search requires a live internal NodeId.");
-    }
-
-    const AltitudeDiff<T> nodeAltitude = static_cast<AltitudeDiff<T>>(attributeDeltaAltitudeAt(altitude, nodeId));
-    NodeId currentNodeId = nodeId;
-    while (!tree.isRoot(currentNodeId)) {
-        currentNodeId = tree.getNodeParent(currentNodeId);
-        if (currentNodeId == InvalidNode || !tree.isAlive(currentNodeId)) {
-            return InvalidNode;
-        }
-
-        const AltitudeDiff<T> currentAltitude = static_cast<AltitudeDiff<T>>(attributeDeltaAltitudeAt(altitude, currentNodeId));
-        if (tree.getAltitudeOrder() == AltitudeOrder::INCREASING_FROM_ROOT) {
-            if (nodeAltitude - currentAltitude >= delta) {
-                return currentNodeId;
-            }
-        } else if (currentAltitude - nodeAltitude >= delta) {
-            return currentNodeId;
-        }
-    }
-    return InvalidNode;
+    MMCFILTERS_CONTRACT_REQUIRE(tree.isAlive(nodeId),
+                                throw std::invalid_argument("Strict altitude ascendant search requires a live internal NodeId."));
+    return kernel::findStrictAscendantByAltitudeDelta(tree, altitude, nodeId, delta);
 }
 
 /**
@@ -143,7 +214,7 @@ inline StabilityNeighborhood computeAltitudeStabilityNeighborhood(const Morpholo
     const std::vector<int32_t> areaByNode = computeAttributeDeltaAreasIncrementally(tree);
 
     for (NodeId nodeId : tree.getAliveNodeIds()) {
-        const NodeId ascendantNodeId = findStrictAscendantByAltitudeDelta(tree, altitude, nodeId, delta);
+        const NodeId ascendantNodeId = kernel::findStrictAscendantByAltitudeDelta(tree, altitude, nodeId, delta);
         if (ascendantNodeId == InvalidNode) {
             continue;
         }
@@ -164,21 +235,8 @@ inline StabilityNeighborhood computeAltitudeStabilityNeighborhood(const Morpholo
  */
 inline NodeId findAscendantByDepthDelta(const MorphologicalTree& tree, NodeId nodeId, int depthDelta) {
     validatePositiveDepthDelta(depthDelta, "findAscendantByDepthDelta");
-    if (!tree.isAlive(nodeId)) {
-        throw std::invalid_argument("Depth ascendant search requires a live internal NodeId.");
-    }
-
-    NodeId currentNodeId = nodeId;
-    for (int d = 0; d < depthDelta; ++d) {
-        if (tree.isRoot(currentNodeId)) {
-            return InvalidNode;
-        }
-        currentNodeId = tree.getNodeParent(currentNodeId);
-        if (currentNodeId == InvalidNode || !tree.isAlive(currentNodeId)) {
-            return InvalidNode;
-        }
-    }
-    return currentNodeId;
+    MMCFILTERS_CONTRACT_REQUIRE(tree.isAlive(nodeId), throw std::invalid_argument("Depth ascendant search requires a live internal NodeId."));
+    return kernel::findAscendantByDepthDelta(tree, nodeId, depthDelta);
 }
 
 /**
@@ -194,25 +252,7 @@ inline NodeId findAscendantByDepthDelta(const MorphologicalTree& tree, NodeId no
 inline std::vector<NodeId> computeDepthDescendants(const MorphologicalTree& tree, int depthDelta) {
     validatePositiveDepthDelta(depthDelta, "computeDepthDescendants");
     const std::vector<int32_t> areaByNode = computeAttributeDeltaAreasIncrementally(tree);
-    std::vector<NodeId> previous(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), InvalidNode);
-    for (NodeId nodeId : tree.getAliveNodeIds()) {
-        previous[static_cast<std::size_t>(nodeId)] = nodeId;
-    }
-
-    std::vector<NodeId> current(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), InvalidNode);
-    for (int depth = 1; depth <= depthDelta; ++depth) {
-        std::fill(current.begin(), current.end(), InvalidNode);
-        for (NodeId nodeId : tree.getAliveNodeIds()) {
-            NodeId bestNode = InvalidNode;
-            for (NodeId childId : tree.getChildren(nodeId)) {
-                updateBestAreaCandidate(areaByNode, bestNode, previous[static_cast<std::size_t>(childId)]);
-            }
-            current[static_cast<std::size_t>(nodeId)] = bestNode;
-        }
-        previous.swap(current);
-    }
-
-    return previous;
+    return kernel::computeDepthDescendants(tree, depthDelta, areaByNode);
 }
 
 /**
@@ -229,11 +269,13 @@ inline std::vector<NodeId> computeDepthDescendants(const MorphologicalTree& tree
 inline StabilityNeighborhood computeDepthStabilityNeighborhood(const MorphologicalTree& tree, int depthDelta) {
     validatePositiveDepthDelta(depthDelta, "computeDepthStabilityNeighborhood");
 
+    const std::vector<int32_t> areaByNode = computeAttributeDeltaAreasIncrementally(tree);
+
     StabilityNeighborhood neighborhood{std::vector<NodeId>(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), InvalidNode),
-                                       computeDepthDescendants(tree, depthDelta)};
+                                       kernel::computeDepthDescendants(tree, depthDelta, areaByNode)};
 
     for (NodeId nodeId : tree.getAliveNodeIds()) {
-        neighborhood.ascendants[static_cast<std::size_t>(nodeId)] = findAscendantByDepthDelta(tree, nodeId, depthDelta);
+        neighborhood.ascendants[static_cast<std::size_t>(nodeId)] = kernel::findAscendantByDepthDelta(tree, nodeId, depthDelta);
     }
 
     return neighborhood;

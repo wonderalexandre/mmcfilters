@@ -160,24 +160,26 @@ int main() {
         auto [attrNames, attrBuffer] = AttributeComputation::computeSingleAttribute(*weighted, LEVEL);
         (void)attrNames;
 
-        if (isMaxtree) {
+        if (isMaxtree && contract::validationsEnabled) {
             requireThrows<std::invalid_argument>([&]() { ExtinctionValues<std::uint8_t> invalidExtinction(*weighted, std::vector<float>{1.0f}); },
                                                  "ExtinctionValues<std::uint8_t> must reject short vector attribute buffer");
         }
 
         ExtinctionValues<std::uint8_t> extinction(*weighted, attrBuffer);
         const auto keepAll = ExtinctionSelectionPolicy<float>::byTopK(1024);
-        requireThrows<std::invalid_argument>([&]() { static_cast<void>(extinction.filtering(ExtinctionSelectionPolicy<float>::byTopK(-1))); },
-                                             isMaxtree ? "weighted max-tree extinction filtering must reject negative keep count"
-                                                       : "weighted min-tree extinction filtering must reject negative keep count");
-        requireThrows<std::invalid_argument>(
-            [&]() { static_cast<void>(extinction.contourMap(ExtinctionSelectionPolicy<float>::byTopK(-1), ExtinctionContourScorePolicy::RankScore)); },
-            isMaxtree ? "weighted max-tree extinction saliency must reject negative keep count"
-                      : "weighted min-tree extinction saliency must reject negative keep count");
-        requireThrows<std::invalid_argument>(
-            [&]() { static_cast<void>(extinction.filtering(ExtinctionSelectionPolicy<float>::byThreshold(std::numeric_limits<float>::quiet_NaN()))); },
-            isMaxtree ? "weighted max-tree extinction threshold filtering must reject NaN"
-                      : "weighted min-tree extinction threshold filtering must reject NaN");
+        if constexpr (contract::validationsEnabled) {
+            requireThrows<std::invalid_argument>([&]() { static_cast<void>(extinction.filtering(ExtinctionSelectionPolicy<float>::byTopK(-1))); },
+                                                 isMaxtree ? "weighted max-tree extinction filtering must reject negative keep count"
+                                                           : "weighted min-tree extinction filtering must reject negative keep count");
+            requireThrows<std::invalid_argument>(
+                [&]() { static_cast<void>(extinction.contourMap(ExtinctionSelectionPolicy<float>::byTopK(-1), ExtinctionContourScorePolicy::RankScore)); },
+                isMaxtree ? "weighted max-tree extinction saliency must reject negative keep count"
+                          : "weighted min-tree extinction saliency must reject negative keep count");
+            requireThrows<std::invalid_argument>(
+                [&]() { static_cast<void>(extinction.filtering(ExtinctionSelectionPolicy<float>::byThreshold(std::numeric_limits<float>::quiet_NaN()))); },
+                isMaxtree ? "weighted max-tree extinction threshold filtering must reject NaN"
+                          : "weighted min-tree extinction threshold filtering must reject NaN");
+        }
 
         std::vector<float> hierarchyValuation = extinction.getExtinctionValueAttribute();
         requireVectorEqual(hierarchyValuation, expectedExtinctionValueAttribute(weighted->topology(), extinction.getRegionalExtrema()),
@@ -233,7 +235,7 @@ int main() {
         requireVectorEqual(collectImageValues(filtered), collectImageValues(reconstructed),
                            isMaxtree ? "weighted max-tree extinction keep-all reconstruction" : "weighted min-tree extinction keep-all reconstruction");
 
-        if (isMaxtree) {
+        if (isMaxtree && contract::validationsEnabled) {
             auto staleWeighted = makeWeightedComponentTree(image, true);
             auto [staleNames, staleAttr] = AttributeComputation::computeSingleAttribute(*staleWeighted, LEVEL);
             (void)staleNames;

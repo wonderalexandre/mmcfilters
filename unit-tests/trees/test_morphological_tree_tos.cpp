@@ -227,7 +227,9 @@ int main() {
         }
     }
 
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(ImageUInt8::create(0, 0)); }, "empty image creation must throw");
+    if constexpr (contract::validationsEnabled) {
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(ImageUInt8::create(0, 0)); }, "empty image creation must throw");
+    }
 
     return 0;
 }

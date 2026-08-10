@@ -5,13 +5,15 @@
 #include "NativeHierarchyValidationDetail.hpp"
 #include "../../utils/Image.hpp"
 
+#include <cassert>
 #include <cstddef>
-#include <optional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
 
 namespace mmcfilters::detail {
+
+namespace kernel {
 
 /**
  * @brief Polarity selected by the concrete image component-tree producer.
@@ -28,28 +30,17 @@ enum class ComponentTreePolarity { MAX_TREE, MIN_TREE };
 template <AltitudeValue T> class ComponentTreeProducer {
     /** @brief Stores the polarity. */
     ComponentTreePolarity polarity_;
-    /** @brief Stores the radius. */
-    double radius_;
     /** @brief Stores the adjacency. */
-    std::optional<RegularGridAdjacency2D> adjacency_;
+    RegularGridAdjacency2D adjacency_;
 
   public:
-    /**
-     * @brief Creates a component-tree producer using a radius-based adjacency.
-     *
-     * @param polarity Polarity that determines whether maxima or minima are processed.
-     * @param radius Neighbourhood radius used by the operation.
-     */
-    ComponentTreeProducer(ComponentTreePolarity polarity, double radius) noexcept : polarity_(polarity), radius_(radius) {}
-
     /**
      * @brief Creates a component-tree producer using an explicit adjacency.
      *
      * @param polarity Polarity that determines whether maxima or minima are processed.
      * @param adjacency Adjacency relation used by the operation.
      */
-    ComponentTreeProducer(ComponentTreePolarity polarity, RegularGridAdjacency2D adjacency)
-        : polarity_(polarity), radius_(0.0), adjacency_(std::move(adjacency)) {}
+    ComponentTreeProducer(ComponentTreePolarity polarity, RegularGridAdjacency2D adjacency) : polarity_(polarity), adjacency_(std::move(adjacency)) {}
 
     /**
      * @brief Builds proven owning topology, ownership, and altitude buffers.
@@ -64,32 +55,13 @@ template <AltitudeValue T> class ComponentTreeProducer {
      * @return The resulting proven owning topology, ownership, and altitude buffers.
      */
     [[nodiscard]] ValidatedNativeHierarchy<T> build(const ImagePtr<T>& image) {
-        if (!image) {
-            throw std::invalid_argument("MorphologicalTree component-tree construction requires a non-null image.");
-        }
-        if (image->getNumRows() <= 0 || image->getNumCols() <= 0 || image->getSize() <= 0) {
-            throw std::invalid_argument("MorphologicalTree component-tree construction requires a non-empty 2D image.");
-        }
-
-        bool isMaxTree = false;
-        MorphologicalTreeKind descriptiveKind = MorphologicalTreeKind::GENERIC;
-        switch (polarity_) {
-        case ComponentTreePolarity::MAX_TREE:
-            isMaxTree = true;
-            descriptiveKind = MorphologicalTreeKind::MAX_TREE;
-            break;
-        case ComponentTreePolarity::MIN_TREE:
-            descriptiveKind = MorphologicalTreeKind::MIN_TREE;
-            break;
-        default:
-            throw std::invalid_argument("Unsupported component-tree polarity.");
-        }
+        assert(polarity_ == ComponentTreePolarity::MAX_TREE || polarity_ == ComponentTreePolarity::MIN_TREE);
+        const bool isMaxTree = polarity_ == ComponentTreePolarity::MAX_TREE;
+        const MorphologicalTreeKind descriptiveKind = isMaxTree ? MorphologicalTreeKind::MAX_TREE : MorphologicalTreeKind::MIN_TREE;
 
         const GridDomain2D gridDomain{image->getNumRows(), image->getNumCols()};
-        RegularGridAdjacency2D adjacency = adjacency_ ? std::move(*adjacency_) : RegularGridAdjacency2D(gridDomain.rows, gridDomain.cols, radius_);
-        if (adjacency.getNumRows() != gridDomain.rows || adjacency.getNumCols() != gridDomain.cols) {
-            throw std::invalid_argument("Component-tree adjacency domain must match the input image domain.");
-        }
+        RegularGridAdjacency2D adjacency = std::move(adjacency_);
+        assert(adjacency.getNumRows() == gridDomain.rows && adjacency.getNumCols() == gridDomain.cols);
         ComponentTreeUnionFind unionFind(&adjacency, isMaxTree);
         auto [pixelParent, orderedPixels, numBuiltNodes] = unionFind.template build<T>(image);
 
@@ -111,9 +83,7 @@ template <AltitudeValue T> class ComponentTreeProducer {
             NodeId owner = InvalidNode;
 
             if (properPart == pixelParent[static_cast<std::size_t>(properPart)]) {
-                if (root != InvalidNode) {
-                    throw std::invalid_argument("Component-tree adjacency must induce one connected image-domain graph.");
-                }
+                assert(root == InvalidNode);
                 owner = static_cast<NodeId>(nodeParent.size());
                 root = owner;
                 nodeParent.push_back(owner);
@@ -142,13 +112,13 @@ template <AltitudeValue T> class ComponentTreeProducer {
             proofRecorder.recordProperPartOwner(owner);
         }
 
-        if (root != 0 || nodeParent.size() != static_cast<std::size_t>(numBuiltNodes)) {
-            throw std::logic_error("Component-tree producer emitted an inconsistent node domain.");
-        }
+        assert(root == 0 && nodeParent.size() == static_cast<std::size_t>(numBuiltNodes));
 
         return makeValidatedNativeHierarchy<T>(std::move(nodeParent), std::move(properPartOwner), std::move(altitude), root, gridDomain,
                                                makeHierarchySemantics(descriptiveKind, std::move(adjacency)), std::move(proofRecorder).finish());
     }
 };
+
+} // namespace kernel
 
 } // namespace mmcfilters::detail

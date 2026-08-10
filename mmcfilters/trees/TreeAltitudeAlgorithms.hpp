@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../utils/Altitude.hpp"
+#include "../utils/Contract.hpp"
 #include "../utils/Image.hpp"
 #include "MorphologicalTree.hpp"
 #include "detail/HigraExportLayoutDetail.hpp"
@@ -33,9 +34,8 @@ class TreeAltitudeAlgorithms {
      * @param altitude Altitude data indexed by node identifier.
      */
     template <AltitudeValue T> static void validateAltitudeBufferShape(const MorphologicalTree& tree, std::span<const T> altitude) {
-        if (altitude.size() != static_cast<std::size_t>(tree.getNumInternalNodeSlots())) {
-            throw std::runtime_error("Altitude buffer size must match the dense internal-node domain.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(altitude.size() == static_cast<std::size_t>(tree.getNumInternalNodeSlots()),
+                                    throw std::runtime_error("Altitude buffer size must match the dense internal-node domain."));
     }
 
     /**
@@ -48,11 +48,11 @@ class TreeAltitudeAlgorithms {
     template <AltitudeValue T> static void validateFiniteAltitudeValue(T altitude, std::size_t index, const char* context) {
         if constexpr (std::is_floating_point_v<T>) {
             const long double level = static_cast<long double>(altitude);
-            if (!std::isfinite(level)) {
+            MMCFILTERS_CONTRACT_REQUIRE(std::isfinite(level), {
                 std::ostringstream oss;
                 oss << context << " requires finite floating-point altitudes; value at index " << index << " is " << level << ".";
                 throw std::invalid_argument(oss.str());
-            }
+            });
         }
     }
 
@@ -63,7 +63,7 @@ class TreeAltitudeAlgorithms {
      * @param context Operation context or diagnostic label.
      */
     template <AltitudeValue T> static void validateFiniteAltitudeValues(std::span<const T> altitude, const char* context) {
-        if constexpr (std::is_floating_point_v<T>) {
+        if constexpr (std::is_floating_point_v<T> && contract::validationsEnabled) {
             for (std::size_t index = 0; index < altitude.size(); ++index) {
                 validateFiniteAltitudeValue(altitude[index], index, context);
             }
@@ -77,7 +77,7 @@ class TreeAltitudeAlgorithms {
      * @param context Operation context or diagnostic label.
      */
     template <AltitudeValue T> static void validateFiniteImageAltitudes(const ImagePtr<T>& image, const char* context) {
-        if constexpr (std::is_floating_point_v<T>) {
+        if constexpr (std::is_floating_point_v<T> && contract::validationsEnabled) {
             if (!image) {
                 throw std::invalid_argument("Image altitude validation requires a non-null image.");
             }
@@ -93,9 +93,8 @@ class TreeAltitudeAlgorithms {
      * @return The requested node altitude from an explicit altitude buffer.
      */
     template <AltitudeValue T> [[nodiscard]] static T getAltitude(std::span<const T> altitude, NodeId nodeId) {
-        if (nodeId < 0 || static_cast<std::size_t>(nodeId) >= altitude.size()) {
-            throw std::invalid_argument("Altitude access requires a valid internal NodeId.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(nodeId >= 0 && static_cast<std::size_t>(nodeId) < altitude.size(),
+                                    throw std::invalid_argument("Altitude access requires a valid internal NodeId."));
         return altitude[static_cast<std::size_t>(nodeId)];
     }
 
@@ -109,9 +108,7 @@ class TreeAltitudeAlgorithms {
      */
     template <AltitudeValue T> [[nodiscard]] static AltitudeDiff<T> getNodeResidue(const MorphologicalTree& tree, std::span<const T> altitude, NodeId nodeId) {
         validateAltitudeBufferShape(tree, altitude);
-        if (!tree.isAlive(nodeId)) {
-            throw std::invalid_argument("Node residue requires a live internal NodeId.");
-        }
+        MMCFILTERS_CONTRACT_REQUIRE(tree.isAlive(nodeId), throw std::invalid_argument("Node residue requires a live internal NodeId."));
         const NodeId parentNodeId = tree.getNodeParent(nodeId);
         if (parentNodeId == InvalidNode || parentNodeId == nodeId) {
             return static_cast<AltitudeDiff<T>>(getAltitude(altitude, nodeId));

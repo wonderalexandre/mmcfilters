@@ -12,11 +12,14 @@
 #include "sdrt/MinMaxResidualTreeBuilder.hpp"
 #include "sdrt/SdrtTiePolicy.hpp"
 #include "../utils/Image.hpp"
+#include "../utils/Contract.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <utility>
+#include <vector>
 
 namespace mmcfilters {
 
@@ -49,6 +52,46 @@ namespace mmcfilters {
  */
 class MorphologicalTreeFactory {
   private:
+    /**
+     * @brief Validates image preconditions shared by component-tree factories.
+     * @param img Input image.
+     * @param context Factory name used in diagnostics.
+     */
+    template <AltitudeValue T> static void validateComponentTreeImage(const ImagePtr<T>& img, const char* context) {
+        MMCFILTERS_CONTRACT_REQUIRE(img != nullptr, throw std::invalid_argument(std::string(context) + " requires a non-null image."));
+        MMCFILTERS_CONTRACT_REQUIRE(img->getNumRows() > 0 && img->getNumCols() > 0 && img->getSize() > 0,
+                                    throw std::invalid_argument(std::string(context) + " requires a non-empty 2D image."));
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(TreeAltitudeAlgorithms::validateFiniteImageAltitudes(img, context));
+    }
+
+    /**
+     * @brief Validates that a component-tree grid adjacency is connected.
+     * @param adjacency Input grid adjacency.
+     */
+    static void validateConnectedComponentTreeAdjacency(const RegularGridAdjacency2D& adjacency) {
+        const int numPixels = adjacency.getNumRows() * adjacency.getNumCols();
+        std::vector<std::uint8_t> visited(static_cast<std::size_t>(numPixels), 0);
+        std::vector<int> pending;
+        pending.reserve(static_cast<std::size_t>(numPixels));
+        pending.push_back(0);
+        visited[0] = 1;
+        int reached = 0;
+        while (!pending.empty()) {
+            const int pixel = pending.back();
+            pending.pop_back();
+            ++reached;
+            for (int neighbor : adjacency.getNeighborIndices(pixel)) {
+                if (visited[static_cast<std::size_t>(neighbor)] == 0) {
+                    visited[static_cast<std::size_t>(neighbor)] = 1;
+                    pending.push_back(neighbor);
+                }
+            }
+        }
+        if (reached != numPixels) {
+            throw std::invalid_argument("Component-tree adjacency must induce one connected image-domain graph.");
+        }
+    }
+
     /**
      * @brief Preserves observable versioning from former linked constructors.
      *
@@ -170,9 +213,13 @@ class MorphologicalTreeFactory {
      * @throws std::invalid_argument if the image domain is invalid.
      */
     template <AltitudeValue T> [[nodiscard]] static WeightedMorphologicalTree<T> createMaxTree(ImagePtr<T> img, double radius = 1.5) {
-        TreeAltitudeAlgorithms::validateFiniteImageAltitudes(img, "MorphologicalTreeFactory::createMaxTree image");
-        return materializeNativeHierarchy<T>(detail::ComponentTreeProducer<T>(detail::ComponentTreePolarity::MAX_TREE, radius).build(img), std::nullopt,
-                                             MaterializedVersionPolicy::PreserveLinkedConstruction);
+        validateComponentTreeImage(img, "MorphologicalTreeFactory::createMaxTree");
+        RegularGridAdjacency2D adjacency(img->getNumRows(), img->getNumCols(), radius);
+        MMCFILTERS_CONTRACT_REQUIRE(img->getSize() == 1 || radius >= 1.0,
+                                    throw std::invalid_argument("Component-tree adjacency must induce one connected image-domain graph."));
+        return materializeNativeHierarchy<T>(
+            detail::kernel::ComponentTreeProducer<T>(detail::kernel::ComponentTreePolarity::MAX_TREE, std::move(adjacency)).build(img), std::nullopt,
+            MaterializedVersionPolicy::PreserveLinkedConstruction);
     }
 
     /**
@@ -186,9 +233,13 @@ class MorphologicalTreeFactory {
      * @return The resulting max-tree with an explicit regular-grid 2D adjacency.
      */
     template <AltitudeValue T> [[nodiscard]] static WeightedMorphologicalTree<T> createMaxTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency) {
-        TreeAltitudeAlgorithms::validateFiniteImageAltitudes(img, "MorphologicalTreeFactory::createMaxTree image");
-        return materializeNativeHierarchy<T>(detail::ComponentTreeProducer<T>(detail::ComponentTreePolarity::MAX_TREE, std::move(adjacency)).build(img),
-                                             std::nullopt, MaterializedVersionPolicy::PreserveLinkedConstruction);
+        validateComponentTreeImage(img, "MorphologicalTreeFactory::createMaxTree");
+        MMCFILTERS_CONTRACT_REQUIRE(adjacency.getNumRows() == img->getNumRows() && adjacency.getNumCols() == img->getNumCols(),
+                                    throw std::invalid_argument("Component-tree adjacency domain must match the input image domain."));
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(validateConnectedComponentTreeAdjacency(adjacency));
+        return materializeNativeHierarchy<T>(
+            detail::kernel::ComponentTreeProducer<T>(detail::kernel::ComponentTreePolarity::MAX_TREE, std::move(adjacency)).build(img), std::nullopt,
+            MaterializedVersionPolicy::PreserveLinkedConstruction);
     }
 
     /**
@@ -205,9 +256,13 @@ class MorphologicalTreeFactory {
      * @throws std::invalid_argument if the image domain is invalid.
      */
     template <AltitudeValue T> [[nodiscard]] static WeightedMorphologicalTree<T> createMinTree(ImagePtr<T> img, double radius = 1.5) {
-        TreeAltitudeAlgorithms::validateFiniteImageAltitudes(img, "MorphologicalTreeFactory::createMinTree image");
-        return materializeNativeHierarchy<T>(detail::ComponentTreeProducer<T>(detail::ComponentTreePolarity::MIN_TREE, radius).build(img), std::nullopt,
-                                             MaterializedVersionPolicy::PreserveLinkedConstruction);
+        validateComponentTreeImage(img, "MorphologicalTreeFactory::createMinTree");
+        RegularGridAdjacency2D adjacency(img->getNumRows(), img->getNumCols(), radius);
+        MMCFILTERS_CONTRACT_REQUIRE(img->getSize() == 1 || radius >= 1.0,
+                                    throw std::invalid_argument("Component-tree adjacency must induce one connected image-domain graph."));
+        return materializeNativeHierarchy<T>(
+            detail::kernel::ComponentTreeProducer<T>(detail::kernel::ComponentTreePolarity::MIN_TREE, std::move(adjacency)).build(img), std::nullopt,
+            MaterializedVersionPolicy::PreserveLinkedConstruction);
     }
 
     /**
@@ -218,9 +273,13 @@ class MorphologicalTreeFactory {
      * @return The resulting min-tree with an explicit regular-grid 2D adjacency.
      */
     template <AltitudeValue T> [[nodiscard]] static WeightedMorphologicalTree<T> createMinTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency) {
-        TreeAltitudeAlgorithms::validateFiniteImageAltitudes(img, "MorphologicalTreeFactory::createMinTree image");
-        return materializeNativeHierarchy<T>(detail::ComponentTreeProducer<T>(detail::ComponentTreePolarity::MIN_TREE, std::move(adjacency)).build(img),
-                                             std::nullopt, MaterializedVersionPolicy::PreserveLinkedConstruction);
+        validateComponentTreeImage(img, "MorphologicalTreeFactory::createMinTree");
+        MMCFILTERS_CONTRACT_REQUIRE(adjacency.getNumRows() == img->getNumRows() && adjacency.getNumCols() == img->getNumCols(),
+                                    throw std::invalid_argument("Component-tree adjacency domain must match the input image domain."));
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(validateConnectedComponentTreeAdjacency(adjacency));
+        return materializeNativeHierarchy<T>(
+            detail::kernel::ComponentTreeProducer<T>(detail::kernel::ComponentTreePolarity::MIN_TREE, std::move(adjacency)).build(img), std::nullopt,
+            MaterializedVersionPolicy::PreserveLinkedConstruction);
     }
 
     /**

@@ -2,6 +2,7 @@
 
 #include "../../trees/MorphologicalTree.hpp"
 #include "../../utils/Common.hpp"
+#include "../../utils/Contract.hpp"
 
 #include <cmath>
 #include <concepts>
@@ -23,9 +24,8 @@ namespace mmcfilters::detail {
 inline void validateStabilityNeighborhoodShape(const MorphologicalTree& tree, const std::vector<NodeId>& ascendants, const std::vector<NodeId>& descendants,
                                                const char* context) {
     const auto expected = static_cast<std::size_t>(tree.getNumInternalNodeSlots());
-    if (ascendants.size() != expected || descendants.size() != expected) {
-        throw std::invalid_argument(std::string(context) + " neighbourhood size must match the internal node slot count.");
-    }
+    MMCFILTERS_CONTRACT_REQUIRE(ascendants.size() == expected && descendants.size() == expected,
+                                throw std::invalid_argument(std::string(context) + " neighbourhood size must match the internal node slot count."));
 }
 
 /**
@@ -131,9 +131,8 @@ template <std::floating_point Real, class AttrGetter>
                                                                       const std::vector<NodeId>& ascendants, const std::vector<NodeId>& descendants,
                                                                       AttrGetter& attrAt, Real maxVariation, Real minAttr, Real maxAttr, int& count) {
     validateStabilityNeighborhoodShape(tree, ascendants, descendants, "selectStrictVariationMinima");
-    if (variation.size() != static_cast<std::size_t>(tree.getNumInternalNodeSlots())) {
-        throw std::invalid_argument("selectStrictVariationMinima variation size must match the internal node slot count.");
-    }
+    MMCFILTERS_CONTRACT_REQUIRE(variation.size() == static_cast<std::size_t>(tree.getNumInternalNodeSlots()),
+                                throw std::invalid_argument("selectStrictVariationMinima variation size must match the internal node slot count."));
 
     count = 0;
     std::vector<uint8_t> selected(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), false);

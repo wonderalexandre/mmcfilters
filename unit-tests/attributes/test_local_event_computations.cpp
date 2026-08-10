@@ -11,6 +11,7 @@
 #include "mmcfilters/localEvents/EventEngine.hpp"
 #include "mmcfilters/trees/detail/ProperPartEntryNode.hpp"
 #include "mmcfilters/trees/WeightedTreeView.hpp"
+#include "mmcfilters/utils/Contract.hpp"
 
 #include <algorithm>
 #include <array>
@@ -408,48 +409,50 @@ void verifyLocalEventTreeOfShapesBitquadScalarComputer(const WeightedMorphologic
         }
     }
 
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(AttributeComputation::computeTopologyAttributes(tree, {AttributeGroup::BOUNDARY})); },
-                                         label + " topology-only ToS boundary request must require altitude");
+    if constexpr (contract::validationsEnabled) {
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(AttributeComputation::computeTopologyAttributes(tree, {AttributeGroup::BOUNDARY})); },
+                                             label + " topology-only ToS boundary request must require altitude");
 
-    requireThrows<std::invalid_argument>(
-        [&]() {
-            BitquadAttributeComputer::compute(
-                AttributeComputeContext<float>{tree, std::span<float>(computeBuffer), names, std::span<const Attribute>(requestedAttributes)});
-        },
-        label + " ToS scalar projection without altitude must throw");
+        requireThrows<std::invalid_argument>(
+            [&]() {
+                BitquadAttributeComputer::compute(
+                    AttributeComputeContext<float>{tree, std::span<float>(computeBuffer), names, std::span<const Attribute>(requestedAttributes)});
+            },
+            label + " ToS scalar projection without altitude must throw");
 
-    std::vector<float> shortAltitude = externalFloatAltitude;
-    if (!shortAltitude.empty()) {
-        shortAltitude.pop_back();
-    }
-    requireThrows<std::runtime_error>(
-        [&]() {
-            std::vector<float> throwBuffer(bufferSize, 0.0f);
-            BitquadAttributeMaterialization::materializeAttributesFromBitquadFamilyCounts(tree, std::span<const float>(shortAltitude),
-                                                                                          std::span<const BitquadFamilyCounts>(directBitquadFamilyCounts),
-                                                                                          std::span<float>(throwBuffer), names, requestedAttributes);
-        },
-        label + " ToS generic scalar projection with wrong altitude size must throw");
-
-    NodeId nonRootNode = InvalidNode;
-    for (NodeId nodeId : tree.getAliveNodeIds()) {
-        if (!tree.isRoot(nodeId)) {
-            nonRootNode = nodeId;
-            break;
+        std::vector<float> shortAltitude = externalFloatAltitude;
+        if (!shortAltitude.empty()) {
+            shortAltitude.pop_back();
         }
-    }
-    if (nonRootNode != InvalidNode) {
-        std::vector<float> ambiguousAltitude = externalFloatAltitude;
-        ambiguousAltitude[static_cast<std::size_t>(nonRootNode)] = ambiguousAltitude[static_cast<std::size_t>(tree.getNodeParent(nonRootNode))];
         requireThrows<std::runtime_error>(
             [&]() {
-                std::vector<float> ambiguousBuffer(bufferSize, 0.0f);
-                BitquadAttributeMaterialization::materializeAttributesFromBitquadFamilyCounts(tree, std::span<const float>(ambiguousAltitude),
+                std::vector<float> throwBuffer(bufferSize, 0.0f);
+                BitquadAttributeMaterialization::materializeAttributesFromBitquadFamilyCounts(tree, std::span<const float>(shortAltitude),
                                                                                               std::span<const BitquadFamilyCounts>(directBitquadFamilyCounts),
-                                                                                              std::span<float>(ambiguousBuffer), names, requestedAttributes);
+                                                                                              std::span<float>(throwBuffer), names, requestedAttributes);
             },
-            label + " dual adjacency must reject an altitude-equal ambiguous "
-                    "branch");
+            label + " ToS generic scalar projection with wrong altitude size must throw");
+
+        NodeId nonRootNode = InvalidNode;
+        for (NodeId nodeId : tree.getAliveNodeIds()) {
+            if (!tree.isRoot(nodeId)) {
+                nonRootNode = nodeId;
+                break;
+            }
+        }
+        if (nonRootNode != InvalidNode) {
+            std::vector<float> ambiguousAltitude = externalFloatAltitude;
+            ambiguousAltitude[static_cast<std::size_t>(nonRootNode)] = ambiguousAltitude[static_cast<std::size_t>(tree.getNodeParent(nonRootNode))];
+            requireThrows<std::runtime_error>(
+                [&]() {
+                    std::vector<float> ambiguousBuffer(bufferSize, 0.0f);
+                    BitquadAttributeMaterialization::materializeAttributesFromBitquadFamilyCounts(
+                        tree, std::span<const float>(ambiguousAltitude), std::span<const BitquadFamilyCounts>(directBitquadFamilyCounts),
+                        std::span<float>(ambiguousBuffer), names, requestedAttributes);
+                },
+                label + " dual adjacency must reject an altitude-equal ambiguous "
+                        "branch");
+        }
     }
 }
 

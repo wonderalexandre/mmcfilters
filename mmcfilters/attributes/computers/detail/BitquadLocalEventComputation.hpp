@@ -2,8 +2,10 @@
 
 #include "BitquadAttributeData.hpp"
 #include "../../../localEvents/EventEngine.hpp"
+#include "../../../trees/detail/TreeTraversalDetail.hpp"
 
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -13,6 +15,147 @@
 #include <vector>
 
 namespace mmcfilters::attributes::computers::detail {
+
+namespace kernel {
+
+/** @brief Event-engine policy that accumulates compact bitquad-family deltas. */
+struct BitquadFamilyCountPolicy {
+    /** @brief Per-node accumulator used by the event engine. */
+    using Bucket = BitquadFamilyCounts;
+    uint32_t anchorBit = 0; ///< Lowest visible sample bit owned by this policy instance.
+
+    /** @brief Creates one anchor partition. @param anchorBit_ Bit position owned by the partition. */
+    explicit BitquadFamilyCountPolicy(uint32_t anchorBit_) : anchorBit(anchorBit_) {}
+
+    /** @brief Adds an initial local state. @param bucket Accumulator to update. @param state Initial local state. */
+    void applyInitial(Bucket& bucket, uint32_t state) const { addOwnedState(bucket, state, 1); }
+    /**
+     * @brief Applies one local-state transition.
+     * @param bucket Accumulator to update.
+     * @param oldState State before the transition.
+     * @param newState State after the transition.
+     */
+    void applyTransition(Bucket& bucket, uint32_t oldState, uint32_t newState) const {
+        addOwnedState(bucket, oldState, -1);
+        addOwnedState(bucket, newState, 1);
+    }
+    /** @brief Merges a child accumulator into its parent. @param parent Parent accumulator. @param child Child accumulator. */
+    void merge(Bucket& parent, const Bucket& child) const {
+        parent.empty += child.empty;
+        parent.q1 += child.q1;
+        parent.q2 += child.q2;
+        parent.qd += child.qd;
+        parent.q3 += child.q3;
+        parent.q4 += child.q4;
+    }
+
+  private:
+    /** @brief Tests whether this anchor partition owns a state. @param state Local state. @return True when this partition owns the state. */
+    [[nodiscard]] bool ownsState(uint32_t state) const {
+        const uint32_t anchorMask = uint32_t{1} << anchorBit;
+        return (state & anchorMask) != 0 && (state & (anchorMask - uint32_t{1})) == 0;
+    }
+
+    /**
+     * @brief Adds a signed contribution when this partition owns the state.
+     * @param bucket Accumulator to update.
+     * @param state Local state classified into a bitquad family.
+     * @param delta Signed contribution.
+     */
+    void addOwnedState(Bucket& bucket, uint32_t state, int delta) const {
+        if (!ownsState(state)) {
+            return;
+        }
+        const int visibleSamples = static_cast<int>(std::popcount(state & uint32_t{0b1111}));
+        if (visibleSamples == 1) {
+            bucket.q1 += delta;
+        } else if (visibleSamples == 2) {
+            if (state == uint32_t{0b0110} || state == uint32_t{0b1001}) {
+                bucket.qd += delta;
+            } else {
+                bucket.q2 += delta;
+            }
+        } else if (visibleSamples == 3) {
+            bucket.q3 += delta;
+        } else if (visibleSamples == 4) {
+            bucket.q4 += delta;
+        }
+    }
+};
+
+/** @brief Four equivalent anchor placements covering every framed 2x2 cell. */
+inline constexpr std::array<std::array<local_events::WindowOffset, 4>, 4> bitquadWindows{{
+    {{{0, 0}, {1, 0}, {0, 1}, {1, 1}}},
+    {{{-1, 0}, {0, 0}, {-1, 1}, {0, 1}}},
+    {{{0, -1}, {1, -1}, {0, 0}, {1, 0}}},
+    {{{-1, -1}, {0, -1}, {-1, 0}, {0, 0}}},
+}};
+
+/**
+ * @brief Computes compact bitquad-family deltas before subtree aggregation.
+ * @param tree Established tree topology and grid domain.
+ * @return Per-node bitquad-family deltas.
+ */
+inline std::vector<BitquadFamilyCounts> computeBitquadFamilyDeltas(const MorphologicalTree& tree) {
+    std::vector<BitquadFamilyCounts> deltas(static_cast<std::size_t>(tree.getNumInternalNodeSlots()));
+    for (std::size_t anchorBit = 0; anchorBit < bitquadWindows.size(); ++anchorBit) {
+        const auto partial = local_events::detail::kernel::computeDeltasWithPolicy(
+            tree, std::span<const local_events::WindowOffset>(bitquadWindows[anchorBit]), BitquadFamilyCountPolicy{static_cast<uint32_t>(anchorBit)});
+        for (std::size_t node = 0; node < deltas.size(); ++node) {
+            deltas[node].q1 += partial[node].q1;
+            deltas[node].q2 += partial[node].q2;
+            deltas[node].qd += partial[node].qd;
+            deltas[node].q3 += partial[node].q3;
+            deltas[node].q4 += partial[node].q4;
+        }
+    }
+    return deltas;
+}
+
+/**
+ * @brief Aggregates compact family deltas and materializes the empty-state complement.
+ * @param tree Established tree topology and grid domain.
+ * @param deltas Per-node family deltas.
+ * @return Aggregated per-node bitquad-family counts.
+ */
+inline std::vector<BitquadFamilyCounts> aggregateBitquadFamilyDeltas(const MorphologicalTree& tree,
+                                                                     std::span<const BitquadFamilyCounts> deltas) {
+    std::vector<BitquadFamilyCounts> aggregated(deltas.begin(), deltas.end());
+    ::mmcfilters::detail::kernel::traversePostOrder(
+        tree, tree.getRoot(), [](NodeId) {},
+        [&](NodeId parent, NodeId child) {
+            BitquadFamilyCounts& parentCounts = aggregated[static_cast<std::size_t>(parent)];
+            const BitquadFamilyCounts& childCounts = aggregated[static_cast<std::size_t>(child)];
+            parentCounts.empty += childCounts.empty;
+            parentCounts.q1 += childCounts.q1;
+            parentCounts.q2 += childCounts.q2;
+            parentCounts.qd += childCounts.qd;
+            parentCounts.q3 += childCounts.q3;
+            parentCounts.q4 += childCounts.q4;
+        },
+        [](NodeId) {});
+
+    const GridDomain2D& domain = ::mmcfilters::detail::CommittedTreeAccess::gridDomain2D(tree);
+    const int totalCells = (domain.rows + 1) * (domain.cols + 1);
+    ::mmcfilters::detail::kernel::traversePostOrder(
+        tree, tree.getRoot(), [](NodeId) {}, [](NodeId, NodeId) {},
+        [&](NodeId node) {
+            BitquadFamilyCounts& counts = aggregated[static_cast<std::size_t>(node)];
+            counts.empty = totalCells - (counts.q1 + counts.q2 + counts.qd + counts.q3 + counts.q4);
+        });
+    return aggregated;
+}
+
+/**
+ * @brief Computes complete bitquad-family counts through the delta path.
+ * @param tree Established tree topology and grid domain.
+ * @return Aggregated per-node bitquad-family counts.
+ */
+inline std::vector<BitquadFamilyCounts> computeBitquadFamilyCounts(const MorphologicalTree& tree) {
+    return aggregateBitquadFamilyDeltas(tree, computeBitquadFamilyDeltas(tree));
+}
+
+} // namespace kernel
 
 /**
  * @brief Bitquad family counters computed through local entry-event deltas.
@@ -64,112 +207,6 @@ class BitquadLocalEventComputation {
     using BitquadFamilyCounts = ::mmcfilters::attributes::computers::detail::BitquadFamilyCounts;
 
   private:
-    /**
-     * @brief Policy that accumulates projected family counters directly.
-     *
-     * @details
-     * The policy accepts only states owned by its `anchorBit`, which is the
-     * lowest visible bit of the 2x2 cell. A transition removes the previous
-     * owned state's family and adds the new owned state's family, allowing the
-     * generic event engine to store only local deltas before subtree merging.
-     */
-    struct BitquadFamilyCountPolicy {
-        /** @brief Defines the `Bucket` alias used by the component. */
-        using Bucket = BitquadFamilyCounts;
-
-        /** @brief Stores the anchor bit. */
-        uint32_t anchorBit = 0;
-
-        /**
-         * @brief Constructs `BitquadFamilyCountPolicy` from the supplied inputs.
-         *
-         * @param anchorBit Bit mask identifying the anchor sample in a local configuration.
-         */
-        explicit BitquadFamilyCountPolicy(uint32_t anchorBit) : anchorBit(anchorBit) {}
-
-        /**
-         * @brief Initializes an accumulator from a local bitquad state.
-         *
-         * @param bucket Accumulator updated by the operation.
-         * @param state State read or updated by the operation.
-         */
-        void applyInitial(Bucket& bucket, uint32_t state) const { addOwnedState(bucket, state, 1); }
-
-        /**
-         * @brief Applies transition.
-         *
-         * @param bucket Accumulator updated by the operation.
-         * @param oldState State before the transition.
-         * @param newState State after the transition.
-         */
-        void applyTransition(Bucket& bucket, uint32_t oldState, uint32_t newState) const {
-            addOwnedState(bucket, oldState, -1);
-            addOwnedState(bucket, newState, 1);
-        }
-
-        /**
-         * @brief Merges a child bitquad accumulator into its parent.
-         *
-         * @param parent Parent accumulator or node.
-         * @param child Child accumulator or node.
-         */
-        void merge(Bucket& parent, const Bucket& child) const {
-            parent.empty += child.empty;
-            parent.q1 += child.q1;
-            parent.q2 += child.q2;
-            parent.qd += child.qd;
-            parent.q3 += child.q3;
-            parent.q4 += child.q4;
-        }
-
-      private:
-        /**
-         * @brief Checks whether this partition owns the supplied local bitquad state.
-         *
-         * @param state State read or updated by the operation.
-         * @return True when the documented condition holds; otherwise false.
-         */
-        bool ownsState(uint32_t state) const {
-            const uint32_t anchorMask = uint32_t{1} << anchorBit;
-            const uint32_t lowerBitsMask = anchorMask - uint32_t{1};
-            return (state & anchorMask) != 0 && (state & lowerBitsMask) == 0;
-        }
-
-        /**
-         * @brief Accumulates a local bitquad state owned by this partition.
-         *
-         * @param bucket Accumulator updated by the operation.
-         * @param state State read or updated by the operation.
-         * @param delta Delta offset used by the operation.
-         */
-        void addOwnedState(Bucket& bucket, uint32_t state, int delta) const {
-            if (!ownsState(state)) {
-                return;
-            }
-
-            switch (stateFamily(state)) {
-            case StateFamily::Empty:
-                bucket.empty += delta;
-                break;
-            case StateFamily::Q1:
-                bucket.q1 += delta;
-                break;
-            case StateFamily::Q2:
-                bucket.q2 += delta;
-                break;
-            case StateFamily::QD:
-                bucket.qd += delta;
-                break;
-            case StateFamily::Q3:
-                bucket.q3 += delta;
-                break;
-            case StateFamily::Q4:
-                bucket.q4 += delta;
-                break;
-            }
-        }
-    };
-
     /**
      * @brief Policy that accumulates the full 16-state bitquad histogram.
      */
@@ -458,7 +495,8 @@ class BitquadLocalEventComputation {
      * @return The computed bitquad family counters through the family-delta route.
      */
     [[nodiscard]] static std::vector<BitquadFamilyCounts> computeBitquadFamilyCounts(const MorphologicalTree& tree) {
-        return aggregateBitquadFamilyDeltas(tree, computeBitquadFamilyDeltas(tree));
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(local_events::detail::validateEventEngineInput(tree, kernel::bitquadWindows[0]));
+        return kernel::computeBitquadFamilyCounts(tree);
     }
 
     /**
@@ -475,22 +513,8 @@ class BitquadLocalEventComputation {
      * @return The computed projected bitquad-family deltas before subtree merging.
      */
     [[nodiscard]] static std::vector<BitquadFamilyCounts> computeBitquadFamilyDeltas(const MorphologicalTree& tree) {
-        std::vector<BitquadFamilyCounts> deltas(static_cast<std::size_t>(tree.getNumInternalNodeSlots()));
-
-        for (std::size_t anchorBit = 0; anchorBit < 4; ++anchorBit) {
-            auto partial = local_events::EventEngine::computeDeltasWithPolicy(tree, bitquadWindowForAnchorBit(anchorBit),
-                                                                              BitquadFamilyCountPolicy{static_cast<uint32_t>(anchorBit)});
-
-            for (std::size_t node = 0; node < deltas.size(); ++node) {
-                deltas[node].q1 += partial[node].q1;
-                deltas[node].q2 += partial[node].q2;
-                deltas[node].qd += partial[node].qd;
-                deltas[node].q3 += partial[node].q3;
-                deltas[node].q4 += partial[node].q4;
-            }
-        }
-
-        return deltas;
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(local_events::detail::validateEventEngineInput(tree, kernel::bitquadWindows[0]));
+        return kernel::computeBitquadFamilyDeltas(tree);
     }
 
     /**
@@ -503,17 +527,7 @@ class BitquadLocalEventComputation {
     [[nodiscard]] static std::vector<BitquadFamilyCounts> aggregateBitquadFamilyDeltas(const MorphologicalTree& tree,
                                                                                        std::span<const BitquadFamilyCounts> deltas) {
         requireFamilyCountShape(tree, deltas, "Bitquad family delta aggregation");
-        std::vector<BitquadFamilyCounts> aggregated(deltas.begin(), deltas.end());
-        aggregateSubtreeValues(tree, aggregated, [](BitquadFamilyCounts& parent, const BitquadFamilyCounts& child) {
-            parent.empty += child.empty;
-            parent.q1 += child.q1;
-            parent.q2 += child.q2;
-            parent.qd += child.qd;
-            parent.q3 += child.q3;
-            parent.q4 += child.q4;
-        });
-        fillEmptyBitquadFamilyCounts(tree, aggregated);
-        return aggregated;
+        return kernel::aggregateBitquadFamilyDeltas(tree, deltas);
     }
 
     /**
@@ -659,21 +673,6 @@ class BitquadLocalEventComputation {
                 nonEmptyCells += histogram[state];
             }
             histogram[0] = totalCells - nonEmptyCells;
-        }
-    }
-
-    /**
-     * @brief Fills the empty family as the complement of non-empty families.
-     *
-     * @param tree Tree topology used by the operation.
-     * @param familyCounts Per-node counters for the attribute family.
-     */
-    static void fillEmptyBitquadFamilyCounts(const MorphologicalTree& tree, std::vector<BitquadFamilyCounts>& familyCounts) {
-        const int totalCells = (tree.getNumRowsOfGridDomain2D() + 1) * (tree.getNumColsOfGridDomain2D() + 1);
-        for (NodeId nodeId : tree.getAliveNodeIds()) {
-            BitquadFamilyCounts& counts = familyCounts[static_cast<std::size_t>(nodeId)];
-            const int nonEmptyCells = counts.q1 + counts.q2 + counts.qd + counts.q3 + counts.q4;
-            counts.empty = totalCells - nonEmptyCells;
         }
     }
 

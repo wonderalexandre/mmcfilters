@@ -1,7 +1,9 @@
 #pragma once
 
 #include "../../trees/MorphologicalTree.hpp"
+#include "../../trees/detail/CommittedTreeAccess.hpp"
 #include "../../utils/Common.hpp"
+#include "../../utils/Contract.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -155,7 +157,7 @@ inline std::vector<NodeId> collectTopDownOrder(const MorphologicalTree& tree) {
         stack.pop_back();
         order.push_back(nodeId);
 
-        for (NodeId childNodeId : tree.getChildren(nodeId)) {
+        for (NodeId childNodeId : CommittedTreeAccess::children(tree, nodeId)) {
             stack.push_back(childNodeId);
         }
     }
@@ -183,12 +185,9 @@ inline std::vector<NodeId> collectTopDownOrder(const MorphologicalTree& tree) {
  */
 template <std::floating_point Real>
 [[nodiscard]] ViterbiNodeCosts<Real> makeThresholdViterbiCosts(const MorphologicalTree& tree, const Real* attribute, Real threshold) {
-    if (attribute == nullptr) {
-        throw std::invalid_argument("Viterbi threshold costs require a non-null attribute buffer.");
-    }
-    if (!std::isfinite(threshold)) {
-        throw std::invalid_argument("Viterbi threshold must be finite.");
-    }
+    MMCFILTERS_CONTRACT_REQUIRE(attribute != nullptr,
+                                throw std::invalid_argument("Viterbi threshold costs require a non-null attribute buffer."));
+    MMCFILTERS_CONTRACT_REQUIRE(std::isfinite(threshold), throw std::invalid_argument("Viterbi threshold must be finite."));
 
     const auto numNodeSlots = static_cast<std::size_t>(tree.getNumInternalNodeSlots());
     ViterbiNodeCosts<Real> costs{
@@ -199,7 +198,7 @@ template <std::floating_point Real>
     for (NodeId nodeId : tree.getAliveNodeIds()) {
         const auto index = static_cast<std::size_t>(nodeId);
         const Real value = attribute[index];
-        viterbi_decision_detail::requireFiniteAttribute(value, nodeId);
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(viterbi_decision_detail::requireFiniteAttribute(value, nodeId));
         costs.preserve[index] = std::max(Real{}, threshold - value);
         costs.remove[index] = std::max(Real{}, value - threshold);
     }
@@ -225,7 +224,7 @@ template <std::floating_point Real>
 template <std::floating_point Real>
 [[nodiscard]] std::vector<bool> computeViterbiKeepCriterion(const MorphologicalTree& tree, const ViterbiNodeCosts<Real>& costs,
                                                             const ViterbiDecisionOptions& options = {}) {
-    viterbi_decision_detail::requireCostShapeAndValues(tree, costs);
+    MMCFILTERS_CONTRACT_CHECKED_ONLY(viterbi_decision_detail::requireCostShapeAndValues(tree, costs));
 
     const auto numNodeSlots = static_cast<std::size_t>(tree.getNumInternalNodeSlots());
     std::vector<Real> preserveCost(numNodeSlots, Real{});
@@ -239,7 +238,7 @@ template <std::floating_point Real>
         Real preserve = costs.preserve[index];
         Real remove = costs.remove[index];
 
-        for (NodeId childNodeId : tree.getChildren(nodeId)) {
+        for (NodeId childNodeId : CommittedTreeAccess::children(tree, nodeId)) {
             const auto childIndex = static_cast<std::size_t>(childNodeId);
             const bool preserveChild = viterbi_decision_detail::choosePreserve(preserveCost[childIndex], removeCost[childIndex], options);
             childPreservedWhenParentPreserved[childIndex] = static_cast<std::uint8_t>(preserveChild);
@@ -259,7 +258,7 @@ template <std::floating_point Real>
         stack.pop_back();
         keep[static_cast<std::size_t>(nodeId)] = preserve;
 
-        for (NodeId childNodeId : tree.getChildren(nodeId)) {
+        for (NodeId childNodeId : CommittedTreeAccess::children(tree, nodeId)) {
             const auto childIndex = static_cast<std::size_t>(childNodeId);
             const bool preserveChild = preserve && (childPreservedWhenParentPreserved[childIndex] != 0);
             stack.emplace_back(childNodeId, preserveChild);

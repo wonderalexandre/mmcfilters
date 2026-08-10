@@ -174,6 +174,67 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+  scientific-benchmark-smoke:
+    name: Scientific benchmark smoke (CHECKED/UNCHECKED)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "cmake>=3.20" ninja
+
+      - name: Configure CHECKED
+        run: >
+          cmake -S . -B build-benchmark-checked -G Ninja
+          -DMMCFILTERS_BUILD_PYTHON=OFF
+          -DMMCFILTERS_BUILD_TESTS=ON
+          -DMMCFILTERS_BUILD_EXAMPLES=OFF
+          -DMMCFILTERS_BUILD_BENCHMARKS=ON
+          -DMMCFILTERS_CONTRACT_MODE=CHECKED
+          -DCMAKE_BUILD_TYPE=Release
+
+      - name: Configure UNCHECKED
+        run: >
+          cmake -S . -B build-benchmark-unchecked -G Ninja
+          -DMMCFILTERS_BUILD_PYTHON=OFF
+          -DMMCFILTERS_BUILD_TESTS=ON
+          -DMMCFILTERS_BUILD_EXAMPLES=OFF
+          -DMMCFILTERS_BUILD_BENCHMARKS=ON
+          -DMMCFILTERS_CONTRACT_MODE=UNCHECKED
+          -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build both contract modes
+        run: |
+          cmake --build build-benchmark-checked --target mmcfilters_api_benchmark --parallel
+          cmake --build build-benchmark-unchecked --target mmcfilters_api_benchmark --parallel
+
+      - name: Run manifest smoke in both modes
+        run: |
+          ctest --test-dir build-benchmark-checked -R '^benchmark_api_manifest_smoke$' --output-on-failure
+          ctest --test-dir build-benchmark-unchecked -R '^benchmark_api_manifest_smoke$' --output-on-failure
+
+      - name: Verify deterministic cross-mode results
+        run: >
+          python benchmarks/compare_validation_modes.py
+          --process-runs 2
+          --capture-samples
+          build-benchmark-checked/benchmarks/mmcfilters_api_benchmark
+          build-benchmark-unchecked/benchmarks/mmcfilters_api_benchmark
+          --
+          --manifest benchmarks/workloads/scientific-api.ini
+          --workload smoke_structured
+          --repetitions 1
+          --suite attributes,casf
+
   sanitizers:
     name: Sanitizers (ubuntu-latest)
     runs-on: ubuntu-latest

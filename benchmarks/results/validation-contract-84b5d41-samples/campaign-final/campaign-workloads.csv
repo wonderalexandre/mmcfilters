@@ -1,0 +1,5 @@
+workload,input_source,rows,cols,scenario_count,checked_sum_of_medians_ms,unchecked_sum_of_medians_ms,unchecked_vs_checked_sum_percent,median_scenario_difference_percent,unchecked_faster_scenarios
+publication_structured,synthetic:structured,512,512,141,13402.182588,12342.681498,-7.905436917033592,-2.180968947189321,91
+publication_real_lena,file:/private/tmp/mmcfilters-publication-84b5d41-20260810/dat/lena.pgm,256,256,145,1557.813958,1526.713579,-1.996411627992356,-0.49507595319929765,80
+publication_real_brain,file:/private/tmp/mmcfilters-publication-84b5d41-20260810/dat/brain2.pgm,322,506,145,2524.980208,2510.669673,-0.5667583038734048,0.11991395311863329,71
+publication_real_wrist,file:/private/tmp/mmcfilters-publication-84b5d41-20260810/dat/wrist.pgm,289,373,145,2370.015415,2320.91496,-2.0717356810947107,0.20058028842802056,65

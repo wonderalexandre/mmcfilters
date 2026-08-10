@@ -15,6 +15,21 @@
 
 include(GNUInstallDirs)
 
+set(MMCFILTERS_CONTRACT_MODE "CHECKED" CACHE STRING
+    "Compile-time defensive validation policy: CHECKED or UNCHECKED")
+set_property(CACHE MMCFILTERS_CONTRACT_MODE PROPERTY STRINGS CHECKED UNCHECKED)
+string(TOUPPER "${MMCFILTERS_CONTRACT_MODE}" _MMCFILTERS_CONTRACT_MODE)
+
+if(_MMCFILTERS_CONTRACT_MODE STREQUAL "CHECKED")
+    set(_MMCFILTERS_CONTRACT_MODE_VALUE 1)
+elseif(_MMCFILTERS_CONTRACT_MODE STREQUAL "UNCHECKED")
+    set(_MMCFILTERS_CONTRACT_MODE_VALUE 0)
+else()
+    message(FATAL_ERROR
+        "MMCFILTERS_CONTRACT_MODE must be CHECKED or UNCHECKED; got "
+        "'${MMCFILTERS_CONTRACT_MODE}'.")
+endif()
+
 set(MMCFILTERS_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 get_filename_component(MMCFILTERS_INCLUDE_ROOT "${MMCFILTERS_ROOT}" DIRECTORY)
 include("${MMCFILTERS_INCLUDE_ROOT}/cmake/mmcfiltersPublicHeaders.cmake")
@@ -39,6 +54,11 @@ target_include_directories(mmcfilters_lib
 
 # Garante C++20 para tudo que linkar nesta biblioteca.
 target_compile_features(mmcfilters_lib INTERFACE cxx_std_20)
+target_compile_definitions(mmcfilters_lib
+    INTERFACE
+        MMCFILTERS_CONTRACT_MODE=${_MMCFILTERS_CONTRACT_MODE_VALUE})
+
+message(STATUS "mmcfilters defensive contract mode: ${_MMCFILTERS_CONTRACT_MODE}")
 
 # Alias canônico para consumo moderno via target namespace.
 add_library(mmcfilters::core ALIAS mmcfilters_lib)

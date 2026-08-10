@@ -1,9 +1,9 @@
 #pragma once
 
+#include <cassert>
 #include <vector>
 #include <algorithm>
 #include <limits>
-#include <stdexcept>
 
 namespace mmcfilters::attributes::computers::detail::maxdist {
 /**
@@ -72,13 +72,11 @@ class PQueue // sPQueue
      * @param nbuckets Largest queue bucket index.
      * @param nelems Number of addressable queue elements.
      *
-     * @throws std::invalid_argument if either argument is negative.
-     *
+     * Invalid dimensions violate this internal kernel precondition and are
+     * diagnosed only by debug assertions.
      */
     PQueue(int nbuckets, int nelems) : nadded_{0} {
-        if (nbuckets < 0 || nelems < 0) {
-            throw std::invalid_argument("PQueue requires non-negative bucket and element counts.");
-        }
+        assert(nbuckets >= 0 && nelems >= 0);
         pixels_.nelems = nelems;
         pixels_.cost.resize(nelems);
         pixels_.elem.resize(nelems);
@@ -190,15 +188,12 @@ class PQueue // sPQueue
      *
      * @param elem Element identifier addressed by the queue.
      *
-     * @throws std::out_of_range if the cost is negative or larger than the
-     * configured maximum finite cost.
-     *
+     * An out-of-domain cost violates the established EdtDIFT invariant and is
+     * diagnosed only by a debug assertion.
      */
     void insert(int elem) {
         int bucket = pixels_.cost[elem];
-        if (bucket < 0 || bucket >= buckets_.nbuckets) {
-            throw std::out_of_range("PQueue::insert cost is outside the bucket domain.");
-        }
+        assert(bucket >= 0 && bucket < buckets_.nbuckets);
 
         ++nadded_;
 
@@ -271,8 +266,6 @@ class PQueue // sPQueue
      *
      * @return The largest non-empty bucket cost.
      *
-     * @throws std::underflow_error if the queue is empty.
-     *
      */
     int maxValue() {
         requireNotEmpty();
@@ -283,8 +276,6 @@ class PQueue // sPQueue
      * @brief Returns the smallest non-empty bucket cost.
      *
      * @return The smallest non-empty bucket cost.
-     *
-     * @throws std::underflow_error if the queue is empty.
      *
      */
     int minValue() {
@@ -297,8 +288,6 @@ class PQueue // sPQueue
      *
      * @return The oldest element in the smallest non-empty bucket.
      *
-     * @throws std::underflow_error if the queue is empty.
-     *
      */
     int minElemFIFO() {
         requireNotEmpty();
@@ -310,8 +299,6 @@ class PQueue // sPQueue
      * @brief Pops the oldest element from the smallest non-empty bucket.
      *
      * @return The removed oldest element from the smallest non-empty bucket.
-     *
-     * @throws std::underflow_error if the queue is empty.
      *
      */
     int popMinFIFO() {
@@ -326,8 +313,6 @@ class PQueue // sPQueue
      *
      * @return The removed oldest element from the largest non-empty bucket.
      *
-     * @throws std::underflow_error if the queue is empty.
-     *
      */
     int popMaxFIFO() {
         requireNotEmpty();
@@ -341,8 +326,6 @@ class PQueue // sPQueue
      *
      * @return The removed newest element from the smallest non-empty bucket.
      *
-     * @throws std::underflow_error if the queue is empty.
-     *
      */
     int popMinLIFO() {
         requireNotEmpty();
@@ -355,8 +338,6 @@ class PQueue // sPQueue
      * @brief Pops the newest element from the largest non-empty bucket.
      *
      * @return The removed newest element from the largest non-empty bucket.
-     *
-     * @throws std::underflow_error if the queue is empty.
      *
      */
     int popMaxLIFO() {
@@ -466,11 +447,7 @@ class PQueue // sPQueue
     /**
      * @brief Rejects public min/max/pop operations on an empty queue.
      */
-    void requireNotEmpty() const {
-        if (isEmpty()) {
-            throw std::underflow_error("PQueue operation requires a non-empty queue.");
-        }
-    }
+    void requireNotEmpty() const { assert(!isEmpty()); }
 
     /**
      * @brief Removes and returns the oldest element in `bucket`.

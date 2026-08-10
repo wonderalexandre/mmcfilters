@@ -23,21 +23,26 @@ int main() {
     };
 
     auto image = makeComponentTreeFixture();
-    mmcfilters::unit_tests::requireThrows<std::invalid_argument>([]() { (void)ImageUInt8::create(0, 1); }, "zero-row image creation must throw");
-    mmcfilters::unit_tests::requireThrows<std::invalid_argument>([]() { (void)ImageUInt8::create(1, 0); }, "zero-column image creation must throw");
-    mmcfilters::unit_tests::requireThrows<std::invalid_argument>([]() { (void)ImageUInt8::create(-1, 1); }, "negative-row image creation must throw");
-    mmcfilters::unit_tests::requireThrows<std::overflow_error>([]() { (void)ImageUInt8::create(std::numeric_limits<int>::max(), 2); },
-                                                               "overflowing image creation must throw before allocation");
-    mmcfilters::unit_tests::requireThrows<std::invalid_argument>([]() { (void)RegularGridAdjacency2D(4, 4, -1.0); },
-                                                                 "negative adjacency radius must throw before stencil construction");
-    mmcfilters::unit_tests::requireThrows<std::invalid_argument>([]() { (void)RegularGridAdjacency2D(4, 4, std::numeric_limits<double>::quiet_NaN()); },
-                                                                 "NaN adjacency radius must throw before stencil construction");
-    mmcfilters::unit_tests::requireThrows<std::invalid_argument>([]() { (void)RegularGridAdjacency2D(4, 4, std::numeric_limits<double>::infinity()); },
-                                                                 "infinite adjacency radius must throw before stencil construction");
-    mmcfilters::unit_tests::requireThrows<std::invalid_argument>([]() { (void)RegularGridAdjacency2D(4, 4, std::numeric_limits<double>::max()); },
-                                                                 "unrepresentable finite adjacency radius must throw before stencil construction");
-    mmcfilters::unit_tests::requireThrows<std::invalid_argument>([]() { (void)RegularGridAdjacency2D(-1, 4, 1.0); },
-                                                                 "negative adjacency dimensions must throw before stencil construction");
+    if constexpr (contract::validationsEnabled) {
+        mmcfilters::unit_tests::requireThrows<std::invalid_argument>([]() { (void)ImageUInt8::create(0, 1); }, "zero-row image creation must throw");
+        mmcfilters::unit_tests::requireThrows<std::invalid_argument>([]() { (void)ImageUInt8::create(1, 0); }, "zero-column image creation must throw");
+        mmcfilters::unit_tests::requireThrows<std::invalid_argument>([]() { (void)ImageUInt8::create(-1, 1); }, "negative-row image creation must throw");
+        mmcfilters::unit_tests::requireThrows<std::overflow_error>([]() { (void)ImageUInt8::create(std::numeric_limits<int>::max(), 2); },
+                                                                   "overflowing image creation must throw before allocation");
+        mmcfilters::unit_tests::requireThrows<std::invalid_argument>([]() { (void)RegularGridAdjacency2D(4, 4, -1.0); },
+                                                                     "negative adjacency radius must throw before stencil construction");
+        mmcfilters::unit_tests::requireThrows<std::invalid_argument>(
+            []() { (void)RegularGridAdjacency2D(4, 4, std::numeric_limits<double>::quiet_NaN()); },
+            "NaN adjacency radius must throw before stencil construction");
+        mmcfilters::unit_tests::requireThrows<std::invalid_argument>(
+            []() { (void)RegularGridAdjacency2D(4, 4, std::numeric_limits<double>::infinity()); },
+            "infinite adjacency radius must throw before stencil construction");
+        mmcfilters::unit_tests::requireThrows<std::invalid_argument>(
+            []() { (void)RegularGridAdjacency2D(4, 4, std::numeric_limits<double>::max()); },
+            "unrepresentable finite adjacency radius must throw before stencil construction");
+        mmcfilters::unit_tests::requireThrows<std::invalid_argument>([]() { (void)RegularGridAdjacency2D(-1, 4, 1.0); },
+                                                                     "negative adjacency dimensions must throw before stencil construction");
+    }
 
     auto maxTree = makeWeightedComponentTree(image, true);
     auto minTree = makeWeightedComponentTree(image, false);

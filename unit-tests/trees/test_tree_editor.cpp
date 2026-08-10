@@ -136,7 +136,9 @@ int main() {
         const NodeId detachedNode = editor.createDetachedNode();
         require(editor.hasDetachedAliveNodes(), "detached edit must be visible before commit");
         requireThrows([&]() { (void)exportFlatHigraHierarchy(*tree); }, "Higra export must reject detached alive nodes");
-        requireThrows([&]() { (void)computeAreaViaAttributeFacade(*tree, tree->getRoot()); }, "attribute computation must reject an open edit session");
+        if constexpr (contract::validationsEnabled) {
+            requireThrows([&]() { (void)computeAreaViaAttributeFacade(*tree, tree->getRoot()); }, "attribute computation must reject an open edit session");
+        }
 
         bool threw = false;
         try {
@@ -236,14 +238,16 @@ int main() {
         auto editor = tree->edit();
         editor.detach(3);
 
-        requireThrows(
-            [&] {
-                MorphologicalTree moved(std::move(*tree));
-                static_cast<void>(moved);
-            },
-            "move construction must reject a tree with an active editor");
-        requireThrows([&] { static_cast<void>(tree->clone()); }, "clone must reject a staged forest");
-        require(tree->isEditing(), "failed move/clone must leave the editor bound to its original owner");
+        if constexpr (contract::validationsEnabled) {
+            requireThrows(
+                [&] {
+                    MorphologicalTree moved(std::move(*tree));
+                    static_cast<void>(moved);
+                },
+                "move construction must reject a tree with an active editor");
+            requireThrows([&] { static_cast<void>(tree->clone()); }, "clone must reject a staged forest");
+            require(tree->isEditing(), "failed move/clone must leave the editor bound to its original owner");
+        }
 
         editor.rollback();
         requirePublicTreeStateEqual(*tree, original, "failed move/clone followed by rollback");
@@ -261,16 +265,20 @@ int main() {
 
         auto sourceEditor = source->edit();
         sourceEditor.detach(3);
-        requireThrows([&] { *destination = std::move(*source); }, "move assignment must reject an actively edited source");
-        requirePublicTreeStateEqual(*destination, destinationBefore, "rejected move assignment must preserve its destination");
-        require(source->isEditing(), "rejected move assignment must preserve its source editor");
+        if constexpr (contract::validationsEnabled) {
+            requireThrows([&] { *destination = std::move(*source); }, "move assignment must reject an actively edited source");
+            requirePublicTreeStateEqual(*destination, destinationBefore, "rejected move assignment must preserve its destination");
+            require(source->isEditing(), "rejected move assignment must preserve its source editor");
+        }
         sourceEditor.rollback();
         requirePublicTreeStateEqual(*source, sourceBefore, "rejected move assignment source rollback");
 
         auto destinationEditor = destination->edit();
 
-        requireThrows([&] { *destination = std::move(*source); }, "move assignment must reject an actively edited destination");
-        requirePublicTreeStateEqual(*source, sourceBefore, "rejected move assignment must preserve its source");
+        if constexpr (contract::validationsEnabled) {
+            requireThrows([&] { *destination = std::move(*source); }, "move assignment must reject an actively edited destination");
+            requirePublicTreeStateEqual(*source, sourceBefore, "rejected move assignment must preserve its source");
+        }
         destinationEditor.commit();
 
         const NodeId expectedLca = source->getLowestCommonAncestor(3, 4);

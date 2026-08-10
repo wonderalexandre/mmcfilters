@@ -53,27 +53,33 @@ int main() {
     require(!maxTree->isLeaf(4), "4 must not be leaf in max-tree");
     require(maxTree->isLeaf(5), "5 must be leaf in max-tree");
     require(!maxTree->isAlive(InvalidNode), "invalid node id must not be alive");
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->getNodeParent(InvalidNode)); }, "invalid getNodeParent must throw");
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(collectNodeIds(maxTree->getChildren(InvalidNode))); }, "invalid getChildren must throw");
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->getNumChildren(999)); }, "invalid getNumChildren must throw");
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->getNodeTimePreOrder(999)); }, "invalid getNodeTimePreOrder must throw");
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(collectNodeIds(maxTree->getProperParts(999))); }, "invalid getProperParts must throw");
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->isAncestor(999, 0)); }, "invalid isAncestor source must throw");
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->isAncestor(0, 999)); }, "invalid isAncestor target must throw");
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->isDescendant(999, 0)); }, "invalid isDescendant source must throw");
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->isDescendant(0, 999)); }, "invalid isDescendant target must throw");
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(weightedMaxTree->getAltitude(InvalidNode)); }, "invalid weighted getAltitude must throw");
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(weightedMaxTree->getNodeResidue(999)); }, "invalid weighted getNodeResidue must throw");
+    if constexpr (contract::validationsEnabled) {
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->getNodeParent(InvalidNode)); }, "invalid getNodeParent must throw");
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(collectNodeIds(maxTree->getChildren(InvalidNode))); }, "invalid getChildren must throw");
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->getNumChildren(999)); }, "invalid getNumChildren must throw");
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->getNodeTimePreOrder(999)); }, "invalid getNodeTimePreOrder must throw");
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(collectNodeIds(maxTree->getProperParts(999))); }, "invalid getProperParts must throw");
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->isAncestor(999, 0)); }, "invalid isAncestor source must throw");
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->isAncestor(0, 999)); }, "invalid isAncestor target must throw");
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->isDescendant(999, 0)); }, "invalid isDescendant source must throw");
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(maxTree->isDescendant(0, 999)); }, "invalid isDescendant target must throw");
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(weightedMaxTree->getAltitude(InvalidNode)); }, "invalid weighted getAltitude must throw");
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(weightedMaxTree->getNodeResidue(999)); }, "invalid weighted getNodeResidue must throw");
+    }
 
     auto sparseTree = makeComponentTree(image, true);
     sparseTree->mergeNodeIntoParent(4);
     require(!sparseTree->isAlive(4), "merged node slot must no longer be alive");
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(sparseTree->getNodeParent(4)); }, "dead-slot getNodeParent must throw");
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(collectNodeIds(sparseTree->getChildren(4))); }, "dead-slot getChildren must throw");
+    if constexpr (contract::validationsEnabled) {
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(sparseTree->getNodeParent(4)); }, "dead-slot getNodeParent must throw");
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(collectNodeIds(sparseTree->getChildren(4))); }, "dead-slot getChildren must throw");
+    }
     auto sparseWeightedTree = makeWeightedComponentTree(image, true);
     sparseWeightedTree->mergeNodeIntoParent(4);
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(sparseWeightedTree->getAltitude(4)); }, "dead-slot weighted getAltitude must throw");
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(sparseWeightedTree->getNodeResidue(4)); }, "dead-slot weighted getNodeResidue must throw");
+    if constexpr (contract::validationsEnabled) {
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(sparseWeightedTree->getAltitude(4)); }, "dead-slot weighted getAltitude must throw");
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(sparseWeightedTree->getNodeResidue(4)); }, "dead-slot weighted getNodeResidue must throw");
+    }
     requireThrows<std::invalid_argument>([&]() { sparseWeightedTree->setAltitude(4, 7); }, "dead-slot weighted setAltitude must throw");
 
     auto rebuiltFromHigra = makeTreeFromHigraParent(maxHigraParent, 4, 4, true);

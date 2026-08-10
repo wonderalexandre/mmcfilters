@@ -4,8 +4,10 @@
 #include "AttributeComputerFamily.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
 #include "../../trees/detail/TreeTraversalDetail.hpp"
+#include "../../trees/detail/CommittedTreeAccess.hpp"
 #include "../../trees/TreeAltitudeAlgorithms.hpp"
 #include "../../utils/Altitude.hpp"
+#include "../../utils/Contract.hpp"
 
 #include <algorithm>
 #include <array>
@@ -81,48 +83,83 @@ struct VolumeRequest {
  * @param dependencySources Dependency source `0` must contain `AREA` when
  * `RELATIVE_VOLUME` is requested.
  */
-template <std::floating_point Real, AltitudeValue T>
-void computeVolumeAttributeKernel(const MorphologicalTree& tree, std::span<const T> altitude, std::span<Real> buffer, const AttributeNames& attrNames,
-                                  std::span<const Attribute> requestedAttributes, std::span<const DependencySourceT<Real>> dependencySources) {
-    TreeAltitudeAlgorithms::validateAltitudeBufferShape(tree, altitude);
+namespace kernel {
 
-    const VolumeRequest request = VolumeRequest::from(requestedAttributes);
+/**
+ * @brief Computes requested volume descriptors from established altitude and dependency domains.
+ * @param context Established tree, altitude span, output layout, and output buffer.
+ * @param request Volume columns to materialize.
+ * @param areaDependency Optional established area dependency.
+ */
+template <std::floating_point Real, AltitudeValue T>
+void computeVolume(const AltitudeAttributeComputeContext<Real, T>& context, const VolumeRequest& request,
+                   const DependencySourceT<Real>* areaDependency) {
     if (!request.any()) {
         return;
     }
 
-    auto indexOfVol = [&](NodeId idx) { return attrNames.linearIndex(idx, VOLUME); };
-    auto indexOfRel = [&](NodeId idx) { return attrNames.linearIndex(idx, RELATIVE_VOLUME); };
-    const DependencyResolver<Real> dependencies{dependencySources};
-    const DependencySourceT<Real>* dependencyArea = request.needsAreaDependency() ? &dependencies.require(AREA) : nullptr;
-    auto indexOfArea = [&](NodeId idx) { return dependencyArea->attrNames->linearIndex(idx, AREA); };
+    const int stride = context.attrNames.NUM_ATTRIBUTES;
+    const auto offsetOf = [&](Attribute attribute) { return context.attrNames.indexMap.find(attribute)->second; };
+    const int volumeOffset = request.volume ? offsetOf(VOLUME) : 0;
+    const int relativeOffset = request.relative ? offsetOf(RELATIVE_VOLUME) : 0;
+    auto indexOfVolume = [&](NodeId node) { return static_cast<std::size_t>(node * stride + volumeOffset); };
+    auto indexOfRelative = [&](NodeId node) { return static_cast<std::size_t>(node * stride + relativeOffset); };
+    const int areaStride = areaDependency != nullptr ? areaDependency->attrNames->NUM_ATTRIBUTES : 0;
+    const int areaOffset = areaDependency != nullptr ? areaDependency->attrNames->indexMap.find(AREA)->second : 0;
+    auto indexOfArea = [&](NodeId node) { return static_cast<std::size_t>(node * areaStride + areaOffset); };
 
-    ::mmcfilters::detail::traversePostOrder(
-        tree, tree.getRoot(),
+    ::mmcfilters::detail::kernel::traversePostOrder(
+        context.tree, context.tree.getRoot(),
         [&](NodeId nodeId) {
-            const NodeId node = detail::volumeSlotOf(tree, nodeId);
-            const T nodeAltitude = TreeAltitudeAlgorithms::getAltitude(altitude, nodeId);
+            const NodeId node = detail::volumeSlotOf(context.tree, nodeId);
+            const T nodeAltitude = context.altitude[static_cast<std::size_t>(nodeId)];
             if (request.volume)
-                buffer[indexOfVol(node)] = static_cast<Real>(tree.getNumProperParts(nodeId)) * static_cast<Real>(nodeAltitude);
+                context.buffer[indexOfVolume(node)] =
+                    static_cast<Real>(::mmcfilters::detail::CommittedTreeAccess::numProperParts(context.tree, nodeId)) * static_cast<Real>(nodeAltitude);
             if (request.relative)
-                buffer[indexOfRel(node)] = Real{0};
+                context.buffer[indexOfRelative(node)] = Real{0};
         },
         [&](NodeId parentNodeId, NodeId childNodeId) {
-            const NodeId parent = detail::volumeSlotOf(tree, parentNodeId);
-            const NodeId child = detail::volumeSlotOf(tree, childNodeId);
+            const NodeId parent = detail::volumeSlotOf(context.tree, parentNodeId);
+            const NodeId child = detail::volumeSlotOf(context.tree, childNodeId);
             if (request.volume)
-                buffer[indexOfVol(parent)] += buffer[indexOfVol(child)];
+                context.buffer[indexOfVolume(parent)] += context.buffer[indexOfVolume(child)];
             if (request.relative)
-                buffer[indexOfRel(parent)] +=
-                    buffer[indexOfRel(child)] + static_cast<Real>(dependencyArea->buffer[indexOfArea(child)] *
-                                                                  std::abs(static_cast<Real>(TreeAltitudeAlgorithms::getAltitude(altitude, childNodeId)) -
-                                                                           static_cast<Real>(TreeAltitudeAlgorithms::getAltitude(altitude, parentNodeId))));
+                context.buffer[indexOfRelative(parent)] +=
+                    context.buffer[indexOfRelative(child)] +
+                    static_cast<Real>(areaDependency->buffer[indexOfArea(child)] *
+                                      std::abs(static_cast<Real>(context.altitude[static_cast<std::size_t>(childNodeId)]) -
+                                               static_cast<Real>(context.altitude[static_cast<std::size_t>(parentNodeId)])));
         },
         [&](NodeId nodeId) {
-            const NodeId node = detail::volumeSlotOf(tree, nodeId);
+            const NodeId node = detail::volumeSlotOf(context.tree, nodeId);
             if (request.relative)
-                buffer[indexOfRel(node)] += dependencyArea->buffer[indexOfArea(node)];
+                context.buffer[indexOfRelative(node)] += areaDependency->buffer[indexOfArea(node)];
         });
+}
+
+} // namespace kernel
+
+template <std::floating_point Real>
+inline const DependencySourceT<Real>* findDependency(std::span<const DependencySourceT<Real>> sources, Attribute attribute) {
+    for (const DependencySourceT<Real>& source : sources) {
+        if (source.attrNames->contains(attribute)) {
+            return &source;
+        }
+    }
+    return nullptr;
+}
+
+template <std::floating_point Real, AltitudeValue T>
+inline void validateVolumeContext(const AltitudeAttributeComputeContext<Real, T>& context, const VolumeRequest& request) {
+    requireAttributeBufferShape(context.tree, context.buffer, context.attrNames);
+    TreeAltitudeAlgorithms::validateAltitudeBufferShape(context.tree, context.altitude);
+    if (request.volume && !context.attrNames.contains(VOLUME)) {
+        throw std::invalid_argument("VOLUME computation requires a VOLUME column in the output layout.");
+    }
+    if (request.relative && !context.attrNames.contains(RELATIVE_VOLUME)) {
+        throw std::invalid_argument("RELATIVE_VOLUME computation requires a RELATIVE_VOLUME column in the output layout.");
+    }
 }
 
 } // namespace detail
@@ -174,9 +211,17 @@ class VolumeComputer {
      * @param context Operation context or diagnostic label.
      */
     template <std::floating_point Real, AltitudeValue T> static void compute(const AltitudeAttributeComputeContext<Real, T>& context) {
-        requireAttributeBufferShape(context.tree, context.buffer, context.attrNames);
-        detail::computeVolumeAttributeKernel(context.tree, context.altitude, context.buffer, context.attrNames, context.requestedAttributes,
-                                             context.dependencySources);
+        const detail::VolumeRequest request = detail::VolumeRequest::from(context.requestedAttributes);
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(detail::validateVolumeContext(context, request));
+        const DependencySourceT<Real>* areaDependency = nullptr;
+        if (request.needsAreaDependency()) {
+            if constexpr (contract::validationsEnabled) {
+                areaDependency = &context.dependencies.require(AREA);
+            } else {
+                areaDependency = detail::findDependency(context.dependencySources, AREA);
+            }
+        }
+        detail::kernel::computeVolume(context, request, areaDependency);
     }
 
     /**
@@ -200,7 +245,8 @@ class VolumeComputer {
         for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitProperParts.size()); ++leafIndex) {
             const NodeId properPart = context.unitProperParts[static_cast<size_t>(leafIndex)];
             if (request.volume) {
-                context.buffer[context.attrNames.linearIndex(leafIndex, VOLUME)] = static_cast<Real>(unitAltitude(context.tree, context.altitude, properPart));
+                context.buffer[context.attrNames.linearIndex(leafIndex, VOLUME)] =
+                    static_cast<Real>(::mmcfilters::detail::kernel::unitAltitude(context.tree, context.altitude, properPart));
             }
             if (request.relative) {
                 context.buffer[context.attrNames.linearIndex(leafIndex, RELATIVE_VOLUME)] = Real{1};

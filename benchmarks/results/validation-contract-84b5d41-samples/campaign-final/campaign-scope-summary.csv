@@ -1,0 +1,11 @@
+suite,scope,observation_count,checked_sum_of_medians_ms,unchecked_sum_of_medians_ms,unchecked_vs_checked_sum_percent
+attribute_bundles,established_input,36,927.914331,941.502919,1.4644226892536416
+attribute_groups,established_input,48,3552.879628,3649.666376,2.7241775160979254
+attributes,established_input,264,1347.558579,1374.593754,2.0062337490413418
+casf,end_to_end,16,823.195669,770.96571,-6.344780587031973
+casf,established_input,28,4043.992667,3278.720626,-18.923675288652554
+construction,end_to_end,48,6525.391124,6182.2927070000005,-5.257898116453186
+editing,established_input,16,5.522832,5.239456000000001,-5.1309907670557315
+filters,established_input,64,559.054336,496.958413,-11.10731444179337
+interoperability,established_input,36,771.278377,728.69179,-5.5215585280177
+pipelines,end_to_end,20,1298.204626,1272.347959,-1.991725070312611

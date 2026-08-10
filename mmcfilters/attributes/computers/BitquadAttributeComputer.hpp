@@ -5,6 +5,9 @@
 #include "../detail/AttributeKernelSupport.hpp"
 #include "detail/BitquadAttributeMaterialization.hpp"
 #include "detail/BitquadLocalEventComputation.hpp"
+#include "../../trees/TreeAltitudeAlgorithms.hpp"
+#include "../../trees/detail/CommittedTreeAccess.hpp"
+#include "../../utils/Contract.hpp"
 
 #include <array>
 #include <numbers>
@@ -13,6 +16,122 @@
 #include <string_view>
 
 namespace mmcfilters::attributes::computers {
+
+namespace detail {
+
+namespace kernel {
+
+/**
+ * @brief Computes requested bitquad attributes with established uniform connectivity.
+ * @param context Established tree, output layout, and output buffer.
+ * @param request Bitquad columns to materialize.
+ */
+template <std::floating_point Real>
+inline void computeBitquadAttributes(const AttributeComputeContext<Real>& context, const BitquadRequest& request) {
+    if (!request.any()) {
+        return;
+    }
+    const std::vector<BitquadFamilyCounts> familyCounts = computeBitquadFamilyCounts(context.tree);
+    const RegularGridAdjacency2D* uniformAdjacency = context.tree.getUniformGridAdjacency2D();
+    const bool is4Connectivity = uniformAdjacency != nullptr ? uniformAdjacency->is4connectivity()
+                                                               : context.tree.getDecreasingGridAdjacency2D()->is4connectivity();
+    materializeBitquadAttributes(context, request, familyCounts, [is4Connectivity](NodeId) { return is4Connectivity; });
+}
+
+/**
+ * @brief Computes requested bitquad attributes with established typed altitudes.
+ * @param context Established tree, altitude span, output layout, and output buffer.
+ * @param request Bitquad columns to materialize.
+ */
+template <std::floating_point Real, AltitudeValue T>
+inline void computeBitquadAttributes(const AltitudeAttributeComputeContext<Real, T>& context, const BitquadRequest& request) {
+    if (!request.any()) {
+        return;
+    }
+    const std::vector<BitquadFamilyCounts> familyCounts = computeBitquadFamilyCounts(context.tree);
+    const AttributeComputeContext<Real> outputContext{context.tree, context.buffer, context.attrNames, context.requestedAttributes,
+                                                      context.dependencySources};
+    const RegularGridAdjacency2D* uniformAdjacency = context.tree.getUniformGridAdjacency2D();
+    if (uniformAdjacency != nullptr) {
+        const bool is4Connectivity = uniformAdjacency->is4connectivity();
+        materializeBitquadAttributes(outputContext, request, familyCounts, [is4Connectivity](NodeId) { return is4Connectivity; });
+        return;
+    }
+
+    const bool decreasingIs4Connectivity = context.tree.getDecreasingGridAdjacency2D()->is4connectivity();
+    const bool increasingIs4Connectivity = context.tree.getIncreasingGridAdjacency2D()->is4connectivity();
+    const NodeId root = context.tree.getRoot();
+    materializeBitquadAttributes(outputContext, request, familyCounts, [&](NodeId node) {
+        if (node == root) {
+            return decreasingIs4Connectivity == increasingIs4Connectivity ? decreasingIs4Connectivity : false;
+        }
+        const NodeId parent = ::mmcfilters::detail::CommittedTreeAccess::nodeParent(context.tree, node);
+        if (context.altitude[static_cast<std::size_t>(node)] > context.altitude[static_cast<std::size_t>(parent)]) {
+            return increasingIs4Connectivity;
+        }
+        if (context.altitude[static_cast<std::size_t>(node)] < context.altitude[static_cast<std::size_t>(parent)]) {
+            return decreasingIs4Connectivity;
+        }
+        return decreasingIs4Connectivity;
+    });
+}
+
+} // namespace kernel
+
+inline void validateBitquadAdjacency(const MorphologicalTree& tree, bool altitudeAvailable) {
+    const RegularGridAdjacency2D* uniformAdjacency = tree.getUniformGridAdjacency2D();
+    if (uniformAdjacency != nullptr) {
+        if (!uniformAdjacency->isCanonical4Or8Connectivity()) {
+            throw std::invalid_argument("Local-event BitQuads scalar projection requires canonical 4- or 8-connectivity.");
+        }
+        return;
+    }
+
+    const RegularGridAdjacency2D* decreasingAdjacency = tree.getDecreasingGridAdjacency2D();
+    const RegularGridAdjacency2D* increasingAdjacency = tree.getIncreasingGridAdjacency2D();
+    if (decreasingAdjacency == nullptr || increasingAdjacency == nullptr) {
+        throw std::invalid_argument("Local-event BitQuads scalar attributes require a regular or dual adjacency context.");
+    }
+    if (!decreasingAdjacency->isCanonical4Or8Connectivity() || !increasingAdjacency->isCanonical4Or8Connectivity()) {
+        throw std::invalid_argument("Local-event BitQuads scalar projection requires canonical 4- or 8-connectivity.");
+    }
+    if (!altitudeAvailable && decreasingAdjacency->is4connectivity() != increasingAdjacency->is4connectivity()) {
+        throw std::invalid_argument("Local-event BitQuads scalar projection requires an altitude buffer when decreasing and increasing connectivity differ.");
+    }
+}
+
+template <std::floating_point Real> inline void validateBitquadContext(const AttributeComputeContext<Real>& context) {
+    requireAttributeBufferShape(context.tree, context.buffer, context.attrNames);
+    requireRequestedAttributeColumns(context);
+    local_events::detail::validateEventEngineInput(context.tree, kernel::bitquadWindows[0]);
+    validateBitquadAdjacency(context.tree, false);
+}
+
+template <std::floating_point Real, AltitudeValue T>
+inline void validateBitquadContext(const AltitudeAttributeComputeContext<Real, T>& context) {
+    requireAttributeBufferShape(context.tree, context.buffer, context.attrNames);
+    requireRequestedAttributeColumns(context);
+    local_events::detail::validateEventEngineInput(context.tree, kernel::bitquadWindows[0]);
+    validateBitquadAdjacency(context.tree, true);
+    TreeAltitudeAlgorithms::validateAltitudeBufferShape(context.tree, context.altitude);
+
+    const RegularGridAdjacency2D* decreasingAdjacency = context.tree.getDecreasingGridAdjacency2D();
+    const RegularGridAdjacency2D* increasingAdjacency = context.tree.getIncreasingGridAdjacency2D();
+    if (context.tree.getUniformGridAdjacency2D() != nullptr || decreasingAdjacency->is4connectivity() == increasingAdjacency->is4connectivity()) {
+        return;
+    }
+    for (NodeId node : context.tree.getAliveNodeIds()) {
+        if (context.tree.isRoot(node)) {
+            continue;
+        }
+        const NodeId parent = context.tree.getNodeParent(node);
+        if (context.altitude[static_cast<std::size_t>(node)] == context.altitude[static_cast<std::size_t>(parent)]) {
+            throw std::runtime_error("Local-event BitQuads scalar projection cannot select decreasing or increasing connectivity from equal node and parent altitudes.");
+        }
+    }
+}
+
+} // namespace detail
 
 /**
  * @brief Bitquad scalar computer backed by local events.
@@ -61,11 +180,9 @@ class BitquadAttributeComputer {
      * @param context Operation context or diagnostic label.
      */
     template <std::floating_point Real> static void compute(const AttributeComputeContext<Real>& context) {
-        requireAttributeBufferShape(context.tree, context.buffer, context.attrNames);
-        const auto familyDeltas = detail::BitquadLocalEventComputation::computeBitquadFamilyDeltas(context.tree);
-        const auto familyCounts = detail::BitquadLocalEventComputation::aggregateBitquadFamilyDeltas(context.tree, familyDeltas);
-        detail::BitquadAttributeMaterialization::materializeAttributesFromBitquadFamilyCounts(context.tree, familyCounts, context.buffer, context.attrNames,
-                                                                                              context.requestedAttributes);
+        const detail::BitquadRequest request = detail::BitquadRequest::from(context.requestedAttributes);
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(detail::validateBitquadContext(context));
+        detail::kernel::computeBitquadAttributes(context, request);
     }
 
     /**
@@ -79,11 +196,9 @@ class BitquadAttributeComputer {
      * @param context Operation context or diagnostic label.
      */
     template <std::floating_point Real, AltitudeValue T> static void compute(const AltitudeAttributeComputeContext<Real, T>& context) {
-        requireAttributeBufferShape(context.tree, context.buffer, context.attrNames);
-        const auto familyDeltas = detail::BitquadLocalEventComputation::computeBitquadFamilyDeltas(context.tree);
-        const auto familyCounts = detail::BitquadLocalEventComputation::aggregateBitquadFamilyDeltas(context.tree, familyDeltas);
-        detail::BitquadAttributeMaterialization::materializeAttributesFromBitquadFamilyCounts(context.tree, context.altitude, familyCounts, context.buffer,
-                                                                                              context.attrNames, context.requestedAttributes);
+        const detail::BitquadRequest request = detail::BitquadRequest::from(context.requestedAttributes);
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(detail::validateBitquadContext(context));
+        detail::kernel::computeBitquadAttributes(context, request);
     }
 
     /**

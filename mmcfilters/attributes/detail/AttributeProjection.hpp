@@ -4,9 +4,11 @@
 #include "../AttributeNames.hpp"
 #include "../AttributeResultTypes.hpp"
 #include "../../trees/MorphologicalTree.hpp"
+#include "../../trees/detail/CommittedTreeAccess.hpp"
 #include "../../trees/detail/HigraExportLayoutDetail.hpp"
 #include "../../utils/Altitude.hpp"
 #include "../../utils/Common.hpp"
+#include "../../utils/Contract.hpp"
 #include "../../utils/Image.hpp"
 
 #include <algorithm>
@@ -270,7 +272,7 @@ inline void copyScalarInternalRowsToPreservedHigra(const MorphologicalTree& tree
                                                    std::span<Real> projected, int outputSize) {
     const int numColumns = attrNames.NUM_ATTRIBUTES;
     for (NodeId nodeId : tree.getAliveNodeIds()) {
-        const NodeId outputNodeId = tree.getHigraNodeId(nodeId);
+        const NodeId outputNodeId = CommittedTreeAccess::higraNodeId(tree, nodeId);
         if (outputNodeId == InvalidNode || outputNodeId < 0 || outputNodeId >= outputSize) {
             throw std::runtime_error("Cannot project attributes to Higra node-id space: a live node has no valid Higra id.");
         }
@@ -341,7 +343,7 @@ template <std::floating_point Real>
 inline void copyDeltaInternalRowsToPreservedHigra(const MorphologicalTree& tree, const AttributeNamesWithDelta& deltaNames, std::span<const Real> nodeValues,
                                                   std::span<Real> projected, int outputSize) {
     for (NodeId nodeId : tree.getAliveNodeIds()) {
-        const NodeId outputNodeId = tree.getHigraNodeId(nodeId);
+        const NodeId outputNodeId = CommittedTreeAccess::higraNodeId(tree, nodeId);
         if (outputNodeId == InvalidNode || outputNodeId < 0 || outputNodeId >= outputSize) {
             throw std::runtime_error("Cannot project delta attributes to Higra node-id space: a live node has no valid Higra id.");
         }
@@ -506,9 +508,9 @@ inline std::vector<Real> projectNodeValuesToExportedHigraTyped(const Morphologic
                                                                std::span<const Real> nodeValues) {
     const int numColumns = attrNames.NUM_ATTRIBUTES;
     const size_t expectedSize = static_cast<size_t>(topology.getNumInternalNodeSlots()) * static_cast<size_t>(numColumns);
-    if (nodeValues.size() != expectedSize) {
-        throw std::invalid_argument("Node-value buffer size must match the dense internal-node domain and requested attributes.");
-    }
+    MMCFILTERS_CONTRACT_REQUIRE(
+        nodeValues.size() == expectedSize,
+        throw std::invalid_argument("Node-value buffer size must match the dense internal-node domain and requested attributes."));
 
     const auto layout = computeExportedHigraLayout(topology, altitude);
     const size_t numColumnValues = static_cast<size_t>(numColumns);
@@ -556,7 +558,7 @@ inline ImagePtr<Real> mapNodeAttributeToImage(const MorphologicalTree& tree, con
     ImagePtr<Real> imgPtr = Image<Real>::create(tree.getNumRowsOfGridDomain2D(), tree.getNumColsOfGridDomain2D());
     Real* img = imgPtr->rawData();
     for (int p = 0; p < imgPtr->getSize(); ++p) {
-        const NodeId nodeId = tree.getProperPartOwner(p);
+        const NodeId nodeId = CommittedTreeAccess::properPartOwner(tree, p);
         img[p] = nodeValues[attrNames.linearIndex(nodeId, attribute)];
     }
     return imgPtr;

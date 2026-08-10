@@ -31,8 +31,10 @@ void testRadiusStencilOrderAndBounds() {
     requireVectorEqual(collectNodeIds(adjacency.getForwardNeighborIndices(4)), std::vector<NodeId>{5, 8, 7, 6}, "8-neighborhood forward order");
     requireVectorEqual(collectNodeIds(adjacency.getNeighborIndices(0)), std::vector<NodeId>{1, 4, 3}, "corner bounds filtering");
 
-    requireThrows<std::out_of_range>([&] { (void)adjacency.getNeighborIndices(-1); }, "negative linear adjacency index");
-    requireThrows<std::out_of_range>([&] { (void)adjacency.getAdjacentIndices(3, 0); }, "row outside adjacency domain");
+    if constexpr (contract::validationsEnabled) {
+        requireThrows<std::out_of_range>([&] { (void)adjacency.getNeighborIndices(-1); }, "negative linear adjacency index");
+        requireThrows<std::out_of_range>([&] { (void)adjacency.getAdjacentIndices(3, 0); }, "row outside adjacency domain");
+    }
 }
 
 void testNestedAndInterleavedTraversal() {
@@ -107,12 +109,14 @@ void testComponentTreeUsesExplicitAdjacency() {
     const auto* stored = tree.topology().getUniformGridAdjacency2D();
     require(stored != nullptr, "component tree stores explicit adjacency");
     requireVectorEqual(collectNodeIds(stored->getNeighborIndices(2)), std::vector<NodeId>{1, 3}, "stored explicit adjacency");
-    requireThrowsContaining<std::invalid_argument>([&] { (void)AttributeComputation::computeSingleTopologyAttribute(tree.topology(), BITQUADS_AREA); },
-                                                   "canonical 4- or 8-connectivity", "BitQuads rejects unsupported custom adjacency");
+    if constexpr (contract::validationsEnabled) {
+        requireThrowsContaining<std::invalid_argument>([&] { (void)AttributeComputation::computeSingleTopologyAttribute(tree.topology(), BITQUADS_AREA); },
+                                                       "canonical 4- or 8-connectivity", "BitQuads rejects unsupported custom adjacency");
 
-    requireThrowsContaining<std::invalid_argument>(
-        [&] { (void)MorphologicalTreeFactory::createMinTree(image, RegularGridAdjacency2D::rectangular(2, 5, 1, 1)); }, "must match",
-        "component tree rejects adjacency from another domain");
+        requireThrowsContaining<std::invalid_argument>(
+            [&] { (void)MorphologicalTreeFactory::createMinTree(image, RegularGridAdjacency2D::rectangular(2, 5, 1, 1)); }, "must match",
+            "component tree rejects adjacency from another domain");
+    }
 }
 
 void testCanonicalCustomStencilIsEquivalent() {

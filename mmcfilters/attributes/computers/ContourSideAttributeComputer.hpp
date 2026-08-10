@@ -5,6 +5,7 @@
 #include "../detail/AttributeKernelSupport.hpp"
 #include "detail/ContourSideAttributeMaterialization.hpp"
 #include "detail/ContourSideLocalEventComputation.hpp"
+#include "../../utils/Contract.hpp"
 
 #include <array>
 #include <concepts>
@@ -12,6 +13,36 @@
 #include <string_view>
 
 namespace mmcfilters::attributes::computers {
+
+namespace detail {
+
+namespace kernel {
+
+/**
+ * @brief Computes requested contour-side attributes over an established tree.
+ * @param context Established tree, output layout, and output buffer.
+ * @param request Contour-side columns to materialize.
+ */
+template <std::floating_point Real>
+inline void computeContourSideAttributes(const AttributeComputeContext<Real>& context, const ContourSideRequest& request) {
+    if (!request.any()) {
+        return;
+    }
+
+    const std::vector<ContourSideCounts> sideCounts = computeContourSideCounts(context.tree);
+    materializeContourSideAttributes(context, request, sideCounts);
+}
+
+} // namespace kernel
+
+template <std::floating_point Real> inline void validateContourSideContext(const AttributeComputeContext<Real>& context) {
+    requireAttributeBufferShape(context.tree, context.buffer, context.attrNames);
+    requireRequestedAttributeColumns(context);
+    constexpr std::array<local_events::WindowOffset, 5> contourWindow{{{0, 0}, {-1, 0}, {0, -1}, {0, 1}, {1, 0}}};
+    local_events::detail::validateEventEngineInput(context.tree, contourWindow);
+}
+
+} // namespace detail
 
 /**
  * @brief Scalar computer backed by local contour-side counts.
@@ -59,23 +90,9 @@ class ContourSideAttributeComputer {
      * @param context Operation context or diagnostic label.
      */
     template <std::floating_point Real> static void compute(const AttributeComputeContext<Real>& context) {
-        computeImpl(context.tree, context.buffer, context.attrNames, context.requestedAttributes);
-    }
-
-  private:
-    /**
-     * @brief Computes the requested attribute values into the output buffer.
-     *
-     * @param tree Tree topology used by the operation.
-     * @param buffer Buffer read or written by the operation.
-     * @param attrNames Layout mapping attributes to buffer columns.
-     * @param requestedAttributes Requested attribute subset.
-     */
-    template <std::floating_point Real>
-    static void computeImpl(const MorphologicalTree& tree, std::span<Real> buffer, const AttributeNames& attrNames,
-                            std::span<const Attribute> requestedAttributes) {
-        const auto sideCounts = detail::ContourSideLocalEventComputation::computeContourSideCounts(tree);
-        detail::ContourSideAttributeMaterialization::materializeAttributesFromContourSideCounts(tree, sideCounts, buffer, attrNames, requestedAttributes);
+        const detail::ContourSideRequest request = detail::ContourSideRequest::from(context.requestedAttributes);
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(detail::validateContourSideContext(context));
+        detail::kernel::computeContourSideAttributes(context, request);
     }
 
   public:

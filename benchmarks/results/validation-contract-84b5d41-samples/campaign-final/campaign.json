@@ -1,0 +1,40 @@
+{
+  "analysis_git_commit": "84b5d415cebd6d12d8249a2467359d910b4a9164",
+  "analysis_git_dirty": false,
+  "benchmark": {
+    "attribute_bundles": "geometric_moments,radiometric_size,shape_boundary",
+    "benchmark": "scientific_api",
+    "casf_quantiles": "0.100000,0.500000,0.900000",
+    "cols": "512",
+    "compiler": "Apple LLVM 21.0.0 (clang-2100.1.1.101)",
+    "cplusplus": "202002",
+    "input": "structured",
+    "input_checksum": "17156642234612327727",
+    "input_source": "synthetic:structured",
+    "manifest": "/private/tmp/mmcfilters-publication-84b5d41-20260810/benchmarks/workloads/scientific-api.ini",
+    "profile": "publication",
+    "repetitions": "15",
+    "rows": "512",
+    "samples_emitted": "true",
+    "scenario_count": "141",
+    "suite": "all",
+    "workload": "publication_structured"
+  },
+  "experiment_git_commit": "84b5d415cebd6d12d8249a2467359d910b4a9164",
+  "experiments": [
+    "/Volumes/SSD/GitHub/MorphologicalAttributeFilters/benchmarks/results/validation-contract-84b5d41-samples/publication_structured",
+    "/Volumes/SSD/GitHub/MorphologicalAttributeFilters/benchmarks/results/validation-contract-84b5d41-samples/publication_real_lena",
+    "/Volumes/SSD/GitHub/MorphologicalAttributeFilters/benchmarks/results/validation-contract-84b5d41-samples/publication_real_brain",
+    "/Volumes/SSD/GitHub/MorphologicalAttributeFilters/benchmarks/results/validation-contract-84b5d41-samples/publication_real_wrist"
+  ],
+  "host": {
+    "cpu": "Apple M4",
+    "logical_cpu_count": 10,
+    "machine": "arm64",
+    "operating_system": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "python": "3.13.3"
+  },
+  "process_runs_per_mode": 5,
+  "samples_captured": true,
+  "schema_version": 2
+}

@@ -4,7 +4,9 @@
 #include "AttributeComputerFamily.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
 #include "../../trees/detail/TreeTraversalDetail.hpp"
+#include "../../trees/detail/CommittedTreeAccess.hpp"
 #include "../../trees/MorphologicalTree.hpp"
+#include "../../utils/Contract.hpp"
 #include "../../utils/Image.hpp"
 
 #include <algorithm>
@@ -91,6 +93,100 @@ struct BoundingBoxRequest {
         return std::find(requestedAttributes.begin(), requestedAttributes.end(), attribute) != requestedAttributes.end();
     }
 };
+
+namespace kernel {
+
+/**
+ * @brief Computes requested bounding-box descriptors over an established tree.
+ * @param context Established tree, output layout, and output buffer.
+ * @param request Bounding-box columns to materialize.
+ * @param areaDependency Optional established area dependency.
+ */
+template <std::floating_point Real>
+inline void computeBoundingBox(const AttributeComputeContext<Real>& context, const BoundingBoxRequest& request,
+                               const DependencySourceT<Real>* areaDependency) {
+    if (!request.any()) {
+        return;
+    }
+
+    const int stride = context.attrNames.NUM_ATTRIBUTES;
+    const auto offsetOf = [&](Attribute attribute) { return context.attrNames.indexMap.find(attribute)->second; };
+    const int widthOffset = request.width ? offsetOf(BOX_WIDTH) : 0;
+    const int heightOffset = request.height ? offsetOf(BOX_HEIGHT) : 0;
+    const int rectangularityOffset = request.rectangularity ? offsetOf(RECTANGULARITY) : 0;
+    const int ratioOffset = request.ratioWH ? offsetOf(RATIO_WH) : 0;
+    const int colMinOffset = request.colMin ? offsetOf(BOX_COL_MIN) : 0;
+    const int colMaxOffset = request.colMax ? offsetOf(BOX_COL_MAX) : 0;
+    const int rowMinOffset = request.rowMin ? offsetOf(BOX_ROW_MIN) : 0;
+    const int rowMaxOffset = request.rowMax ? offsetOf(BOX_ROW_MAX) : 0;
+    const int diagonalOffset = request.diagonalLength ? offsetOf(DIAGONAL_LENGTH) : 0;
+    auto outputIndex = [&](NodeId node, int offset) { return static_cast<std::size_t>(node * stride + offset); };
+
+    const int areaStride = areaDependency != nullptr ? areaDependency->attrNames->NUM_ATTRIBUTES : 0;
+    const int areaOffset = areaDependency != nullptr ? areaDependency->attrNames->indexMap.find(AREA)->second : 0;
+    auto areaIndex = [&](NodeId node) { return static_cast<std::size_t>(node * areaStride + areaOffset); };
+
+    const int numNodes = context.tree.getNumInternalNodeSlots();
+    const GridDomain2D& domain = ::mmcfilters::detail::CommittedTreeAccess::gridDomain2D(context.tree);
+    std::vector<int> columnMin(static_cast<std::size_t>(numNodes), domain.cols);
+    std::vector<int> columnMax(static_cast<std::size_t>(numNodes), 0);
+    std::vector<int> rowMin(static_cast<std::size_t>(numNodes), domain.rows);
+    std::vector<int> rowMax(static_cast<std::size_t>(numNodes), 0);
+
+    ::mmcfilters::detail::kernel::traversePostOrder(
+        context.tree, context.tree.getRoot(),
+        [&](NodeId node) {
+            for (int properPart : ::mmcfilters::detail::CommittedTreeAccess::properParts(context.tree, node)) {
+                const int row = properPart / domain.cols;
+                const int column = properPart % domain.cols;
+                columnMin[static_cast<std::size_t>(node)] = std::min(columnMin[static_cast<std::size_t>(node)], column);
+                columnMax[static_cast<std::size_t>(node)] = std::max(columnMax[static_cast<std::size_t>(node)], column);
+                rowMin[static_cast<std::size_t>(node)] = std::min(rowMin[static_cast<std::size_t>(node)], row);
+                rowMax[static_cast<std::size_t>(node)] = std::max(rowMax[static_cast<std::size_t>(node)], row);
+            }
+        },
+        [&](NodeId parent, NodeId child) {
+            columnMin[static_cast<std::size_t>(parent)] =
+                std::min(columnMin[static_cast<std::size_t>(parent)], columnMin[static_cast<std::size_t>(child)]);
+            columnMax[static_cast<std::size_t>(parent)] =
+                std::max(columnMax[static_cast<std::size_t>(parent)], columnMax[static_cast<std::size_t>(child)]);
+            rowMin[static_cast<std::size_t>(parent)] = std::min(rowMin[static_cast<std::size_t>(parent)], rowMin[static_cast<std::size_t>(child)]);
+            rowMax[static_cast<std::size_t>(parent)] = std::max(rowMax[static_cast<std::size_t>(parent)], rowMax[static_cast<std::size_t>(child)]);
+        },
+        [&](NodeId node) {
+            const Real width = static_cast<Real>(columnMax[static_cast<std::size_t>(node)] - columnMin[static_cast<std::size_t>(node)] + 1);
+            const Real height = static_cast<Real>(rowMax[static_cast<std::size_t>(node)] - rowMin[static_cast<std::size_t>(node)] + 1);
+            if (request.width)
+                context.buffer[outputIndex(node, widthOffset)] = width;
+            if (request.height)
+                context.buffer[outputIndex(node, heightOffset)] = height;
+            if (request.rectangularity)
+                context.buffer[outputIndex(node, rectangularityOffset)] =
+                    ::mmcfilters::attributes::numeric::safeDivide(areaDependency->buffer[areaIndex(node)], width * height);
+            if (request.ratioWH)
+                context.buffer[outputIndex(node, ratioOffset)] =
+                    ::mmcfilters::attributes::numeric::safeDivide(std::max(width, height), std::min(width, height));
+            if (request.colMin)
+                context.buffer[outputIndex(node, colMinOffset)] = static_cast<Real>(columnMin[static_cast<std::size_t>(node)]);
+            if (request.colMax)
+                context.buffer[outputIndex(node, colMaxOffset)] = static_cast<Real>(columnMax[static_cast<std::size_t>(node)]);
+            if (request.rowMin)
+                context.buffer[outputIndex(node, rowMinOffset)] = static_cast<Real>(rowMin[static_cast<std::size_t>(node)]);
+            if (request.rowMax)
+                context.buffer[outputIndex(node, rowMaxOffset)] = static_cast<Real>(rowMax[static_cast<std::size_t>(node)]);
+            if (request.diagonalLength)
+                context.buffer[outputIndex(node, diagonalOffset)] = ::mmcfilters::attributes::numeric::safeSqrt(width * width + height * height);
+        });
+}
+
+} // namespace kernel
+
+template <std::floating_point Real>
+inline void validateBoundingBoxContext(const AttributeComputeContext<Real>& context) {
+    requireAttributeBufferShape(context.tree, context.buffer, context.attrNames);
+    requireRequestedAttributeColumns(context);
+    static_cast<void>(context.tree.requireGridDomain2D("BoundingBoxComputer"));
+}
 } // namespace detail
 
 /**
@@ -146,98 +242,18 @@ class BoundingBoxComputer {
      * @param context Operation context or diagnostic label.
      */
     template <std::floating_point Real> static void compute(const AttributeComputeContext<Real>& context) {
-        const MorphologicalTree& tree = context.tree;
-        std::span<Real> buffer = context.buffer;
-        const AttributeNames& attrNames = context.attrNames;
-        std::span<const Attribute> requestedAttributes = context.requestedAttributes;
+        const detail::BoundingBoxRequest request = detail::BoundingBoxRequest::from(context.requestedAttributes);
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(detail::validateBoundingBoxContext(context));
 
-        requireAttributeBufferShape(tree, buffer, attrNames);
-
-        auto indexOfWidth = [&](NodeId idx) { return attrNames.linearIndex(idx, BOX_WIDTH); };
-        auto indexOfHeight = [&](NodeId idx) { return attrNames.linearIndex(idx, BOX_HEIGHT); };
-        auto indexOfRectangularity = [&](NodeId idx) { return attrNames.linearIndex(idx, RECTANGULARITY); };
-        auto indexOfRatioWH = [&](NodeId idx) { return attrNames.linearIndex(idx, RATIO_WH); };
-        auto indexOfColMin = [&](NodeId idx) { return attrNames.linearIndex(idx, BOX_COL_MIN); };
-        auto indexOfColMax = [&](NodeId idx) { return attrNames.linearIndex(idx, BOX_COL_MAX); };
-        auto indexOfRowMin = [&](NodeId idx) { return attrNames.linearIndex(idx, BOX_ROW_MIN); };
-        auto indexOfRowMax = [&](NodeId idx) { return attrNames.linearIndex(idx, BOX_ROW_MAX); };
-        auto indexOfDiagonalLength = [&](NodeId idx) { return attrNames.linearIndex(idx, DIAGONAL_LENGTH); };
-
-        const detail::BoundingBoxRequest request = detail::BoundingBoxRequest::from(requestedAttributes);
-        if (!request.any()) {
-            return;
+        const DependencySourceT<Real>* areaDependency = nullptr;
+        if (request.needsAreaDependency()) {
+            if constexpr (contract::validationsEnabled) {
+                areaDependency = &context.dependencies.require(AREA);
+            } else {
+                areaDependency = ::mmcfilters::findDependencySource(context.dependencySources, AREA);
+            }
         }
-
-        const DependencySourceT<Real>* dependencyArea = request.needsAreaDependency() ? &context.dependencies.require(AREA) : nullptr;
-        auto indexOfArea = [&](NodeId idx) { return dependencyArea->attrNames->linearIndex(idx, AREA); };
-
-        int n = tree.getNumInternalNodeSlots();
-        int numCols = tree.getNumColsOfGridDomain2D();
-        int numRows = tree.getNumRowsOfGridDomain2D();
-
-        std::vector<int> xmin(n, numCols);
-        std::vector<int> xmax(n, 0);
-        std::vector<int> ymin(n, numRows);
-        std::vector<int> ymax(n, 0);
-
-        ::mmcfilters::detail::traversePostOrder(
-            tree, tree.getRoot(),
-            [&](NodeId nodeId) {
-                const NodeId idx = detail::boundingBoxSlotOf(tree, nodeId);
-                xmin[idx] = numCols;
-                xmax[idx] = 0;
-                ymin[idx] = numRows;
-                ymax[idx] = 0;
-
-                for (int p : tree.getProperParts(nodeId)) {
-                    auto [y, x] = ImageUtils::to2D(p, numCols);
-                    xmin[idx] = std::min(xmin[idx], x);
-                    xmax[idx] = std::max(xmax[idx], x);
-                    ymin[idx] = std::min(ymin[idx], y);
-                    ymax[idx] = std::max(ymax[idx], y);
-                }
-            },
-            [&](NodeId parentNodeId, NodeId childNodeId) {
-                const NodeId pid = detail::boundingBoxSlotOf(tree, parentNodeId);
-                const NodeId cid = detail::boundingBoxSlotOf(tree, childNodeId);
-                xmin[pid] = std::min(xmin[pid], xmin[cid]);
-                xmax[pid] = std::max(xmax[pid], xmax[cid]);
-                ymin[pid] = std::min(ymin[pid], ymin[cid]);
-                ymax[pid] = std::max(ymax[pid], ymax[cid]);
-            },
-            [&](NodeId nodeId) {
-                const NodeId idx = detail::boundingBoxSlotOf(tree, nodeId);
-                if (request.width)
-                    buffer[indexOfWidth(idx)] = static_cast<Real>(xmax[idx] - xmin[idx] + 1);
-                if (request.height)
-                    buffer[indexOfHeight(idx)] = static_cast<Real>(ymax[idx] - ymin[idx] + 1);
-
-                if (request.rectangularity) {
-                    Real area = dependencyArea->buffer[indexOfArea(idx)];
-                    Real width = static_cast<Real>(xmax[idx] - xmin[idx] + 1);
-                    Real height = static_cast<Real>(ymax[idx] - ymin[idx] + 1);
-                    Real denom = width * height;
-                    buffer[indexOfRectangularity(idx)] = ::mmcfilters::attributes::numeric::safeDivide(area, denom);
-                }
-                if (request.ratioWH) {
-                    Real width = static_cast<Real>(xmax[idx] - xmin[idx] + 1);
-                    Real height = static_cast<Real>(ymax[idx] - ymin[idx] + 1);
-                    buffer[indexOfRatioWH(idx)] = ::mmcfilters::attributes::numeric::safeDivide(std::max(width, height), std::min(width, height));
-                }
-                if (request.colMin)
-                    buffer[indexOfColMin(idx)] = static_cast<Real>(xmin[idx]);
-                if (request.colMax)
-                    buffer[indexOfColMax(idx)] = static_cast<Real>(xmax[idx]);
-                if (request.rowMin)
-                    buffer[indexOfRowMin(idx)] = static_cast<Real>(ymin[idx]);
-                if (request.rowMax)
-                    buffer[indexOfRowMax(idx)] = static_cast<Real>(ymax[idx]);
-                if (request.diagonalLength) {
-                    Real width = static_cast<Real>(xmax[idx] - xmin[idx] + 1);
-                    Real height = static_cast<Real>(ymax[idx] - ymin[idx] + 1);
-                    buffer[indexOfDiagonalLength(idx)] = ::mmcfilters::attributes::numeric::safeSqrt(width * width + height * height);
-                }
-            });
+        detail::kernel::computeBoundingBox(context, request, areaDependency);
     }
 
     /**

@@ -95,7 +95,9 @@ struct NoTopologyBackendAltitude {};
 template <std::floating_point Real>
 inline void computeBitquadBackendAttributesIntoResult(const MorphologicalTree& tree, std::span<const Attribute> bitquadAttributes,
                                                       const AttributeNames& resultNames, std::span<Real> resultBuffer, NoTopologyBackendAltitude) {
-    ::mmcfilters::attributes::computers::BitquadAttributeComputer::compute(AttributeComputeContext<Real>{tree, resultBuffer, resultNames, bitquadAttributes});
+    const AttributeComputeContext<Real> context{tree, resultBuffer, resultNames, bitquadAttributes};
+    const attributes::computers::detail::BitquadRequest request = attributes::computers::detail::BitquadRequest::from(bitquadAttributes);
+    attributes::computers::detail::kernel::computeBitquadAttributes(context, request);
 }
 
 /**
@@ -110,8 +112,9 @@ inline void computeBitquadBackendAttributesIntoResult(const MorphologicalTree& t
 template <std::floating_point Real, AltitudeValue T>
 inline void computeBitquadBackendAttributesIntoResult(const MorphologicalTree& tree, std::span<const Attribute> bitquadAttributes,
                                                       const AttributeNames& resultNames, std::span<Real> resultBuffer, std::span<const T> altitude) {
-    ::mmcfilters::attributes::computers::BitquadAttributeComputer::compute(
-        AltitudeAttributeComputeContext<Real, T>{tree, altitude, resultBuffer, resultNames, bitquadAttributes});
+    const AltitudeAttributeComputeContext<Real, T> context{tree, altitude, resultBuffer, resultNames, bitquadAttributes};
+    const attributes::computers::detail::BitquadRequest request = attributes::computers::detail::BitquadRequest::from(bitquadAttributes);
+    attributes::computers::detail::kernel::computeBitquadAttributes(context, request);
 }
 
 /**
@@ -144,9 +147,10 @@ inline void executeTopologyAttributeComputationPlan(const MorphologicalTree& tre
 
         AttributeNames areaNames = AttributeNames::fromList({AREA});
         std::vector<Real> areaBuffer = makeAttributeValueBuffer<Real>(tree, areaNames);
-        attributes::computers::AreaComputer::compute(AttributeComputeContext<Real>{tree, std::span<Real>(areaBuffer), areaNames, std::span<const Attribute>{}});
+        const AttributeComputeContext<Real> areaContext{tree, std::span<Real>(areaBuffer), areaNames, std::span<const Attribute>{}};
+        attributes::computers::detail::kernel::computeArea(areaContext);
         stashComputedAttributes(ownedResults, available, ComputedAttributeData<Real>(std::move(areaNames), std::move(areaBuffer)));
-        return available.at(AREA).dependencySource();
+        return available.find(AREA)->second.dependencySource();
     };
 
     auto ensureInternalCentralMomentDependency = [&](const std::vector<Attribute>& requiredAttributes) -> DependencySourceT<Real> {
@@ -159,10 +163,12 @@ inline void executeTopologyAttributeComputationPlan(const MorphologicalTree& tre
 
         AttributeNames momentNames = AttributeNames::fromList(requiredAttributes);
         std::vector<Real> momentBuffer = makeAttributeValueBuffer<Real>(tree, momentNames);
-        attributes::computers::CentralMomentsComputer::compute(
-            AttributeComputeContext<Real>{tree, std::span<Real>(momentBuffer), momentNames, std::span<const Attribute>(requiredAttributes)});
+        const AttributeComputeContext<Real> context{tree, std::span<Real>(momentBuffer), momentNames, std::span<const Attribute>(requiredAttributes)};
+        const attributes::computers::detail::CentralMomentsRequest request =
+            attributes::computers::detail::CentralMomentsRequest::from(context.requestedAttributes);
+        attributes::computers::detail::kernel::computeCentralMoments(context, request);
         stashComputedAttributes(ownedResults, available, ComputedAttributeData<Real>(std::move(momentNames), std::move(momentBuffer)));
-        return available.at(requiredAttributes.front()).dependencySource();
+        return available.find(requiredAttributes.front())->second.dependencySource();
     };
 
     const std::vector<Attribute> boundingBoxAttributes = plan.requestedForFamily(attributes::computers::AttributeComputerFamily::BoundingBox);
@@ -189,8 +195,11 @@ inline void executeTopologyAttributeComputationPlan(const MorphologicalTree& tre
             dependencySources = std::span<const DependencySourceT<Real>>(areaDependency);
         }
 
-        attributes::computers::BoundingBoxComputer::compute(
-            AttributeComputeContext<Real>{tree, resultBuffer, resultNames, std::span<const Attribute>(boundingBoxAttributes), dependencySources});
+        const AttributeComputeContext<Real> context{tree, resultBuffer, resultNames, std::span<const Attribute>(boundingBoxAttributes), dependencySources};
+        const attributes::computers::detail::BoundingBoxRequest request =
+            attributes::computers::detail::BoundingBoxRequest::from(context.requestedAttributes);
+        const DependencySourceT<Real>* areaSource = needsAreaDependency ? &areaDependency[0] : nullptr;
+        attributes::computers::detail::kernel::computeBoundingBox(context, request, areaSource);
 
         for (const Attribute attribute : boundingBoxAttributes) {
             available[attribute] = ComputedAttributeViewT<Real>{&resultNames, resultBuffer.data(), NodeIdSpace::MORPHOLOGICAL_TREE};
@@ -198,8 +207,10 @@ inline void executeTopologyAttributeComputationPlan(const MorphologicalTree& tre
     }
 
     if (!treeTopologyAttributes.empty()) {
-        attributes::computers::TreeTopologyComputer::compute(
-            AttributeComputeContext<Real>{tree, resultBuffer, resultNames, std::span<const Attribute>(treeTopologyAttributes)});
+        const AttributeComputeContext<Real> context{tree, resultBuffer, resultNames, std::span<const Attribute>(treeTopologyAttributes)};
+        const attributes::computers::detail::TreeTopologyRequest request =
+            attributes::computers::detail::TreeTopologyRequest::from(context.requestedAttributes);
+        attributes::computers::detail::kernel::computeTreeTopology(context, request);
 
         for (const Attribute attribute : treeTopologyAttributes) {
             available[attribute] = ComputedAttributeViewT<Real>{&resultNames, resultBuffer.data(), NodeIdSpace::MORPHOLOGICAL_TREE};
@@ -207,8 +218,10 @@ inline void executeTopologyAttributeComputationPlan(const MorphologicalTree& tre
     }
 
     if (!centralMomentAttributes.empty()) {
-        attributes::computers::CentralMomentsComputer::compute(
-            AttributeComputeContext<Real>{tree, resultBuffer, resultNames, std::span<const Attribute>(centralMomentAttributes)});
+        const AttributeComputeContext<Real> context{tree, resultBuffer, resultNames, std::span<const Attribute>(centralMomentAttributes)};
+        const attributes::computers::detail::CentralMomentsRequest request =
+            attributes::computers::detail::CentralMomentsRequest::from(context.requestedAttributes);
+        attributes::computers::detail::kernel::computeCentralMoments(context, request);
 
         for (const Attribute attribute : centralMomentAttributes) {
             available[attribute] = ComputedAttributeViewT<Real>{&resultNames, resultBuffer.data(), NodeIdSpace::MORPHOLOGICAL_TREE};
@@ -220,8 +233,11 @@ inline void executeTopologyAttributeComputationPlan(const MorphologicalTree& tre
                                                                    CENTRAL_MOMENT_03, CENTRAL_MOMENT_21, CENTRAL_MOMENT_12};
         std::array<DependencySourceT<Real>, 2> dependencies{{ensureInternalCentralMomentDependency(requiredCentralMoments), ensureInternalAreaDependency()}};
 
-        attributes::computers::HuMomentsComputer::compute(AttributeComputeContext<Real>{
-            tree, resultBuffer, resultNames, std::span<const Attribute>(huMomentAttributes), std::span<const DependencySourceT<Real>>(dependencies)});
+        const AttributeComputeContext<Real> context{tree, resultBuffer, resultNames, std::span<const Attribute>(huMomentAttributes),
+                                                    std::span<const DependencySourceT<Real>>(dependencies)};
+        const attributes::computers::detail::HuMomentsRequest request =
+            attributes::computers::detail::HuMomentsRequest::from(context.requestedAttributes);
+        attributes::computers::detail::kernel::computeHuMoments(context, request, dependencies[0], dependencies[1]);
 
         for (const Attribute attribute : huMomentAttributes) {
             available[attribute] = ComputedAttributeViewT<Real>{&resultNames, resultBuffer.data(), NodeIdSpace::MORPHOLOGICAL_TREE};
@@ -232,8 +248,11 @@ inline void executeTopologyAttributeComputationPlan(const MorphologicalTree& tre
         static const std::vector<Attribute> requiredCentralMoments{CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11};
         std::array<DependencySourceT<Real>, 2> dependencies{{ensureInternalCentralMomentDependency(requiredCentralMoments), ensureInternalAreaDependency()}};
 
-        attributes::computers::MomentBasedAttributeComputer::compute(AttributeComputeContext<Real>{
-            tree, resultBuffer, resultNames, std::span<const Attribute>(momentBasedAttributes), std::span<const DependencySourceT<Real>>(dependencies)});
+        const AttributeComputeContext<Real> context{tree, resultBuffer, resultNames, std::span<const Attribute>(momentBasedAttributes),
+                                                    std::span<const DependencySourceT<Real>>(dependencies)};
+        const attributes::computers::detail::MomentDerivedRequest request =
+            attributes::computers::detail::MomentDerivedRequest::from(context.requestedAttributes);
+        attributes::computers::detail::kernel::computeMomentDerived(context, request, dependencies[0], dependencies[1]);
 
         for (const Attribute attribute : momentBasedAttributes) {
             available[attribute] = ComputedAttributeViewT<Real>{&resultNames, resultBuffer.data(), NodeIdSpace::MORPHOLOGICAL_TREE};
@@ -249,8 +268,10 @@ inline void executeTopologyAttributeComputationPlan(const MorphologicalTree& tre
     }
 
     if (!contourAttributes.empty()) {
-        ::mmcfilters::attributes::computers::ContourSideAttributeComputer::compute(
-            AttributeComputeContext<Real>{tree, resultBuffer, resultNames, std::span<const Attribute>(contourAttributes)});
+        const AttributeComputeContext<Real> context{tree, resultBuffer, resultNames, std::span<const Attribute>(contourAttributes)};
+        const attributes::computers::detail::ContourSideRequest request =
+            attributes::computers::detail::ContourSideRequest::from(context.requestedAttributes);
+        attributes::computers::detail::kernel::computeContourSideAttributes(context, request);
 
         for (const Attribute attribute : contourAttributes) {
             available[attribute] = ComputedAttributeViewT<Real>{&resultNames, resultBuffer.data(), NodeIdSpace::MORPHOLOGICAL_TREE};
@@ -351,8 +372,8 @@ inline ComputedAttributeData<Real> materializeTopologyAttributeRequest(const Mor
         if (it != available.end() && isReusableDependencyData(it->second, {AREA})) {
             copyAttributesIntoBuffer(tree, it->second, {AREA}, resultNames, resultBuffer.data());
         } else {
-            attributes::computers::AreaComputer::compute(
-                AttributeComputeContext<Real>{tree, std::span<Real>(resultBuffer), resultNames, std::span<const Attribute>{}});
+            const AttributeComputeContext<Real> areaContext{tree, std::span<Real>(resultBuffer), resultNames, std::span<const Attribute>{}};
+            attributes::computers::detail::kernel::computeArea(areaContext);
         }
         available[AREA] = ComputedAttributeViewT<Real>{&resultNames, resultBuffer.data(), NodeIdSpace::MORPHOLOGICAL_TREE};
     }
@@ -392,8 +413,8 @@ inline ComputedAttributeData<Real> materializeTopologyAttributeRequest(const Mor
         if (it != available.end() && isReusableDependencyData(it->second, {AREA})) {
             copyAttributesIntoBuffer(tree, it->second, {AREA}, resultNames, resultBuffer.data());
         } else {
-            attributes::computers::AreaComputer::compute(
-                AttributeComputeContext<Real>{tree, std::span<Real>(resultBuffer), resultNames, std::span<const Attribute>{}});
+            const AttributeComputeContext<Real> areaContext{tree, std::span<Real>(resultBuffer), resultNames, std::span<const Attribute>{}};
+            attributes::computers::detail::kernel::computeArea(areaContext);
         }
         available[AREA] = ComputedAttributeViewT<Real>{&resultNames, resultBuffer.data(), NodeIdSpace::MORPHOLOGICAL_TREE};
     }

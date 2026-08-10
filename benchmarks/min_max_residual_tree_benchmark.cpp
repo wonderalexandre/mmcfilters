@@ -1,5 +1,6 @@
 #include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
-#include "mmcfilters/trees/sdrt/MinMaxResidualTreeBuilder.hpp"
+#include "mmcfilters/trees/sdrt/SaturatedResidualTreeBuilder.hpp"
+#include "mmcfilters/trees/sdrt/UnrestrictedResidualTreeBuilder.hpp"
 #include "stb_image.h"
 
 #include <algorithm>
@@ -19,24 +20,38 @@ using namespace mmcfilters::sdrt;
 namespace {
 
 using Clock = std::chrono::steady_clock;
-using Builder = MinMaxResidualTreeBuilder<std::uint8_t>;
+using SaturatedBuilder = SaturatedResidualTreeBuilder<std::uint8_t>;
+using UnrestrictedBuilder = UnrestrictedResidualTreeBuilder<std::uint8_t>;
 
 struct Options {
+    enum class Mode { Both, Unrestricted, Saturated };
+
     std::string imagePath;
     int repetitions = 3;
+    Mode mode = Mode::Both;
 };
 
 Options parseOptions(int argc, char** argv) {
-    if (argc < 2 || argc > 3) {
-        throw std::invalid_argument("expected image path and optional repetition count");
+    if (argc < 2 || argc > 4) {
+        throw std::invalid_argument("expected image path, optional repetition count, and optional mode (both, unrestricted, or saturated)");
     }
     Options options;
     options.imagePath = argv[1];
-    if (argc == 3) {
+    if (argc >= 3) {
         options.repetitions = std::stoi(argv[2]);
     }
     if (options.repetitions <= 0) {
         throw std::invalid_argument("repetitions must be positive");
+    }
+    if (argc == 4) {
+        const std::string mode = argv[3];
+        if (mode == "unrestricted") {
+            options.mode = Options::Mode::Unrestricted;
+        } else if (mode == "saturated") {
+            options.mode = Options::Mode::Saturated;
+        } else if (mode != "both") {
+            throw std::invalid_argument("mode must be both, unrestricted, or saturated");
+        }
     }
     return options;
 }
@@ -55,12 +70,7 @@ ImageUInt8Ptr loadImage(const std::string& path) {
     return image;
 }
 
-Builder makeBuilder(const RegularGridAdjacency2D& adjacency, MinMaxResidualEligibilityPolicy eligibility) {
-    return Builder(adjacency, 0, SdrtTiePolicy::ContrastInvariantSpatial, SaturatedMinMaxLcaPolicy::ParentClimb,
-                   SaturatedMinMaxFallbackPolicy::BoundaryMultiSource, SaturatedMinMaxBoundaryPolicy::IncrementalSmallToLarge, eligibility);
-}
-
-void build(Builder& builder, const ImageUInt8Ptr& image, const RegularGridAdjacency2D& adjacency) {
+template <class Builder> void build(Builder& builder, const ImageUInt8Ptr& image, const RegularGridAdjacency2D& adjacency) {
     auto minTree = MorphologicalTreeFactory::createMinTree(image, adjacency);
     auto maxTree = MorphologicalTreeFactory::createMaxTree(image, adjacency);
     builder.build(image, std::move(minTree), std::move(maxTree));
@@ -81,7 +91,7 @@ double median(std::vector<double> values) {
     return (values[middle - 1] + values[middle]) / 2.0;
 }
 
-bool reconstructs(const Builder& builder, const ImageUInt8Ptr& image) {
+template <class Builder> bool reconstructs(const Builder& builder, const ImageUInt8Ptr& image) {
     for (NodeId pixel = 0; pixel < image->getSize(); ++pixel) {
         const NodeId owner = builder.getProperPartOwner()[static_cast<std::size_t>(pixel)];
         if (builder.getAltitude()[static_cast<std::size_t>(owner)] != (*image)[pixel]) {
@@ -91,6 +101,34 @@ bool reconstructs(const Builder& builder, const ImageUInt8Ptr& image) {
     return true;
 }
 
+void printDomain(const Options& options, const ImageUInt8Ptr& image, const char* mode) {
+    std::cout << "rows=" << image->getNumRows() << '\n'
+              << "cols=" << image->getNumCols() << '\n'
+              << "pixels=" << image->getSize() << '\n'
+              << "repetitions=" << options.repetitions << '\n'
+              << "mode=" << mode << '\n';
+}
+
+template <class Builder>
+void runIsolated(const Options& options, const ImageUInt8Ptr& image, const RegularGridAdjacency2D& adjacency,
+                 Builder& builder, const char* mode) {
+    build(builder, image, adjacency);
+    if (!reconstructs(builder, image)) {
+        throw std::runtime_error(std::string(mode) + " min/max mode failed reconstruction");
+    }
+    std::vector<double> times;
+    times.reserve(options.repetitions);
+    for (int repetition = 0; repetition < options.repetitions; ++repetition) {
+        times.push_back(measureMilliseconds([&] { build(builder, image, adjacency); }));
+    }
+
+    printDomain(options, image, mode);
+    std::cout << std::fixed << std::setprecision(3)
+              << mode << "_median_ms=" << median(std::move(times)) << '\n'
+              << mode << "_nodes=" << builder.getNodeParent().size() << '\n'
+              << mode << "_rejected_extrema=" << builder.getStatistics().rejectedExtrema << '\n';
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -98,8 +136,19 @@ int main(int argc, char** argv) {
         const Options options = parseOptions(argc, argv);
         const auto image = loadImage(options.imagePath);
         const RegularGridAdjacency2D adjacency(image->getNumRows(), image->getNumCols(), 1.0);
-        Builder unrestricted = makeBuilder(adjacency, MinMaxResidualEligibilityPolicy::AllRegionalExtrema);
-        Builder saturated = makeBuilder(adjacency, MinMaxResidualEligibilityPolicy::SaturatedOnly);
+        if (options.mode == Options::Mode::Unrestricted) {
+            UnrestrictedBuilder unrestricted(adjacency, UnrestrictedResidualTreeOptions{SdrtTiePolicy::ContrastInvariantSpatial});
+            runIsolated(options, image, adjacency, unrestricted, "unrestricted");
+            return 0;
+        }
+        if (options.mode == Options::Mode::Saturated) {
+            SaturatedBuilder saturated(adjacency, NodeId{0}, SaturatedResidualTreeOptions{SdrtTiePolicy::ContrastInvariantSpatial});
+            runIsolated(options, image, adjacency, saturated, "saturated");
+            return 0;
+        }
+
+        UnrestrictedBuilder unrestricted(adjacency, UnrestrictedResidualTreeOptions{SdrtTiePolicy::ContrastInvariantSpatial});
+        SaturatedBuilder saturated(adjacency, NodeId{0}, SaturatedResidualTreeOptions{SdrtTiePolicy::ContrastInvariantSpatial});
 
         build(unrestricted, image, adjacency);
         build(saturated, image, adjacency);
@@ -125,11 +174,8 @@ int main(int argc, char** argv) {
         const double saturatedMedian = median(saturatedTimes);
         const auto& unrestrictedStats = unrestricted.getStatistics();
         const auto& saturatedStats = saturated.getStatistics();
-        std::cout << std::fixed << std::setprecision(3) << "rows=" << image->getNumRows() << '\n'
-                  << "cols=" << image->getNumCols() << '\n'
-                  << "pixels=" << image->getSize() << '\n'
-                  << "repetitions=" << options.repetitions << '\n'
-                  << "unrestricted_median_ms=" << unrestrictedMedian << '\n'
+        printDomain(options, image, "both");
+        std::cout << std::fixed << std::setprecision(3) << "unrestricted_median_ms=" << unrestrictedMedian << '\n'
                   << "saturated_median_ms=" << saturatedMedian << '\n'
                   << "saturated_over_unrestricted=" << saturatedMedian / unrestrictedMedian << '\n'
                   << "unrestricted_nodes=" << unrestricted.getNodeParent().size() << '\n'

@@ -32,8 +32,11 @@ set(MMCFILTERS_PUBLIC_HEADER_ENTRYPOINTS
     ${MMCFILTERS_ROOT}/trees/saliency/HierarchySaliencyMapValidation.hpp
     ${MMCFILTERS_ROOT}/trees/saliency/HierarchicalWatershedSaliency.hpp
     ${MMCFILTERS_ROOT}/trees/saliency/ShapeSpaceSaliency.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/MinMaxResidualTreeBuilder.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/SaturatedResidualTreeBuilder.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/ResidualTreeBuildStatistics.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/ResidualTreePolicies.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/SdrtTiePolicy.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/UnrestrictedResidualTreeBuilder.hpp
     ${MMCFILTERS_ROOT}/utils/Altitude.hpp
     ${MMCFILTERS_ROOT}/utils/Common.hpp
     ${MMCFILTERS_ROOT}/utils/Contract.hpp
@@ -128,10 +131,19 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/trees/saliency/HierarchySaliencyMapValidation.hpp
     ${MMCFILTERS_ROOT}/trees/saliency/HierarchicalWatershedSaliency.hpp
     ${MMCFILTERS_ROOT}/trees/saliency/ShapeSpaceSaliency.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/MinMaxResidualTreeBuilder.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/ResidualTreeBuildStatistics.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/ResidualTreePolicies.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/SaturatedResidualTreeBuilder.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/SdrtTiePolicy.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/detail/UnionFindRegionTypes.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/detail/UnionFindResidualTreeAssembler.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/UnrestrictedResidualTreeBuilder.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/detail/MinMaxResidualTreeEngineCommon.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeBoundaryCache.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeCandidateAgenda.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeCandidateContext.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeEventAssembler.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeRegionTypes.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/detail/SaturatedDynamicLca.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/detail/SaturatedResidualEligibility.hpp
     ${MMCFILTERS_ROOT}/utils/Altitude.hpp
     ${MMCFILTERS_ROOT}/utils/Assert.hpp
     ${MMCFILTERS_ROOT}/utils/Common.hpp

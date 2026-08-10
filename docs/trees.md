@@ -141,6 +141,38 @@ auto residual = MorphologicalTreeFactory::createSelfDualResidualTree(
     adjacency);
 ```
 
+Construction policies are grouped by mode, so unrestricted callers cannot
+accidentally configure saturation-only mechanisms:
+
+```cpp
+#include <mmcfilters/trees/sdrt/ResidualTreePolicies.hpp>
+
+sdrt::UnrestrictedResidualTreeOptions unrestrictedOptions;
+unrestrictedOptions.tiePolicy = sdrt::SdrtTiePolicy::MaxBeforeMinThenSpatial;
+auto unrestricted = MorphologicalTreeFactory::createSelfDualResidualTree(
+    image,
+    adjacency,
+    unrestrictedOptions);
+
+sdrt::SaturatedResidualTreeOptions saturatedOptions;
+saturatedOptions.lcaPolicy = sdrt::SaturatedMinMaxLcaPolicy::LinkCut;
+saturatedOptions.fallbackPolicy =
+    sdrt::SaturatedMinMaxFallbackPolicy::BoundaryMultiSource;
+saturatedOptions.boundaryPolicy =
+    sdrt::ResidualTreeBoundaryPolicy::IncrementalSmallToLarge;
+auto saturated =
+    MorphologicalTreeFactory::createSaturatedSelfDualResidualTree(
+        image,
+        adjacency,
+        NodeId{0},
+        saturatedOptions);
+```
+
+The defaults remain contrast-invariant spatial tie-breaking, parent-climb LCA,
+multi-source boundary fallback, and incremental small-to-large boundary
+maintenance. Mode-specific option objects are the only configurable C++ entry
+point.
+
 ### Tree-of-shapes policies
 
 `TreeOfShapesProducerOptions` controls:

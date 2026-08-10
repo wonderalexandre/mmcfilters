@@ -1138,7 +1138,8 @@ void initMorphologicalTree(py::module_& m) {
             [](UInt8InputArray input, double radius, sdrt::SdrtTiePolicy tiePolicy) {
                 const double validatedRadius = pybind_utils::requireAdjacencyRadius(radius, "MorphologicalTreeFactory.createSelfDualResidualTree");
                 return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(
-                    MorphologicalTreeFactory::createSelfDualResidualTree(imageFromArray(input), validatedRadius, tiePolicy));
+                    MorphologicalTreeFactory::createSelfDualResidualTree(
+                        imageFromArray(input), validatedRadius, sdrt::UnrestrictedResidualTreeOptions{tiePolicy}));
             },
             "input"_a, "radius"_a = 1.5, "tiePolicy"_a = sdrt::SdrtTiePolicy::ContrastInvariantSpatial,
             "Create the unrestricted residual tree with synchronized max-tree and min-tree states.")
@@ -1146,7 +1147,8 @@ void initMorphologicalTree(py::module_& m) {
             "createSelfDualResidualTree",
             [](UInt8InputArray input, RegularGridAdjacency2D adjacency, sdrt::SdrtTiePolicy tiePolicy) {
                 return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(
-                    MorphologicalTreeFactory::createSelfDualResidualTree(imageFromArray(input), std::move(adjacency), tiePolicy));
+                    MorphologicalTreeFactory::createSelfDualResidualTree(
+                        imageFromArray(input), std::move(adjacency), sdrt::UnrestrictedResidualTreeOptions{tiePolicy}));
             },
             "input"_a, "adjacency"_a, "tiePolicy"_a = sdrt::SdrtTiePolicy::ContrastInvariantSpatial,
             "Create the unrestricted residual tree with an explicit shared symmetric adjacency.")
@@ -1155,7 +1157,8 @@ void initMorphologicalTree(py::module_& m) {
             [](UInt8InputArray input, NodeId infinityPixel, double radius, sdrt::SdrtTiePolicy tiePolicy) {
                 const double validatedRadius = pybind_utils::requireAdjacencyRadius(radius, "MorphologicalTreeFactory.createSaturatedSelfDualResidualTree");
                 return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(
-                    MorphologicalTreeFactory::createSaturatedSelfDualResidualTree(imageFromArray(input), infinityPixel, validatedRadius, tiePolicy));
+                    MorphologicalTreeFactory::createSaturatedSelfDualResidualTree(
+                        imageFromArray(input), infinityPixel, validatedRadius, sdrt::SaturatedResidualTreeOptions{tiePolicy}));
             },
             "input"_a, "infinityPixel"_a = NodeId{0}, "radius"_a = 1.5, "tiePolicy"_a = sdrt::SdrtTiePolicy::ContrastInvariantSpatial,
             "Create the saturated residual tree with synchronized max-tree and min-tree states.")
@@ -1163,7 +1166,8 @@ void initMorphologicalTree(py::module_& m) {
             "createSaturatedSelfDualResidualTree",
             [](UInt8InputArray input, RegularGridAdjacency2D adjacency, NodeId infinityPixel, sdrt::SdrtTiePolicy tiePolicy) {
                 return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(
-                    MorphologicalTreeFactory::createSaturatedSelfDualResidualTree(imageFromArray(input), std::move(adjacency), infinityPixel, tiePolicy));
+                    MorphologicalTreeFactory::createSaturatedSelfDualResidualTree(
+                        imageFromArray(input), std::move(adjacency), infinityPixel, sdrt::SaturatedResidualTreeOptions{tiePolicy}));
             },
             "input"_a, "adjacency"_a, "infinityPixel"_a = NodeId{0}, "tiePolicy"_a = sdrt::SdrtTiePolicy::ContrastInvariantSpatial,
             "Create the saturated residual tree with an explicit shared symmetric adjacency.")

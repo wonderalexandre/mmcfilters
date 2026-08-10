@@ -1,0 +1,59 @@
+#pragma once
+
+/**
+ * @file ResidualTreeCandidateContext.hpp
+ * @brief Reusable candidate data shared by residual-tree construction modes.
+ */
+
+#include "../../../utils/Common.hpp"
+#include "../../../utils/GenerationStampSet.hpp"
+
+#include <cstddef>
+#include <span>
+#include <vector>
+
+namespace mmcfilters::sdrt::detail {
+
+/** @brief Owns candidate data shared by both residual-tree modes. */
+struct ResidualTreeCandidateContext {
+    /** @brief Stores the boundary pixel marks. */
+    GenerationStampSet boundaryPixelMarks;
+    /** @brief Stores the boundary owner marks. */
+    GenerationStampSet boundaryOwnerMarks;
+    /** @brief Stores the support owner marks. */
+    GenerationStampSet supportOwnerMarks;
+    /** @brief Stores the boundary owners. */
+    std::vector<NodeId> boundaryOwners;
+    /** @brief Stores the boundary pixels. */
+    std::vector<NodeId> boundaryPixels;
+    /** @brief Stores the support pixels. */
+    std::span<const NodeId> supportPixels;
+    /** @brief Stores the support owners. */
+    std::vector<NodeId> supportOwners;
+    /** @brief Stores the flat zone root marks. */
+    GenerationStampSet flatZoneRootMarks;
+    /** @brief Stores the flat zone merge roots. */
+    std::vector<NodeId> flatZoneMergeRoots;
+    /** @brief Stores the flat zone root. */
+    NodeId flatZoneRoot = InvalidNode;
+    /** @brief Stores the dual extremal owner. */
+    NodeId dualExtremalOwner = InvalidNode;
+    /** @brief Stores the whole support owner. */
+    NodeId wholeSupportOwner = InvalidNode;
+
+    /**
+     * @brief Constructs a `CandidateContextScratch` instance.
+     *
+     * @param numPixels Num pixels used by the operation.
+     * @param maxNodeSlots Max node slots used by the operation.
+     */
+    ResidualTreeCandidateContext(std::size_t numPixels, std::size_t maxNodeSlots)
+        : boundaryPixelMarks(numPixels), boundaryOwnerMarks(maxNodeSlots), supportOwnerMarks(maxNodeSlots), flatZoneRootMarks(numPixels) {
+        boundaryOwners.reserve(32);
+        boundaryPixels.reserve(64);
+        supportOwners.reserve(8);
+        flatZoneMergeRoots.reserve(8);
+    }
+};
+
+} // namespace mmcfilters::sdrt::detail

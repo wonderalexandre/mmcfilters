@@ -104,9 +104,11 @@ struct Measurement {
     case Algorithm::MinTree8c:
         return MorphologicalTreeFactory::createMinTree(image, adjacency8c);
     case Algorithm::UnrestrictedResidualTree8c:
-        return MorphologicalTreeFactory::createSelfDualResidualTree(image, adjacency8c, sdrt::SdrtTiePolicy::ContrastInvariantSpatial);
+        return MorphologicalTreeFactory::createSelfDualResidualTree(
+            image, adjacency8c, sdrt::UnrestrictedResidualTreeOptions{sdrt::SdrtTiePolicy::ContrastInvariantSpatial});
     case Algorithm::SaturatedResidualTree8c:
-        return MorphologicalTreeFactory::createSaturatedSelfDualResidualTree(image, adjacency8c, NodeId{0}, sdrt::SdrtTiePolicy::ContrastInvariantSpatial);
+        return MorphologicalTreeFactory::createSaturatedSelfDualResidualTree(
+            image, adjacency8c, NodeId{0}, sdrt::SaturatedResidualTreeOptions{sdrt::SdrtTiePolicy::ContrastInvariantSpatial});
     }
     throw std::invalid_argument("unsupported benchmark algorithm");
 }

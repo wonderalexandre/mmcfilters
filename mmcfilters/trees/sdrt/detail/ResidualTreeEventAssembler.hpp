@@ -1,11 +1,11 @@
 #pragma once
 
 /**
- * @file UnionFindResidualTreeAssembler.hpp
- * @brief Sequential replay of union-find contraction events into tree buffers.
+ * @file ResidualTreeEventAssembler.hpp
+ * @brief Sequential assembly of region-contraction events into tree buffers.
  */
 
-#include "UnionFindRegionTypes.hpp"
+#include "ResidualTreeRegionTypes.hpp"
 #include "../../detail/NativeHierarchyValidationDetail.hpp"
 #include "../../../utils/Common.hpp"
 
@@ -21,14 +21,14 @@ namespace mmcfilters::sdrt::detail {
 /**
  * @brief Replayable residual-tree assembler independent of region adjacency.
  *
- * Each initial union-find region owns an intrusive list of pixels whose proper
+ * Each initial region owns an intrusive list of pixels whose proper
  * part has not yet been emitted and a list of residual roots that still need a
  * parent. A contraction concatenates these lists in constant time per absorbed
  * region; it neither inspects nor mutates the implicit contact-edge structure.
  *
  * @tparam T Residual-node altitude type.
  */
-template <AltitudeValue T> class UnionFindResidualTreeAssembler {
+template <AltitudeValue T> class ResidualTreeEventAssembler {
   public:
     /** @brief Fully materialized native buffers returned at finalization. */
     struct Output {
@@ -49,11 +49,11 @@ template <AltitudeValue T> class UnionFindResidualTreeAssembler {
      * @throws std::length_error if ids cannot represent the supplied domain.
      * @throws std::out_of_range if a pixel refers to an invalid region.
      */
-    UnionFindResidualTreeAssembler(std::size_t numRegions, const std::vector<RegionId>& regionByPixel)
+    ResidualTreeEventAssembler(std::size_t numRegions, const std::vector<RegionId>& regionByPixel)
         : regions_(numRegions), properPartOwner_(regionByPixel.size(), InvalidNode), nextPixel_(regionByPixel.size(), InvalidNode), nodeParent_(1, InvalidNode),
           altitude_(1, T{}), nextOpenRoot_(1, InvalidNode) {
         if (numRegions > static_cast<std::size_t>(std::numeric_limits<RegionId>::max())) {
-            throw std::length_error("Too many regions for the union-find region-id type.");
+            throw std::length_error("Too many regions for the residual-tree region-id type.");
         }
         if (regionByPixel.size() > static_cast<std::size_t>(std::numeric_limits<NodeId>::max())) {
             throw std::length_error("Too many pixels for the residual-tree node-id type.");
@@ -88,7 +88,7 @@ template <AltitudeValue T> class UnionFindResidualTreeAssembler {
 
         RegionLists& lists = regions_[static_cast<std::size_t>(region)];
         if (lists.freshPixelHead == InvalidNode && lists.openRootHead == InvalidNode) {
-            throw std::runtime_error("A union-find residual event cannot have empty subtree support.");
+            throw std::runtime_error("A residual-tree event cannot have empty subtree support.");
         }
         subtreeSupportRecorder_.recordSupportedNode();
         const NodeId event = static_cast<NodeId>(nodeParent_.size());
@@ -99,7 +99,7 @@ template <AltitudeValue T> class UnionFindResidualTreeAssembler {
         for (NodeId root = lists.openRootHead; root != InvalidNode;) {
             const NodeId next = nextOpenRoot_[static_cast<std::size_t>(root)];
             if (nodeParent_[static_cast<std::size_t>(root)] != InvalidNode) {
-                throw std::runtime_error("A union-find residual node received more than one parent.");
+                throw std::runtime_error("A residual-tree node received more than one parent.");
             }
             nodeParent_[static_cast<std::size_t>(root)] = event;
             root = next;
@@ -157,7 +157,7 @@ template <AltitudeValue T> class UnionFindResidualTreeAssembler {
         requireRegion(terminalRegion);
         RegionLists& terminal = regions_[static_cast<std::size_t>(terminalRegion)];
         if (terminal.freshPixelHead == InvalidNode && terminal.openRootHead == InvalidNode) {
-            throw std::runtime_error("The union-find residual root cannot have empty subtree support.");
+            throw std::runtime_error("The residual-tree root cannot have empty subtree support.");
         }
         subtreeSupportRecorder_.recordSupportedNode();
         altitude_[0] = terminalAltitude;
@@ -166,7 +166,7 @@ template <AltitudeValue T> class UnionFindResidualTreeAssembler {
         for (NodeId root = terminal.openRootHead; root != InvalidNode;) {
             const NodeId next = nextOpenRoot_[static_cast<std::size_t>(root)];
             if (nodeParent_[static_cast<std::size_t>(root)] != InvalidNode) {
-                throw std::runtime_error("A terminal union-find residual root already has a parent.");
+                throw std::runtime_error("A terminal residual-tree root already has a parent.");
             }
             nodeParent_[static_cast<std::size_t>(root)] = 0;
             root = next;
@@ -182,12 +182,12 @@ template <AltitudeValue T> class UnionFindResidualTreeAssembler {
 
         for (NodeId parent : nodeParent_) {
             if (parent == InvalidNode) {
-                throw std::runtime_error("Union-find SDRT assembly left an unparented residual node.");
+                throw std::runtime_error("Residual-tree assembly left an unparented residual node.");
             }
         }
         for (NodeId owner : properPartOwner_) {
             if (owner == InvalidNode) {
-                throw std::runtime_error("Union-find SDRT assembly left an unowned proper part.");
+                throw std::runtime_error("Residual-tree assembly left an unowned proper part.");
             }
         }
 
@@ -223,7 +223,7 @@ template <AltitudeValue T> class UnionFindResidualTreeAssembler {
      */
     void requireRegion(RegionId region) const {
         if (region < 0 || region >= static_cast<RegionId>(regions_.size())) {
-            throw std::out_of_range("Union-find residual assembler region id is outside its dense domain.");
+            throw std::out_of_range("Residual-tree event assembler region id is outside its dense domain.");
         }
     }
 

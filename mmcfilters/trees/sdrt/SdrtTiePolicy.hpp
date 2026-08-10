@@ -12,9 +12,10 @@ namespace mmcfilters::sdrt {
  * @brief Direct construction and reference implementations of the SDRT.
  *
  * An SDRT alternates regional maxima and minima in one hierarchy. Production
- * construction is provided by MinMaxResidualTreeBuilder from a synchronized
- * min-tree/max-tree pair. Independent constructions used for differential
- * validation remain confined to the test suite.
+ * construction is provided by the saturated and unrestricted residual-tree
+ * builders from a synchronized min-tree/max-tree pair. Independent
+ * constructions used for differential validation remain confined to the test
+ * suite.
  */
 
 /**

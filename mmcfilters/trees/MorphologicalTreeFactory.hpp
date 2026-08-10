@@ -9,8 +9,9 @@
 #include "detail/HigraHierarchyAdapterDetail.hpp"
 #include "detail/MorphologicalTreeConstructionTag.hpp"
 #include "detail/NativeHierarchyValidationDetail.hpp"
-#include "sdrt/MinMaxResidualTreeBuilder.hpp"
+#include "sdrt/SaturatedResidualTreeBuilder.hpp"
 #include "sdrt/SdrtTiePolicy.hpp"
+#include "sdrt/UnrestrictedResidualTreeBuilder.hpp"
 #include "../utils/Image.hpp"
 #include "../utils/Contract.hpp"
 
@@ -175,24 +176,37 @@ class MorphologicalTreeFactory {
     }
 
     /**
-     * @brief Builds either residual-tree mode from synchronized component trees.
-     *
-     * @param img Image processed by the operation.
-     * @param adjacency Adjacency relation used by the operation.
-     * @param infinityPixel Row-major pixel used as the exterior seed.
-     * @param tiePolicy Policy used to resolve deterministic ties.
-     * @param eligibilityPolicy Policy that determines candidate eligibility.
-     * @return The weighted residual tree selected by `eligibilityPolicy`.
+     * @brief Builds the unrestricted residual tree from synchronized component trees.
+     * @param img Input image.
+     * @param adjacency Symmetric component-tree adjacency.
+     * @param options Unrestricted residual-tree policies.
+     * @return Materialized unrestricted residual hierarchy.
      */
     template <AltitudeValue T>
-    [[nodiscard]] static WeightedMorphologicalTree<T> createMinMaxResidualTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency, NodeId infinityPixel,
-                                                                               sdrt::SdrtTiePolicy tiePolicy,
-                                                                               sdrt::MinMaxResidualEligibilityPolicy eligibilityPolicy) {
+    [[nodiscard]] static WeightedMorphologicalTree<T> createUnrestrictedResidualTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency,
+                                                                                      sdrt::UnrestrictedResidualTreeOptions options) {
         auto minTree = createMinTree(img, adjacency);
         auto maxTree = createMaxTree(img, adjacency);
-        sdrt::MinMaxResidualTreeBuilder<T> builder(adjacency, infinityPixel, tiePolicy, sdrt::SaturatedMinMaxLcaPolicy::ParentClimb,
-                                                   sdrt::SaturatedMinMaxFallbackPolicy::BoundaryMultiSource,
-                                                   sdrt::SaturatedMinMaxBoundaryPolicy::IncrementalSmallToLarge, eligibilityPolicy);
+        sdrt::UnrestrictedResidualTreeBuilder<T> builder(adjacency, options);
+        builder.build(img, std::move(minTree), std::move(maxTree));
+        return materializeNativeHierarchy<T>(
+            std::move(builder).takeValidatedHierarchy(makeHierarchySemantics(MorphologicalTreeKind::SELF_DUAL_RESIDUAL_TREE, std::move(adjacency))));
+    }
+
+    /**
+     * @brief Builds the saturated residual tree from synchronized component trees.
+     * @param img Input image.
+     * @param adjacency Symmetric component-tree adjacency.
+     * @param infinityPixel Exterior seed excluded from residual events.
+     * @param options Saturated residual-tree policies.
+     * @return Materialized saturated residual hierarchy.
+     */
+    template <AltitudeValue T>
+    [[nodiscard]] static WeightedMorphologicalTree<T> createSaturatedResidualTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency,
+                                                                                   NodeId infinityPixel, sdrt::SaturatedResidualTreeOptions options) {
+        auto minTree = createMinTree(img, adjacency);
+        auto maxTree = createMaxTree(img, adjacency);
+        sdrt::SaturatedResidualTreeBuilder<T> builder(adjacency, infinityPixel, options);
         builder.build(img, std::move(minTree), std::move(maxTree));
         return materializeNativeHierarchy<T>(
             std::move(builder).takeValidatedHierarchy(makeHierarchySemantics(MorphologicalTreeKind::SELF_DUAL_RESIDUAL_TREE, std::move(adjacency))));
@@ -291,14 +305,14 @@ class MorphologicalTreeFactory {
      *
      * @param img Image processed by the operation.
      * @param adjacency Adjacency relation used by the operation.
-     * @param tiePolicy Policy used to resolve deterministic ties.
+     * @param options Ordering policies for unrestricted construction.
      * @return An unrestricted self-dual residual tree over `adjacency`.
      */
     template <AltitudeValue T>
     [[nodiscard]] static WeightedMorphologicalTree<T>
     createSelfDualResidualTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency,
-                               sdrt::SdrtTiePolicy tiePolicy = sdrt::SdrtTiePolicy::ContrastInvariantSpatial) {
-        return createMinMaxResidualTree(std::move(img), std::move(adjacency), NodeId{0}, tiePolicy, sdrt::MinMaxResidualEligibilityPolicy::AllRegionalExtrema);
+                               sdrt::UnrestrictedResidualTreeOptions options = {}) {
+        return createUnrestrictedResidualTree(std::move(img), std::move(adjacency), options);
     }
 
     /**
@@ -306,15 +320,15 @@ class MorphologicalTreeFactory {
      *
      * @param img Image processed by the operation.
      * @param radius Radius of the regular-grid adjacency.
-     * @param tiePolicy Policy used to resolve deterministic ties.
+     * @param options Ordering policies for unrestricted construction.
      * @return An unrestricted self-dual residual tree using the radius adjacency.
      */
     template <AltitudeValue T>
     [[nodiscard]] static WeightedMorphologicalTree<T>
-    createSelfDualResidualTree(ImagePtr<T> img, double radius = 1.5, sdrt::SdrtTiePolicy tiePolicy = sdrt::SdrtTiePolicy::ContrastInvariantSpatial) {
+    createSelfDualResidualTree(ImagePtr<T> img, double radius = 1.5, sdrt::UnrestrictedResidualTreeOptions options = {}) {
         TreeAltitudeAlgorithms::validateFiniteImageAltitudes(img, "MorphologicalTreeFactory::createSelfDualResidualTree image");
         RegularGridAdjacency2D adjacency(img->getNumRows(), img->getNumCols(), radius);
-        return createSelfDualResidualTree(std::move(img), std::move(adjacency), tiePolicy);
+        return createSelfDualResidualTree(std::move(img), std::move(adjacency), options);
     }
 
     /**
@@ -327,14 +341,14 @@ class MorphologicalTreeFactory {
      * @param img Image processed by the operation.
      * @param adjacency Adjacency relation used by the operation.
      * @param infinityPixel Row-major pixel used as the exterior seed.
-     * @param tiePolicy Policy used to resolve deterministic ties.
+     * @param options Saturation and ordering policies.
      * @return A saturated self-dual residual tree rooted relative to `infinityPixel`.
      */
     template <AltitudeValue T>
     [[nodiscard]] static WeightedMorphologicalTree<T>
     createSaturatedSelfDualResidualTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency, NodeId infinityPixel,
-                                        sdrt::SdrtTiePolicy tiePolicy = sdrt::SdrtTiePolicy::ContrastInvariantSpatial) {
-        return createMinMaxResidualTree(std::move(img), std::move(adjacency), infinityPixel, tiePolicy, sdrt::MinMaxResidualEligibilityPolicy::SaturatedOnly);
+                                        sdrt::SaturatedResidualTreeOptions options = {}) {
+        return createSaturatedResidualTree(std::move(img), std::move(adjacency), infinityPixel, options);
     }
 
     /**
@@ -343,16 +357,16 @@ class MorphologicalTreeFactory {
      * @param img Image processed by the operation.
      * @param infinityPixel Row-major pixel used as the exterior seed.
      * @param radius Radius of the regular-grid adjacency.
-     * @param tiePolicy Policy used to resolve deterministic ties.
+     * @param options Saturation and ordering policies.
      * @return A saturated self-dual residual tree using the radius adjacency.
      */
     template <AltitudeValue T>
     [[nodiscard]] static WeightedMorphologicalTree<T>
     createSaturatedSelfDualResidualTree(ImagePtr<T> img, NodeId infinityPixel, double radius = 1.5,
-                                        sdrt::SdrtTiePolicy tiePolicy = sdrt::SdrtTiePolicy::ContrastInvariantSpatial) {
+                                        sdrt::SaturatedResidualTreeOptions options = {}) {
         TreeAltitudeAlgorithms::validateFiniteImageAltitudes(img, "MorphologicalTreeFactory::createSaturatedSelfDualResidualTree image");
         RegularGridAdjacency2D adjacency(img->getNumRows(), img->getNumCols(), radius);
-        return createSaturatedSelfDualResidualTree(std::move(img), std::move(adjacency), infinityPixel, tiePolicy);
+        return createSaturatedSelfDualResidualTree(std::move(img), std::move(adjacency), infinityPixel, options);
     }
 
     /**

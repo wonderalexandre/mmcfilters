@@ -2,16 +2,14 @@
 
 /**
  * @file ResidualTreeCandidateAgenda.hpp
- * @brief Deterministic candidate agenda shared by residual-tree modes.
+ * @brief Deterministic candidate ordering shared by residual-tree modes.
  */
 
+#include "ResidualTreeCandidateTypes.hpp"
 #include "../ResidualTreePolicies.hpp"
-#include "../../WeightedMorphologicalTree.hpp"
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <optional>
 #include <set>
 #include <stdexcept>
@@ -19,55 +17,38 @@
 
 namespace mmcfilters::sdrt::detail {
 
-/** @brief Mode-independent candidate, ordering, and agenda types for one residual altitude type. */
-template <AltitudeValue T> struct ResidualTreeAgendaTypes {
-    /** @brief Weighted component-tree type processed by the agenda. */
-    using tree_t = WeightedMorphologicalTree<T>;
-
-    /** @brief Enumerates the supported polarity values. */
+/** @brief Candidate, ordering, and agenda types shared by all residual altitude types. */
+struct ResidualTreeAgendaTypes {
+    /** @brief Enumerates the supported component-tree polarities. */
     enum class Polarity : std::uint8_t { Max, Min };
 
-    /** @brief Describes one residual-tree candidate and its deterministic ordering keys. */
+    /** @brief Candidate entry stored in deterministic agenda order. */
     struct Candidate {
-        /** @brief Stores the area. */
-        int area = 0;
-        /** @brief Stores the stable spatial key. */
-        NodeId stableSpatialKey = InvalidNode;
-        /** @brief Stores the polarity. */
-        Polarity polarity = Polarity::Max;
-        /** @brief Stores the node identifier. */
-        NodeId nodeId = InvalidNode;
+        int area = 0;                                  ///< Current flat-zone area.
+        NodeId stableSpatialKey = InvalidNode;         ///< Stable spatial tie-breaking key.
+        Polarity polarity = Polarity::Max;             ///< Component-tree polarity.
+        NodeId nodeId = InvalidNode;                   ///< Current component-tree node.
     };
 
-    /** @brief Caches the derived properties of one residual-tree candidate. */
-    struct CandidateDescriptor {
-        /** @brief Stores the area. */
-        int area = 0;
-        /** @brief Stores the stable spatial key. */
-        NodeId stableSpatialKey = InvalidNode;
-        /** @brief Indicates whether the candidate support contains the infinity pixel. */
-        bool containsInfinity = false;
-    };
+    /** @brief Neutral candidate metadata supplied by the flat-zone partition. */
+    using CandidateDescriptor = ResidualTreeCandidateDescriptor;
 
-    /** @brief Orders residual-tree candidates according to the configured tie policy. */
+    /** @brief Orders candidates according to the configured deterministic tie policy. */
     struct CandidateLess {
-        /** @brief Stores the policy. */
-        SdrtTiePolicy policy = SdrtTiePolicy::ContrastInvariantSpatial;
+        SdrtTiePolicy policy = SdrtTiePolicy::ContrastInvariantSpatial; ///< Configured tie policy.
 
         /**
-         * @brief Returns the deterministic ordering rank of a component-tree polarity.
-         *
-         * @param polarity Component-tree polarity to process.
-         * @return `0` for max-tree candidates and `1` for min-tree candidates.
+         * @brief Maps a polarity to its deterministic secondary ordering rank.
+         * @param polarity Polarity to rank.
+         * @return Zero for max-tree candidates and one for min-tree candidates.
          */
         [[nodiscard]] static int polarityRank(Polarity polarity) noexcept { return polarity == Polarity::Max ? 0 : 1; }
 
         /**
-         * @brief Compares two candidates according to the configured deterministic order.
-         *
-         * @param lhs Left-hand value of the comparison.
-         * @param rhs Right-hand value of the comparison.
-         * @return `true` when the left-hand candidate precedes the right-hand candidate.
+         * @brief Compares two candidates according to the configured tie policy.
+         * @param lhs Left candidate.
+         * @param rhs Right candidate.
+         * @return `true` when `lhs` precedes `rhs` in agenda order.
          */
         [[nodiscard]] bool operator()(const Candidate& lhs, const Candidate& rhs) const noexcept {
             if (lhs.area != rhs.area) {
@@ -86,62 +67,51 @@ template <AltitudeValue T> struct ResidualTreeAgendaTypes {
         }
     };
 
-    /** @brief Stores the active agenda entry associated with one component-tree node. */
+    /** @brief Active agenda entry associated with one component-tree node slot. */
     struct AgendaSlot {
-        /** @brief Indicates whether the slot currently owns an agenda candidate. */
-        bool active = false;
-        /** @brief Stores the candidate. */
-        Candidate candidate;
+        bool active = false; ///< Whether this slot currently owns a candidate.
+        Candidate candidate; ///< Candidate stored in the ordered set.
     };
 
-    /** @brief Maintains the deterministic agenda of eligible component-tree leaves. */
+    /** @brief Maintains deterministic ordering and membership of current extrema. */
     class CandidateAgenda {
       private:
-        /** @brief Stores the policy. */
-        SdrtTiePolicy policy_;
-        /** @brief Stores the infinity pixel. */
-        NodeId infinityPixel_ = InvalidNode;
-        /** @brief Indicates whether the infinity pixel must be excluded from candidates. */
-        bool excludeInfinity_ = true;
-        /** @brief Stores the candidates. */
-        std::set<Candidate, CandidateLess> candidates_;
-        /** @brief Stores the max slots. */
-        std::vector<AgendaSlot> maxSlots_;
-        /** @brief Stores the min slots. */
-        std::vector<AgendaSlot> minSlots_;
+        SdrtTiePolicy policy_;                           ///< Configured deterministic tie policy.
+        bool excludeExteriorSeed_ = true;               ///< Whether exterior-containing candidates are excluded.
+        std::set<Candidate, CandidateLess> candidates_; ///< Ordered active candidates.
+        std::vector<AgendaSlot> maxSlots_;               ///< Candidate slots for the max-tree.
+        std::vector<AgendaSlot> minSlots_;               ///< Candidate slots for the min-tree.
 
         /**
-         * @brief Returns the agenda-slot array for one component-tree polarity.
-         *
-         * @param polarity Component-tree polarity to process.
-         * @return A reference to the requested object.
+         * @brief Selects the mutable slot array for one polarity.
+         * @param polarity Component-tree polarity.
+         * @return Mutable slot array associated with `polarity`.
          */
         [[nodiscard]] std::vector<AgendaSlot>& slots(Polarity polarity) { return polarity == Polarity::Max ? maxSlots_ : minSlots_; }
 
         /**
-         * @brief Returns the agenda-slot array for one component-tree polarity.
-         *
-         * @param polarity Component-tree polarity to process.
-         * @return A reference to the requested object.
+         * @brief Selects the immutable slot array for one polarity.
+         * @param polarity Component-tree polarity.
+         * @return Immutable slot array associated with `polarity`.
          */
-        [[nodiscard]] const std::vector<AgendaSlot>& slots(Polarity polarity) const { return polarity == Polarity::Max ? maxSlots_ : minSlots_; }
+        [[nodiscard]] const std::vector<AgendaSlot>& slots(Polarity polarity) const {
+            return polarity == Polarity::Max ? maxSlots_ : minSlots_;
+        }
 
         /**
-         * @brief Checks whether a node identifier indexes an agenda-slot array.
-         *
-         * @param side Agenda-slot array to validate.
-         * @param nodeId Identifier of the node processed by the operation.
-         * @return `true` when the node identifier is within the slot array; otherwise `false`.
+         * @brief Checks whether a node identifier addresses an existing slot.
+         * @param side Slot array to inspect.
+         * @param nodeId Candidate node identifier.
+         * @return `true` when `nodeId` lies inside `side`.
          */
         [[nodiscard]] static bool validSlot(const std::vector<AgendaSlot>& side, NodeId nodeId) noexcept {
             return nodeId >= 0 && nodeId < static_cast<NodeId>(side.size());
         }
 
         /**
-         * @brief Removes one node from the active candidate agenda.
-         *
-         * @param polarity Component-tree polarity to process.
-         * @param nodeId Identifier of the node processed by the operation.
+         * @brief Removes an active candidate while preserving the slot/set invariant.
+         * @param polarity Component-tree polarity.
+         * @param nodeId Candidate node identifier.
          */
         void remove(Polarity polarity, NodeId nodeId) {
             auto& side = slots(polarity);
@@ -158,83 +128,46 @@ template <AltitudeValue T> struct ResidualTreeAgendaTypes {
             slot = AgendaSlot{};
         }
 
-        /**
-         * @brief Indexes all current regional extrema of one component tree.
-         *
-         * @param tree Tree processed by the operation.
-         * @param polarity Component-tree polarity to process.
-         */
-        void indexTree(const tree_t& tree, Polarity polarity) {
-            for (NodeId nodeId : tree.topology().getAliveNodeIds()) {
-                update(tree, polarity, nodeId);
-            }
-        }
-
       public:
         /**
-         * @brief Constructs a `CandidateAgenda` instance.
-         *
-         * @param policy Policy controlling the operation.
-         * @param infinityPixel Row-major pixel used as the exterior seed.
-         * @param excludeInfinity Whether the infinity pixel must be excluded from the agenda.
+         * @brief Creates an empty agenda.
+         * @param policy Deterministic equal-area ordering policy.
+         * @param excludeExteriorSeed Whether exterior-containing candidates must be excluded.
          */
-        CandidateAgenda(SdrtTiePolicy policy, NodeId infinityPixel, bool excludeInfinity)
-            : policy_(policy), infinityPixel_(infinityPixel), excludeInfinity_(excludeInfinity), candidates_(CandidateLess{policy}) {}
+        CandidateAgenda(SdrtTiePolicy policy, bool excludeExteriorSeed)
+            : policy_(policy), excludeExteriorSeed_(excludeExteriorSeed), candidates_(CandidateLess{policy}) {}
 
         /**
-         * @brief Initializes the data structure from the current component trees.
-         *
-         * @param maxTree Max-tree consumed by the operation.
-         * @param minTree Min-tree consumed by the operation.
+         * @brief Resets ordered entries and sizes the per-polarity node slots.
+         * @param maxNodeSlots Number of max-tree node slots.
+         * @param minNodeSlots Number of min-tree node slots.
          */
-        void initialize(const tree_t& maxTree, const tree_t& minTree) {
+        void reset(std::size_t maxNodeSlots, std::size_t minNodeSlots) {
             candidates_ = std::set<Candidate, CandidateLess>(CandidateLess{policy_});
-            maxSlots_.assign(static_cast<std::size_t>(maxTree.topology().getNumInternalNodeSlots()), AgendaSlot{});
-            minSlots_.assign(static_cast<std::size_t>(minTree.topology().getNumInternalNodeSlots()), AgendaSlot{});
-            indexTree(maxTree, Polarity::Max);
-            indexTree(minTree, Polarity::Min);
+            maxSlots_.assign(maxNodeSlots, AgendaSlot{});
+            minSlots_.assign(minNodeSlots, AgendaSlot{});
         }
 
         /**
-         * @brief Refreshes the active agenda entry of one component-tree node.
-         *
-         * @param tree Tree processed by the operation.
-         * @param polarity Component-tree polarity to process.
-         * @param nodeId Identifier of the node processed by the operation.
+         * @brief Inserts or replaces one current candidate using partition metadata.
+         * @param polarity Component-tree polarity.
+         * @param nodeId Current component-tree node identifier.
+         * @param descriptor Metadata supplied by the current flat-zone partition.
          */
-        void update(const tree_t& tree, Polarity polarity, NodeId nodeId) {
+        void upsert(Polarity polarity, NodeId nodeId, const CandidateDescriptor& descriptor) {
             auto& side = slots(polarity);
             if (!validSlot(side, nodeId)) {
-                return;
+                throw std::out_of_range("Min/max residual candidate lies outside its agenda slot domain.");
             }
             remove(polarity, nodeId);
-
-            const MorphologicalTree& topology = tree.topology();
-            if (!topology.isNode(nodeId) || !topology.isAlive(nodeId) || nodeId == topology.getRoot() || !topology.isLeaf(nodeId)) {
-                return;
+            if (descriptor.area <= 0 || descriptor.stableSpatialKey == InvalidNode) {
+                throw std::runtime_error("Min/max residual agenda received invalid flat-zone metadata.");
             }
-            const NodeId parent = topology.getNodeParent(nodeId);
-            if (parent == InvalidNode || parent == nodeId) {
-                throw std::runtime_error("Min/max residual leaf violates the parent invariant.");
-            }
-            const int area = topology.getNumProperParts(nodeId);
-            if (area <= 0) {
-                return;
-            }
-            NodeId spatial = std::numeric_limits<NodeId>::max();
-            bool containsInfinity = false;
-            for (NodeId pixel : topology.getProperParts(nodeId)) {
-                spatial = std::min(spatial, pixel);
-                containsInfinity = containsInfinity || pixel == infinityPixel_;
-            }
-            if (spatial == std::numeric_limits<NodeId>::max()) {
-                throw std::runtime_error("Min/max residual candidate has an empty proper part.");
-            }
-            if (excludeInfinity_ && containsInfinity) {
+            if (excludeExteriorSeed_ && descriptor.containsExteriorSeed) {
                 return;
             }
 
-            Candidate candidate{area, spatial, polarity, nodeId};
+            const Candidate candidate{descriptor.area, descriptor.stableSpatialKey, polarity, nodeId};
             const auto [_, inserted] = candidates_.insert(candidate);
             if (!inserted) {
                 throw std::runtime_error("Min/max residual agenda received a duplicate candidate.");
@@ -245,54 +178,13 @@ template <AltitudeValue T> struct ResidualTreeAgendaTypes {
         }
 
         /**
-         * @brief Updates an agenda entry from a precomputed candidate descriptor.
-         *
-         * @param tree Tree processed by the operation.
-         * @param polarity Component-tree polarity to process.
-         * @param nodeId Identifier of the node processed by the operation.
-         * @param descriptor Descriptor associated with the candidate.
-         */
-        void updateKnown(const tree_t& tree, Polarity polarity, NodeId nodeId, const CandidateDescriptor& descriptor) {
-            auto& side = slots(polarity);
-            if (!validSlot(side, nodeId)) {
-                return;
-            }
-            remove(polarity, nodeId);
-
-            const MorphologicalTree& topology = tree.topology();
-            if (!topology.isNode(nodeId) || !topology.isAlive(nodeId) || nodeId == topology.getRoot() || !topology.isLeaf(nodeId)) {
-                return;
-            }
-            if (descriptor.area <= 0 || descriptor.stableSpatialKey == InvalidNode || topology.getNumProperParts(nodeId) != descriptor.area) {
-                throw std::runtime_error("Min/max residual flat-zone metadata violates the agenda invariant.");
-            }
-            if (excludeInfinity_ && descriptor.containsInfinity) {
-                return;
-            }
-
-            Candidate candidate{descriptor.area, descriptor.stableSpatialKey, polarity, nodeId};
-            const auto [_, inserted] = candidates_.insert(candidate);
-            if (!inserted) {
-                throw std::runtime_error("Min/max residual agenda received a duplicate metadata candidate.");
-            }
-            auto& slot = side[static_cast<std::size_t>(nodeId)];
-            slot.active = true;
-            slot.candidate = candidate;
-        }
-
-        /**
-         * @brief Removes a rejected node from the active candidate agenda.
-         *
-         * @param polarity Component-tree polarity to process.
-         * @param nodeId Identifier of the node processed by the operation.
+         * @brief Removes a node from the active agenda, if present.
+         * @param polarity Component-tree polarity.
+         * @param nodeId Candidate node identifier.
          */
         void reject(Polarity polarity, NodeId nodeId) { remove(polarity, nodeId); }
 
-        /**
-         * @brief Selects the first candidate in deterministic agenda order.
-         *
-         * @return The next candidate, or `std::nullopt` when the agenda is empty.
-         */
+        /** @return First candidate in deterministic order, or `std::nullopt` when empty. */
         [[nodiscard]] std::optional<Candidate> select() const {
             if (candidates_.empty()) {
                 return std::nullopt;
@@ -301,11 +193,10 @@ template <AltitudeValue T> struct ResidualTreeAgendaTypes {
         }
 
         /**
-         * @brief Checks whether a node currently has an active agenda entry.
-         *
-         * @param polarity Component-tree polarity to process.
-         * @param nodeId Identifier of the node processed by the operation.
-         * @return `true` when the node has an active agenda entry; otherwise `false`.
+         * @brief Checks whether a node currently owns an active agenda entry.
+         * @param polarity Component-tree polarity.
+         * @param nodeId Candidate node identifier.
+         * @return `true` when the corresponding slot is active.
          */
         [[nodiscard]] bool contains(Polarity polarity, NodeId nodeId) const {
             const auto& side = slots(polarity);

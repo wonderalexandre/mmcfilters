@@ -3,17 +3,21 @@
 #include "mmcfilters/trees/saliency/HierarchySaliencyMap.hpp"
 #include "mmcfilters/trees/sdrt/SaturatedResidualTreeBuilder.hpp"
 #include "mmcfilters/trees/sdrt/UnrestrictedResidualTreeBuilder.hpp"
+#include "mmcfilters/trees/sdrt/detail/FlatZonePartition.hpp"
 #include "mmcfilters/trees/sdrt/detail/ResidualTreeEventAssembler.hpp"
 #include "mmcfilters/trees/sdrt/detail/ResidualTreeRegionTypes.hpp"
 #include "sdrt_reference/OptimizedUnionFindSelfDualResidualTreeBuilder.hpp"
+#include "sdrt_reference/detail/RecomputeFromSupportReference.hpp"
 #include "sdrt_reference/oracle/rag/SingleAdjacencySaturatedResidualTreeOracle.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
 #include <span>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 using namespace mmcfilters;
@@ -21,13 +25,26 @@ using namespace mmcfilters::unit_tests;
 
 namespace {
 
-static_assert(!std::is_same_v<sdrt::detail::MinMaxResidualTreeEngine<std::uint8_t, true>,
-                              sdrt::detail::MinMaxResidualTreeEngine<std::uint8_t, false>>,
+template <class Engine>
+concept HasInfinityPixelAccessor = requires(const Engine& engine) { engine.getInfinityPixel(); };
+
+template <class Assembler>
+concept LvalueFinalizableAssembler = requires(Assembler& assembler) { assembler.finalize(sdrt::detail::RegionId{0}, 0); };
+
+template <class Assembler>
+concept RvalueFinalizableAssembler = requires(Assembler&& assembler) { std::move(assembler).finalize(sdrt::detail::RegionId{0}, 0); };
+
+static_assert(!std::is_same_v<sdrt::detail::MinMaxResidualTreeEngine<std::uint8_t, true>, sdrt::detail::MinMaxResidualTreeEngine<std::uint8_t, false>>,
               "saturated and unrestricted builders must use distinct engine specializations");
-static_assert(std::is_empty_v<sdrt::detail::UnrestrictedResidualEligibilityState>,
-              "unrestricted construction must not retain saturated certification workspace");
-static_assert(!std::is_constructible_v<sdrt::UnrestrictedResidualTreeBuilder<std::uint8_t>, RegularGridAdjacency2D, NodeId,
-                                       sdrt::SaturatedResidualTreeOptions>,
+static_assert(HasInfinityPixelAccessor<sdrt::detail::MinMaxResidualTreeEngine<std::uint8_t, true>>,
+              "saturated construction must expose its configured exterior seed");
+static_assert(!HasInfinityPixelAccessor<sdrt::detail::MinMaxResidualTreeEngine<std::uint8_t, false>>,
+              "unrestricted construction must not expose exterior-seed state");
+static_assert(!LvalueFinalizableAssembler<sdrt::detail::ResidualTreeEventAssembler<int>>,
+              "residual event assembly must not be finalizable through an lvalue");
+static_assert(RvalueFinalizableAssembler<sdrt::detail::ResidualTreeEventAssembler<int>>,
+              "residual event assembly must be finalizable through an rvalue");
+static_assert(!std::is_constructible_v<sdrt::UnrestrictedResidualTreeBuilder<std::uint8_t>, RegularGridAdjacency2D, NodeId, sdrt::SaturatedResidualTreeOptions>,
               "unrestricted builders must not accept an exterior seed or saturated policies");
 static_assert(!std::is_constructible_v<sdrt::UnrestrictedResidualTreeBuilder<std::uint8_t>, RegularGridAdjacency2D, sdrt::SdrtTiePolicy>,
               "unrestricted builders must require their mode-specific option object");
@@ -68,12 +85,10 @@ template <class T> struct ResidualBuffers {
 
 template <class T>
 ResidualBuffers<T> buildResidualWithPolicies(const ImagePtr<T>& image, const RegularGridAdjacency2D& adjacency, NodeId infinityPixel,
-                                             sdrt::SaturatedMinMaxLcaPolicy lcaPolicy, sdrt::SaturatedMinMaxFallbackPolicy fallbackPolicy,
-                                             sdrt::ResidualTreeBoundaryPolicy boundaryPolicy) {
+                                             sdrt::SaturatedMinMaxLcaPolicy lcaPolicy, sdrt::SaturatedMinMaxFallbackPolicy fallbackPolicy) {
     auto minTree = MorphologicalTreeFactory::createMinTree(image, adjacency);
     auto maxTree = MorphologicalTreeFactory::createMaxTree(image, adjacency);
-    const sdrt::SaturatedResidualTreeOptions options{
-        sdrt::SdrtTiePolicy::ContrastInvariantSpatial, lcaPolicy, fallbackPolicy, boundaryPolicy};
+    const sdrt::SaturatedResidualTreeOptions options{sdrt::SdrtTiePolicy::ContrastInvariantSpatial, lcaPolicy, fallbackPolicy};
     sdrt::SaturatedResidualTreeBuilder<T> builder(adjacency, infinityPixel, options);
     builder.build(image, std::move(minTree), std::move(maxTree));
     return {toVector(builder.getNodeParent()), toVector(builder.getProperPartOwner()), toVector(builder.getAltitude())};
@@ -181,8 +196,8 @@ void testDirectBuilderPolicies() {
     const RegularGridAdjacency2D adjacency(2, 3, 1.0);
     auto minTree = MorphologicalTreeFactory::createMinTree(image, adjacency);
     auto maxTree = MorphologicalTreeFactory::createMaxTree(image, adjacency);
-    sdrt::UnrestrictedResidualTreeBuilder<std::uint8_t> builder(
-        adjacency, sdrt::UnrestrictedResidualTreeOptions{sdrt::SdrtTiePolicy::ContrastInvariantSpatial});
+    sdrt::UnrestrictedResidualTreeBuilder<std::uint8_t> builder(adjacency,
+                                                                sdrt::UnrestrictedResidualTreeOptions{sdrt::SdrtTiePolicy::ContrastInvariantSpatial});
     builder.build(image, std::move(minTree), std::move(maxTree));
     requireEqual(builder.getStatistics().rejectedExtrema, std::size_t{0}, "unrestricted builder rejects no extrema");
     requireEqual(builder.getStatistics().complementTraversalCertificates, std::size_t{0}, "unrestricted builder performs no complement traversal");
@@ -192,24 +207,118 @@ void testResidualTreeEventAssemblerInIsolation() {
     using sdrt::detail::RegionId;
     const std::vector<RegionId> regionByPixel{0, 0, 1, 2};
     sdrt::detail::ResidualTreeEventAssembler<int> assembler(3, regionByPixel);
+    sdrt::reference::PersistentSupportHistory<int> reference(4);
 
     requireEqual(assembler.emitEvent(RegionId{0}, 5), NodeId{1}, "assembler first event id");
+    const std::array<NodeId, 2> firstSupport{0, 1};
+    reference.recordEvent(5, firstSupport);
     const std::array<RegionId, 1> firstAbsorption{0};
     assembler.consume(RegionId{1}, firstAbsorption);
     requireEqual(assembler.emitEvent(RegionId{1}, 3), NodeId{2}, "assembler second event id");
+    const std::array<NodeId, 3> secondSupport{0, 1, 2};
+    reference.recordEvent(3, secondSupport);
     const std::array<RegionId, 1> secondAbsorption{1};
     assembler.consume(RegionId{2}, secondAbsorption);
     requireEqual(assembler.numEvents(), std::size_t{2}, "assembler event count");
 
-    auto output = assembler.finalize(RegionId{2}, 1);
+    auto output = std::move(assembler).finalize(RegionId{2}, 1);
+    const auto referenceOutput = reference.finalize(1);
+    requireVectorEqual(output.nodeParent, referenceOutput.nodeParent, "assembler reference parents");
+    requireVectorEqual(output.properPartOwner, referenceOutput.properPartOwner, "assembler reference owners");
+    requireVectorEqual(output.altitude, referenceOutput.altitude, "assembler reference altitudes");
     requireVectorEqual(output.nodeParent, std::vector<NodeId>{0, 2, 0}, "assembler parent materialization");
     requireVectorEqual(output.properPartOwner, std::vector<NodeId>{1, 1, 2, 0}, "assembler owner materialization");
     requireVectorEqual(output.altitude, std::vector<int>{1, 5, 3}, "assembler altitude materialization");
 
     sdrt::detail::ResidualTreeEventAssembler<int> invalidAssembler(2, std::vector<RegionId>{0, 1});
     const std::array<RegionId, 1> absorbsSelf{0};
-    requireThrows<std::invalid_argument>([&] { invalidAssembler.consume(RegionId{0}, absorbsSelf); },
-                                         "assembler rejects absorbing its survivor");
+    requireThrows<std::invalid_argument>([&] { invalidAssembler.consume(RegionId{0}, absorbsSelf); }, "assembler rejects absorbing its survivor");
+}
+
+void testIncrementalBoundaryAgainstRecomputedReference() {
+    const auto image = makeImage(3, 4,
+                                 {
+                                     0, 0, 2, 1,
+                                     0, 3, 2, 1,
+                                     4, 3, 3, 1,
+                                 });
+    const RegularGridAdjacency2D adjacency(3, 4, 1.0);
+    const auto verifyTree = [&](const WeightedMorphologicalTree<std::uint8_t>& tree, const std::string& label) {
+        sdrt::detail::FlatZonePartition<std::uint8_t> partition;
+        sdrt::reference::RecomputedProperPartBoundary<std::uint8_t> reference;
+        partition.initialize(image, adjacency, NodeId{0});
+
+        for (NodeId node : tree.topology().getAliveNodeIds()) {
+            if (tree.topology().getNumProperParts(node) == 0) {
+                continue;
+            }
+            const auto partitionView = partition.viewForNode(node, tree);
+            std::vector<NodeId> incrementalSupport(partitionView.supportPixels.begin(), partitionView.supportPixels.end());
+            std::vector<NodeId> incrementalBoundary(partitionView.externalPixelsByIncidence.begin(), partitionView.externalPixelsByIncidence.end());
+            const auto& recomputed = reference.acquire(node, tree, adjacency);
+            auto recomputedSupport = recomputed.supportPixels;
+            auto recomputedBoundary = recomputed.externalPixelsByIncidence;
+            std::ranges::sort(incrementalSupport);
+            std::ranges::sort(incrementalBoundary);
+            std::ranges::sort(recomputedSupport);
+            std::ranges::sort(recomputedBoundary);
+            requireVectorEqual(incrementalSupport, recomputedSupport, label + " support");
+            requireVectorEqual(incrementalBoundary, recomputedBoundary, label + " boundary incidences");
+        }
+    };
+
+    verifyTree(MorphologicalTreeFactory::createMaxTree(image, adjacency), "max-tree incremental boundary");
+    verifyTree(MorphologicalTreeFactory::createMinTree(image, adjacency), "min-tree incremental boundary");
+
+    const auto chainImage = makeImage(1, 4, {2, 1, 1, 0});
+    const RegularGridAdjacency2D chainAdjacency(1, 4, 1.0);
+    sdrt::detail::FlatZonePartition<std::uint8_t> partition;
+    partition.initialize(chainImage, chainAdjacency, NodeId{3});
+    GenerationStampSet representativeMarks(static_cast<std::size_t>(chainImage->getSize()));
+    std::vector<NodeId> mergeRepresentatives;
+
+    const auto requireViewMatchesSupport = [&](const auto& view, std::vector<NodeId> expectedSupport, const std::string& label) {
+        std::vector<std::uint8_t> supportMarks(static_cast<std::size_t>(chainImage->getSize()), std::uint8_t{0});
+        for (NodeId pixel : expectedSupport) {
+            supportMarks[static_cast<std::size_t>(pixel)] = 1;
+        }
+        std::vector<NodeId> expectedBoundary;
+        for (NodeId pixel : expectedSupport) {
+            for (NodeId neighbor : chainAdjacency.getNeighborIndices(pixel)) {
+                if (supportMarks[static_cast<std::size_t>(neighbor)] == 0) {
+                    expectedBoundary.push_back(neighbor);
+                }
+            }
+        }
+        std::vector<NodeId> actualSupport(view.supportPixels.begin(), view.supportPixels.end());
+        std::vector<NodeId> actualBoundary(view.externalPixelsByIncidence.begin(), view.externalPixelsByIncidence.end());
+        std::ranges::sort(expectedSupport);
+        std::ranges::sort(expectedBoundary);
+        std::ranges::sort(actualSupport);
+        std::ranges::sort(actualBoundary);
+        requireVectorEqual(actualSupport, expectedSupport, label + " support");
+        requireVectorEqual(actualBoundary, expectedBoundary, label + " boundary");
+    };
+
+    auto selectedView = partition.viewForPixel(NodeId{0});
+    requireViewMatchesSupport(selectedView, {0}, "initial selected flat zone");
+    partition.collectAdjacentRepresentativesAtLevel(selectedView.representative, std::uint8_t{1}, selectedView.externalPixelsByIncidence,
+                                                    representativeMarks, mergeRepresentatives);
+    requireEqual(mergeRepresentatives.size(), std::size_t{1}, "first incremental flat-zone merge count");
+    NodeId mergedRepresentative = partition.mergeFlatZonesAtLevel(selectedView.representative, mergeRepresentatives, std::uint8_t{1});
+    auto mergedView = partition.viewForPixel(mergedRepresentative);
+    requireViewMatchesSupport(mergedView, {0, 1, 2}, "first merged flat zone");
+    requireEqual(mergedView.stableSpatialKey, NodeId{0}, "merged flat-zone stable spatial key");
+    require(!mergedView.containsExteriorSeed, "first merged flat zone excludes exterior seed");
+
+    partition.collectAdjacentRepresentativesAtLevel(mergedView.representative, std::uint8_t{0}, mergedView.externalPixelsByIncidence,
+                                                    representativeMarks, mergeRepresentatives);
+    requireEqual(mergeRepresentatives.size(), std::size_t{1}, "second incremental flat-zone merge count");
+    mergedRepresentative = partition.mergeFlatZonesAtLevel(mergedView.representative, mergeRepresentatives, std::uint8_t{0});
+    const auto terminalView = partition.viewForPixel(mergedRepresentative);
+    requireViewMatchesSupport(terminalView, {0, 1, 2, 3}, "terminal merged flat zone");
+    require(terminalView.containsExteriorSeed, "terminal merged flat zone retains exterior seed");
+    requireEqual(partition.representativeOf(NodeId{3}), mergedRepresentative, "terminal flat-zone representative");
 }
 
 template <class T> void testTypedResidualConstruction(const std::string& label) {
@@ -262,7 +371,6 @@ void testOptionsAndInputContracts() {
     saturatedOptions.tiePolicy = sdrt::SdrtTiePolicy::ContrastInvariantSpatial;
     saturatedOptions.lcaPolicy = sdrt::SaturatedMinMaxLcaPolicy::LinkCut;
     saturatedOptions.fallbackPolicy = sdrt::SaturatedMinMaxFallbackPolicy::SingleSourceDepthFirst;
-    saturatedOptions.boundaryPolicy = sdrt::ResidualTreeBoundaryPolicy::RecomputeFromSupport;
     const auto saturatedWithOptions = MorphologicalTreeFactory::createSaturatedSelfDualResidualTree(image, adjacency, NodeId{0}, saturatedOptions);
     const auto saturatedDefault = MorphologicalTreeFactory::createSaturatedSelfDualResidualTree(image, adjacency, NodeId{0});
     requireVectorEqual(parentBuffer(saturatedWithOptions), parentBuffer(saturatedDefault), "saturated option parents");
@@ -280,8 +388,7 @@ void testOptionsAndInputContracts() {
     auto secondMinTree = MorphologicalTreeFactory::createMinTree(image, adjacency);
     requireThrows<std::invalid_argument>([&] { reusable.build(image, std::move(firstMinTree), std::move(secondMinTree)); },
                                          "unrestricted builder rejects a min-tree in the max-tree slot");
-    requireThrows<std::logic_error>([&] { static_cast<void>(reusable.getNodeParent()); },
-                                    "failed construction leaves no observable partial result");
+    requireThrows<std::logic_error>([&] { static_cast<void>(reusable.getNodeParent()); }, "failed construction leaves no observable partial result");
     auto validMinTree = MorphologicalTreeFactory::createMinTree(image, adjacency);
     auto validMaxTree = MorphologicalTreeFactory::createMaxTree(image, adjacency);
     reusable.build(image, std::move(validMinTree), std::move(validMaxTree));
@@ -370,8 +477,6 @@ void testConfigurablePolicyEquivalence() {
                                      sdrt::SaturatedMinMaxLcaPolicy::LinkCut};
     constexpr std::array fallbackPolicies{sdrt::SaturatedMinMaxFallbackPolicy::SingleSourceDepthFirst,
                                           sdrt::SaturatedMinMaxFallbackPolicy::BoundaryMultiSource};
-    constexpr std::array boundaryPolicies{sdrt::ResidualTreeBoundaryPolicy::RecomputeFromSupport,
-                                          sdrt::ResidualTreeBoundaryPolicy::IncrementalSmallToLarge};
     const RegularGridAdjacency2D adjacency(2, 3, 1.0);
 
     for (int code = 0; code < 729; ++code) {
@@ -384,12 +489,10 @@ void testConfigurablePolicyEquivalence() {
 
         for (const auto lcaPolicy : lcaPolicies) {
             for (const auto fallbackPolicy : fallbackPolicies) {
-                for (const auto boundaryPolicy : boundaryPolicies) {
-                    const auto actual = buildResidualWithPolicies(image, adjacency, infinityPixel, lcaPolicy, fallbackPolicy, boundaryPolicy);
-                    requireVectorEqual(actual.parent, expectedParent, "configurable policy parents");
-                    requireVectorEqual(actual.owner, expectedOwner, "configurable policy owners");
-                    requireVectorEqual(actual.altitude, expectedAltitude, "configurable policy altitudes");
-                }
+                const auto actual = buildResidualWithPolicies(image, adjacency, infinityPixel, lcaPolicy, fallbackPolicy);
+                requireVectorEqual(actual.parent, expectedParent, "configurable policy parents");
+                requireVectorEqual(actual.owner, expectedOwner, "configurable policy owners");
+                requireVectorEqual(actual.altitude, expectedAltitude, "configurable policy altitudes");
             }
         }
     }
@@ -402,6 +505,7 @@ int main() {
     testContrastInversion();
     testDirectBuilderPolicies();
     testResidualTreeEventAssemblerInIsolation();
+    testIncrementalBoundaryAgainstRecomputedReference();
     testAltitudeTypesAndDegenerateDomain();
     testOptionsAndInputContracts();
     testExhaustiveDifferentialOracles();

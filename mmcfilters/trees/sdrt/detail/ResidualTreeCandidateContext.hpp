@@ -14,7 +14,7 @@
 
 namespace mmcfilters::sdrt::detail {
 
-/** @brief Owns candidate data shared by both residual-tree modes. */
+/** @brief Owns reusable candidate preparation data shared by both residual-tree modes. */
 struct ResidualTreeCandidateContext {
     /** @brief Stores the boundary pixel marks. */
     GenerationStampSet boundaryPixelMarks;
@@ -30,29 +30,29 @@ struct ResidualTreeCandidateContext {
     std::span<const NodeId> supportPixels;
     /** @brief Stores the support owners. */
     std::vector<NodeId> supportOwners;
-    /** @brief Stores the flat zone root marks. */
-    GenerationStampSet flatZoneRootMarks;
-    /** @brief Stores the flat zone merge roots. */
-    std::vector<NodeId> flatZoneMergeRoots;
-    /** @brief Stores the flat zone root. */
-    NodeId flatZoneRoot = InvalidNode;
+    /** @brief Stores the flat-zone representative marks. */
+    GenerationStampSet flatZoneRepresentativeMarks;
+    /** @brief Stores the flat-zone representatives selected for merging. */
+    std::vector<NodeId> flatZoneMergeRepresentatives;
+    /** @brief Stores the selected flat-zone representative. */
+    NodeId flatZoneRepresentative = InvalidNode;
     /** @brief Stores the dual extremal owner. */
     NodeId dualExtremalOwner = InvalidNode;
     /** @brief Stores the whole support owner. */
     NodeId wholeSupportOwner = InvalidNode;
 
     /**
-     * @brief Constructs a `CandidateContextScratch` instance.
+     * @brief Constructs a `ResidualTreeCandidateContext` instance.
      *
      * @param numPixels Num pixels used by the operation.
      * @param maxNodeSlots Max node slots used by the operation.
      */
     ResidualTreeCandidateContext(std::size_t numPixels, std::size_t maxNodeSlots)
-        : boundaryPixelMarks(numPixels), boundaryOwnerMarks(maxNodeSlots), supportOwnerMarks(maxNodeSlots), flatZoneRootMarks(numPixels) {
+        : boundaryPixelMarks(numPixels), boundaryOwnerMarks(maxNodeSlots), supportOwnerMarks(maxNodeSlots), flatZoneRepresentativeMarks(numPixels) {
         boundaryOwners.reserve(32);
         boundaryPixels.reserve(64);
         supportOwners.reserve(8);
-        flatZoneMergeRoots.reserve(8);
+        flatZoneMergeRepresentatives.reserve(8);
     }
 };
 

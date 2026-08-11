@@ -158,8 +158,6 @@ sdrt::SaturatedResidualTreeOptions saturatedOptions;
 saturatedOptions.lcaPolicy = sdrt::SaturatedMinMaxLcaPolicy::LinkCut;
 saturatedOptions.fallbackPolicy =
     sdrt::SaturatedMinMaxFallbackPolicy::BoundaryMultiSource;
-saturatedOptions.boundaryPolicy =
-    sdrt::ResidualTreeBoundaryPolicy::IncrementalSmallToLarge;
 auto saturated =
     MorphologicalTreeFactory::createSaturatedSelfDualResidualTree(
         image,
@@ -168,10 +166,11 @@ auto saturated =
         saturatedOptions);
 ```
 
-The defaults remain contrast-invariant spatial tie-breaking, parent-climb LCA,
-multi-source boundary fallback, and incremental small-to-large boundary
-maintenance. Mode-specific option objects are the only configurable C++ entry
-point.
+By default, construction uses contrast-invariant spatial tie-breaking,
+parent-climb LCA, and multi-source boundary fallback. Both modes use
+incremental small-to-large flat-zone boundary maintenance and
+region-contraction event assembly. Configuration is supplied through
+mode-specific C++ option objects.
 
 ### Tree-of-shapes policies
 

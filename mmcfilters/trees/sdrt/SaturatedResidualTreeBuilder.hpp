@@ -7,7 +7,7 @@
 
 #include "ResidualTreeBuildStatistics.hpp"
 #include "ResidualTreePolicies.hpp"
-#include "detail/MinMaxResidualTreeEngineCommon.hpp"
+#include "detail/MinMaxResidualTreeEngine.hpp"
 
 #include <span>
 #include <utility>
@@ -65,8 +65,6 @@ template <AltitudeValue T> class SaturatedResidualTreeBuilder {
     [[nodiscard]] SaturatedMinMaxLcaPolicy getLcaPolicy() const noexcept { return implementation_.getLcaPolicy(); }
     /** @return Configured exact complement fallback. */
     [[nodiscard]] SaturatedMinMaxFallbackPolicy getFallbackPolicy() const noexcept { return implementation_.getFallbackPolicy(); }
-    /** @return Configured boundary maintenance policy. */
-    [[nodiscard]] ResidualTreeBoundaryPolicy getBoundaryPolicy() const noexcept { return implementation_.getBoundaryPolicy(); }
     /** @return Parent buffer indexed by residual node id. */
     [[nodiscard]] std::span<const NodeId> getNodeParent() const { return implementation_.getNodeParent(); }
     /** @return Direct residual owner indexed by source pixel id. */

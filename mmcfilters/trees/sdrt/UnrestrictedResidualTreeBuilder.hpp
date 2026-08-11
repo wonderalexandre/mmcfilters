@@ -7,7 +7,7 @@
 
 #include "ResidualTreeBuildStatistics.hpp"
 #include "ResidualTreePolicies.hpp"
-#include "detail/MinMaxResidualTreeEngineCommon.hpp"
+#include "detail/MinMaxResidualTreeEngine.hpp"
 
 #include <span>
 #include <utility>

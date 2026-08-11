@@ -19,7 +19,7 @@
 namespace mmcfilters::sdrt::detail {
 
 /**
- * @brief Replayable residual-tree assembler independent of region adjacency.
+ * @brief Single-pass residual-tree assembler independent of region adjacency.
  *
  * Each initial region owns an intrusive list of pixels whose proper
  * part has not yet been emitted and a list of residual roots that still need a
@@ -128,7 +128,7 @@ template <AltitudeValue T> class ResidualTreeEventAssembler {
     [[nodiscard]] std::size_t numEvents() const noexcept { return nodeParent_.size() - 1; }
 
     /**
-     * @brief Transfers unresolved lists described by a replayed event range.
+     * @brief Transfers unresolved lists after one live region contraction.
      * @param survivorRegion Dense root retained by the original contraction.
      * @param absorbedRegions Former live roots absorbed by that contraction.
      */
@@ -148,12 +148,12 @@ template <AltitudeValue T> class ResidualTreeEventAssembler {
     }
 
     /**
-     * @brief Attaches remaining content to node 0 and releases output buffers.
+     * @brief Attaches remaining content to node 0 and consumes the assembler.
      * @param terminalRegion Sole live quotient-partition root.
      * @param terminalAltitude Valuation assigned to root node 0.
      * @return Complete parent, proper-part owner, and altitude buffers.
      */
-    [[nodiscard]] Output finalize(RegionId terminalRegion, T terminalAltitude) {
+    [[nodiscard]] Output finalize(RegionId terminalRegion, T terminalAltitude) && {
         requireRegion(terminalRegion);
         RegionLists& terminal = regions_[static_cast<std::size_t>(terminalRegion)];
         if (terminal.freshPixelHead == InvalidNode && terminal.openRootHead == InvalidNode) {

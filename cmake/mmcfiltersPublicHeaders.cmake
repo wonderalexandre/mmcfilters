@@ -136,11 +136,14 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/trees/sdrt/SaturatedResidualTreeBuilder.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/SdrtTiePolicy.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/UnrestrictedResidualTreeBuilder.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/detail/MinMaxResidualTreeEngineCommon.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeBoundaryCache.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/detail/MinMaxResidualTreeEngine.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/detail/FlatZonePartition.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeCandidateAgenda.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeCandidateContext.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeCandidatePreparation.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeCandidateTypes.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeEventAssembler.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeMaterialization.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeRegionTypes.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/detail/SaturatedDynamicLca.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/detail/SaturatedResidualEligibility.hpp

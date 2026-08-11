@@ -22,18 +22,11 @@ enum class SaturatedMinMaxFallbackPolicy {
     BoundaryMultiSource     ///< Grow and merge all boundary components.
 };
 
-/** @brief Strategy used to obtain the current proper-part boundary. */
-enum class ResidualTreeBoundaryPolicy {
-    RecomputeFromSupport,   ///< Rebuild support and boundary for every candidate.
-    IncrementalSmallToLarge ///< Maintain flat zones and incidences incrementally.
-};
-
 /** @brief Options that affect saturated residual-tree construction. */
 struct SaturatedResidualTreeOptions {
     SdrtTiePolicy tiePolicy = SdrtTiePolicy::ContrastInvariantSpatial; ///< Equal-area event ordering.
     SaturatedMinMaxLcaPolicy lcaPolicy = SaturatedMinMaxLcaPolicy::ParentClimb; ///< Dynamic LCA strategy.
     SaturatedMinMaxFallbackPolicy fallbackPolicy = SaturatedMinMaxFallbackPolicy::BoundaryMultiSource; ///< Exact fallback strategy.
-    ResidualTreeBoundaryPolicy boundaryPolicy = ResidualTreeBoundaryPolicy::IncrementalSmallToLarge; ///< Boundary maintenance strategy.
 };
 
 /** @brief Options that affect unrestricted residual-tree construction. */

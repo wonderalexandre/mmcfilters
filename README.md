@@ -114,6 +114,7 @@ reconstructed_image = tree.reconstructionImage()
 | Goal | Guide |
 | --- | --- |
 | Understand the tree model and construct hierarchies | [Morphological trees](https://wonderalexandre.github.io/MorphologicalAttributeFilters/md_docs_2trees.html) |
+| Locate the self-dual residual-tree implementation and paper notebook | [Self-dual residual trees: implementation and demonstration](docs/self-dual-residual-trees.md) |
 | Use the Python interface | [Python API](https://wonderalexandre.github.io/MorphologicalAttributeFilters/md_docs_2python-api.html) |
 | Compute attributes | [Attributes](https://wonderalexandre.github.io/MorphologicalAttributeFilters/md_docs_2attributes.html) |
 | Apply filtering and hierarchy operators | [Filters](https://wonderalexandre.github.io/MorphologicalAttributeFilters/md_docs_2filters.html) |

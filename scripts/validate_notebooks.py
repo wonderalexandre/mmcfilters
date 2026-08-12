@@ -19,6 +19,7 @@ EXPECTED_NOTEBOOKS = (
     "Comparative_Morphological_Tree_Filtering.ipynb",
     "Higra_Attribute_Interoperability.ipynb",
     "MaxDistExample.ipynb",
+    "Self_Dual_Residual_Trees_Tutorial.ipynb",
     "SimpleExamples.ipynb",
     "ToS_Contour_Example.ipynb",
     "UAO_Examples.ipynb",

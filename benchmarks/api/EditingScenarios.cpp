@@ -10,7 +10,7 @@ namespace mmcfilters::benchmarks::api {
 namespace {
 
 struct EditState {
-    WeightedMorphologicalTree<std::uint8_t> tree;
+    ValuedMorphologicalTree<std::uint8_t> tree;
     std::vector<NodeId> candidates;
 };
 
@@ -19,8 +19,8 @@ struct EditState {
     std::vector<NodeId> candidates;
     candidates.reserve(static_cast<std::size_t>(maximumCandidates));
     const MorphologicalTree& topology = tree.topology();
-    for (NodeId node : topology.getAliveNodeIds()) {
-        if (!topology.isRoot(node) && topology.getNumChildren(node) == 0) {
+    for (NodeId node : topology.aliveNodeIds()) {
+        if (!topology.isRoot(node) && topology.numChildren(node) == 0) {
             candidates.push_back(node);
             if (static_cast<int>(candidates.size()) == maximumCandidates) {
                 break;
@@ -28,7 +28,7 @@ struct EditState {
         }
     }
     if (candidates.empty()) {
-        for (NodeId node : topology.getAliveNodeIds()) {
+        for (NodeId node : topology.aliveNodeIds()) {
             if (!topology.isRoot(node)) {
                 candidates.push_back(node);
                 break;
@@ -44,14 +44,14 @@ struct EditState {
 [[nodiscard]] std::uint64_t editedTreeChecksum(const EditState& state, int operations) {
     Fnv1a64 hash;
     hash.append(operations);
-    hash.append(weightedTreeChecksum(state.tree));
+    hash.append(valuedTreeChecksum(state.tree));
     return hash.value();
 }
 
 } // namespace
 
 void addEditingScenarios(Context& context, std::vector<ScenarioResult>& results) {
-    if (context.maxTree.topology().getNumNodes() <= 1) {
+    if (context.maxTree.topology().numNodes() <= 1) {
         if (context.options.suites.contains("all")) {
             return;
         }

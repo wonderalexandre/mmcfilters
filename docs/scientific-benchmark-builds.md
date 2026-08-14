@@ -70,9 +70,9 @@ Every condition belongs to one of the following categories:
 
 | Category | Examples | Policy |
 | --- | --- | --- |
-| Caller contract | valid node or pixel id, non-null pointer, buffer shape, finite threshold, positive delta, supported padding, valid call sequence | `MMCFILTERS_CONTRACT_REQUIRE` or `MMCFILTERS_CONTRACT_CHECKED_ONLY` |
+| Caller contract | valid node or pixel id, non-null pointer, buffer shape, finite threshold, positive window radius, supported padding, valid call sequence | `MMCFILTERS_CONTRACT_REQUIRE` or `MMCFILTERS_CONTRACT_CHECKED_ONLY` |
 | Scientific capability | globally monotone altitude order required by MSER/extinction, adjacency information required by a projection | Always enforced when the algorithm cannot produce the defined scientific quantity without it |
-| Structural invariant | coherent parent/child topology, valid support ownership, monotone owned altitude after mutation, projection conservation, representable output | Always enforced |
+| Structural invariant | coherent parent/child topology, valid smallest-node support assignment, monotone owned altitude after mutation, projection conservation, representable output | Always enforced |
 | Established kernel precondition | live-node domain, valid parent/child links, dense buffer indexing, compatible image domain already established by the caller | No runtime validation inside the kernel |
 
 ### Validation-free execution cores
@@ -87,10 +87,10 @@ Kernels use established spans and the narrow
 image access. Helpers outside `detail::kernel` may also use those facades after
 their own dominating boundary has established the same domain.
 
-For example, an MSER computation validates the altitude buffer, delta, and
+For example, an MSER computation validates the altitude buffer, window radius, and
 hierarchy capability once. Its ancestor search then reads altitude slots and
 parent links directly for every live node. Likewise, a reconstruction filter
-validates its criterion and output image once before traversing committed child
+validates its node-preservation mask and output image once before traversing committed child
 and proper-part ranges.
 
 ### Redundant checks

@@ -28,13 +28,13 @@ using namespace mmcfilters;
 
 namespace {
 
-ImageUInt8Ptr makeBenchmarkImage(int rows, int cols) {
-    auto image = ImageUInt8::create(rows, cols);
+ImageUInt8Ptr makeBenchmarkImage(int rows, int columns) {
+    auto image = ImageUInt8::create(rows, columns);
     for (int row = 0; row < rows; ++row) {
-        for (int col = 0; col < cols; ++col) {
-            const int idx = row * cols + col;
-            const int radial = (row - rows / 2) * (row - rows / 2) + (col - cols / 2) * (col - cols / 2);
-            (*image)[idx] = static_cast<uint8_t>((radial / 113 + row * 7 + col * 3) & 0xff);
+        for (int column = 0; column < columns; ++column) {
+            const int idx = row * columns + column;
+            const int radial = (row - rows / 2) * (row - rows / 2) + (column - columns / 2) * (column - columns / 2);
+            (*image)[idx] = static_cast<uint8_t>((radial / 113 + row * 7 + column * 3) & 0xff);
         }
     }
     return image;
@@ -76,8 +76,8 @@ template <typename Fn> double timedVoid(Fn&& fn) {
 
 std::vector<NodeId> aliveNodesInTreeOrder(const MorphologicalTree& tree) {
     std::vector<NodeId> nodes;
-    nodes.reserve(static_cast<std::size_t>(tree.getNumNodes()));
-    for (NodeId node : tree.getAliveNodeIds()) {
+    nodes.reserve(static_cast<std::size_t>(tree.numNodes()));
+    for (NodeId node : tree.aliveNodeIds()) {
         nodes.push_back(node);
     }
     return nodes;
@@ -156,13 +156,13 @@ void printStorageStats(const std::string& label, const ContourTraceComputation::
 #endif
 
 void measureCase(const std::string& label, const MorphologicalTree& tree, int repeats) {
-    const NodeId root = tree.getRoot();
+    const NodeId root = tree.root();
     const auto treeOrder = aliveNodesInTreeOrder(tree);
     const auto randomOrder = shuffledAliveNodes(tree);
 
     std::cout << "\n"
               << label << '\n'
-              << "  nodes: live=" << tree.getNumNodes() << " slots=" << tree.getNumInternalNodeSlots() << " proper_parts=" << tree.getNumTotalProperParts()
+              << "  nodes: live=" << tree.numNodes() << " slots=" << tree.numInternalNodeSlots() << " proper_parts=" << tree.numPixels()
               << '\n';
 
     auto [extractOnly, extractMs] = timed([&]() { return ContourTraceComputation::extract(tree); });
@@ -257,12 +257,12 @@ int main(int argc, char** argv) {
     try {
         if (argc == 4) {
             const int rows = std::stoi(argv[1]);
-            const int cols = std::stoi(argv[2]);
+            const int columns = std::stoi(argv[2]);
             const int repeats = std::stoi(argv[3]);
-            if (rows <= 0 || cols <= 0 || repeats <= 0) {
-                throw std::invalid_argument("rows, cols, and repeats must be positive.");
+            if (rows <= 0 || columns <= 0 || repeats <= 0) {
+                throw std::invalid_argument("rows, columns, and repeats must be positive.");
             }
-            runBenchmark(makeBenchmarkImage(rows, cols), repeats);
+            runBenchmark(makeBenchmarkImage(rows, columns), repeats);
             return 0;
         }
 
@@ -276,7 +276,7 @@ int main(int argc, char** argv) {
         }
 
         std::cerr << "usage:\n"
-                  << "  " << argv[0] << " rows cols repeats\n"
+                  << "  " << argv[0] << " rows columns repeats\n"
                   << "  " << argv[0] << " image-path repeats\n";
         return 2;
     } catch (const std::exception& ex) {

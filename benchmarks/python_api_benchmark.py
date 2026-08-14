@@ -25,28 +25,28 @@ class Scenario:
     checksum: str
 
 
-def make_input(pattern: str, rows: int, cols: int) -> np.ndarray:
-    row, col = np.indices((rows, cols), dtype=np.int64)
+def make_input(pattern: str, rows: int, columns: int) -> np.ndarray:
+    row, column = np.indices((rows, columns), dtype=np.int64)
     if pattern == "structured":
-        radial = (row - rows // 2) ** 2 + (col - cols // 2) ** 2
-        values = radial + 17 * row + 31 * col
+        radial = (row - rows // 2) ** 2 + (column - columns // 2) ** 2
+        values = radial + 17 * row + 31 * column
     elif pattern == "noise":
-        values = (row * cols + col).astype(np.uint32) + np.uint32(0x9E3779B9)
+        values = (row * columns + column).astype(np.uint32) + np.uint32(0x9E3779B9)
         values ^= values >> np.uint32(16)
         values *= np.uint32(0x7FEB352D)
         values ^= values >> np.uint32(15)
         values *= np.uint32(0x846CA68B)
         values ^= values >> np.uint32(16)
     elif pattern == "ramp":
-        values = 3 * row + 5 * col
+        values = 3 * row + 5 * column
     elif pattern == "geometric":
-        values = np.full((rows, cols), 24, dtype=np.int64)
-        radius = max(2, min(rows, cols) // 4)
-        values[(row - rows // 2) ** 2 + (col - cols // 2) ** 2 <= radius**2] = 180
-        values[rows // 8 : rows // 3, cols // 7 : cols // 2] = 92
-        values[rows // 2 : 7 * rows // 8, 5 * cols // 8 : 7 * cols // 8] = 232
+        values = np.full((rows, columns), 24, dtype=np.int64)
+        radius = max(2, min(rows, columns) // 4)
+        values[(row - rows // 2) ** 2 + (column - columns // 2) ** 2 <= radius**2] = 180
+        values[rows // 8 : rows // 3, columns // 7 : columns // 2] = 92
+        values[rows // 2 : 7 * rows // 8, 5 * columns // 8 : 7 * columns // 8] = 232
     else:
-        values = np.full((rows, cols), 127, dtype=np.int64)
+        values = np.full((rows, columns), 127, dtype=np.int64)
     return np.ascontiguousarray(values.astype(np.uint8))
 
 
@@ -64,7 +64,7 @@ def array_checksum(value: Any) -> str:
 
 
 def tree_checksum(tree: Any) -> str:
-    parent, altitude = tree.exportHigraHierarchy()
+    parent, altitude = tree.export_higra_hierarchy()
     digest = hashlib.blake2b(digest_size=8)
     append_array(digest, parent)
     append_array(digest, altitude)
@@ -75,7 +75,7 @@ def casf_checksum(casf: Any, image: Any | None = None) -> str:
     digest = hashlib.blake2b(digest_size=8)
     if image is not None:
         append_array(digest, image)
-    for hierarchy in (casf.exportMinTree(), casf.exportMaxTree()):
+    for hierarchy in (casf.export_min_tree(), casf.export_max_tree()):
         append_array(digest, hierarchy[0])
         append_array(digest, hierarchy[1])
     return digest.hexdigest()
@@ -150,12 +150,13 @@ def group_requests(profile: str) -> list[tuple[str, Any]]:
 
 
 def pipeline_area_direct(image: np.ndarray) -> tuple[Any, Any, np.ndarray, np.ndarray]:
-    tree = mmcfilters.MorphologicalTreeFactory.createMaxTree(image, radius=1.5)
-    names, attributes = mmcfilters.Attribute.computeAttributes(tree, [mmcfilters.Attribute.Group.SHAPE])
+    tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image, radius=1.5)
+    names, attributes = mmcfilters.Attribute.compute_attributes(tree, [mmcfilters.Attribute.Group.SHAPE])
     area = attributes[:, names["AREA"]]
-    criterion = (area >= image.size / 16.0).tolist()
-    criterion[tree.getRoot()] = True
-    filtered = mmcfilters.AttributeFilters(tree).filteringDirectRule(criterion)
+    preservationDecisions = (area >= image.size / 16.0).tolist()
+    preservationDecisions[tree.root] = True
+    mask = mmcfilters.NodePreservationMask(preservationDecisions)
+    filtered = mmcfilters.DirectAttributeFilter(tree).apply_direct_attribute_filter(mask)
     return tree, names, attributes, filtered
 
 
@@ -181,13 +182,13 @@ def parse_quantiles(value: str) -> tuple[float, float, float]:
 def casf_area_thresholds(image: np.ndarray, quantiles: tuple[float, float, float]) -> list[float]:
     values: list[float] = []
     trees = (
-        mmcfilters.MorphologicalTreeFactory.createMinTree(image, radius=1.5),
-        mmcfilters.MorphologicalTreeFactory.createMaxTree(image, radius=1.5),
+        mmcfilters.MorphologicalTreeFactory.create_min_tree(image, radius=1.5),
+        mmcfilters.MorphologicalTreeFactory.create_max_tree(image, radius=1.5),
     )
     for tree in trees:
-        area = mmcfilters.Attribute.computeSingleAttribute(tree, mmcfilters.Attribute.AREA, dtype=np.float64)
-        root = tree.getRoot()
-        values.extend(float(area[node]) for node in tree.getAliveNodeIds() if node != root)
+        area = mmcfilters.Attribute.compute_single_attribute(tree, mmcfilters.Attribute.AREA, dtype=np.float64)
+        root = tree.root
+        values.extend(float(area[node]) for node in tree.alive_node_ids if node != root)
     if not values:
         return [0.0, 0.0, 0.0]
     ordered = np.sort(np.asarray(values, dtype=np.float64))
@@ -202,11 +203,11 @@ def casf_area_thresholds(image: np.ndarray, quantiles: tuple[float, float, float
 
 
 def run(options: argparse.Namespace) -> list[Scenario]:
-    image = make_input(options.input, options.rows, options.cols)
-    tree = mmcfilters.MorphologicalTreeFactory.createMaxTree(image, radius=1.5)
+    image = make_input(options.input, options.rows, options.columns)
+    tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image, radius=1.5)
     scenarios = [
-        benchmark("python.construction.end_to_end.max_tree", options.repetitions, lambda: mmcfilters.MorphologicalTreeFactory.createMaxTree(image, radius=1.5), tree_checksum),
-        benchmark("python.construction.end_to_end.min_tree", options.repetitions, lambda: mmcfilters.MorphologicalTreeFactory.createMinTree(image, radius=1.5), tree_checksum),
+        benchmark("python.construction.end_to_end.max_tree", options.repetitions, lambda: mmcfilters.MorphologicalTreeFactory.create_max_tree(image, radius=1.5), tree_checksum),
+        benchmark("python.construction.end_to_end.min_tree", options.repetitions, lambda: mmcfilters.MorphologicalTreeFactory.create_min_tree(image, radius=1.5), tree_checksum),
     ]
 
     for attribute_name in ("AREA", "MAX_DIST"):
@@ -215,7 +216,7 @@ def run(options: argparse.Namespace) -> list[Scenario]:
             benchmark(
                 f"python.attributes.established_input.scalar_{attribute_name.lower()}",
                 options.repetitions,
-                lambda attribute=attribute: mmcfilters.Attribute.computeSingleAttribute(tree, attribute, dtype=np.float64),
+                lambda attribute=attribute: mmcfilters.Attribute.compute_single_attribute(tree, attribute, dtype=np.float64),
                 array_checksum,
             )
         )
@@ -224,17 +225,17 @@ def run(options: argparse.Namespace) -> list[Scenario]:
         grouped = benchmark(
             f"python.attribute_groups.established_input.{group_name}",
             options.repetitions,
-            lambda group=group: mmcfilters.Attribute.computeAttributes(tree, [group], dtype=np.float64),
+            lambda group=group: mmcfilters.Attribute.compute_attributes(tree, [group], dtype=np.float64),
             lambda result: canonical_attributes_checksum(result[0], result[1]),
         )
         scenarios.append(grouped)
         if options.profile != "smoke":
-            layout, _ = mmcfilters.Attribute.computeAttributes(tree, [group], dtype=np.float64)
+            layout, _ = mmcfilters.Attribute.compute_attributes(tree, [group], dtype=np.float64)
             names = list(layout)
 
             def sequential(names: list[str] = names) -> tuple[list[str], np.ndarray]:
                 columns = [
-                    mmcfilters.Attribute.computeSingleAttribute(tree, getattr(mmcfilters.Attribute, name), dtype=np.float64)
+                    mmcfilters.Attribute.compute_single_attribute(tree, getattr(mmcfilters.Attribute, name), dtype=np.float64)
                     for name in names
                 ]
                 return names, np.column_stack(columns)
@@ -249,12 +250,12 @@ def run(options: argparse.Namespace) -> list[Scenario]:
                 raise RuntimeError(f"grouped and sequential Python results differ for {group_name}")
             scenarios.append(scalar)
 
-    area = mmcfilters.Attribute.computeSingleAttribute(tree, mmcfilters.Attribute.AREA, dtype=np.float64)
+    area = mmcfilters.Attribute.compute_single_attribute(tree, mmcfilters.Attribute.AREA, dtype=np.float64)
     scenarios.append(
         benchmark(
             "python.filters.established_input.pruning_max_area",
             options.repetitions,
-            lambda: mmcfilters.AttributeFilters(tree).filteringByPruningMax(area, image.size / 16.0),
+            lambda: mmcfilters.AttributeFilters(tree).filtering_by_pruning_max(area, image.size / 16.0),
             array_checksum,
         )
     )
@@ -285,17 +286,17 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--profile", choices=("smoke", "core", "publication"), default="smoke")
     parser.add_argument("--input", choices=("structured", "noise", "ramp", "geometric", "flat"), default="structured")
     parser.add_argument("--rows", type=int)
-    parser.add_argument("--cols", type=int)
+    parser.add_argument("--columns", type=int)
     parser.add_argument("--repetitions", type=int)
     parser.add_argument("--casf-quantiles", type=parse_quantiles, default=(0.1, 0.5, 0.9))
     parser.add_argument("--format", choices=("key-value", "jsonl"), default="key-value")
     options = parser.parse_args()
     defaults = {"smoke": (48, 48, 2), "core": (192, 192, 5), "publication": (512, 512, 15)}[options.profile]
     options.rows = options.rows or defaults[0]
-    options.cols = options.cols or defaults[1]
+    options.columns = options.columns or defaults[1]
     options.repetitions = options.repetitions or defaults[2]
-    if min(options.rows, options.cols, options.repetitions) <= 0:
-        parser.error("rows, cols, and repetitions must be positive")
+    if min(options.rows, options.columns, options.repetitions) <= 0:
+        parser.error("rows, columns, and repetitions must be positive")
     return options
 
 
@@ -308,7 +309,7 @@ def main() -> int:
         "profile": options.profile,
         "input": options.input,
         "rows": options.rows,
-        "cols": options.cols,
+        "columns": options.columns,
         "repetitions": options.repetitions,
         "casf_quantiles": ",".join(f"{value:.6f}" for value in options.casf_quantiles),
         "scenario_count": len(scenarios),

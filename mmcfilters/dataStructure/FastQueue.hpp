@@ -14,9 +14,9 @@ namespace mmcfilters {
  */
 template <typename T> struct FastQueue {
   private:
-    /** @brief Stores the data. */
+    /** @brief Data buffer. */
     std::vector<T> data_;
-    /** @brief Stores the head. */
+    /** @brief Head. */
     size_t head_ = 0;
 
   public:
@@ -64,14 +64,14 @@ template <typename T> struct FastQueue {
     /**
      * @brief Appends an element to the tail.
      *
-     * @param value Value used by the operation.
+     * @param value Value.
      */
     void push(const T& value) { data_.push_back(value); }
 
     /**
      * @brief Appends an element to the tail by moving it into storage.
      *
-     * @param value Value used by the operation.
+     * @param value Value.
      */
     void push(T&& value) { data_.push_back(std::move(value)); }
 

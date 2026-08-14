@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "Common.hpp"
 #include "Contract.hpp"
 
 namespace mmcfilters {
@@ -28,7 +29,7 @@ struct GridOffset2D {
     /// Signed row displacement.
     int row = 0;
     /// Signed column displacement.
-    int col = 0;
+    int column = 0;
 
     /**
      * @brief Compares both displacement coordinates.
@@ -51,8 +52,8 @@ enum class RegularGridAdjacencyShape { EuclideanDisk, StructuringElement };
  * forward-only mode, which exposes only one directed half of the neighbourhood
  * and is therefore convenient when unique undirected edges are needed.
  *
- * Coordinates use `(row, col)` order. Linear grid indices use
- * `row * numCols + col`. Each traversal range owns its cursor state,
+ * Coordinates use `(row, column)` order. Linear grid indices use
+ * `row * numColumns + column`. Each traversal range owns its cursor state,
  * so ranges over the same relation are reentrant and can be nested safely.
  */
 class RegularGridAdjacency2D {
@@ -61,45 +62,45 @@ class RegularGridAdjacency2D {
     struct StructuringElementTag {};
     struct EstablishedRadiusTag {};
 
-    /** @brief Stores the num cols. */
-    int numCols;
-    /** @brief Stores the num rows. */
+    /** @brief Number of columns. */
+    int numColumns;
+    /** @brief Number of rows. */
     int numRows;
-    /** @brief Stores the radius. */
+    /** @brief Radius. */
     double radius;
-    /** @brief Stores the radius2. */
+    /** @brief Radius2. */
     double radius2;
-    /** @brief Stores the n. */
+    /** @brief N. */
     int n;
-    /** @brief Stores the shape. */
+    /** @brief Shape. */
     RegularGridAdjacencyShape shape = RegularGridAdjacencyShape::EuclideanDisk;
 
-    /** @brief Stores the offset row. */
+    /** @brief Offset row buffer. */
     std::vector<int> offsetRow;
-    /** @brief Stores the offset col. */
-    std::vector<int> offsetCol;
-    /** @brief Stores the forward offset indices. */
+    /** @brief Offset column buffer. */
+    std::vector<int> offsetColumn;
+    /** @brief Forward offset indices buffer. */
     std::vector<int> forwardOffsetIndices;
 
     /**
      * @brief Validates domain dimensions.
      *
      * @param rows Number of rows in the domain.
-     * @param cols Number of columns in the domain.
+     * @param columns Number of columns in the domain.
      */
-    static void requireDomainDimensions(int rows, int cols) {
-        MMCFILTERS_CONTRACT_REQUIRE(rows >= 0 && cols >= 0, throw std::invalid_argument("RegularGridAdjacency2D grid dimensions must be non-negative."));
+    static void requireDomainDimensions(int rows, int columns) {
+        MMCFILTERS_CONTRACT_REQUIRE(rows >= 0 && columns >= 0, throw std::invalid_argument("RegularGridAdjacency2D grid dimensions must be non-negative."));
     }
 
     /**
      * @brief Validates a radius adjacency domain and radius.
      * @param rows Number of grid rows.
-     * @param cols Number of grid columns.
+     * @param columns Number of grid columns.
      * @param radius Requested neighborhood radius.
      * @return Validated radius.
      */
-    static double checkedRadiusParameters(int rows, int cols, double radius) {
-        requireDomainDimensions(rows, cols);
+    static double checkedRadiusParameters(int rows, int columns, double radius) {
+        requireDomainDimensions(rows, columns);
         const double maxSafeRadius = (std::sqrt(static_cast<double>(std::numeric_limits<int>::max())) - 1.0) / 2.0;
         MMCFILTERS_CONTRACT_REQUIRE(
             std::isfinite(radius) && radius >= 0.0 && radius <= maxSafeRadius,
@@ -111,12 +112,12 @@ class RegularGridAdjacency2D {
      * @brief Tests whether offset holds.
      *
      * @param rowOffset Row displacement of the neighbor.
-     * @param colOffset Column displacement of the neighbor.
+     * @param columnOffset Column displacement of the neighbor.
      * @return True when offset; otherwise false.
      */
-    [[nodiscard]] bool containsOffset(int rowOffset, int colOffset) const noexcept {
+    [[nodiscard]] bool containsOffset(int rowOffset, int columnOffset) const noexcept {
         for (int index = 0; index < n; ++index) {
-            if (offsetRow[static_cast<std::size_t>(index)] == rowOffset && offsetCol[static_cast<std::size_t>(index)] == colOffset) {
+            if (offsetRow[static_cast<std::size_t>(index)] == rowOffset && offsetColumn[static_cast<std::size_t>(index)] == columnOffset) {
                 return true;
             }
         }
@@ -134,7 +135,7 @@ class RegularGridAdjacency2D {
             return false;
         }
         for (const GridOffset2D offset : expected) {
-            if (!containsOffset(offset.row, offset.col)) {
+            if (!containsOffset(offset.row, offset.column)) {
                 return false;
             }
         }
@@ -148,7 +149,7 @@ class RegularGridAdjacency2D {
         forwardOffsetIndices.clear();
         forwardOffsetIndices.reserve(static_cast<std::size_t>(n / 2));
         for (int index = 1; index < n; ++index) {
-            const int dx = offsetCol[static_cast<std::size_t>(index)];
+            const int dx = offsetColumn[static_cast<std::size_t>(index)];
             const int dy = offsetRow[static_cast<std::size_t>(index)];
             if (dy > 0 || (dy == 0 && dx > 0)) {
                 forwardOffsetIndices.push_back(index);
@@ -160,18 +161,18 @@ class RegularGridAdjacency2D {
      * @brief Constructs `RegularGridAdjacency2D` from the supplied inputs.
      *
      * @param rows Number of rows in the domain.
-     * @param cols Number of columns in the domain.
+     * @param columns Number of columns in the domain.
      * @param offsets Adjacency offsets used to construct the regular grid relation.
      */
-    RegularGridAdjacency2D(int rows, int cols, std::vector<GridOffset2D> offsets, StructuringElementTag)
-        : numCols(cols), numRows(rows), radius(0.0), radius2(0.0), n(0), shape(RegularGridAdjacencyShape::StructuringElement) {
-        requireDomainDimensions(rows, cols);
+    RegularGridAdjacency2D(int rows, int columns, std::vector<GridOffset2D> offsets, StructuringElementTag)
+        : numColumns(columns), numRows(rows), radius(0.0), radius2(0.0), n(0), shape(RegularGridAdjacencyShape::StructuringElement) {
+        requireDomainDimensions(rows, columns);
         if (offsets.empty()) {
             throw std::invalid_argument("A structuring-element adjacency requires at least the origin offset.");
         }
 
         for (const GridOffset2D offset : offsets) {
-            if (offset.row == std::numeric_limits<int>::min() || offset.col == std::numeric_limits<int>::min()) {
+            if (offset.row == std::numeric_limits<int>::min() || offset.column == std::numeric_limits<int>::min()) {
                 throw std::invalid_argument("Structuring-element offsets must be safely negatable.");
             }
         }
@@ -180,7 +181,7 @@ class RegularGridAdjacency2D {
             if (lhs.row != rhs.row) {
                 return lhs.row < rhs.row;
             }
-            return lhs.col < rhs.col;
+            return lhs.column < rhs.column;
         });
         const auto duplicate = std::adjacent_find(offsets.begin(), offsets.end());
         if (duplicate != offsets.end()) {
@@ -192,12 +193,12 @@ class RegularGridAdjacency2D {
             throw std::invalid_argument("A structuring-element adjacency must contain the origin offset.");
         }
         for (const GridOffset2D offset : offsets) {
-            if (!std::binary_search(offsets.begin(), offsets.end(), GridOffset2D{-offset.row, -offset.col},
+            if (!std::binary_search(offsets.begin(), offsets.end(), GridOffset2D{-offset.row, -offset.column},
                                     [](const GridOffset2D& lhs, const GridOffset2D& rhs) {
                                         if (lhs.row != rhs.row) {
                                             return lhs.row < rhs.row;
                                         }
-                                        return lhs.col < rhs.col;
+                                        return lhs.column < rhs.column;
                                     })) {
                 throw std::invalid_argument("An adjacency-inducing structuring element must be centrally symmetric.");
             }
@@ -209,7 +210,7 @@ class RegularGridAdjacency2D {
         offsets.erase(origin);
         std::sort(offsets.begin(), offsets.end(), [](const GridOffset2D& lhs, const GridOffset2D& rhs) {
             auto angle = [](GridOffset2D offset) {
-                double value = std::atan2(-static_cast<double>(offset.row), -static_cast<double>(offset.col));
+                double value = std::atan2(-static_cast<double>(offset.row), -static_cast<double>(offset.column));
                 if (value < 0.0) {
                     value += 2.0 * std::numbers::pi;
                 }
@@ -220,8 +221,8 @@ class RegularGridAdjacency2D {
             if (lhsAngle != rhsAngle) {
                 return lhsAngle < rhsAngle;
             }
-            const std::int64_t lhsRadius = static_cast<std::int64_t>(lhs.row) * lhs.row + static_cast<std::int64_t>(lhs.col) * lhs.col;
-            const std::int64_t rhsRadius = static_cast<std::int64_t>(rhs.row) * rhs.row + static_cast<std::int64_t>(rhs.col) * rhs.col;
+            const std::int64_t lhsRadius = static_cast<std::int64_t>(lhs.row) * lhs.row + static_cast<std::int64_t>(lhs.column) * lhs.column;
+            const std::int64_t rhsRadius = static_cast<std::int64_t>(rhs.row) * rhs.row + static_cast<std::int64_t>(rhs.column) * rhs.column;
             return lhsRadius < rhsRadius;
         });
         ordered.insert(ordered.end(), offsets.begin(), offsets.end());
@@ -231,11 +232,11 @@ class RegularGridAdjacency2D {
         }
         n = static_cast<int>(ordered.size());
         offsetRow.reserve(ordered.size());
-        offsetCol.reserve(ordered.size());
+        offsetColumn.reserve(ordered.size());
         for (const GridOffset2D offset : ordered) {
             offsetRow.push_back(offset.row);
-            offsetCol.push_back(offset.col);
-            const double squaredDistance = static_cast<double>(offset.row) * offset.row + static_cast<double>(offset.col) * offset.col;
+            offsetColumn.push_back(offset.column);
+            const double squaredDistance = static_cast<double>(offset.row) * offset.row + static_cast<double>(offset.column) * offset.column;
             radius2 = std::max(radius2, squaredDistance);
         }
         radius = std::sqrt(radius2);
@@ -246,45 +247,45 @@ class RegularGridAdjacency2D {
      * @brief Validates coordinates.
      *
      * @param row Zero-based row coordinate.
-     * @param col Zero-based column coordinate.
+     * @param column Zero-based column coordinate.
      */
-    void requireCoordinates(int row, int col) const {
-        MMCFILTERS_CONTRACT_REQUIRE(row >= 0 && row < numRows && col >= 0 && col < numCols, throw std::out_of_range("Index out of bounds."));
+    void requireCoordinates(int row, int column) const {
+        MMCFILTERS_CONTRACT_REQUIRE(row >= 0 && row < numRows && column >= 0 && column < numColumns, throw std::out_of_range("Index out of bounds."));
     }
 
     /**
      * @brief Validates linear index.
      *
-     * @param index Zero-based index used by the operation.
+     * @param index Zero-based index.
      */
-    void requireLinearIndex(int index) const {
-        const std::int64_t domainSize = static_cast<std::int64_t>(numRows) * static_cast<std::int64_t>(numCols);
+    void requireLinearIndex(PixelId index) const {
+        const std::int64_t domainSize = static_cast<std::int64_t>(numRows) * static_cast<std::int64_t>(numColumns);
         MMCFILTERS_CONTRACT_REQUIRE(index >= 0 && static_cast<std::int64_t>(index) < domainSize, throw std::out_of_range("Index out of bounds."));
     }
 
   public:
     /**
-     * @brief Builds an adjacency relation for a `numRows` by `numCols` grid.
+     * @brief Builds an adjacency relation for a `numRows` by `numColumns` grid.
      *
      * @param numRows Number of grid rows.
-     * @param numCols Number of grid columns.
+     * @param numColumns Number of grid columns.
      * @param radius Radius of the neighbourhood stencil. `1.0` gives 4-connectivity
      * and `1.5` gives 8-connectivity on the integer grid.
      */
-    RegularGridAdjacency2D(int numRows, int numCols, double radius)
-        : RegularGridAdjacency2D(numRows, numCols, checkedRadiusParameters(numRows, numCols, radius), EstablishedRadiusTag{}) {}
+    RegularGridAdjacency2D(int numRows, int numColumns, double radius)
+        : RegularGridAdjacency2D(numRows, numColumns, checkedRadiusParameters(numRows, numColumns, radius), EstablishedRadiusTag{}) {}
 
   private:
     /**
      * @brief Builds a radius stencil after its parameters were established.
      * @param numRows Established grid row count.
-     * @param numCols Established grid column count.
+     * @param numColumns Established grid column count.
      * @param radius Established finite radius.
      * @param tag Proof tag selecting the validation-free constructor.
      */
-    RegularGridAdjacency2D(int numRows, int numCols, double radius, [[maybe_unused]] EstablishedRadiusTag tag) {
+    RegularGridAdjacency2D(int numRows, int numColumns, double radius, [[maybe_unused]] EstablishedRadiusTag tag) {
         this->numRows = numRows;
-        this->numCols = numCols;
+        this->numColumns = numColumns;
         this->radius = radius;
         this->radius2 = radius * radius;
 
@@ -298,13 +299,13 @@ class RegularGridAdjacency2D {
                     this->n++;
 
         i = 0;
-        this->offsetCol.resize(this->n);
+        this->offsetColumn.resize(this->n);
         this->offsetRow.resize(this->n);
 
         for (dy = -r0; dy <= r0; dy++) {
             for (dx = -r0; dx <= r0; dx++) {
                 if (((dx * dx) + (dy * dy)) <= r2) {
-                    this->offsetCol[i] = dx;
+                    this->offsetColumn[i] = dx;
                     this->offsetRow[i] = dy;
                     if ((dx == 0) && (dy == 0))
                         i0 = i;
@@ -319,7 +320,7 @@ class RegularGridAdjacency2D {
 
         /* Set clockwise */
         for (i = 0; i < n; i++) {
-            dx = this->offsetCol[i];
+            dx = this->offsetColumn[i];
             dy = this->offsetRow[i];
             dr[i] = std::sqrt((dx * dx) + (dy * dy));
             if (i != i0) {
@@ -341,12 +342,12 @@ class RegularGridAdjacency2D {
         dr[0] = aux;
 
         int auxX, auxY;
-        auxX = this->offsetCol[i0];
+        auxX = this->offsetColumn[i0];
         auxY = this->offsetRow[i0];
-        this->offsetCol[i0] = this->offsetCol[0];
+        this->offsetColumn[i0] = this->offsetColumn[0];
         this->offsetRow[i0] = this->offsetRow[0];
 
-        this->offsetCol[0] = auxX;
+        this->offsetColumn[0] = auxX;
         this->offsetRow[0] = auxY;
 
         /* sort by angle */
@@ -363,12 +364,12 @@ class RegularGridAdjacency2D {
             dr[i] = dr[k];
             dr[k] = aux;
 
-            auxX = this->offsetCol[i];
+            auxX = this->offsetColumn[i];
             auxY = this->offsetRow[i];
-            this->offsetCol[i] = this->offsetCol[k];
+            this->offsetColumn[i] = this->offsetColumn[k];
             this->offsetRow[i] = this->offsetRow[k];
 
-            this->offsetCol[k] = auxX;
+            this->offsetColumn[k] = auxX;
             this->offsetRow[k] = auxY;
         }
 
@@ -383,12 +384,12 @@ class RegularGridAdjacency2D {
             dr[i] = dr[k];
             dr[k] = aux;
 
-            auxX = this->offsetCol[i];
+            auxX = this->offsetColumn[i];
             auxY = this->offsetRow[i];
-            this->offsetCol[i] = this->offsetCol[k];
+            this->offsetColumn[i] = this->offsetColumn[k];
             this->offsetRow[i] = this->offsetRow[k];
 
-            this->offsetCol[k] = auxX;
+            this->offsetColumn[k] = auxX;
             this->offsetRow[k] = auxY;
         }
 
@@ -407,29 +408,29 @@ class RegularGridAdjacency2D {
      * `getForwardNeighborIndices()`.
      *
      * @param numRows Number of rows in the domain.
-     * @param numCols Number of columns in the domain.
+     * @param numColumns Number of columns in the domain.
      * @param offsets Symmetric structuring-element offsets.
      * @return The resulting adjacency induced by a symmetric structuring element.
      */
-    [[nodiscard]] static RegularGridAdjacency2D fromStructuringElement(int numRows, int numCols, std::span<const GridOffset2D> offsets) {
-        return RegularGridAdjacency2D(numRows, numCols, std::vector<GridOffset2D>(offsets.begin(), offsets.end()), StructuringElementTag{});
+    [[nodiscard]] static RegularGridAdjacency2D fromStructuringElement(int numRows, int numColumns, std::span<const GridOffset2D> offsets) {
+        return RegularGridAdjacency2D(numRows, numColumns, std::vector<GridOffset2D>(offsets.begin(), offsets.end()), StructuringElementTag{});
     }
 
     /**
      * @brief Builds a centered rectangular structuring-element adjacency.
      *
      * @param numRows Number of rows in the domain.
-     * @param numCols Number of columns in the domain.
+     * @param numColumns Number of columns in the domain.
      * @param rowRadius Vertical radius of the rectangular stencil.
-     * @param colRadius Horizontal radius of the rectangular stencil.
+     * @param columnRadius Horizontal radius of the rectangular stencil.
      * @return The resulting centered rectangular structuring-element adjacency.
      */
-    [[nodiscard]] static RegularGridAdjacency2D rectangular(int numRows, int numCols, int rowRadius, int colRadius) {
-        if (rowRadius < 0 || colRadius < 0) {
+    [[nodiscard]] static RegularGridAdjacency2D rectangular(int numRows, int numColumns, int rowRadius, int columnRadius) {
+        if (rowRadius < 0 || columnRadius < 0) {
             throw std::invalid_argument("Rectangular adjacency radii must be non-negative.");
         }
         const std::int64_t height = 2 * static_cast<std::int64_t>(rowRadius) + 1;
-        const std::int64_t width = 2 * static_cast<std::int64_t>(colRadius) + 1;
+        const std::int64_t width = 2 * static_cast<std::int64_t>(columnRadius) + 1;
         const std::int64_t count = height * width;
         if (count > static_cast<std::int64_t>(std::numeric_limits<int>::max())) {
             throw std::length_error("Rectangular adjacency exceeds the supported offset count.");
@@ -438,11 +439,11 @@ class RegularGridAdjacency2D {
         std::vector<GridOffset2D> offsets;
         offsets.reserve(static_cast<std::size_t>(count));
         for (int rowOffset = -rowRadius; rowOffset <= rowRadius; ++rowOffset) {
-            for (int colOffset = -colRadius; colOffset <= colRadius; ++colOffset) {
-                offsets.push_back({rowOffset, colOffset});
+            for (int columnOffset = -columnRadius; columnOffset <= columnRadius; ++columnOffset) {
+                offsets.push_back({rowOffset, columnOffset});
             }
         }
-        return fromStructuringElement(numRows, numCols, offsets);
+        return fromStructuringElement(numRows, numColumns, offsets);
     }
 
     /**
@@ -452,24 +453,24 @@ class RegularGridAdjacency2D {
      * centrally symmetric digital segment suitable as an undirected adjacency.
      *
      * @param numRows Number of rows in the domain.
-     * @param numCols Number of columns in the domain.
+     * @param numColumns Number of columns in the domain.
      * @param rowExtent Vertical extent of the digital line.
-     * @param colExtent Horizontal extent of the digital line.
+     * @param columnExtent Horizontal extent of the digital line.
      * @return The resulting centered digital line from (-dr,-dc) to (dr,dc).
      */
-    [[nodiscard]] static RegularGridAdjacency2D line(int numRows, int numCols, int rowExtent, int colExtent) {
-        if (rowExtent == std::numeric_limits<int>::min() || colExtent == std::numeric_limits<int>::min()) {
+    [[nodiscard]] static RegularGridAdjacency2D line(int numRows, int numColumns, int rowExtent, int columnExtent) {
+        if (rowExtent == std::numeric_limits<int>::min() || columnExtent == std::numeric_limits<int>::min()) {
             throw std::invalid_argument("Line adjacency extents must be safely negatable.");
         }
         const std::int64_t absoluteRow = std::abs(static_cast<std::int64_t>(rowExtent));
-        const std::int64_t absoluteCol = std::abs(static_cast<std::int64_t>(colExtent));
-        const std::int64_t steps = std::max(absoluteRow, absoluteCol);
+        const std::int64_t absoluteColumn = std::abs(static_cast<std::int64_t>(columnExtent));
+        const std::int64_t steps = std::max(absoluteRow, absoluteColumn);
         if (2 * steps + 1 > static_cast<std::int64_t>(std::numeric_limits<int>::max())) {
             throw std::length_error("Line adjacency exceeds the supported offset count.");
         }
         if (steps == 0) {
             const GridOffset2D origin{0, 0};
-            return fromStructuringElement(numRows, numCols, std::span<const GridOffset2D>(&origin, 1));
+            return fromStructuringElement(numRows, numColumns, std::span<const GridOffset2D>(&origin, 1));
         }
 
         auto roundedRatio = [](std::int64_t numerator, std::int64_t denominator) {
@@ -482,39 +483,39 @@ class RegularGridAdjacency2D {
         std::vector<GridOffset2D> offsets;
         offsets.reserve(static_cast<std::size_t>(2 * steps + 1));
         for (std::int64_t sample = -steps; sample <= steps; ++sample) {
-            offsets.push_back({static_cast<int>(roundedRatio(sample * rowExtent, steps)), static_cast<int>(roundedRatio(sample * colExtent, steps))});
+            offsets.push_back({static_cast<int>(roundedRatio(sample * rowExtent, steps)), static_cast<int>(roundedRatio(sample * columnExtent, steps))});
         }
-        return fromStructuringElement(numRows, numCols, offsets);
+        return fromStructuringElement(numRows, numColumns, offsets);
     }
 
     /**
      * @brief Builds a centered horizontal-line adjacency.
      *
      * @param numRows Number of rows in the domain.
-     * @param numCols Number of columns in the domain.
+     * @param numColumns Number of columns in the domain.
      * @param halfLength Half-length of the centred line.
      * @return The resulting centered horizontal-line adjacency.
      */
-    [[nodiscard]] static RegularGridAdjacency2D horizontalLine(int numRows, int numCols, int halfLength) {
+    [[nodiscard]] static RegularGridAdjacency2D horizontalLine(int numRows, int numColumns, int halfLength) {
         if (halfLength < 0) {
             throw std::invalid_argument("Horizontal-line half-length must be non-negative.");
         }
-        return line(numRows, numCols, 0, halfLength);
+        return line(numRows, numColumns, 0, halfLength);
     }
 
     /**
      * @brief Builds a centered vertical-line adjacency.
      *
      * @param numRows Number of rows in the domain.
-     * @param numCols Number of columns in the domain.
+     * @param numColumns Number of columns in the domain.
      * @param halfLength Half-length of the centred line.
      * @return The resulting centered vertical-line adjacency.
      */
-    [[nodiscard]] static RegularGridAdjacency2D verticalLine(int numRows, int numCols, int halfLength) {
+    [[nodiscard]] static RegularGridAdjacency2D verticalLine(int numRows, int numColumns, int halfLength) {
         if (halfLength < 0) {
             throw std::invalid_argument("Vertical-line half-length must be non-negative.");
         }
-        return line(numRows, numCols, halfLength, 0);
+        return line(numRows, numColumns, halfLength, 0);
     }
 
     /**
@@ -538,7 +539,7 @@ class RegularGridAdjacency2D {
      *
      * @return The number of columns in the attached grid domain.
      */
-    int getNumCols() const noexcept { return numCols; }
+    int getNumColumns() const noexcept { return numColumns; }
 
     /**
      * @brief Returns how the immutable stencil was constructed.
@@ -553,16 +554,16 @@ class RegularGridAdjacency2D {
      * A grid index is adjacent to itself because every supported stencil
      * includes the origin.
      *
-     * @param p Point used by the operation.
-     * @param q Second point used by the operation.
+     * @param p Point.
+     * @param q Second point.
      * @return True when the documented condition holds; otherwise false.
      */
-    inline bool isAdjacent(int p, int q) const noexcept {
-        if (numCols <= 0) {
+    inline bool isAdjacent(PixelId p, PixelId q) const noexcept {
+        if (numColumns <= 0) {
             return false;
         }
-        int py = p / numCols, px = p % numCols;
-        int qy = q / numCols, qx = q % numCols;
+        int py = p / numColumns, px = p % numColumns;
+        int qy = q / numColumns, qx = q % numColumns;
 
         return isAdjacent(px, py, qx, qy);
     }
@@ -638,33 +639,33 @@ class RegularGridAdjacency2D {
      * @brief Returns whether a linear grid index lies on the grid boundary.
      *
      * The index is interpreted in row-major order. No explicit bounds check is
-     * performed before converting the index to `(row, col)`.
+     * performed before converting the index to `(row, column)`.
      *
-     * @param index Zero-based index used by the operation.
+     * @param index Zero-based index.
      * @return Whether a linear grid index lies on the grid boundary.
      */
-    bool isGridBoundary(int index) const {
+    bool isGridBoundary(PixelId index) const {
         requireLinearIndex(index);
-        return isGridBoundary(index / numCols, index % numCols);
+        return isGridBoundary(index / numColumns, index % numColumns);
     }
 
     /**
-     * @brief Returns whether `(row, col)` lies on the grid boundary.
+     * @brief Returns whether `(row, column)` lies on the grid boundary.
      *
      * The method assumes coordinates are inside the grid domain.
      *
      * @param row Zero-based row coordinate.
-     * @param col Zero-based column coordinate.
-     * @return Whether (row, col) lies on the grid boundary.
+     * @param column Zero-based column coordinate.
+     * @return Whether (row, column) lies on the grid boundary.
      */
-    bool isGridBoundary(int row, int col) const noexcept { return row == 0 || col == 0 || row == this->numRows - 1 || col == this->numCols - 1; }
+    bool isGridBoundary(int row, int column) const noexcept { return row == 0 || column == 0 || row == this->numRows - 1 || column == this->numColumns - 1; }
 
     /**
      * @brief Returns the row offset stored at stencil position `index`.
      *
      * The method does not perform bounds checking.
      *
-     * @param index Zero-based index used by the operation.
+     * @param index Zero-based index.
      * @return The row offset stored at stencil position index.
      */
     int getOffsetRow(int index) const noexcept { return offsetRow[index]; }
@@ -674,10 +675,10 @@ class RegularGridAdjacency2D {
      *
      * The method does not perform bounds checking.
      *
-     * @param index Zero-based index used by the operation.
+     * @param index Zero-based index.
      * @return The column offset stored at stencil position index.
      */
-    int getOffsetCol(int index) const noexcept { return offsetCol[index]; }
+    int getOffsetColumn(int index) const noexcept { return offsetColumn[index]; }
 
     /**
      * @brief Allocation-free iterator over one independent grid traversal.
@@ -688,13 +689,13 @@ class RegularGridAdjacency2D {
      */
     template <bool ForwardOnly> class IteratorAdjacencyT {
       private:
-        /** @brief Stores the relation. */
+        /** @brief Relation. */
         const RegularGridAdjacency2D* relation_ = nullptr;
-        /** @brief Stores the row. */
+        /** @brief Row. */
         int row_ = 0;
-        /** @brief Stores the col. */
-        int col_ = 0;
-        /** @brief Stores the index. */
+        /** @brief Column. */
+        int column_ = 0;
+        /** @brief Index. */
         int index_ = 0;
 
         /**
@@ -729,8 +730,8 @@ class RegularGridAdjacency2D {
             while (index_ < size) {
                 const int offsetIndex = stencilIndex();
                 const std::int64_t neighborRow = static_cast<std::int64_t>(row_) + relation_->offsetRow[static_cast<std::size_t>(offsetIndex)];
-                const std::int64_t neighborCol = static_cast<std::int64_t>(col_) + relation_->offsetCol[static_cast<std::size_t>(offsetIndex)];
-                if (neighborRow >= 0 && neighborRow < relation_->numRows && neighborCol >= 0 && neighborCol < relation_->numCols) {
+                const std::int64_t neighborColumn = static_cast<std::int64_t>(column_) + relation_->offsetColumn[static_cast<std::size_t>(offsetIndex)];
+                if (neighborRow >= 0 && neighborRow < relation_->numRows && neighborColumn >= 0 && neighborColumn < relation_->numColumns) {
                     return;
                 }
                 ++index_;
@@ -744,11 +745,11 @@ class RegularGridAdjacency2D {
         using iterator_concept = std::forward_iterator_tag;
 
         /// Linear grid index yielded by the iterator.
-        using value_type = int;
+        using value_type = PixelId;
         /// Signed distance type used by iterator algorithms.
         using difference_type = std::ptrdiff_t;
         /// Value-returning reference type.
-        using reference = int;
+        using reference = PixelId;
         /// No pointer type is exposed because dereference returns a value.
         using pointer = void;
 
@@ -762,18 +763,18 @@ class RegularGridAdjacency2D {
          *
          * @param relation Adjacency relation traversed by the iterator.
          * @param row Zero-based row coordinate.
-         * @param col Zero-based column coordinate.
-         * @param index Zero-based index used by the operation.
+         * @param column Zero-based column coordinate.
+         * @param index Zero-based index.
          */
-        IteratorAdjacencyT(const RegularGridAdjacency2D* relation, int row, int col, int index) noexcept
-            : relation_(relation), row_(row), col_(col), index_(index) {
+        IteratorAdjacencyT(const RegularGridAdjacency2D* relation, int row, int column, int index) noexcept
+            : relation_(relation), row_(row), column_(column), index_(index) {
             seekValid();
         }
 
         /**
          * @brief Advances this iterator without modifying the relation or other ranges.
          *
-         * @return Reference to the resulting object.
+         * @return Mutable reference to the updated object.
          */
         IteratorAdjacencyT& operator++() noexcept {
             ++index_;
@@ -799,7 +800,7 @@ class RegularGridAdjacency2D {
          * @return True when both iterators identify the same traversal position.
          */
         bool operator==(const IteratorAdjacencyT& other) const noexcept {
-            return relation_ == other.relation_ && row_ == other.row_ && col_ == other.col_ && index_ == other.index_;
+            return relation_ == other.relation_ && row_ == other.row_ && column_ == other.column_ && index_ == other.index_;
         }
 
         /**
@@ -815,11 +816,11 @@ class RegularGridAdjacency2D {
          *
          * @return The current neighbour as a linear grid index.
          */
-        int operator*() const noexcept {
+        PixelId operator*() const noexcept {
             const int offsetIndex = stencilIndex();
             const std::int64_t neighborRow = static_cast<std::int64_t>(row_) + relation_->offsetRow[static_cast<std::size_t>(offsetIndex)];
-            const std::int64_t neighborCol = static_cast<std::int64_t>(col_) + relation_->offsetCol[static_cast<std::size_t>(offsetIndex)];
-            return static_cast<int>(neighborRow * relation_->numCols + neighborCol);
+            const std::int64_t neighborColumn = static_cast<std::int64_t>(column_) + relation_->offsetColumn[static_cast<std::size_t>(offsetIndex)];
+            return static_cast<PixelId>(neighborRow * relation_->numColumns + neighborColumn);
         }
     };
 
@@ -833,12 +834,12 @@ class RegularGridAdjacency2D {
      */
     template <bool ForwardOnly, int FirstOffset> class GridIndexRangeT {
       private:
-        /** @brief Stores the relation. */
+        /** @brief Relation. */
         const RegularGridAdjacency2D* relation_;
-        /** @brief Stores the row. */
+        /** @brief Row. */
         int row_;
-        /** @brief Stores the col. */
-        int col_;
+        /** @brief Column. */
+        int column_;
 
       public:
         /**
@@ -846,9 +847,9 @@ class RegularGridAdjacency2D {
          *
          * @param relation Adjacency relation traversed by the iterator.
          * @param row Zero-based row coordinate.
-         * @param col Zero-based column coordinate.
+         * @param column Zero-based column coordinate.
          */
-        GridIndexRangeT(const RegularGridAdjacency2D& relation, int row, int col) noexcept : relation_(&relation), row_(row), col_(col) {}
+        GridIndexRangeT(const RegularGridAdjacency2D& relation, int row, int column) noexcept : relation_(&relation), row_(row), column_(column) {}
 
         /// Iterator type returned by this range.
         using iterator = IteratorAdjacencyT<ForwardOnly>;
@@ -858,7 +859,7 @@ class RegularGridAdjacency2D {
          *
          * @return An iterator positioned at the first valid neighbour.
          */
-        [[nodiscard]] iterator begin() const noexcept { return iterator(relation_, row_, col_, FirstOffset); }
+        [[nodiscard]] iterator begin() const noexcept { return iterator(relation_, row_, column_, FirstOffset); }
 
         /**
          * @brief Returns the traversal sentinel iterator.
@@ -872,7 +873,7 @@ class RegularGridAdjacency2D {
                 }
                 return relation_->n;
             }();
-            return iterator(relation_, row_, col_, endIndex);
+            return iterator(relation_, row_, column_, endIndex);
         }
     };
 
@@ -887,12 +888,12 @@ class RegularGridAdjacency2D {
      * @brief Returns adjacent grid indices including the origin.
      *
      * @param row Zero-based row coordinate.
-     * @param col Zero-based column coordinate.
+     * @param column Zero-based column coordinate.
      * @return Adjacent grid indices including the origin.
      */
-    [[nodiscard]] AdjacentIndexRange getAdjacentIndices(int row, int col) const {
-        requireCoordinates(row, col);
-        return AdjacentIndexRange(*this, row, col);
+    [[nodiscard]] AdjacentIndexRange getAdjacentIndices(int row, int column) const {
+        requireCoordinates(row, column);
+        return AdjacentIndexRange(*this, row, column);
     }
 
     /**
@@ -900,24 +901,24 @@ class RegularGridAdjacency2D {
      *
      * This overload accepts a validated row-major linear index.
      *
-     * @param gridIndex Index represented by `gridIndex`.
+     * @param gridIndex Index.
      * @return Adjacent grid indices including the origin.
      */
-    [[nodiscard]] AdjacentIndexRange getAdjacentIndices(int gridIndex) const {
+    [[nodiscard]] AdjacentIndexRange getAdjacentIndices(PixelId gridIndex) const {
         requireLinearIndex(gridIndex);
-        return getAdjacentIndices(gridIndex / numCols, gridIndex % numCols);
+        return getAdjacentIndices(gridIndex / numColumns, gridIndex % numColumns);
     }
 
     /**
      * @brief Returns valid neighbouring grid indices excluding the origin.
      *
      * @param row Zero-based row coordinate.
-     * @param col Zero-based column coordinate.
+     * @param column Zero-based column coordinate.
      * @return Valid neighbouring grid indices excluding the origin.
      */
-    [[nodiscard]] NeighborIndexRange getNeighborIndices(int row, int col) const {
-        requireCoordinates(row, col);
-        return NeighborIndexRange(*this, row, col);
+    [[nodiscard]] NeighborIndexRange getNeighborIndices(int row, int column) const {
+        requireCoordinates(row, column);
+        return NeighborIndexRange(*this, row, column);
     }
 
     /**
@@ -925,24 +926,24 @@ class RegularGridAdjacency2D {
      *
      * This overload accepts a validated row-major linear index.
      *
-     * @param gridIndex Index represented by `gridIndex`.
+     * @param gridIndex Index.
      * @return Neighbouring grid indices excluding the origin.
      */
-    [[nodiscard]] NeighborIndexRange getNeighborIndices(int gridIndex) const {
+    [[nodiscard]] NeighborIndexRange getNeighborIndices(PixelId gridIndex) const {
         requireLinearIndex(gridIndex);
-        return getNeighborIndices(gridIndex / numCols, gridIndex % numCols);
+        return getNeighborIndices(gridIndex / numColumns, gridIndex % numColumns);
     }
 
     /**
      * @brief Returns the directed positive half of the neighbourhood.
      *
      * @param row Zero-based row coordinate.
-     * @param col Zero-based column coordinate.
+     * @param column Zero-based column coordinate.
      * @return The directed positive half of the neighbourhood.
      */
-    [[nodiscard]] ForwardNeighborIndexRange getForwardNeighborIndices(int row, int col) const {
-        requireCoordinates(row, col);
-        return ForwardNeighborIndexRange(*this, row, col);
+    [[nodiscard]] ForwardNeighborIndexRange getForwardNeighborIndices(int row, int column) const {
+        requireCoordinates(row, column);
+        return ForwardNeighborIndexRange(*this, row, column);
     }
 
     /**
@@ -950,12 +951,12 @@ class RegularGridAdjacency2D {
      *
      * This overload accepts a validated row-major linear index.
      *
-     * @param gridIndex Index represented by `gridIndex`.
+     * @param gridIndex Index.
      * @return The directed positive half of the neighbourhood.
      */
-    [[nodiscard]] ForwardNeighborIndexRange getForwardNeighborIndices(int gridIndex) const {
+    [[nodiscard]] ForwardNeighborIndexRange getForwardNeighborIndices(PixelId gridIndex) const {
         requireLinearIndex(gridIndex);
-        return getForwardNeighborIndices(gridIndex / numCols, gridIndex % numCols);
+        return getForwardNeighborIndices(gridIndex / numColumns, gridIndex % numColumns);
     }
 };
 

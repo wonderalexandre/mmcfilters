@@ -50,17 +50,17 @@ struct TreeTopologyRequest {
      * @return Tree-topology selection mask.
      */
     [[nodiscard]] static TreeTopologyRequest from(std::span<const Attribute> requestedAttributes) {
-        return {.height = requestsAttribute(requestedAttributes, HEIGHT_NODE),
-                .depth = requestsAttribute(requestedAttributes, DEPTH_NODE),
-                .isLeaf = requestsAttribute(requestedAttributes, IS_LEAF_NODE),
-                .isRoot = requestsAttribute(requestedAttributes, IS_ROOT_NODE),
-                .numChildren = requestsAttribute(requestedAttributes, NUM_CHILDREN_NODE),
-                .numSiblings = requestsAttribute(requestedAttributes, NUM_SIBLINGS_NODE),
-                .numDescendants = requestsAttribute(requestedAttributes, NUM_DESCENDANTS_NODE),
-                .numLeafDescendants = requestsAttribute(requestedAttributes, NUM_LEAF_DESCENDANTS_NODE),
-                .leafRatio = requestsAttribute(requestedAttributes, LEAF_RATIO_NODE),
-                .balance = requestsAttribute(requestedAttributes, BALANCE_NODE),
-                .avgChildHeight = requestsAttribute(requestedAttributes, AVG_CHILD_HEIGHT_NODE)};
+        return {.height = requestsAttribute(requestedAttributes, SubtreeHeight),
+                .depth = requestsAttribute(requestedAttributes, DepthNode),
+                .isLeaf = requestsAttribute(requestedAttributes, IsLeafNode),
+                .isRoot = requestsAttribute(requestedAttributes, IsRootNode),
+                .numChildren = requestsAttribute(requestedAttributes, NumChildrenNode),
+                .numSiblings = requestsAttribute(requestedAttributes, NumSiblingsNode),
+                .numDescendants = requestsAttribute(requestedAttributes, NumDescendantsNode),
+                .numLeafDescendants = requestsAttribute(requestedAttributes, NumLeafDescendantsNode),
+                .leafRatio = requestsAttribute(requestedAttributes, LeafRatioNode),
+                .balance = requestsAttribute(requestedAttributes, BalanceNode),
+                .avgChildHeight = requestsAttribute(requestedAttributes, AvgChildHeightNode)};
     }
 };
 
@@ -79,20 +79,20 @@ inline void computeTreeTopology(const AttributeComputeContext<Real>& context, co
 
     const int stride = context.attrNames.NUM_ATTRIBUTES;
     const auto offsetOf = [&](Attribute attribute) { return context.attrNames.indexMap.find(attribute)->second; };
-    const int heightOffset = request.height ? offsetOf(HEIGHT_NODE) : 0;
-    const int depthOffset = request.depth ? offsetOf(DEPTH_NODE) : 0;
-    const int isLeafOffset = request.isLeaf ? offsetOf(IS_LEAF_NODE) : 0;
-    const int isRootOffset = request.isRoot ? offsetOf(IS_ROOT_NODE) : 0;
-    const int numChildrenOffset = request.numChildren ? offsetOf(NUM_CHILDREN_NODE) : 0;
-    const int numSiblingsOffset = request.numSiblings ? offsetOf(NUM_SIBLINGS_NODE) : 0;
-    const int numDescendantsOffset = request.numDescendants ? offsetOf(NUM_DESCENDANTS_NODE) : 0;
-    const int numLeafDescendantsOffset = request.numLeafDescendants ? offsetOf(NUM_LEAF_DESCENDANTS_NODE) : 0;
-    const int leafRatioOffset = request.leafRatio ? offsetOf(LEAF_RATIO_NODE) : 0;
-    const int balanceOffset = request.balance ? offsetOf(BALANCE_NODE) : 0;
-    const int avgChildHeightOffset = request.avgChildHeight ? offsetOf(AVG_CHILD_HEIGHT_NODE) : 0;
+    const int heightOffset = request.height ? offsetOf(SubtreeHeight) : 0;
+    const int depthOffset = request.depth ? offsetOf(DepthNode) : 0;
+    const int isLeafOffset = request.isLeaf ? offsetOf(IsLeafNode) : 0;
+    const int isRootOffset = request.isRoot ? offsetOf(IsRootNode) : 0;
+    const int numChildrenOffset = request.numChildren ? offsetOf(NumChildrenNode) : 0;
+    const int numSiblingsOffset = request.numSiblings ? offsetOf(NumSiblingsNode) : 0;
+    const int numDescendantsOffset = request.numDescendants ? offsetOf(NumDescendantsNode) : 0;
+    const int numLeafDescendantsOffset = request.numLeafDescendants ? offsetOf(NumLeafDescendantsNode) : 0;
+    const int leafRatioOffset = request.leafRatio ? offsetOf(LeafRatioNode) : 0;
+    const int balanceOffset = request.balance ? offsetOf(BalanceNode) : 0;
+    const int avgChildHeightOffset = request.avgChildHeight ? offsetOf(AvgChildHeightNode) : 0;
     const auto outputIndex = [&](NodeId node, int offset) { return static_cast<std::size_t>(node * stride + offset); };
 
-    const int numNodeSlots = context.tree.getNumInternalNodeSlots();
+    const int numNodeSlots = context.tree.numInternalNodeSlots();
     std::vector<Real> heightStorage(request.needsHeight() && !request.height ? static_cast<std::size_t>(numNodeSlots) : 0, Real{0});
     std::vector<Real> numDescendantStorage(request.needsDescendantCounts() && !request.numDescendants ? static_cast<std::size_t>(numNodeSlots) : 0,
                                            Real{0});
@@ -112,7 +112,7 @@ inline void computeTreeTopology(const AttributeComputeContext<Real>& context, co
                                           : numLeafDescendantStorage[static_cast<std::size_t>(node)];
     };
 
-    const NodeId root = context.tree.getRoot();
+    const NodeId root = context.tree.root();
     ::mmcfilters::detail::kernel::traversePostOrder(
         context.tree, root,
         [&](NodeId node) {
@@ -238,9 +238,9 @@ class TreeTopologyComputer {
     /**
      * @brief Canonical list of topology-derived descriptors produced by this computer.
      */
-    inline static constexpr std::array<Attribute, 11> producedAttributes{HEIGHT_NODE,       DEPTH_NODE,        IS_LEAF_NODE,         IS_ROOT_NODE,
-                                                                         NUM_CHILDREN_NODE, NUM_SIBLINGS_NODE, NUM_DESCENDANTS_NODE, NUM_LEAF_DESCENDANTS_NODE,
-                                                                         LEAF_RATIO_NODE,   BALANCE_NODE,      AVG_CHILD_HEIGHT_NODE};
+    inline static constexpr std::array<Attribute, 11> producedAttributes{SubtreeHeight,       DepthNode,        IsLeafNode,         IsRootNode,
+                                                                         NumChildrenNode, NumSiblingsNode, NumDescendantsNode, NumLeafDescendantsNode,
+                                                                         LeafRatioNode,   BalanceNode,      AvgChildHeightNode};
 
     /**
      * @brief Computes the requested topology descriptors.
@@ -272,63 +272,63 @@ class TreeTopologyComputer {
      */
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
         const MorphologicalTree& tree = context.tree;
-        std::span<const NodeId> unitProperParts = context.unitProperParts;
+        std::span<const PixelId> unitPixels = context.unitPixels;
         std::span<Real> buffer = context.buffer;
         const AttributeNames& attrNames = context.attrNames;
         std::span<const Attribute> requestedAttributes = context.requestedAttributes;
 
-        requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
+        requireUnitAttributeBufferShape(tree, unitPixels, buffer, attrNames);
 
-        const bool computeHeight = requestsAttribute(requestedAttributes, HEIGHT_NODE);
-        const bool computeDepth = requestsAttribute(requestedAttributes, DEPTH_NODE);
-        const bool computeIsLeaf = requestsAttribute(requestedAttributes, IS_LEAF_NODE);
-        const bool computeIsRoot = requestsAttribute(requestedAttributes, IS_ROOT_NODE);
-        const bool computeNumChildren = requestsAttribute(requestedAttributes, NUM_CHILDREN_NODE);
-        const bool computeNumSiblings = requestsAttribute(requestedAttributes, NUM_SIBLINGS_NODE);
-        const bool computeNumDescendants = requestsAttribute(requestedAttributes, NUM_DESCENDANTS_NODE);
-        const bool computeNumLeafDescendants = requestsAttribute(requestedAttributes, NUM_LEAF_DESCENDANTS_NODE);
-        const bool computeLeafRatio = requestsAttribute(requestedAttributes, LEAF_RATIO_NODE);
-        const bool computeBalance = requestsAttribute(requestedAttributes, BALANCE_NODE);
-        const bool computeAvgChildHeight = requestsAttribute(requestedAttributes, AVG_CHILD_HEIGHT_NODE);
+        const bool computeHeight = requestsAttribute(requestedAttributes, SubtreeHeight);
+        const bool computeDepth = requestsAttribute(requestedAttributes, DepthNode);
+        const bool computeIsLeaf = requestsAttribute(requestedAttributes, IsLeafNode);
+        const bool computeIsRoot = requestsAttribute(requestedAttributes, IsRootNode);
+        const bool computeNumChildren = requestsAttribute(requestedAttributes, NumChildrenNode);
+        const bool computeNumSiblings = requestsAttribute(requestedAttributes, NumSiblingsNode);
+        const bool computeNumDescendants = requestsAttribute(requestedAttributes, NumDescendantsNode);
+        const bool computeNumLeafDescendants = requestsAttribute(requestedAttributes, NumLeafDescendantsNode);
+        const bool computeLeafRatio = requestsAttribute(requestedAttributes, LeafRatioNode);
+        const bool computeBalance = requestsAttribute(requestedAttributes, BalanceNode);
+        const bool computeAvgChildHeight = requestsAttribute(requestedAttributes, AvgChildHeightNode);
 
         if (!computeHeight && !computeDepth && !computeIsLeaf && !computeIsRoot && !computeNumChildren && !computeNumSiblings && !computeNumDescendants &&
             !computeNumLeafDescendants && !computeLeafRatio && !computeBalance && !computeAvgChildHeight) {
             return;
         }
 
-        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
+        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitPixels.size()); ++leafIndex) {
             if (computeHeight) {
-                buffer[attrNames.linearIndex(leafIndex, HEIGHT_NODE)] = Real{0};
+                buffer[attrNames.linearIndex(leafIndex, SubtreeHeight)] = Real{0};
             }
             if (computeDepth) {
-                buffer[attrNames.linearIndex(leafIndex, DEPTH_NODE)] = Real{0};
+                buffer[attrNames.linearIndex(leafIndex, DepthNode)] = Real{0};
             }
             if (computeIsLeaf) {
-                buffer[attrNames.linearIndex(leafIndex, IS_LEAF_NODE)] = Real{1};
+                buffer[attrNames.linearIndex(leafIndex, IsLeafNode)] = Real{1};
             }
             if (computeIsRoot) {
-                buffer[attrNames.linearIndex(leafIndex, IS_ROOT_NODE)] = Real{1};
+                buffer[attrNames.linearIndex(leafIndex, IsRootNode)] = Real{1};
             }
             if (computeNumChildren) {
-                buffer[attrNames.linearIndex(leafIndex, NUM_CHILDREN_NODE)] = Real{0};
+                buffer[attrNames.linearIndex(leafIndex, NumChildrenNode)] = Real{0};
             }
             if (computeNumSiblings) {
-                buffer[attrNames.linearIndex(leafIndex, NUM_SIBLINGS_NODE)] = Real{0};
+                buffer[attrNames.linearIndex(leafIndex, NumSiblingsNode)] = Real{0};
             }
             if (computeNumDescendants) {
-                buffer[attrNames.linearIndex(leafIndex, NUM_DESCENDANTS_NODE)] = Real{0};
+                buffer[attrNames.linearIndex(leafIndex, NumDescendantsNode)] = Real{0};
             }
             if (computeNumLeafDescendants) {
-                buffer[attrNames.linearIndex(leafIndex, NUM_LEAF_DESCENDANTS_NODE)] = Real{1};
+                buffer[attrNames.linearIndex(leafIndex, NumLeafDescendantsNode)] = Real{1};
             }
             if (computeLeafRatio) {
-                buffer[attrNames.linearIndex(leafIndex, LEAF_RATIO_NODE)] = Real{1};
+                buffer[attrNames.linearIndex(leafIndex, LeafRatioNode)] = Real{1};
             }
             if (computeBalance) {
-                buffer[attrNames.linearIndex(leafIndex, BALANCE_NODE)] = Real{0};
+                buffer[attrNames.linearIndex(leafIndex, BalanceNode)] = Real{0};
             }
             if (computeAvgChildHeight) {
-                buffer[attrNames.linearIndex(leafIndex, AVG_CHILD_HEIGHT_NODE)] = Real{0};
+                buffer[attrNames.linearIndex(leafIndex, AvgChildHeightNode)] = Real{0};
             }
         }
     }

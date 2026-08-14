@@ -11,7 +11,7 @@ void addTreeConstruction(Context& context, std::vector<ScenarioResult>& results,
     WorkloadMetrics metrics = metricsOf(baseline);
     metrics.edges = context.maxTreeMetrics.edges;
     results.push_back(benchmarkScenario("construction", std::move(name), TimingScope::EndToEnd, context.options.repetitions, metrics, builder,
-                                        [](const WeightedMorphologicalTree<T>& tree) { return weightedTreeChecksum(tree); }));
+                                        [](const ValuedMorphologicalTree<T>& tree) { return valuedTreeChecksum(tree); }));
 }
 
 } // namespace
@@ -24,19 +24,23 @@ void addConstructionScenarios(Context& context, std::vector<ScenarioResult>& res
         return;
     }
 
-    addTreeConstruction<std::uint8_t>(context, results, "tree_of_shapes_self_dual",
-                                      [&] { return MorphologicalTreeFactory::createTreeOfShapes(context.imageUInt8, ToSInterpolation::SelfDual); });
-    addTreeConstruction<std::uint8_t>(context, results, "tree_of_shapes_min4c_max8c",
-                                      [&] { return MorphologicalTreeFactory::createTreeOfShapes(context.imageUInt8, ToSInterpolation::Min4cMax8c); });
+    addTreeConstruction<ToSGrayLevel>(context, results, "tree_of_shapes_self_dual",
+                                     [&] { return MorphologicalTreeFactory::createTreeOfShapes(context.imageUInt8); });
+    addTreeConstruction<ToSGrayLevel>(context, results, "tree_of_shapes_min4c_max8c",
+                                     [&] {
+                                          return MorphologicalTreeFactory::createTreeOfShapes(
+                                              context.imageUInt8,
+                                              complementaryTopographicConvention(context.options.rows, context.options.columns, true));
+                                      });
     addTreeConstruction<std::uint8_t>(context, results, "self_dual_residual_unrestricted", [&] {
-        return MorphologicalTreeFactory::createSelfDualResidualTree(
+        return MorphologicalTreeFactory::createUnrestrictedResidualTree(
             context.imageUInt8, context.adjacency,
-            sdrt::UnrestrictedResidualTreeOptions{sdrt::SdrtTiePolicy::ContrastInvariantSpatial});
+            sdrt::UnrestrictedResidualTreeOptions{});
     });
     addTreeConstruction<std::uint8_t>(context, results, "self_dual_residual_saturated", [&] {
-        return MorphologicalTreeFactory::createSaturatedSelfDualResidualTree(context.imageUInt8, context.adjacency, NodeId{0},
+        return MorphologicalTreeFactory::createSaturatedResidualTree(context.imageUInt8, context.adjacency, PixelId{0},
                                                                              sdrt::SaturatedResidualTreeOptions{
-                                                                                 sdrt::SdrtTiePolicy::ContrastInvariantSpatial});
+                                                                                 sdrt::RowMajorSpatialOrder{}});
     });
     addTreeConstruction<std::int32_t>(context, results, "max_tree_int32", [&] { return MorphologicalTreeFactory::createMaxTree(context.imageInt32, 1.5); });
     addTreeConstruction<float>(context, results, "max_tree_float", [&] { return MorphologicalTreeFactory::createMaxTree(context.imageFloat, 1.5); });
@@ -45,10 +49,14 @@ void addConstructionScenarios(Context& context, std::vector<ScenarioResult>& res
         return;
     }
 
-    addTreeConstruction<std::uint8_t>(context, results, "tree_of_shapes_min8c_max4c",
-                                      [&] { return MorphologicalTreeFactory::createTreeOfShapes(context.imageUInt8, ToSInterpolation::Min8cMax4c); });
-    addTreeConstruction<ToSGrayLevel>(context, results, "tree_of_shapes_exact_self_dual", [&] {
-        return MorphologicalTreeFactory::createTreeOfShapesExact(context.imageUInt8, ToSInterpolation::SelfDual);
+    addTreeConstruction<ToSGrayLevel>(context, results, "tree_of_shapes_min8c_max4c",
+                                      [&] {
+                                          return MorphologicalTreeFactory::createTreeOfShapes(
+                                              context.imageUInt8,
+                                              complementaryTopographicConvention(context.options.rows, context.options.columns, false));
+                                      });
+    addTreeConstruction<ToSGrayLevel>(context, results, "tree_of_shapes_self_dual", [&] {
+        return MorphologicalTreeFactory::createTreeOfShapes(context.imageUInt8);
     });
     addTreeConstruction<std::int32_t>(context, results, "min_tree_int32", [&] { return MorphologicalTreeFactory::createMinTree(context.imageInt32, 1.5); });
     addTreeConstruction<float>(context, results, "min_tree_float", [&] { return MorphologicalTreeFactory::createMinTree(context.imageFloat, 1.5); });

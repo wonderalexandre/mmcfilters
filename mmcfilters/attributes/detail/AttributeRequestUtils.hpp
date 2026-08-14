@@ -47,7 +47,7 @@ inline std::vector<Attribute> expandAttributeOrGroup(const AttributeOrGroup& ite
  * @brief Returns whether every scalar attribute implied by a request is accepted.
  *
  * @param attributes Attributes requested by the operation.
- * @param acceptsAttribute Attribute information represented by `acceptsAttribute`.
+ * @param acceptsAttribute Attribute information.
  * @return Whether every scalar attribute implied by a request is accepted.
  */
 template <class Predicate> inline bool requestContainsOnlyAttributes(const std::vector<AttributeOrGroup>& attributes, Predicate&& acceptsAttribute) {
@@ -65,8 +65,8 @@ template <class Predicate> inline bool requestContainsOnlyAttributes(const std::
  * @brief Expands a request into a sorted unique scalar attribute list.
  *
  * @param attributes Attributes requested by the operation.
- * @param acceptsAttribute Attribute information represented by `acceptsAttribute`.
- * @param unsupportedAttributeMessage Attribute information represented by `unsupportedAttributeMessage`.
+ * @param acceptsAttribute Attribute information.
+ * @param unsupportedAttributeMessage Attribute information.
  * @param unsupportedGroupMessage Diagnostic message for unsupported groups.
  * @return Values produced by the operation.
  */
@@ -100,12 +100,12 @@ inline bool containsAttribute(std::span<const Attribute> attributes, Attribute t
 /**
  * @brief Builds a dense node-major attribute buffer initialized to zero.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param attrNames Layout that maps attributes to buffer columns.
  * @return The resulting dense node-major attribute buffer initialized to zero.
  */
 template <std::floating_point Real = float> inline std::vector<Real> makeAttributeValueBuffer(const MorphologicalTree& tree, const AttributeNames& attrNames) {
-    return std::vector<Real>(static_cast<std::size_t>(tree.getNumInternalNodeSlots()) * static_cast<std::size_t>(attrNames.NUM_ATTRIBUTES), Real{0});
+    return std::vector<Real>(static_cast<std::size_t>(tree.numInternalNodeSlots()) * static_cast<std::size_t>(attrNames.NUM_ATTRIBUTES), Real{0});
 }
 
 /**
@@ -121,17 +121,17 @@ inline AttributeNames makeAttributeNamesFromSet(const std::set<Attribute>& attri
 /**
  * @brief Copies one scalar attribute between two flat node-major layouts.
  *
- * @param tree Tree topology used by the operation.
- * @param sourceNames Input represented by `sourceNames`.
- * @param sourceBuffer Input represented by `sourceBuffer`.
- * @param targetNames Destination represented by `targetNames`.
- * @param targetBuffer Destination represented by `targetBuffer`.
+ * @param tree Tree topology.
+ * @param sourceNames Input.
+ * @param sourceBuffer Input.
+ * @param targetNames Destination.
+ * @param targetBuffer Destination.
  * @param attribute Attribute requested by the operation.
  */
 template <std::floating_point Real>
 inline void copyAttributeValuesBetweenLayouts(const MorphologicalTree& tree, const AttributeNames& sourceNames, std::span<const Real> sourceBuffer,
                                               const AttributeNames& targetNames, std::span<Real> targetBuffer, Attribute attribute) {
-    for (NodeId nodeId : tree.getAliveNodeIds()) {
+    for (NodeId nodeId : tree.aliveNodeIds()) {
         targetBuffer[targetNames.linearIndex(nodeId, attribute)] = sourceBuffer[sourceNames.linearIndex(nodeId, attribute)];
     }
 }

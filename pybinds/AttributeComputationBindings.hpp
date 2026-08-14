@@ -1,7 +1,8 @@
 #pragma once
 
+#include "PythonValuedMorphologicalTree.hpp"
 #include "../mmcfilters/attributes/AttributeComputation.hpp"
-#include "../mmcfilters/trees/WeightedMorphologicalTree.hpp"
+#include "../mmcfilters/trees/ValuedMorphologicalTree.hpp"
 #include "PybindConversions.hpp"
 
 #include <pybind11/pybind11.h>
@@ -14,6 +15,7 @@
 #include <memory>
 #include <numeric>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -24,15 +26,17 @@ namespace py = pybind11;
 /**
  * @brief Conversion and dispatch functions used by the Python attribute API.
  *
- * @param tree Tree topology used by the operation.
- * @return Reference to the resulting object.
+ * @param tree Tree topology.
+ * @return Mutable reference to the updated object.
  */
-inline const MorphologicalTree& topologyOf(const WeightedMorphologicalTree<std::uint8_t>& tree) { return tree.topology(); }
+template <AltitudeValue T> inline const MorphologicalTree& topologyOf(const ValuedMorphologicalTree<T>& tree) { return tree.topology(); }
+
+inline const MorphologicalTree& topologyOf(const PythonValuedMorphologicalTree& tree) { return tree.topology(); }
 
 /**
  * @brief Returns the number of values required by the selected output node space.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param outputSpace Node-id domain used to index the output.
  * @return Required number of output values.
  */
@@ -41,7 +45,7 @@ template <class TreePtr> inline int outputSize(const TreePtr& tree, NodeIdSpace 
 /**
  * @brief Creates attribute layout dict.
  *
- * @param attributeNames Attribute information represented by `attributeNames`.
+ * @param attributeNames Attribute information.
  * @return Created attribute layout dict.
  */
 inline py::dict makeAttributeLayoutDict(const AttributeNames& attributeNames) {
@@ -67,19 +71,19 @@ inline py::dict makeAttributeLayoutDict(const AttributeNames& attributeNames) {
 }
 
 /**
- * @brief Creates delta attribute layout dict.
+ * @brief Creates a sampled node-attribute layout dictionary.
  *
- * @param attributeNames Attribute information represented by `attributeNames`.
- * @return Created delta attribute layout dict.
+ * @param attributeNames Attribute information.
+ * @return Created sampled node-attribute layout dictionary.
  */
-inline py::dict makeDeltaAttributeLayoutDict(const AttributeNamesWithDelta& attributeNames) {
+inline py::dict makeNodeAttributeSampleLayoutDict(const NodeAttributeSampleLayout& attributeNames) {
     std::vector<std::string> keys;
     std::vector<int> values;
 
     for (const auto& pair : attributeNames.indexMap) {
-        const AttributeKey& attrKey = pair.first;
+        const NodeAttributeSampleKey& sampleKey = pair.first;
         int offset = pair.second;
-        keys.push_back(AttributeNamesWithDelta::toString(attrKey.attr, attrKey.delta));
+        keys.push_back(NodeAttributeSampleLayout::toString(sampleKey.attribute, sampleKey.sampleOffset));
         values.push_back(offset);
     }
 
@@ -97,7 +101,7 @@ inline py::dict makeDeltaAttributeLayoutDict(const AttributeNamesWithDelta& attr
 /**
  * @brief Computes single attribute typed.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param attribute Attribute requested by the operation.
  * @param outputSpace Node-id domain used to index the output.
  * @return Computed single attribute typed.
@@ -111,7 +115,7 @@ inline py::array_t<Real> computeSingleAttributeTyped(TreePtr tree, Attribute att
 /**
  * @brief Computes single attribute impl.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param attribute Attribute requested by the operation.
  * @param outputSpace Node-id domain used to index the output.
  * @param dtype Requested NumPy floating-point type.
@@ -124,51 +128,39 @@ template <class TreePtr> inline py::array computeSingleAttributeImpl(TreePtr tre
     return computeSingleAttributeTyped<float>(std::move(tree), attribute, outputSpace);
 }
 
-/**
- * @brief Computes single attribute with delta typed.
- *
- * @param tree Tree topology used by the operation.
- * @param attribute Attribute requested by the operation.
- * @param delta Delta offset used by the operation.
- * @param padding Padding strategy used by the operation.
- * @param outputSpace Node-id domain used to index the output.
- * @return Computed single attribute with delta typed.
- */
+/** @brief Computes sampled node-attribute data for one concrete altitude type. */
 template <std::floating_point Real, class TreePtr>
-inline std::pair<py::dict, py::array> computeSingleAttributeWithDeltaTyped(TreePtr tree, Attribute attribute, int delta, std::string padding,
-                                                                           NodeIdSpace outputSpace) {
-    auto [attributeNames, buffer] =
-        AttributeComputation::computeSingleAttributeWithDelta<Real>(*tree, attribute, AltitudeDiff<std::uint8_t>{1}, delta, std::move(padding), outputSpace);
+inline std::pair<py::dict, py::array>
+computeSampledNodeAttributeTyped(TreePtr tree, Attribute attribute, std::int64_t altitudeStep, int samplingRadius,
+                                 NodeAttributeSamplingPolicy samplingPolicy, MissingNodeAttributeSamplePolicy missingSamplePolicy,
+                                 NodeIdSpace outputSpace) {
+    using Altitude = typename std::remove_cvref_t<decltype(*tree)>::AltitudeType;
+    auto [attributeNames, buffer] = AttributeComputation::computeSampledNodeAttribute<Real>(
+        *tree, attribute, static_cast<AltitudeDifference<Altitude>>(altitudeStep), samplingRadius, samplingPolicy, missingSamplePolicy, outputSpace);
 
     const int numAttribute = attributeNames.NUM_ATTRIBUTES;
     const int n = outputSize(tree, outputSpace);
-    return std::make_pair(makeDeltaAttributeLayoutDict(attributeNames), pybind_utils::toNumpyOwned2D(std::move(buffer), n, numAttribute));
+    return std::make_pair(makeNodeAttributeSampleLayoutDict(attributeNames), pybind_utils::toNumpyOwned2D(std::move(buffer), n, numAttribute));
 }
 
-/**
- * @brief Computes single attribute with delta impl.
- *
- * @param tree Tree topology used by the operation.
- * @param attribute Attribute requested by the operation.
- * @param delta Delta offset used by the operation.
- * @param padding Padding strategy used by the operation.
- * @param outputSpace Node-id domain used to index the output.
- * @param dtype Requested NumPy floating-point type.
- * @return Computed single attribute with delta impl.
- */
+/** @brief Dispatches sampled node-attribute result precision. */
 template <class TreePtr>
-inline std::pair<py::dict, py::array> computeSingleAttributeWithDeltaImpl(TreePtr tree, Attribute attribute, int delta, std::string padding,
-                                                                          NodeIdSpace outputSpace, py::object dtype) {
+inline std::pair<py::dict, py::array>
+computeSampledNodeAttributeImpl(TreePtr tree, Attribute attribute, std::int64_t altitudeStep, int samplingRadius,
+                                NodeAttributeSamplingPolicy samplingPolicy, MissingNodeAttributeSamplePolicy missingSamplePolicy,
+                                NodeIdSpace outputSpace, py::object dtype) {
     if (pybind_utils::parseFloatingDType(std::move(dtype)) == pybind_utils::FloatingDType::Float64) {
-        return computeSingleAttributeWithDeltaTyped<double>(std::move(tree), attribute, delta, std::move(padding), outputSpace);
+        return computeSampledNodeAttributeTyped<double>(std::move(tree), attribute, altitudeStep, samplingRadius, samplingPolicy, missingSamplePolicy,
+                                                        outputSpace);
     }
-    return computeSingleAttributeWithDeltaTyped<float>(std::move(tree), attribute, delta, std::move(padding), outputSpace);
+    return computeSampledNodeAttributeTyped<float>(std::move(tree), attribute, altitudeStep, samplingRadius, samplingPolicy, missingSamplePolicy,
+                                                   outputSpace);
 }
 
 /**
  * @brief Computes attribute mapping typed.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param attribute Attribute requested by the operation.
  * @return Computed attribute mapping typed.
  */
@@ -180,7 +172,7 @@ template <std::floating_point Real, class TreePtr> inline py::array_t<Real> comp
 /**
  * @brief Computes attribute mapping impl.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param attribute Attribute requested by the operation.
  * @param dtype Requested NumPy floating-point type.
  * @return Computed attribute mapping impl.
@@ -195,7 +187,7 @@ template <class TreePtr> inline py::array computeAttributeMappingImpl(TreePtr tr
 /**
  * @brief Computes attributes from list typed.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param attributes Attributes requested by the operation.
  * @param outputSpace Node-id domain used to index the output.
  * @return Computed attributes from list typed.
@@ -212,7 +204,7 @@ inline std::pair<py::dict, py::array> computeAttributesFromListTyped(TreePtr tre
 /**
  * @brief Computes attributes from list impl.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param attributes Attributes requested by the operation.
  * @param outputSpace Node-id domain used to index the output.
  * @param dtype Requested NumPy floating-point type.
@@ -230,7 +222,7 @@ inline std::pair<py::dict, py::array> computeAttributesFromListImpl(TreePtr tree
 /**
  * @brief Computes single topology attribute typed.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param attribute Attribute requested by the operation.
  * @param outputSpace Node-id domain used to index the output.
  * @return Computed single topology attribute typed.
@@ -244,7 +236,7 @@ inline py::array_t<Real> computeSingleTopologyAttributeTyped(TreePtr tree, Attri
 /**
  * @brief Computes single topology attribute impl.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param attribute Attribute requested by the operation.
  * @param outputSpace Node-id domain used to index the output.
  * @param dtype Requested NumPy floating-point type.
@@ -260,7 +252,7 @@ template <class TreePtr> inline py::array computeSingleTopologyAttributeImpl(Tre
 /**
  * @brief Computes topology attributes from list typed.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param attributes Attributes requested by the operation.
  * @param outputSpace Node-id domain used to index the output.
  * @return Computed topology attributes from list typed.
@@ -279,7 +271,7 @@ inline std::pair<py::dict, py::array> computeTopologyAttributesFromListTyped(Tre
 /**
  * @brief Computes topology attributes from list impl.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param attributes Attributes requested by the operation.
  * @param outputSpace Node-id domain used to index the output.
  * @param dtype Requested NumPy floating-point type.
@@ -305,90 +297,85 @@ inline std::string describeAttribute(Attribute attribute) { return AttributeName
 /**
  * @brief Computes single attribute.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param attribute Attribute requested by the operation.
  * @param outputSpace Node-id domain used to index the output.
  * @param dtype Requested NumPy floating-point type.
  * @return Computed single attribute.
  */
-inline py::array computeSingleAttribute(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree, Attribute attribute,
-                                        NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE, py::object dtype = py::none()) {
-    return computeSingleAttributeImpl(std::move(tree), attribute, outputSpace, std::move(dtype));
+inline py::array computeSingleAttribute(std::shared_ptr<PythonValuedMorphologicalTree> tree, Attribute attribute,
+                                        NodeIdSpace outputSpace = NodeIdSpace::MorphologicalTree, py::object dtype = py::none()) {
+    return tree->visit([&](const auto& concreteTree) { return computeSingleAttributeImpl(concreteTree, attribute, outputSpace, dtype); });
 }
 
-/**
- * @brief Computes single attribute with delta.
- *
- * @param tree Tree topology used by the operation.
- * @param attribute Attribute requested by the operation.
- * @param delta Delta offset used by the operation.
- * @param padding Padding strategy used by the operation.
- * @param outputSpace Node-id domain used to index the output.
- * @param dtype Requested NumPy floating-point type.
- * @return Computed single attribute with delta.
- */
-inline std::pair<py::dict, py::array> computeSingleAttributeWithDelta(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree, Attribute attribute,
-                                                                      int delta, std::string padding = "last-padding",
-                                                                      NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE,
-                                                                      py::object dtype = py::none()) {
-    return computeSingleAttributeWithDeltaImpl(std::move(tree), attribute, delta, std::move(padding), outputSpace, std::move(dtype));
+/** @brief Computes altitude-based samples of one node attribute. */
+inline std::pair<py::dict, py::array>
+computeSampledNodeAttribute(std::shared_ptr<PythonValuedMorphologicalTree> tree, Attribute attribute, std::int64_t altitudeStep,
+                            int samplingRadius,
+                            NodeAttributeSamplingPolicy samplingPolicy = NodeAttributeSamplingPolicy::LargestSupportDescendant,
+                            MissingNodeAttributeSamplePolicy missingSamplePolicy = MissingNodeAttributeSamplePolicy::RepeatNearest,
+                            NodeIdSpace outputSpace = NodeIdSpace::MorphologicalTree, py::object dtype = py::none()) {
+    return tree->visit([&](const auto& concreteTree) {
+        return computeSampledNodeAttributeImpl(concreteTree, attribute, altitudeStep, samplingRadius, samplingPolicy, missingSamplePolicy, outputSpace,
+                                               dtype);
+    });
 }
 
 /**
  * @brief Computes attribute mapping.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param attribute Attribute requested by the operation.
  * @param dtype Requested NumPy floating-point type.
  * @return Computed attribute mapping.
  */
-inline py::array computeAttributeMapping(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree, Attribute attribute, py::object dtype = py::none()) {
-    return computeAttributeMappingImpl(std::move(tree), attribute, std::move(dtype));
+inline py::array computeAttributeMapping(std::shared_ptr<PythonValuedMorphologicalTree> tree, Attribute attribute, py::object dtype = py::none()) {
+    return tree->visit([&](const auto& concreteTree) { return computeAttributeMappingImpl(concreteTree, attribute, dtype); });
 }
 
 /**
  * @brief Computes attributes from list.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param attributes Attributes requested by the operation.
  * @param outputSpace Node-id domain used to index the output.
  * @param dtype Requested NumPy floating-point type.
  * @return Computed attributes from list.
  */
-inline std::pair<py::dict, py::array> computeAttributesFromList(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree,
+inline std::pair<py::dict, py::array> computeAttributesFromList(std::shared_ptr<PythonValuedMorphologicalTree> tree,
                                                                 const std::vector<AttributeOrGroup>& attributes,
-                                                                NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE, py::object dtype = py::none()) {
-    return computeAttributesFromListImpl(std::move(tree), attributes, outputSpace, std::move(dtype));
+                                                                NodeIdSpace outputSpace = NodeIdSpace::MorphologicalTree, py::object dtype = py::none()) {
+    return tree->visit([&](const auto& concreteTree) { return computeAttributesFromListImpl(concreteTree, attributes, outputSpace, dtype); });
 }
 
 /**
  * @brief Computes single topology attribute.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param attribute Attribute requested by the operation.
  * @param outputSpace Node-id domain used to index the output.
  * @param dtype Requested NumPy floating-point type.
  * @return Computed single topology attribute.
  */
-inline py::array computeSingleTopologyAttribute(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree, Attribute attribute,
-                                                NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE, py::object dtype = py::none()) {
-    return computeSingleTopologyAttributeImpl(std::move(tree), attribute, outputSpace, std::move(dtype));
+inline py::array computeSingleTopologyAttribute(std::shared_ptr<PythonValuedMorphologicalTree> tree, Attribute attribute,
+                                                NodeIdSpace outputSpace = NodeIdSpace::MorphologicalTree, py::object dtype = py::none()) {
+    return tree->visit([&](const auto& concreteTree) { return computeSingleTopologyAttributeImpl(concreteTree, attribute, outputSpace, dtype); });
 }
 
 /**
  * @brief Computes topology attributes from list.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param attributes Attributes requested by the operation.
  * @param outputSpace Node-id domain used to index the output.
  * @param dtype Requested NumPy floating-point type.
  * @return Computed topology attributes from list.
  */
-inline std::pair<py::dict, py::array> computeTopologyAttributesFromList(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> tree,
+inline std::pair<py::dict, py::array> computeTopologyAttributesFromList(std::shared_ptr<PythonValuedMorphologicalTree> tree,
                                                                         const std::vector<AttributeOrGroup>& attributes,
-                                                                        NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE,
+                                                                        NodeIdSpace outputSpace = NodeIdSpace::MorphologicalTree,
                                                                         py::object dtype = py::none()) {
-    return computeTopologyAttributesFromListImpl(std::move(tree), attributes, outputSpace, std::move(dtype));
+    return tree->visit([&](const auto& concreteTree) { return computeTopologyAttributesFromListImpl(concreteTree, attributes, outputSpace, dtype); });
 }
 
 } // namespace mmcfilters::pybindings::attribute_computation

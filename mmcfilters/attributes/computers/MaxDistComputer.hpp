@@ -7,6 +7,7 @@
 #include "../../trees/MorphologicalTree.hpp"
 #include "../../trees/TreeAltitudeAlgorithms.hpp"
 #include "../../trees/detail/CommittedTreeAccess.hpp"
+#include "../../trees/detail/MorphologicalTreeConstructionContextQueries.hpp"
 #include "../../trees/detail/TreeTraversalDetail.hpp"
 #include "../../utils/Common.hpp"
 #include "../../utils/Contract.hpp"
@@ -29,7 +30,7 @@
 namespace mmcfilters::attributes::computers::detail {
 
 inline void requireMaxDistCapabilities(const MorphologicalTree& tree) {
-    if (tree.getAltitudeOrder() == AltitudeOrder::UNCONSTRAINED) {
+    if (tree.nodeAltitudeOrder() == NodeAltitudeOrder::Unconstrained) {
         throw std::invalid_argument("MAX_DIST requires a globally monotone altitude order.");
     }
 }
@@ -51,10 +52,10 @@ template <AltitudeValue T> inline void validateFiniteMaxDistAltitude(std::span<c
 
 template <AltitudeValue T> inline void validateMaxDistInput(const MorphologicalTree& tree, std::span<const T> altitude) {
     requireMaxDistCapabilities(tree);
-    if (!tree.hasUniformGridAdjacency2D()) {
-        throw std::invalid_argument("MAX_DIST requires uniform adjacency.");
+    if (::mmcfilters::detail::constructionAdjacency(tree) == nullptr) {
+        throw std::invalid_argument("MAX_DIST requires a shared or saturated construction adjacency.");
     }
-    TreeAltitudeAlgorithms::validateAltitudeBufferShape(tree, altitude);
+    TreeAltitudeAlgorithms::validateNodeAltitudeBufferShape(tree, altitude);
     validateFiniteMaxDistAltitude(altitude);
 }
 
@@ -82,19 +83,19 @@ class MaxDistAttribute {
      * Floating-point altitudes must be finite because the level ordering and
      * contour tests require a total finite order.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @param altitude Altitude data indexed by node identifier.
      * @return Values produced by the operation.
      */
     template <std::floating_point Real, AltitudeValue T>
     [[nodiscard]] static std::vector<Real> compute(const MorphologicalTree& tree, std::span<const T> altitude) {
-        std::vector<Real> maxDist(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), Real{0});
+        std::vector<Real> maxDist(static_cast<std::size_t>(tree.numInternalNodeSlots()), Real{0});
         const GridDomain2D& domain = ::mmcfilters::detail::CommittedTreeAccess::gridDomain2D(tree);
-        maxdist::EdtDIFT edtDIFT(domain.rows, domain.cols);
+        maxdist::EdtDIFT edtDIFT(domain.rows, domain.columns);
 
         const ContourDeltaStore contourDeltas = ::mmcfilters::detail::kernel::extractLocalContourDeltas(tree);
-        std::vector<std::vector<int>> contours(static_cast<std::size_t>(tree.getNumInternalNodeSlots()));
-        const std::size_t totalPixels = static_cast<std::size_t>(domain.rows * domain.cols);
+        std::vector<std::vector<PixelId>> contours(static_cast<std::size_t>(tree.numInternalNodeSlots()));
+        const std::size_t totalPixels = static_cast<std::size_t>(domain.rows * domain.columns);
         std::vector<std::uint8_t> removalMark(totalPixels, 0);
         std::vector<std::uint8_t> contourAdditionMark(totalPixels, 0);
 
@@ -122,11 +123,11 @@ class MaxDistAttribute {
     /**
      * @brief Marks pixels.
      *
-     * @param pixels Pixel identifiers used by the operation.
+     * @param pixels Pixel identifiers.
      * @param marks Mark buffer updated by the operation.
      */
-    static void markPixels(std::span<const int> pixels, std::vector<std::uint8_t>& marks) {
-        for (int pixelId : pixels) {
+    static void markPixels(std::span<const PixelId> pixels, std::vector<std::uint8_t>& marks) {
+        for (PixelId pixelId : pixels) {
             marks[static_cast<std::size_t>(pixelId)] = 1;
         }
     }
@@ -134,11 +135,11 @@ class MaxDistAttribute {
     /**
      * @brief Clears pixel marks.
      *
-     * @param pixels Pixel identifiers used by the operation.
+     * @param pixels Pixel identifiers.
      * @param marks Mark buffer updated by the operation.
      */
-    static void clearPixelMarks(std::span<const int> pixels, std::vector<std::uint8_t>& marks) {
-        for (int pixelId : pixels) {
+    static void clearPixelMarks(std::span<const PixelId> pixels, std::vector<std::uint8_t>& marks) {
+        for (PixelId pixelId : pixels) {
             marks[static_cast<std::size_t>(pixelId)] = 0;
         }
     }
@@ -152,20 +153,20 @@ class MaxDistAttribute {
      * post-order among unrelated nodes that share an altitude; the declared
      * ordered contracts already forbid equal altitudes on a parent-child arc.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @param altitude Altitude data indexed by node identifier.
      * @return Values produced by the operation.
      */
     template <AltitudeValue T> [[nodiscard]] static std::vector<NodeId> sortedNodesByAltitude(const MorphologicalTree& tree, std::span<const T> altitude) {
         std::vector<NodeId> nodes;
-        nodes.reserve(static_cast<std::size_t>(tree.getNumNodes()));
+        nodes.reserve(static_cast<std::size_t>(tree.numNodes()));
         ::mmcfilters::detail::kernel::traversePostOrder(
-            tree, tree.getRoot(), [](NodeId) {}, [](NodeId, NodeId) {}, [&](NodeId nodeId) { nodes.push_back(nodeId); });
+            tree, tree.root(), [](NodeId) {}, [](NodeId, NodeId) {}, [&](NodeId nodeId) { nodes.push_back(nodeId); });
 
         std::stable_sort(nodes.begin(), nodes.end(), [&](NodeId lhs, NodeId rhs) {
             const T lhsAltitude = altitude[static_cast<std::size_t>(lhs)];
             const T rhsAltitude = altitude[static_cast<std::size_t>(rhs)];
-            return tree.getAltitudeOrder() == AltitudeOrder::INCREASING_FROM_ROOT ? lhsAltitude > rhsAltitude : lhsAltitude < rhsAltitude;
+            return tree.nodeAltitudeOrder() == NodeAltitudeOrder::Increasing ? lhsAltitude > rhsAltitude : lhsAltitude < rhsAltitude;
         });
 
         return nodes;
@@ -193,27 +194,28 @@ class MaxDistAttribute {
      * group have been materialized does EdtDIFT propagate labels; this preserves
      * the simultaneous per-level sweep.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @param nodes Node identifiers processed by the operation.
      * @param contourDeltas Compact local contour additions and removals.
      * @param edtDIFT Distance-transform state updated by the sweep.
-     * @param contours Contour data used by the operation.
+     * @param contours Contour data.
      * @param removalMark Generation marks for pixels scheduled for removal.
      * @param contourAdditionMark Generation marks for contour additions.
      * @param maxDist Destination MAX_DIST values indexed by node.
      */
     template <std::floating_point Real>
     static void processLevel(const MorphologicalTree& tree, std::span<const NodeId> nodes, const ContourDeltaStore& contourDeltas, maxdist::EdtDIFT& edtDIFT,
-                             std::vector<std::vector<int>>& contours, std::vector<std::uint8_t>& removalMark, std::vector<std::uint8_t>& contourAdditionMark,
+                             std::vector<std::vector<PixelId>>& contours, std::vector<std::uint8_t>& removalMark,
+                             std::vector<std::uint8_t>& contourAdditionMark,
                              std::vector<Real>& maxDist) {
         if (nodes.empty()) {
             return;
         }
 
-        std::vector<int> toRemove;
+        std::vector<PixelId> toRemove;
         toRemove.reserve(64);
         for (NodeId nodeId : nodes) {
-            std::vector<int>& nodeContour = contours[static_cast<std::size_t>(nodeId)];
+            std::vector<PixelId>& nodeContour = contours[static_cast<std::size_t>(nodeId)];
             nodeContour.clear();
 
             const auto removals = contourDeltas.removals(nodeId);
@@ -229,13 +231,13 @@ class MaxDistAttribute {
             nodeContour.reserve(reserveSize);
 
             for (NodeId childNodeId : ::mmcfilters::detail::CommittedTreeAccess::children(tree, nodeId)) {
-                std::vector<int>& childContour = contours[static_cast<std::size_t>(childNodeId)];
-                for (int pixelId : childContour) {
+                std::vector<PixelId>& childContour = contours[static_cast<std::size_t>(childNodeId)];
+                for (PixelId pixelId : childContour) {
                     if (!removalMark[static_cast<std::size_t>(pixelId)]) {
                         nodeContour.push_back(pixelId);
                     }
                 }
-                std::vector<int>().swap(childContour);
+                std::vector<PixelId>().swap(childContour);
             }
             clearPixelMarks(removals, removalMark);
 
@@ -244,7 +246,7 @@ class MaxDistAttribute {
             }
 
             markPixels(additions, contourAdditionMark);
-            for (int pixelId : ::mmcfilters::detail::CommittedTreeAccess::properParts(tree, nodeId)) {
+            for (PixelId pixelId : ::mmcfilters::detail::CommittedTreeAccess::properParts(tree, nodeId)) {
                 edtDIFT.addPixelToBinaryImage(pixelId);
 
                 if (contourAdditionMark[static_cast<std::size_t>(pixelId)]) {
@@ -276,8 +278,8 @@ class MaxDistAttribute {
 template <std::floating_point Real, AltitudeValue T> inline void computeMaxDist(const AltitudeAttributeComputeContext<Real, T>& context) {
     const std::vector<Real> maxDist = MaxDistAttribute::compute<Real>(context.tree, context.altitude);
     const int stride = context.attrNames.NUM_ATTRIBUTES;
-    const int offset = context.attrNames.indexMap.find(MAX_DIST)->second;
-    for (NodeId nodeId = 0; nodeId < context.tree.getNumInternalNodeSlots(); ++nodeId) {
+    const int offset = context.attrNames.indexMap.find(MaxDist)->second;
+    for (NodeId nodeId = 0; nodeId < context.tree.numInternalNodeSlots(); ++nodeId) {
         if (::mmcfilters::detail::CommittedTreeAccess::isAlive(context.tree, nodeId)) {
             context.buffer[static_cast<std::size_t>(nodeId * stride + offset)] = maxDist[static_cast<std::size_t>(nodeId)];
         }
@@ -313,12 +315,12 @@ class MaxDistComputer {
     /**
      * @brief Canonical list of scalar descriptors materialized by this computer.
      */
-    inline static constexpr std::array<Attribute, 1> producedAttributes{MAX_DIST};
+    inline static constexpr std::array<Attribute, 1> producedAttributes{MaxDist};
 
     /**
      * @brief Rejects tree kinds for which MAX_DIST is not defined.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      */
     static void requireSupportedTreeKind(const MorphologicalTree& tree) { detail::requireMaxDistCapabilities(tree); }
 
@@ -334,7 +336,7 @@ class MaxDistComputer {
     template <std::floating_point Real, AltitudeValue T> static void compute(const AltitudeAttributeComputeContext<Real, T>& context) {
         MMCFILTERS_CONTRACT_CHECKED_ONLY(requireAttributeBufferShape(context.tree, context.buffer, context.attrNames);
                                          detail::validateMaxDistInput(context.tree, context.altitude));
-        if (!requestsAttribute(context.requestedAttributes, MAX_DIST)) {
+        if (!requestsAttribute(context.requestedAttributes, MaxDist)) {
             return;
         }
 
@@ -350,14 +352,14 @@ class MaxDistComputer {
      * @param context Operation context or diagnostic label.
      */
     template <std::floating_point Real, AltitudeValue T> static void computeUnitRows(const AltitudeUnitAttributeComputeContext<Real, T>& context) {
-        requireUnitAttributeBufferShape(context.tree, context.unitProperParts, context.buffer, context.attrNames);
-        TreeAltitudeAlgorithms::validateAltitudeBufferShape(context.tree, context.altitude);
-        if (!requestsAttribute(context.requestedAttributes, MAX_DIST)) {
+        requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
+        TreeAltitudeAlgorithms::validateNodeAltitudeBufferShape(context.tree, context.altitude);
+        if (!requestsAttribute(context.requestedAttributes, MaxDist)) {
             return;
         }
 
-        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitProperParts.size()); ++leafIndex) {
-            context.buffer[context.attrNames.linearIndex(leafIndex, MAX_DIST)] = Real{0};
+        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitPixels.size()); ++leafIndex) {
+            context.buffer[context.attrNames.linearIndex(leafIndex, MaxDist)] = Real{0};
         }
     }
 };

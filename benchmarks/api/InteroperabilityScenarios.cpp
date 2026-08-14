@@ -19,7 +19,7 @@ template <typename Value> [[nodiscard]] std::uint64_t vectorChecksum(const std::
 void addInteroperabilityScenarios(Context& context, std::vector<ScenarioResult>& results) {
     results.push_back(benchmarkScenario(
         "interoperability", "reconstruct_max_tree", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
-        [&] { return context.maxTree.reconstructionImage(); }, [](const ImageUInt8Ptr& result) { return imageChecksum(result); }));
+        [&] { return context.maxTree.reconstructFromNodeAltitudes(); }, [](const ImageUInt8Ptr& result) { return imageChecksum(result); }));
 
     results.push_back(benchmarkScenario(
         "interoperability", "export_higra", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
@@ -36,18 +36,18 @@ void addInteroperabilityScenarios(Context& context, std::vector<ScenarioResult>&
 
     const auto exported = context.maxTree.exportHigraHierarchy();
     auto importedBaseline = MorphologicalTreeFactory::createFromHigraParent<std::uint8_t>(
-        std::span<const NodeId>(exported.first), std::span<const std::uint8_t>(exported.second), context.options.rows, context.options.cols,
-        MorphologicalTreeKind::MAX_TREE, context.adjacency);
+        std::span<const NodeId>(exported.first), std::span<const std::uint8_t>(exported.second), context.options.rows, context.options.columns,
+        MorphologicalTreeKind::MaxTree, context.adjacency);
     WorkloadMetrics importedMetrics = metricsOf(importedBaseline);
     importedMetrics.edges = context.maxTreeMetrics.edges;
     results.push_back(benchmarkScenario(
         "interoperability", "import_higra", TimingScope::EstablishedInput, context.options.repetitions, importedMetrics,
         [&] {
             return MorphologicalTreeFactory::createFromHigraParent<std::uint8_t>(
-                std::span<const NodeId>(exported.first), std::span<const std::uint8_t>(exported.second), context.options.rows, context.options.cols,
-                MorphologicalTreeKind::MAX_TREE, context.adjacency);
+                std::span<const NodeId>(exported.first), std::span<const std::uint8_t>(exported.second), context.options.rows, context.options.columns,
+                MorphologicalTreeKind::MaxTree, context.adjacency);
         },
-        [](const WeightedMorphologicalTree<std::uint8_t>& result) { return weightedTreeChecksum(result); }));
+        [](const ValuedMorphologicalTree<std::uint8_t>& result) { return valuedTreeChecksum(result); }));
 
     results.push_back(benchmarkScenario(
         "interoperability", "project_area_to_higra", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
@@ -56,12 +56,12 @@ void addInteroperabilityScenarios(Context& context, std::vector<ScenarioResult>&
 
     results.push_back(benchmarkScenario(
         "interoperability", "map_area_to_image", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
-        [&] { return AttributeComputation::computeAttributeMapping<double>(context.maxTree, AREA); },
+        [&] { return AttributeComputation::computeAttributeMapping<double>(context.maxTree, Area); },
         [](const ImagePtr<double>& result) { return imageChecksum(result); }));
 
     results.push_back(benchmarkScenario(
-        "interoperability", "weighted_view_attributes", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
-        [&] { return AttributeComputation::computeAttributes<double>(context.maxTree.asView(), {AREA, LEVEL, MAX_DIST}); },
+        "interoperability", "valuedTree_view_attributes", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
+        [&] { return AttributeComputation::computeAttributes<double>(context.maxTree.asView(), {Area, MeanGrayLevel, MaxDist}); },
         [](const ComputedAttributeData<double>& result) { return semanticAttributeChecksum(result); }));
 
     WorkloadMetrics saliencyMetrics = context.maxTreeMetrics;
@@ -82,7 +82,7 @@ void addInteroperabilityScenarios(Context& context, std::vector<ScenarioResult>&
 
     results.push_back(benchmarkScenario(
         "interoperability", "attributes_in_higra_space", TimingScope::EstablishedInput, context.options.repetitions, importedMetrics,
-        [&] { return AttributeComputation::computeAttributes<double>(importedBaseline, {AREA, LEVEL, MAX_DIST}, NodeIdSpace::HIGRA); },
+        [&] { return AttributeComputation::computeAttributes<double>(importedBaseline, {Area, MeanGrayLevel, MaxDist}, NodeIdSpace::Higra); },
         [](const ComputedAttributeData<double>& result) { return semanticAttributeChecksum(result); }));
 }
 

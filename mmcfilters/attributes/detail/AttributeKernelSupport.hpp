@@ -2,7 +2,7 @@
 
 #include "AttributeNumericPolicy.hpp"
 #include "../../trees/TreeAltitudeAlgorithms.hpp"
-#include "../../trees/WeightedMorphologicalTree.hpp"
+#include "../../trees/ValuedMorphologicalTree.hpp"
 #include "../../trees/detail/CommittedTreeAccess.hpp"
 #include "../../utils/Common.hpp"
 #include "../../utils/Contract.hpp"
@@ -46,7 +46,7 @@ template <std::floating_point Real> struct DependencySourceT {
  * columns.
  */
 template <std::floating_point Real> class DependencyResolver {
-    /** @brief Stores the sources. */
+    /** @brief Sources buffer. */
     std::span<const DependencySourceT<Real>> sources_;
 
     /**
@@ -67,14 +67,14 @@ template <std::floating_point Real> class DependencyResolver {
      * The span and every referenced `AttributeNames`/buffer must outlive the
      * resolver and any compute context that owns it.
      *
-     * @param sources Input represented by `sources`.
+     * @param sources Input.
      */
     explicit DependencyResolver(std::span<const DependencySourceT<Real>> sources) noexcept : sources_(sources) {}
 
     /**
      * @brief Returns the first source containing `requiredAttribute`.
      *
-     * @param requiredAttribute Attribute information represented by `requiredAttribute`.
+     * @param requiredAttribute Attribute information.
      * @return The first source containing requiredAttribute.
      *
      * @throws std::invalid_argument if any inspected source is invalid or no
@@ -98,7 +98,7 @@ template <std::floating_point Real> class DependencyResolver {
      * This is used by computers whose formulas consume a coherent dependency
      * block, such as several central moments stored in the same buffer layout.
      *
-     * @param requiredAttributes Attribute information represented by `requiredAttributes`.
+     * @param requiredAttributes Attribute information.
      * @return One source that contains all requested attributes.
      *
      * @throws std::invalid_argument if the request is empty, if an inspected
@@ -158,11 +158,11 @@ template <std::floating_point Real> struct AttributeComputeContext {
     /**
      * @brief Binds borrowed topology, output, request, and dependency views.
      *
-     * @param tree_ Tree topology used by the operation.
+     * @param tree_ Tree topology.
      * @param buffer_ Buffer read or written by the operation.
      * @param attrNames_ Layout that maps attributes to buffer columns.
      * @param requestedAttributes_ Attributes requested for materialization.
-     * @param dependencySources_ Input represented by `dependencySources_`.
+     * @param dependencySources_ Input.
      */
     AttributeComputeContext(const MorphologicalTree& tree_, std::span<Real> buffer_, const AttributeNames& attrNames_,
                             std::span<const Attribute> requestedAttributes_, std::span<const DependencySourceT<Real>> dependencySources_ = {}) noexcept
@@ -203,12 +203,12 @@ template <std::floating_point Real, AltitudeValue T> struct AltitudeAttributeCom
     /**
      * @brief Binds borrowed topology, altitude, output, request, and dependencies.
      *
-     * @param tree_ Tree topology used by the operation.
+     * @param tree_ Tree topology.
      * @param altitude_ Altitude data indexed by node identifier.
      * @param buffer_ Buffer read or written by the operation.
      * @param attrNames_ Layout that maps attributes to buffer columns.
      * @param requestedAttributes_ Attributes requested for materialization.
-     * @param dependencySources_ Input represented by `dependencySources_`.
+     * @param dependencySources_ Input.
      */
     AltitudeAttributeComputeContext(const MorphologicalTree& tree_, std::span<const T> altitude_, std::span<Real> buffer_, const AttributeNames& attrNames_,
                                     std::span<const Attribute> requestedAttributes_, std::span<const DependencySourceT<Real>> dependencySources_ = {}) noexcept
@@ -221,16 +221,16 @@ template <std::floating_point Real, AltitudeValue T> struct AltitudeAttributeCom
  *
  * @details
  * Unit rows are used when a compact exported-Higra layout needs one row per
- * image-domain proper part. `unitProperParts` contains the proper-part ids that
+ * image-domain proper part. `unitPixels` contains the pixel ids that
  * index `buffer`; `attrNames` describes the columns in that proper-part row
  * domain.
  */
 template <std::floating_point Real> struct UnitAttributeComputeContext {
-    /// Topology that owns the proper parts listed in `unitProperParts`.
+    /// Topology that owns the proper parts listed in `unitPixels`.
     const MorphologicalTree& tree;
 
     /// Proper-part ids whose row order indexes `buffer`.
-    std::span<const NodeId> unitProperParts;
+    std::span<const PixelId> unitPixels;
 
     /// Caller-owned output buffer in unit-proper-part row order.
     std::span<Real> buffer;
@@ -244,15 +244,15 @@ template <std::floating_point Real> struct UnitAttributeComputeContext {
     /**
      * @brief Binds borrowed topology, unit rows, output, and request.
      *
-     * @param tree_ Tree topology used by the operation.
-     * @param unitProperParts_ Proper-part data represented by `unitProperParts_`.
+     * @param tree_ Tree topology.
+     * @param unitPixels_ Proper-part data.
      * @param buffer_ Buffer read or written by the operation.
      * @param attrNames_ Layout that maps attributes to buffer columns.
      * @param requestedAttributes_ Attributes requested for materialization.
      */
-    UnitAttributeComputeContext(const MorphologicalTree& tree_, std::span<const NodeId> unitProperParts_, std::span<Real> buffer_,
+    UnitAttributeComputeContext(const MorphologicalTree& tree_, std::span<const PixelId> unitPixels_, std::span<Real> buffer_,
                                 const AttributeNames& attrNames_, std::span<const Attribute> requestedAttributes_) noexcept
-        : tree(tree_), unitProperParts(unitProperParts_), buffer(buffer_), attrNames(attrNames_), requestedAttributes(requestedAttributes_) {}
+        : tree(tree_), unitPixels(unitPixels_), buffer(buffer_), attrNames(attrNames_), requestedAttributes(requestedAttributes_) {}
 };
 
 /**
@@ -265,14 +265,14 @@ template <std::floating_point Real> struct UnitAttributeComputeContext {
  * that owns its proper part.
  */
 template <std::floating_point Real, AltitudeValue T> struct AltitudeUnitAttributeComputeContext {
-    /// Topology that owns the proper parts listed in `unitProperParts`.
+    /// Topology that owns the proper parts listed in `unitPixels`.
     const MorphologicalTree& tree;
 
     /// Borrowed altitude values indexed by internal node id.
     std::span<const T> altitude;
 
     /// Proper-part ids whose row order indexes `buffer`.
-    std::span<const NodeId> unitProperParts;
+    std::span<const PixelId> unitPixels;
 
     /// Caller-owned output buffer in unit-proper-part row order.
     std::span<Real> buffer;
@@ -286,23 +286,23 @@ template <std::floating_point Real, AltitudeValue T> struct AltitudeUnitAttribut
     /**
      * @brief Binds borrowed topology, altitude, unit rows, output, and request.
      *
-     * @param tree_ Tree topology used by the operation.
+     * @param tree_ Tree topology.
      * @param altitude_ Altitude data indexed by node identifier.
-     * @param unitProperParts_ Proper-part data represented by `unitProperParts_`.
+     * @param unitPixels_ Proper-part data.
      * @param buffer_ Buffer read or written by the operation.
      * @param attrNames_ Layout that maps attributes to buffer columns.
      * @param requestedAttributes_ Attributes requested for materialization.
      */
-    AltitudeUnitAttributeComputeContext(const MorphologicalTree& tree_, std::span<const T> altitude_, std::span<const NodeId> unitProperParts_,
+    AltitudeUnitAttributeComputeContext(const MorphologicalTree& tree_, std::span<const T> altitude_, std::span<const PixelId> unitPixels_,
                                         std::span<Real> buffer_, const AttributeNames& attrNames_, std::span<const Attribute> requestedAttributes_) noexcept
-        : tree(tree_), altitude(altitude_), unitProperParts(unitProperParts_), buffer(buffer_), attrNames(attrNames_),
+        : tree(tree_), altitude(altitude_), unitPixels(unitPixels_), buffer(buffer_), attrNames(attrNames_),
           requestedAttributes(requestedAttributes_) {}
 };
 
-template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, NodeId properPart);
+template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, PixelId pixel);
 
 namespace detail::kernel {
-template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, NodeId properPart);
+template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, PixelId pixel);
 }
 
 /**
@@ -313,13 +313,13 @@ template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, 
  * including dead slots. Live-node semantics are enforced by traversal code;
  * this helper only checks the flat storage shape.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param buffer Buffer read or written by the operation.
  * @param attrNames Layout that maps attributes to buffer columns.
  */
 template <std::floating_point Real>
 inline void requireAttributeBufferShape(const MorphologicalTree& tree, std::span<Real> buffer, const AttributeNames& attrNames) {
-    const std::size_t expectedSize = static_cast<std::size_t>(tree.getNumInternalNodeSlots()) * static_cast<std::size_t>(attrNames.NUM_ATTRIBUTES);
+    const std::size_t expectedSize = static_cast<std::size_t>(tree.numInternalNodeSlots()) * static_cast<std::size_t>(attrNames.NUM_ATTRIBUTES);
     if (buffer.size() != expectedSize) {
         throw std::invalid_argument("Attribute output buffer size must match the dense internal-node domain and requested attributes.");
     }
@@ -372,23 +372,23 @@ inline bool requestsAttribute(std::span<const Attribute> requestedAttributes, At
  * @details
  * Unit rows are used when projecting internal tree-node attributes to compact
  * exported Higra layouts. Each row corresponds to one proper part listed in
- * `unitProperParts`, not to an internal tree node.
+ * `unitPixels`, not to an internal tree node.
  *
- * @param tree Tree topology used by the operation.
- * @param unitProperParts Proper-part data represented by `unitProperParts`.
+ * @param tree Tree topology.
+ * @param unitPixels Proper-part data.
  * @param buffer Buffer read or written by the operation.
  * @param attrNames Layout that maps attributes to buffer columns.
  */
 template <std::floating_point Real>
-inline void requireUnitAttributeBufferShape(const MorphologicalTree& tree, std::span<const NodeId> unitProperParts, std::span<Real> buffer,
+inline void requireUnitAttributeBufferShape(const MorphologicalTree& tree, std::span<const PixelId> unitPixels, std::span<Real> buffer,
                                             const AttributeNames& attrNames) {
-    const std::size_t expectedSize = unitProperParts.size() * static_cast<std::size_t>(attrNames.NUM_ATTRIBUTES);
+    const std::size_t expectedSize = unitPixels.size() * static_cast<std::size_t>(attrNames.NUM_ATTRIBUTES);
     MMCFILTERS_CONTRACT_REQUIRE(buffer.size() == expectedSize,
                                 throw std::invalid_argument("Unit-attribute buffer size must match the exported leaf domain and requested attributes."));
     if constexpr (contract::validationsEnabled) {
-        for (const NodeId properPart : unitProperParts) {
-            if (!tree.isProperPart(properPart)) {
-                throw std::invalid_argument("Unit-attribute computation requires valid proper-part ids.");
+        for (const PixelId pixel : unitPixels) {
+            if (!tree.isPixel(pixel)) {
+                throw std::invalid_argument("Unit-attribute computation requires valid pixel ids.");
             }
         }
     }
@@ -397,9 +397,9 @@ inline void requireUnitAttributeBufferShape(const MorphologicalTree& tree, std::
 /**
  * @brief Reads the typed altitude assigned to one unit proper part.
  *
- * @param tree Tree topology used by the operation.
- * @param altitudeView Altitude or level represented by `altitudeView`.
- * @param properPart Proper-part data represented by `properPart`.
+ * @param tree Tree topology.
+ * @param altitudeView Altitude or level.
+ * @param pixel Proper-part data.
  * @return The requested typed altitude assigned to one unit proper part.
  */
 namespace detail::kernel {
@@ -408,25 +408,25 @@ namespace detail::kernel {
  * @brief Reads the typed altitude assigned to an established unit proper part.
  * @param tree Established tree topology.
  * @param altitudeView Established altitude span.
- * @param properPart Established proper-part id.
- * @return Altitude of the proper part owner.
+ * @param pixel Established proper-part id.
+ * @return Altitude of the smallest node.
  */
-template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, NodeId properPart) {
-    const NodeId ownerNodeId = detail::CommittedTreeAccess::properPartOwner(tree, properPart);
-    return altitudeView[static_cast<std::size_t>(ownerNodeId)];
+template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, PixelId pixel) {
+    const NodeId smallestNodeId = detail::CommittedTreeAccess::smallestNodeMap(tree, pixel);
+    return altitudeView[static_cast<std::size_t>(smallestNodeId)];
 }
 
 } // namespace detail::kernel
 
-template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, NodeId properPart) {
-    TreeAltitudeAlgorithms::validateAltitudeBufferShape(tree, altitudeView);
-    MMCFILTERS_CONTRACT_REQUIRE(tree.isProperPart(properPart),
+template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, PixelId pixel) {
+    TreeAltitudeAlgorithms::validateNodeAltitudeBufferShape(tree, altitudeView);
+    MMCFILTERS_CONTRACT_REQUIRE(tree.isPixel(pixel),
                                 throw std::invalid_argument("Unit altitude computation requires a valid proper-part id."));
-    const NodeId ownerNodeId = detail::CommittedTreeAccess::properPartOwner(tree, properPart);
-    if (ownerNodeId == InvalidNode || !detail::CommittedTreeAccess::isAlive(tree, ownerNodeId)) {
-        throw std::runtime_error("Unit-attribute computation requires every proper part to have an alive owner.");
+    const NodeId smallestNodeId = detail::CommittedTreeAccess::smallestNodeMap(tree, pixel);
+    if (smallestNodeId == InvalidNode || !detail::CommittedTreeAccess::isAlive(tree, smallestNodeId)) {
+        throw std::runtime_error("Unit-attribute computation requires every proper part to have an alive smallest node.");
     }
-    return altitudeView[static_cast<std::size_t>(ownerNodeId)];
+    return altitudeView[static_cast<std::size_t>(smallestNodeId)];
 }
 
 } // namespace mmcfilters

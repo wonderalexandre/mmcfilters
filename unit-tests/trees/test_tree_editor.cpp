@@ -26,15 +26,15 @@ struct PublicTreeState {
     std::vector<std::uint8_t> alive;
     std::vector<NodeId> parents;
     std::vector<NodeId> orderedChildren;
-    std::vector<NodeId> orderedProperParts;
-    std::vector<NodeId> properPartOwners;
+    std::vector<PixelId> orderedProperParts;
+    std::vector<NodeId> smallestNodeMaps;
 };
 
 PublicTreeState capturePublicTreeState(const MorphologicalTree& tree) {
     PublicTreeState state;
-    state.root = tree.getRoot();
-    state.numNodes = tree.getNumNodes();
-    state.numSlots = tree.getNumInternalNodeSlots();
+    state.root = tree.root();
+    state.numNodes = tree.numNodes();
+    state.numSlots = tree.numInternalNodeSlots();
     state.numFreeSlots = tree.getNumFreeNodeSlots();
     state.mutationVersion = tree.getMutationVersion();
     state.alive.reserve(static_cast<std::size_t>(state.numSlots));
@@ -43,21 +43,21 @@ PublicTreeState capturePublicTreeState(const MorphologicalTree& tree) {
     for (NodeId node = 0; node < state.numSlots; ++node) {
         const bool alive = tree.isAlive(node);
         state.alive.push_back(static_cast<std::uint8_t>(alive));
-        state.parents.push_back(alive ? tree.getNodeParent(node) : InvalidNode);
+        state.parents.push_back(alive ? tree.parent(node) : InvalidNode);
         if (alive) {
-            for (NodeId child : tree.getChildren(node)) {
+            for (NodeId child : tree.children(node)) {
                 state.orderedChildren.push_back(child);
             }
-            for (NodeId properPart : tree.getProperParts(node)) {
-                state.orderedProperParts.push_back(properPart);
+            for (PixelId pixel : tree.properPart(node)) {
+                state.orderedProperParts.push_back(pixel);
             }
         }
         state.orderedChildren.push_back(InvalidNode);
-        state.orderedProperParts.push_back(InvalidNode);
+        state.orderedProperParts.push_back(InvalidPixel);
     }
 
-    for (NodeId properPart = 0; properPart < tree.getNumTotalProperParts(); ++properPart) {
-        state.properPartOwners.push_back(tree.getProperPartOwner(properPart));
+    for (PixelId pixel = 0; pixel < tree.numPixels(); ++pixel) {
+        state.smallestNodeMaps.push_back(tree.smallestNode(pixel));
     }
     return state;
 }
@@ -73,7 +73,7 @@ void requirePublicTreeStateEqual(const MorphologicalTree& tree, const PublicTree
     requireVectorEqual(actual.parents, expected.parents, label + " parents");
     requireVectorEqual(actual.orderedChildren, expected.orderedChildren, label + " ordered children");
     requireVectorEqual(actual.orderedProperParts, expected.orderedProperParts, label + " ordered proper parts");
-    requireVectorEqual(actual.properPartOwners, expected.properPartOwners, label + " proper-part owners");
+    requireVectorEqual(actual.smallestNodeMaps, expected.smallestNodeMaps, label + " smallest nodes");
 }
 
 } // namespace
@@ -95,7 +95,7 @@ int main() {
         const std::size_t versionBeforeEdit = tree->getMutationVersion();
         auto editor = tree->edit();
 
-        requireEqual(tree->getNumInternalNodeSlots(), 6, "initial internal slot count");
+        requireEqual(tree->numInternalNodeSlots(), 6, "initial internal slot count");
         requireEqual(tree->getNumFreeNodeSlots(), 0, "initial free slot count");
 
         const NodeId insertedNode = editor.createDetachedNode();
@@ -103,12 +103,12 @@ int main() {
 
         requireEqual(insertedNode, 6, "createDetachedNode must append a fresh slot when none is free");
         require(tree->isAlive(insertedNode), "inserted node must be alive");
-        requireEqual(tree->getNodeParent(insertedNode), insertedNode, "inserted node must start detached");
+        requireEqual(tree->parent(insertedNode), insertedNode, "inserted node must start detached");
         require(editor.hasDetachedAliveNodes(), "editor must report detached nodes during the staged edit");
 
         editor.reparent(3, insertedNode);
         editor.reparent(4, insertedNode);
-        requireVectorEqual(collectNodeIds(tree->getChildren(insertedNode)), {3, 4}, "new node children before attach");
+        requireVectorEqual(collectNodeIds(tree->children(insertedNode)), {3, 4}, "new node children before attach");
 
         editor.attach(2, insertedNode);
         require(!editor.hasDetachedAliveNodes(), "editor must stop reporting detached nodes after re-attachment");
@@ -118,14 +118,14 @@ int main() {
         require(!tree->isEditing(), "successful validateAndCommit must close the edit session");
         require(tree->getMutationVersion() > versionBeforeEdit, "committed staged edit must advance the mutation version");
 
-        requireEqual(tree->getNodeParent(insertedNode), 2, "inserted node parent after commit");
-        requireVectorEqual(collectNodeIds(tree->getChildren(2)), {6}, "parent children after commit");
-        requireVectorEqual(collectNodeIds(tree->getChildren(insertedNode)), {3, 4}, "inserted node children after commit");
-        requireVectorEqual(collectNodeIds(tree->getPathToRootNodes(5)), {5, 3, 6, 2, 1, 0}, "path to root after staged insertion");
+        requireEqual(tree->parent(insertedNode), 2, "inserted node parent after commit");
+        requireVectorEqual(collectNodeIds(tree->children(2)), {6}, "parent children after commit");
+        requireVectorEqual(collectNodeIds(tree->children(insertedNode)), {3, 4}, "inserted node children after commit");
+        requireVectorEqual(collectNodeIds(tree->ancestors(5)), {5, 3, 6, 2, 1, 0}, "path to root after staged insertion");
         requireEqual(computeAreaViaAttributeFacade(*tree, insertedNode), expectedInsertedArea, "inserted node area after commit");
 
         const auto exportedHigra = exportFlatHigraHierarchy(*tree);
-        requireEqual(static_cast<int>(exportedHigra.first.size()), tree->getNumTotalProperParts() + tree->getNumNodes(),
+        requireEqual(static_cast<int>(exportedHigra.first.size()), tree->numPixels() + tree->numNodes(),
                      "exported Higra parent size after commit");
     }
 
@@ -137,7 +137,7 @@ int main() {
         require(editor.hasDetachedAliveNodes(), "detached edit must be visible before commit");
         requireThrows([&]() { (void)exportFlatHigraHierarchy(*tree); }, "Higra export must reject detached alive nodes");
         if constexpr (contract::validationsEnabled) {
-            requireThrows([&]() { (void)computeAreaViaAttributeFacade(*tree, tree->getRoot()); }, "attribute computation must reject an open edit session");
+            requireThrows([&]() { (void)computeAreaViaAttributeFacade(*tree, tree->root()); }, "attribute computation must reject an open edit session");
         }
 
         bool threw = false;
@@ -149,13 +149,13 @@ int main() {
         require(threw, "commit must reject a tree that still has detached alive nodes");
         require(tree->isEditing(), "failed commit must leave the edit session open");
 
-        const auto donorProperParts = collectNodeIds(tree->getProperParts(4));
+        const auto donorProperParts = collectPixelIds(tree->properPart(4));
         require(!donorProperParts.empty(), "repair fixture must expose a direct proper part");
-        editor.moveProperPart(detachedNode, 4, donorProperParts.front());
+        editor.movePixelToProperPart(detachedNode, 4, donorProperParts.front());
         editor.attach(4, detachedNode);
         const TreeValidationResult repairedCommit = editor.validateAndCommit();
         require(repairedCommit.ok, "validateAndCommit must succeed after repairing the edit");
-        requireEqual(tree->getNodeParent(detachedNode), 4, "editor must remain usable after a failed commit");
+        requireEqual(tree->parent(detachedNode), 4, "editor must remain usable after a failed commit");
         require(!editor.hasDetachedAliveNodes(), "successful re-attachment must clear the detached state");
         require(!tree->isEditing(), "successful validateAndCommit must close the repaired session");
     }
@@ -191,7 +191,7 @@ int main() {
     {
         auto tree = makeComponentTree(makeComponentTreeFixture(), true);
         const NodeId node = 3;
-        const NodeId parent = tree->getNodeParent(node);
+        const NodeId parent = tree->parent(node);
         auto editor = tree->edit();
         editor.detach(node);
         editor.attach(parent, node);
@@ -207,7 +207,7 @@ int main() {
     {
         auto tree = makeComponentTree(makeComponentTreeFixture(), true);
         const NodeId node = 3;
-        const NodeId parent = tree->getNodeParent(node);
+        const NodeId parent = tree->parent(node);
         auto editor = tree->edit();
         auto staleProof = editor.proveIncremental();
         editor.detach(node);
@@ -254,7 +254,13 @@ int main() {
 
         MorphologicalTree moved(std::move(*tree));
         moved.validateConnectedRootedTree();
-        requireEqual(moved.getNumTotalProperParts(), static_cast<int>(original.properPartOwners.size()), "committed topology must remain movable");
+        requireEqual(moved.numPixels(), static_cast<int>(original.smallestNodeMaps.size()), "committed topology must remain movable");
+        requireEqual(tree->root(), InvalidNode, "moved-from empty tree root");
+        requireEqual(tree->numNodes(), 0, "moved-from empty tree node count");
+        requireVectorEqual(collectNodeIds(tree->aliveNodeIds()), std::vector<NodeId>{}, "moved-from empty alive-node range");
+        requireVectorEqual(tree->leaves(), std::vector<NodeId>{}, "moved-from empty leaves");
+        requireVectorEqual(collectNodeIds(tree->postOrder()), std::vector<NodeId>{}, "moved-from empty post-order traversal");
+        requireVectorEqual(collectNodeIds(tree->breadthFirstTraversal()), std::vector<NodeId>{}, "moved-from empty breadth-first traversal");
     }
 
     {
@@ -281,19 +287,19 @@ int main() {
         }
         destinationEditor.commit();
 
-        const NodeId expectedLca = source->getLowestCommonAncestor(3, 4);
-        static_cast<void>(destination->getLowestCommonAncestor(3, 4));
+        const NodeId expectedLca = source->lowestCommonAncestor(3, 4);
+        static_cast<void>(destination->lowestCommonAncestor(3, 4));
         *destination = std::move(*source);
         destination->validateConnectedRootedTree();
-        requireEqual(destination->getNumTotalProperParts(), static_cast<int>(sourceBefore.properPartOwners.size()),
+        requireEqual(destination->numPixels(), static_cast<int>(sourceBefore.smallestNodeMaps.size()),
                      "committed topology must remain move-assignable");
-        requireEqual(destination->getLowestCommonAncestor(3, 4), expectedLca, "move assignment must rebuild an owner-bound LCA cache");
+        requireEqual(destination->lowestCommonAncestor(3, 4), expectedLca, "move assignment must rebuild an owner-bound LCA cache");
     }
 
     {
         auto tree = makeComponentTree(makeComponentTreeFixture(), true);
-        const NodeId originalParent = tree->getNodeParent(3);
-        const int originalSlots = tree->getNumInternalNodeSlots();
+        const NodeId originalParent = tree->parent(3);
+        const int originalSlots = tree->numInternalNodeSlots();
         const std::size_t originalVersion = tree->getMutationVersion();
         {
             auto editor = tree->edit();
@@ -303,10 +309,10 @@ int main() {
             require(tree->isEditing(), "uncommitted editor must keep the tree in editing mode");
         }
         require(!tree->isEditing(), "destroying an ordinary editor must roll back and close the session");
-        requireEqual(tree->getNodeParent(3), originalParent, "ordinary editor rollback must restore parent links");
-        requireEqual(tree->getNumInternalNodeSlots(), originalSlots, "ordinary editor rollback must remove appended slots");
+        requireEqual(tree->parent(3), originalParent, "ordinary editor rollback must restore parent links");
+        requireEqual(tree->numInternalNodeSlots(), originalSlots, "ordinary editor rollback must remove appended slots");
         requireEqual(tree->getMutationVersion(), originalVersion, "ordinary editor rollback must restore the committed version");
-        requireEqual(computeAreaViaAttributeFacade(*tree, tree->getRoot()), tree->getNumTotalProperParts(),
+        requireEqual(computeAreaViaAttributeFacade(*tree, tree->root()), tree->numPixels(),
                      "rolled-back ordinary edit must leave the tree usable");
         auto nextEditor = tree->edit();
         nextEditor.commit();
@@ -318,7 +324,7 @@ int main() {
         {
             auto editor = tree->edit();
             editor.moveChildren(4, 3);
-            editor.moveProperParts(4, 3);
+            editor.mergeProperParts(4, 3);
         }
         requirePublicTreeStateEqual(*tree, original, "abandoned child/proper-part splice");
     }
@@ -329,7 +335,7 @@ int main() {
         {
             auto editor = tree->edit();
             const NodeId appended = editor.createDetachedNode();
-            const NodeId root = tree->getRoot();
+            const NodeId root = tree->root();
             editor.attach(root, appended);
             editor.removeChild(root, appended, true);
             const NodeId reused = editor.createDetachedNode();
@@ -373,8 +379,8 @@ int main() {
 
     {
         auto tree = makeComponentTree(makeComponentTreeFixture(), true);
-        const NodeId originalParent = tree->getNodeParent(3);
-        const int originalSlots = tree->getNumInternalNodeSlots();
+        const NodeId originalParent = tree->parent(3);
+        const int originalSlots = tree->numInternalNodeSlots();
         const std::size_t originalVersion = tree->getMutationVersion();
 
         auto editor = tree->edit();
@@ -384,34 +390,34 @@ int main() {
         editor.rollback();
 
         require(!tree->isEditing(), "explicit rollback must close the edit session");
-        requireEqual(tree->getNodeParent(3), originalParent, "explicit rollback must restore parent links");
-        requireEqual(tree->getNumInternalNodeSlots(), originalSlots, "explicit rollback must restore dense node slots");
+        requireEqual(tree->parent(3), originalParent, "explicit rollback must restore parent links");
+        requireEqual(tree->numInternalNodeSlots(), originalSlots, "explicit rollback must restore dense node slots");
         requireEqual(tree->getMutationVersion(), originalVersion, "explicit rollback must restore the committed version");
     }
 
     {
         auto tree = makeComponentTree(makeComponentTreeFixture(), true);
-        const NodeId originalParent = tree->getNodeParent(3);
+        const NodeId originalParent = tree->parent(3);
         {
             auto editor = tree->edit();
             editor.reparent(3, 4);
             require(tree->isEditing(), "abandoned transactional edit must be visible while active");
         }
         require(!tree->isEditing(), "transactional editor destructor must close through rollback");
-        requireEqual(tree->getNodeParent(3), originalParent, "transactional editor destructor must restore topology");
-        requireEqual(computeAreaViaAttributeFacade(*tree, tree->getRoot()), tree->getNumTotalProperParts(), "rolled-back hierarchy must remain usable");
+        requireEqual(tree->parent(3), originalParent, "transactional editor destructor must restore topology");
+        requireEqual(computeAreaViaAttributeFacade(*tree, tree->root()), tree->numPixels(), "rolled-back hierarchy must remain usable");
     }
 
     {
         auto tree = makeComponentTree(makeComponentTreeFixture(), true);
-        requireEqual(tree->getProperPartOwner(5), 4, "transaction commit fixture ownership");
+        requireEqual(tree->smallestNode(5), 4, "transaction commit fixture smallest-node assignment");
         {
             auto editor = tree->edit();
-            editor.moveProperPart(5, 4, 5);
+            editor.movePixelToProperPart(5, 4, 5);
             editor.commit();
         }
-        requireEqual(tree->getProperPartOwner(5), 5, "successful transactional commit must discard rollback snapshot");
-        requireEqual(computeAreaViaAttributeFacade(*tree, tree->getRoot()), tree->getNumTotalProperParts(),
+        requireEqual(tree->smallestNode(5), 5, "successful transactional commit must discard rollback snapshot");
+        requireEqual(computeAreaViaAttributeFacade(*tree, tree->root()), tree->numPixels(),
                      "successful transactional edit must publish a valid root support");
     }
 

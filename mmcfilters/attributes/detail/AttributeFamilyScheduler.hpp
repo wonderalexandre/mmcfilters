@@ -178,31 +178,31 @@ template <attributes::computers::AttributeComputerDomain Domain> inline bool att
  */
 inline std::vector<Attribute> dependenciesForAttribute(Attribute attribute) {
     switch (attribute) {
-    case RECTANGULARITY:
-    case RELATIVE_VOLUME:
-        return {AREA};
+    case Rectangularity:
+    case RelativeVolume:
+        return {Area};
 
-    case MEAN_LEVEL:
-    case VARIANCE_LEVEL:
-        return {VOLUME, AREA};
+    case MeanGrayLevel:
+    case GrayLevelVariance:
+        return {Volume, Area};
 
-    case HU_MOMENT_1:
-    case HU_MOMENT_2:
-    case HU_MOMENT_3:
-    case HU_MOMENT_4:
-    case HU_MOMENT_5:
-    case HU_MOMENT_6:
-    case HU_MOMENT_7:
-        return {AREA, CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11, CENTRAL_MOMENT_30, CENTRAL_MOMENT_03, CENTRAL_MOMENT_21, CENTRAL_MOMENT_12};
+    case HuMoment1:
+    case HuMoment2:
+    case HuMoment3:
+    case HuMoment4:
+    case HuMoment5:
+    case HuMoment6:
+    case HuMoment7:
+        return {Area, CentralMoment20, CentralMoment02, CentralMoment11, CentralMoment30, CentralMoment03, CentralMoment21, CentralMoment12};
 
-    case INERTIA:
-    case COMPACTNESS:
-    case ECCENTRICITY:
-    case LENGTH_MAJOR_AXIS:
-    case LENGTH_MINOR_AXIS:
-    case AXIS_ORIENTATION:
-    case CIRCULARITY:
-        return {AREA, CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11};
+    case Inertia:
+    case Compactness:
+    case Eccentricity:
+    case LengthMajorAxis:
+    case LengthMinorAxis:
+    case AxisOrientation:
+    case Circularity:
+        return {Area, CentralMoment20, CentralMoment02, CentralMoment11};
 
     default:
         return {};

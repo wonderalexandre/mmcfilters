@@ -38,14 +38,14 @@ struct UaoResult {
     mmcfilters::ImageInt32Ptr associated;
 };
 
-mmcfilters::ImageUInt8Ptr makeInput(int rows, int cols) {
-    auto image = mmcfilters::ImageUInt8::create(rows, cols);
+mmcfilters::ImageUInt8Ptr makeInput(int rows, int columns) {
+    auto image = mmcfilters::ImageUInt8::create(rows, columns);
     for (int row = 0; row < rows; ++row) {
-        for (int col = 0; col < cols; ++col) {
+        for (int column = 0; column < columns; ++column) {
             const int centeredRow = row - rows / 2;
-            const int centeredCol = col - cols / 2;
-            const int radial = centeredRow * centeredRow + centeredCol * centeredCol;
-            (*image)[row * cols + col] = static_cast<std::uint8_t>((radial + 17 * row + 31 * col) & 0xff);
+            const int centeredColumn = column - columns / 2;
+            const int radial = centeredRow * centeredRow + centeredColumn * centeredColumn;
+            (*image)[row * columns + column] = static_cast<std::uint8_t>((radial + 17 * row + 31 * column) & 0xff);
         }
     }
     return image;
@@ -88,18 +88,18 @@ void hashAttributeLayout(std::uint64_t& hash, const mmcfilters::AttributeNames& 
     }
 }
 
-void hashDeltaAttributeLayout(std::uint64_t& hash, const mmcfilters::AttributeNamesWithDelta& names) {
-    std::vector<std::pair<mmcfilters::AttributeKey, int>> entries(names.indexMap.begin(), names.indexMap.end());
+void hashNodeAttributeSampleLayout(std::uint64_t& hash, const mmcfilters::NodeAttributeSampleLayout& names) {
+    std::vector<std::pair<mmcfilters::NodeAttributeSampleKey, int>> entries(names.indexMap.begin(), names.indexMap.end());
     std::sort(entries.begin(), entries.end(), [](const auto& lhs, const auto& rhs) {
-        if (lhs.first.delta != rhs.first.delta) {
-            return lhs.first.delta < rhs.first.delta;
+        if (lhs.first.sampleOffset != rhs.first.sampleOffset) {
+            return lhs.first.sampleOffset < rhs.first.sampleOffset;
         }
-        return static_cast<int>(lhs.first.attr) < static_cast<int>(rhs.first.attr);
+        return static_cast<int>(lhs.first.attribute) < static_cast<int>(rhs.first.attribute);
     });
     hashValue(hash, names.NUM_ATTRIBUTES);
     for (const auto& [key, offset] : entries) {
-        hashValue(hash, key.attr);
-        hashValue(hash, key.delta);
+        hashValue(hash, key.attribute);
+        hashValue(hash, key.sampleOffset);
         hashValue(hash, offset);
     }
 }
@@ -135,9 +135,9 @@ template <typename Real> std::uint64_t attributeChecksum(const mmcfilters::Compu
     return hash;
 }
 
-template <typename Real> std::uint64_t deltaAttributeChecksum(const mmcfilters::ComputedAttributeDataWithDelta<Real>& result) {
+template <typename Real> std::uint64_t sampledNodeAttributeChecksum(const mmcfilters::SampledNodeAttributeData<Real>& result) {
     std::uint64_t hash = fnvOffsetBasis;
-    hashDeltaAttributeLayout(hash, result.first);
+    hashNodeAttributeSampleLayout(hash, result.first);
     hashValue(hash, result.nodeIdSpace);
     hashVector(hash, result.second);
     return hash;
@@ -174,10 +174,10 @@ std::uint64_t higraChecksum(const std::pair<std::vector<mmcfilters::NodeId>, std
 
 int main(int argc, char** argv) {
     const int rows = argc > 1 ? std::atoi(argv[1]) : 256;
-    const int cols = argc > 2 ? std::atoi(argv[2]) : 256;
+    const int columns = argc > 2 ? std::atoi(argv[2]) : 256;
     const int repetitions = argc > 3 ? std::atoi(argv[3]) : 9;
-    if (rows <= 0 || cols <= 0 || repetitions <= 0) {
-        std::cerr << "usage: validation_sensitive_algorithms_benchmark [rows>0] [cols>0] [repetitions>0]\n";
+    if (rows <= 0 || columns <= 0 || repetitions <= 0) {
+        std::cerr << "usage: validation_sensitive_algorithms_benchmark [rows>0] [columns>0] [repetitions>0]\n";
         return EXIT_FAILURE;
     }
 
@@ -185,10 +185,10 @@ int main(int argc, char** argv) {
         // The image, topology, altitude and shared increasing attribute are the
         // established input state. Their construction is intentionally outside
         // every timed region so each scenario measures only its named operation.
-        const auto image = makeInput(rows, cols);
-        const auto weighted = mmcfilters::MorphologicalTreeFactory::createMaxTree(image, 1.5);
-        const auto area = mmcfilters::AttributeComputation::computeSingleAttribute<double>(weighted, mmcfilters::AREA);
-        const double criterion = static_cast<double>(rows) * static_cast<double>(cols) / 16.0;
+        const auto image = makeInput(rows, columns);
+        const auto valuedTree = mmcfilters::MorphologicalTreeFactory::createMaxTree(image, 1.5);
+        const auto area = mmcfilters::AttributeComputation::computeSingleAttribute<double>(valuedTree, mmcfilters::Area);
+        const double attributeThreshold = static_cast<double>(rows) * static_cast<double>(columns) / 16.0;
 
         std::vector<ScenarioResult> results;
         results.reserve(8);
@@ -196,16 +196,16 @@ int main(int argc, char** argv) {
         results.push_back(benchmarkScenario(
             "viterbi_filter", repetitions,
             [&]() {
-                mmcfilters::AttributeFilters<std::uint8_t> filters(weighted);
-                return filters.filteringByViterbiRule(area.second.data(), criterion);
+                mmcfilters::AttributeFilters<std::uint8_t> filters(valuedTree);
+                return filters.filteringByViterbiRule(area.second.data(), attributeThreshold);
             },
             [](const auto& result) { return imageChecksum(result); }));
 
         results.push_back(benchmarkScenario(
             "ultimate_attribute_opening", repetitions,
             [&]() {
-                mmcfilters::UltimateAttributeOpening<std::uint8_t, double> uao(weighted, area.second.data());
-                uao.execute(criterion);
+                mmcfilters::UltimateAttributeOpening<std::uint8_t, double> uao(valuedTree, area.second.data());
+                uao.execute(attributeThreshold);
                 return UaoResult{uao.getMaxContrastImage(), uao.getAssociatedImage()};
             },
             [](const UaoResult& result) { return uaoChecksum(result); }));
@@ -213,7 +213,7 @@ int main(int argc, char** argv) {
         results.push_back(benchmarkScenario(
             "extinction_filter", repetitions,
             [&]() {
-                mmcfilters::ExtinctionValues<std::uint8_t, double> extinction(weighted, area.second.data());
+                mmcfilters::ExtinctionValues<std::uint8_t, double> extinction(valuedTree, area.second.data());
                 return extinction.filtering(mmcfilters::ExtinctionSelectionPolicy<double>::byTopK(16));
             },
             [](const auto& result) { return imageChecksum(result); }));
@@ -221,45 +221,45 @@ int main(int argc, char** argv) {
         results.push_back(benchmarkScenario(
             "mser", repetitions,
             [&]() {
-                mmcfilters::MSERComputer<std::uint8_t, double> mser(weighted, area.second.data());
-                return mser.computeMSER(mmcfilters::AltitudeDiff<std::uint8_t>{4});
+                mmcfilters::MSERComputer<std::uint8_t, double> mser(valuedTree, area.second.data());
+                return mser.computeMSER(mmcfilters::AltitudeDifference<std::uint8_t>{4});
             },
             [](const std::vector<std::uint8_t>& result) { return maskChecksum(result); }));
 
         results.push_back(benchmarkScenario(
             "depth_stability", repetitions,
             [&]() {
-                mmcfilters::DepthStableRegionComputer<double> depth(weighted.topology(), area.second.data());
+                mmcfilters::DepthStableRegionComputer<double> depth(valuedTree.topology(), area.second.data());
                 return depth.computeByDepth(4);
             },
             [](const std::vector<std::uint8_t>& result) { return maskChecksum(result); }));
 
         results.push_back(benchmarkScenario(
-            "delta_attribute", repetitions,
+            "sampled_node_attribute", repetitions,
             [&]() {
-                return mmcfilters::AttributeComputation::computeSingleAttributeWithDelta<double>(
-                    weighted, mmcfilters::AREA, mmcfilters::AltitudeDiff<std::uint8_t>{1}, 2, "last-padding");
+                return mmcfilters::AttributeComputation::computeSampledNodeAttribute<double>(
+                    valuedTree, mmcfilters::Area, mmcfilters::AltitudeDifference<std::uint8_t>{1}, 2);
             },
-            [](const auto& result) { return deltaAttributeChecksum(result); }));
+            [](const auto& result) { return sampledNodeAttributeChecksum(result); }));
 
         results.push_back(benchmarkScenario(
             "bitquad_attributes", repetitions,
             [&]() {
                 return mmcfilters::AttributeComputation::computeAttributes<double>(
-                    weighted, {mmcfilters::BITQUADS_AREA, mmcfilters::BITQUADS_PERIMETER, mmcfilters::BITQUADS_CIRCULARITY});
+                    valuedTree, {mmcfilters::BitquadArea, mmcfilters::BitquadPerimeter, mmcfilters::BitquadCircularity});
             },
             [](const auto& result) { return attributeChecksum(result); }));
 
         results.push_back(benchmarkScenario(
-            "higra_export", repetitions, [&]() { return weighted.exportHigraHierarchy(); },
+            "higra_export", repetitions, [&]() { return valuedTree.exportHigraHierarchy(); },
             [](const auto& result) { return higraChecksum(result); }));
 
         std::cout << std::fixed << std::setprecision(3)
                   << "contract_mode=" << (mmcfilters::contract::validationsEnabled ? "CHECKED" : "UNCHECKED") << '\n'
                   << "rows=" << rows << '\n'
-                  << "cols=" << cols << '\n'
+                  << "columns=" << columns << '\n'
                   << "repetitions=" << repetitions << '\n'
-                  << "internal_node_slots=" << weighted.topology().getNumInternalNodeSlots() << '\n';
+                  << "internal_node_slots=" << valuedTree.topology().numInternalNodeSlots() << '\n';
         for (const ScenarioResult& result : results) {
             std::cout << result.name << "_median_ms=" << result.medianMilliseconds << '\n'
                       << result.name << "_checksum=" << result.checksum << '\n';

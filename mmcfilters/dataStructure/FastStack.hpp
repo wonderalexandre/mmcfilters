@@ -14,7 +14,7 @@ namespace mmcfilters {
  */
 template <typename T> struct FastStack {
   private:
-    /** @brief Stores the data. */
+    /** @brief Data buffer. */
     std::vector<T> data_;
 
   public:
@@ -59,14 +59,14 @@ template <typename T> struct FastStack {
     /**
      * @brief Pushes an element on top of the stack.
      *
-     * @param value Value used by the operation.
+     * @param value Value.
      */
     void push(const T& value) { data_.push_back(value); }
 
     /**
      * @brief Pushes an element on top of the stack by moving it into storage.
      *
-     * @param value Value used by the operation.
+     * @param value Value.
      */
     void push(T&& value) { data_.push_back(std::move(value)); }
 

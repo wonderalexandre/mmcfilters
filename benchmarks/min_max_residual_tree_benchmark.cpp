@@ -92,9 +92,9 @@ double median(std::vector<double> values) {
 }
 
 template <class Builder> bool reconstructs(const Builder& builder, const ImageUInt8Ptr& image) {
-    for (NodeId pixel = 0; pixel < image->getSize(); ++pixel) {
-        const NodeId owner = builder.getProperPartOwner()[static_cast<std::size_t>(pixel)];
-        if (builder.getAltitude()[static_cast<std::size_t>(owner)] != (*image)[pixel]) {
+    for (PixelId pixel = 0; pixel < image->getSize(); ++pixel) {
+        const NodeId smallestNode = builder.smallestNodeMap()[static_cast<std::size_t>(pixel)];
+        if (builder.nodeAltitudes()[static_cast<std::size_t>(smallestNode)] != (*image)[pixel]) {
             return false;
         }
     }
@@ -103,7 +103,7 @@ template <class Builder> bool reconstructs(const Builder& builder, const ImageUI
 
 void printDomain(const Options& options, const ImageUInt8Ptr& image, const char* mode) {
     std::cout << "rows=" << image->getNumRows() << '\n'
-              << "cols=" << image->getNumCols() << '\n'
+              << "columns=" << image->getNumColumns() << '\n'
               << "pixels=" << image->getSize() << '\n'
               << "repetitions=" << options.repetitions << '\n'
               << "mode=" << mode << '\n';
@@ -125,8 +125,8 @@ void runIsolated(const Options& options, const ImageUInt8Ptr& image, const Regul
     printDomain(options, image, mode);
     std::cout << std::fixed << std::setprecision(3)
               << mode << "_median_ms=" << median(std::move(times)) << '\n'
-              << mode << "_nodes=" << builder.getNodeParent().size() << '\n'
-              << mode << "_rejected_extrema=" << builder.getStatistics().rejectedExtrema << '\n';
+              << mode << "_nodes=" << builder.parents().size() << '\n'
+              << mode << "_rejected_extrema=" << builder.statistics().rejectedExtrema << '\n';
 }
 
 } // namespace
@@ -135,20 +135,20 @@ int main(int argc, char** argv) {
     try {
         const Options options = parseOptions(argc, argv);
         const auto image = loadImage(options.imagePath);
-        const RegularGridAdjacency2D adjacency(image->getNumRows(), image->getNumCols(), 1.0);
+        const RegularGridAdjacency2D adjacency(image->getNumRows(), image->getNumColumns(), 1.0);
         if (options.mode == Options::Mode::Unrestricted) {
-            UnrestrictedBuilder unrestricted(adjacency, UnrestrictedResidualTreeOptions{SdrtTiePolicy::ContrastInvariantSpatial});
+            UnrestrictedBuilder unrestricted(adjacency);
             runIsolated(options, image, adjacency, unrestricted, "unrestricted");
             return 0;
         }
         if (options.mode == Options::Mode::Saturated) {
-            SaturatedBuilder saturated(adjacency, NodeId{0}, SaturatedResidualTreeOptions{SdrtTiePolicy::ContrastInvariantSpatial});
+            SaturatedBuilder saturated(adjacency, PixelId{0});
             runIsolated(options, image, adjacency, saturated, "saturated");
             return 0;
         }
 
-        UnrestrictedBuilder unrestricted(adjacency, UnrestrictedResidualTreeOptions{SdrtTiePolicy::ContrastInvariantSpatial});
-        SaturatedBuilder saturated(adjacency, NodeId{0}, SaturatedResidualTreeOptions{SdrtTiePolicy::ContrastInvariantSpatial});
+        UnrestrictedBuilder unrestricted(adjacency);
+        SaturatedBuilder saturated(adjacency, PixelId{0});
 
         build(unrestricted, image, adjacency);
         build(saturated, image, adjacency);
@@ -172,14 +172,14 @@ int main(int argc, char** argv) {
 
         const double unrestrictedMedian = median(unrestrictedTimes);
         const double saturatedMedian = median(saturatedTimes);
-        const auto& unrestrictedStats = unrestricted.getStatistics();
-        const auto& saturatedStats = saturated.getStatistics();
+        const auto& unrestrictedStats = unrestricted.statistics();
+        const auto& saturatedStats = saturated.statistics();
         printDomain(options, image, "both");
         std::cout << std::fixed << std::setprecision(3) << "unrestricted_median_ms=" << unrestrictedMedian << '\n'
                   << "saturated_median_ms=" << saturatedMedian << '\n'
                   << "saturated_over_unrestricted=" << saturatedMedian / unrestrictedMedian << '\n'
-                  << "unrestricted_nodes=" << unrestricted.getNodeParent().size() << '\n'
-                  << "saturated_nodes=" << saturated.getNodeParent().size() << '\n'
+                  << "unrestricted_nodes=" << unrestricted.parents().size() << '\n'
+                  << "saturated_nodes=" << saturated.parents().size() << '\n'
                   << "unrestricted_rejected_extrema=" << unrestrictedStats.rejectedExtrema << '\n'
                   << "saturated_rejected_extrema=" << saturatedStats.rejectedExtrema << '\n';
         return 0;

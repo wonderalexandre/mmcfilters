@@ -18,7 +18,7 @@ namespace detail {
 /**
  * @brief Squared integer distance helper.
  *
- * @param value Value used by the operation.
+ * @param value Value.
  * @return Squared integer distance helper.
  */
 inline int square(int value) noexcept { return value * value; }
@@ -26,12 +26,12 @@ inline int square(int value) noexcept { return value * value; }
 /**
  * @brief Prints an uint8 image as a small debug table.
  *
- * @param image Image used by the operation.
+ * @param image Image.
  */
 inline void printUInt8Image(const mmcfilters::ImageUInt8Ptr& image) {
     for (int row = 0; row < image->getNumRows(); ++row) {
-        for (int col = 0; col < image->getNumCols(); ++col) {
-            std::cout << std::setw(4) << static_cast<int>((*image)[row * image->getNumCols() + col]);
+        for (int column = 0; column < image->getNumColumns(); ++column) {
+            std::cout << std::setw(4) << static_cast<int>((*image)[row * image->getNumColumns() + column]);
         }
         std::cout << "\n";
     }
@@ -66,8 +66,8 @@ class AdaptiveAdj {
             /**
              * @brief Creates an iterator at a position inside a Neighbors view.
              *
-             * @param neighbors Neighbour offsets used by the operation.
-             * @param idx Zero-based index used by the operation.
+             * @param neighbors Neighbour offsets.
+             * @param idx Zero-based index.
              */
             Iterator(const Neighbors& neighbors, int idx = 0) : idx_{idx}, neighbors_{neighbors} {}
 
@@ -85,7 +85,7 @@ class AdaptiveAdj {
             /**
              * @brief Advances to the next offset in the view.
              *
-             * @return Reference to the resulting object.
+             * @return Mutable reference to the updated object.
              */
             inline Iterator& operator++() noexcept {
                 idx_++;
@@ -123,7 +123,7 @@ class AdaptiveAdj {
         /**
          * @brief Creates a neighbour view centered at point `p`.
          *
-         * @param p Point used by the operation.
+         * @param p Point.
          * @param adj Adaptive adjacency stencil.
          * @param end Exclusive end position.
          */
@@ -132,7 +132,7 @@ class AdaptiveAdj {
         /**
          * @brief Returns the neighbour point at offset index `idx`.
          *
-         * @param idx Zero-based index used by the operation.
+         * @param idx Zero-based index.
          * @return The neighbour point at offset index idx.
          */
         Point2D point(int idx) const { return p_ + adj_.offset_[idx]; }
@@ -140,7 +140,7 @@ class AdaptiveAdj {
         /**
          * @brief Returns the adaptive adjacency id associated with offset `idx`.
          *
-         * @param idx Zero-based index used by the operation.
+         * @param idx Zero-based index.
          * @return The adaptive adjacency id associated with offset idx.
          */
         inline int nextAdj(int idx) const { return adj_.nextAdj_[idx]; }
@@ -148,7 +148,7 @@ class AdaptiveAdj {
         /**
          * @brief Function-call shorthand for point(idx).
          *
-         * @param idx Zero-based index used by the operation.
+         * @param idx Zero-based index.
          * @return Point at the requested offset.
          */
         inline Point2D operator()(int idx) const { return point(idx); }
@@ -282,7 +282,7 @@ class AdaptiveAdj {
     /**
      * @brief Returns the complete neighbour view around `p`.
      *
-     * @param p Point used by the operation.
+     * @param p Point.
      * @return The complete neighbour view around p.
      */
     Neighbors neighbors(const Point2D& p) const { return Neighbors(p, *this, offset_.size()); }
@@ -290,7 +290,7 @@ class AdaptiveAdj {
     /**
      * @brief Returns only the propagation prefix around `p`.
      *
-     * @param p Point used by the operation.
+     * @param p Point.
      * @return Only the propagation prefix around p.
      */
     Neighbors neighborsPropogation(const Point2D& p) const { return Neighbors(p, *this, npropagation_); }
@@ -366,7 +366,7 @@ class AdaptiveAdjBank {
     /**
      * @brief Returns a stencil by its adjacency-map id.
      *
-     * @param idx Zero-based index used by the operation.
+     * @param idx Zero-based index.
      * @return A stencil by its adjacency-map id.
      */
     const AdaptiveAdj& adj(int idx) const { return bank_[idx]; }
@@ -374,13 +374,13 @@ class AdaptiveAdjBank {
     /**
      * @brief Array-style access to adj(idx).
      *
-     * @param idx Zero-based index used by the operation.
-     * @return Reference to the resulting object.
+     * @param idx Zero-based index.
+     * @return Mutable reference to the updated object.
      */
     const AdaptiveAdj& operator[](int idx) const { return adj(idx); }
 
   private:
-    /** @brief Stores the bank. */
+    /** @brief Bank buffer. */
     std::vector<AdaptiveAdj> bank_;
 };
 
@@ -406,23 +406,23 @@ class EdtDIFT {
     inline static constexpr int NIL = -1;
 
     /**
-     * @brief Allocates all buffers for an `nrows x ncols` image domain.
+     * @brief Allocates all buffers for an `numRows x numColumns` image domain.
      *
      * The queue bucket domain is derived from a conservative squared-distance
      * bound for the image size. All pixels start outside the binary support,
      * with themselves as root representatives.
      *
-     * @param nrows Number of rows in the domain.
-     * @param ncols Number of columns in the domain.
+     * @param numRows Number of rows in the domain.
+     * @param numColumns Number of columns in the domain.
      */
-    EdtDIFT(int nrows, int ncols)
-        : bin_{::mmcfilters::detail::CommittedImageAccess::createValue<std::uint8_t>(nrows, ncols)},
-          root_{::mmcfilters::detail::CommittedImageAccess::createValue<int>(nrows, ncols)},
-          Bedt_{::mmcfilters::detail::CommittedImageAccess::createValue<int>(nrows, ncols)},
-          adjMap_{::mmcfilters::detail::CommittedImageAccess::createValue<std::uint8_t>(nrows, ncols)},
-          O_{::mmcfilters::detail::CommittedImageAccess::createValue<std::uint8_t>(nrows, ncols)},
-          Q_{detail::square(static_cast<int>(std::min(ncols, nrows) / 2.0 + 1)), nrows * ncols},
-          adj4_{::mmcfilters::detail::CommittedGridAccess::radiusAdjacency(nrows, ncols, 1.0)}, domain_{ncols, nrows}, stack_(nrows * ncols) {
+    EdtDIFT(int numRows, int numColumns)
+        : bin_{::mmcfilters::detail::CommittedImageAccess::createValue<std::uint8_t>(numRows, numColumns)},
+          root_{::mmcfilters::detail::CommittedImageAccess::createValue<int>(numRows, numColumns)},
+          Bedt_{::mmcfilters::detail::CommittedImageAccess::createValue<int>(numRows, numColumns)},
+          adjMap_{::mmcfilters::detail::CommittedImageAccess::createValue<std::uint8_t>(numRows, numColumns)},
+          O_{::mmcfilters::detail::CommittedImageAccess::createValue<std::uint8_t>(numRows, numColumns)},
+          Q_{detail::square(static_cast<int>(std::min(numColumns, numRows) / 2.0 + 1)), numRows * numColumns},
+          adj4_{::mmcfilters::detail::CommittedGridAccess::radiusAdjacency(numRows, numColumns, 1.0)}, domain_{numColumns, numRows}, stack_(numRows * numColumns) {
         bin_.fill(0);
         root_.fill(0);
         Bedt_.fill(0);
@@ -466,7 +466,7 @@ class EdtDIFT {
                 int tmp = detail::square(dx) + detail::square(dy);
 
                 if (tmp < Q_.cost(qidx) && O_[qidx] == 1) {
-                    if (Q_.state(qidx) != PQueue::State::QUEUED) {
+                    if (Q_.state(qidx) != PQueue::State::Queued) {
                         Q_.setCost(qidx, tmp);
                         Q_.insert(qidx);
                     } else {
@@ -483,7 +483,7 @@ class EdtDIFT {
     /**
      * @brief Marks a pixel as belonging to the current binary support.
      *
-     * @param pidx Row-major pixel index used by the operation.
+     * @param pidx Row-major pixel index.
      */
     inline void addPixelToBinaryImage(int pidx) { bin_[pidx] = 1; }
 
@@ -493,12 +493,12 @@ class EdtDIFT {
      * When a new interior pixel is opened with infinite cost, adjacent pixels
      * whose labels may propagate into it are inserted back into the queue.
      *
-     * @param pidx Row-major pixel index used by the operation.
+     * @param pidx Row-major pixel index.
      */
     void insertNeighborsPQueue(int pidx) {
         for (int qidx : ::mmcfilters::detail::CommittedGridAccess::neighbors(adj4_, pidx)) {
-            if (bin_[qidx] > 0 && Q_.cost(qidx) != PQueue::PINF && Q_.state(qidx) != PQueue::State::QUEUED) {
-                Q_.setState(qidx, PQueue::State::NOT_PROCESSED);
+            if (bin_[qidx] > 0 && Q_.cost(qidx) != PQueue::PINF && Q_.state(qidx) != PQueue::State::Queued) {
+                Q_.setState(qidx, PQueue::State::NotProcessed);
                 Q_.insert(qidx);
             }
         }
@@ -507,7 +507,7 @@ class EdtDIFT {
     /**
      * @brief Inserts a contour pixel as a zero-cost IFT seed.
      *
-     * @param pidx Row-major pixel index used by the operation.
+     * @param pidx Row-major pixel index.
      */
     void seed(int pidx) {
         root_[pidx] = pidx;
@@ -521,7 +521,7 @@ class EdtDIFT {
      * Open pixels (`O_ = 1`) can still receive a better distance label during
      * run(). They start from infinite cost until reached from a contour seed.
      *
-     * @param pidx Row-major pixel index used by the operation.
+     * @param pidx Row-major pixel index.
      */
     void open(int pidx) {
         O_[pidx] = 1;
@@ -543,7 +543,7 @@ class EdtDIFT {
         for (int pidx : toRemove) {
             O_[pidx] = 1;
             Q_.setCost(pidx, PQueue::PINF);
-            Q_.setState(pidx, PQueue::State::NOT_PROCESSED);
+            Q_.setState(pidx, PQueue::State::NotProcessed);
             ++top;
             stack_[top] = pidx;
         }
@@ -563,12 +563,12 @@ class EdtDIFT {
                     if (O_[qidx] == 0) {
                         O_[qidx] = 1;
                         Q_.setCost(qidx, PQueue::PINF);
-                        Q_.setState(qidx, PQueue::State::NOT_PROCESSED);
+                        Q_.setState(qidx, PQueue::State::NotProcessed);
                         ++top;
                         stack_[top] = qidx;
                     }
-                } else if (bin_[qidx] > 0 && Q_.state(qidx) != PQueue::State::QUEUED) {
-                    Q_.setState(qidx, PQueue::State::NOT_PROCESSED);
+                } else if (bin_[qidx] > 0 && Q_.state(qidx) != PQueue::State::Queued) {
+                    Q_.setState(qidx, PQueue::State::NotProcessed);
                     Q_.insert(qidx);
                 }
             }
@@ -582,7 +582,7 @@ class EdtDIFT {
      * node. Each seed indexes `Bedt_`, whose value is the largest squared
      * distance reached by that seed in the current binary support.
      *
-     * @param Ncontour Contour pixel identifiers used by the operation.
+     * @param Ncontour Contour pixel identifiers.
      * @return The largest root distance attached to a node contour.
      */
     [[nodiscard]] int maxBedt(const std::vector<int>& Ncontour) const {
@@ -607,7 +607,7 @@ class EdtDIFT {
     [[nodiscard]] ImageUInt8Ptr distanceTransformImage() const {
         const std::vector<int>& cost = Q_.cost();
 
-        ImageUInt8Ptr d = ImageUInt8::create(bin_.getNumRows(), bin_.getNumCols());
+        ImageUInt8Ptr d = ImageUInt8::create(bin_.getNumRows(), bin_.getNumColumns());
         int maxCost = 0;
         for (int pidx = 0; pidx < bin_.getSize(); ++pidx) {
             if (maxCost < cost[pidx]) {
@@ -633,7 +633,7 @@ class EdtDIFT {
      * @return The resulting uint8 visualization of the current binary support.
      */
     [[nodiscard]] ImageUInt8Ptr binaryImageForVisualisation() const {
-        ImageUInt8Ptr b = ImageUInt8::create(bin_.getNumRows(), bin_.getNumCols());
+        ImageUInt8Ptr b = ImageUInt8::create(bin_.getNumRows(), bin_.getNumColumns());
         for (int pidx = 0; pidx < b->getSize(); pidx++) {
             (*b)[pidx] = bin_[pidx] == 0 ? 255 : 0;
         }
@@ -659,8 +659,8 @@ class EdtDIFT {
     void displayRootMapForSmallImages() const {
         for (int row = 0; row < root_.getNumRows(); row++) {
             std::cout << std::setw(4) << row;
-            for (int col = 0; col < root_.getNumCols(); col++) {
-                std::cout << std::setw(4) << root_[row * root_.getNumCols() + col];
+            for (int column = 0; column < root_.getNumColumns(); column++) {
+                std::cout << std::setw(4) << root_[row * root_.getNumColumns() + column];
             }
             std::cout << "\n";
         }
@@ -675,22 +675,22 @@ class EdtDIFT {
      * outside the rectangular domain.
      */
     void setUpAdjMap() {
-        int lastCol = adjMap_.getNumCols() - 1;
+        int lastColumn = adjMap_.getNumColumns() - 1;
         for (int i = 1; i < adjMap_.getNumRows(); i++) {
-            adjMap_[i * adjMap_.getNumCols()] = 1;
-            adjMap_[(i * adjMap_.getNumCols()) + lastCol] = 2;
+            adjMap_[i * adjMap_.getNumColumns()] = 1;
+            adjMap_[(i * adjMap_.getNumColumns()) + lastColumn] = 2;
         }
 
-        int lastRow = adjMap_.getNumCols() * (adjMap_.getNumRows() - 1);
-        for (int i = 1; i < adjMap_.getNumCols() - 1; i++) {
+        int lastRow = adjMap_.getNumColumns() * (adjMap_.getNumRows() - 1);
+        for (int i = 1; i < adjMap_.getNumColumns() - 1; i++) {
             adjMap_[i] = 4;
             adjMap_[lastRow + i] = 3;
         }
 
         adjMap_[0] = 6;
-        adjMap_[adjMap_.getNumCols() - 1] = 8;
-        adjMap_[adjMap_.getNumCols() * (adjMap_.getNumRows() - 1)] = 5;
-        adjMap_[adjMap_.getNumCols() * (adjMap_.getNumRows() - 1) + adjMap_.getNumCols() - 1] = 7;
+        adjMap_[adjMap_.getNumColumns() - 1] = 8;
+        adjMap_[adjMap_.getNumColumns() * (adjMap_.getNumRows() - 1)] = 5;
+        adjMap_[adjMap_.getNumColumns() * (adjMap_.getNumRows() - 1) + adjMap_.getNumColumns() - 1] = 7;
     }
 
   private:

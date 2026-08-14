@@ -167,7 +167,7 @@ def main() -> int:
                 "workload": workload,
                 "input_source": benchmark["input_source"],
                 "rows": int(benchmark["rows"]),
-                "cols": int(benchmark["cols"]),
+                "columns": int(benchmark["columns"]),
                 "scenario_count": len(summary),
                 "checked_sum_of_medians_ms": checked_sum,
                 "unchecked_sum_of_medians_ms": unchecked_sum,
@@ -198,7 +198,7 @@ def main() -> int:
         "workload",
         "input_source",
         "rows",
-        "cols",
+        "columns",
         "scenario_count",
         "checked_sum_of_medians_ms",
         "unchecked_sum_of_medians_ms",
@@ -371,7 +371,7 @@ def main() -> int:
             [
                 [
                     str(row["workload"]),
-                    f"{row['rows']}x{row['cols']}",
+                    f"{row['rows']}x{row['columns']}",
                     str(row["scenario_count"]),
                     f"{float(row['checked_sum_of_medians_ms']):.3f}",
                     f"{float(row['unchecked_sum_of_medians_ms']):.3f}",

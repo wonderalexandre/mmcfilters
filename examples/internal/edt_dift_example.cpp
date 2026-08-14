@@ -18,17 +18,17 @@
 namespace {
 
 void writePng(const std::filesystem::path& outputPath, const mmcfilters::ImageUInt8Ptr& image) {
-    if (!stbi_write_png(outputPath.string().c_str(), image->getNumCols(), image->getNumRows(), 1, image->rawData(), 0)) {
+    if (!stbi_write_png(outputPath.string().c_str(), image->getNumColumns(), image->getNumRows(), 1, image->rawData(), 0)) {
         throw std::runtime_error("Failed to write PNG file: " + outputPath.string());
     }
 }
 
-bool isContourPixel(int row, int col, int top, int left, int bottom, int right) {
-    const bool inside = row >= top && row <= bottom && col >= left && col <= right;
+bool isContourPixel(int row, int column, int top, int left, int bottom, int right) {
+    const bool inside = row >= top && row <= bottom && column >= left && column <= right;
     if (!inside) {
         return false;
     }
-    return row == top || row == bottom || col == left || col == right;
+    return row == top || row == bottom || column == left || column == right;
 }
 
 } // namespace
@@ -39,20 +39,20 @@ int main(int argc, char** argv) {
     std::filesystem::create_directories(outputDir);
 
     constexpr int rows = 15;
-    constexpr int cols = 15;
+    constexpr int columns = 15;
     constexpr int top = 3;
     constexpr int left = 4;
     constexpr int bottom = 11;
     constexpr int right = 10;
 
-    mmcfilters::attributes::computers::detail::maxdist::EdtDIFT edt(rows, cols);
+    mmcfilters::attributes::computers::detail::maxdist::EdtDIFT edt(rows, columns);
 
     for (int row = top; row <= bottom; ++row) {
-        for (int col = left; col <= right; ++col) {
-            const int pidx = row * cols + col;
+        for (int column = left; column <= right; ++column) {
+            const int pidx = row * columns + column;
             edt.addPixelToBinaryImage(pidx);
 
-            if (isContourPixel(row, col, top, left, bottom, right)) {
+            if (isContourPixel(row, column, top, left, bottom, right)) {
                 edt.seed(pidx);
             } else {
                 edt.open(pidx);

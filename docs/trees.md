@@ -1,38 +1,46 @@
 # Morphological trees
 
 This guide describes the public hierarchy model, construction factories,
-ownership rules, node domains, and altitude contracts used by `mmcfilters`.
+smallest-node rules, node domains, and altitude contracts used by `mmcfilters`.
 
 ## Public model
 
 The public tree API separates topology from node altitude:
 
-- `MorphologicalTree` owns rooted topology and proper-part ownership;
-- `WeightedMorphologicalTree<T>` owns a topology and a dense altitude buffer;
-- `WeightedTreeView<T>` borrows a topology and an external altitude span.
+- `MorphologicalTree` owns rooted topology and smallest-node mapping;
+- `ValuedMorphologicalTree<T>` owns a topology and a dense altitude buffer;
+- `ValuedMorphologicalTreeView<T>` borrows a topology and an external altitude span.
 
 `MorphologicalTree` stores:
 
 - parent/child relations and one live root;
 - dense internal `NodeId` slots;
-- one direct proper-part owner for every proper part;
+- one smallest node for every pixel;
 - optional regular 2D geometry;
 - optional regular-grid adjacency semantics.
 
-Operations that read altitude require `WeightedMorphologicalTree<T>` or
-`WeightedTreeView<T>`. Topology/support operations can use the topology alone.
+Pixel-domain objects use `PixelId`: this includes the infinity pixel,
+proper-part elements, support and boundary pixels, and flat-zone
+representatives. Tree slots and parent/child links use `NodeId`. Their current
+integer representations are equal, but code must use `InvalidPixel` for the
+pixel domain and `InvalidNode` for the node domain. Counts use ordinary
+integral count types rather than either identifier alias.
+
+Operations that read altitude require `ValuedMorphologicalTree<T>` or
+`ValuedMorphologicalTreeView<T>`. Topology/support operations can use the topology alone.
 
 ## Capabilities and descriptive kinds
 
-`HierarchySemantics` declares the capabilities of a hierarchy:
+`MorphologicalTreeSemantics` declares the capabilities of a hierarchy:
 
-- `AltitudeOrder::INCREASING_FROM_ROOT` requires
+- `NodeAltitudeOrder::Increasing` requires
   `altitude(parent) < altitude(child)`;
-- `AltitudeOrder::DECREASING_FROM_ROOT` requires
+- `NodeAltitudeOrder::Decreasing` requires
   `altitude(parent) > altitude(child)`;
-- `AltitudeOrder::UNCONSTRAINED` declares no global altitude direction;
-- `AdjacencyMode` declares no adjacency, one uniform adjacency, or distinct
-  decreasing/increasing adjacencies;
+- `NodeAltitudeOrder::Unconstrained` declares no global altitude direction;
+- `MorphologicalTreeConstructionContext` records explicit absence of
+  construction provenance, a shared adjacency, saturated-residual parameters,
+  or a complete topographic convention;
 - `MorphologicalTreeKind` is a descriptive label, not an algorithm-dispatch
   contract.
 
@@ -42,11 +50,12 @@ monotone altitude order. It does not require a particular descriptive kind.
 
 | Operation | Required capabilities |
 | --- | --- |
-| topology traversal and `AREA` | finite proper-part ownership |
-| `LEVEL`, `GRAY_HEIGHT`, and `VOLUME` | altitude buffer |
+| topology traversal and `AREA` | finite smallest-node mapping |
+| `nodeAltitude`, `nodeAltitudes`, and reconstruction from node altitudes | altitude buffer |
+| `GrayLevelHeight`, `MeanGrayLevel`, `GrayLevelVariance`, and `VOLUME` | altitude buffer |
 | reconstruction and pixel mapping | regular 2D domain |
 | moments, bounding boxes, and contours | regular 2D domain |
-| bitquad attributes | regular 2D domain and canonical 4/8 adjacency when adjacency is needed |
+| bitquad attributes | regular 2D domain, canonical 4/8 projection connectivity, and exact node altitudes when lower/upper shape connectivity differs |
 | `MAX_DIST` | regular 2D domain, uniform adjacency, and monotone altitude order |
 | hierarchy saliency projection | regular 2D domain and one compatible projection adjacency |
 
@@ -57,16 +66,16 @@ selects 8-connectivity. `RegularGridAdjacency2D` also supports centered
 rectangles, digital lines, and symmetric structuring elements:
 
 ```cpp
-const RegularGridAdjacency2D disk(rows, cols, 1.5);
-auto rectangle = RegularGridAdjacency2D::rectangular(rows, cols, 1, 2);
-auto horizontal = RegularGridAdjacency2D::horizontalLine(rows, cols, 3);
+const RegularGridAdjacency2D disk(rows, columns, 1.5);
+auto rectangle = RegularGridAdjacency2D::rectangular(rows, columns, 1, 2);
+auto horizontal = RegularGridAdjacency2D::horizontalLine(rows, columns, 3);
 
 std::array<GridOffset2D, 5> cross{{
     {0, 0}, {-1, 0}, {0, -1}, {0, 1}, {1, 0}
 }};
 auto custom = RegularGridAdjacency2D::fromStructuringElement(
     rows,
-    cols,
+    columns,
     cross);
 ```
 
@@ -89,13 +98,13 @@ auto image = ImageUInt8::create(4, 4, std::uint8_t{0});
 
 auto maxTree = MorphologicalTreeFactory::createMaxTree(image, 1.5);
 auto minTree = MorphologicalTreeFactory::createMinTree(image, 1.5);
-auto residual = MorphologicalTreeFactory::createSelfDualResidualTree(
+auto residual = MorphologicalTreeFactory::createUnrestrictedResidualTree(
     image,
     1.5);
 auto saturatedResidual =
-    MorphologicalTreeFactory::createSaturatedSelfDualResidualTree(
+    MorphologicalTreeFactory::createSaturatedResidualTree(
         image,
-        NodeId{0},
+        PixelId{0},
         1.5);
 auto treeOfShapes = MorphologicalTreeFactory::createTreeOfShapes(image);
 ```
@@ -104,26 +113,27 @@ C++ max-tree and min-tree factories are typed:
 
 ```cpp
 ImagePtr<float> floatImage = Image<float>::create(4, 4, 0.0f);
-WeightedMorphologicalTree<float> floatMaxTree =
+ValuedMorphologicalTree<float> floatMaxTree =
     MorphologicalTreeFactory::createMaxTree(floatImage, 1.5);
 ```
 
 Python image factories accept two-dimensional C-contiguous `np.uint8` arrays
-and return `WeightedMorphologicalTree`. See [Python API](python-api.md) for the
+and return `ValuedMorphologicalTree`. See [Python API](python-api.md) for the
 binding-specific contract.
 
 ### Self-dual residual trees
 
-`createSelfDualResidualTree` constructs a hierarchy from synchronized max-tree
+`createUnrestrictedResidualTree` constructs a hierarchy from synchronized max-tree
 and min-tree states using one symmetric adjacency. The saturated variant also
 requires the complement of a selected extremum to remain connected to the
 row-major `infinityPixel` supplied by the caller.
 
-Both factories publish:
+The unrestricted and saturated factories publish distinct
+`UnrestrictedResidualTree` and `SaturatedResidualTree` kinds. The former
+retains a `SharedAdjacencyContext`; the latter retains a
+`SaturatedResidualContext`, including its infinity pixel. Both publish:
 
-- descriptive kind `SELF_DUAL_RESIDUAL_TREE`;
-- uniform adjacency;
-- `AltitudeOrder::UNCONSTRAINED`.
+- `NodeAltitudeOrder::Unconstrained`.
 
 Their alternating gray-level altitudes are not a monotone hierarchy valuation.
 Use a structural or otherwise non-decreasing node valuation for operations that
@@ -134,9 +144,9 @@ An explicit adjacency can replace the radius:
 ```cpp
 auto adjacency = RegularGridAdjacency2D::fromStructuringElement(
     rows,
-    cols,
+    columns,
     offsets);
-auto residual = MorphologicalTreeFactory::createSelfDualResidualTree(
+auto residual = MorphologicalTreeFactory::createUnrestrictedResidualTree(
     image,
     adjacency);
 ```
@@ -148,8 +158,9 @@ accidentally configure saturation-only mechanisms:
 #include <mmcfilters/trees/sdrt/ResidualTreePolicies.hpp>
 
 sdrt::UnrestrictedResidualTreeOptions unrestrictedOptions;
-unrestrictedOptions.tiePolicy = sdrt::SdrtTiePolicy::MaxBeforeMinThenSpatial;
-auto unrestricted = MorphologicalTreeFactory::createSelfDualResidualTree(
+unrestrictedOptions.spatialOrder =
+    sdrt::SpatialOrder(std::vector<PixelId>{3, 2, 1, 0});
+auto unrestricted = MorphologicalTreeFactory::createUnrestrictedResidualTree(
     image,
     adjacency,
     unrestrictedOptions);
@@ -159,59 +170,74 @@ saturatedOptions.lcaPolicy = sdrt::SaturatedMinMaxLcaPolicy::LinkCut;
 saturatedOptions.fallbackPolicy =
     sdrt::SaturatedMinMaxFallbackPolicy::BoundaryMultiSource;
 auto saturated =
-    MorphologicalTreeFactory::createSaturatedSelfDualResidualTree(
+    MorphologicalTreeFactory::createSaturatedResidualTree(
         image,
         adjacency,
-        NodeId{0},
+        PixelId{0},
         saturatedOptions);
 ```
 
-By default, construction uses contrast-invariant spatial tie-breaking,
-parent-climb LCA, and multi-source boundary fallback. Both modes use
+By default, construction uses `RowMajorSpatialOrder`, parent-climb LCA, and
+multi-source boundary fallback. The unique self-dual schedule orders candidates
+by `(supportCardinality, spatialMinimum)` and never by polarity. Both modes use
 incremental small-to-large flat-zone boundary maintenance and
 region-contraction event assembly. Configuration is supplied through
 mode-specific C++ option objects.
 
 ### Tree-of-shapes policies
 
-`TreeOfShapesProducerOptions` controls:
+`TopographicConvention` records and controls:
 
-- `SelfDual`, `Min4cMax8c`, or `Min8cMax4c` interpolation/connectivity;
-- exterior immersion padding or no padding;
-- the \f$p_\infty\f$ seed in the selected immersion domain.
+- `SelfDualSpanImmersion` or a `ComplementaryGridImmersion` carrying its
+  minimum/maximum adjacencies;
+- `TopographicDomainExtension::ExteriorRing` or `None`;
+- the row-major `infinityPixel` in the active topographic domain.
 
 ```cpp
-auto selfDual = MorphologicalTreeFactory::createTreeOfShapes(
-    image,
-    ToSInterpolation::SelfDual);
+auto selfDual = MorphologicalTreeFactory::createTreeOfShapes(image);
 
-TreeOfShapesProducerOptions options{
-    ToSInterpolation::Min4cMax8c,
-    ToSPaddingPolicy::NoPadding,
-    0,
-    0};
-auto unpadded = MorphologicalTreeFactory::createTreeOfShapes(image, options);
+TopographicConvention convention{
+    ComplementaryGridImmersion{ComplementaryAdjacencies{
+        RegularGridAdjacency2D(rows, columns, 1.0),
+        RegularGridAdjacency2D(rows, columns, 1.5)}},
+    TopographicDomainExtension::None,
+    PixelId{0}};
+auto unpadded = MorphologicalTreeFactory::createTreeOfShapes(image, convention);
 ```
 
-Both padding policies publish exactly one proper part per source pixel and
+Both padding policies publish the original source pixels as the tree domain and
 attach the original `GridDomain2D`. The immersion grid is not exposed as the
-proper-part domain.
+pixel domain.
 
-The `std::uint8_t` overload quantizes half-level structural nodes. C++ callers
-that need exact levels can use doubled gray units:
+Tree-of-shapes construction uses exact doubled gray units:
 
 ```cpp
-WeightedMorphologicalTree<ToSGrayLevel> exact =
-    MorphologicalTreeFactory::createTreeOfShapesExact(image, options);
+ValuedMorphologicalTree<ToSGrayLevel> treeOfShapes =
+    MorphologicalTreeFactory::createTreeOfShapes(image, convention);
 ```
 
 A source value `v` is represented by `2 * v`; odd values represent half levels.
-`reconstructionImage()` therefore also returns doubled values for an exact
-weighted tree. Python exposes the producer options with `np.uint8` altitudes.
+`reconstructFromNodeAltitudes()` therefore also returns doubled values. The
+constructor never quantizes half levels into `std::uint8_t`, because doing so
+can create equal-altitude parent-child edges and destroy shape polarity.
+
+Every non-root tree-of-shapes node has a polarity derived from these exact
+altitudes:
+
+- `ShapePolarity::Upper` when the node altitude is greater than its parent altitude;
+- `ShapePolarity::Lower` when the node altitude is less than its parent altitude.
+
+The root has no shape polarity. Scalar bitquad materialization uses an explicit
+`BitquadConnectivityPolicy` after hierarchy-independent bitquad-family counts
+have been computed. Under a complementary convention, lower shapes use
+`minAdjacency`, upper shapes use `maxAdjacency`, and the unpolarized root follows
+the policy's explicit root connectivity. The current root projection remains
+8-connected when the two complementary choices differ; this is not inferred by
+classifying the root as an upper or lower shape.
 
 ## Owning tree and view boundary
 
-Use `WeightedMorphologicalTree<T>` when an operation must own topology and
+Use `ValuedMorphologicalTree<T>` when an operation must own topology and
 altitude state, including:
 
 - construction and import;
@@ -222,80 +248,125 @@ altitude state, including:
   `adjust::CasfComponentTrees`, and paired-tree adjustment;
 - Python workflows.
 
-Use `WeightedTreeView<T>` for read-only C++ operations over caller-owned altitude
+Use `ValuedMorphologicalTreeView<T>` for read-only C++ operations over caller-owned altitude
 storage:
 
 ```cpp
-const MorphologicalTree& topology = weighted.topology();
-std::vector<float> altitude(topology.getNumInternalNodeSlots(), 0.0f);
+const MorphologicalTree& topology = valuedTree.topology();
+std::vector<float> altitude(topology.numInternalNodeSlots(), 0.0f);
 
-WeightedTreeView<float> view(topology, altitude);
-auto rootAltitude = view.getAltitude(topology.getRoot());
+ValuedMorphologicalTreeView<float> view(topology, altitude);
+auto rootAltitude = view.nodeAltitude(topology.root());
 ```
 
 The caller must keep the topology and altitude storage alive for the lifetime of
 the view. A view captures the topology mutation version and rejects reads after
 the topology changes.
 
-## Node IDs and proper parts
+## Nodes, supports, proper parts, and pixels
 
 The internal node domain is dense:
 
 ```text
-0 <= node_id < tree.getNumInternalNodeSlots()
+0 <= node_id < tree.numInternalNodeSlots()
 ```
 
 Edits may leave dead internal slots. Node-indexed buffers retain the complete
-slot count so existing IDs remain addressable. Iterate `tree.getAliveNodeIds()`
-when consuming live nodes.
+slot count so existing IDs remain addressable. In C++, iterate
+`tree.aliveNodeIds()` when consuming live nodes; in Python, use the
+`tree.alive_node_ids` property.
 
-Image pixels are proper parts with row-major IDs:
+Image pixels have row-major IDs:
 
 ```text
-proper_part = row * numCols + col
+pixel = row * numColumns + column
 ```
 
-The main ownership queries are:
+The main structural queries are:
 
 ```cpp
-NodeId owner = tree.getProperPartOwner(pixel);
-auto direct = tree.getProperParts(node);
-auto support = tree.getConnectedComponent(node);
+NodeId smallest = tree.smallestNode(pixel);
+auto proper = tree.properPart(node);
+auto support = tree.nodeSupport(node);
 ```
 
-`getProperParts(node)` returns only the proper parts directly owned by `node`.
-`getConnectedComponent(node)` returns the complete subtree support.
+`properPart(node)` returns the pixels in
+\f$\rho(X)=X\setminus\bigcup_{Y\in children(X)}Y\f$.
+`nodeSupport(node)` returns every pixel in the complete node support. The
+smallest-node map satisfies `pixel in properPart(smallestNode(pixel))`.
 
-Internal nodes and proper parts are independent domains. A live structural node
-may own no proper part directly when its support is supplied by descendants.
-Every committed live node must nevertheless have non-empty subtree support.
+### Topology queries and traversal contracts
+
+Topology query names describe the relation they return:
+
+| Meaning | C++ | Python |
+| --- | --- | --- |
+| root node | `root()` | `root` |
+| parent node | `parent(node)` | `parent(node)` |
+| direct children | `children(node)` | `children(node)` |
+| inclusive ancestor chain | `ancestors(node)` | `ancestors(node)` |
+| strict descendants | `descendants(node)` | `descendants(node)` |
+| inclusive subtree | `subtreeNodes(node)` | `subtree_nodes(node)` |
+| lowest common ancestor | `lowestCommonAncestor(a, b)` | `lowest_common_ancestor(a, b)` |
+
+`ancestors(node)` includes `node` itself and ends at the root. Conversely,
+`descendants(node)` excludes `node`, whereas `subtreeNodes(node)` includes it.
+The subtree range uses pre-order, but callers must rely on the stated relation
+rather than on incidental sibling order unless an algorithm explicitly defines
+that order.
+
+`postOrder()` and `breadthFirstTraversal()` (Python: `post_order` and
+`breadth_first_traversal`) return tree-wide traversal schedules. Post-order
+visits every child before its parent. It can schedule bottom-up aggregation,
+but traversal and aggregation are distinct operations.
+
+`dfsEntryIndex(node)` and `dfsExitIndex(node)` (Python:
+`dfs_entry_index(node)` and `dfs_exit_index(node)`) are indices in one shared,
+zero-based DFS event sequence. The counter advances when DFS enters a node and
+again when it exits after visiting every descendant. For a tree with
+`numNodes()` live nodes, the combined entry and exit indices form a permutation
+of `[0, 2 * numNodes())`.
+
+The inclusive ancestor relation is characterized by interval containment:
+$u$ is an ancestor of $v$ exactly when
+`dfsEntryIndex(u) <= dfsEntryIndex(v)` and
+`dfsExitIndex(u) >= dfsExitIndex(v)`. The number of strict descendants is
+`(dfsExitIndex(node) - dfsEntryIndex(node) - 1) / 2`. These values are event
+indices, not wall-clock timestamps or independent positions in two traversals.
+
+Node IDs and pixel IDs are independent domains. A live node may have an empty
+proper part when its support is supplied by descendants. Every committed live
+node must nevertheless have non-empty node support. Such a tree remains a valid
+`MorphologicalTree`, but it is not a morphological tree of partial partitions;
+use `isTreeOfPartialPartitions()` or `validateTreeOfPartialPartitions()` when
+that stricter specialization is required.
 
 ### Native topology import
 
-Builders that already have node parents and proper-part ownership can use the
+Builders that already have node parents and smallest-node mapping can use the
 native representation directly:
 
 ```cpp
 std::vector<NodeId> nodeParent{0, 0, 0};
-std::vector<NodeId> properPartOwner{1, 2};
+std::vector<NodeId> smallestNodeMap{1, 2};
 std::vector<std::uint8_t> altitude{0, 1, 0};
 
 auto tree = MorphologicalTreeFactory::createFromNativeTopology(
     std::span<const NodeId>(nodeParent),
-    std::span<const NodeId>(properPartOwner),
+    std::span<const NodeId>(smallestNodeMap),
     std::span<const std::uint8_t>(altitude),
     0,
-    HierarchySemantics{
-        MorphologicalTreeKind::GENERIC,
-        AltitudeOrder::UNCONSTRAINED,
+    MorphologicalTreeSemantics{
+        MorphologicalTreeKind::Generic,
+        NodeAltitudeOrder::Unconstrained,
         NoAdjacency{}});
 ```
 
 This overload attaches no coordinate interpretation. Topology/support
 attributes remain available, while reconstruction and geometry-dependent
 attributes reject the missing `GridDomain2D`. An overload with `rows` and
-`cols` attaches a regular 2D domain and requires one proper-part owner entry per
-grid position.
+`columns` attaches a regular 2D domain and requires one smallest-node-map entry
+per grid position.
 
 `NativeHierarchyView<T>` provides the equivalent synchronous C++ import from
 borrowed spans. The factory copies or moves the validated buffers into owning
@@ -317,12 +388,26 @@ Accepted altitude types satisfy `AltitudeValue`:
 - `bool` is rejected.
 
 Construction and committed edits validate strict parent/child inequalities for
-ordered hierarchies. `UNCONSTRAINED` skips only monotonicity validation; buffer
+ordered hierarchies. `NodeAltitudeOrder::Unconstrained` skips only monotonicity validation; buffer
 shape and finite values remain required.
 
-`GRAY_HEIGHT` is defined for every altitude order as the maximum absolute
+`GrayLevelHeight` is defined for every altitude order as the maximum absolute
 altitude difference between a node and any node in its subtree. On monotone
 max-tree and min-tree hierarchies this is the usual one-sided gray-level span.
+
+### Residue and reconstruction baseline
+
+The project adopts the fixed reconstruction baseline zero. For every non-root
+node `n`, `nodeResidue(n)` is
+`nodeAltitude(n) - nodeAltitude(parent(n))`; for the root it is simply
+`nodeAltitude(root)`. No baseline parameter or baseline state is part of the
+public API.
+
+With this convention, summing node residues along the path from the root to a
+node telescopes to that node's altitude. Assigning the resulting altitude to
+each pixel through its smallest node therefore reconstructs the image represented
+by the valued tree. `reconstructFromNodeAltitudes()` performs the equivalent
+direct reconstruction from the stored node altitudes.
 
 ## Edits and derived state
 
@@ -330,7 +415,7 @@ max-tree and min-tree hierarchies this is the usual one-sided gray-level span.
 Multi-step structural changes use an editor session and cross a checked commit
 boundary. Topology mutations invalidate cached objects and node-indexed results
 computed against the previous topology. See [Editing API](editing-api.md) for
-rollback, weighted edits, and Python exposure.
+rollback, valued-tree edits, and Python exposure.
 
 ## Related guides
 

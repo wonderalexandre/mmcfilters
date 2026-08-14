@@ -110,23 +110,23 @@ void addAttributeScenarios(Context& context, std::vector<ScenarioResult>& result
             scalarAttributes.push_back(metadata.attribute);
         }
     } else if (atLeast(context.options.profile, Profile::Core)) {
-        scalarAttributes = {AREA,          LEVEL,           VOLUME,          BOX_WIDTH,       HU_MOMENT_1,
-                            BITQUADS_AREA, HEIGHT_NODE,     MAX_DIST,        CONTOUR_PERIMETER};
+        scalarAttributes = {Area,          MeanGrayLevel,   Volume,          BoxWidth,       HuMoment1,
+                            BitquadArea, SubtreeHeight,     MaxDist,        ContourPerimeter};
     } else {
-        scalarAttributes = {AREA, LEVEL, MAX_DIST};
+        scalarAttributes = {Area, MeanGrayLevel, MaxDist};
     }
     for (Attribute attribute : scalarAttributes) {
         addScalarAttribute(context, results, attribute);
     }
 
-    const std::array<AttributeGroup, 6> groups{AttributeGroup::GRAY_LEVEL, AttributeGroup::SHAPE,         AttributeGroup::MOMENTS,
-                                                AttributeGroup::BOUNDARY,   AttributeGroup::TREE_TOPOLOGY, AttributeGroup::ALL};
+    const std::array<AttributeGroup, 6> groups{AttributeGroup::GrayLevel, AttributeGroup::Shape,         AttributeGroup::Moments,
+                                                AttributeGroup::Boundary,   AttributeGroup::TreeTopology, AttributeGroup::All};
     for (AttributeGroup group : groups) {
-        if (!atLeast(context.options.profile, Profile::Core) && group != AttributeGroup::GRAY_LEVEL && group != AttributeGroup::TREE_TOPOLOGY) {
+        if (!atLeast(context.options.profile, Profile::Core) && group != AttributeGroup::GrayLevel && group != AttributeGroup::TreeTopology) {
             continue;
         }
         const bool sequential = atLeast(context.options.profile, Profile::Core) &&
-                                (group != AttributeGroup::ALL || atLeast(context.options.profile, Profile::Publication));
+                                (group != AttributeGroup::All || atLeast(context.options.profile, Profile::Publication));
         addAttributeGroup(context, results, group, sequential);
     }
 
@@ -138,18 +138,19 @@ void addAttributeScenarios(Context& context, std::vector<ScenarioResult>& result
         return;
     }
 
-    const std::vector<AttributeOrGroup> heterogeneousRequest{AREA, LEVEL, BOX_WIDTH, HU_MOMENT_1, BITQUADS_AREA, HEIGHT_NODE, MAX_DIST, CONTOUR_PERIMETER};
+    const std::vector<AttributeOrGroup> heterogeneousRequest{Area, MeanGrayLevel, BoxWidth, HuMoment1, BitquadArea, SubtreeHeight, MaxDist,
+                                                             ContourPerimeter};
     results.push_back(benchmarkScenario(
         "attributes", "heterogeneous_request", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
         [&] { return AttributeComputation::computeAttributes<double>(context.maxTree, heterogeneousRequest); },
         [](const ComputedAttributeData<double>& result) { return semanticAttributeChecksum(result); }));
 
     results.push_back(benchmarkScenario(
-        "attributes", "area_delta_radius_2", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
+        "attributes", "area_altitude_samples_radius_2", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
         [&] {
-            return AttributeComputation::computeSingleAttributeWithDelta<double>(context.maxTree, AREA, AltitudeDiff<std::uint8_t>{1}, 2, "last-padding");
+            return AttributeComputation::computeSampledNodeAttribute<double>(context.maxTree, Area, AltitudeDifference<std::uint8_t>{1}, 2);
         },
-        [](const ComputedAttributeDataWithDelta<double>& result) { return deltaAttributeChecksum(result); }));
+        [](const SampledNodeAttributeData<double>& result) { return sampledNodeAttributeChecksum(result); }));
 }
 
 } // namespace mmcfilters::benchmarks::api

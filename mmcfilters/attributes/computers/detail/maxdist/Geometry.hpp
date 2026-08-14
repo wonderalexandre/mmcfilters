@@ -43,7 +43,7 @@ class Point2D {
      * points in place. The caller remains responsible for keeping the point
      * inside the intended image domain.
      *
-     * @return Reference to the resulting object.
+     * @return Mutable reference to the updated object.
      */
     inline int& x() noexcept { return x_; }
     /**
@@ -56,7 +56,7 @@ class Point2D {
     /**
      * @brief Replaces one coordinate without touching the other.
      *
-     * @param val Value used by the operation.
+     * @param val Value.
      */
     inline void x(int val) noexcept { x_ = val; }
     /**
@@ -97,8 +97,8 @@ class Point2D {
 /**
  * @brief Component-wise point addition.
  *
- * @param p Point used by the operation.
- * @param q Second point used by the operation.
+ * @param p Point.
+ * @param q Second point.
  * @return Component-wise sum of the two points.
  */
 inline Point2D operator+(const Point2D& p, const Point2D& q) { return p.add(q); }
@@ -106,8 +106,8 @@ inline Point2D operator+(const Point2D& p, const Point2D& q) { return p.add(q); 
 /**
  * @brief Component-wise point subtraction.
  *
- * @param p Point used by the operation.
- * @param q Second point used by the operation.
+ * @param p Point.
+ * @param q Second point.
  * @return Component-wise difference of the two points.
  */
 inline Point2D operator-(const Point2D& p, const Point2D& q) { return p.sub(q); }
@@ -116,8 +116,8 @@ inline Point2D operator-(const Point2D& p, const Point2D& q) { return p.sub(q); 
  * @brief Debug stream representation as `(x, y)`.
  *
  * @param os Output stream receiving the representation.
- * @param p Point used by the operation.
- * @return Reference to the resulting object.
+ * @param p Point.
+ * @return Mutable reference to the updated object.
  */
 inline std::ostream& operator<<(std::ostream& os, const Point2D& p) { return os << "(" << p.x() << ", " << p.y() << ")"; }
 
@@ -223,7 +223,7 @@ class Box2D {
     /**
      * @brief Converts a point to a row-major index relative to this box.
      *
-     * @param p Point used by the operation.
+     * @param p Point.
      * @return The zero-based linear index, or `-1` when the point is outside
      * the inclusive box.
      *
@@ -261,7 +261,7 @@ class Box2D {
      * The method assumes `0 <= idx < width() * height()`. It is intentionally
      * unchecked because it is called inside tight image loops.
      *
-     * @param idx Zero-based index used by the operation.
+     * @param idx Zero-based index.
      * @return The converted row-major index into a point in this box.
      */
     Point2D point(int idx) const noexcept {
@@ -274,7 +274,7 @@ class Box2D {
     /**
      * @brief Same conversion as point(), returned as a standard pair.
      *
-     * @param idx Zero-based index used by the operation.
+     * @param idx Zero-based index.
      * @return Converted point coordinates.
      */
     std::pair<int, int> pointPair(int idx) const noexcept {
@@ -287,7 +287,7 @@ class Box2D {
     /**
      * @brief Checks whether a point lies inside the inclusive domain.
      *
-     * @param p Point used by the operation.
+     * @param p Point.
      * @return True if a point lies inside the inclusive domain; otherwise false.
      */
     bool contains(const Point2D& p) const noexcept {

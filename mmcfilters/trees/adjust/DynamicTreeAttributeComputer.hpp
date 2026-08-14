@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../WeightedMorphologicalTree.hpp"
+#include "../ValuedMorphologicalTree.hpp"
 #include "../../utils/Image.hpp"
 
 #include <algorithm>
@@ -19,11 +19,11 @@ namespace mmcfilters::adjust {
  */
 enum class BoundingBoxMeasure {
     /// Width of the subtree support bounding box.
-    WIDTH,
+    Width,
     /// Height of the subtree support bounding box.
-    HEIGHT,
+    Height,
     /// Euclidean diagonal length of the subtree support bounding box.
-    DIAGONAL_LENGTH
+    DiagonalLength
 };
 
 /**
@@ -45,7 +45,7 @@ enum class BoundingBoxMeasure {
  * Buffers are indexed in this project's dense internal `NodeId` space, not in
  * Higra's global leaf+node id space. This is the main representation
  * difference relative to the source algorithm and keeps the implementation
- * compatible with `WeightedMorphologicalTree<T>`.
+ * compatible with `ValuedMorphologicalTree<T>`.
  */
 template <AltitudeValue T> class DynamicTreeAttributeComputer {
   public:
@@ -64,22 +64,22 @@ template <AltitudeValue T> class DynamicTreeAttributeComputer {
      * so buffers are sized by the number of allocated internal node slots rather
      * than by the number of currently alive nodes.
      *
-     * @param tree Weighted tree whose internal node-slot domain defines the
+     * @param tree Valued tree whose internal node-slot domain defines the
      * buffer size.
      * @param buffer Output buffer resized to the full internal node-slot count.
      */
-    virtual void resize(const WeightedMorphologicalTree<T>& tree, buffer_type& buffer) const {
-        buffer.resize(static_cast<size_t>(tree.topology().getNumInternalNodeSlots()), 0.0);
+    virtual void resize(const ValuedMorphologicalTree<T>& tree, buffer_type& buffer) const {
+        buffer.resize(static_cast<size_t>(tree.topology().numInternalNodeSlots()), 0.0);
     }
 
     /**
      * @brief Initializes the direct contribution of one node before child merges.
      *
      * @param nodeId Live dense internal node id being recomputed.
-     * @param tree Current mutable weighted tree state.
+     * @param tree Current mutable valued tree state.
      * @param buffer Dense per-node output buffer.
      */
-    virtual void preProcessing(NodeId nodeId, const WeightedMorphologicalTree<T>& tree, buffer_type& buffer) const = 0;
+    virtual void preProcessing(NodeId nodeId, const ValuedMorphologicalTree<T>& tree, buffer_type& buffer) const = 0;
 
     /**
      * @brief Accumulates an already-current child contribution into its parent.
@@ -87,19 +87,19 @@ template <AltitudeValue T> class DynamicTreeAttributeComputer {
      * @param parentId Live dense internal parent node id.
      * @param childId Live dense internal child node id whose buffer entry is
      * already current.
-     * @param tree Current mutable weighted tree state.
+     * @param tree Current mutable valued tree state.
      * @param buffer Dense per-node output buffer.
      */
-    virtual void mergeProcessing(NodeId parentId, NodeId childId, const WeightedMorphologicalTree<T>& tree, buffer_type& buffer) const = 0;
+    virtual void mergeProcessing(NodeId parentId, NodeId childId, const ValuedMorphologicalTree<T>& tree, buffer_type& buffer) const = 0;
 
     /**
      * @brief Materializes the final scalar value for one node after all child merges.
      *
      * @param nodeId Live dense internal node id being finalized.
-     * @param tree Current mutable weighted tree state.
+     * @param tree Current mutable valued tree state.
      * @param buffer Dense per-node output buffer.
      */
-    virtual void postProcessing(NodeId nodeId, const WeightedMorphologicalTree<T>& tree, buffer_type& buffer) const = 0;
+    virtual void postProcessing(NodeId nodeId, const ValuedMorphologicalTree<T>& tree, buffer_type& buffer) const = 0;
 
     /**
      * @brief Incremental hook called after all direct proper parts move from one node to another.
@@ -110,7 +110,7 @@ template <AltitudeValue T> class DynamicTreeAttributeComputer {
      * state. Implementations that maintain direct-proper-part caches can use
      * this event to move or invalidate cached summaries without a full rebuild.
      */
-    virtual void onMoveProperParts(NodeId, NodeId, const WeightedMorphologicalTree<T>&) const {}
+    virtual void onMoveProperParts(NodeId, NodeId, const ValuedMorphologicalTree<T>&) const {}
 
     /**
      * @brief Incremental hook called after one proper part moves between nodes.
@@ -120,7 +120,7 @@ template <AltitudeValue T> class DynamicTreeAttributeComputer {
      * The parameters are proper-part id, source node id, destination node id,
      * and current tree state.
      */
-    virtual void onMoveProperPart(NodeId, NodeId, NodeId, const WeightedMorphologicalTree<T>&) const {}
+    virtual void onMoveProperPart(NodeId, NodeId, PixelId, const ValuedMorphologicalTree<T>&) const {}
 
     /**
      * @brief Incremental hook called when one node slot is released from the live tree.
@@ -130,7 +130,7 @@ template <AltitudeValue T> class DynamicTreeAttributeComputer {
      * Implementations should clear or invalidate any auxiliary state indexed by
      * the released dense internal node id.
      */
-    virtual void onNodeRemoved(NodeId, const WeightedMorphologicalTree<T>&) const {}
+    virtual void onNodeRemoved(NodeId, const ValuedMorphologicalTree<T>&) const {}
 
     /**
      * @brief Computes the attribute for the full current tree in post-order.
@@ -139,15 +139,15 @@ template <AltitudeValue T> class DynamicTreeAttributeComputer {
      * and as a reference-compatible full computation. Adjustment steps later
      * refresh only the nodes marked by local structural changes.
      *
-     * @param tree Current mutable weighted tree state.
+     * @param tree Current mutable valued tree state.
      * @param buffer Dense output buffer. It is resized before computation.
      */
-    void computeAttribute(const WeightedMorphologicalTree<T>& tree, buffer_type& buffer) const {
+    void computeAttribute(const ValuedMorphologicalTree<T>& tree, buffer_type& buffer) const {
         resize(tree, buffer);
         const MorphologicalTree& topology = tree.topology();
-        for (NodeId nodeId : topology.getPostOrderNodes()) {
+        for (NodeId nodeId : topology.postOrder()) {
             preProcessing(nodeId, tree, buffer);
-            for (NodeId childId : topology.getChildren(nodeId)) {
+            for (NodeId childId : topology.children(nodeId)) {
                 mergeProcessing(nodeId, childId, tree, buffer);
             }
             postProcessing(nodeId, tree, buffer);
@@ -157,13 +157,13 @@ template <AltitudeValue T> class DynamicTreeAttributeComputer {
     /**
      * @brief Recomputes one node assuming all direct children are already up to date.
      *
-     * @param tree Current mutable weighted tree state.
+     * @param tree Current mutable valued tree state.
      * @param nodeId Live dense internal node id to refresh.
      * @param buffer Dense output buffer already sized for the tree.
      */
-    void computeAttributeOnNode(const WeightedMorphologicalTree<T>& tree, NodeId nodeId, buffer_type& buffer) const {
+    void computeAttributeOnNode(const ValuedMorphologicalTree<T>& tree, NodeId nodeId, buffer_type& buffer) const {
         preProcessing(nodeId, tree, buffer);
-        for (NodeId childId : tree.topology().getChildren(nodeId)) {
+        for (NodeId childId : tree.topology().children(nodeId)) {
             mergeProcessing(nodeId, childId, tree, buffer);
         }
         postProcessing(nodeId, tree, buffer);
@@ -193,12 +193,12 @@ template <AltitudeValue T> class DynamicAreaAttributeComputer : public DynamicTr
     /**
      * @brief Initializes one node area from its direct proper-part count.
      *
-     * @param nodeId Identifier of the node used by the operation.
-     * @param tree Tree topology used by the operation.
+     * @param nodeId Dense internal node identifier.
+     * @param tree Tree topology.
      * @param buffer Buffer read or written by the operation.
      */
-    void preProcessing(NodeId nodeId, const WeightedMorphologicalTree<T>& tree, buffer_type& buffer) const override {
-        buffer[static_cast<size_t>(nodeId)] = static_cast<double>(tree.topology().getNumProperParts(nodeId));
+    void preProcessing(NodeId nodeId, const ValuedMorphologicalTree<T>& tree, buffer_type& buffer) const override {
+        buffer[static_cast<size_t>(nodeId)] = static_cast<double>(tree.topology().properPartCardinality(nodeId));
     }
 
     /**
@@ -208,14 +208,14 @@ template <AltitudeValue T> class DynamicAreaAttributeComputer : public DynamicTr
      * @param childId Identifier of the child node.
      * @param buffer Buffer read or written by the operation.
      */
-    void mergeProcessing(NodeId parentId, NodeId childId, const WeightedMorphologicalTree<T>&, buffer_type& buffer) const override {
+    void mergeProcessing(NodeId parentId, NodeId childId, const ValuedMorphologicalTree<T>&, buffer_type& buffer) const override {
         buffer[static_cast<size_t>(parentId)] += buffer[static_cast<size_t>(childId)];
     }
 
     /**
      * @brief Area has no finalization step beyond child accumulation.
      */
-    void postProcessing(NodeId, const WeightedMorphologicalTree<T>&, buffer_type&) const override {}
+    void postProcessing(NodeId, const ValuedMorphologicalTree<T>&, buffer_type&) const override {}
 };
 
 /**
@@ -249,13 +249,13 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
      * @brief Cached subtree box produced during the current bottom-up reduction.
      */
     struct BoxState {
-        /** @brief Stores the xmin. */
+        /** @brief Xmin. */
         int xmin = 0;
-        /** @brief Stores the xmax. */
+        /** @brief Xmax. */
         int xmax = -1;
-        /** @brief Stores the ymin. */
+        /** @brief Ymin. */
         int ymin = 0;
-        /** @brief Stores the ymax. */
+        /** @brief Ymax. */
         int ymax = -1;
         /** @brief Indicates whether the old snapshot was empty. */
         bool empty = true;
@@ -270,23 +270,23 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
      * rebuilt lazily before the next bottom-up reduction.
      */
     struct LocalBoxState {
-        /** @brief Stores the xmin. */
+        /** @brief Xmin. */
         int xmin = 0;
-        /** @brief Stores the xmax. */
+        /** @brief Xmax. */
         int xmax = -1;
-        /** @brief Stores the ymin. */
+        /** @brief Ymin. */
         int ymin = 0;
-        /** @brief Stores the ymax. */
+        /** @brief Ymax. */
         int ymax = -1;
-        /** @brief Stores the xmin count. */
+        /** @brief Xmin count. */
         int xminCount = 0;
-        /** @brief Stores the xmax count. */
+        /** @brief Xmax count. */
         int xmaxCount = 0;
-        /** @brief Stores the ymin count. */
+        /** @brief Ymin count. */
         int yminCount = 0;
-        /** @brief Stores the ymax count. */
+        /** @brief Ymax count. */
         int ymaxCount = 0;
-        /** @brief Stores the proper part count. */
+        /** @brief Proper part count. */
         int properPartCount = 0;
         /** @brief Indicates whether the new snapshot is empty. */
         bool empty = true;
@@ -294,11 +294,11 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
         bool dirty = true;
     };
 
-    /** @brief Stores the measure. */
-    BoundingBoxMeasure measure_ = BoundingBoxMeasure::DIAGONAL_LENGTH;
-    /** @brief Stores the local. */
+    /** @brief Measure. */
+    BoundingBoxMeasure measure_ = BoundingBoxMeasure::DiagonalLength;
+    /** @brief Local buffer. */
     mutable std::vector<LocalBoxState> local_;
-    /** @brief Stores the subtree. */
+    /** @brief Subtree buffer. */
     mutable std::vector<BoxState> subtree_;
 
     /**
@@ -322,7 +322,7 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
     /**
      * @brief Resets one node-local cache entry and marks it synchronized.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      */
     void resetLocalSummary(NodeId nodeId) const {
         auto& local = local_[static_cast<size_t>(nodeId)];
@@ -333,7 +333,7 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
     /**
      * @brief Clears the subtree cache associated with one node.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      */
     void resetSubtreeSummary(NodeId nodeId) const {
         auto& subtree = subtree_[static_cast<size_t>(nodeId)];
@@ -348,11 +348,11 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
      * @brief Enlarges a local box with one proper part and updates extremum counts.
      *
      * @param local Local state accumulated by the operation.
-     * @param pixelId Pixel identifier used by the operation.
-     * @param numCols Number of columns in the domain.
+     * @param pixelId Pixel identifier.
+     * @param numColumns Number of columns in the domain.
      */
-    void expandLocalBoxWithPixel(LocalBoxState& local, NodeId pixelId, int numCols) const {
-        const auto [y, x] = ImageUtils::to2D(pixelId, numCols);
+    void expandLocalBoxWithPixel(LocalBoxState& local, PixelId pixelId, int numColumns) const {
+        const auto [y, x] = ImageUtils::to2D(pixelId, numColumns);
         if (local.empty) {
             local.xmin = x;
             local.xmax = x;
@@ -398,17 +398,17 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
     /**
      * @brief Rebuilds the local summary from the current proper parts of the node.
      *
-     * @param nodeId Identifier of the node used by the operation.
-     * @param tree Tree topology used by the operation.
+     * @param nodeId Dense internal node identifier.
+     * @param tree Tree topology.
      */
-    void rebuildLocalBox(NodeId nodeId, const WeightedMorphologicalTree<T>& tree) const {
+    void rebuildLocalBox(NodeId nodeId, const ValuedMorphologicalTree<T>& tree) const {
         auto& local = local_[static_cast<size_t>(nodeId)];
         resetLocalBox(local);
-        const int numCols = tree.topology().getNumColsOfGridDomain2D();
-        for (NodeId pixelId : tree.topology().getProperParts(nodeId)) {
-            expandLocalBoxWithPixel(local, pixelId, numCols);
+        const int numColumns = tree.topology().numColumns();
+        for (PixelId pixelId : tree.topology().properPart(nodeId)) {
+            expandLocalBoxWithPixel(local, pixelId, numColumns);
         }
-        local.properPartCount = tree.topology().getNumProperParts(nodeId);
+        local.properPartCount = tree.topology().properPartCardinality(nodeId);
         local.dirty = false;
     }
 
@@ -418,12 +418,12 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
      * rebuilt if their cached direct proper-part count no longer matches the
      * tree, which covers bulk moves.
      *
-     * @param nodeId Identifier of the node used by the operation.
-     * @param tree Tree topology used by the operation.
+     * @param nodeId Dense internal node identifier.
+     * @param tree Tree topology.
      */
-    void ensureLocalSummary(NodeId nodeId, const WeightedMorphologicalTree<T>& tree) const {
+    void ensureLocalSummary(NodeId nodeId, const ValuedMorphologicalTree<T>& tree) const {
         auto& local = local_[static_cast<size_t>(nodeId)];
-        const int properPartCount = tree.topology().getNumProperParts(nodeId);
+        const int properPartCount = tree.topology().properPartCardinality(nodeId);
         if (!local.dirty && local.properPartCount == properPartCount) {
             return;
         }
@@ -433,7 +433,7 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
     /**
      * @brief Initializes the subtree box from the current direct proper-part box.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      */
     void copyLocalToSubtree(NodeId nodeId) const {
         const auto& local = local_[static_cast<size_t>(nodeId)];
@@ -521,7 +521,7 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
      * @param measure Scalar projection materialized from the accumulated
      * bounding-box state.
      */
-    explicit DynamicBoundingBoxAttributeComputer(BoundingBoxMeasure measure = BoundingBoxMeasure::DIAGONAL_LENGTH) : measure_(measure) {}
+    explicit DynamicBoundingBoxAttributeComputer(BoundingBoxMeasure measure = BoundingBoxMeasure::DiagonalLength) : measure_(measure) {}
 
     /**
      * @brief Resizes public and auxiliary buffers to the current tree slot space.
@@ -529,12 +529,12 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
      * Auxiliary direct/local and subtree summaries are indexed by the same
      * dense internal node-id space as the public output buffer.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @param buffer Buffer read or written by the operation.
      */
-    void resize(const WeightedMorphologicalTree<T>& tree, buffer_type& buffer) const override {
+    void resize(const ValuedMorphologicalTree<T>& tree, buffer_type& buffer) const override {
         base_t::resize(tree, buffer);
-        const size_t size = static_cast<size_t>(tree.topology().getNumInternalNodeSlots());
+        const size_t size = static_cast<size_t>(tree.topology().numInternalNodeSlots());
         local_.resize(size);
         subtree_.resize(size);
     }
@@ -542,10 +542,10 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
     /**
      * @brief Initializes the subtree box of one node from its direct proper parts.
      *
-     * @param nodeId Identifier of the node used by the operation.
-     * @param tree Tree topology used by the operation.
+     * @param nodeId Dense internal node identifier.
+     * @param tree Tree topology.
      */
-    void preProcessing(NodeId nodeId, const WeightedMorphologicalTree<T>& tree, buffer_type&) const override {
+    void preProcessing(NodeId nodeId, const ValuedMorphologicalTree<T>& tree, buffer_type&) const override {
         ensureLocalSummary(nodeId, tree);
         copyLocalToSubtree(nodeId);
     }
@@ -556,17 +556,17 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
      * @param parentId Identifier of the parent node.
      * @param childId Identifier of the child node.
      */
-    void mergeProcessing(NodeId parentId, NodeId childId, const WeightedMorphologicalTree<T>&, buffer_type&) const override {
+    void mergeProcessing(NodeId parentId, NodeId childId, const ValuedMorphologicalTree<T>&, buffer_type&) const override {
         mergeSubtreeStates(subtree_[static_cast<size_t>(parentId)], subtree_[static_cast<size_t>(childId)]);
     }
 
     /**
      * @brief Converts the accumulated subtree box into the configured scalar measure.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      * @param buffer Buffer read or written by the operation.
      */
-    void postProcessing(NodeId nodeId, const WeightedMorphologicalTree<T>&, buffer_type& buffer) const override {
+    void postProcessing(NodeId nodeId, const ValuedMorphologicalTree<T>&, buffer_type& buffer) const override {
         const auto& subtree = subtree_[static_cast<size_t>(nodeId)];
         if (subtree.empty) {
             buffer[static_cast<size_t>(nodeId)] = 0.0;
@@ -576,13 +576,13 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
         const double width = static_cast<double>(subtree.xmax - subtree.xmin + 1);
         const double height = static_cast<double>(subtree.ymax - subtree.ymin + 1);
         switch (measure_) {
-        case BoundingBoxMeasure::WIDTH:
+        case BoundingBoxMeasure::Width:
             buffer[static_cast<size_t>(nodeId)] = width;
             break;
-        case BoundingBoxMeasure::HEIGHT:
+        case BoundingBoxMeasure::Height:
             buffer[static_cast<size_t>(nodeId)] = height;
             break;
-        case BoundingBoxMeasure::DIAGONAL_LENGTH:
+        case BoundingBoxMeasure::DiagonalLength:
             buffer[static_cast<size_t>(nodeId)] = std::sqrt(width * width + height * height);
             break;
         }
@@ -591,11 +591,11 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
     /**
      * @brief Updates local boxes after all proper parts move from `sourceId` to `targetId`.
      *
-     * @param targetId Destination represented by `targetId`.
-     * @param sourceId Input represented by `sourceId`.
-     * @param tree Tree topology used by the operation.
+     * @param targetId Destination.
+     * @param sourceId Input.
+     * @param tree Tree topology.
      */
-    void onMoveProperParts(NodeId targetId, NodeId sourceId, const WeightedMorphologicalTree<T>& tree) const override {
+    void onMoveProperParts(NodeId targetId, NodeId sourceId, const ValuedMorphologicalTree<T>& tree) const override {
         ensureLocalSummary(targetId, tree);
         ensureLocalSummary(sourceId, tree);
         mergeLocalBoxes(local_[static_cast<size_t>(targetId)], local_[static_cast<size_t>(sourceId)]);
@@ -608,19 +608,19 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
      * unless the removed pixel exhausts one extremum; in that case the source
      * summary is marked dirty and rebuilt lazily.
      *
-     * @param targetId Destination represented by `targetId`.
-     * @param sourceId Input represented by `sourceId`.
-     * @param pixelId Pixel identifier used by the operation.
-     * @param tree Tree topology used by the operation.
+     * @param targetId Destination.
+     * @param sourceId Input.
+     * @param pixelId Pixel identifier.
+     * @param tree Tree topology.
      */
-    void onMoveProperPart(NodeId targetId, NodeId sourceId, NodeId pixelId, const WeightedMorphologicalTree<T>& tree) const override {
+    void onMoveProperPart(NodeId targetId, NodeId sourceId, PixelId pixelId, const ValuedMorphologicalTree<T>& tree) const override {
         ensureLocalSummary(targetId, tree);
         if (sourceId != InvalidNode) {
             ensureLocalSummary(sourceId, tree);
         }
 
-        const int numCols = tree.topology().getNumColsOfGridDomain2D();
-        expandLocalBoxWithPixel(local_[static_cast<size_t>(targetId)], pixelId, numCols);
+        const int numColumns = tree.topology().numColumns();
+        expandLocalBoxWithPixel(local_[static_cast<size_t>(targetId)], pixelId, numColumns);
         local_[static_cast<size_t>(targetId)].properPartCount += 1;
         local_[static_cast<size_t>(targetId)].dirty = false;
 
@@ -634,7 +634,7 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
             return;
         }
 
-        const auto [y, x] = ImageUtils::to2D(pixelId, numCols);
+        const auto [y, x] = ImageUtils::to2D(pixelId, numColumns);
         --source.properPartCount;
 
         bool exhaustsXmin = false;
@@ -679,9 +679,9 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
     /**
      * @brief Clears auxiliary summaries associated with a released node slot.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      */
-    void onNodeRemoved(NodeId nodeId, const WeightedMorphologicalTree<T>&) const override {
+    void onNodeRemoved(NodeId nodeId, const ValuedMorphologicalTree<T>&) const override {
         resetLocalSummary(nodeId);
         resetSubtreeSummary(nodeId);
     }

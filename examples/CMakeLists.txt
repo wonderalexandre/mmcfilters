@@ -38,8 +38,8 @@ add_executable(mmcfilters_contour_trace_profile
     ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb/stb_image.cpp
 )
 
-add_executable(mmcfilters_local_events_bitquads_benchmark
-    ${MMCFILTERS_INTERNAL_EXAMPLES_ROOT}/local_events_bitquads_benchmark.cpp
+add_executable(mmcfilters_finite_window_bitquad_benchmark
+    ${MMCFILTERS_INTERNAL_EXAMPLES_ROOT}/finite_window_bitquad_benchmark.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb/stb_image.cpp
 )
 
@@ -70,7 +70,7 @@ mmcfilters_configure_example(mmcfilters_example_editing_api)
 mmcfilters_configure_stb_example(mmcfilters_contour_benchmark)
 mmcfilters_configure_stb_example(mmcfilters_contour_trace_benchmark)
 mmcfilters_configure_stb_example(mmcfilters_contour_trace_profile)
-mmcfilters_configure_stb_example(mmcfilters_local_events_bitquads_benchmark)
+mmcfilters_configure_stb_example(mmcfilters_finite_window_bitquad_benchmark)
 mmcfilters_configure_stb_example(mmcfilters_tos_bitquad_projection_export)
 mmcfilters_configure_stb_example(mmcfilters_tos_bitquad_naive_validation)
 mmcfilters_configure_example(mmcfilters_maxdist_benchmark)
@@ -82,7 +82,7 @@ source_group(TREE ${MMCFILTERS_EXAMPLES_ROOT} FILES
     ${MMCFILTERS_EXAMPLES_ROOT}/contour_trace_benchmark.cpp
     ${MMCFILTERS_INTERNAL_EXAMPLES_ROOT}/contour_trace_profile.cpp
     ${MMCFILTERS_INTERNAL_EXAMPLES_ROOT}/edt_dift_example.cpp
-    ${MMCFILTERS_INTERNAL_EXAMPLES_ROOT}/local_events_bitquads_benchmark.cpp
+    ${MMCFILTERS_INTERNAL_EXAMPLES_ROOT}/finite_window_bitquad_benchmark.cpp
     ${MMCFILTERS_INTERNAL_EXAMPLES_ROOT}/tos_bitquad_projection_export.cpp
     ${MMCFILTERS_INTERNAL_EXAMPLES_ROOT}/tos_bitquad_naive_validation.cpp
     ${MMCFILTERS_EXAMPLES_ROOT}/editing_api_example.cpp

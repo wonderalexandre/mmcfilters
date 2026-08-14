@@ -118,7 +118,7 @@ def load_and_validate(path: Path) -> list[dict[str, object]]:
             "resolution": raw["resolution"],
             "image": raw["image"],
             "rows": int(raw["rows"]),
-            "cols": int(raw["cols"]),
+            "columns": int(raw["columns"]),
             "pixels": int(raw["pixels"]),
             "repetition": int(raw["repetition"]),
             "position": int(raw["position"]),
@@ -132,7 +132,7 @@ def load_and_validate(path: Path) -> list[dict[str, object]]:
             raise ValueError(f"unexpected resolution: {resolution}")
         if algorithm not in METHODS:
             raise ValueError(f"unexpected algorithm: {algorithm}")
-        dimensions = (row["rows"], row["cols"], row["pixels"])
+        dimensions = (row["rows"], row["columns"], row["pixels"])
         if dimensions != EXPECTED_DIMENSIONS[resolution]:
             raise ValueError(f"unexpected dimensions for {resolution}: {dimensions}")
         if float(row["construction_ms"]) <= 0.0:

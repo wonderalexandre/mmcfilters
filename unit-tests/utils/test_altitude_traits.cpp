@@ -11,10 +11,10 @@ using namespace mmcfilters;
 
 template <class T> void checkAltitudeSpanAlias() {
     static_assert(AltitudeValue<T>);
-    static_assert(std::is_same_v<AltitudeSpan<T>, std::span<const T>>);
+    static_assert(std::is_same_v<NodeAltitudeSpan<T>, std::span<const T>>);
 
     std::vector<T> values{T{0}, T{1}, T{2}};
-    AltitudeSpan<T> view(values);
+    NodeAltitudeSpan<T> view(values);
 
     assert(view.size() == values.size());
     assert(view[0] == T{0});
@@ -32,12 +32,12 @@ int main() {
     static_assert(!AltitudeValue<std::uint64_t>);
     static_assert(!AltitudeValue<std::vector<int>>);
 
-    static_assert(std::is_same_v<AltitudeDiff<std::uint8_t>, std::int64_t>);
-    static_assert(std::is_same_v<AltitudeDiff<std::int32_t>, std::int64_t>);
-    static_assert(std::is_same_v<AltitudeDiff<float>, float>);
-    static_assert(std::is_same_v<AltitudeDiff<double>, double>);
-    static_assert(std::is_same_v<AltitudeBuffer<std::int32_t>, std::vector<std::int32_t>>);
-    static_assert(std::is_same_v<AltitudeBuffer<std::uint8_t>, std::vector<std::uint8_t>>);
+    static_assert(std::is_same_v<AltitudeDifference<std::uint8_t>, std::int64_t>);
+    static_assert(std::is_same_v<AltitudeDifference<std::int32_t>, std::int64_t>);
+    static_assert(std::is_same_v<AltitudeDifference<float>, float>);
+    static_assert(std::is_same_v<AltitudeDifference<double>, double>);
+    static_assert(std::is_same_v<NodeAltitudeBuffer<std::int32_t>, std::vector<std::int32_t>>);
+    static_assert(std::is_same_v<NodeAltitudeBuffer<std::uint8_t>, std::vector<std::uint8_t>>);
 
     checkAltitudeSpanAlias<std::uint8_t>();
     checkAltitudeSpanAlias<std::int32_t>();

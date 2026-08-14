@@ -77,16 +77,16 @@ def read_pgm(path: pathlib.Path) -> np.ndarray:
 
     with path.open("rb") as handle:
         magic = next_token(handle)
-        cols = int(next_token(handle))
+        columns = int(next_token(handle))
         rows = int(next_token(handle))
         max_value = int(next_token(handle))
 
         if magic == b"P5":
             dtype = np.uint8 if max_value < 256 else ">u2"
-            expected = rows * cols * np.dtype(dtype).itemsize
+            expected = rows * columns * np.dtype(dtype).itemsize
             payload = handle.read(expected)
             require(len(payload) == expected, f"{path.name}: incomplete PGM payload")
-            image = np.frombuffer(payload, dtype=dtype).reshape(rows, cols)
+            image = np.frombuffer(payload, dtype=dtype).reshape(rows, columns)
         elif magic == b"P2":
             values = []
             try:
@@ -94,8 +94,8 @@ def read_pgm(path: pathlib.Path) -> np.ndarray:
                     values.append(int(next_token(handle)))
             except RuntimeError:
                 pass
-            require(len(values) == rows * cols, f"{path.name}: unexpected PGM sample count")
-            image = np.asarray(values, dtype=np.uint16).reshape(rows, cols)
+            require(len(values) == rows * columns, f"{path.name}: unexpected PGM sample count")
+            image = np.asarray(values, dtype=np.uint16).reshape(rows, columns)
         else:
             raise RuntimeError(f"{path.name}: unsupported PGM magic {magic!r}")
 
@@ -106,8 +106,8 @@ def read_pgm(path: pathlib.Path) -> np.ndarray:
 
 def sampled(image: np.ndarray, limit: int = 40) -> np.ndarray:
     row_step = max(1, image.shape[0] // limit)
-    col_step = max(1, image.shape[1] // limit)
-    return np.ascontiguousarray(image[::row_step, ::col_step][:limit, :limit])
+    column_step = max(1, image.shape[1] // limit)
+    return np.ascontiguousarray(image[::row_step, ::column_step][:limit, :limit])
 
 
 def synthetic_images():
@@ -166,9 +166,9 @@ def finite_examples(values: np.ndarray, layout=None) -> str:
             examples.append(f"row {row}={values[row]!r}")
         else:
             row = int(index[0])
-            col = int(index[1])
-            name = inverse_layout.get(col, f"column {col}")
-            examples.append(f"{name}@row {row}={values[row, col]!r}")
+            column = int(index[1])
+            name = inverse_layout.get(column, f"column {column}")
+            examples.append(f"{name}@row {row}={values[row, column]!r}")
     return ", ".join(examples)
 
 
@@ -219,27 +219,27 @@ def require_attribute_matrix(tree, layout, values, label: str, expected_dtype=np
 
     for key in (
         "ECCENTRICITY",
-        "BITQUADS_CIRCULARITY",
-        "BITQUADS_PERIMETER_AVERAGE",
-        "BITQUADS_LENGTH_AVERAGE",
-        "BITQUADS_WIDTH_AVERAGE",
+        "BITQUAD_CIRCULARITY",
+        "BITQUAD_PERIMETER_AVERAGE",
+        "BITQUAD_LENGTH_AVERAGE",
+        "BITQUAD_WIDTH_AVERAGE",
     ):
         require(key in layout, f"{label}: missing {key}")
 
-    expected_rows = tree.numInternalNodeSlots
+    expected_rows = tree.num_internal_node_slots
     require(values.shape[0] == expected_rows, f"{label}: expected {expected_rows} internal-node rows")
 
 
 def validate_tree_dtype(mmcfilters, tree, label: str, dtype):
     dtype_label = np.dtype(dtype).name
-    all_layout, all_values = mmcfilters.Attribute.computeAttributes(
+    all_layout, all_values = mmcfilters.Attribute.compute_attributes(
         tree,
         [mmcfilters.Attribute.Group.ALL],
         dtype=dtype,
     )
     require_attribute_matrix(tree, all_layout, all_values, f"{label}: {dtype_label}: Attribute.Group.ALL", dtype)
 
-    topology_layout, topology_values = mmcfilters.Attribute.computeTopologyAttributes(
+    topology_layout, topology_values = mmcfilters.Attribute.compute_topology_attributes(
         tree,
         [
             mmcfilters.Attribute.Group.MOMENTS,
@@ -252,39 +252,39 @@ def validate_tree_dtype(mmcfilters, tree, label: str, dtype):
 
     for attr_name in (
         "ECCENTRICITY",
-        "BITQUADS_CIRCULARITY",
-        "BITQUADS_PERIMETER_AVERAGE",
-        "BITQUADS_LENGTH_AVERAGE",
-        "BITQUADS_WIDTH_AVERAGE",
+        "BITQUAD_CIRCULARITY",
+        "BITQUAD_PERIMETER_AVERAGE",
+        "BITQUAD_LENGTH_AVERAGE",
+        "BITQUAD_WIDTH_AVERAGE",
     ):
         attr = getattr(mmcfilters.Attribute, attr_name)
-        single = mmcfilters.Attribute.computeSingleAttribute(tree, attr, dtype=dtype)
-        require(single.shape == (tree.numInternalNodeSlots,), f"{label}: {attr_name} single shape")
+        single = mmcfilters.Attribute.compute_single_attribute(tree, attr, dtype=dtype)
+        require(single.shape == (tree.num_internal_node_slots,), f"{label}: {attr_name} single shape")
         require_dtype_finite(single, f"{label}: {dtype_label}: single {attr_name}", expected_dtype=dtype)
 
-        topology_single = mmcfilters.Attribute.computeSingleTopologyAttribute(tree, attr, dtype=dtype)
-        require(topology_single.shape == (tree.numInternalNodeSlots,), f"{label}: {attr_name} topology single shape")
+        topology_single = mmcfilters.Attribute.compute_single_topology_attribute(tree, attr, dtype=dtype)
+        require(topology_single.shape == (tree.num_internal_node_slots,), f"{label}: {attr_name} topology single shape")
         require_dtype_finite(topology_single, f"{label}: {dtype_label}: topology single {attr_name}", expected_dtype=dtype)
 
-    for attr_name in ("ECCENTRICITY", "BITQUADS_WIDTH_AVERAGE", "LEVEL"):
+    for attr_name in ("ECCENTRICITY", "BITQUAD_WIDTH_AVERAGE", "MEAN_GRAY_LEVEL"):
         attr = getattr(mmcfilters.Attribute, attr_name)
-        delta_layout, delta_values = mmcfilters.Attribute.computeSingleAttributeWithDelta(
+        sample_layout, sampled_values = mmcfilters.Attribute.compute_sampled_node_attribute(
             tree,
             attr,
             1,
-            "last-padding",
+            1,
             dtype=dtype,
         )
-        require_finite_matrix(delta_values, f"{label}: {dtype_label}: delta {attr_name}", delta_layout, dtype)
-        require(delta_values.shape[0] == tree.numInternalNodeSlots, f"{label}: delta {attr_name} row count")
+        require_finite_matrix(sampled_values, f"{label}: {dtype_label}: sampled {attr_name}", sample_layout, dtype)
+        require(sampled_values.shape[0] == tree.num_internal_node_slots, f"{label}: sampled {attr_name} row count")
 
-    for attr_name in ("ECCENTRICITY", "BITQUADS_WIDTH_AVERAGE", "MAX_DIST"):
+    for attr_name in ("ECCENTRICITY", "BITQUAD_WIDTH_AVERAGE", "MAX_DIST"):
         attr = getattr(mmcfilters.Attribute, attr_name)
-        mapped = mmcfilters.Attribute.computeAttributeMapping(tree, attr, dtype=dtype)
-        require(mapped.shape == (tree.numRows, tree.numCols), f"{label}: mapped {attr_name} shape")
+        mapped = mmcfilters.Attribute.compute_attribute_mapping(tree, attr, dtype=dtype)
+        require(mapped.shape == (tree.num_rows, tree.num_columns), f"{label}: mapped {attr_name} shape")
         require_dtype_finite(mapped, f"{label}: {dtype_label}: mapped {attr_name}", expected_dtype=dtype)
 
-    projection_layout, projection_values = mmcfilters.Attribute.computeAttributes(
+    projection_layout, projection_values = mmcfilters.Attribute.compute_attributes(
         tree,
         [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST],
         dtype=dtype,
@@ -302,15 +302,15 @@ def validate_tree(mmcfilters, tree, label: str):
     validate_tree_dtype(mmcfilters, tree, label, np.float32)
     validate_tree_dtype(mmcfilters, tree, label, np.float64)
 
-    default_single = mmcfilters.Attribute.computeSingleAttribute(tree, mmcfilters.Attribute.ECCENTRICITY)
+    default_single = mmcfilters.Attribute.compute_single_attribute(tree, mmcfilters.Attribute.ECCENTRICITY)
     require_float32_finite(default_single, f"{label}: default dtype")
 
-    all32_layout, all32 = mmcfilters.Attribute.computeAttributes(
+    all32_layout, all32 = mmcfilters.Attribute.compute_attributes(
         tree,
         [mmcfilters.Attribute.Group.ALL],
         dtype=np.float32,
     )
-    all64_layout, all64 = mmcfilters.Attribute.computeAttributes(
+    all64_layout, all64 = mmcfilters.Attribute.compute_attributes(
         tree,
         [mmcfilters.Attribute.Group.ALL],
         dtype=np.float64,
@@ -318,7 +318,7 @@ def validate_tree(mmcfilters, tree, label: str):
     require_same_layout(all32_layout, all64_layout, f"{label}: Attribute.Group.ALL cast contract")
     require_float32_matches_float64_cast(all32, all64, f"{label}: Attribute.Group.ALL cast contract")
 
-    topology32_layout, topology32 = mmcfilters.Attribute.computeTopologyAttributes(
+    topology32_layout, topology32 = mmcfilters.Attribute.compute_topology_attributes(
         tree,
         [
             mmcfilters.Attribute.Group.MOMENTS,
@@ -327,7 +327,7 @@ def validate_tree(mmcfilters, tree, label: str):
         ],
         dtype=np.float32,
     )
-    topology64_layout, topology64 = mmcfilters.Attribute.computeTopologyAttributes(
+    topology64_layout, topology64 = mmcfilters.Attribute.compute_topology_attributes(
         tree,
         [
             mmcfilters.Attribute.Group.MOMENTS,
@@ -339,40 +339,40 @@ def validate_tree(mmcfilters, tree, label: str):
     require_same_layout(topology32_layout, topology64_layout, f"{label}: topology cast contract")
     require_float32_matches_float64_cast(topology32, topology64, f"{label}: topology cast contract")
 
-    for attr_name in ("ECCENTRICITY", "BITQUADS_WIDTH_AVERAGE", "LEVEL", "MAX_DIST"):
+    for attr_name in ("ECCENTRICITY", "BITQUAD_WIDTH_AVERAGE", "MEAN_GRAY_LEVEL", "MAX_DIST"):
         attr = getattr(mmcfilters.Attribute, attr_name)
 
-        single32 = mmcfilters.Attribute.computeSingleAttribute(tree, attr, dtype=np.float32)
-        single64 = mmcfilters.Attribute.computeSingleAttribute(tree, attr, dtype=np.float64)
+        single32 = mmcfilters.Attribute.compute_single_attribute(tree, attr, dtype=np.float32)
+        single64 = mmcfilters.Attribute.compute_single_attribute(tree, attr, dtype=np.float64)
         require_float32_matches_float64_cast(single32, single64, f"{label}: single {attr_name} cast contract")
 
-        mapped32 = mmcfilters.Attribute.computeAttributeMapping(tree, attr, dtype=np.float32)
-        mapped64 = mmcfilters.Attribute.computeAttributeMapping(tree, attr, dtype=np.float64)
+        mapped32 = mmcfilters.Attribute.compute_attribute_mapping(tree, attr, dtype=np.float32)
+        mapped64 = mmcfilters.Attribute.compute_attribute_mapping(tree, attr, dtype=np.float64)
         require_float32_matches_float64_cast(mapped32, mapped64, f"{label}: mapped {attr_name} cast contract")
 
-    delta32_layout, delta32 = mmcfilters.Attribute.computeSingleAttributeWithDelta(
+    sample32_layout, samples32 = mmcfilters.Attribute.compute_sampled_node_attribute(
         tree,
         mmcfilters.Attribute.ECCENTRICITY,
         1,
-        "last-padding",
+        1,
         dtype=np.float32,
     )
-    delta64_layout, delta64 = mmcfilters.Attribute.computeSingleAttributeWithDelta(
+    sample64_layout, samples64 = mmcfilters.Attribute.compute_sampled_node_attribute(
         tree,
         mmcfilters.Attribute.ECCENTRICITY,
         1,
-        "last-padding",
+        1,
         dtype=np.float64,
     )
-    require_same_layout(delta32_layout, delta64_layout, f"{label}: delta cast contract")
-    require_float32_matches_float64_cast(delta32, delta64, f"{label}: delta cast contract")
+    require_same_layout(sample32_layout, sample64_layout, f"{label}: sampled-attribute cast contract")
+    require_float32_matches_float64_cast(samples32, samples64, f"{label}: sampled-attribute cast contract")
 
-    projection32_layout, projection32_values = mmcfilters.Attribute.computeAttributes(
+    projection32_layout, projection32_values = mmcfilters.Attribute.compute_attributes(
         tree,
         [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST],
         dtype=np.float32,
     )
-    projection64_layout, projection64_values = mmcfilters.Attribute.computeAttributes(
+    projection64_layout, projection64_values = mmcfilters.Attribute.compute_attributes(
         tree,
         [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST],
         dtype=np.float64,
@@ -390,63 +390,63 @@ def validate_tree(mmcfilters, tree, label: str):
 
 
 def validate_higra_roundtrip(mmcfilters, tree, label: str, kind):
-    parent, altitude = tree.exportHigraHierarchy()
-    imported = mmcfilters.MorphologicalTreeFactory.createFromHigraParent(
+    parent, altitude = tree.export_higra_hierarchy()
+    imported = mmcfilters.MorphologicalTreeFactory.create_from_higra_parent(
         parent,
         altitude,
-        tree.numRows,
-        tree.numCols,
+        tree.num_rows,
+        tree.num_columns,
         kind,
         1.5,
     )
 
     for dtype in (np.float32, np.float64):
         dtype_label = np.dtype(dtype).name
-        layout, values = mmcfilters.Attribute.computeAttributes(
+        layout, values = mmcfilters.Attribute.compute_attributes(
             imported,
             [mmcfilters.Attribute.Group.ALL],
             mmcfilters.NodeIdSpace.HIGRA,
             dtype=dtype,
         )
         require(values.ndim == 2, f"{label}: {dtype_label}: HIGRA ALL must be a 2D matrix")
-        require(values.shape == (imported.numHigraNodes, len(layout)), f"{label}: {dtype_label}: HIGRA ALL shape")
+        require(values.shape == (imported.num_higra_nodes, len(layout)), f"{label}: {dtype_label}: HIGRA ALL shape")
         require_dtype_finite(values, f"{label}: {dtype_label}: HIGRA Attribute.Group.ALL", layout, dtype)
 
 
 def validate_dtype_errors(mmcfilters):
     image = np.array([[0, 1], [2, 3]], dtype=np.uint8)
-    tree = mmcfilters.MorphologicalTreeFactory.createMaxTree(image, 1.0)
+    tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image, 1.0)
 
     for bad_dtype in (np.float16, np.int32):
         require_raises(
-            lambda bad_dtype=bad_dtype: mmcfilters.Attribute.computeSingleAttribute(
+            lambda bad_dtype=bad_dtype: mmcfilters.Attribute.compute_single_attribute(
                 tree, mmcfilters.Attribute.AREA, dtype=bad_dtype
             ),
-            f"computeSingleAttribute must reject {bad_dtype}",
+            f"compute_single_attribute must reject {bad_dtype}",
         )
         require_raises(
-            lambda bad_dtype=bad_dtype: mmcfilters.Attribute.computeAttributes(
+            lambda bad_dtype=bad_dtype: mmcfilters.Attribute.compute_attributes(
                 tree, [mmcfilters.Attribute.AREA], dtype=bad_dtype
             ),
-            f"computeAttributes must reject {bad_dtype}",
+            f"compute_attributes must reject {bad_dtype}",
         )
         require_raises(
-            lambda bad_dtype=bad_dtype: mmcfilters.Attribute.computeTopologyAttributes(
+            lambda bad_dtype=bad_dtype: mmcfilters.Attribute.compute_topology_attributes(
                 tree, [mmcfilters.Attribute.AREA], dtype=bad_dtype
             ),
-            f"computeTopologyAttributes must reject {bad_dtype}",
+            f"compute_topology_attributes must reject {bad_dtype}",
         )
         require_raises(
-            lambda bad_dtype=bad_dtype: mmcfilters.Attribute.computeSingleAttributeWithDelta(
-                tree, mmcfilters.Attribute.AREA, 1, dtype=bad_dtype
+            lambda bad_dtype=bad_dtype: mmcfilters.Attribute.compute_sampled_node_attribute(
+                tree, mmcfilters.Attribute.AREA, 1, 1, dtype=bad_dtype
             ),
-            f"computeSingleAttributeWithDelta must reject {bad_dtype}",
+            f"compute_sampled_node_attribute must reject {bad_dtype}",
         )
         require_raises(
-            lambda bad_dtype=bad_dtype: mmcfilters.Attribute.computeAttributeMapping(
+            lambda bad_dtype=bad_dtype: mmcfilters.Attribute.compute_attribute_mapping(
                 tree, mmcfilters.Attribute.AREA, dtype=bad_dtype
             ),
-            f"computeAttributeMapping must reject {bad_dtype}",
+            f"compute_attribute_mapping must reject {bad_dtype}",
         )
 
 
@@ -454,7 +454,7 @@ def validate_image(mmcfilters, name: str, image: np.ndarray, radius: float):
     require(image.dtype == np.uint8, f"{name}: image must be uint8")
     require(image.flags.c_contiguous, f"{name}: image must be contiguous")
 
-    max_tree = mmcfilters.MorphologicalTreeFactory.createMaxTree(image, radius)
+    max_tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image, radius)
     validate_tree(mmcfilters, max_tree, f"{name}: max-tree r={radius:g}")
     validate_higra_roundtrip(
         mmcfilters,
@@ -463,7 +463,7 @@ def validate_image(mmcfilters, name: str, image: np.ndarray, radius: float):
         mmcfilters.MorphologicalTreeKind.MAX_TREE,
     )
 
-    min_tree = mmcfilters.MorphologicalTreeFactory.createMinTree(image, radius)
+    min_tree = mmcfilters.MorphologicalTreeFactory.create_min_tree(image, radius)
     validate_tree(mmcfilters, min_tree, f"{name}: min-tree r={radius:g}")
     validate_higra_roundtrip(
         mmcfilters,

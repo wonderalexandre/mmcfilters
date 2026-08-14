@@ -16,14 +16,14 @@ using namespace mmcfilters;
 
 struct Fixture {
     std::vector<NodeId> parent;
-    std::vector<NodeId> owner;
+    std::vector<NodeId> smallestNodeMap;
     std::vector<std::uint8_t> altitude;
 };
 
 struct HigraFixture {
     std::vector<NodeId> parent;
     std::vector<std::uint8_t> altitude;
-    int numProperParts = 0;
+    int numPixels = 0;
 };
 
 Fixture makeFixture(int numNodes, bool branching) {
@@ -41,27 +41,27 @@ Fixture makeFixture(int numNodes, bool branching) {
 
     for (NodeId nodeId = 0; nodeId < numNodes; ++nodeId) {
         if (childCount[static_cast<std::size_t>(nodeId)] == 0) {
-            fixture.owner.push_back(nodeId);
+            fixture.smallestNodeMap.push_back(nodeId);
         }
     }
     return fixture;
 }
 
 HigraFixture makeHigraFixture(const Fixture& native) {
-    const NodeId numProperParts = static_cast<NodeId>(native.owner.size());
-    const NodeId numNodes = static_cast<NodeId>(native.parent.size());
-    const NodeId numVertices = numProperParts + numNodes;
+    const int numPixels = static_cast<int>(native.smallestNodeMap.size());
+    const int numNodes = static_cast<int>(native.parent.size());
+    const int numVertices = numPixels + numNodes;
 
     HigraFixture higra;
     higra.parent.resize(static_cast<std::size_t>(numVertices));
     higra.altitude.assign(static_cast<std::size_t>(numVertices), std::uint8_t{0});
-    higra.numProperParts = numProperParts;
+    higra.numPixels = numPixels;
 
-    for (NodeId properPartId = 0; properPartId < numProperParts; ++properPartId) {
-        higra.parent[static_cast<std::size_t>(properPartId)] = numProperParts + native.owner[static_cast<std::size_t>(properPartId)];
+    for (PixelId pixel = 0; pixel < numPixels; ++pixel) {
+        higra.parent[static_cast<std::size_t>(pixel)] = numPixels + native.smallestNodeMap[static_cast<std::size_t>(pixel)];
     }
     for (NodeId nodeId = 0; nodeId < numNodes; ++nodeId) {
-        higra.parent[static_cast<std::size_t>(numProperParts + nodeId)] = numProperParts + native.parent[static_cast<std::size_t>(nodeId)];
+        higra.parent[static_cast<std::size_t>(numPixels + nodeId)] = numPixels + native.parent[static_cast<std::size_t>(nodeId)];
     }
     return higra;
 }
@@ -72,18 +72,18 @@ void runCase(const char* shape, int numNodes, int commits, bool branching) {
     Fixture fixture = makeFixture(numNodes, branching);
 
     const auto constructionStart = Clock::now();
-    auto weighted = MorphologicalTreeFactory::createFromNativeHierarchy(
-        NativeHierarchyView<std::uint8_t>{fixture.parent, fixture.owner, fixture.altitude, 0, std::nullopt, HierarchySemantics{}});
+    auto valuedTree = MorphologicalTreeFactory::createFromNativeHierarchy(
+        NativeHierarchyView<std::uint8_t>{fixture.parent, fixture.smallestNodeMap, fixture.altitude, 0, std::nullopt, MorphologicalTreeSemantics{}});
     const auto constructionFinish = Clock::now();
 
     const auto commitStart = Clock::now();
     for (int iteration = 0; iteration < commits; ++iteration) {
-        auto editor = weighted.edit();
+        auto editor = valuedTree.edit();
         editor.commit();
     }
     const auto commitFinish = Clock::now();
 
-    std::cout << shape << ',' << numNodes << ',' << fixture.owner.size() << ',' << commits << ',' << milliseconds(constructionStart, constructionFinish) << ','
+    std::cout << shape << ',' << numNodes << ',' << fixture.smallestNodeMap.size() << ',' << commits << ',' << milliseconds(constructionStart, constructionFinish) << ','
               << milliseconds(commitStart, commitFinish) << '\n';
 }
 
@@ -92,19 +92,19 @@ void runHigraCase(const char* shape, int numNodes, int commits, bool branching) 
     const HigraFixture fixture = makeHigraFixture(native);
 
     const auto constructionStart = Clock::now();
-    auto weighted = MorphologicalTreeFactory::createFromHigraParent(std::span<const NodeId>(fixture.parent), std::span<const std::uint8_t>(fixture.altitude), 1,
-                                                                    fixture.numProperParts, MorphologicalTreeKind::MAX_TREE,
-                                                                    RegularGridAdjacency2D(1, fixture.numProperParts, 1.5));
+    auto valuedTree = MorphologicalTreeFactory::createFromHigraParent(std::span<const NodeId>(fixture.parent), std::span<const std::uint8_t>(fixture.altitude), 1,
+                                                                    fixture.numPixels, MorphologicalTreeKind::MaxTree,
+                                                                    RegularGridAdjacency2D(1, fixture.numPixels, 1.5));
     const auto constructionFinish = Clock::now();
 
     const auto commitStart = Clock::now();
     for (int iteration = 0; iteration < commits; ++iteration) {
-        auto editor = weighted.edit();
+        auto editor = valuedTree.edit();
         editor.commit();
     }
     const auto commitFinish = Clock::now();
 
-    std::cout << shape << ',' << numNodes << ',' << fixture.numProperParts << ',' << commits << ',' << milliseconds(constructionStart, constructionFinish)
+    std::cout << shape << ',' << numNodes << ',' << fixture.numPixels << ',' << commits << ',' << milliseconds(constructionStart, constructionFinish)
               << ',' << milliseconds(commitStart, commitFinish) << '\n';
 }
 

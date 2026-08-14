@@ -17,7 +17,7 @@
 #include "mmcfilters/trees/MorphologicalTree.hpp"
 #include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
 #include "mmcfilters/trees/TreeAltitudeAlgorithms.hpp"
-#include "mmcfilters/trees/WeightedMorphologicalTree.hpp"
+#include "mmcfilters/trees/ValuedMorphologicalTree.hpp"
 
 namespace mmcfilters::unit_tests {
 
@@ -105,9 +105,9 @@ inline void requireThrowsContaining(Fn&& fn, const std::string& expectedMessageF
     throw std::runtime_error(label + ": expected an exception");
 }
 
-inline ImageUInt8Ptr makeImage(int rows, int cols, std::initializer_list<uint8_t> values) {
-    requireEqual(static_cast<int>(values.size()), rows * cols, "image buffer size");
-    auto image = ImageUInt8::create(rows, cols);
+inline ImageUInt8Ptr makeImage(int rows, int columns, std::initializer_list<uint8_t> values) {
+    requireEqual(static_cast<int>(values.size()), rows * columns, "image buffer size");
+    auto image = ImageUInt8::create(rows, columns);
     int index = 0;
     for (uint8_t value : values) {
         (*image)[index++] = value;
@@ -138,31 +138,56 @@ inline ImageUInt8Ptr makeComponentTreeFixture() {
 }
 
 inline std::shared_ptr<MorphologicalTree> makeComponentTree(ImageUInt8Ptr image, bool isMaxtree, double radius = 1.5) {
-    auto weighted = isMaxtree ? MorphologicalTreeFactory::createMaxTree(image, radius) : MorphologicalTreeFactory::createMinTree(image, radius);
-    return std::make_shared<MorphologicalTree>(weighted.topology().clone());
+    auto valuedTree = isMaxtree ? MorphologicalTreeFactory::createMaxTree(image, radius) : MorphologicalTreeFactory::createMinTree(image, radius);
+    return std::make_shared<MorphologicalTree>(valuedTree.topology().clone());
 }
 
-inline std::shared_ptr<MorphologicalTree> makeTreeOfShapes(ImageUInt8Ptr image, ToSInterpolation interpolation = ToSInterpolation::SelfDual) {
-    auto weighted = MorphologicalTreeFactory::createTreeOfShapes(image, interpolation);
-    return std::make_shared<MorphologicalTree>(weighted.topology().clone());
+enum class TestTopographicImmersion { SelfDualSpan, Min4Max8, Min8Max4 };
+
+inline TopographicConvention makeTopographicConvention(int rows, int columns,
+                                                        TestTopographicImmersion immersion = TestTopographicImmersion::SelfDualSpan,
+                                                        TopographicDomainExtension domainExtension = TopographicDomainExtension::ExteriorRing,
+                                                        PixelId infinityPixel = 0) {
+    TreeOfShapesImmersion specification = SelfDualSpanImmersion{};
+    if (immersion == TestTopographicImmersion::Min4Max8) {
+        specification = ComplementaryGridImmersion{
+            ComplementaryAdjacencies{RegularGridAdjacency2D(rows, columns, 1.0), RegularGridAdjacency2D(rows, columns, 1.5)}};
+    } else if (immersion == TestTopographicImmersion::Min8Max4) {
+        specification = ComplementaryGridImmersion{
+            ComplementaryAdjacencies{RegularGridAdjacency2D(rows, columns, 1.5), RegularGridAdjacency2D(rows, columns, 1.0)}};
+    }
+    return TopographicConvention{std::move(specification), domainExtension, infinityPixel};
+}
+
+inline TopographicConvention makeTopographicConvention(const ImageUInt8Ptr& image,
+                                                        TestTopographicImmersion immersion = TestTopographicImmersion::SelfDualSpan,
+                                                        TopographicDomainExtension domainExtension = TopographicDomainExtension::ExteriorRing,
+                                                        PixelId infinityPixel = 0) {
+    return makeTopographicConvention(image->getNumRows(), image->getNumColumns(), immersion, domainExtension, infinityPixel);
+}
+
+inline std::shared_ptr<MorphologicalTree> makeTreeOfShapes(ImageUInt8Ptr image,
+                                                           TestTopographicImmersion immersion = TestTopographicImmersion::SelfDualSpan) {
+    auto valuedTree = MorphologicalTreeFactory::createTreeOfShapes(image, makeTopographicConvention(image, immersion));
+    return std::make_shared<MorphologicalTree>(valuedTree.topology().clone());
 }
 
 template <class Altitude>
-inline std::vector<Altitude> makeStrictHigraAltitude(const std::vector<NodeId>& parent, NodeId numProperParts, bool increasingFromRoot) {
+inline std::vector<Altitude> makeStrictHigraAltitude(const std::vector<NodeId>& parent, int numPixels, bool increasingFromRoot) {
     static_assert(std::is_integral_v<Altitude>);
-    require(numProperParts > 0 && numProperParts < static_cast<NodeId>(parent.size()), "strict Higra altitude requires leaves followed by internal nodes");
+    require(numPixels > 0 && numPixels < static_cast<NodeId>(parent.size()), "strict Higra altitude requires leaves followed by internal nodes");
 
     const auto unknown = std::numeric_limits<std::size_t>::max();
     std::vector<std::size_t> depth(parent.size(), unknown);
     std::vector<NodeId> path;
     std::size_t maxDepth = 0;
 
-    for (NodeId higraNode = numProperParts; higraNode < static_cast<NodeId>(parent.size()); ++higraNode) {
+    for (NodeId higraNode = numPixels; higraNode < static_cast<NodeId>(parent.size()); ++higraNode) {
         NodeId cursor = higraNode;
         path.clear();
         while (depth[static_cast<std::size_t>(cursor)] == unknown) {
             const NodeId parentNode = parent[static_cast<std::size_t>(cursor)];
-            require(parentNode >= numProperParts && parentNode < static_cast<NodeId>(parent.size()), "strict Higra altitude requires internal parents");
+            require(parentNode >= numPixels && parentNode < static_cast<NodeId>(parent.size()), "strict Higra altitude requires internal parents");
             if (parentNode == cursor) {
                 depth[static_cast<std::size_t>(cursor)] = 0;
                 break;
@@ -183,33 +208,34 @@ inline std::vector<Altitude> makeStrictHigraAltitude(const std::vector<NodeId>& 
     require(maxDepth <= static_cast<std::size_t>(std::numeric_limits<Altitude>::max()), "strict Higra altitude exceeds the requested value type");
 
     std::vector<Altitude> altitude(parent.size(), Altitude{});
-    for (NodeId higraNode = numProperParts; higraNode < static_cast<NodeId>(parent.size()); ++higraNode) {
+    for (NodeId higraNode = numPixels; higraNode < static_cast<NodeId>(parent.size()); ++higraNode) {
         const std::size_t nodeDepth = depth[static_cast<std::size_t>(higraNode)];
         altitude[static_cast<std::size_t>(higraNode)] = static_cast<Altitude>(increasingFromRoot ? nodeDepth : maxDepth - nodeDepth);
     }
-    for (NodeId properPart = 0; properPart < numProperParts; ++properPart) {
-        const NodeId owner = parent[static_cast<std::size_t>(properPart)];
-        altitude[static_cast<std::size_t>(properPart)] = altitude[static_cast<std::size_t>(owner)];
+    for (PixelId pixel = 0; pixel < numPixels; ++pixel) {
+        const NodeId smallestNodeId = parent[static_cast<std::size_t>(pixel)];
+        altitude[static_cast<std::size_t>(pixel)] = altitude[static_cast<std::size_t>(smallestNodeId)];
     }
     return altitude;
 }
 
-inline std::shared_ptr<MorphologicalTree> makeTreeFromHigraParent(const std::vector<NodeId>& parent, int rows, int cols, bool isMaxtree, double radius = 1.5) {
-    const auto altitude = makeStrictHigraAltitude<std::uint8_t>(parent, rows * cols, isMaxtree);
-    auto weighted = MorphologicalTreeFactory::createFromHigraParent(std::span<const NodeId>(parent), std::span<const std::uint8_t>(altitude), rows, cols,
-                                                                    isMaxtree ? MorphologicalTreeKind::MAX_TREE : MorphologicalTreeKind::MIN_TREE,
-                                                                    RegularGridAdjacency2D(rows, cols, radius));
-    return std::make_shared<MorphologicalTree>(weighted.topology().clone());
+inline std::shared_ptr<MorphologicalTree> makeTreeFromHigraParent(const std::vector<NodeId>& parent, int rows, int columns, bool isMaxtree, double radius = 1.5) {
+    const auto altitude = makeStrictHigraAltitude<std::uint8_t>(parent, rows * columns, isMaxtree);
+    auto valuedTree = MorphologicalTreeFactory::createFromHigraParent(std::span<const NodeId>(parent), std::span<const std::uint8_t>(altitude), rows, columns,
+                                                                    isMaxtree ? MorphologicalTreeKind::MaxTree : MorphologicalTreeKind::MinTree,
+                                                                    RegularGridAdjacency2D(rows, columns, radius));
+    return std::make_shared<MorphologicalTree>(valuedTree.topology().clone());
 }
 
-inline std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> makeWeightedComponentTree(ImageUInt8Ptr image, bool isMaxtree, double radius = 1.5) {
-    return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(isMaxtree ? MorphologicalTreeFactory::createMaxTree(image, radius)
+inline std::shared_ptr<ValuedMorphologicalTree<std::uint8_t>> makeValuedComponentTree(ImageUInt8Ptr image, bool isMaxtree, double radius = 1.5) {
+    return std::make_shared<ValuedMorphologicalTree<std::uint8_t>>(isMaxtree ? MorphologicalTreeFactory::createMaxTree(image, radius)
                                                                                : MorphologicalTreeFactory::createMinTree(image, radius));
 }
 
-inline std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> makeWeightedTreeOfShapes(ImageUInt8Ptr image,
-                                                                                         ToSInterpolation interpolation = ToSInterpolation::SelfDual) {
-    return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(MorphologicalTreeFactory::createTreeOfShapes(image, interpolation));
+inline std::shared_ptr<ValuedMorphologicalTree<ToSGrayLevel>> makeValuedTreeOfShapes(ImageUInt8Ptr image,
+                                                                                        TestTopographicImmersion immersion = TestTopographicImmersion::SelfDualSpan) {
+    return std::make_shared<ValuedMorphologicalTree<ToSGrayLevel>>(
+        MorphologicalTreeFactory::createTreeOfShapes(image, makeTopographicConvention(image, immersion)));
 }
 
 inline std::vector<NodeId> collectNodeIds(auto range) {
@@ -220,24 +246,32 @@ inline std::vector<NodeId> collectNodeIds(auto range) {
     return ids;
 }
 
+inline std::vector<PixelId> collectPixelIds(auto range) {
+    std::vector<PixelId> ids;
+    for (PixelId id : range) {
+        ids.push_back(id);
+    }
+    return ids;
+}
+
 inline std::pair<std::vector<NodeId>, std::vector<std::uint8_t>> exportFlatHigraHierarchy(const MorphologicalTree& tree) {
-    AltitudeBuffer<std::uint8_t> altitude(static_cast<size_t>(tree.getNumInternalNodeSlots()), std::uint8_t{});
+    NodeAltitudeBuffer<std::uint8_t> altitude(static_cast<size_t>(tree.numInternalNodeSlots()), std::uint8_t{});
     return TreeAltitudeAlgorithms::exportHigraHierarchy(tree, std::span<const std::uint8_t>(altitude));
 }
 
-inline std::pair<std::vector<NodeId>, std::vector<std::uint8_t>> exportHigraHierarchy(const WeightedMorphologicalTree<std::uint8_t>& tree) {
+inline std::pair<std::vector<NodeId>, std::vector<std::uint8_t>> exportHigraHierarchy(const ValuedMorphologicalTree<std::uint8_t>& tree) {
     return tree.exportHigraHierarchy();
 }
 
 inline int computeAreaViaAttributeFacade(const MorphologicalTree& tree, NodeId nodeId) {
-    auto [attrNames, buffer] = AttributeComputation::computeSingleTopologyAttribute(tree, AREA);
-    return static_cast<int>(buffer[attrNames.linearIndex(nodeId, AREA)]);
+    auto [attrNames, buffer] = AttributeComputation::computeSingleTopologyAttribute(tree, Area);
+    return static_cast<int>(buffer[attrNames.linearIndex(nodeId, Area)]);
 }
 
-template <class PixelType> inline void requireImageShape(const std::shared_ptr<Image<PixelType>>& image, int rows, int cols) {
+template <class PixelType> inline void requireImageShape(const std::shared_ptr<Image<PixelType>>& image, int rows, int columns) {
     require(static_cast<bool>(image), "image must not be null");
     requireEqual(image->getNumRows(), rows, "image rows");
-    requireEqual(image->getNumCols(), cols, "image cols");
+    requireEqual(image->getNumColumns(), columns, "image columns");
 }
 
 template <class PixelType> inline std::vector<PixelType> collectImageValues(const std::shared_ptr<Image<PixelType>>& image) {

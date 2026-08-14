@@ -36,7 +36,7 @@ enum class ViterbiTieBreak {
  * @brief Options for the connected Viterbi decision on a morphological tree.
  */
 struct ViterbiDecisionOptions {
-    /** @brief Stores the tie break. */
+    /** @brief Tie break. */
     ViterbiTieBreak tieBreak = ViterbiTieBreak::PreferRemove;
 };
 
@@ -45,14 +45,14 @@ struct ViterbiDecisionOptions {
  *
  * Costs are indexed by the dense internal `NodeId` slot domain. Only alive
  * nodes reachable from the current root participate in the dynamic program,
- * but the vectors must still match `tree.getNumInternalNodeSlots()` so the
+ * but the vectors must still match `tree.numInternalNodeSlots()` so the
  * caller cannot accidentally mix Higra ids, compacted alive ids, and internal
  * node slots.
  */
 template <std::floating_point Real> struct ViterbiNodeCosts {
-    /** @brief Stores the preserve. */
+    /** @brief Preserve buffer. */
     std::vector<Real> preserve;
-    /** @brief Stores the remove. */
+    /** @brief Remove buffer. */
     std::vector<Real> remove;
 };
 
@@ -61,8 +61,8 @@ namespace viterbi_decision_detail {
 /**
  * @brief Validates finite non negative cost.
  *
- * @param value Value used by the operation.
- * @param nodeId Identifier of the node used by the operation.
+ * @param value Value.
+ * @param nodeId Dense internal node identifier.
  * @param costName Name of the cost term included in diagnostics.
  */
 template <std::floating_point Real> void requireFiniteNonNegativeCost(Real value, NodeId nodeId, std::string_view costName) {
@@ -76,8 +76,8 @@ template <std::floating_point Real> void requireFiniteNonNegativeCost(Real value
 /**
  * @brief Validates finite attribute.
  *
- * @param value Value used by the operation.
- * @param nodeId Identifier of the node used by the operation.
+ * @param value Value.
+ * @param nodeId Dense internal node identifier.
  */
 template <std::floating_point Real> void requireFiniteAttribute(Real value, NodeId nodeId) {
     if (!std::isfinite(value)) {
@@ -125,16 +125,16 @@ template <std::floating_point Real> bool choosePreserve(Real preserveCost, Real 
 /**
  * @brief Validates cost shape and values.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param costs Per-node preservation and removal costs.
  */
 template <std::floating_point Real> void requireCostShapeAndValues(const MorphologicalTree& tree, const ViterbiNodeCosts<Real>& costs) {
-    const auto expectedSize = static_cast<std::size_t>(tree.getNumInternalNodeSlots());
+    const auto expectedSize = static_cast<std::size_t>(tree.numInternalNodeSlots());
     if (costs.preserve.size() != expectedSize || costs.remove.size() != expectedSize) {
         throw std::invalid_argument("Viterbi cost buffers must match the internal node slot count.");
     }
 
-    for (NodeId nodeId : tree.getAliveNodeIds()) {
+    for (NodeId nodeId : tree.aliveNodeIds()) {
         requireFiniteNonNegativeCost(costs.preserve[static_cast<std::size_t>(nodeId)], nodeId, "preserve");
         requireFiniteNonNegativeCost(costs.remove[static_cast<std::size_t>(nodeId)], nodeId, "remove");
     }
@@ -143,15 +143,15 @@ template <std::floating_point Real> void requireCostShapeAndValues(const Morphol
 /**
  * @brief Collects top down order.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @return Values produced by the operation.
  */
 inline std::vector<NodeId> collectTopDownOrder(const MorphologicalTree& tree) {
     std::vector<NodeId> order;
-    order.reserve(static_cast<std::size_t>(tree.getNumNodes()));
+    order.reserve(static_cast<std::size_t>(tree.numNodes()));
 
     std::vector<NodeId> stack;
-    stack.push_back(tree.getRoot());
+    stack.push_back(tree.root());
     while (!stack.empty()) {
         const NodeId nodeId = stack.back();
         stack.pop_back();
@@ -178,7 +178,7 @@ inline std::vector<NodeId> collectTopDownOrder(const MorphologicalTree& tree) {
  * Large attribute values therefore favor preservation, small values favor
  * removal, and exact threshold ties are left to `ViterbiDecisionOptions`.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param attribute Attribute requested by the operation.
  * @param threshold Threshold applied by the operation.
  * @return The resulting threshold-based Viterbi costs from an increasing node attribute.
@@ -189,13 +189,13 @@ template <std::floating_point Real>
                                 throw std::invalid_argument("Viterbi threshold costs require a non-null attribute buffer."));
     MMCFILTERS_CONTRACT_REQUIRE(std::isfinite(threshold), throw std::invalid_argument("Viterbi threshold must be finite."));
 
-    const auto numNodeSlots = static_cast<std::size_t>(tree.getNumInternalNodeSlots());
+    const auto numNodeSlots = static_cast<std::size_t>(tree.numInternalNodeSlots());
     ViterbiNodeCosts<Real> costs{
         std::vector<Real>(numNodeSlots, Real{}),
         std::vector<Real>(numNodeSlots, Real{}),
     };
 
-    for (NodeId nodeId : tree.getAliveNodeIds()) {
+    for (NodeId nodeId : tree.aliveNodeIds()) {
         const auto index = static_cast<std::size_t>(nodeId);
         const Real value = attribute[index];
         MMCFILTERS_CONTRACT_CHECKED_ONLY(viterbi_decision_detail::requireFiniteAttribute(value, nodeId));
@@ -213,20 +213,20 @@ template <std::floating_point Real>
  * `preserve`, and connectivity is enforced by the transition constraint: once a
  * node is removed, all descendants are also removed. If a parent is preserved,
  * each child independently chooses the cheaper of its preserve/remove
- * subproblems. The returned vector is a dense internal-node keep criterion that
+ * subproblems. The returned vector contains dense internal-node preservation decisions that
  * can be consumed directly by the direct reconstruction rule.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param costs Preserve/remove costs indexed by node.
  * @param options Policy options controlling the operation.
  * @return The computed optimal connected keep mask by dynamic programming on the tree.
  */
 template <std::floating_point Real>
-[[nodiscard]] std::vector<bool> computeViterbiKeepCriterion(const MorphologicalTree& tree, const ViterbiNodeCosts<Real>& costs,
+[[nodiscard]] std::vector<bool> computeViterbiPreservationDecisions(const MorphologicalTree& tree, const ViterbiNodeCosts<Real>& costs,
                                                             const ViterbiDecisionOptions& options = {}) {
     MMCFILTERS_CONTRACT_CHECKED_ONLY(viterbi_decision_detail::requireCostShapeAndValues(tree, costs));
 
-    const auto numNodeSlots = static_cast<std::size_t>(tree.getNumInternalNodeSlots());
+    const auto numNodeSlots = static_cast<std::size_t>(tree.numInternalNodeSlots());
     std::vector<Real> preserveCost(numNodeSlots, Real{});
     std::vector<Real> removeCost(numNodeSlots, Real{});
     std::vector<std::uint8_t> childPreservedWhenParentPreserved(numNodeSlots, false);
@@ -252,7 +252,7 @@ template <std::floating_point Real>
 
     std::vector<bool> keep(numNodeSlots, false);
     std::vector<std::pair<NodeId, bool>> stack;
-    stack.emplace_back(tree.getRoot(), true);
+    stack.emplace_back(tree.root(), true);
     while (!stack.empty()) {
         const auto [nodeId, preserve] = stack.back();
         stack.pop_back();

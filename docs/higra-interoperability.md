@@ -16,7 +16,7 @@ The library exposes two distinct Higra-related domains:
 | Preserved imported Higra domain | `createFromHigraParent(...)` | No | Original imported node IDs |
 | Exported compact Higra domain | `exportHigraHierarchy()` | Snapshot only | Current live tree export |
 
-`NodeIdSpace::HIGRA` refers only to the preserved imported domain. It does not
+`NodeIdSpace::Higra` refers only to the preserved imported domain. It does not
 mean "whatever `exportHigraHierarchy()` would produce now".
 
 `exportHigraHierarchy()` always computes a new compact layout for the current
@@ -32,10 +32,10 @@ The compact Higra layout used by import and export is:
 [proper parts | internal nodes]
 ```
 
-For an image domain with `rows * cols` proper parts:
+For an image domain with `rows * columns` proper parts:
 
-- proper-part leaf IDs are `[0, rows * cols)`;
-- internal node IDs are `[rows * cols, parent.size())`;
+- proper-part leaf IDs are `[0, rows * columns)`;
+- internal node IDs are `[rows * columns, parent.size())`;
 - every leaf points to an internal node;
 - every internal node points to another internal node or to itself;
 - exactly one internal node is self-parented and is the root.
@@ -44,15 +44,15 @@ When exporting, proper parts are emitted in row-major order. Internal nodes are
 assigned compact node IDs from the live rooted tree. For max-trees and min-trees,
 the export order follows the tree altitude polarity with a deterministic
 post-order tie-breaker. Trees of shapes and other
-`UNCONSTRAINED` hierarchies use deterministic post-order directly. Consequently,
+`NodeAltitudeOrder::Unconstrained` hierarchies use deterministic post-order directly. Consequently,
 every non-root internal node appears before its parent even when one branch
 increases in altitude and another decreases.
 
 The exported altitude array has the same length as the exported parent array.
-Each proper-part leaf receives the altitude of its proper-part owner.
+Each proper-part leaf receives the altitude of its smallest node.
 
 This layout policy lives at the interoperability boundary. Import converts it
-to separate dense buffers for node parents and proper-part owners before generic
+to separate dense buffers for node parents and smallest nodes before generic
 tree materialization; `MorphologicalTree` does not parse Higra parent arrays.
 While the topology is unchanged, it retains only the affine external ID offset
 needed by the compatibility queries below.
@@ -77,9 +77,9 @@ auto tree = MorphologicalTreeFactory::createFromHigraParent(
     std::span<const NodeId>(parent),
     std::span<const std::uint8_t>(altitude),
     rows,
-    cols,
-    MorphologicalTreeKind::MAX_TREE,
-    RegularGridAdjacency2D(rows, cols, 1.5));
+    columns,
+    MorphologicalTreeKind::MaxTree,
+    RegularGridAdjacency2D(rows, columns, 1.5));
 ```
 
 C++ import is generic over the altitude type:
@@ -91,9 +91,9 @@ auto floatTree = MorphologicalTreeFactory::createFromHigraParent<float>(
     std::span<const NodeId>(parent),
     std::span<const float>(floatAltitude),
     rows,
-    cols,
-    MorphologicalTreeKind::MIN_TREE,
-    RegularGridAdjacency2D(rows, cols, 1.5));
+    columns,
+    MorphologicalTreeKind::MinTree,
+    RegularGridAdjacency2D(rows, columns, 1.5));
 ```
 
 Python exposes the canonical 8-bit path:
@@ -101,12 +101,12 @@ Python exposes the canonical 8-bit path:
 ```python
 import mmcfilters
 
-tree = mmcfilters.MorphologicalTreeFactory.createFromHigraParent(
-    parent,
-    altitude,
-    rows,
-    cols,
-    mmcfilters.MorphologicalTreeKind.MAX_TREE,
+tree = mmcfilters.MorphologicalTreeFactory.create_from_higra_parent(
+    parent=parent,
+    node_altitudes=node_altitudes,
+    rows=rows,
+    columns=columns,
+    kind=mmcfilters.MorphologicalTreeKind.MAX_TREE,
     radius=1.5,
 )
 ```
@@ -126,22 +126,22 @@ tree operations. A preserved mapping from internal live nodes to the original
 Higra node IDs is available until the topology is edited:
 
 ```cpp
-NodeId internal = tree.topology().getRoot();
+NodeId internal = tree.topology().root();
 NodeId originalHigraId = tree.topology().getHigraNodeId(internal);
 int higraDomainSize = tree.topology().getNumHigraNodes();
 ```
 
 ```python
-internal = tree.getRoot()
-original_higra_id = tree.getHigraNodeId(internal)
-higra_domain_size = tree.numHigraNodes
+internal = tree.root
+original_higra_id = tree.higra_node_id(internal)
+higra_domain_size = tree.num_higra_nodes
 ```
 
 For trees imported from the compact layout above, the internal slot associated
 with Higra internal node ID `h` starts as:
 
 ```text
-node_id = h - rows * cols
+node_id = h - rows * columns
 ```
 
 Do not rely on that arithmetic after edits. Safe public code should use
@@ -152,15 +152,15 @@ includes safe mutators such as `pruneNode(...)` and `mergeNodeIntoParent(...)`
 and staged edit commits. After invalidation:
 
 - `getNumHigraNodes()` fails;
-- `NodeIdSpace::HIGRA` attribute requests fail;
+- `NodeIdSpace::Higra` attribute requests fail;
 - `getHigraNodeId(node)` returns `InvalidNode`.
 
 Export still works after edits because it creates a new compact domain.
 
 ## Attributes in preserved Higra space
 
-Attribute computation always runs internally in `NodeIdSpace::MORPHOLOGICAL_TREE`.
-Projection to `NodeIdSpace::HIGRA` is an API-boundary step.
+Attribute computation always runs internally in `NodeIdSpace::MorphologicalTree`.
+Projection to `NodeIdSpace::Higra` is an API-boundary step.
 
 Use preserved Higra output space when a consumer needs rows indexed by the
 original imported node IDs:
@@ -169,14 +169,14 @@ original imported node IDs:
 auto computed = AttributeComputation::computeSingleAttribute(
     tree,
     AREA,
-    NodeIdSpace::HIGRA);
+    NodeIdSpace::Higra);
 
 const AttributeNames& names = computed.attributeNames();
 const std::vector<float>& values = computed.values();
 ```
 
 ```python
-area_in_imported_space = mmcfilters.Attribute.computeSingleAttribute(
+area_in_imported_space = mmcfilters.Attribute.compute_single_attribute(
     tree,
     mmcfilters.Attribute.AREA,
     mmcfilters.NodeIdSpace.HIGRA,
@@ -197,7 +197,7 @@ auto [exportedParent, exportedAltitude] = tree.exportHigraHierarchy();
 ```
 
 ```python
-exported_parent, exported_altitude = tree.exportHigraHierarchy()
+exported_parent, exported_altitude = tree.export_higra_hierarchy()
 ```
 
 The exported layout is a fresh snapshot. It is valid for image-built trees,
@@ -217,7 +217,7 @@ the new compact node IDs.
 
 ## Projecting attributes to exported layout
 
-`NodeIdSpace::HIGRA` is not the right tool for exported snapshots. To align
+`NodeIdSpace::Higra` is not the right tool for exported snapshots. To align
 attributes with `exportHigraHierarchy()`, project a dense internal-node buffer:
 
 ```cpp
@@ -232,10 +232,10 @@ std::vector<float> exportedValues =
         values);
 ```
 
-Python exposes the same operation on `WeightedMorphologicalTree`:
+Python exposes the same operation on `ValuedMorphologicalTree`:
 
 ```python
-layout, values = mmcfilters.Attribute.computeAttributes(
+layout, values = mmcfilters.Attribute.compute_attributes(
     tree,
     [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST],
 )
@@ -249,7 +249,7 @@ exported_values = tree.project_node_values_to_exported_higra(
 For a single attribute:
 
 ```python
-area = mmcfilters.Attribute.computeSingleAttribute(
+area = mmcfilters.Attribute.compute_single_attribute(
     tree,
     mmcfilters.Attribute.AREA,
 )
@@ -268,9 +268,9 @@ the requested attributes.
 Examples of unit proper-part values:
 
 - `AREA`: `1`;
-- `LEVEL` and `MEAN_LEVEL`: the altitude of the proper-part owner;
-- `VOLUME`: one pixel at the proper-part owner altitude;
-- `VARIANCE_LEVEL`, `GRAY_HEIGHT`, and `MAX_DIST`: `0`;
+- `MeanGrayLevel`: the altitude of the smallest node;
+- `VOLUME`: one pixel at the smallest node altitude;
+- `GrayLevelVariance`, `GrayLevelHeight`, and `MAX_DIST`: `0`;
 - bounding-box attributes: the proper-part row/column coordinates.
 
 Projection fails if:
@@ -279,18 +279,18 @@ Projection fails if:
 - the attribute list does not match the number of columns;
 - an attribute has no registered unit-component projection;
 - the tree is currently inside an edit session;
-- a borrowed `WeightedTreeView<T>` became stale after topology mutation.
+- a borrowed `ValuedMorphologicalTreeView<T>` became stale after topology mutation.
 
 ## Round-trip pattern
 
 A common interoperability round trip is:
 
 ```python
-tree = mmcfilters.MorphologicalTreeFactory.createMaxTree(image, radius=1.5)
+tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image, radius=1.5)
 
-parent, altitude = tree.exportHigraHierarchy()
+parent, altitude = tree.export_higra_hierarchy()
 
-roundtrip = mmcfilters.MorphologicalTreeFactory.createFromHigraParent(
+roundtrip = mmcfilters.MorphologicalTreeFactory.create_from_higra_parent(
     parent,
     altitude,
     image.shape[0],
@@ -300,11 +300,11 @@ roundtrip = mmcfilters.MorphologicalTreeFactory.createFromHigraParent(
 )
 
 area_exported = tree.project_node_values_to_exported_higra(
-    mmcfilters.Attribute.computeSingleAttribute(tree, mmcfilters.Attribute.AREA),
+    mmcfilters.Attribute.compute_single_attribute(tree, mmcfilters.Attribute.AREA),
     mmcfilters.Attribute.AREA,
 )
 
-area_imported_space = mmcfilters.Attribute.computeSingleAttribute(
+area_imported_space = mmcfilters.Attribute.compute_single_attribute(
     roundtrip,
     mmcfilters.Attribute.AREA,
     mmcfilters.NodeIdSpace.HIGRA,
@@ -316,7 +316,7 @@ after the round trip. Both paths fill proper-part rows with unit-component value
 
 ## Choosing the API
 
-Use preserved `NodeIdSpace::HIGRA` when:
+Use preserved `NodeIdSpace::Higra` when:
 
 - the tree was imported from Higra;
 - the topology has not been edited;
@@ -329,7 +329,7 @@ Use exported Higra projection when:
 - the topology may have been edited;
 - the downstream consumer will use `exportHigraHierarchy()` output.
 
-Use internal `NodeIdSpace::MORPHOLOGICAL_TREE` when:
+Use internal `NodeIdSpace::MorphologicalTree` when:
 
 - the data stays inside `mmcfilters`;
 - filters, `UltimateAttributeOpening`, contours, or topology queries will

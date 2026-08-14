@@ -71,8 +71,8 @@ def main() -> int:
         ],
         dtype=np.uint8,
     )
-    tree = mmcfilters.MorphologicalTreeFactory.createMaxTree(image)
-    area = mmcfilters.Attribute.computeSingleTopologyAttribute(tree, mmcfilters.Attribute.AREA)
+    tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image)
+    area = mmcfilters.Attribute.compute_single_topology_attribute(tree, mmcfilters.Attribute.AREA)
     ring_nodes = [node for node, value in enumerate(area.tolist()) if int(value) == 8]
     require(len(ring_nodes) == 1, "ring fixture must expose one area-8 node")
 
@@ -87,28 +87,28 @@ def main() -> int:
 
     # ContourTraces borrows the topology internally, so its Python binding must
     # keep the source tree alive for every lazy query.
-    require(traces.isMaterialized is False, "traces must start without global materialization")
-    edges = traces.getEdges(ring_nodes[0])
+    require(traces.is_materialized is False, "traces must start without global materialization")
+    edges = traces.get_edges(ring_nodes[0])
     require(len(edges) == 16, "ring trace edge count")
-    require(traces.isEdgeMaterialized(ring_nodes[0]) is True, "getEdges must materialize node edges")
-    require(traces.isNodeTraced(ring_nodes[0]) is False, "getEdges must not trace loops")
+    require(traces.is_edge_materialized(ring_nodes[0]) is True, "get_edges must materialize node edges")
+    require(traces.is_node_traced(ring_nodes[0]) is False, "get_edges must not trace loops")
 
-    loops = traces.getLoops(ring_nodes[0])
+    loops = traces.get_loops(ring_nodes[0])
     require(len(loops) == 2, "ring trace loop count")
-    require(traces.isNodeTraced(ring_nodes[0]) is True, "getLoops must trace node loops")
-    external = [loop for loop in loops if loop.kind == mmcfilters.ContourLoopKind.External]
-    internal = [loop for loop in loops if loop.kind == mmcfilters.ContourLoopKind.Internal]
+    require(traces.is_node_traced(ring_nodes[0]) is True, "get_loops must trace node loops")
+    external = [loop for loop in loops if loop.kind == mmcfilters.ContourLoopKind.EXTERNAL]
+    internal = [loop for loop in loops if loop.kind == mmcfilters.ContourLoopKind.INTERNAL]
     require(len(external) == 1, "ring must have one external loop")
     require(len(internal) == 1, "ring must have one internal loop")
     require(external[0].edge_count == 12, "ring external loop edge count")
     require(internal[0].edge_count == 4, "ring internal loop edge count")
     require(external[0].signed_area2 > 0, "external loop signed area")
     require(internal[0].signed_area2 < 0, "internal loop signed area")
-    require(len(traces.getLoopEdges(external[0])) == 12, "external loop edge range")
-    require(len(traces.getLoopEdges(internal[0])) == 4, "internal loop edge range")
+    require(len(traces.get_loop_edges(external[0])) == 12, "external loop edge range")
+    require(len(traces.get_loop_edges(internal[0])) == 4, "internal loop edge range")
 
-    traces.materializeAll()
-    require(traces.isMaterialized is True, "materializeAll must trace all nodes")
+    traces.materialize_all()
+    require(traces.is_materialized is True, "materialize_all must trace all nodes")
     return 0
 
 

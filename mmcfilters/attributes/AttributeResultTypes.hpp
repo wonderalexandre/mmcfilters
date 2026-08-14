@@ -37,7 +37,7 @@ template <std::floating_point Real = float> struct [[nodiscard]] ComputedAttribu
     std::vector<Real> second;
 
     /// Node-id domain used by the rows of `second`.
-    NodeIdSpace nodeIdSpace = NodeIdSpace::MORPHOLOGICAL_TREE;
+    NodeIdSpace nodeIdSpace = NodeIdSpace::MorphologicalTree;
 
     /**
      * @brief Takes ownership of a scalar-attribute layout and its flat buffer.
@@ -46,7 +46,7 @@ template <std::floating_point Real = float> struct [[nodiscard]] ComputedAttribu
      * @param buffer Attribute values stored in node-major order.
      * @param outputSpace Node-id domain used by the buffer rows.
      */
-    ComputedAttributeData(AttributeNames attrNames, std::vector<Real> buffer, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE)
+    ComputedAttributeData(AttributeNames attrNames, std::vector<Real> buffer, NodeIdSpace outputSpace = NodeIdSpace::MorphologicalTree)
         : first(std::move(attrNames)), second(std::move(buffer)), nodeIdSpace(outputSpace) {}
 
     /**
@@ -98,66 +98,65 @@ template <std::floating_point Real = float> struct [[nodiscard]] ComputedAttribu
 };
 
 /**
- * @brief Owning result for one delta-augmented attribute layout and buffer.
+ * @brief Owning result for one sampled node-attribute layout and buffer.
  *
  * @details
- * This is the delta-aware counterpart of `ComputedAttributeData<Real>`. It is
- * used when one logical attribute is sampled at several ancestor/descendant
- * offsets around each node.
+ * This result is used when one logical node attribute is sampled at several
+ * ancestor/current/representative-descendant offsets.
  */
-template <std::floating_point Real = float> struct [[nodiscard]] ComputedAttributeDataWithDelta {
-    /// Delta-aware layout used to interpret `second`.
-    AttributeNamesWithDelta first;
+template <std::floating_point Real = float> struct [[nodiscard]] SampledNodeAttributeData {
+    /// Sample layout used to interpret `second`.
+    NodeAttributeSampleLayout first;
 
-    /// Flat per-node, per-delta attribute buffer indexed through `first`.
+    /// Flat per-node, per-sample attribute buffer indexed through `first`.
     std::vector<Real> second;
 
     /// Node-id domain used by the rows of `second`.
-    NodeIdSpace nodeIdSpace = NodeIdSpace::MORPHOLOGICAL_TREE;
+    NodeIdSpace nodeIdSpace = NodeIdSpace::MorphologicalTree;
 
     /**
-     * @brief Takes ownership of a delta-augmented layout and its flat buffer.
+     * @brief Takes ownership of a sample layout and its flat buffer.
      *
-     * @param attrNames Layout that maps `(attribute, delta)` keys to offsets.
+     * @param attrNames Layout that maps `(attribute, sampleOffset)` keys to offsets.
      * @param buffer Attribute values stored in node-major order.
      * @param outputSpace Node-id domain used by the buffer rows.
      */
-    ComputedAttributeDataWithDelta(AttributeNamesWithDelta attrNames, std::vector<Real> buffer, NodeIdSpace outputSpace = NodeIdSpace::MORPHOLOGICAL_TREE)
+    SampledNodeAttributeData(NodeAttributeSampleLayout attrNames, std::vector<Real> buffer, NodeIdSpace outputSpace = NodeIdSpace::MorphologicalTree)
         : first(std::move(attrNames)), second(std::move(buffer)), nodeIdSpace(outputSpace) {}
 
     /**
      * @brief Disables copy construction.
      */
-    ComputedAttributeDataWithDelta(const ComputedAttributeDataWithDelta&) = delete;
+    SampledNodeAttributeData(const SampledNodeAttributeData&) = delete;
 
     /**
      * @brief Disables copy assignment.
      */
-    ComputedAttributeDataWithDelta& operator=(const ComputedAttributeDataWithDelta&) = delete;
+    SampledNodeAttributeData& operator=(const SampledNodeAttributeData&) = delete;
 
     /**
      * @brief Transfers ownership of the layout, buffer, and node-id-space marker.
      */
-    ComputedAttributeDataWithDelta(ComputedAttributeDataWithDelta&&) noexcept = default;
+    SampledNodeAttributeData(SampledNodeAttributeData&&) noexcept = default;
 
     /**
      * @brief Disables move assignment.
      */
-    ComputedAttributeDataWithDelta& operator=(ComputedAttributeDataWithDelta&&) = delete;
+    SampledNodeAttributeData& operator=(SampledNodeAttributeData&&) = delete;
 
     /**
-     * @brief Returns the mutable delta-aware attribute layout.
+     * @brief Returns the mutable sampled-attribute layout.
      *
-     * @return The mutable delta-aware attribute layout.
+     * @return The mutable sampled-attribute layout.
      */
-    AttributeNamesWithDelta& attributeNames() noexcept { return this->first; }
+    NodeAttributeSampleLayout& attributeNames() noexcept { return this->first; }
 
     /**
-     * @brief Returns the immutable delta-aware attribute layout.
+     * @brief Returns the immutable sampled-attribute layout.
      *
-     * @return The immutable delta-aware attribute layout.
+     * @return The immutable sampled-attribute layout.
      */
-    const AttributeNamesWithDelta& attributeNames() const noexcept { return this->first; }
+    const NodeAttributeSampleLayout& attributeNames() const noexcept { return this->first; }
 
     /**
      * @brief Returns the mutable flat attribute buffer.
@@ -200,24 +199,24 @@ template <std::floating_point Real> struct tuple_element<1, mmcfilters::Computed
     using type = std::vector<Real>;
 };
 
-template <std::floating_point Real> struct tuple_size<mmcfilters::ComputedAttributeDataWithDelta<Real>> : integral_constant<std::size_t, 2> {};
+template <std::floating_point Real> struct tuple_size<mmcfilters::SampledNodeAttributeData<Real>> : integral_constant<std::size_t, 2> {};
 
 /**
  * @brief Provides tuple-element metadata for structured binding support.
  *
- * @tparam Real Floating-point type stored in the attribute and delta buffers.
+ * @tparam Real Floating-point type stored in the sampled attribute buffer.
  */
-template <std::floating_point Real> struct tuple_element<0, mmcfilters::ComputedAttributeDataWithDelta<Real>> {
+template <std::floating_point Real> struct tuple_element<0, mmcfilters::SampledNodeAttributeData<Real>> {
     /** @brief Defines the `type` alias used by the component. */
-    using type = mmcfilters::AttributeNamesWithDelta;
+    using type = mmcfilters::NodeAttributeSampleLayout;
 };
 
 /**
  * @brief Provides tuple-element metadata for structured binding support.
  *
- * @tparam Real Floating-point type stored in the attribute and delta buffers.
+ * @tparam Real Floating-point type stored in the sampled attribute buffer.
  */
-template <std::floating_point Real> struct tuple_element<1, mmcfilters::ComputedAttributeDataWithDelta<Real>> {
+template <std::floating_point Real> struct tuple_element<1, mmcfilters::SampledNodeAttributeData<Real>> {
     /** @brief Defines the `type` alias used by the component. */
     using type = std::vector<Real>;
 };
@@ -274,7 +273,7 @@ template <std::size_t I, std::floating_point Real> decltype(auto) get(ComputedAt
  * @param computed Computed attribute result to transform.
  * @return The requested tuple element.
  */
-template <std::size_t I, std::floating_point Real> decltype(auto) get(ComputedAttributeDataWithDelta<Real>& computed) noexcept {
+template <std::size_t I, std::floating_point Real> decltype(auto) get(SampledNodeAttributeData<Real>& computed) noexcept {
     if constexpr (I == 0) {
         return (computed.first);
     } else {
@@ -288,7 +287,7 @@ template <std::size_t I, std::floating_point Real> decltype(auto) get(ComputedAt
  * @param computed Computed attribute result to transform.
  * @return The requested tuple element.
  */
-template <std::size_t I, std::floating_point Real> decltype(auto) get(const ComputedAttributeDataWithDelta<Real>& computed) noexcept {
+template <std::size_t I, std::floating_point Real> decltype(auto) get(const SampledNodeAttributeData<Real>& computed) noexcept {
     if constexpr (I == 0) {
         return (computed.first);
     } else {
@@ -302,7 +301,7 @@ template <std::size_t I, std::floating_point Real> decltype(auto) get(const Comp
  * @param computed Computed attribute result to transform.
  * @return The requested tuple element.
  */
-template <std::size_t I, std::floating_point Real> decltype(auto) get(ComputedAttributeDataWithDelta<Real>&& computed) noexcept {
+template <std::size_t I, std::floating_point Real> decltype(auto) get(SampledNodeAttributeData<Real>&& computed) noexcept {
     if constexpr (I == 0) {
         return std::move(computed.first);
     } else {

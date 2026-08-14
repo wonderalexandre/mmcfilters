@@ -9,7 +9,7 @@ operation needs oriented sides, ordered loops, or external/internal separation.
 
 For a node, the contour contains every support pixel that exposes at least one
 side to the 4-neighbor complement. Pixel IDs are row-major indices in the
-tree's regular 2D proper-part domain.
+tree's regular 2D pixel domain.
 
 The side relation is fixed to 4-neighbor geometry, independently of the
 adjacency used to construct the morphological tree. This matches the public
@@ -18,8 +18,8 @@ adjacency used to construct the morphological tree. This matches the public
 Extraction requires:
 
 - a committed rooted topology;
-- a non-empty regular 2D proper-part domain;
-- one valid direct proper-part owner for every pixel.
+- a non-empty regular 2D pixel domain;
+- one valid direct smallest node for every pixel.
 
 The result captures the tree mutation version and rejects reads after topology
 mutation.
@@ -54,13 +54,13 @@ that will revisit many contours; it is not required for ordinary iteration.
 ```python
 contours = mmcfilters.ContourComputation.extraction(tree)
 
-root_contour = list(contours.getContour(tree.getRoot()))
+root_contour = list(contours.get_contour(tree.root))
 
-for node_id, contour in contours.contoursByNode():
+for node_id, contour in contours.contours_by_node():
     pixels = list(contour)
 ```
 
-Python uses `getContour(node_id)`, `contoursByNode()`, and `materializeAll()` with
+Python uses `get_contour(node_id)`, `contours_by_node()`, and `materialize_all()` with
 the same semantics as C++.
 
 ## Materialization and lifetime
@@ -105,6 +105,6 @@ contiguous contour slice.
 ## Related guides
 
 - [Contour traces](contour-traces.md): oriented boundary sides and loops.
-- [Morphological trees](trees.md): proper-part ownership and `NodeId` domains.
+- [Morphological trees](trees.md): smallest-node mapping and `NodeId` domains.
 - [Attribute catalog](attribute-catalog.md): `CONTOUR_*` attributes.
 - [Editing API](editing-api.md): lifetime after topology mutation.

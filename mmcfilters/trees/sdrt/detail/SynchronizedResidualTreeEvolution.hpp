@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * @file MinMaxResidualTreeEngine.hpp
+ * @file SynchronizedResidualTreeEvolution.hpp
  * @brief Synchronized min/max contraction engine for residual-tree construction.
  */
 
@@ -43,23 +43,23 @@ namespace mmcfilters::sdrt::detail {
  * @tparam RequiresSaturationCertification Whether complement connectivity is required.
  * @internal
  */
-template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxResidualTreeEngine {
+template <AltitudeValue T, bool RequiresSaturationCertification> class SynchronizedResidualTreeEvolution {
   private:
-    using altitude_t = T;                                                       ///< Image and residual altitude type.
-    using image_ptr_t = ImagePtr<altitude_t>;                                   ///< Shared input image type.
-    using tree_t = WeightedMorphologicalTree<altitude_t>;                       ///< Mutable component-tree type.
-    using Adjustment = adjust::DualMinMaxTreeIncrementalFilterLeaf<altitude_t>; ///< Synchronized tree adjustment.
+    using Altitude = T;                                                        ///< Image and residual altitude type.
+    using ImagePointer = ImagePtr<Altitude>;                                   ///< Shared input image type.
+    using Tree = ValuedMorphologicalTree<Altitude>;                            ///< Mutable component-tree type.
+    using Adjustment = adjust::DualMinMaxTreeIncrementalFilterLeaf<Altitude>;  ///< Synchronized tree adjustment.
     using AgendaTypes = ResidualTreeAgendaTypes;                                ///< Candidate agenda type family.
     using Polarity = typename AgendaTypes::Polarity;                            ///< Candidate polarity.
     using Candidate = typename AgendaTypes::Candidate;                          ///< Ordered candidate record.
     using CandidateDescriptor = typename AgendaTypes::CandidateDescriptor;      ///< Partition-supplied metadata.
     using CandidateAgenda = typename AgendaTypes::CandidateAgenda;              ///< Deterministic active agenda.
-    using FlatZonePartitionType = FlatZonePartition<altitude_t>;                ///< Current flat-zone partition.
-    using SaturatedEvaluator = SaturatedEligibilityEvaluator<altitude_t>;       ///< Saturated-only eligibility evaluator.
+    using FlatZonePartitionType = FlatZonePartition<Altitude>;                 ///< Current flat-zone partition.
+    using SaturatedEligibility = SaturatedResidualEligibility<Altitude>;      ///< Saturated-only eligibility predicate.
 
     /** @brief Configuration retained only by the saturated specialization. */
     struct SaturatedConfiguration {
-        NodeId infinityPixel = InvalidNode; ///< Exterior seed pixel.
+        PixelId infinityPixel = InvalidPixel; ///< Declared infinity pixel.
         SaturatedMinMaxLcaPolicy lcaPolicy = SaturatedMinMaxLcaPolicy::ParentClimb; ///< Dynamic LCA strategy.
         SaturatedMinMaxFallbackPolicy fallbackPolicy = SaturatedMinMaxFallbackPolicy::BoundaryMultiSource; ///< Exact fallback.
     };
@@ -73,44 +73,44 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
     using ModeConfiguration =
         std::conditional_t<RequiresSaturationCertification, SaturatedConfiguration, UnrestrictedConfiguration>; ///< Mode-specific options.
     using SaturationStorage =
-        std::conditional_t<RequiresSaturationCertification, std::optional<SaturatedEvaluator>, NoSaturationEvaluator>; ///< Mode-specific evaluator storage.
+        std::conditional_t<RequiresSaturationCertification, std::optional<SaturatedEligibility>, NoSaturationEvaluator>; ///< Mode-specific evaluator storage.
 
     /** @brief Owns mutable state for one synchronized construction. */
     struct ConstructionState {
-        std::unique_ptr<tree_t> maxTree;             ///< Current max-tree.
-        std::unique_ptr<tree_t> minTree;             ///< Current min-tree.
+        std::unique_ptr<Tree> maxTree;               ///< Current max-tree.
+        std::unique_ptr<Tree> minTree;               ///< Current min-tree.
         std::unique_ptr<Adjustment> adjustment;      ///< Synchronized tree updater.
         CandidateAgenda agenda;                      ///< Active deterministic candidate agenda.
         ResidualTreeCandidateContext candidateContext; ///< Reusable preparation scratch.
         SaturationStorage saturatedEligibility;      ///< Saturated-only evaluator storage.
         FlatZonePartitionType flatZonePartition;     ///< Current flat-zone union partition.
-        ResidualTreeEventAssembler<altitude_t> residualAssembler; ///< Sequential residual event assembler.
+        ResidualTreeEventAssembler<Altitude> residualAssembler; ///< Sequential residual event assembler.
         std::vector<RegionId> absorbedFlatZones;     ///< Flat zones absorbed by the current contraction.
 
         /**
          * @brief Creates mutable state around an initialized flat-zone partition.
-         * @param tiePolicy Deterministic equal-area ordering policy.
+         * @param spatialOrder Total order defining the spatial-minimum key coordinate.
          * @param numPixels Number of pixels in the common image domain.
          * @param maxNodeSlots Maximum node-slot capacity across both component trees.
          * @param initializedPartition Initial flat-zone partition transferred into the state.
          * @param initialRegionByPixel Initial flat-zone representative indexed by pixel.
          */
-        ConstructionState(SdrtTiePolicy tiePolicy, std::size_t numPixels, std::size_t maxNodeSlots,
+        ConstructionState(SpatialOrder spatialOrder, std::size_t numPixels, std::size_t maxNodeSlots,
                           FlatZonePartitionType&& initializedPartition, const std::vector<RegionId>& initialRegionByPixel)
-            : agenda(tiePolicy, RequiresSaturationCertification), candidateContext(numPixels, maxNodeSlots),
+            : agenda(std::move(spatialOrder), RequiresSaturationCertification), candidateContext(numPixels, maxNodeSlots),
               flatZonePartition(std::move(initializedPartition)), residualAssembler(numPixels, initialRegionByPixel) {}
     };
 
     RegularGridAdjacency2D adjacency_; ///< Shared symmetric adjacency.
-    SdrtTiePolicy tiePolicy_ = SdrtTiePolicy::ContrastInvariantSpatial; ///< Deterministic equal-area order.
-    ModeConfiguration modeConfiguration_; ///< Mode-specific configuration without unrestricted exterior state.
+    SpatialOrder spatialOrder_ = RowMajorSpatialOrder{}; ///< Total pixel order used by the self-dual schedule.
+    ModeConfiguration modeConfiguration_; ///< Mode-specific configuration without unrestricted infinity-pixel state.
     bool built_ = false;                    ///< Whether a completed result is available.
     int rows_ = 0;                          ///< Rows of the completed result.
-    int cols_ = 0;                          ///< Columns of the completed result.
+    int columns_ = 0;                       ///< Columns of the completed result.
     NodeId root_ = InvalidNode;             ///< Root of the completed result.
-    std::vector<NodeId> nodeParent_;        ///< Residual parent buffer.
-    std::vector<NodeId> properPartOwner_;   ///< Direct proper-part owner buffer.
-    std::vector<altitude_t> altitude_;      ///< Residual altitude buffer.
+    std::vector<NodeId> parents_;           ///< Residual parent buffer.
+    std::vector<NodeId> smallestNodeMap_;   ///< Direct smallest node buffer.
+    std::vector<Altitude> nodeAltitudes_;   ///< Residual node-altitude buffer.
     mmcfilters::detail::NativeTopologyProof topologyProof_; ///< Established topology proof.
     ResidualTreeBuildStatistics statistics_; ///< Diagnostics from the completed build.
 
@@ -118,24 +118,24 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
     void clearResult() {
         built_ = false;
         rows_ = 0;
-        cols_ = 0;
+        columns_ = 0;
         root_ = InvalidNode;
-        nodeParent_.clear();
-        properPartOwner_.clear();
-        altitude_.clear();
+        parents_.clear();
+        smallestNodeMap_.clear();
+        nodeAltitudes_.clear();
         topologyProof_ = mmcfilters::detail::NativeTopologyProof{};
         statistics_ = ResidualTreeBuildStatistics{};
     }
 
     /**
-     * @brief Validates the common image/adjacency contract and saturated exterior seed.
+     * @brief Validates the common image/adjacency contract and saturated infinity pixel.
      * @param image Image whose domain and connectivity are validated.
      */
-    void requireInputs(const image_ptr_t& image) const {
-        if (!image || image->getNumRows() <= 0 || image->getNumCols() <= 0 || image->getSize() <= 0) {
+    void requireInputs(const ImagePointer& image) const {
+        if (!image || image->getNumRows() <= 0 || image->getNumColumns() <= 0 || image->getSize() <= 0) {
             throw std::invalid_argument("Residual-tree engine requires a non-null, non-empty image.");
         }
-        if (adjacency_.getNumRows() != image->getNumRows() || adjacency_.getNumCols() != image->getNumCols()) {
+        if (adjacency_.getNumRows() != image->getNumRows() || adjacency_.getNumColumns() != image->getNumColumns()) {
             throw std::invalid_argument("Residual-tree engine adjacency domain differs from the image.");
         }
         if constexpr (RequiresSaturationCertification) {
@@ -144,18 +144,18 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
             }
         }
 
-        constexpr NodeId domainTraversalSeed = NodeId{0};
+        constexpr PixelId domainTraversalSeed = PixelId{0};
         std::vector<std::uint8_t> visited(static_cast<std::size_t>(image->getSize()), std::uint8_t{0});
-        std::vector<NodeId> frontier;
+        std::vector<PixelId> frontier;
         frontier.reserve(static_cast<std::size_t>(image->getSize()));
         frontier.push_back(domainTraversalSeed);
         visited[static_cast<std::size_t>(domainTraversalSeed)] = 1;
         std::size_t visitedPixels = 0;
         while (!frontier.empty()) {
-            const NodeId pixel = frontier.back();
+            const PixelId pixel = frontier.back();
             frontier.pop_back();
             ++visitedPixels;
-            for (NodeId neighbor : adjacency_.getNeighborIndices(pixel)) {
+            for (PixelId neighbor : adjacency_.getNeighborIndices(pixel)) {
                 auto& mark = visited[static_cast<std::size_t>(neighbor)];
                 if (mark == 0) {
                     mark = 1;
@@ -175,16 +175,16 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
      * @param kind Required component-tree polarity.
      * @param label Human-readable seed label used in diagnostics.
      */
-    static void requireSeedTree(const tree_t& tree, const image_ptr_t& image, MorphologicalTreeKind kind, const char* label) {
+    static void requireSeedTree(const Tree& tree, const ImagePointer& image, MorphologicalTreeKind kind, const char* label) {
         const MorphologicalTree& topology = tree.topology();
-        if (topology.getDescriptiveKind() != kind) {
+        if (topology.kind() != kind) {
             throw std::invalid_argument(std::string("Min/max residual ") + label + " seed has an unexpected tree type.");
         }
-        if (topology.getNumRowsOfGridDomain2D() != image->getNumRows() || topology.getNumColsOfGridDomain2D() != image->getNumCols() ||
-            topology.getNumTotalProperParts() != image->getSize()) {
+        if (topology.numRows() != image->getNumRows() || topology.numColumns() != image->getNumColumns() ||
+            topology.numPixels() != image->getSize()) {
             throw std::invalid_argument(std::string("Min/max residual ") + label + " seed domain differs from the image.");
         }
-        tree.validateAltitudeBufferShape();
+        tree.validateNodeAltitudeBufferShape();
     }
 
     /**
@@ -193,10 +193,10 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
      * @param nodeId Node identifier to inspect.
      * @return `true` when `nodeId` is a live non-root leaf with a non-empty proper part.
      */
-    [[nodiscard]] static bool isCurrentCandidateNode(const tree_t& tree, NodeId nodeId) {
+    [[nodiscard]] static bool isCurrentCandidateNode(const Tree& tree, NodeId nodeId) {
         const MorphologicalTree& topology = tree.topology();
-        return nodeId >= 0 && topology.isNode(nodeId) && topology.isAlive(nodeId) && nodeId != topology.getRoot() && topology.isLeaf(nodeId) &&
-               topology.getNodeParent(nodeId) != InvalidNode && topology.getNodeParent(nodeId) != nodeId && topology.getNumProperParts(nodeId) > 0;
+        return nodeId >= 0 && topology.isNode(nodeId) && topology.isAlive(nodeId) && nodeId != topology.root() && topology.isLeaf(nodeId) &&
+               topology.parent(nodeId) != InvalidNode && topology.parent(nodeId) != nodeId && topology.properPartCardinality(nodeId) > 0;
     }
 
     /**
@@ -206,7 +206,7 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
      * @param polarity Polarity of `tree`.
      * @param nodeId Node whose agenda entry is refreshed.
      */
-    static void updateAgendaCandidate(ConstructionState& state, const tree_t& tree, Polarity polarity, NodeId nodeId) {
+    static void updateAgendaCandidate(ConstructionState& state, const Tree& tree, Polarity polarity, NodeId nodeId) {
         if (isCurrentCandidateNode(tree, nodeId)) {
             state.agenda.upsert(polarity, nodeId, state.flatZonePartition.describeNode(tree, nodeId));
             return;
@@ -220,8 +220,8 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
      * @param tree Component tree whose extrema are indexed.
      * @param polarity Polarity of `tree`.
      */
-    static void indexTreeCandidates(ConstructionState& state, const tree_t& tree, Polarity polarity) {
-        for (NodeId nodeId : tree.topology().getAliveNodeIds()) {
+    static void indexTreeCandidates(ConstructionState& state, const Tree& tree, Polarity polarity) {
+        for (NodeId nodeId : tree.topology().aliveNodeIds()) {
             updateAgendaCandidate(state, tree, polarity, nodeId);
         }
     }
@@ -233,31 +233,31 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
      * @param maxTree Max-tree seed transferred into mutable state.
      * @return Fully initialized synchronized construction state.
      */
-    [[nodiscard]] ConstructionState initializeConstruction(const image_ptr_t& image, tree_t&& minTree, tree_t&& maxTree) const {
-        requireSeedTree(maxTree, image, MorphologicalTreeKind::MAX_TREE, "max-tree");
-        requireSeedTree(minTree, image, MorphologicalTreeKind::MIN_TREE, "min-tree");
-        const std::size_t maxTreeSlots = static_cast<std::size_t>(maxTree.topology().getNumInternalNodeSlots());
-        const std::size_t minTreeSlots = static_cast<std::size_t>(minTree.topology().getNumInternalNodeSlots());
+    [[nodiscard]] ConstructionState initializeConstruction(const ImagePointer& image, Tree&& minTree, Tree&& maxTree) const {
+        requireSeedTree(maxTree, image, MorphologicalTreeKind::MaxTree, "max-tree");
+        requireSeedTree(minTree, image, MorphologicalTreeKind::MinTree, "min-tree");
+        const std::size_t maxTreeSlots = static_cast<std::size_t>(maxTree.topology().numInternalNodeSlots());
+        const std::size_t minTreeSlots = static_cast<std::size_t>(minTree.topology().numInternalNodeSlots());
         const std::size_t maxNodeSlots = std::max(maxTreeSlots, minTreeSlots);
 
-        FlatZonePartitionType flatZonePartition;
+        FlatZonePartitionType flatZonePartition(spatialOrder_);
         if constexpr (RequiresSaturationCertification) {
             flatZonePartition.initialize(image, adjacency_, modeConfiguration_.infinityPixel);
         } else {
             flatZonePartition.initialize(image, adjacency_);
         }
         const auto initialRegionByPixel = flatZonePartition.representativesByPixel();
-        ConstructionState state(tiePolicy_, static_cast<std::size_t>(image->getSize()), maxNodeSlots, std::move(flatZonePartition), initialRegionByPixel);
-        state.maxTree = std::make_unique<tree_t>(std::move(maxTree));
-        state.minTree = std::make_unique<tree_t>(std::move(minTree));
+        ConstructionState state(spatialOrder_, static_cast<std::size_t>(image->getSize()), maxNodeSlots, std::move(flatZonePartition), initialRegionByPixel);
+        state.maxTree = std::make_unique<Tree>(std::move(maxTree));
+        state.minTree = std::make_unique<Tree>(std::move(minTree));
         state.adjustment = std::make_unique<Adjustment>(state.minTree.get(), state.maxTree.get(), adjacency_);
         state.agenda.reset(maxTreeSlots, minTreeSlots);
         if constexpr (RequiresSaturationCertification) {
             state.saturatedEligibility.emplace(static_cast<std::size_t>(image->getSize()), adjacency_, modeConfiguration_.infinityPixel,
                                                 modeConfiguration_.lcaPolicy, modeConfiguration_.fallbackPolicy, *state.minTree, *state.maxTree);
         }
-        indexTreeCandidates(state, *state.maxTree, Polarity::Max);
-        indexTreeCandidates(state, *state.minTree, Polarity::Min);
+        indexTreeCandidates(state, *state.maxTree, Polarity::Maximum);
+        indexTreeCandidates(state, *state.minTree, Polarity::Minimum);
         return state;
     }
 
@@ -268,12 +268,12 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
      * @param candidate Cached agenda candidate.
      * @return `true` when the candidate remains current and its ordering metadata is unchanged.
      */
-    [[nodiscard]] static bool isCandidateCurrent(ConstructionState& state, const tree_t& tree, const Candidate& candidate) {
+    [[nodiscard]] static bool isCandidateCurrent(ConstructionState& state, const Tree& tree, const Candidate& candidate) {
         if (!isCurrentCandidateNode(tree, candidate.nodeId)) {
             return false;
         }
         const CandidateDescriptor descriptor = state.flatZonePartition.describeNode(tree, candidate.nodeId);
-        return descriptor.area == candidate.area && descriptor.stableSpatialKey == candidate.stableSpatialKey;
+        return SelfDualResidualKey{descriptor.supportCardinality, descriptor.spatialMinimum} == candidate.residualKey;
     }
 
     /**
@@ -285,16 +285,16 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
      */
     [[nodiscard]] static bool prepareAndTestEligibility(ConstructionState& state, const Candidate& candidate,
                                                         ResidualTreeBuildStatistics& statistics) {
-        const tree_t& primal = candidate.polarity == Polarity::Max ? *state.maxTree : *state.minTree;
-        const tree_t& dual = candidate.polarity == Polarity::Max ? *state.minTree : *state.maxTree;
-        const bool containsExteriorSeed =
+        const Tree& primal = candidate.polarity == Polarity::Maximum ? *state.maxTree : *state.minTree;
+        const Tree& dual = candidate.polarity == Polarity::Maximum ? *state.minTree : *state.maxTree;
+        const bool containsInfinityPixel =
             prepareResidualTreeCandidate(state.flatZonePartition, state.candidateContext, candidate.nodeId, primal, dual);
         if constexpr (RequiresSaturationCertification) {
             if (!state.saturatedEligibility.has_value()) {
                 throw std::logic_error("Saturated residual construction has no eligibility evaluator.");
             }
-            return state.saturatedEligibility->isEligible(primal, dual, candidate.nodeId, candidate.polarity == Polarity::Max,
-                                                          containsExteriorSeed, state.candidateContext, statistics);
+            return state.saturatedEligibility->isEligible(primal, dual, candidate.nodeId, candidate.polarity == Polarity::Maximum,
+                                                          containsInfinityPixel, state.candidateContext, statistics);
         }
         return true;
     }
@@ -303,40 +303,42 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
      * @brief Commits one eligible extremum to both component trees and the residual event stream.
      * @param state Mutable synchronized construction state.
      * @param candidate Prepared and eligible agenda candidate.
+     * @param residualEvent Immutable scientific event recorded before mutation.
      */
-    static void commitCandidate(ConstructionState& state, const Candidate& candidate) {
-        tree_t& primal = candidate.polarity == Polarity::Max ? *state.maxTree : *state.minTree;
-        tree_t& dual = candidate.polarity == Polarity::Max ? *state.minTree : *state.maxTree;
-        const Polarity dualPolarity = candidate.polarity == Polarity::Max ? Polarity::Min : Polarity::Max;
-        const NodeId parent = primal.topology().getNodeParent(candidate.nodeId);
-        const auto support = std::span<const NodeId>(state.candidateContext.supportPixels);
-        const auto boundaryOwners = std::span<const NodeId>(state.candidateContext.boundaryOwners);
-        const NodeId dualExtremalOwner = state.candidateContext.dualExtremalOwner;
-        if (support.empty() || boundaryOwners.empty() || dualExtremalOwner == InvalidNode) {
+    static void updateAfterElementaryLeveling(ConstructionState& state, const Candidate& candidate,
+                                               const ResidualEvent<Altitude>& residualEvent) {
+        Tree& primal = candidate.polarity == Polarity::Maximum ? *state.maxTree : *state.minTree;
+        Tree& dual = candidate.polarity == Polarity::Maximum ? *state.minTree : *state.maxTree;
+        const Polarity dualPolarity = candidate.polarity == Polarity::Maximum ? Polarity::Minimum : Polarity::Maximum;
+        const NodeId parent = primal.topology().parent(candidate.nodeId);
+        const auto support = residualEvent.support;
+        const auto boundarySmallestNodes = std::span<const NodeId>(state.candidateContext.boundarySmallestNodes);
+        const NodeId dualExtremalSmallestNode = state.candidateContext.dualExtremalSmallestNode;
+        if (support.empty() || boundarySmallestNodes.empty() || dualExtremalSmallestNode == InvalidNode) {
             throw std::runtime_error("Min/max residual commit received an incomplete leaf certificate.");
         }
 
-        const altitude_t targetLevel = primal.getAltitude(parent);
+        const Altitude targetLevel = residualEvent.firstMergingLevel;
         state.flatZonePartition.collectAdjacentRepresentativesAtLevel(
             state.candidateContext.flatZoneRepresentative, targetLevel, state.candidateContext.boundaryPixels,
             state.candidateContext.flatZoneRepresentativeMarks, state.candidateContext.flatZoneMergeRepresentatives);
 
-        if (candidate.polarity == Polarity::Max) {
-            state.adjustment->pruneMaxLeafAndUpdateMinTree(candidate.nodeId, support, dualExtremalOwner, boundaryOwners,
-                                                           state.candidateContext.wholeSupportOwner);
+        if (candidate.polarity == Polarity::Maximum) {
+            state.adjustment->pruneMaxLeafAndUpdateMinTree(candidate.nodeId, support, dualExtremalSmallestNode, boundarySmallestNodes,
+                                                           state.candidateContext.wholeSupportSmallestNode);
         } else {
-            state.adjustment->pruneMinLeafAndUpdateMaxTree(candidate.nodeId, support, dualExtremalOwner, boundaryOwners,
-                                                           state.candidateContext.wholeSupportOwner);
+            state.adjustment->pruneMinLeafAndUpdateMaxTree(candidate.nodeId, support, dualExtremalSmallestNode, boundarySmallestNodes,
+                                                           state.candidateContext.wholeSupportSmallestNode);
         }
 
-        const NodeId selectedRepresentative = state.candidateContext.flatZoneRepresentative;
-        const NodeId mergedRepresentative = state.flatZonePartition.mergeFlatZonesAtLevel(
+        const PixelId selectedRepresentative = state.candidateContext.flatZoneRepresentative;
+        const PixelId mergedRepresentative = state.flatZonePartition.mergeFlatZonesAtLevel(
             selectedRepresentative, state.candidateContext.flatZoneMergeRepresentatives, targetLevel);
         state.absorbedFlatZones.clear();
         if (selectedRepresentative != mergedRepresentative) {
             state.absorbedFlatZones.push_back(static_cast<RegionId>(selectedRepresentative));
         }
-        for (NodeId representative : state.candidateContext.flatZoneMergeRepresentatives) {
+        for (PixelId representative : state.candidateContext.flatZoneMergeRepresentatives) {
             if (representative != mergedRepresentative) {
                 state.absorbedFlatZones.push_back(static_cast<RegionId>(representative));
             }
@@ -345,7 +347,7 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
         state.candidateContext.supportPixels = {};
 
         if constexpr (RequiresSaturationCertification) {
-            state.saturatedEligibility->noteDualMutation(candidate.polarity == Polarity::Max,
+            state.saturatedEligibility->noteDualMutation(candidate.polarity == Polarity::Maximum,
                                                           state.adjustment->getLastTopologyChangedNodes());
         }
         for (NodeId nodeId : state.adjustment->getLastCandidateNodes()) {
@@ -365,11 +367,11 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
      * @param statistics Build diagnostics updated for emitted and rejected extrema.
      * @return Common terminal altitude of the contracted min-tree and max-tree roots.
      */
-    [[nodiscard]] static altitude_t buildEvents(ConstructionState& state, ResidualTreeBuildStatistics& statistics) {
-        int previousArea = 0;
+    [[nodiscard]] static Altitude buildEvents(ConstructionState& state, ResidualTreeBuildStatistics& statistics) {
+        std::size_t previousSupportCardinality = 0;
         while (const auto selected = state.agenda.select()) {
             const Candidate candidate = *selected;
-            const tree_t& primal = candidate.polarity == Polarity::Max ? *state.maxTree : *state.minTree;
+            const Tree& primal = candidate.polarity == Polarity::Maximum ? *state.maxTree : *state.minTree;
             if (!isCandidateCurrent(state, primal, candidate)) {
                 updateAgendaCandidate(state, primal, candidate.polarity, candidate.nodeId);
                 continue;
@@ -379,24 +381,29 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
                 ++statistics.rejectedExtrema;
                 continue;
             }
-            if (candidate.area < previousArea) {
-                throw std::runtime_error("Min/max residual event areas are not nondecreasing.");
+            if (candidate.residualKey.supportCardinality < previousSupportCardinality) {
+                throw std::runtime_error("Residual event support cardinalities are not nondecreasing.");
             }
-            previousArea = candidate.area;
+            previousSupportCardinality = candidate.residualKey.supportCardinality;
 
-            const altitude_t eventAltitude = primal.getAltitude(candidate.nodeId);
-            static_cast<void>(state.residualAssembler.emitEvent(static_cast<RegionId>(state.candidateContext.flatZoneRepresentative), eventAltitude));
-            commitCandidate(state, candidate);
+            const NodeId parent = primal.topology().parent(candidate.nodeId);
+            const ResidualCandidate<Altitude> preparedCandidate{
+                std::span<const PixelId>(state.candidateContext.supportPixels), candidate.polarity,
+                primal.nodeAltitude(candidate.nodeId), primal.nodeAltitude(parent), candidate.residualKey};
+            const ResidualEvent<Altitude> residualEvent = recordResidualEvent(state.residualAssembler.numEvents(), preparedCandidate);
+            static_cast<void>(state.residualAssembler.emitEvent(
+                static_cast<RegionId>(state.candidateContext.flatZoneRepresentative), residualEvent));
+            updateAfterElementaryLeveling(state, candidate, residualEvent);
             ++statistics.residualEvents;
         }
 
-        if (state.maxTree->topology().getNumNodes() != 1 || state.minTree->topology().getNumNodes() != 1) {
+        if (state.maxTree->topology().numNodes() != 1 || state.minTree->topology().numNodes() != 1) {
             throw std::runtime_error("Min/max residual agenda was exhausted before both component trees became constant.");
         }
-        const NodeId maxRoot = state.maxTree->topology().getRoot();
-        const NodeId minRoot = state.minTree->topology().getRoot();
-        const altitude_t maxAltitude = state.maxTree->getAltitude(maxRoot);
-        const altitude_t minAltitude = state.minTree->getAltitude(minRoot);
+        const NodeId maxRoot = state.maxTree->topology().root();
+        const NodeId minRoot = state.minTree->topology().root();
+        const Altitude maxAltitude = state.maxTree->nodeAltitude(maxRoot);
+        const Altitude minAltitude = state.minTree->nodeAltitude(minRoot);
         if (maxAltitude != minAltitude) {
             throw std::runtime_error("Min/max residual terminal roots have different altitudes.");
         }
@@ -417,23 +424,23 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
      * @param maxTree Max-tree seed transferred into the construction.
      * @param localStatistics Diagnostics accumulated during this build.
      */
-    void buildFromSeeds(const image_ptr_t& image, tree_t&& minTree, tree_t&& maxTree, ResidualTreeBuildStatistics& localStatistics) {
+    void buildFromSeeds(const ImagePointer& image, Tree&& minTree, Tree&& maxTree, ResidualTreeBuildStatistics& localStatistics) {
         ConstructionState state = initializeConstruction(image, std::move(minTree), std::move(maxTree));
-        const altitude_t terminalAltitude = buildEvents(state, localStatistics);
+        const Altitude terminalAltitude = buildEvents(state, localStatistics);
         if (state.residualAssembler.numEvents() != localStatistics.residualEvents) {
             throw std::runtime_error("Min/max residual incremental assembly changed the residual event count.");
         }
 
-        constexpr NodeId terminalAnchorPixel = NodeId{0};
-        const NodeId terminalRepresentative = state.flatZonePartition.representativeOf(terminalAnchorPixel);
+        constexpr PixelId terminalAnchorPixel = PixelId{0};
+        const PixelId terminalRepresentative = state.flatZonePartition.representativeOf(terminalAnchorPixel);
         auto assemblerOutput = std::move(state.residualAssembler).finalize(static_cast<RegionId>(terminalRepresentative), terminalAltitude);
         auto result = materializeResidualTree(image, adjacency_, std::move(assemblerOutput));
         rows_ = result.rows;
-        cols_ = result.cols;
+        columns_ = result.columns;
         root_ = result.root;
-        nodeParent_ = std::move(result.nodeParent);
-        properPartOwner_ = std::move(result.properPartOwner);
-        altitude_ = std::move(result.altitude);
+        parents_ = std::move(result.parents);
+        smallestNodeMap_ = std::move(result.smallestNodeMap);
+        nodeAltitudes_ = std::move(result.nodeAltitudes);
         topologyProof_ = std::move(result.topologyProof);
         statistics_ = localStatistics;
         built_ = true;
@@ -441,24 +448,24 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
 
   public:
     /**
-     * @brief Configures saturated construction with an explicit exterior seed.
+     * @brief Configures saturated construction with an explicit infinity pixel.
      * @param adjacency Symmetric adjacency over the image domain.
-     * @param infinityPixel Exterior seed pixel excluded from residual candidates.
+     * @param infinityPixel Infinity pixel excluded from residual candidates.
      * @param options Saturated construction policies.
      */
-    explicit MinMaxResidualTreeEngine(RegularGridAdjacency2D adjacency, NodeId infinityPixel, SaturatedResidualTreeOptions options)
+    explicit SynchronizedResidualTreeEvolution(RegularGridAdjacency2D adjacency, PixelId infinityPixel, SaturatedResidualTreeOptions options)
         requires(RequiresSaturationCertification)
-        : adjacency_(std::move(adjacency)), tiePolicy_(options.tiePolicy),
+        : adjacency_(std::move(adjacency)), spatialOrder_(std::move(options.spatialOrder)),
           modeConfiguration_{infinityPixel, options.lcaPolicy, options.fallbackPolicy} {}
 
     /**
-     * @brief Configures unrestricted construction without exterior state.
+     * @brief Configures unrestricted construction without infinity-pixel state.
      * @param adjacency Symmetric adjacency over the image domain.
      * @param options Unrestricted construction policies.
      */
-    explicit MinMaxResidualTreeEngine(RegularGridAdjacency2D adjacency, UnrestrictedResidualTreeOptions options)
+    explicit SynchronizedResidualTreeEvolution(RegularGridAdjacency2D adjacency, UnrestrictedResidualTreeOptions options)
         requires(!RequiresSaturationCertification)
-        : adjacency_(std::move(adjacency)), tiePolicy_(options.tiePolicy), modeConfiguration_{} {}
+        : adjacency_(std::move(adjacency)), spatialOrder_(std::move(options.spatialOrder)), modeConfiguration_{} {}
 
     /**
      * @brief Consumes caller-built synchronized min-tree and max-tree seeds.
@@ -466,7 +473,7 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
      * @param minTree Min-tree seed transferred into the construction.
      * @param maxTree Max-tree seed transferred into the construction.
      */
-    void build(const image_ptr_t& image, tree_t&& minTree, tree_t&& maxTree) {
+    void build(const ImagePointer& image, Tree&& minTree, Tree&& maxTree) {
         clearResult();
         ResidualTreeBuildStatistics localStatistics;
         requireInputs(image);
@@ -478,7 +485,7 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
      * @brief Returns the number of rows in the completed hierarchy domain.
      * @return Number of rows.
      */
-    [[nodiscard]] int getRows() const {
+    [[nodiscard]] int rows() const {
         requireBuilt();
         return rows_;
     }
@@ -487,25 +494,25 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
      * @brief Returns the number of columns in the completed hierarchy domain.
      * @return Number of columns.
      */
-    [[nodiscard]] int getCols() const {
+    [[nodiscard]] int columns() const {
         requireBuilt();
-        return cols_;
+        return columns_;
     }
 
     /**
      * @brief Returns the root of the completed residual hierarchy.
      * @return Residual root node identifier.
      */
-    [[nodiscard]] NodeId getRoot() const {
+    [[nodiscard]] NodeId root() const {
         requireBuilt();
         return root_;
     }
 
     /**
-     * @brief Returns the configured saturated exterior seed.
-     * @return Row-major exterior seed pixel.
+     * @brief Returns the configured infinity pixel.
+     * @return Declared row-major infinity pixel.
      */
-    [[nodiscard]] NodeId getInfinityPixel() const noexcept
+    [[nodiscard]] PixelId infinityPixel() const noexcept
         requires(RequiresSaturationCertification)
     {
         return modeConfiguration_.infinityPixel;
@@ -515,19 +522,19 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
      * @brief Returns the adjacency shared by the construction.
      * @return Configured symmetric grid adjacency.
      */
-    [[nodiscard]] const RegularGridAdjacency2D& getAdjacency() const noexcept { return adjacency_; }
+    [[nodiscard]] const RegularGridAdjacency2D& adjacency() const noexcept { return adjacency_; }
 
     /**
-     * @brief Returns the deterministic equal-area ordering policy.
-     * @return Configured tie policy.
+     * @brief Returns the total order used to define spatial minima.
+     * @return Configured spatial order.
      */
-    [[nodiscard]] SdrtTiePolicy getTiePolicy() const noexcept { return tiePolicy_; }
+    [[nodiscard]] const SpatialOrder& spatialOrder() const noexcept { return spatialOrder_; }
 
     /**
      * @brief Returns the saturated dynamic LCA policy.
      * @return Configured LCA policy.
      */
-    [[nodiscard]] SaturatedMinMaxLcaPolicy getLcaPolicy() const noexcept
+    [[nodiscard]] SaturatedMinMaxLcaPolicy lcaPolicy() const noexcept
         requires(RequiresSaturationCertification)
     {
         return modeConfiguration_.lcaPolicy;
@@ -537,7 +544,7 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
      * @brief Returns the saturated exact-complement fallback policy.
      * @return Configured fallback policy.
      */
-    [[nodiscard]] SaturatedMinMaxFallbackPolicy getFallbackPolicy() const noexcept
+    [[nodiscard]] SaturatedMinMaxFallbackPolicy fallbackPolicy() const noexcept
         requires(RequiresSaturationCertification)
     {
         return modeConfiguration_.fallbackPolicy;
@@ -547,34 +554,34 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
      * @brief Returns the completed residual parent buffer.
      * @return Parent identifier indexed by residual node.
      */
-    [[nodiscard]] std::span<const NodeId> getNodeParent() const {
+    [[nodiscard]] std::span<const NodeId> parents() const {
         requireBuilt();
-        return nodeParent_;
+        return parents_;
     }
 
     /**
-     * @brief Returns the completed direct proper-part owner buffer.
-     * @return Residual owner indexed by row-major pixel.
+     * @brief Returns the completed direct smallest node buffer.
+     * @return Smallest residual node indexed by row-major pixel.
      */
-    [[nodiscard]] std::span<const NodeId> getProperPartOwner() const {
+    [[nodiscard]] std::span<const NodeId> smallestNodeMap() const {
         requireBuilt();
-        return properPartOwner_;
+        return smallestNodeMap_;
     }
 
     /**
      * @brief Returns the completed residual altitude buffer.
      * @return Altitude indexed by residual node.
      */
-    [[nodiscard]] std::span<const altitude_t> getAltitude() const {
+    [[nodiscard]] std::span<const Altitude> nodeAltitudes() const {
         requireBuilt();
-        return altitude_;
+        return nodeAltitudes_;
     }
 
     /**
      * @brief Returns diagnostics from the completed construction.
      * @return Build statistics retained by the engine.
      */
-    [[nodiscard]] const ResidualTreeBuildStatistics& getStatistics() const {
+    [[nodiscard]] const ResidualTreeBuildStatistics& statistics() const {
         requireBuilt();
         return statistics_;
     }
@@ -584,14 +591,14 @@ template <AltitudeValue T, bool RequiresSaturationCertification> class MinMaxRes
      * @param semantics Semantic metadata attached to the resulting hierarchy.
      * @return Validated native hierarchy that owns the completed buffers.
      */
-    [[nodiscard]] mmcfilters::detail::ValidatedNativeHierarchy<altitude_t> takeValidatedHierarchy(HierarchySemantics semantics) && {
+    [[nodiscard]] mmcfilters::detail::ValidatedNativeHierarchy<Altitude> takeValidatedHierarchy(MorphologicalTreeSemantics semantics) && {
         requireBuilt();
-        auto hierarchy = mmcfilters::detail::makeValidatedNativeHierarchy<altitude_t>(
-            std::move(nodeParent_), std::move(properPartOwner_), std::move(altitude_), root_, GridDomain2D{rows_, cols_}, std::move(semantics),
+        auto hierarchy = mmcfilters::detail::makeValidatedNativeHierarchy<Altitude>(
+            std::move(parents_), std::move(smallestNodeMap_), std::move(nodeAltitudes_), root_, GridDomain2D{rows_, columns_}, std::move(semantics),
             std::move(topologyProof_));
         built_ = false;
         rows_ = 0;
-        cols_ = 0;
+        columns_ = 0;
         root_ = InvalidNode;
         return hierarchy;
     }

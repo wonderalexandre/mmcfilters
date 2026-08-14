@@ -11,10 +11,10 @@ Every listed attribute produces one value per node in the returned
 The `Contract` column classifies the input required by the attribute:
 
 - `Topology/support`: does not read node altitudes. Some attributes use only
-  finite proper-part ownership; others additionally declare regular 2D geometry
+  finite smallest-node mapping; others additionally declare regular 2D geometry
   or adjacency requirements.
 - `Altitude-aware`: reads the node altitude buffer and therefore requires a
-  `WeightedMorphologicalTree<T>` or `WeightedTreeView<T>`.
+  `ValuedMorphologicalTree<T>` or `ValuedMorphologicalTreeView<T>`.
 - `Tree topology`: uses only parent/child relations in the hierarchy.
 
 The `Groups` column lists non-`ALL` group memberships. Rows are sorted by the
@@ -25,10 +25,10 @@ The complete capability matrix is:
 
 | Attributes | Altitude | Grid 2D | Adjacency | Monotone order | Altitude for directional adjacency | Canonical 4/8 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `AREA`, `HEIGHT_NODE` through `BALANCE_NODE`, `AVG_CHILD_HEIGHT_NODE` | no | no | none | no | no | no |
-| `VOLUME`, `RELATIVE_VOLUME`, `LEVEL`, `GRAY_HEIGHT`, `MEAN_LEVEL`, `VARIANCE_LEVEL` | yes | no | none | no | no | no |
+| `AREA`, `SubtreeHeight` through `BALANCE_NODE`, `AVG_CHILD_HEIGHT_NODE` | no | no | none | no | no | no |
+| `VOLUME`, `RELATIVE_VOLUME`, `GrayLevelHeight`, `MeanGrayLevel`, `GrayLevelVariance` | yes | no | none | no | no | no |
 | bounding boxes, central/Hu moments, moment-derived attributes, `CONTOUR_*` | no | yes | none | no | no | no |
-| `BITQUADS_*` | no | yes | uniform or directional | no | yes | yes |
+| `BITQUAD_*` | no | yes | uniform or directional | no | yes | yes |
 | `MAX_DIST` | yes | yes | uniform | yes | no | no |
 
 C++ callers can query
@@ -40,18 +40,17 @@ scalar attributes before these requirements are validated.
 | --- | --- | --- | --- |
 | `VOLUME` | `GRAY_LEVEL` | Altitude-aware | Sum of altitude-weighted support contributions over the node subtree. It behaves like the gray-level mass or integral of the image over the connected component support. |
 | `RELATIVE_VOLUME` | `GRAY_LEVEL` | Altitude-aware | Cumulative gray-level contrast volume: absolute parent/child altitude jumps weighted by child support area, plus the node support-area contribution. |
-| `LEVEL` | `GRAY_LEVEL` | Altitude-aware | Altitude of the node in the morphological hierarchy. For component trees, this is the gray level at which the connected component appears. |
-| `GRAY_HEIGHT` | `GRAY_LEVEL` | Altitude-aware | Maximum absolute altitude difference between the node and any node in its subtree. On monotone max-tree and min-tree hierarchies this reduces to the traditional one-sided span; it also applies to hierarchies with unconstrained altitude order. Leaves have value `0`. |
-| `MEAN_LEVEL` | `GRAY_LEVEL` | Altitude-aware | Average gray level over the full node support. It is computed from accumulated `VOLUME / AREA`. |
-| `VARIANCE_LEVEL` | `GRAY_LEVEL` | Altitude-aware | Variance of gray levels over the full node support. It uses the accumulated squared gray-level sum and the mean level. |
-| `AREA` | `SHAPE` | Topology/support | Number of proper parts in the full node support, including all descendant supports. In image-domain trees this is the pixel count of the connected component represented by the node. |
+| `GrayLevelHeight` | `GRAY_LEVEL` | Altitude-aware | Maximum absolute altitude difference between the node and any node in its subtree. On monotone max-tree and min-tree hierarchies this reduces to the traditional one-sided span; it also applies to hierarchies with unconstrained altitude order. Leaves have value `0`. |
+| `MeanGrayLevel` | `GRAY_LEVEL` | Altitude-aware | Arithmetic mean of the image values over the full node support: `sum(f(x), x in X) / |X|`. |
+| `GrayLevelVariance` | `GRAY_LEVEL` | Altitude-aware | Population variance of the image values over the full node support, with denominator `|X|`. |
+| `AREA` | `SHAPE` | Topology/support | Number of pixels in the full node support. Equivalently, it is the sum of proper-part cardinalities over the node's subtree. |
 | `BOX_WIDTH` | `SHAPE` | Topology/support | Width, in columns, of the smallest axis-aligned bounding box enclosing the node support. |
-| `BOX_HEIGHT` | `SHAPE` | Topology/support | Height, in rows, of the smallest axis-aligned bounding box enclosing the node support. |
+| `BoundingBoxHeight` | `SHAPE` | Topology/support | Height, in rows, of the smallest axis-aligned bounding box enclosing the node support. |
 | `DIAGONAL_LENGTH` | `SHAPE` | Topology/support | Euclidean diagonal length of the bounding box, `sqrt(width^2 + height^2)`. |
-| `RECTANGULARITY` | `SHAPE` | Topology/support | Ratio `AREA / (BOX_WIDTH * BOX_HEIGHT)`. Values closer to `1` indicate that the support fills its bounding box densely. |
+| `RECTANGULARITY` | `SHAPE` | Topology/support | Ratio `AREA / (BOX_WIDTH * BoundingBoxHeight)`. Values closer to `1` indicate that the support fills its bounding box densely. |
 | `RATIO_WH` | `SHAPE` | Topology/support | Bounding-box aspect ratio, `max(width, height) / min(width, height)` for non-degenerate boxes. Values are at least `1`. |
-| `BOX_COL_MIN` | `SHAPE` | Topology/support | Minimum image column index covered by the node support. |
-| `BOX_COL_MAX` | `SHAPE` | Topology/support | Maximum image column index covered by the node support. |
+| `BOX_COLUMN_MIN` | `SHAPE` | Topology/support | Minimum image column index covered by the node support. |
+| `BOX_COLUMN_MAX` | `SHAPE` | Topology/support | Maximum image column index covered by the node support. |
 | `BOX_ROW_MIN` | `SHAPE` | Topology/support | Minimum image row index covered by the node support. |
 | `BOX_ROW_MAX` | `SHAPE` | Topology/support | Maximum image row index covered by the node support. |
 | `MAX_DIST` | `SHAPE` | Altitude-aware | Maximum squared Euclidean distance reached from the node contour during the incremental distance-transform sweep. Requires a regular 2D domain, globally monotone altitude order, and uniform adjacency; the descriptive tree kind is irrelevant. |
@@ -76,22 +75,22 @@ scalar attributes before these requirements are validated.
 | `LENGTH_MINOR_AXIS` | `MOMENTS`, `SHAPE` | Topology/support | Length proxy for the minor axis of the equivalent second-moment ellipse, derived from the smallest inertia eigenvalue and area. |
 | `AXIS_ORIENTATION` | `MOMENTS`, `SHAPE` | Topology/support | Principal-axis orientation in degrees, `0.5 * atan2(2*mu11, mu20 - mu02)`, normalized to a non-negative angle. |
 | `CIRCULARITY` | `MOMENTS`, `SHAPE` | Topology/support | Ratio `lambda2 / lambda1` of second-moment eigenvalues. Values near `1` indicate circular or isotropic supports; values near `0` indicate elongation. |
-| `BITQUADS_AREA` | `BOUNDARY`, `SHAPE` | Topology/support | Duda-style sub-pixel area estimator derived from aggregated `2x2` bitquad pattern counts. |
-| `BITQUADS_NUMBER_EULER` | `BOUNDARY`, `SHAPE` | Topology/support | Euler characteristic estimated from bitquad counters, representing connected components minus holes under the selected connectivity projection. |
-| `BITQUADS_NUMBER_HOLES` | `BOUNDARY`, `SHAPE` | Topology/support | Number of holes inferred from the bitquad Euler characteristic for a single connected support. |
-| `BITQUADS_PERIMETER` | `BOUNDARY`, `SHAPE` | Topology/support | Discrete boundary-length estimate from bitquad edge-contributing patterns. |
-| `BITQUADS_PERIMETER_CONTINUOUS` | `BOUNDARY`, `SHAPE` | Topology/support | Smoothed continuous perimeter estimate from bitquad counters, using weighted transitions across local `2x2` configurations. |
-| `BITQUADS_CIRCULARITY` | `BOUNDARY`, `SHAPE` | Topology/support | Bitquad compactness measure `(4*pi*BITQUADS_AREA) / BITQUADS_PERIMETER_CONTINUOUS^2`. Values closer to `1` indicate rounder supports. Degenerate zero-perimeter supports return `0`. |
-| `BITQUADS_PERIMETER_AVERAGE` | `BOUNDARY`, `SHAPE` | Topology/support | Average continuous perimeter per connected component, computed from bitquad perimeter and Euler-count estimates. Euler estimates `<= 0` return `0`. |
-| `BITQUADS_LENGTH_AVERAGE` | `BOUNDARY`, `SHAPE` | Topology/support | Average longitudinal extent proxy, derived as half of the average continuous perimeter. Euler estimates `<= 0` return `0`. |
-| `BITQUADS_WIDTH_AVERAGE` | `BOUNDARY`, `SHAPE` | Topology/support | Average transverse extent proxy, computed as `2 * BITQUADS_AREA / BITQUADS_PERIMETER_CONTINUOUS` with a zero fallback when the continuous perimeter is degenerate. |
+| `BITQUAD_AREA` | `BOUNDARY`, `SHAPE` | Topology/support | Duda-style sub-pixel area estimator derived from aggregated `2x2` bitquad pattern counts. |
+| `BITQUAD_NUMBER_EULER` | `BOUNDARY`, `SHAPE` | Topology/support | Euler characteristic estimated from bitquad family counts under an explicit connectivity projection. For a tree of shapes, non-root connectivity is selected from exact lower/upper shape polarity; the root has no polarity. |
+| `BITQUAD_NUMBER_HOLES` | `BOUNDARY`, `SHAPE` | Topology/support | Number of holes inferred from the bitquad Euler characteristic for a single connected support. |
+| `BITQUAD_PERIMETER` | `BOUNDARY`, `SHAPE` | Topology/support | Discrete boundary-length estimate from bitquad edge-contributing patterns. |
+| `BITQUAD_PERIMETER_CONTINUOUS` | `BOUNDARY`, `SHAPE` | Topology/support | Smoothed continuous perimeter estimate from bitquad counters, using weighted transitions across local `2x2` configurations. |
+| `BITQUAD_CIRCULARITY` | `BOUNDARY`, `SHAPE` | Topology/support | Bitquad compactness measure `(4*pi*BITQUAD_AREA) / BITQUAD_PERIMETER_CONTINUOUS^2`. Values closer to `1` indicate rounder supports. Degenerate zero-perimeter supports return `0`. |
+| `BITQUAD_PERIMETER_AVERAGE` | `BOUNDARY`, `SHAPE` | Topology/support | Average continuous perimeter per connected component, computed from bitquad perimeter and Euler-count estimates. Euler estimates `<= 0` return `0`. |
+| `BITQUAD_LENGTH_AVERAGE` | `BOUNDARY`, `SHAPE` | Topology/support | Average longitudinal extent proxy, derived as half of the average continuous perimeter. Euler estimates `<= 0` return `0`. |
+| `BITQUAD_WIDTH_AVERAGE` | `BOUNDARY`, `SHAPE` | Topology/support | Average transverse extent proxy, computed as `2 * BITQUAD_AREA / BITQUAD_PERIMETER_CONTINUOUS` with a zero fallback when the continuous perimeter is degenerate. |
 | `CONTOUR_PIXELS` | `BOUNDARY`, `SHAPE` | Topology/support | Number of support pixels that touch the 4-neighbor complement by at least one side. |
 | `CONTOUR_PERIMETER` | `BOUNDARY`, `SHAPE` | Topology/support | Total number of exposed 4-neighbor sides over the support. This is the side-count perimeter, not a Euclidean perimeter estimate. |
 | `CONTOUR_SIDE_NORTH` | `BOUNDARY`, `SHAPE` | Topology/support | Number of exposed north-facing sides over support pixels. |
 | `CONTOUR_SIDE_WEST` | `BOUNDARY`, `SHAPE` | Topology/support | Number of exposed west-facing sides over support pixels. |
 | `CONTOUR_SIDE_EAST` | `BOUNDARY`, `SHAPE` | Topology/support | Number of exposed east-facing sides over support pixels. |
 | `CONTOUR_SIDE_SOUTH` | `BOUNDARY`, `SHAPE` | Topology/support | Number of exposed south-facing sides over support pixels. |
-| `HEIGHT_NODE` | `TREE_TOPOLOGY` | Tree topology | Longest child-edge path from the node to any leaf in its subtree. Leaves have height `0`. |
+| `SubtreeHeight` | `TREE_TOPOLOGY` | Tree topology | Longest child-edge path from the node to any leaf in its subtree. Leaves have height `0`. |
 | `DEPTH_NODE` | `TREE_TOPOLOGY` | Tree topology | Number of parent-edge steps from the node to the root. The root has depth `0`. |
 | `IS_LEAF_NODE` | `TREE_TOPOLOGY` | Tree topology | Boolean scalar encoded as `1` when the node has no children and `0` otherwise. |
 | `IS_ROOT_NODE` | `TREE_TOPOLOGY` | Tree topology | Boolean scalar encoded as `1` for the tree root and `0` for all other nodes. |

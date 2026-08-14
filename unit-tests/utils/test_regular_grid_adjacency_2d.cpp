@@ -16,9 +16,9 @@ using namespace mmcfilters::unit_tests;
 static_assert(std::ranges::forward_range<RegularGridAdjacency2D::AdjacentIndexRange>);
 static_assert(std::ranges::forward_range<RegularGridAdjacency2D::NeighborIndexRange>);
 static_assert(std::ranges::forward_range<RegularGridAdjacency2D::ForwardNeighborIndexRange>);
-static_assert(std::is_same_v<decltype(std::declval<MorphologicalTree&>().getUniformGridAdjacency2D()), const RegularGridAdjacency2D*>);
-static_assert(std::is_same_v<decltype(std::declval<MorphologicalTree&>().getUniformGridAdjacency2D()), const RegularGridAdjacency2D*>);
-static_assert(std::is_same_v<decltype(std::declval<MorphologicalTree&>().getDirectionalGridAdjacency2D()), const DirectionalGridAdjacency2D*>);
+static_assert(std::is_same_v<decltype(std::declval<MorphologicalTree&>().semantics()), const MorphologicalTreeSemantics&>);
+static_assert(std::is_same_v<decltype(std::declval<MorphologicalTree&>().sharedAdjacencyContext()), const SharedAdjacencyContext*>);
+static_assert(std::is_same_v<decltype(std::declval<MorphologicalTree&>().topographicConvention()), const TopographicConvention*>);
 
 namespace {
 
@@ -106,12 +106,12 @@ void testComponentTreeUsesExplicitAdjacency() {
     const auto image = makeImage(1, 5, {3, 1, 4, 1, 5});
     const auto horizontal = RegularGridAdjacency2D::horizontalLine(1, 5, 1);
     const auto tree = MorphologicalTreeFactory::createMaxTree(image, horizontal);
-    const auto* stored = tree.topology().getUniformGridAdjacency2D();
-    require(stored != nullptr, "component tree stores explicit adjacency");
-    requireVectorEqual(collectNodeIds(stored->getNeighborIndices(2)), std::vector<NodeId>{1, 3}, "stored explicit adjacency");
+    const auto* stored = tree.topology().sharedAdjacencyContext();
+    require(stored != nullptr, "component tree stores explicit shared-adjacency context");
+    requireVectorEqual(collectNodeIds(stored->adjacency.getNeighborIndices(2)), std::vector<NodeId>{1, 3}, "stored explicit adjacency");
     if constexpr (contract::validationsEnabled) {
-        requireThrowsContaining<std::invalid_argument>([&] { (void)AttributeComputation::computeSingleTopologyAttribute(tree.topology(), BITQUADS_AREA); },
-                                                       "canonical 4- or 8-connectivity", "BitQuads rejects unsupported custom adjacency");
+        requireThrowsContaining<std::invalid_argument>([&] { (void)AttributeComputation::computeSingleTopologyAttribute(tree.topology(), BitquadArea); },
+                                                       "canonical 4- or 8-connectivity", "Bitquad rejects unsupported custom adjacency");
 
         requireThrowsContaining<std::invalid_argument>(
             [&] { (void)MorphologicalTreeFactory::createMinTree(image, RegularGridAdjacency2D::rectangular(2, 5, 1, 1)); }, "must match",
@@ -146,9 +146,9 @@ void testCanonicalCustomStencilIsEquivalent() {
     const auto customExport = exportHigraHierarchy(customTree);
     requireVectorEqual(customExport.first, radiusExport.first, "custom 4-connectivity parent equivalence");
     requireVectorEqual(customExport.second, radiusExport.second, "custom 4-connectivity altitude equivalence");
-    for (NodeId properPart = 0; properPart < radiusTree.topology().getNumTotalProperParts(); ++properPart) {
-        requireEqual(customTree.topology().getProperPartOwner(properPart), radiusTree.topology().getProperPartOwner(properPart),
-                     "custom 4-connectivity owner equivalence");
+    for (PixelId pixel = 0; pixel < radiusTree.topology().numPixels(); ++pixel) {
+        requireEqual(customTree.topology().smallestNode(pixel), radiusTree.topology().smallestNode(pixel),
+                     "custom 4-connectivity smallest-node-map equivalence");
     }
 }
 

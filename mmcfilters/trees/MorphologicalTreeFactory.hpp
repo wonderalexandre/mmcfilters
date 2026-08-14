@@ -4,13 +4,13 @@
 #include "NativeHierarchy.hpp"
 #include "TreeOfShapesProducer.hpp"
 #include "TreeAltitudeAlgorithms.hpp"
-#include "WeightedMorphologicalTree.hpp"
+#include "ValuedMorphologicalTree.hpp"
 #include "detail/ComponentTreeProducerDetail.hpp"
 #include "detail/HigraHierarchyAdapterDetail.hpp"
 #include "detail/MorphologicalTreeConstructionTag.hpp"
 #include "detail/NativeHierarchyValidationDetail.hpp"
 #include "sdrt/SaturatedResidualTreeBuilder.hpp"
-#include "sdrt/SdrtTiePolicy.hpp"
+#include "sdrt/ResidualEvolution.hpp"
 #include "sdrt/UnrestrictedResidualTreeBuilder.hpp"
 #include "../utils/Image.hpp"
 #include "../utils/Contract.hpp"
@@ -31,15 +31,15 @@ namespace mmcfilters {
  * tree instances from images and static Higra hierarchies. The factory owns
  * only construction orchestration; it does not
  * store mutable build state and every construction method returns a fully
- * initialized weighted owner.
+ * initialized valued-tree owner.
  *
  * Design contract:
  *
- * - builders whose structural nodes may own no direct proper part supply
+ * - builders whose nodes may have an empty proper part supply
  *   explicit node altitudes together with their native topology;
  * - Higra imports preserve the external Higra node-id domain for altitude
  *   mapping, then expose the result through the internal dense `NodeId` domain;
- * - callers that only need topology should use `WeightedMorphologicalTree<std::uint8_t>::topology()`
+ * - callers that only need topology should use `ValuedMorphologicalTree<std::uint8_t>::topology()`
  *   instead of constructing a bare `MorphologicalTree` directly;
  * - max/min image factories derive altitude type from the image type. `uint8_t`
  *   uses counting sort; other supported altitude values use comparison sort;
@@ -47,7 +47,7 @@ namespace mmcfilters {
  *   the altitude array itself supplies that type.
  *
  * Keeping construction in this factory prevents `MorphologicalTree` and
- * `WeightedMorphologicalTree<std::uint8_t>` from depending on public factory logic while still
+ * `ValuedMorphologicalTree<std::uint8_t>` from depending on public factory logic while still
  * allowing their tag-based constructors to remain available for header-only
  * composition inside this library.
  */
@@ -60,7 +60,7 @@ class MorphologicalTreeFactory {
      */
     template <AltitudeValue T> static void validateComponentTreeImage(const ImagePtr<T>& img, const char* context) {
         MMCFILTERS_CONTRACT_REQUIRE(img != nullptr, throw std::invalid_argument(std::string(context) + " requires a non-null image."));
-        MMCFILTERS_CONTRACT_REQUIRE(img->getNumRows() > 0 && img->getNumCols() > 0 && img->getSize() > 0,
+        MMCFILTERS_CONTRACT_REQUIRE(img->getNumRows() > 0 && img->getNumColumns() > 0 && img->getSize() > 0,
                                     throw std::invalid_argument(std::string(context) + " requires a non-empty 2D image."));
         MMCFILTERS_CONTRACT_CHECKED_ONLY(TreeAltitudeAlgorithms::validateFiniteImageAltitudes(img, context));
     }
@@ -70,18 +70,18 @@ class MorphologicalTreeFactory {
      * @param adjacency Input grid adjacency.
      */
     static void validateConnectedComponentTreeAdjacency(const RegularGridAdjacency2D& adjacency) {
-        const int numPixels = adjacency.getNumRows() * adjacency.getNumCols();
+        const int numPixels = adjacency.getNumRows() * adjacency.getNumColumns();
         std::vector<std::uint8_t> visited(static_cast<std::size_t>(numPixels), 0);
-        std::vector<int> pending;
+        std::vector<PixelId> pending;
         pending.reserve(static_cast<std::size_t>(numPixels));
         pending.push_back(0);
         visited[0] = 1;
         int reached = 0;
         while (!pending.empty()) {
-            const int pixel = pending.back();
+            const PixelId pixel = pending.back();
             pending.pop_back();
             ++reached;
-            for (int neighbor : adjacency.getNeighborIndices(pixel)) {
+            for (PixelId neighbor : adjacency.getNeighborIndices(pixel)) {
                 if (visited[static_cast<std::size_t>(neighbor)] == 0) {
                     visited[static_cast<std::size_t>(neighbor)] = 1;
                     pending.push_back(neighbor);
@@ -115,35 +115,15 @@ class MorphologicalTreeFactory {
     static constexpr detail::MorphologicalTreeConstructionTag tag() noexcept { return detail::MorphologicalTreeConstructionTag{}; }
 
     /**
-     * @brief Creates the directional grid adjacency used by a tree of shapes.
-     *
-     * @param interpolation Interpolation mode used to construct the directional adjacency.
-     * @param rows Number of rows in the domain.
-     * @param cols Number of columns in the domain.
-     * @return Directional adjacency configured for the interpolation mode.
-     */
-    static DirectionalGridAdjacency2D treeOfShapesDirectionalAdjacency(ToSInterpolation interpolation, int rows, int cols) {
-        switch (interpolation) {
-        case ToSInterpolation::SelfDual:
-            return {RegularGridAdjacency2D(rows, cols, 1.0), RegularGridAdjacency2D(rows, cols, 1.0)};
-        case ToSInterpolation::Min4cMax8c:
-            return {RegularGridAdjacency2D(rows, cols, 1.0), RegularGridAdjacency2D(rows, cols, 1.5)};
-        case ToSInterpolation::Min8cMax4c:
-            return {RegularGridAdjacency2D(rows, cols, 1.5), RegularGridAdjacency2D(rows, cols, 1.0)};
-        }
-        throw std::invalid_argument("Unsupported tree-of-shapes interpolation.");
-    }
-
-    /**
      * @brief Validates tree of shapes image.
      *
-     * @param img Image used by the operation.
+     * @param img Image.
      */
     static void validateTreeOfShapesImage(const ImageUInt8Ptr& img) {
         if (!img) {
             throw std::invalid_argument("MorphologicalTreeFactory::createTreeOfShapes requires a non-null image.");
         }
-        if (img->getNumRows() <= 0 || img->getNumCols() <= 0 || img->getSize() <= 0) {
+        if (img->getNumRows() <= 0 || img->getNumColumns() <= 0 || img->getSize() <= 0) {
             throw std::invalid_argument("MorphologicalTreeFactory::createTreeOfShapes requires a non-empty 2D image.");
         }
     }
@@ -151,18 +131,18 @@ class MorphologicalTreeFactory {
     /**
      * @brief Consumes a proven owning native hierarchy.
      *
-     * @param hierarchy Hierarchy data used by the operation.
-     * @param preservedExternalNodeIdOffset Node identifier represented by `preservedExternalNodeIdOffset`.
+     * @param hierarchy Hierarchy data.
+     * @param preservedExternalNodeIdOffset Node identifier.
      * @param versionPolicy Policy used to preserve or reset imported version metadata.
      * @return The materialized proven owning native hierarchy.
      */
     template <AltitudeValue T>
-    [[nodiscard]] static WeightedMorphologicalTree<T>
+    [[nodiscard]] static ValuedMorphologicalTree<T>
     materializeNativeHierarchy(detail::ValidatedNativeHierarchy<T>&& hierarchy, std::optional<NodeId> preservedExternalNodeIdOffset = std::nullopt,
                                MaterializedVersionPolicy versionPolicy = MaterializedVersionPolicy::CanonicalNative) {
         auto storage = std::move(hierarchy).release();
-        const std::size_t numNodes = storage.nodeParent.size();
-        MorphologicalTree topology(tag(), std::move(storage.nodeParent), std::move(storage.properPartOwner), storage.root, storage.gridDomain2D,
+        const std::size_t numNodes = storage.parent.size();
+        MorphologicalTree topology(tag(), std::move(storage.parent), std::move(storage.smallestNodeMap), storage.root, storage.gridDomain2D,
                                    std::move(storage.semantics), std::move(storage.topologyProof));
         if (versionPolicy == MaterializedVersionPolicy::PreserveLinkedConstruction) {
             // One initial storage invalidation, one per non-root link, and one
@@ -172,67 +152,30 @@ class MorphologicalTreeFactory {
         if (preservedExternalNodeIdOffset) {
             topology.preserveExternalNodeIdOffset(*preservedExternalNodeIdOffset);
         }
-        return WeightedMorphologicalTree<T>(tag(), std::move(topology), std::move(storage.altitude));
-    }
-
-    /**
-     * @brief Builds the unrestricted residual tree from synchronized component trees.
-     * @param img Input image.
-     * @param adjacency Symmetric component-tree adjacency.
-     * @param options Unrestricted residual-tree policies.
-     * @return Materialized unrestricted residual hierarchy.
-     */
-    template <AltitudeValue T>
-    [[nodiscard]] static WeightedMorphologicalTree<T> createUnrestrictedResidualTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency,
-                                                                                      sdrt::UnrestrictedResidualTreeOptions options) {
-        auto minTree = createMinTree(img, adjacency);
-        auto maxTree = createMaxTree(img, adjacency);
-        sdrt::UnrestrictedResidualTreeBuilder<T> builder(adjacency, options);
-        builder.build(img, std::move(minTree), std::move(maxTree));
-        return materializeNativeHierarchy<T>(
-            std::move(builder).takeValidatedHierarchy(makeHierarchySemantics(MorphologicalTreeKind::SELF_DUAL_RESIDUAL_TREE, std::move(adjacency))));
-    }
-
-    /**
-     * @brief Builds the saturated residual tree from synchronized component trees.
-     * @param img Input image.
-     * @param adjacency Symmetric component-tree adjacency.
-     * @param infinityPixel Exterior seed excluded from residual events.
-     * @param options Saturated residual-tree policies.
-     * @return Materialized saturated residual hierarchy.
-     */
-    template <AltitudeValue T>
-    [[nodiscard]] static WeightedMorphologicalTree<T> createSaturatedResidualTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency,
-                                                                                   NodeId infinityPixel, sdrt::SaturatedResidualTreeOptions options) {
-        auto minTree = createMinTree(img, adjacency);
-        auto maxTree = createMaxTree(img, adjacency);
-        sdrt::SaturatedResidualTreeBuilder<T> builder(adjacency, infinityPixel, options);
-        builder.build(img, std::move(minTree), std::move(maxTree));
-        return materializeNativeHierarchy<T>(
-            std::move(builder).takeValidatedHierarchy(makeHierarchySemantics(MorphologicalTreeKind::SELF_DUAL_RESIDUAL_TREE, std::move(adjacency))));
+        return ValuedMorphologicalTree<T>(tag(), std::move(topology), std::move(storage.nodeAltitudes));
     }
 
   public:
     /**
-     * @brief Builds a typed weighted max-tree from an image.
+     * @brief Builds a typed valuedTree max-tree from an image.
      *
      * @param img Non-null, non-empty image. Its row/column domain becomes the
-     * proper-part domain of the resulting tree, and its pixel type becomes the
+     * pixel domain of the resulting tree, and its pixel type becomes the
      * altitude type of the returned owner.
      * @param radius Radius used by the component-tree adjacency relation.
      *
-     * @return A `WeightedMorphologicalTree<T>` whose topology is a max-tree
+     * @return A `ValuedMorphologicalTree<T>` whose topology is a max-tree
      * and whose altitude buffer is indexed by internal `NodeId`.
      *
      * @throws std::invalid_argument if the image domain is invalid.
      */
-    template <AltitudeValue T> [[nodiscard]] static WeightedMorphologicalTree<T> createMaxTree(ImagePtr<T> img, double radius = 1.5) {
+    template <AltitudeValue T> [[nodiscard]] static ValuedMorphologicalTree<T> createMaxTree(ImagePtr<T> img, double radius = 1.5) {
         validateComponentTreeImage(img, "MorphologicalTreeFactory::createMaxTree");
-        RegularGridAdjacency2D adjacency(img->getNumRows(), img->getNumCols(), radius);
+        RegularGridAdjacency2D adjacency(img->getNumRows(), img->getNumColumns(), radius);
         MMCFILTERS_CONTRACT_REQUIRE(img->getSize() == 1 || radius >= 1.0,
                                     throw std::invalid_argument("Component-tree adjacency must induce one connected image-domain graph."));
         return materializeNativeHierarchy<T>(
-            detail::kernel::ComponentTreeProducer<T>(detail::kernel::ComponentTreePolarity::MAX_TREE, std::move(adjacency)).build(img), std::nullopt,
+            detail::kernel::ComponentTreeProducer<T>(detail::kernel::ComponentTreePolarity::MaxTree, std::move(adjacency)).build(img), std::nullopt,
             MaterializedVersionPolicy::PreserveLinkedConstruction);
     }
 
@@ -242,288 +185,240 @@ class MorphologicalTreeFactory {
      * The relation may be radius-, rectangle-, line-, or
      * structuring-element-based. Its grid dimensions must match `img`.
      *
-     * @param img Image used by the operation.
-     * @param adjacency Adjacency relation used by the operation.
+     * @param img Image.
+     * @param adjacency Adjacency relation.
      * @return The resulting max-tree with an explicit regular-grid 2D adjacency.
      */
-    template <AltitudeValue T> [[nodiscard]] static WeightedMorphologicalTree<T> createMaxTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency) {
+    template <AltitudeValue T> [[nodiscard]] static ValuedMorphologicalTree<T> createMaxTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency) {
         validateComponentTreeImage(img, "MorphologicalTreeFactory::createMaxTree");
-        MMCFILTERS_CONTRACT_REQUIRE(adjacency.getNumRows() == img->getNumRows() && adjacency.getNumCols() == img->getNumCols(),
+        MMCFILTERS_CONTRACT_REQUIRE(adjacency.getNumRows() == img->getNumRows() && adjacency.getNumColumns() == img->getNumColumns(),
                                     throw std::invalid_argument("Component-tree adjacency domain must match the input image domain."));
         MMCFILTERS_CONTRACT_CHECKED_ONLY(validateConnectedComponentTreeAdjacency(adjacency));
         return materializeNativeHierarchy<T>(
-            detail::kernel::ComponentTreeProducer<T>(detail::kernel::ComponentTreePolarity::MAX_TREE, std::move(adjacency)).build(img), std::nullopt,
+            detail::kernel::ComponentTreeProducer<T>(detail::kernel::ComponentTreePolarity::MaxTree, std::move(adjacency)).build(img), std::nullopt,
             MaterializedVersionPolicy::PreserveLinkedConstruction);
     }
 
     /**
-     * @brief Builds a typed weighted min-tree from an image.
+     * @brief Builds a typed valuedTree min-tree from an image.
      *
      * @param img Non-null, non-empty image. Its row/column domain becomes the
-     * proper-part domain of the resulting tree, and its pixel type becomes the
+     * pixel domain of the resulting tree, and its pixel type becomes the
      * altitude type of the returned owner.
      * @param radius Radius used by the component-tree adjacency relation.
      *
-     * @return A `WeightedMorphologicalTree<T>` whose topology is a min-tree
+     * @return A `ValuedMorphologicalTree<T>` whose topology is a min-tree
      * and whose altitude buffer is indexed by internal `NodeId`.
      *
      * @throws std::invalid_argument if the image domain is invalid.
      */
-    template <AltitudeValue T> [[nodiscard]] static WeightedMorphologicalTree<T> createMinTree(ImagePtr<T> img, double radius = 1.5) {
+    template <AltitudeValue T> [[nodiscard]] static ValuedMorphologicalTree<T> createMinTree(ImagePtr<T> img, double radius = 1.5) {
         validateComponentTreeImage(img, "MorphologicalTreeFactory::createMinTree");
-        RegularGridAdjacency2D adjacency(img->getNumRows(), img->getNumCols(), radius);
+        RegularGridAdjacency2D adjacency(img->getNumRows(), img->getNumColumns(), radius);
         MMCFILTERS_CONTRACT_REQUIRE(img->getSize() == 1 || radius >= 1.0,
                                     throw std::invalid_argument("Component-tree adjacency must induce one connected image-domain graph."));
         return materializeNativeHierarchy<T>(
-            detail::kernel::ComponentTreeProducer<T>(detail::kernel::ComponentTreePolarity::MIN_TREE, std::move(adjacency)).build(img), std::nullopt,
+            detail::kernel::ComponentTreeProducer<T>(detail::kernel::ComponentTreePolarity::MinTree, std::move(adjacency)).build(img), std::nullopt,
             MaterializedVersionPolicy::PreserveLinkedConstruction);
     }
 
     /**
      * @brief Builds a min-tree with an explicit regular-grid 2D adjacency.
      *
-     * @param img Image used by the operation.
-     * @param adjacency Adjacency relation used by the operation.
+     * @param img Image.
+     * @param adjacency Adjacency relation.
      * @return The resulting min-tree with an explicit regular-grid 2D adjacency.
      */
-    template <AltitudeValue T> [[nodiscard]] static WeightedMorphologicalTree<T> createMinTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency) {
+    template <AltitudeValue T> [[nodiscard]] static ValuedMorphologicalTree<T> createMinTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency) {
         validateComponentTreeImage(img, "MorphologicalTreeFactory::createMinTree");
-        MMCFILTERS_CONTRACT_REQUIRE(adjacency.getNumRows() == img->getNumRows() && adjacency.getNumCols() == img->getNumCols(),
+        MMCFILTERS_CONTRACT_REQUIRE(adjacency.getNumRows() == img->getNumRows() && adjacency.getNumColumns() == img->getNumColumns(),
                                     throw std::invalid_argument("Component-tree adjacency domain must match the input image domain."));
         MMCFILTERS_CONTRACT_CHECKED_ONLY(validateConnectedComponentTreeAdjacency(adjacency));
         return materializeNativeHierarchy<T>(
-            detail::kernel::ComponentTreeProducer<T>(detail::kernel::ComponentTreePolarity::MIN_TREE, std::move(adjacency)).build(img), std::nullopt,
+            detail::kernel::ComponentTreeProducer<T>(detail::kernel::ComponentTreePolarity::MinTree, std::move(adjacency)).build(img), std::nullopt,
             MaterializedVersionPolicy::PreserveLinkedConstruction);
     }
 
     /**
-     * @brief Builds the unrestricted self-dual residual tree.
+     * @brief Builds the unrestricted residual tree.
      *
      * Current regional extrema from the synchronized max-tree and min-tree are
-     * selected by increasing support cardinality and the configured deterministic
-     * tie policy. Both trees use the same symmetric connected adjacency.
+     * selected by the self-dual residual schedule. Both component trees use the
+     * same symmetric connected adjacency.
      *
      * @param img Image processed by the operation.
-     * @param adjacency Adjacency relation used by the operation.
-     * @param options Ordering policies for unrestricted construction.
-     * @return An unrestricted self-dual residual tree over `adjacency`.
+     * @param adjacency Adjacency relation.
+     * @param options Spatial-order options for unrestricted construction.
+     * @return An unrestricted residual tree over `adjacency`.
      */
     template <AltitudeValue T>
-    [[nodiscard]] static WeightedMorphologicalTree<T>
-    createSelfDualResidualTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency,
-                               sdrt::UnrestrictedResidualTreeOptions options = {}) {
+    [[nodiscard]] static ValuedMorphologicalTree<T>
+    createUnrestrictedResidualTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency,
+                                   sdrt::UnrestrictedResidualTreeOptions options = {}) {
+        auto minTree = createMinTree(img, adjacency);
+        auto maxTree = createMaxTree(img, adjacency);
+        sdrt::UnrestrictedResidualTreeBuilder<T> builder(adjacency, options);
+        builder.build(img, std::move(minTree), std::move(maxTree));
+        return materializeNativeHierarchy<T>(
+            std::move(builder).takeValidatedHierarchy(makeMorphologicalTreeSemantics(
+                MorphologicalTreeKind::UnrestrictedResidualTree, SharedAdjacencyContext{std::move(adjacency)})));
+    }
+
+    /**
+     * @brief Builds the unrestricted residual tree with a radius adjacency.
+     *
+     * @param img Image processed by the operation.
+     * @param radius Radius of the regular-grid adjacency.
+     * @param options Spatial-order options for unrestricted construction.
+     * @return An unrestricted residual tree using the radius adjacency.
+     */
+    template <AltitudeValue T>
+    [[nodiscard]] static ValuedMorphologicalTree<T>
+    createUnrestrictedResidualTree(ImagePtr<T> img, double radius = 1.5, sdrt::UnrestrictedResidualTreeOptions options = {}) {
+        TreeAltitudeAlgorithms::validateFiniteImageAltitudes(img, "MorphologicalTreeFactory::createUnrestrictedResidualTree image");
+        RegularGridAdjacency2D adjacency(img->getNumRows(), img->getNumColumns(), radius);
         return createUnrestrictedResidualTree(std::move(img), std::move(adjacency), options);
     }
 
     /**
-     * @brief Builds the unrestricted self-dual residual tree with a radius adjacency.
-     *
-     * @param img Image processed by the operation.
-     * @param radius Radius of the regular-grid adjacency.
-     * @param options Ordering policies for unrestricted construction.
-     * @return An unrestricted self-dual residual tree using the radius adjacency.
-     */
-    template <AltitudeValue T>
-    [[nodiscard]] static WeightedMorphologicalTree<T>
-    createSelfDualResidualTree(ImagePtr<T> img, double radius = 1.5, sdrt::UnrestrictedResidualTreeOptions options = {}) {
-        TreeAltitudeAlgorithms::validateFiniteImageAltitudes(img, "MorphologicalTreeFactory::createSelfDualResidualTree image");
-        RegularGridAdjacency2D adjacency(img->getNumRows(), img->getNumCols(), radius);
-        return createSelfDualResidualTree(std::move(img), std::move(adjacency), options);
-    }
-
-    /**
-     * @brief Builds the saturated self-dual residual tree.
+     * @brief Builds the saturated residual tree.
      *
      * Only current regional extrema whose complement is connected to
      * `infinityPixel` are eligible. The supplied adjacency must be symmetric,
      * connected on the image domain, and shared by both component trees.
      *
      * @param img Image processed by the operation.
-     * @param adjacency Adjacency relation used by the operation.
-     * @param infinityPixel Row-major pixel used as the exterior seed.
-     * @param options Saturation and ordering policies.
-     * @return A saturated self-dual residual tree rooted relative to `infinityPixel`.
+     * @param adjacency Adjacency relation.
+     * @param infinityPixel Row-major infinity pixel.
+     * @param options Saturation and spatial-order policies.
+     * @return A saturated residual tree relative to `infinityPixel`.
      */
     template <AltitudeValue T>
-    [[nodiscard]] static WeightedMorphologicalTree<T>
-    createSaturatedSelfDualResidualTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency, NodeId infinityPixel,
-                                        sdrt::SaturatedResidualTreeOptions options = {}) {
+    [[nodiscard]] static ValuedMorphologicalTree<T>
+    createSaturatedResidualTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency, PixelId infinityPixel,
+                                sdrt::SaturatedResidualTreeOptions options = {}) {
+        auto minTree = createMinTree(img, adjacency);
+        auto maxTree = createMaxTree(img, adjacency);
+        sdrt::SaturatedResidualTreeBuilder<T> builder(adjacency, infinityPixel, options);
+        builder.build(img, std::move(minTree), std::move(maxTree));
+        return materializeNativeHierarchy<T>(
+            std::move(builder).takeValidatedHierarchy(makeMorphologicalTreeSemantics(
+                MorphologicalTreeKind::SaturatedResidualTree, SaturatedResidualContext{std::move(adjacency), infinityPixel})));
+    }
+
+    /**
+     * @brief Builds the saturated residual tree with a radius adjacency.
+     *
+     * @param img Image processed by the operation.
+     * @param infinityPixel Row-major infinity pixel.
+     * @param radius Radius of the regular-grid adjacency.
+     * @param options Saturation and spatial-order policies.
+     * @return A saturated residual tree using the radius adjacency.
+     */
+    template <AltitudeValue T>
+    [[nodiscard]] static ValuedMorphologicalTree<T>
+    createSaturatedResidualTree(ImagePtr<T> img, PixelId infinityPixel, double radius = 1.5,
+                                sdrt::SaturatedResidualTreeOptions options = {}) {
+        TreeAltitudeAlgorithms::validateFiniteImageAltitudes(img, "MorphologicalTreeFactory::createSaturatedResidualTree image");
+        RegularGridAdjacency2D adjacency(img->getNumRows(), img->getNumColumns(), radius);
         return createSaturatedResidualTree(std::move(img), std::move(adjacency), infinityPixel, options);
     }
 
     /**
-     * @brief Builds the saturated self-dual residual tree with a radius adjacency.
-     *
-     * @param img Image processed by the operation.
-     * @param infinityPixel Row-major pixel used as the exterior seed.
-     * @param radius Radius of the regular-grid adjacency.
-     * @param options Saturation and ordering policies.
-     * @return A saturated self-dual residual tree using the radius adjacency.
-     */
-    template <AltitudeValue T>
-    [[nodiscard]] static WeightedMorphologicalTree<T>
-    createSaturatedSelfDualResidualTree(ImagePtr<T> img, NodeId infinityPixel, double radius = 1.5,
-                                        sdrt::SaturatedResidualTreeOptions options = {}) {
-        TreeAltitudeAlgorithms::validateFiniteImageAltitudes(img, "MorphologicalTreeFactory::createSaturatedSelfDualResidualTree image");
-        RegularGridAdjacency2D adjacency(img->getNumRows(), img->getNumCols(), radius);
-        return createSaturatedSelfDualResidualTree(std::move(img), std::move(adjacency), infinityPixel, options);
-    }
-
-    /**
-     * @brief Builds a weighted tree of shapes from an 8-bit image.
+     * @brief Builds a valued tree of shapes from an 8-bit image.
      *
      * @param img Non-null, non-empty image.
-     * @param options Producer-local interpolation, padding, and infinity-seed
-     * policies. They are not stored in the returned generic tree.
-     * @return A `WeightedMorphologicalTree<std::uint8_t>` whose topology is a tree of shapes
-     * and whose altitude buffer is indexed by internal `NodeId`.
-     * Half-integer construction levels of virtual nodes are quantized downward
-     * in the public uint8 altitude buffer. Source-domain reconstruction remains
-     * exact because those structural nodes do not own source pixels.
+     * @param convention Complete topographic convention retained by the result.
+     * @return A `ValuedMorphologicalTree<ToSGrayLevel>` whose topology is a tree
+     * of shapes and whose exact doubled-unit altitude buffer is indexed by
+     * internal `NodeId`.
      *
      * @throws std::invalid_argument if the image domain or ToS parameters are
      * rejected by the underlying builder.
      */
-    [[nodiscard]] static WeightedMorphologicalTree<std::uint8_t> createTreeOfShapes(ImageUInt8Ptr img, TreeOfShapesProducerOptions options) {
+    [[nodiscard]] static ValuedMorphologicalTree<ToSGrayLevel> createTreeOfShapes(ImageUInt8Ptr img, TopographicConvention convention = {}) {
         validateTreeOfShapesImage(img);
 
-        TreeOfShapesProducer producer(options);
+        TreeOfShapesProducer producer(convention);
         TreeOfShapesBuildResult result = producer.build(img);
-        HierarchySemantics semantics{MorphologicalTreeKind::TREE_OF_SHAPES, AltitudeOrder::UNCONSTRAINED,
-                                     treeOfShapesDirectionalAdjacency(options.interpolation, result.numRows, result.numCols)};
-        return materializeNativeHierarchy<std::uint8_t>(std::move(result).takeValidatedHierarchy(std::move(semantics)));
-    }
-
-    /**
-     * @brief Convenience overload using exterior padding.
-     *
-     * @param img Non-null, non-empty image.
-     * @param interpolation Built-in interpolation/connectivity convention.
-     * @param infinitySeedRow Seed row in the padded immersion domain.
-     * @param infinitySeedCol Seed column in the padded immersion domain.
-     *
-     * @return Value returned by the convenience overload.
-     */
-    [[nodiscard]] static WeightedMorphologicalTree<std::uint8_t> createTreeOfShapes(ImageUInt8Ptr img,
-                                                                                    ToSInterpolation interpolation = ToSInterpolation::SelfDual,
-                                                                                    int infinitySeedRow = ToSDefaultInfinityRow,
-                                                                                    int infinitySeedCol = ToSDefaultInfinityCol) {
-        return createTreeOfShapes(std::move(img), TreeOfShapesProducerOptions{interpolation, ToSPaddingPolicy::Exterior, infinitySeedRow, infinitySeedCol});
-    }
-
-    /**
-     * @brief Builds a Tree of Shapes with exact doubled gray-level altitudes.
-     *
-     * The topology and proper-part domain are identical to the quantized
-     * uint8 result. Source samples have even altitudes (`2 * value`), while
-     * odd values preserve self-dual half levels without quantization.
-     *
-     * @param img Non-null, non-empty image.
-     * @param options Producer-local construction policies.
-     *
-     * @return The resulting Tree of Shapes with exact doubled gray-level altitudes.
-     */
-    [[nodiscard]] static WeightedMorphologicalTree<ToSGrayLevel> createTreeOfShapesExact(ImageUInt8Ptr img, TreeOfShapesProducerOptions options) {
-        validateTreeOfShapesImage(img);
-
-        TreeOfShapesProducer producer(options);
-        ExactTreeOfShapesBuildResult result = producer.buildExact(img);
-        HierarchySemantics semantics{MorphologicalTreeKind::TREE_OF_SHAPES, AltitudeOrder::UNCONSTRAINED,
-                                     treeOfShapesDirectionalAdjacency(options.interpolation, result.numRows, result.numCols)};
+        MorphologicalTreeSemantics semantics = makeMorphologicalTreeSemantics(MorphologicalTreeKind::TreeOfShapes, std::move(convention));
         return materializeNativeHierarchy<ToSGrayLevel>(std::move(result).takeValidatedHierarchy(std::move(semantics)));
-    }
-
-    /**
-     * @brief Exact-altitude convenience overload using exterior padding.
-     *
-     * @param img Image used by the operation.
-     * @param interpolation Tree-of-Shapes interpolation policy.
-     * @param infinitySeedRow Row of the infinity seed.
-     * @param infinitySeedCol Column of the infinity seed.
-     * @return Exact-altitude convenience overload using exterior padding.
-     */
-    [[nodiscard]] static WeightedMorphologicalTree<ToSGrayLevel> createTreeOfShapesExact(ImageUInt8Ptr img,
-                                                                                         ToSInterpolation interpolation = ToSInterpolation::SelfDual,
-                                                                                         int infinitySeedRow = ToSDefaultInfinityRow,
-                                                                                         int infinitySeedCol = ToSDefaultInfinityCol) {
-        return createTreeOfShapesExact(std::move(img),
-                                       TreeOfShapesProducerOptions{interpolation, ToSPaddingPolicy::Exterior, infinitySeedRow, infinitySeedCol});
     }
 
     /**
      * @brief Materializes the common output contract of a native producer.
      *
-     * @param hierarchy Hierarchy data used by the operation.
+     * @param hierarchy Hierarchy data.
      * @return The materialized common output contract of a native producer.
      */
-    template <AltitudeValue T> [[nodiscard]] static WeightedMorphologicalTree<T> createFromNativeHierarchy(NativeHierarchyView<T> hierarchy) {
+    template <AltitudeValue T> [[nodiscard]] static ValuedMorphologicalTree<T> createFromNativeHierarchy(NativeHierarchyView<T> hierarchy) {
         return materializeNativeHierarchy<T>(detail::validateAndCopyNativeHierarchy<T>(std::move(hierarchy)));
     }
 
     /**
-     * @brief Imports a weighted native morphological tree of partial partitions.
+     * @brief Imports a valued connected-subset tree from native buffers.
      *
-     * Internal nodes and proper parts have independent domains. Consequently,
-     * any node, including the root, may own no direct proper part as long as
-     * the complete buffers encode one connected rooted hierarchy and every
-     * node has non-empty full subtree support.
+     * Node ids and pixel ids have independent domains. Consequently, any node,
+     * including the root, may have an empty proper part as long as the complete
+     * buffers encode one connected rooted hierarchy and every node has
+     * non-empty support.
      *
-     * @param nodeParent Parent-node value represented by `nodeParent`.
-     * @param properPartOwner Proper-part data represented by `properPartOwner`.
-     * @param altitude Altitude data indexed by node identifier.
+     * @param parent Parent node indexed by internal node identifier.
+     * @param smallestNodeMap Pixel-indexed inclusion-smallest node map.
+     * @param nodeAltitudes Altitude data indexed by internal node identifier.
      * @param root Root node of the traversal.
      * @param semantics Hierarchy semantics validated by the operation.
-     * @return The imported weighted native morphological tree of partial partitions.
+     * @return The imported valued connected-subset tree.
      */
     template <AltitudeValue T>
-    [[nodiscard]] static WeightedMorphologicalTree<T> createFromNativeTopology(std::span<const NodeId> nodeParent, std::span<const NodeId> properPartOwner,
-                                                                               std::span<const T> altitude, NodeId root, HierarchySemantics semantics) {
-        return createFromNativeHierarchy<T>(NativeHierarchyView<T>{nodeParent, properPartOwner, altitude, root, std::nullopt, std::move(semantics)});
+    [[nodiscard]] static ValuedMorphologicalTree<T> createFromNativeTopology(std::span<const NodeId> parent, std::span<const NodeId> smallestNodeMap,
+                                                                               std::span<const T> nodeAltitudes, NodeId root, MorphologicalTreeSemantics semantics) {
+        return createFromNativeHierarchy<T>(NativeHierarchyView<T>{parent, smallestNodeMap, nodeAltitudes, root, std::nullopt, std::move(semantics)});
     }
 
     /**
-     * @brief Imports a native hierarchy with a regular 2D proper-part layout.
+     * @brief Imports a native hierarchy with a regular 2D pixel layout.
      *
      * The row/column shape is optional metadata: it enables reconstruction and
      * geometry-dependent algorithms but does not alter the topology contract.
      *
-     * @param nodeParent Parent-node value represented by `nodeParent`.
-     * @param properPartOwner Proper-part data represented by `properPartOwner`.
-     * @param altitude Altitude data indexed by node identifier.
+     * @param parent Parent node indexed by internal node identifier.
+     * @param smallestNodeMap Pixel-indexed inclusion-smallest node map.
+     * @param nodeAltitudes Altitude data indexed by internal node identifier.
      * @param root Root node of the traversal.
      * @param rows Number of rows in the domain.
-     * @param cols Number of columns in the domain.
+     * @param columns Number of columns in the domain.
      * @param semantics Hierarchy semantics validated by the operation.
-     * @return The imported native hierarchy with a regular 2D proper-part layout.
+     * @return The imported native hierarchy with a regular 2D pixel layout.
      */
     template <AltitudeValue T>
-    [[nodiscard]] static WeightedMorphologicalTree<T> createFromNativeTopology(std::span<const NodeId> nodeParent, std::span<const NodeId> properPartOwner,
-                                                                               std::span<const T> altitude, NodeId root, int rows, int cols,
-                                                                               HierarchySemantics semantics) {
+    [[nodiscard]] static ValuedMorphologicalTree<T> createFromNativeTopology(std::span<const NodeId> parent, std::span<const NodeId> smallestNodeMap,
+                                                                               std::span<const T> nodeAltitudes, NodeId root, int rows, int columns,
+                                                                               MorphologicalTreeSemantics semantics) {
         return createFromNativeHierarchy<T>(
-            NativeHierarchyView<T>{nodeParent, properPartOwner, altitude, root, GridDomain2D{rows, cols}, std::move(semantics)});
+            NativeHierarchyView<T>{parent, smallestNodeMap, nodeAltitudes, root, GridDomain2D{rows, columns}, std::move(semantics)});
     }
 
     /**
      * @brief Imports a static Higra parent/altitude hierarchy.
      *
      * Higra arrays use one compact id domain containing leaves followed by
-     * internal nodes. For an image domain with `rows * cols` leaves, leaf ids
-     * are `[0, rows * cols)` and internal ids are `[rows * cols, parent.size())`.
+     * internal nodes. For an image domain with `rows * columns` leaves, leaf ids
+     * are `[0, rows * columns)` and internal ids are `[rows * columns, parent.size())`.
      * Every leaf must point to an internal node, every internal node must point
      * to another internal node or to itself, and exactly one internal node must
      * be self-parented as the root.
      *
-     * @param higraParent Parent array in the compact Higra id domain.
-     * @param higraAltitude Altitudes in the same compact Higra id domain.
-     * @param rows Number of rows in the image/proper-part domain.
-     * @param cols Number of columns in the image/proper-part domain.
+     * @param parent Parent array in the compact Higra id domain.
+     * @param nodeAltitudes Altitudes in the same compact Higra id domain.
+     * @param rows Number of rows in the image/pixel domain.
+     * @param columns Number of columns in the image/pixel domain.
      * @param kind Semantic tree kind represented by the imported hierarchy.
      * @param adjacency Required for max-tree and min-tree imports. Optional for
      * tree-of-shapes imports, whose topology can be interpreted without a
      * component-tree adjacency relation.
      *
-     * @return A typed weighted tree whose internal altitude buffer has already
+     * @return A typed valued tree whose internal altitude buffer has already
      * been remapped from Higra ids to internal `NodeId` slots.
      *
      * @throws std::invalid_argument if the hierarchy is malformed, if the
@@ -531,10 +426,10 @@ class MorphologicalTreeFactory {
      * does not provide adjacency.
      */
     template <AltitudeValue T>
-    [[nodiscard]] static WeightedMorphologicalTree<T> createFromHigraParent(std::span<const NodeId> higraParent, std::span<const T> higraAltitude, int rows,
-                                                                            int cols, MorphologicalTreeKind kind,
+    [[nodiscard]] static ValuedMorphologicalTree<T> createFromHigraParent(std::span<const NodeId> parent, std::span<const T> nodeAltitudes, int rows,
+                                                                            int columns, MorphologicalTreeKind kind,
                                                                             std::optional<RegularGridAdjacency2D> adjacency = std::nullopt) {
-        auto imported = detail::adaptHigraHierarchy<T>(higraParent, higraAltitude, rows, cols, kind, std::move(adjacency));
+        auto imported = detail::adaptHigraHierarchy<T>(parent, nodeAltitudes, rows, columns, kind, std::move(adjacency));
         return materializeNativeHierarchy<T>(std::move(imported.hierarchy), imported.internalNodeOffset, MaterializedVersionPolicy::PreserveLinkedConstruction);
     }
 };

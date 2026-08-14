@@ -1,7 +1,8 @@
 #include "ModuleBindings.hpp"
+#include "PythonValuedMorphologicalTree.hpp"
 
 #include "../mmcfilters/contours/ContoursComputedIncrementally.hpp"
-#include "../mmcfilters/trees/WeightedMorphologicalTree.hpp"
+#include "../mmcfilters/trees/ValuedMorphologicalTree.hpp"
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -70,24 +71,24 @@ void initContoursComputedIncrementally(py::module_& m) {
 Contours are exposed as row-major pixel-index ranges. The first read of a node
 may materialize and cache its subtree contour; later reads use cached storage.)doc")
         .def(
-            "contoursByNode", [](Contours& self) { return ContoursIterator(self); }, py::keep_alive<0, 1>(),
+            "contours_by_node", [](Contours& self) { return ContoursIterator(self); }, py::keep_alive<0, 1>(),
             "Iterate `(node_id, contour_range)` for every live internal node.")
-        .def("getContour", &Contours::getContour, "nodeId"_a, "Return a lazy contour range for one live internal node.")
-        .def("materializeAll", &Contours::materializeAll, "Materialize and cache contours for every live node.")
-        .def_property_readonly("isMaterialized", &Contours::isMaterialized, "Whether all live-node contours have been materialized.")
-        .def("isContourMaterialized", &Contours::isContourMaterialized, "nodeId"_a, "Return whether one live node contour has been materialized.");
+        .def("get_contour", &Contours::getContour, "node_id"_a, "Return a lazy contour range for one live internal node.")
+        .def("materialize_all", &Contours::materializeAll, "Materialize and cache contours for every live node.")
+        .def_property_readonly("is_materialized", &Contours::isMaterialized, "Whether all live-node contours have been materialized.")
+        .def("is_contour_materialized", &Contours::isContourMaterialized, "node_id"_a, "Return whether one live node contour has been materialized.");
 
     py::class_<ContourComputationBinding>(m, "ContourComputation", py::module_local(false),
                                           "Factory for incremental contour extraction on morphological trees.")
         .def_static(
             "extraction",
-            [](const std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>& weighted) {
-                if (!weighted) {
-                    throw std::invalid_argument("Contour extraction requires a non-null WeightedMorphologicalTree.");
+            [](const std::shared_ptr<PythonValuedMorphologicalTree>& valuedTree) {
+                if (!valuedTree) {
+                    throw std::invalid_argument("Contour extraction requires a non-null ValuedMorphologicalTree.");
                 }
-                return ContoursComputedIncrementally::extractCompactContours(weighted->asView());
+                return valuedTree->visit([](const auto& concreteTree) { return ContoursComputedIncrementally::extractCompactContours(concreteTree->asView()); });
             },
-            "tree"_a.none(false), "Extract compact contours from a weighted tree.");
+            py::keep_alive<0, 1>(), "tree"_a.none(false), "Extract compact contours from a valued tree.");
 }
 
 } // namespace mmcfilters::pybindings

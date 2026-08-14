@@ -5,7 +5,7 @@
 #include "../trees/detail/HierarchyCapabilityValidation.hpp"
 #include "../trees/MorphologicalTree.hpp"
 #include "../trees/TreeAltitudeAlgorithms.hpp"
-#include "../trees/WeightedMorphologicalTree.hpp"
+#include "../trees/ValuedMorphologicalTree.hpp"
 #include "../utils/Common.hpp"
 #include "../utils/Contract.hpp"
 #include "detail/VariationMeasure.hpp"
@@ -28,18 +28,18 @@ namespace mmcfilters {
  * on the hierarchy.
  *
  * @details
- * The class implements the classical MSER stability criterion in tree form.
- * It is intentionally tied to `WeightedMorphologicalTree<T>`: the delta
- * neighbourhood is computed from the altitude buffer owned by the weighted
- * tree, not from an arbitrary external altitude array. Given a delta value,
- * each node is paired with an ascendant and a descendant located approximately
- * `delta` units away in altitude space. The node variation is then defined
+ * The class implements the classical MSER stability measure in tree form.
+ * It is intentionally tied to `ValuedMorphologicalTree<T>`: the altitude
+ * neighbourhood is computed from the altitude buffer owned by the valuedTree
+ * tree, not from an arbitrary external altitude array. Given an altitude-window
+ * radius, each node is paired with an ancestor and a descendant located at the
+ * requested distance in altitude space. The node variation is then defined
  * from a monotone increasing attribute as:
  *
- * `variation(node) = (attr(asc(node)) - attr(desc(node))) / attr(node)`
+ * `variation(node) = (attr(ancestor(node)) - attr(descendant(node))) / attr(node)`
  *
  * A node is marked as MSER-like when:
- * @li both delta neighbours exist;
+ * @li both window neighbours exist;
  * @li its variation is a strict local minimum with respect to those neighbours;
  * @li the variation lies below `maxVariation`;
  * @li the attribute value is within the user-specified `[minAttr, maxAttr]`
@@ -53,7 +53,7 @@ namespace mmcfilters {
  * @note MSER requires a globally monotone altitude capability on the topology.
  * Standard max-tree and min-tree producers provide that capability. Standard
  * tree-of-shapes and self-dual residual-tree producers publish
- * `AltitudeOrder::UNCONSTRAINED` and are therefore rejected. The descriptive
+ * `NodeAltitudeOrder::Unconstrained` and are therefore rejected. The descriptive
  * tree kind itself is not used as the acceptance gate.
  */
 template <AltitudeValue T, std::floating_point Real = float> class MSERComputer {
@@ -62,31 +62,31 @@ template <AltitudeValue T, std::floating_point Real = float> class MSERComputer 
     using variation_value_type = Real;
 
   private:
-    /** @brief Stores the weighted. */
-    const WeightedMorphologicalTree<T>& weighted_;
+    /** @brief ValuedTree. */
+    const ValuedMorphologicalTree<T>& valuedTree_;
     /** @brief References the tree used by the component. */
     const MorphologicalTree& tree;
-    /** @brief Stores the altitude. */
+    /** @brief Altitude buffer. */
     const std::vector<T>& altitude_;
-    /** @brief Stores the external attr mser. */
+    /** @brief External attr mser. */
     const Real* externalAttrMser_;
-    /** @brief Stores the owned attr mser. */
+    /** @brief Owned attr mser buffer. */
     std::vector<Real> ownedAttrMser_;
-    /** @brief Stores the max variation. */
+    /** @brief Max variation. */
     Real maxVariation;
-    /** @brief Stores the min attr. */
+    /** @brief Min attr. */
     Real minAttr;
-    /** @brief Stores the max attr. */
+    /** @brief Max attr. */
     Real maxAttr;
-    /** @brief Stores the num. */
+    /** @brief Num. */
     int num = 0;
     /** @brief Indicates whether a successful computation result is available. */
     bool hasComputed_ = false;
-    /** @brief Stores the variation. */
+    /** @brief Variation buffer. */
     std::vector<Real> variation;
-    /** @brief Stores the ascendants. */
-    std::vector<NodeId> ascendants;
-    /** @brief Stores the descendants. */
+    /** @brief Dense node identifier of the ancestors. */
+    std::vector<NodeId> ancestors;
+    /** @brief Dense node identifier of the descendants. */
     std::vector<NodeId> descendants;
 
     /**
@@ -108,26 +108,26 @@ template <AltitudeValue T, std::floating_point Real = float> class MSERComputer 
     /**
      * @brief Validates owned attribute size.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @param attr Attribute requested by the operation.
      */
     static void validateOwnedAttributeSize(const MorphologicalTree& tree, const std::vector<Real>& attr) {
-        MMCFILTERS_CONTRACT_REQUIRE(attr.size() == static_cast<std::size_t>(tree.getNumInternalNodeSlots()),
+        MMCFILTERS_CONTRACT_REQUIRE(attr.size() == static_cast<std::size_t>(tree.numInternalNodeSlots()),
                                     throw std::invalid_argument("MSERComputer attribute size must match the internal node slot count."));
     }
 
     /**
-     * @brief Creates an MSER evaluator over a weighted tree and attribute buffer.
+     * @brief Creates an MSER evaluator over a valued tree and attribute buffer.
      *
-     * @param weighted Weighted tree used by the operation.
-     * @param attr_increasing Attribute information represented by `attr_increasing`.
+     * @param valuedTree Valued tree.
+     * @param attr_increasing Attribute information.
      * @param ownedAttr Owned attribute storage used when no external buffer is supplied.
      */
-    MSERComputer(const WeightedMorphologicalTree<T>& weighted, const Real* attr_increasing, std::vector<Real> ownedAttr)
-        : weighted_(weighted), tree(weighted.topology()), altitude_(weighted.getAltitudeBuffer()), externalAttrMser_(attr_increasing),
+    MSERComputer(const ValuedMorphologicalTree<T>& valuedTree, const Real* attr_increasing, std::vector<Real> ownedAttr)
+        : valuedTree_(valuedTree), tree(valuedTree.topology()), altitude_(valuedTree.nodeAltitudes()), externalAttrMser_(attr_increasing),
           ownedAttrMser_(std::move(ownedAttr)), maxVariation(Real{10}), minAttr(Real{0}),
-          maxAttr(static_cast<Real>(this->tree.getNumColsOfGridDomain2D() * this->tree.getNumRowsOfGridDomain2D())) {
-        TreeAltitudeAlgorithms::validateAltitudeBufferShape(this->tree, std::span<const T>(this->altitude_));
+          maxAttr(static_cast<Real>(this->tree.numColumns() * this->tree.numRows())) {
+        TreeAltitudeAlgorithms::validateNodeAltitudeBufferShape(this->tree, std::span<const T>(this->altitude_));
         detail::validateGlobalMonotoneAltitudeOrder(this->tree, "MSERComputer");
     }
 
@@ -135,12 +135,12 @@ template <AltitudeValue T, std::floating_point Real = float> class MSERComputer 
     /**
      * @brief Creates an MSER detector backed by an owned attribute buffer.
      *
-     * @param weighted Weighted tree used by the operation.
-     * @param attr_increasing Attribute information represented by `attr_increasing`.
+     * @param valuedTree Valued tree.
+     * @param attr_increasing Attribute information.
      */
-    MSERComputer(const WeightedMorphologicalTree<T>& weighted, std::vector<Real> attr_increasing)
-        : MSERComputer(weighted, nullptr, [&]() {
-              validateOwnedAttributeSize(weighted.topology(), attr_increasing);
+    MSERComputer(const ValuedMorphologicalTree<T>& valuedTree, std::vector<Real> attr_increasing)
+        : MSERComputer(valuedTree, nullptr, [&]() {
+              validateOwnedAttributeSize(valuedTree.topology(), attr_increasing);
               return std::move(attr_increasing);
           }()) {}
 
@@ -149,10 +149,10 @@ template <AltitudeValue T, std::floating_point Real = float> class MSERComputer 
      *
      * The raw pointer must reference one value per internal node slot.
      *
-     * @param weighted Weighted tree used by the operation.
-     * @param attr_increasing Attribute information represented by `attr_increasing`.
+     * @param valuedTree Valued tree.
+     * @param attr_increasing Attribute information.
      */
-    MSERComputer(const WeightedMorphologicalTree<T>& weighted, const Real* attr_increasing) : MSERComputer(weighted, attr_increasing, {}) {
+    MSERComputer(const ValuedMorphologicalTree<T>& valuedTree, const Real* attr_increasing) : MSERComputer(valuedTree, attr_increasing, {}) {
         MMCFILTERS_CONTRACT_REQUIRE(
             attr_increasing != nullptr,
             throw std::invalid_argument("MSERComputer requires a non-null attribute buffer for the raw-pointer constructor."));
@@ -161,9 +161,9 @@ template <AltitudeValue T, std::floating_point Real = float> class MSERComputer 
     /**
      * @brief Creates an MSER detector that lazily falls back to `AREA`.
      *
-     * @param weighted Weighted tree used by the operation.
+     * @param valuedTree Valued tree.
      */
-    MSERComputer(const WeightedMorphologicalTree<T>& weighted) : MSERComputer(weighted, nullptr, {}) {}
+    MSERComputer(const ValuedMorphologicalTree<T>& valuedTree) : MSERComputer(valuedTree, nullptr, {}) {}
 
     /** @brief Copies the evaluator while preserving owned-buffer safety. */
     MSERComputer(const MSERComputer&) = default;
@@ -180,21 +180,22 @@ template <AltitudeValue T, std::floating_point Real = float> class MSERComputer 
     ~MSERComputer() = default;
 
     /**
-     * @brief Computes the MSER indicator vector for the given delta.
+     * @brief Computes the MSER indicator vector for an altitude-window radius.
      *
-     * @param delta Delta offset or radius used by the operation.
+     * @param altitudeWindowRadius Positive altitude-window radius.
      * @return A dense boolean-like vector indexed by the tree's internal node
      * slots, with `true` at the nodes selected as MSER-like regions.
      *
      */
-    [[nodiscard]] std::vector<uint8_t> computeMSER(AltitudeDiff<T> delta) {
-        detail::StabilityNeighborhood neighborhood = detail::computeAltitudeStabilityNeighborhood(tree, std::span<const T>(altitude_), delta);
-        this->ascendants = std::move(neighborhood.ascendants);
+    [[nodiscard]] std::vector<uint8_t> computeMSER(AltitudeDifference<T> altitudeWindowRadius) {
+        detail::StabilityNeighborhood neighborhood =
+            detail::computeAltitudeStabilityNeighborhood(tree, std::span<const T>(altitude_), altitudeWindowRadius);
+        this->ancestors = std::move(neighborhood.ancestors);
         this->descendants = std::move(neighborhood.descendants);
 
         auto attrAt = [this](NodeId node) -> Real { return this->getAttrMSER(node); };
-        this->variation = detail::computeVariationsFromNeighborhood<Real>(this->tree, this->ascendants, this->descendants, attrAt);
-        std::vector<uint8_t> selected = detail::selectStrictVariationMinima<Real>(this->tree, this->variation, this->ascendants, this->descendants, attrAt,
+        this->variation = detail::computeVariationsFromNeighborhood<Real>(this->tree, this->ancestors, this->descendants, attrAt);
+        std::vector<uint8_t> selected = detail::selectStrictVariationMinima<Real>(this->tree, this->variation, this->ancestors, this->descendants, attrAt,
                                                                                   this->maxVariation, this->minAttr, this->maxAttr, this->num);
         this->hasComputed_ = true;
         return selected;
@@ -203,26 +204,26 @@ template <AltitudeValue T, std::floating_point Real = float> class MSERComputer 
     /**
      * @brief Returns the variation score currently associated with a node.
      *
-     * @param node Node identifier used by the operation.
+     * @param node Node identifier.
      * @return The variation score currently associated with a node.
      */
     [[nodiscard]] Real getVariation(NodeId node) {
         requireComputed("MSERComputer::getVariation");
-        detail::validateStabilityNeighborhoodShape(this->tree, this->ascendants, this->descendants, "MSERComputer::getVariation");
+        detail::validateStabilityNeighborhoodShape(this->tree, this->ancestors, this->descendants, "MSERComputer::getVariation");
         auto attrAt = [this](NodeId nodeId) -> Real { return this->getAttrMSER(nodeId); };
-        return detail::computeVariationValue<Real>(node, this->ascendants, this->descendants, attrAt);
+        return detail::computeVariationValue<Real>(node, this->ancestors, this->descendants, attrAt);
     }
 
     /**
-     * @brief Returns the attribute used by the MSER criterion, lazily
+     * @brief Returns the attribute used by the MSER stability measure, lazily
      * computing `AREA` when no external buffer has been provided.
      *
-     * @param node Node identifier used by the operation.
-     * @return The attribute used by the MSER criterion, lazily computing AREA when no external buffer has been provided.
+     * @param node Node identifier.
+     * @return Increasing-attribute value of the requested node.
      */
     [[nodiscard]] Real getAttrMSER(NodeId node) {
         if (attributeData() == nullptr) {
-            auto area = AttributeComputation::computeSingleAttribute<Real>(weighted_, AREA);
+            auto area = AttributeComputation::computeSingleAttribute<Real>(valuedTree_, Area);
             ownedAttrMser_ = std::move(area.second);
         }
         const Real* data = attributeData();
@@ -234,32 +235,32 @@ template <AltitudeValue T, std::floating_point Real = float> class MSERComputer 
 
     /**
      * @brief Returns the node with minimum variation among the current node and
-     * its delta-linked neighbours.
+     * its altitude-window neighbours.
      *
-     * @param node Node identifier used by the operation.
-     * @return The node with minimum variation among the current node and its delta-linked neighbours.
+     * @param node Node identifier.
+     * @return The node with minimum variation among the current node and its altitude-window neighbours.
      */
     [[nodiscard]] NodeId nodeWithMinimumVariationInWindow(NodeId node) {
         requireComputed("MSERComputer::nodeWithMinimumVariationInWindow");
-        detail::validateStabilityNeighborhoodShape(this->tree, this->ascendants, this->descendants, "MSERComputer::nodeWithMinimumVariationInWindow");
-        return detail::nodeWithMinimumVariationInWindow<Real>(node, this->variation, this->ascendants, this->descendants);
+        detail::validateStabilityNeighborhoodShape(this->tree, this->ancestors, this->descendants, "MSERComputer::nodeWithMinimumVariationInWindow");
+        return detail::nodeWithMinimumVariationInWindow<Real>(node, this->variation, this->ancestors, this->descendants);
     }
 
     /**
-     * @brief Returns the ascendant used in the current stability window.
+     * @brief Returns the ancestor used in the current stability window.
      *
-     * @param node Node identifier used by the operation.
-     * @return The ascendant used in the current stability window.
+     * @param node Node identifier.
+     * @return The ancestor used in the current stability window.
      */
-    [[nodiscard]] NodeId ascendantInStabilityWindow(NodeId node) const {
-        requireComputed("MSERComputer::ascendantInStabilityWindow");
-        return this->ascendants[node];
+    [[nodiscard]] NodeId ancestorInStabilityWindow(NodeId node) const {
+        requireComputed("MSERComputer::ancestorInStabilityWindow");
+        return this->ancestors[static_cast<std::size_t>(node)];
     }
 
     /**
      * @brief Returns the descendant used in the current stability window.
      *
-     * @param node Node identifier used by the operation.
+     * @param node Node identifier.
      * @return The descendant used in the current stability window.
      */
     [[nodiscard]] NodeId descendantInStabilityWindow(NodeId node) const {
@@ -282,8 +283,8 @@ template <AltitudeValue T, std::floating_point Real = float> class MSERComputer 
      *
      * @return The number of nodes selected as MSER-like in the last run.
      */
-    [[nodiscard]] int getNumNodes() {
-        requireComputed("MSERComputer::getNumNodes");
+    [[nodiscard]] int numNodes() {
+        requireComputed("MSERComputer::numNodes");
         return this->num;
     }
 

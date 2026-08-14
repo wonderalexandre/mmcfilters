@@ -66,14 +66,14 @@ struct GenerationStampSet {
     /**
      * @brief Marks `idx` in the current generation.
      *
-     * @param idx Zero-based index used by the operation.
+     * @param idx Zero-based index.
      */
     inline void mark(size_t idx) noexcept { stamp[idx] = cur; }
 
     /**
      * @brief Returns true when `idx` is marked in the current generation.
      *
-     * @param idx Zero-based index used by the operation.
+     * @param idx Zero-based index.
      * @return True when idx is marked in the current generation.
      */
     inline bool isMarked(size_t idx) const noexcept { return stamp[idx] == cur; }
@@ -81,7 +81,7 @@ struct GenerationStampSet {
     /**
      * @brief Removes one mark from the current logical generation.
      *
-     * @param idx Zero-based index used by the operation.
+     * @param idx Zero-based index.
      */
     inline void unmark(size_t idx) noexcept {
         if (stamp[idx] == cur) {

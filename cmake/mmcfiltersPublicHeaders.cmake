@@ -11,12 +11,15 @@ set(MMCFILTERS_PUBLIC_HEADER_ENTRYPOINTS
     ${MMCFILTERS_ROOT}/contours/ContourTraceComputation.hpp
     ${MMCFILTERS_ROOT}/contours/ContoursComputedIncrementally.hpp
     ${MMCFILTERS_ROOT}/filters/AttributeFilters.hpp
+    ${MMCFILTERS_ROOT}/filters/AttributeReconstructionFilters.hpp
+    ${MMCFILTERS_ROOT}/filters/NodeDecisionMasks.hpp
+    ${MMCFILTERS_ROOT}/filters/NodePreservationStability.hpp
     ${MMCFILTERS_ROOT}/filters/DepthStableRegionComputer.hpp
     ${MMCFILTERS_ROOT}/filters/ExtinctionValues.hpp
     ${MMCFILTERS_ROOT}/filters/MSERComputer.hpp
     ${MMCFILTERS_ROOT}/filters/UltimateAttributeOpening.hpp
-    ${MMCFILTERS_ROOT}/localEvents/EventEngine.hpp
-    ${MMCFILTERS_ROOT}/trees/HierarchySemantics.hpp
+    ${MMCFILTERS_ROOT}/localAttributes/FiniteWindowLocalAttributeComputer.hpp
+    ${MMCFILTERS_ROOT}/trees/MorphologicalTreeSemantics.hpp
     ${MMCFILTERS_ROOT}/trees/MorphologicalTree.hpp
     ${MMCFILTERS_ROOT}/trees/MorphologicalTreeFactory.hpp
     ${MMCFILTERS_ROOT}/trees/NativeHierarchy.hpp
@@ -24,8 +27,8 @@ set(MMCFILTERS_PUBLIC_HEADER_ENTRYPOINTS
     ${MMCFILTERS_ROOT}/trees/TreeAltitudeAlgorithms.hpp
     ${MMCFILTERS_ROOT}/trees/TreeEditor.hpp
     ${MMCFILTERS_ROOT}/trees/TreeOfShapesProducer.hpp
-    ${MMCFILTERS_ROOT}/trees/WeightedMorphologicalTree.hpp
-    ${MMCFILTERS_ROOT}/trees/WeightedTreeView.hpp
+    ${MMCFILTERS_ROOT}/trees/ValuedMorphologicalTree.hpp
+    ${MMCFILTERS_ROOT}/trees/ValuedMorphologicalTreeView.hpp
     ${MMCFILTERS_ROOT}/trees/adjust/CasfComponentTrees.hpp
     ${MMCFILTERS_ROOT}/trees/saliency/HierarchySaliencyMap.hpp
     ${MMCFILTERS_ROOT}/trees/saliency/HierarchySaliencyMapProjection.hpp
@@ -34,8 +37,8 @@ set(MMCFILTERS_PUBLIC_HEADER_ENTRYPOINTS
     ${MMCFILTERS_ROOT}/trees/saliency/ShapeSpaceSaliency.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/SaturatedResidualTreeBuilder.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/ResidualTreeBuildStatistics.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/ResidualEvolution.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/ResidualTreePolicies.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/SdrtTiePolicy.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/UnrestrictedResidualTreeBuilder.hpp
     ${MMCFILTERS_ROOT}/utils/Altitude.hpp
     ${MMCFILTERS_ROOT}/utils/Common.hpp
@@ -67,16 +70,17 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/attributes/computers/TreeTopologyComputer.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/VolumeComputer.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/detail/BitquadAttributeData.hpp
-    ${MMCFILTERS_ROOT}/attributes/computers/detail/BitquadAttributeMaterialization.hpp
-    ${MMCFILTERS_ROOT}/attributes/computers/detail/BitquadLocalEventComputation.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/BitquadConnectivityPolicy.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/BitquadAttributeProjection.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/BitquadFiniteWindowComputation.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/detail/ContourSideAttributeData.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/detail/ContourSideAttributeMaterialization.hpp
-    ${MMCFILTERS_ROOT}/attributes/computers/detail/ContourSideLocalEventComputation.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/ContourSideFiniteWindowComputation.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/detail/maxdist/EdtDIFT.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/detail/maxdist/Geometry.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/detail/maxdist/PQueue.hpp
     ${MMCFILTERS_ROOT}/attributes/detail/AttributeCapabilityValidation.hpp
-    ${MMCFILTERS_ROOT}/attributes/detail/AttributeDeltaMaterialization.hpp
+    ${MMCFILTERS_ROOT}/attributes/detail/NodeAttributeSampleMaterialization.hpp
     ${MMCFILTERS_ROOT}/attributes/detail/AttributeDependencyCache.hpp
     ${MMCFILTERS_ROOT}/attributes/detail/AttributeFamilyScheduler.hpp
     ${MMCFILTERS_ROOT}/attributes/detail/AttributeKernelSupport.hpp
@@ -92,14 +96,17 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/contours/detail/PendingPixelLists.hpp
     ${MMCFILTERS_ROOT}/dataStructure/FastQueue.hpp
     ${MMCFILTERS_ROOT}/filters/AttributeFilters.hpp
+    ${MMCFILTERS_ROOT}/filters/AttributeReconstructionFilters.hpp
+    ${MMCFILTERS_ROOT}/filters/NodeDecisionMasks.hpp
+    ${MMCFILTERS_ROOT}/filters/NodePreservationStability.hpp
     ${MMCFILTERS_ROOT}/filters/DepthStableRegionComputer.hpp
     ${MMCFILTERS_ROOT}/filters/ExtinctionValues.hpp
     ${MMCFILTERS_ROOT}/filters/MSERComputer.hpp
     ${MMCFILTERS_ROOT}/filters/UltimateAttributeOpening.hpp
     ${MMCFILTERS_ROOT}/filters/detail/VariationMeasure.hpp
     ${MMCFILTERS_ROOT}/filters/detail/ViterbiDecision.hpp
-    ${MMCFILTERS_ROOT}/localEvents/EventEngine.hpp
-    ${MMCFILTERS_ROOT}/trees/HierarchySemantics.hpp
+    ${MMCFILTERS_ROOT}/localAttributes/FiniteWindowLocalAttributeComputer.hpp
+    ${MMCFILTERS_ROOT}/trees/MorphologicalTreeSemantics.hpp
     ${MMCFILTERS_ROOT}/trees/MorphologicalTree.hpp
     ${MMCFILTERS_ROOT}/trees/MorphologicalTreeFactory.hpp
     ${MMCFILTERS_ROOT}/trees/NativeHierarchy.hpp
@@ -107,14 +114,15 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/trees/TreeAltitudeAlgorithms.hpp
     ${MMCFILTERS_ROOT}/trees/TreeEditor.hpp
     ${MMCFILTERS_ROOT}/trees/TreeOfShapesProducer.hpp
-    ${MMCFILTERS_ROOT}/trees/WeightedMorphologicalTree.hpp
-    ${MMCFILTERS_ROOT}/trees/WeightedTreeView.hpp
+    ${MMCFILTERS_ROOT}/trees/ValuedMorphologicalTree.hpp
+    ${MMCFILTERS_ROOT}/trees/ValuedMorphologicalTreeView.hpp
     ${MMCFILTERS_ROOT}/trees/adjust/CasfComponentTrees.hpp
     ${MMCFILTERS_ROOT}/trees/adjust/DualMinMaxTreeIncrementalFilterLeaf.hpp
     ${MMCFILTERS_ROOT}/trees/adjust/DualMinMaxTreeIncrementalFilter.hpp
     ${MMCFILTERS_ROOT}/trees/adjust/DynamicTreeAttributeComputer.hpp
     ${MMCFILTERS_ROOT}/trees/detail/ComponentTreeProducerDetail.hpp
     ${MMCFILTERS_ROOT}/trees/detail/CommittedTreeAccess.hpp
+    ${MMCFILTERS_ROOT}/trees/detail/MorphologicalTreeConstructionContextQueries.hpp
     ${MMCFILTERS_ROOT}/trees/detail/ComponentTreeUnionFind.hpp
     ${MMCFILTERS_ROOT}/trees/detail/HierarchyCapabilityValidation.hpp
     ${MMCFILTERS_ROOT}/trees/detail/HigraExportLayoutDetail.hpp
@@ -122,8 +130,7 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/trees/detail/HigraImportLayoutDetail.hpp
     ${MMCFILTERS_ROOT}/trees/detail/MorphologicalTreeConstructionTag.hpp
     ${MMCFILTERS_ROOT}/trees/detail/NativeHierarchyValidationDetail.hpp
-    ${MMCFILTERS_ROOT}/trees/detail/ProperPartEntryNode.hpp
-    ${MMCFILTERS_ROOT}/trees/detail/TreeAltitudeDeltaNeighborhood.hpp
+    ${MMCFILTERS_ROOT}/trees/detail/TreeAttributeSamplingNeighborhood.hpp
     ${MMCFILTERS_ROOT}/trees/detail/TreeStabilityNeighborhood.hpp
     ${MMCFILTERS_ROOT}/trees/detail/TreeTraversalDetail.hpp
     ${MMCFILTERS_ROOT}/trees/saliency/HierarchySaliencyMap.hpp
@@ -132,11 +139,11 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/trees/saliency/HierarchicalWatershedSaliency.hpp
     ${MMCFILTERS_ROOT}/trees/saliency/ShapeSpaceSaliency.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/ResidualTreeBuildStatistics.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/ResidualEvolution.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/ResidualTreePolicies.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/SaturatedResidualTreeBuilder.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/SdrtTiePolicy.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/UnrestrictedResidualTreeBuilder.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/detail/MinMaxResidualTreeEngine.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/detail/SynchronizedResidualTreeEvolution.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/detail/FlatZonePartition.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeCandidateAgenda.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeCandidateContext.hpp

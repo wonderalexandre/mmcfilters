@@ -57,6 +57,30 @@ add_test(
         ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
 
+set(MMCFILTERS_API_REFACTORING_AUDIT_ARGS
+    --root ${CMAKE_CURRENT_SOURCE_DIR}/..
+)
+if(MMCFILTERS_REFACTORING_METADATA_AVAILABLE)
+    list(APPEND MMCFILTERS_API_REFACTORING_AUDIT_ARGS
+        --status ${MMCFILTERS_REFACTORING_METADATA_DIR}/api-migration-status.json
+        --vocabulary ${MMCFILTERS_REFACTORING_METADATA_DIR}/api-vocabulary-audit.json
+        --contextual ${MMCFILTERS_REFACTORING_METADATA_DIR}/api-contextual-vocabulary-review.json
+        --context-report ${CMAKE_BINARY_DIR}/refactoring-contextual-vocabulary-report.json
+    )
+endif()
+add_test(
+    NAME unit_api_refactoring_audit
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/audit_api_refactoring.py
+        ${MMCFILTERS_API_REFACTORING_AUDIT_ARGS}
+)
+add_test(
+    NAME unit_api_refactoring_audit_self_test
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/audit_api_refactoring.py
+        --self-test
+)
+
 mmcfilters_add_unit_test(unit_morphological_tree_build
     trees/test_morphological_tree_build.cpp
 )
@@ -89,12 +113,12 @@ mmcfilters_add_unit_test(unit_edit_api_contracts
     trees/test_edit_api_contracts.cpp
 )
 
-mmcfilters_add_unit_test(unit_weighted_morphological_tree
-    trees/test_weighted_morphological_tree.cpp
+mmcfilters_add_unit_test(unit_valued_morphological_tree
+    trees/test_valued_morphological_tree.cpp
 )
 
-mmcfilters_add_unit_test(unit_weighted_altitude_templates
-    trees/test_weighted_altitude_templates.cpp
+mmcfilters_add_unit_test(unit_valued_altitude_templates
+    trees/test_valued_altitude_templates.cpp
 )
 
 mmcfilters_add_unit_test(unit_hierarchy_saliency_map
@@ -129,8 +153,8 @@ mmcfilters_add_unit_test(unit_attributes_on_morphological_tree
     attributes/test_attributes_on_morphological_tree.cpp
 )
 
-mmcfilters_add_unit_test(unit_local_event_computations
-    attributes/test_local_event_computations.cpp
+mmcfilters_add_unit_test(unit_finite_window_local_attribute_computations
+    attributes/test_finite_window_local_attribute_computations.cpp
 )
 
 mmcfilters_add_unit_test(unit_attribute_plumbing
@@ -187,6 +211,8 @@ mmcfilters_add_unit_test(unit_stability_computers
 
 set(MMCFILTERS_INSTALLED_CONSUMER_TEST_ARGS
     -DMMCFILTERS_BUILD_DIR=${CMAKE_BINARY_DIR}
+    -DMMCFILTERS_PROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/..
+    -DMMCFILTERS_PYTHON_EXECUTABLE=${Python3_EXECUTABLE}
 )
 if(CMAKE_CONFIGURATION_TYPES)
     list(APPEND MMCFILTERS_INSTALLED_CONSUMER_TEST_ARGS
@@ -235,6 +261,21 @@ if(TARGET mmcfilters)
             "PYTHONPATH=${CMAKE_BINARY_DIR}/python"
             ${MMCFILTERS_PYTHON_TEST_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_import_smoke.py
+    )
+
+    set(MMCFILTERS_PYTHON_API_STYLE_AUDIT_ARGS
+        --build-dir ${CMAKE_BINARY_DIR}
+    )
+    if(EXISTS "${MMCFILTERS_REFACTORING_METADATA_DIR}/python-public-api-style-baseline.json")
+        list(APPEND MMCFILTERS_PYTHON_API_STYLE_AUDIT_ARGS
+            --baseline ${MMCFILTERS_REFACTORING_METADATA_DIR}/python-public-api-style-baseline.json
+        )
+    endif()
+    add_test(
+        NAME unit_python_public_api_style_audit
+        COMMAND ${MMCFILTERS_PYTHON_TEST_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/python/audit_python_public_api_style.py
+            ${MMCFILTERS_PYTHON_API_STYLE_AUDIT_ARGS}
     )
 
     add_test(

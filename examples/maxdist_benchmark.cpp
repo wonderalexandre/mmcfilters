@@ -10,7 +10,7 @@
  */
 #include "mmcfilters/attributes/Attributes.hpp"
 #include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
-#include "mmcfilters/trees/WeightedMorphologicalTree.hpp"
+#include "mmcfilters/trees/ValuedMorphologicalTree.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -38,13 +38,13 @@ struct Measurement {
     std::uint64_t checksum = 0;
 };
 
-ImageUInt8Ptr makeBenchmarkImage(int rows, int cols) {
-    auto image = ImageUInt8::create(rows, cols);
+ImageUInt8Ptr makeBenchmarkImage(int rows, int columns) {
+    auto image = ImageUInt8::create(rows, columns);
     for (int row = 0; row < rows; ++row) {
-        for (int col = 0; col < cols; ++col) {
-            const int idx = row * cols + col;
-            const int radial = (row - rows / 2) * (row - rows / 2) + (col - cols / 2) * (col - cols / 2);
-            const int waves = (row * 17) ^ (col * 31) ^ ((row + col) * 7);
+        for (int column = 0; column < columns; ++column) {
+            const int idx = row * columns + column;
+            const int radial = (row - rows / 2) * (row - rows / 2) + (column - columns / 2) * (column - columns / 2);
+            const int waves = (row * 17) ^ (column * 31) ^ ((row + column) * 7);
             (*image)[idx] = static_cast<uint8_t>((radial / 113 + waves) & 0xff);
         }
     }
@@ -59,19 +59,19 @@ template <typename Fn> auto timedValue(Fn&& fn) {
     return std::pair{std::move(value), static_cast<double>(micros) / 1000.0};
 }
 
-std::uint64_t checksumMaxDist(const WeightedMorphologicalTree<std::uint8_t>& tree, const ComputedAttributeData<float>& data) {
+std::uint64_t checksumMaxDist(const ValuedMorphologicalTree<std::uint8_t>& tree, const ComputedAttributeData<float>& data) {
     const auto& attrNames = data.first;
     const auto& buffer = data.second;
 
     std::uint64_t checksum = 0;
-    for (NodeId nodeId : tree.topology().getAliveNodeIds()) {
-        const float value = buffer[attrNames.linearIndex(nodeId, MAX_DIST)];
+    for (NodeId nodeId : tree.topology().aliveNodeIds()) {
+        const float value = buffer[attrNames.linearIndex(nodeId, MaxDist)];
         checksum += static_cast<std::uint64_t>(value * 1000.0f) + static_cast<std::uint64_t>(nodeId + 1);
     }
     return checksum;
 }
 
-Measurement measureMaxDist(const WeightedMorphologicalTree<std::uint8_t>& tree, int repeats) {
+Measurement measureMaxDist(const ValuedMorphologicalTree<std::uint8_t>& tree, int repeats) {
     if (repeats <= 0) {
         throw std::invalid_argument("repeats must be positive.");
     }
@@ -79,7 +79,7 @@ Measurement measureMaxDist(const WeightedMorphologicalTree<std::uint8_t>& tree, 
     std::uint64_t checksum = 0;
     const auto start = std::chrono::steady_clock::now();
     for (int i = 0; i < repeats; ++i) {
-        auto data = AttributeComputation::computeSingleAttribute(tree, MAX_DIST);
+        auto data = AttributeComputation::computeSingleAttribute(tree, MaxDist);
         checksum += checksumMaxDist(tree, data);
     }
     const auto end = std::chrono::steady_clock::now();
@@ -139,14 +139,14 @@ Options parseOptions(int argc, char** argv) {
     return options;
 }
 
-void runCase(int rows, int cols, bool isMaxTree, int repeats, double radius) {
-    auto image = makeBenchmarkImage(rows, cols);
+void runCase(int rows, int columns, bool isMaxTree, int repeats, double radius) {
+    auto image = makeBenchmarkImage(rows, columns);
     auto [tree, buildMs] = timedValue(
         [&]() { return isMaxTree ? MorphologicalTreeFactory::createMaxTree(image, radius) : MorphologicalTreeFactory::createMinTree(image, radius); });
     const Measurement maxDist = measureMaxDist(tree, repeats);
 
-    std::cout << std::setw(5) << rows << " x " << std::setw(5) << cols << "  " << (isMaxTree ? "max" : "min") << "  nodes=" << std::setw(8)
-              << tree.topology().getNumNodes() << "  build_ms=" << std::setw(10) << std::fixed << std::setprecision(3) << buildMs
+    std::cout << std::setw(5) << rows << " x " << std::setw(5) << columns << "  " << (isMaxTree ? "max" : "min") << "  nodes=" << std::setw(8)
+              << tree.topology().numNodes() << "  build_ms=" << std::setw(10) << std::fixed << std::setprecision(3) << buildMs
               << "  max_dist_ms/run=" << std::setw(10) << std::fixed << std::setprecision(3) << maxDist.msPerRun << "  checksum=" << maxDist.checksum << '\n';
 }
 

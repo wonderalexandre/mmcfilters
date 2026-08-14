@@ -24,6 +24,7 @@ notebooks/.virtual_documents/*
 /notebooks/Shape_Space_Saliency_Xu.ipynb
 /benchmarks/results/
 /docs/benchmarks/
+/docs/refactoring/
 /tests/build
 /tests/build
 mmcfilters.cpython-312-darwin.so

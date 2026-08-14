@@ -19,7 +19,7 @@ namespace mmcfilters::adjust {
  * attributes are computed from the image grid coordinates and expose three
  * scalar projections of the same cached box state.
  */
-enum class CasfComponentTreesAttribute { AREA, BOUNDING_BOX_WIDTH, BOUNDING_BOX_HEIGHT, BOUNDING_BOX_DIAGONAL };
+enum class CasfComponentTreesAttribute { Area, BoundingBoxWidth, BoundingBoxHeight, BoundingBoxDiagonal };
 
 /**
  * @brief Connected alternating sequential filter on paired component trees.
@@ -51,7 +51,7 @@ enum class CasfComponentTreesAttribute { AREA, BOUNDING_BOX_WIDTH, BOUNDING_BOX_
  * Internal state owned by this class:
  *
  * - the adjacency relation of the image domain;
- * - the mutable weighted min-tree and max-tree;
+ * - the mutable valuedTree min-tree and max-tree;
  * - one incremental attribute computer per tree and their output buffers;
  * - the dual-tree adjustment helper used to propagate pruning from one tree to
  *   the other;
@@ -71,61 +71,61 @@ enum class CasfComponentTreesAttribute { AREA, BOUNDING_BOX_WIDTH, BOUNDING_BOX_
  *
  * Ownership note:
  *
- * CASF intentionally remains a mutable `WeightedMorphologicalTree<T>` owner.
- * `WeightedTreeView<T>` is suited to read-only kernels; here each threshold step
- * changes tree topology, proper-part ownership, altitude state, and dynamic
+ * CASF intentionally remains a mutable `ValuedMorphologicalTree<T>` owner.
+ * `ValuedMorphologicalTreeView<T>` is suited to read-only kernels; here each threshold step
+ * changes tree topology, smallest-node mapping, altitude state, and dynamic
  * attribute buffers together.
  */
 template <AltitudeValue T> class CasfComponentTrees {
   private:
     /** @brief Defines the `tree_t` alias used by the component. */
-    using tree_t = WeightedMorphologicalTree<T>;
+    using tree_t = ValuedMorphologicalTree<T>;
     /** @brief Defines the `image_ptr_t` alias used by the component. */
     using image_ptr_t = ImagePtr<T>;
     /** @brief Defines the `attribute_computer_t` alias used by the component. */
     using attribute_computer_t = DynamicTreeAttributeComputer<T>;
 
-    /** @brief Stores the adjacency. */
+    /** @brief Adjacency. */
     RegularGridAdjacency2D adjacency_;
-    /** @brief Stores the min tree. */
+    /** @brief Min tree. */
     tree_t minTree_;
-    /** @brief Stores the max tree. */
+    /** @brief Max tree. */
     tree_t maxTree_;
-    /** @brief Stores the min attribute computer. */
+    /** @brief Min attribute computer. */
     std::unique_ptr<attribute_computer_t> minAttributeComputer_;
-    /** @brief Stores the max attribute computer. */
+    /** @brief Max attribute computer. */
     std::unique_ptr<attribute_computer_t> maxAttributeComputer_;
-    /** @brief Stores the adjust. */
+    /** @brief Adjust. */
     std::unique_ptr<DualMinMaxTreeIncrementalFilter<T>> adjust_;
-    /** @brief Stores the min attribute buffer. */
+    /** @brief Min attribute buffer buffer. */
     std::vector<double> minAttributeBuffer_;
-    /** @brief Stores the max attribute buffer. */
+    /** @brief Max attribute buffer buffer. */
     std::vector<double> maxAttributeBuffer_;
-    /** @brief Stores the prune candidate queue. */
+    /** @brief Dense node identifier of the prune candidate queue. */
     std::vector<NodeId> pruneCandidateQueue_;
-    /** @brief Stores the selected prune candidates. */
+    /** @brief Dense node identifier of the selected prune candidates. */
     std::vector<NodeId> selectedPruneCandidates_;
-    /** @brief Stores the attribute. */
-    CasfComponentTreesAttribute attribute_ = CasfComponentTreesAttribute::AREA;
+    /** @brief Attribute. */
+    CasfComponentTreesAttribute attribute_ = CasfComponentTreesAttribute::Area;
 
     /**
      * @brief Creates the incremental attribute computer matching the selected CASF attribute.
      * @details Area uses a scalar area computer. Bounding-box attributes reuse
-     * the row-major image embedding already stored by `WeightedMorphologicalTree<T>`.
+     * the row-major image embedding already stored by `ValuedMorphologicalTree<T>`.
      *
      * @param attribute Attribute requested by the operation.
      * @return The created incremental attribute computer matching the selected CASF attribute.
      */
     static std::unique_ptr<attribute_computer_t> makeAttributeComputer(CasfComponentTreesAttribute attribute) {
         switch (attribute) {
-        case CasfComponentTreesAttribute::AREA:
+        case CasfComponentTreesAttribute::Area:
             return std::make_unique<DynamicAreaAttributeComputer<T>>();
-        case CasfComponentTreesAttribute::BOUNDING_BOX_WIDTH:
-            return std::make_unique<DynamicBoundingBoxAttributeComputer<T>>(BoundingBoxMeasure::WIDTH);
-        case CasfComponentTreesAttribute::BOUNDING_BOX_HEIGHT:
-            return std::make_unique<DynamicBoundingBoxAttributeComputer<T>>(BoundingBoxMeasure::HEIGHT);
-        case CasfComponentTreesAttribute::BOUNDING_BOX_DIAGONAL:
-            return std::make_unique<DynamicBoundingBoxAttributeComputer<T>>(BoundingBoxMeasure::DIAGONAL_LENGTH);
+        case CasfComponentTreesAttribute::BoundingBoxWidth:
+            return std::make_unique<DynamicBoundingBoxAttributeComputer<T>>(BoundingBoxMeasure::Width);
+        case CasfComponentTreesAttribute::BoundingBoxHeight:
+            return std::make_unique<DynamicBoundingBoxAttributeComputer<T>>(BoundingBoxMeasure::Height);
+        case CasfComponentTreesAttribute::BoundingBoxDiagonal:
+            return std::make_unique<DynamicBoundingBoxAttributeComputer<T>>(BoundingBoxMeasure::DiagonalLength);
         }
         throw std::runtime_error("Unknown CASF component-tree attribute.");
     }
@@ -139,7 +139,7 @@ template <AltitudeValue T> class CasfComponentTrees {
      * pruning the root would not define a valid half-step. Internal queue/output
      * buffers are reused across calls to avoid allocation in the threshold loop.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @param attribute Attribute requested by the operation.
      * @param threshold Threshold applied by the operation.
      * @return The selected maximal non-root pruning candidates whose attribute is below or equal to a threshold.
@@ -149,7 +149,7 @@ template <AltitudeValue T> class CasfComponentTrees {
         selectedPruneCandidates_.clear();
 
         const MorphologicalTree& topology = tree.topology();
-        const NodeId root = topology.getRoot();
+        const NodeId root = topology.root();
         if (root == InvalidNode || !topology.isAlive(root)) {
             return selectedPruneCandidates_;
         }
@@ -169,7 +169,7 @@ template <AltitudeValue T> class CasfComponentTrees {
                 continue;
             }
 
-            for (NodeId childId : topology.getChildren(nodeId)) {
+            for (NodeId childId : topology.children(nodeId)) {
                 if (topology.isAlive(childId)) {
                     pruneCandidateQueue_.push_back(childId);
                 }
@@ -204,11 +204,11 @@ template <AltitudeValue T> class CasfComponentTrees {
      * @param attribute Increasing attribute used to select pruning candidates.
      * @param radius Radius used to build the image-domain adjacency relation.
      */
-    CasfComponentTrees(image_ptr_t image, CasfComponentTreesAttribute attribute = CasfComponentTreesAttribute::AREA, double radius = 1.5)
-        : adjacency_(image ? image->getNumRows() : 0, image ? image->getNumCols() : 0, radius),
+    CasfComponentTrees(image_ptr_t image, CasfComponentTreesAttribute attribute = CasfComponentTreesAttribute::Area, double radius = 1.5)
+        : adjacency_(image ? image->getNumRows() : 0, image ? image->getNumColumns() : 0, radius),
           minTree_(MorphologicalTreeFactory::createMinTree(image, radius)), maxTree_(MorphologicalTreeFactory::createMaxTree(image, radius)),
           minAttributeComputer_(makeAttributeComputer(attribute)), maxAttributeComputer_(makeAttributeComputer(attribute)), attribute_(attribute) {
-        if (!image || image->getNumRows() <= 0 || image->getNumCols() <= 0 || image->getSize() <= 0) {
+        if (!image || image->getNumRows() <= 0 || image->getNumColumns() <= 0 || image->getSize() <= 0) {
             throw std::invalid_argument("CasfComponentTrees requires a non-empty image.");
         }
 
@@ -217,7 +217,7 @@ template <AltitudeValue T> class CasfComponentTrees {
         minAttributeComputer_->computeAttribute(minTree_, minAttributeBuffer_);
         maxAttributeComputer_->computeAttribute(maxTree_, maxAttributeBuffer_);
 
-        const size_t maxNodes = static_cast<size_t>(std::max(minTree_.topology().getNumInternalNodeSlots(), maxTree_.topology().getNumInternalNodeSlots()));
+        const size_t maxNodes = static_cast<size_t>(std::max(minTree_.topology().numInternalNodeSlots(), maxTree_.topology().numInternalNodeSlots()));
         pruneCandidateQueue_.reserve(maxNodes);
         selectedPruneCandidates_.reserve(maxNodes);
     }
@@ -236,7 +236,7 @@ template <AltitudeValue T> class CasfComponentTrees {
         for (double threshold : thresholds) {
             applyFilterStep(threshold);
         }
-        return minTree_.reconstructionImage();
+        return minTree_.reconstructFromNodeAltitudes();
     }
 
     /**
@@ -262,7 +262,7 @@ template <AltitudeValue T> class CasfComponentTrees {
 
     /**
      * @brief Exports the current min-tree as a compact static parent/altitude pair.
-     * @details The pair follows the local `WeightedMorphologicalTree<T>`
+     * @details The pair follows the local `ValuedMorphologicalTree<T>`
      * export convention and can be compared with Higra-style static hierarchy
      * outputs in tests and benchmarks.
      *
@@ -272,7 +272,7 @@ template <AltitudeValue T> class CasfComponentTrees {
 
     /**
      * @brief Exports the current max-tree as a compact static parent/altitude pair.
-     * @details The pair follows the local `WeightedMorphologicalTree<T>`
+     * @details The pair follows the local `ValuedMorphologicalTree<T>`
      * export convention and can be compared with Higra-style static hierarchy
      * outputs in tests and benchmarks.
      *

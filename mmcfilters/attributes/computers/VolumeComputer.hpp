@@ -22,7 +22,7 @@ namespace detail {
 /**
  * @brief Returns the dense attribute-buffer slot for a tree node.
  *
- * @param nodeId Identifier of the node used by the operation.
+ * @param nodeId Dense internal node identifier.
  * @return Dense attribute-buffer slot for the node.
  */
 inline NodeId volumeSlotOf(const MorphologicalTree&, NodeId nodeId) noexcept { return nodeId; }
@@ -55,7 +55,7 @@ struct VolumeRequest {
      * @return Resulting request descriptor from the requested attributes.
      */
     [[nodiscard]] static VolumeRequest from(std::span<const Attribute> requestedAttributes) {
-        return {.volume = containsVolumeAttribute(requestedAttributes, VOLUME), .relative = containsVolumeAttribute(requestedAttributes, RELATIVE_VOLUME)};
+        return {.volume = containsVolumeAttribute(requestedAttributes, Volume), .relative = containsVolumeAttribute(requestedAttributes, RelativeVolume)};
     }
 
   private:
@@ -100,22 +100,22 @@ void computeVolume(const AltitudeAttributeComputeContext<Real, T>& context, cons
 
     const int stride = context.attrNames.NUM_ATTRIBUTES;
     const auto offsetOf = [&](Attribute attribute) { return context.attrNames.indexMap.find(attribute)->second; };
-    const int volumeOffset = request.volume ? offsetOf(VOLUME) : 0;
-    const int relativeOffset = request.relative ? offsetOf(RELATIVE_VOLUME) : 0;
+    const int volumeOffset = request.volume ? offsetOf(Volume) : 0;
+    const int relativeOffset = request.relative ? offsetOf(RelativeVolume) : 0;
     auto indexOfVolume = [&](NodeId node) { return static_cast<std::size_t>(node * stride + volumeOffset); };
     auto indexOfRelative = [&](NodeId node) { return static_cast<std::size_t>(node * stride + relativeOffset); };
     const int areaStride = areaDependency != nullptr ? areaDependency->attrNames->NUM_ATTRIBUTES : 0;
-    const int areaOffset = areaDependency != nullptr ? areaDependency->attrNames->indexMap.find(AREA)->second : 0;
+    const int areaOffset = areaDependency != nullptr ? areaDependency->attrNames->indexMap.find(Area)->second : 0;
     auto indexOfArea = [&](NodeId node) { return static_cast<std::size_t>(node * areaStride + areaOffset); };
 
     ::mmcfilters::detail::kernel::traversePostOrder(
-        context.tree, context.tree.getRoot(),
+        context.tree, context.tree.root(),
         [&](NodeId nodeId) {
             const NodeId node = detail::volumeSlotOf(context.tree, nodeId);
             const T nodeAltitude = context.altitude[static_cast<std::size_t>(nodeId)];
             if (request.volume)
                 context.buffer[indexOfVolume(node)] =
-                    static_cast<Real>(::mmcfilters::detail::CommittedTreeAccess::numProperParts(context.tree, nodeId)) * static_cast<Real>(nodeAltitude);
+                    static_cast<Real>(::mmcfilters::detail::CommittedTreeAccess::properPartCardinality(context.tree, nodeId)) * static_cast<Real>(nodeAltitude);
             if (request.relative)
                 context.buffer[indexOfRelative(node)] = Real{0};
         },
@@ -153,11 +153,11 @@ inline const DependencySourceT<Real>* findDependency(std::span<const DependencyS
 template <std::floating_point Real, AltitudeValue T>
 inline void validateVolumeContext(const AltitudeAttributeComputeContext<Real, T>& context, const VolumeRequest& request) {
     requireAttributeBufferShape(context.tree, context.buffer, context.attrNames);
-    TreeAltitudeAlgorithms::validateAltitudeBufferShape(context.tree, context.altitude);
-    if (request.volume && !context.attrNames.contains(VOLUME)) {
+    TreeAltitudeAlgorithms::validateNodeAltitudeBufferShape(context.tree, context.altitude);
+    if (request.volume && !context.attrNames.contains(Volume)) {
         throw std::invalid_argument("VOLUME computation requires a VOLUME column in the output layout.");
     }
-    if (request.relative && !context.attrNames.contains(RELATIVE_VOLUME)) {
+    if (request.relative && !context.attrNames.contains(RelativeVolume)) {
         throw std::invalid_argument("RELATIVE_VOLUME computation requires a RELATIVE_VOLUME column in the output layout.");
     }
 }
@@ -172,13 +172,13 @@ inline void validateVolumeContext(const AltitudeAttributeComputeContext<Real, T>
  * - `VOLUME`: the sum of `altitude * area contribution` over the full subtree
  *   support of the node;
  * - `RELATIVE_VOLUME`: the cumulative contribution of grey-level jumps between
- *   a node and its descendants, weighted by subtree area.
+ *   a node and its descendants, valuedTree by subtree area.
  *
  * `VOLUME` is initialised from the node's own proper parts and then aggregated
  * bottom-up. `RELATIVE_VOLUME` is initialised at zero and accumulates, for
  * each parent/child edge, the absolute altitude difference multiplied by the
  * child subtree area. A final per-node area term is then added so that the
- * descriptor remains expressed in the same unit as a weighted support size.
+ * descriptor remains expressed in the same unit as a valuedTree support size.
  *
  * @note `RELATIVE_VOLUME` depends on `AREA` because subtree sizes are needed
  * to weight parent/child altitude differences.
@@ -197,7 +197,7 @@ class VolumeComputer {
     /**
      * @brief Canonical list of volume descriptors produced by this computer.
      */
-    inline static constexpr std::array<Attribute, 2> producedAttributes{VOLUME, RELATIVE_VOLUME};
+    inline static constexpr std::array<Attribute, 2> producedAttributes{Volume, RelativeVolume};
 
     /**
      * @brief Computes the requested volume descriptors.
@@ -216,9 +216,9 @@ class VolumeComputer {
         const DependencySourceT<Real>* areaDependency = nullptr;
         if (request.needsAreaDependency()) {
             if constexpr (contract::validationsEnabled) {
-                areaDependency = &context.dependencies.require(AREA);
+                areaDependency = &context.dependencies.require(Area);
             } else {
-                areaDependency = detail::findDependency(context.dependencySources, AREA);
+                areaDependency = detail::findDependency(context.dependencySources, Area);
             }
         }
         detail::kernel::computeVolume(context, request, areaDependency);
@@ -227,29 +227,29 @@ class VolumeComputer {
     /**
      * @brief Materializes volume descriptors for one-pixel unit supports.
      *
-     * Unit `VOLUME` is the owner-node altitude of the proper part. Unit
+     * Unit `VOLUME` is the smallest-node altitude of the proper part. Unit
      * `RELATIVE_VOLUME` is `1`, matching the scalar support-size unit used by
      * the subtree computation.
      *
      * @param context Operation context or diagnostic label.
      */
     template <std::floating_point Real, AltitudeValue T> static void computeUnitRows(const AltitudeUnitAttributeComputeContext<Real, T>& context) {
-        requireUnitAttributeBufferShape(context.tree, context.unitProperParts, context.buffer, context.attrNames);
-        TreeAltitudeAlgorithms::validateAltitudeBufferShape(context.tree, context.altitude);
+        requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
+        TreeAltitudeAlgorithms::validateNodeAltitudeBufferShape(context.tree, context.altitude);
 
         const detail::VolumeRequest request = detail::VolumeRequest::from(context.requestedAttributes);
         if (!request.any()) {
             return;
         }
 
-        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitProperParts.size()); ++leafIndex) {
-            const NodeId properPart = context.unitProperParts[static_cast<size_t>(leafIndex)];
+        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitPixels.size()); ++leafIndex) {
+            const PixelId pixel = context.unitPixels[static_cast<size_t>(leafIndex)];
             if (request.volume) {
-                context.buffer[context.attrNames.linearIndex(leafIndex, VOLUME)] =
-                    static_cast<Real>(::mmcfilters::detail::kernel::unitAltitude(context.tree, context.altitude, properPart));
+                context.buffer[context.attrNames.linearIndex(leafIndex, Volume)] =
+                    static_cast<Real>(::mmcfilters::detail::kernel::unitAltitude(context.tree, context.altitude, pixel));
             }
             if (request.relative) {
-                context.buffer[context.attrNames.linearIndex(leafIndex, RELATIVE_VOLUME)] = Real{1};
+                context.buffer[context.attrNames.linearIndex(leafIndex, RelativeVolume)] = Real{1};
             }
         }
     }

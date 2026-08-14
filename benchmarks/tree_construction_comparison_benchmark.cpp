@@ -15,13 +15,17 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <variant>
 
 using namespace mmcfilters;
 
 namespace {
 
 using Clock = std::chrono::steady_clock;
-using Tree = WeightedMorphologicalTree<std::uint8_t>;
+using UInt8Tree = ValuedMorphologicalTree<std::uint8_t>;
+using TreeOfShapesTree = ValuedMorphologicalTree<ToSGrayLevel>;
+using Tree = std::variant<UInt8Tree, TreeOfShapesTree>;
 
 enum class Algorithm : std::size_t { TreeOfShapesMax4cMin8c, TreeOfShapesSelfDual, MaxTree8c, MinTree8c, UnrestrictedResidualTree8c, SaturatedResidualTree8c };
 
@@ -94,39 +98,58 @@ struct Measurement {
 [[nodiscard]] Tree buildTree(Algorithm algorithm, const ImageUInt8Ptr& image, const RegularGridAdjacency2D& adjacency8c) {
     switch (algorithm) {
     case Algorithm::TreeOfShapesMax4cMin8c:
-        // The public enum names the min connectivity first. Therefore
-        // Min8cMax4c is the user's Max4cMin8c convention.
-        return MorphologicalTreeFactory::createTreeOfShapes(image, ToSInterpolation::Min8cMax4c);
+        return MorphologicalTreeFactory::createTreeOfShapes(
+            image, TopographicConvention{ComplementaryGridImmersion{ComplementaryAdjacencies{
+                       RegularGridAdjacency2D(image->getNumRows(), image->getNumColumns(), 1.5),
+                       RegularGridAdjacency2D(image->getNumRows(), image->getNumColumns(), 1.0)}}});
     case Algorithm::TreeOfShapesSelfDual:
-        return MorphologicalTreeFactory::createTreeOfShapes(image, ToSInterpolation::SelfDual);
+        return MorphologicalTreeFactory::createTreeOfShapes(image);
     case Algorithm::MaxTree8c:
         return MorphologicalTreeFactory::createMaxTree(image, adjacency8c);
     case Algorithm::MinTree8c:
         return MorphologicalTreeFactory::createMinTree(image, adjacency8c);
     case Algorithm::UnrestrictedResidualTree8c:
-        return MorphologicalTreeFactory::createSelfDualResidualTree(
-            image, adjacency8c, sdrt::UnrestrictedResidualTreeOptions{sdrt::SdrtTiePolicy::ContrastInvariantSpatial});
+        return MorphologicalTreeFactory::createUnrestrictedResidualTree(
+            image, adjacency8c, sdrt::UnrestrictedResidualTreeOptions{});
     case Algorithm::SaturatedResidualTree8c:
-        return MorphologicalTreeFactory::createSaturatedSelfDualResidualTree(
-            image, adjacency8c, NodeId{0}, sdrt::SaturatedResidualTreeOptions{sdrt::SdrtTiePolicy::ContrastInvariantSpatial});
+        return MorphologicalTreeFactory::createSaturatedResidualTree(
+            image, adjacency8c, PixelId{0}, sdrt::SaturatedResidualTreeOptions{});
     }
     throw std::invalid_argument("unsupported benchmark algorithm");
 }
 
 [[nodiscard]] bool reconstructsExactly(const Tree& tree, const ImageUInt8Ptr& image) {
-    const auto reconstruction = tree.reconstructionImage();
-    if (reconstruction->getNumRows() != image->getNumRows() || reconstruction->getNumCols() != image->getNumCols() ||
-        reconstruction->getSize() != image->getSize()) {
-        return false;
-    }
-    return std::equal(reconstruction->rawData(), reconstruction->rawData() + reconstruction->getSize(), image->rawData());
+    return std::visit(
+        [&](const auto& concreteTree) {
+            const auto reconstruction = concreteTree.reconstructFromNodeAltitudes();
+            if (reconstruction->getNumRows() != image->getNumRows() || reconstruction->getNumColumns() != image->getNumColumns() ||
+                reconstruction->getSize() != image->getSize()) {
+                return false;
+            }
+            using Altitude = typename std::remove_cvref_t<decltype(concreteTree)>::AltitudeType;
+            for (int index = 0; index < image->getSize(); ++index) {
+                const auto expected = [&] {
+                    if constexpr (std::is_same_v<Altitude, ToSGrayLevel>) {
+                        return static_cast<ToSGrayLevel>(2u * (*image)[index]);
+                    } else {
+                        return static_cast<Altitude>((*image)[index]);
+                    }
+                }();
+                if ((*reconstruction)[index] != expected) {
+                    return false;
+                }
+            }
+            return true;
+        },
+        tree);
 }
 
 [[nodiscard]] Measurement measureConstruction(Algorithm algorithm, const ImageUInt8Ptr& image, const RegularGridAdjacency2D& adjacency8c) {
     const auto start = Clock::now();
     Tree tree = buildTree(algorithm, image, adjacency8c);
     const auto stop = Clock::now();
-    return {std::chrono::duration<double, std::milli>(stop - start).count(), tree.topology().getNumNodes()};
+    const int nodeCount = std::visit([](const auto& concreteTree) { return concreteTree.topology().numNodes(); }, tree);
+    return {std::chrono::duration<double, std::milli>(stop - start).count(), nodeCount};
 }
 
 [[nodiscard]] std::filesystem::path imagePath(const std::filesystem::path& root, std::string_view resolution, int imageIndex) {
@@ -144,7 +167,7 @@ int main(int argc, char** argv) {
         if (!output) {
             throw std::runtime_error("could not open output: " + options.outputPath.string());
         }
-        output << "resolution,image,rows,cols,pixels,repetition,position,"
+        output << "resolution,image,rows,columns,pixels,repetition,position,"
                   "algorithm,construction_ms,nodes\n"
                << std::fixed << std::setprecision(6);
 
@@ -153,7 +176,7 @@ int main(int argc, char** argv) {
             for (int imageIndex = 0; imageIndex < 10; ++imageIndex) {
                 const std::filesystem::path path = imagePath(options.dataRoot, resolution, imageIndex);
                 const auto image = loadImage(path);
-                const RegularGridAdjacency2D adjacency8c(image->getNumRows(), image->getNumCols(), 1.5);
+                const RegularGridAdjacency2D adjacency8c(image->getNumRows(), image->getNumColumns(), 1.5);
 
                 std::array<int, Algorithms.size()> expectedNodes{};
                 for (Algorithm algorithm : Algorithms) {
@@ -161,7 +184,8 @@ int main(int argc, char** argv) {
                     if (!reconstructsExactly(warmup, image)) {
                         throw std::runtime_error(std::string(algorithmName(algorithm)) + " failed exact reconstruction for " + path.string());
                     }
-                    expectedNodes[static_cast<std::size_t>(algorithm)] = warmup.topology().getNumNodes();
+                    expectedNodes[static_cast<std::size_t>(algorithm)] =
+                        std::visit([](const auto& concreteTree) { return concreteTree.topology().numNodes(); }, warmup);
                 }
 
                 for (int repetition = 0; repetition < options.repetitions; ++repetition) {
@@ -173,7 +197,7 @@ int main(int argc, char** argv) {
                         if (measurement.nodes != expectedNodes[static_cast<std::size_t>(algorithm)]) {
                             throw std::runtime_error(std::string(algorithmName(algorithm)) + " produced a non-deterministic node count for " + path.string());
                         }
-                        output << resolution << ',' << path.filename().string() << ',' << image->getNumRows() << ',' << image->getNumCols() << ','
+                        output << resolution << ',' << path.filename().string() << ',' << image->getNumRows() << ',' << image->getNumColumns() << ','
                                << image->getSize() << ',' << repetition << ',' << position << ',' << algorithmName(algorithm) << ',' << measurement.milliseconds
                                << ',' << measurement.nodes << '\n';
                     }

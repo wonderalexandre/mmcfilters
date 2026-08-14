@@ -10,10 +10,11 @@
 morphological hierarchies, computing node attributes, and applying connected
 filters and hierarchy operators. It provides a C++20 core and Python bindings.
 
-The library represents hierarchies as rooted trees over finite partial
-partitions. All supported image-domain hierarchies use the same topology model,
-with explicit proper-part ownership and optional regular-grid geometry and
-adjacency.
+The library represents hierarchies through a rooted connected-subset tree
+model. A morphological tree of partial partitions is the stricter case in
+which every node has a non-empty proper part. All supported image-domain trees
+use the same topology model, with an explicit smallest-node map and optional
+regular-grid geometry and adjacency.
 
 Use `mmcfilters` for experiments that require mutable tree topology, direct
 ownership of hierarchy state, incremental attributes, residual hierarchies, or
@@ -86,25 +87,25 @@ image = np.ascontiguousarray(
 )
 
 # radius=1.5 selects 8-connectivity; use 1.0 for 4-connectivity.
-tree = mmcfilters.MorphologicalTreeFactory.createMaxTree(image, radius=1.5)
+tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image, radius=1.5)
 
-root = tree.getRoot()
-root_children = tree.getChildren(root)
+root = tree.root
+root_children = tree.children(root)
 
 pixel = 10
-owner = tree.getProperPartOwner(pixel)
-component_pixels = list(tree.getConnectedComponent(owner))
-component_mask = tree.reconstructNode(owner)
+smallest = tree.smallest_node(pixel)
+support_pixels = list(tree.node_support(smallest))
+component_mask = tree.reconstruct_node(smallest)
 
-area = mmcfilters.Attribute.computeSingleTopologyAttribute(
+area = mmcfilters.Attribute.compute_single_topology_attribute(
     tree,
     mmcfilters.Attribute.AREA,
 )
-max_dist = mmcfilters.Attribute.computeSingleAttribute(
+max_dist = mmcfilters.Attribute.compute_single_attribute(
     tree,
     mmcfilters.Attribute.MAX_DIST,
 )
-reconstructed_image = tree.reconstructionImage()
+reconstructed_image = tree.reconstruct_from_node_altitudes()
 ```
 
 ## Documentation

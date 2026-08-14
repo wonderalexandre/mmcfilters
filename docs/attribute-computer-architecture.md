@@ -7,7 +7,7 @@ for the attribute table, see [Attribute catalog](attribute-catalog.md).
 The public API calls each scalar an attribute. In this guide, descriptor refers
 only to the mathematical quantity represented by a public scalar attribute.
 
-In this subsystem, incremental means bottom-up and local-event-oriented
+In this subsystem, incremental means bottom-up and finite-window-oriented
 computation over the current tree. It does not mean that every public attribute
 buffer stays live after arbitrary topology edits.
 
@@ -85,12 +85,13 @@ should extend this path instead of adding another top-level execution pipeline.
 Dependencies are ordinary attribute results consumed by another computer. They
 are passed as `DependencySourceT<Real>`, a non-owning pair of `AttributeNames`
 and `const Real*`. Dependency buffers are reusable only when they contain the
-requested attributes and use `NodeIdSpace::MORPHOLOGICAL_TREE`.
+requested attributes and use `NodeIdSpace::MorphologicalTree`.
 
 Several computers use bottom-up accumulation: preprocess the current node, merge
-children into the parent, then finalize the current node. Delta-augmented public
+children into the parent, then finalize the current node. Increment-augmented public
 calls compute the base attribute first, then materialize ancestor/descendant
-offsets from a typed altitude step, radius, and padding policy.
+sample offsets from a typed positive altitude step, sampling radius,
+representative-descendant policy, and missing-sample policy.
 
 ## Contexts and concepts
 
@@ -106,8 +107,19 @@ computer protocol. A new family should not add public family-specific method
 names. Private helpers and `detail` kernels may keep narrower signatures when
 that makes implementation or testing clearer.
 
-Local-event bucket types such as `detail::BitquadFamilyCounts` and
-`detail::ContourSideCounts` are implementation storage, not public contracts.
+The generic finite-window extension API exposes role-typed `EventDelta`,
+`LocalAttributeIncrement`, and `NodeAttribute` records so its mathematical
+pipeline can be inspected and tested. Attribute-family storage such as
+`detail::BitquadFamilyCounts` and `detail::ContourSideCounts` remains an
+implementation detail and is not part of the public attribute-computer
+contract.
+
+Bitquad-family counting is hierarchy-independent. Connectivity-dependent scalar
+formulas are a later materialization step and receive an explicit
+`detail::BitquadConnectivityPolicy`. For a tree of shapes with unequal
+complementary connectivity, the policy consumes `ShapePolarity::Lower` or
+`ShapePolarity::Upper` derived from exact node-versus-parent altitudes. The root
+has no polarity and is handled by the policy's separate root entry.
 
 ## Numeric policy
 
@@ -166,11 +178,11 @@ cmake --build build --target \
   unit_attribute_plumbing \
   unit_attribute_unit_values \
   unit_attributes_on_morphological_tree \
-  unit_local_event_computations \
+  unit_finite_window_local_attribute_computations \
   unit_maxdist_support
 
 ctest --test-dir build --output-on-failure -R \
-  "unit_(public_attribute_api|attribute_plumbing|attribute_unit_values|attributes_on_morphological_tree|local_event_computations|maxdist_support|installed_consumer)"
+  "unit_(public_attribute_api|attribute_plumbing|attribute_unit_values|attributes_on_morphological_tree|finite_window_local_attribute_computations|maxdist_support|installed_consumer)"
 ```
 
 Run Python tests when bindings or the Python facade change.
@@ -180,4 +192,5 @@ Run Python tests when bindings or the Python facade change.
 - Do not introduce virtual attribute-computer classes.
 - Do not move away from dense node ID buffers.
 - Do not add runtime polymorphism to hot attribute kernels.
-- Do not expose local-event bucket storage as public computer API.
+- Do not expose attribute-family-specific finite-window storage as public
+  computer API; use the generic role-typed pipeline for extension work.

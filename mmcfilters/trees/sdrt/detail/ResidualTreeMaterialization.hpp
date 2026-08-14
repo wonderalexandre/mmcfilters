@@ -6,7 +6,7 @@
  */
 
 #include "ResidualTreeEventAssembler.hpp"
-#include "../../HierarchySemantics.hpp"
+#include "../../MorphologicalTreeSemantics.hpp"
 #include "../../detail/NativeHierarchyValidationDetail.hpp"
 #include "../../../utils/Image.hpp"
 #include "../../../utils/RegularGridAdjacency2D.hpp"
@@ -21,11 +21,11 @@ namespace mmcfilters::sdrt::detail {
 /** @brief Validated residual-tree buffers ready to be retained by a builder. */
 template <AltitudeValue T> struct MaterializedResidualTree {
     int rows = 0;                                      ///< Source image rows.
-    int cols = 0;                                      ///< Source image columns.
+    int columns = 0;                                   ///< Source image columns.
     NodeId root = InvalidNode;                         ///< Dense residual-tree root.
-    std::vector<NodeId> nodeParent;                    ///< Parent indexed by residual node.
-    std::vector<NodeId> properPartOwner;               ///< Direct owner indexed by pixel.
-    std::vector<T> altitude;                           ///< Altitude indexed by residual node.
+    std::vector<NodeId> parents;                       ///< Parent indexed by residual node.
+    std::vector<NodeId> smallestNodeMap;               ///< Smallest node indexed by pixel.
+    std::vector<T> nodeAltitudes;                      ///< Altitude indexed by residual node.
     mmcfilters::detail::NativeTopologyProof topologyProof; ///< Established native topology proof.
 };
 
@@ -39,20 +39,21 @@ template <AltitudeValue T> struct MaterializedResidualTree {
 template <AltitudeValue T>
 [[nodiscard]] MaterializedResidualTree<T> materializeResidualTree(const ImagePtr<T>& image, const RegularGridAdjacency2D& adjacency,
                                                                   typename ResidualTreeEventAssembler<T>::Output output) {
-    const NativeHierarchyView<T> hierarchy{output.nodeParent,
-                                           output.properPartOwner,
-                                           output.altitude,
+    const NativeHierarchyView<T> hierarchy{output.parents,
+                                           output.smallestNodeMap,
+                                           output.nodeAltitudes,
                                            0,
-                                           GridDomain2D{image->getNumRows(), image->getNumCols()},
-                                           makeHierarchySemantics(MorphologicalTreeKind::SELF_DUAL_RESIDUAL_TREE, adjacency)};
+                                           GridDomain2D{image->getNumRows(), image->getNumColumns()},
+                                           makeMorphologicalTreeSemantics(MorphologicalTreeKind::UnrestrictedResidualTree,
+                                                                          SharedAdjacencyContext{adjacency})};
     auto topologyProof = mmcfilters::detail::NativeHierarchyValidation::validateWithEstablishedSupport(
-        hierarchy, std::move(output.subtreeSupportProof), [&image, &output](NodeId properPart, NodeId owner) {
-            if (output.altitude[static_cast<std::size_t>(owner)] != (*image)[properPart]) {
+        hierarchy, std::move(output.subtreeSupportProof), [&image, &output](PixelId pixel, NodeId smallestNode) {
+            if (output.nodeAltitudes[static_cast<std::size_t>(smallestNode)] != (*image)[pixel]) {
                 throw std::runtime_error("Min/max residual assembler reconstruction differs from the input image.");
             }
         });
-    return MaterializedResidualTree<T>{image->getNumRows(), image->getNumCols(), NodeId{0}, std::move(output.nodeParent),
-                                       std::move(output.properPartOwner), std::move(output.altitude), std::move(topologyProof)};
+    return MaterializedResidualTree<T>{image->getNumRows(), image->getNumColumns(), NodeId{0}, std::move(output.parents),
+                                       std::move(output.smallestNodeMap), std::move(output.nodeAltitudes), std::move(topologyProof)};
 }
 
 } // namespace mmcfilters::sdrt::detail

@@ -2,6 +2,7 @@
 
 #include "../mmcfilters/filters/DepthStableRegionComputer.hpp"
 #include "PybindConversions.hpp"
+#include "PythonValuedMorphologicalTree.hpp"
 
 #include <concepts>
 #include <cstdint>
@@ -20,70 +21,70 @@ namespace py = pybind11;
  * @brief Pybind11 wrapper exposing topological depth-variation computation.
  */
 class DepthStableRegionComputerPybind {
-    /** @brief References the weighted owner used by the component. */
-    std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weightedOwner_;
-    /** @brief Stores the computer. */
+    /** @brief References the valued-tree owner used by the component. */
+    std::shared_ptr<pybindings::PythonValuedMorphologicalTree> valuedTreeOwner_;
+    /** @brief Computer. */
     std::variant<DepthStableRegionComputer<float>, DepthStableRegionComputer<double>> computer_;
 
     /**
      * @brief Creates a depth-stability computer for the runtime attribute type.
      *
-     * @param weighted Weighted tree used by the operation.
+     * @param tree Tree topology.
      * @param attribute Attribute requested by the operation.
      * @return Depth-stability computer variant for the array element type.
      */
     template <std::floating_point Real>
-    static DepthStableRegionComputer<Real> makeComputer(WeightedMorphologicalTree<std::uint8_t>& weighted, py::array attribute) {
-        auto typed = pybind_utils::requireNodeAttributeArray<Real>(std::move(attribute), weighted.topology(), "attribute");
+    static DepthStableRegionComputer<Real> makeComputer(const MorphologicalTree& tree, py::array attribute) {
+        auto typed = pybind_utils::requireNodeAttributeArray<Real>(std::move(attribute), tree, "attribute");
         const py::buffer_info buffer = typed.request();
         const auto* data = static_cast<const Real*>(buffer.ptr);
         std::vector<Real> owned(data, data + buffer.shape[0]);
-        return DepthStableRegionComputer<Real>(weighted.topology(), std::move(owned));
+        return DepthStableRegionComputer<Real>(tree, std::move(owned));
     }
 
     /**
      * @brief Creates a depth-stability computer for the runtime attribute type.
      *
-     * @param weighted Weighted tree used by the operation.
+     * @param tree Tree topology.
      * @param attribute Attribute requested by the operation.
      * @return Depth-stability computer variant for the array element type.
      */
-    static std::variant<DepthStableRegionComputer<float>, DepthStableRegionComputer<double>> makeComputer(WeightedMorphologicalTree<std::uint8_t>& weighted,
+    static std::variant<DepthStableRegionComputer<float>, DepthStableRegionComputer<double>> makeComputer(const MorphologicalTree& tree,
                                                                                                           py::array attribute) {
         if (pybind_utils::parseFloatingArrayDType(attribute, "attribute") == pybind_utils::FloatingDType::Float64) {
-            return makeComputer<double>(weighted, std::move(attribute));
+            return makeComputer<double>(tree, std::move(attribute));
         }
-        return makeComputer<float>(weighted, std::move(attribute));
+        return makeComputer<float>(tree, std::move(attribute));
     }
 
   public:
     /**
      * @brief Constructs `DepthStableRegionComputerPybind` from the supplied inputs.
      *
-     * @param weighted Weighted tree used by the operation.
+     * @param valuedTree Valued tree.
      */
-    explicit DepthStableRegionComputerPybind(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted)
-        : weightedOwner_(std::move(weighted)), computer_(DepthStableRegionComputer<float>(weightedOwner_->topology())) {}
+    explicit DepthStableRegionComputerPybind(std::shared_ptr<pybindings::PythonValuedMorphologicalTree> valuedTree)
+        : valuedTreeOwner_(std::move(valuedTree)), computer_(DepthStableRegionComputer<float>(valuedTreeOwner_->topology())) {}
 
     /**
      * @brief Constructs `DepthStableRegionComputerPybind` from the supplied inputs.
      *
-     * @param weighted Weighted tree used by the operation.
+     * @param valuedTree Valued tree.
      * @param attribute Attribute requested by the operation.
      */
-    DepthStableRegionComputerPybind(std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, py::array attribute)
-        : weightedOwner_(std::move(weighted)), computer_(makeComputer(*weightedOwner_, std::move(attribute))) {}
+    DepthStableRegionComputerPybind(std::shared_ptr<pybindings::PythonValuedMorphologicalTree> valuedTree, py::array attribute)
+        : valuedTreeOwner_(std::move(valuedTree)), computer_(makeComputer(valuedTreeOwner_->topology(), std::move(attribute))) {}
 
     /**
      * @brief Computes by depth.
      *
-     * @param depthDelta Topological-depth radius of the stability window.
+     * @param depthWindowRadius Topological-depth radius of the stability window.
      * @return Computed by depth.
      */
-    py::array_t<std::uint8_t> computeByDepth(int depthDelta) {
+    py::array_t<std::uint8_t> computeByDepth(int depthWindowRadius) {
         return std::visit(
-            [depthDelta](auto& computer) -> py::array_t<std::uint8_t> {
-                std::vector<std::uint8_t> selected = computer.computeByDepth(depthDelta);
+            [depthWindowRadius](auto& computer) -> py::array_t<std::uint8_t> {
+                std::vector<std::uint8_t> selected = computer.computeByDepth(depthWindowRadius);
                 const int size = static_cast<int>(selected.size());
                 return pybind_utils::toNumpyOwned(std::move(selected), size);
             },
@@ -93,7 +94,7 @@ class DepthStableRegionComputerPybind {
     /**
      * @brief Returns variation.
      *
-     * @param node Node identifier used by the operation.
+     * @param node Node identifier.
      * @return Variation.
      */
     double getVariation(NodeId node) {
@@ -119,7 +120,7 @@ class DepthStableRegionComputerPybind {
     /**
      * @brief Finds the node of minimum variation in the stability window.
      *
-     * @param node Node identifier used by the operation.
+     * @param node Node identifier.
      * @return Node identifier with minimum variation in the window.
      */
     NodeId nodeWithMinimumVariationInWindow(NodeId node) {
@@ -127,19 +128,19 @@ class DepthStableRegionComputerPybind {
     }
 
     /**
-     * @brief Finds the ascendant at the upper boundary of the stability window.
+     * @brief Finds the ancestor at the upper boundary of the stability window.
      *
-     * @param node Node identifier used by the operation.
+     * @param node Node identifier.
      * @return Node identifier at the upper stability-window boundary.
      */
-    NodeId ascendantInStabilityWindow(NodeId node) const {
-        return std::visit([node](const auto& computer) -> NodeId { return computer.ascendantInStabilityWindow(node); }, computer_);
+    NodeId ancestorInStabilityWindow(NodeId node) const {
+        return std::visit([node](const auto& computer) -> NodeId { return computer.ancestorInStabilityWindow(node); }, computer_);
     }
 
     /**
      * @brief Finds the descendant at the lower boundary of the stability window.
      *
-     * @param node Node identifier used by the operation.
+     * @param node Node identifier.
      * @return Node identifier at the lower stability-window boundary.
      */
     NodeId descendantInStabilityWindow(NodeId node) const {
@@ -151,14 +152,14 @@ class DepthStableRegionComputerPybind {
      *
      * @return Num nodes.
      */
-    int getNumNodes() const {
-        return std::visit([](const auto& computer) { return computer.getNumNodes(); }, computer_);
+    int numNodes() const {
+        return std::visit([](const auto& computer) { return computer.numNodes(); }, computer_);
     }
 
     /**
      * @brief Sets max variation.
      *
-     * @param value Value used by the operation.
+     * @param value Value.
      */
     void setMaxVariation(double value) {
         std::visit(
@@ -173,7 +174,7 @@ class DepthStableRegionComputerPybind {
     /**
      * @brief Sets min attribute.
      *
-     * @param value Value used by the operation.
+     * @param value Value.
      */
     void setMinAttribute(double value) {
         std::visit(
@@ -188,7 +189,7 @@ class DepthStableRegionComputerPybind {
     /**
      * @brief Sets max attribute.
      *
-     * @param value Value used by the operation.
+     * @param value Value.
      */
     void setMaxAttribute(double value) {
         std::visit(

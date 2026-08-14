@@ -14,7 +14,7 @@ namespace mmcfilters::attributes::numeric {
  * library policy is to materialize the documented finite fallback instead of
  * leaking NaN or infinity into public buffers.
  *
- * @param numerator Number represented by `numerator`.
+ * @param numerator Number.
  * @param denominator Division denominator.
  * @param fallback Value returned when division is not numerically valid.
  * @return Numerically safe division used by attribute kernels.
@@ -26,7 +26,7 @@ template <std::floating_point Real> [[nodiscard]] Real safeDivide(Real numerator
 /**
  * @brief Clamps non negative.
  *
- * @param value Value used by the operation.
+ * @param value Value.
  * @return `value` clamped to the non-negative range.
  */
 template <std::floating_point Real> [[nodiscard]] Real clampNonNegative(Real value) noexcept { return value > Real{0} ? value : Real{0}; }
@@ -34,7 +34,7 @@ template <std::floating_point Real> [[nodiscard]] Real clampNonNegative(Real val
 /**
  * @brief Computes sqrt.
  *
- * @param value Value used by the operation.
+ * @param value Value.
  * @return Computed sqrt.
  */
 template <std::floating_point Real> [[nodiscard]] Real safeSqrt(Real value) noexcept { return std::sqrt(clampNonNegative(value)); }
@@ -42,7 +42,7 @@ template <std::floating_point Real> [[nodiscard]] Real safeSqrt(Real value) noex
 /**
  * @brief Clamps upper.
  *
- * @param value Value used by the operation.
+ * @param value Value.
  * @param upper Upper admissible priority.
  * @return Minimum of `value` and `upper`.
  */

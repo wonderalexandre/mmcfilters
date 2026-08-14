@@ -26,6 +26,12 @@ enum class InputPattern { Structured, Noise, Ramp, Geometric, Flat };
 enum class InputSource { Synthetic, File };
 enum class OutputFormat { KeyValue, JsonLines };
 
+[[nodiscard]] inline TopographicConvention complementaryTopographicConvention(int rows, int columns, bool minimumIs4Connected) {
+    return TopographicConvention{ComplementaryGridImmersion{ComplementaryAdjacencies{
+        RegularGridAdjacency2D(rows, columns, minimumIs4Connected ? 1.0 : 1.5),
+        RegularGridAdjacency2D(rows, columns, minimumIs4Connected ? 1.5 : 1.0)}}};
+}
+
 /** @brief Named sequence of scalar attributes and groups measured together. */
 struct AttributeBundle {
     std::string name;                              ///< Stable bundle name emitted in benchmark records.
@@ -41,7 +47,7 @@ struct Options {
     bool emitSamples = false;                                      ///< Whether individual timing samples are emitted.
     std::set<std::string> suites{"all"};                            ///< Scenario suites selected for execution.
     int rows = 48;                                                  ///< Input height in pixels.
-    int cols = 48;                                                  ///< Input width in pixels.
+    int columns = 48;                                                  ///< Input width in pixels.
     int repetitions = 2;                                           ///< Timed repetitions per scenario.
     std::filesystem::path inputPath;                               ///< File-backed image path, when selected.
     std::filesystem::path manifestPath;                            ///< Workload manifest path, when selected.
@@ -54,7 +60,7 @@ struct Options {
 /** @brief Dimension and repetition fields explicitly supplied by a workload manifest. */
 struct ManifestAppliedFields {
     bool rows = false;        ///< Whether the manifest supplied the row count.
-    bool cols = false;        ///< Whether the manifest supplied the column count.
+    bool columns = false;        ///< Whether the manifest supplied the column count.
     bool repetitions = false; ///< Whether the manifest supplied the repetition count.
 };
 
@@ -112,14 +118,14 @@ struct ManifestAppliedFields {
     return result;
 }
 
-[[nodiscard]] inline std::uint8_t baseInputValue(InputPattern pattern, int row, int col, int rows, int cols) noexcept {
-    const std::uint32_t index = static_cast<std::uint32_t>(row * cols + col);
+[[nodiscard]] inline std::uint8_t baseInputValue(InputPattern pattern, int row, int column, int rows, int columns) noexcept {
+    const std::uint32_t index = static_cast<std::uint32_t>(row * columns + column);
     switch (pattern) {
     case InputPattern::Structured: {
         const int centeredRow = row - rows / 2;
-        const int centeredCol = col - cols / 2;
-        const int radial = centeredRow * centeredRow + centeredCol * centeredCol;
-        return static_cast<std::uint8_t>((radial + 17 * row + 31 * col) & 0xff);
+        const int centeredColumn = column - columns / 2;
+        const int radial = centeredRow * centeredRow + centeredColumn * centeredColumn;
+        return static_cast<std::uint8_t>((radial + 17 * row + 31 * column) & 0xff);
     }
     case InputPattern::Noise: {
         std::uint32_t value = index + 0x9e3779b9U;
@@ -131,19 +137,19 @@ struct ManifestAppliedFields {
         return static_cast<std::uint8_t>(value & 0xffU);
     }
     case InputPattern::Ramp:
-        return static_cast<std::uint8_t>((3 * row + 5 * col) & 0xff);
+        return static_cast<std::uint8_t>((3 * row + 5 * column) & 0xff);
     case InputPattern::Geometric: {
         std::uint8_t value = 24;
         const int centeredRow = row - rows / 2;
-        const int centeredCol = col - cols / 2;
-        const int radius = std::max(2, std::min(rows, cols) / 4);
-        if (centeredRow * centeredRow + centeredCol * centeredCol <= radius * radius) {
+        const int centeredColumn = column - columns / 2;
+        const int radius = std::max(2, std::min(rows, columns) / 4);
+        if (centeredRow * centeredRow + centeredColumn * centeredColumn <= radius * radius) {
             value = 180;
         }
-        if (row >= rows / 8 && row < rows / 3 && col >= cols / 7 && col < cols / 2) {
+        if (row >= rows / 8 && row < rows / 3 && column >= columns / 7 && column < columns / 2) {
             value = 92;
         }
-        if (row >= rows / 2 && row < 7 * rows / 8 && col >= 5 * cols / 8 && col < 7 * cols / 8) {
+        if (row >= rows / 2 && row < 7 * rows / 8 && column >= 5 * columns / 8 && column < 7 * columns / 8) {
             value = 232;
         }
         return value;
@@ -155,24 +161,24 @@ struct ManifestAppliedFields {
 }
 
 template <AltitudeValue T>
-[[nodiscard]] inline T typedInputValue(std::uint8_t base, InputPattern pattern, int row, int col, int cols) noexcept {
+[[nodiscard]] inline T typedInputValue(std::uint8_t base, InputPattern pattern, int row, int column, int columns) noexcept {
     if constexpr (std::is_same_v<T, std::uint8_t>) {
         return base;
     } else if constexpr (std::is_integral_v<T>) {
-        const int perturbation = pattern == InputPattern::Flat ? 0 : (row * cols + col) % 13;
+        const int perturbation = pattern == InputPattern::Flat ? 0 : (row * columns + column) % 13;
         return static_cast<T>(static_cast<int>(base) * 257 - 32768 + perturbation);
     } else {
-        const T perturbation = pattern == InputPattern::Flat ? T{0} : static_cast<T>((row * cols + col) % 7) / static_cast<T>(1000);
+        const T perturbation = pattern == InputPattern::Flat ? T{0} : static_cast<T>((row * columns + column) % 7) / static_cast<T>(1000);
         return static_cast<T>(base) / static_cast<T>(8) + perturbation;
     }
 }
 
-template <AltitudeValue T> [[nodiscard]] inline ImagePtr<T> makeInput(InputPattern pattern, int rows, int cols) {
-    auto image = Image<T>::create(rows, cols);
+template <AltitudeValue T> [[nodiscard]] inline ImagePtr<T> makeInput(InputPattern pattern, int rows, int columns) {
+    auto image = Image<T>::create(rows, columns);
     for (int row = 0; row < rows; ++row) {
-        for (int col = 0; col < cols; ++col) {
-            const std::uint8_t base = baseInputValue(pattern, row, col, rows, cols);
-            (*image)[row * cols + col] = typedInputValue<T>(base, pattern, row, col, cols);
+        for (int column = 0; column < columns; ++column) {
+            const std::uint8_t base = baseInputValue(pattern, row, column, rows, columns);
+            (*image)[row * columns + column] = typedInputValue<T>(base, pattern, row, column, columns);
         }
     }
     return image;
@@ -184,9 +190,9 @@ template <AltitudeValue T> [[nodiscard]] inline ImagePtr<T> makeInput(InputPatte
 
 template <AltitudeValue T> [[nodiscard]] inline ImagePtr<T> makeTypedConfiguredInput(const Options& options, const ImageUInt8Ptr& baseImage) {
     if (options.inputSource == InputSource::Synthetic) {
-        return makeInput<T>(options.inputPattern, options.rows, options.cols);
+        return makeInput<T>(options.inputPattern, options.rows, options.columns);
     }
-    auto image = Image<T>::create(options.rows, options.cols);
+    auto image = Image<T>::create(options.rows, options.columns);
     for (int index = 0; index < baseImage->getSize(); ++index) {
         (*image)[index] = static_cast<T>((*baseImage)[index]);
     }
@@ -195,8 +201,8 @@ template <AltitudeValue T> [[nodiscard]] inline ImagePtr<T> makeTypedConfiguredI
 
 [[nodiscard]] inline std::int64_t countUndirectedEdges(const RegularGridAdjacency2D& adjacency) {
     std::int64_t edges = 0;
-    const int size = adjacency.getNumRows() * adjacency.getNumCols();
-    for (int pixel = 0; pixel < size; ++pixel) {
+    const int size = adjacency.getNumRows() * adjacency.getNumColumns();
+    for (PixelId pixel = 0; pixel < size; ++pixel) {
         for (int neighbor : adjacency.getNeighborIndices(pixel)) {
             if (neighbor > pixel) {
                 ++edges;
@@ -213,10 +219,10 @@ struct Context {
     ImageInt32Ptr imageInt32;                         ///< Signed integral form of the input.
     ImageFloatPtr imageFloat;                         ///< Floating-point form of the input.
     RegularGridAdjacency2D adjacency;                 ///< Established regular-grid adjacency.
-    WeightedMorphologicalTree<std::uint8_t> maxTree; ///< Established max-tree.
-    WeightedMorphologicalTree<std::uint8_t> minTree; ///< Established min-tree.
+    ValuedMorphologicalTree<std::uint8_t> maxTree; ///< Established max-tree.
+    ValuedMorphologicalTree<std::uint8_t> minTree; ///< Established min-tree.
     ComputedAttributeData<double> area;               ///< Area values established on the max-tree.
-    std::vector<bool> keepCriterion;                  ///< Direct-filter criterion derived from area.
+    std::vector<bool> nodePreservationDecisions;                  ///< Direct-filter preservation decisions derived from area.
     std::vector<float> scores;                        ///< Normalized area scores for ranked filters.
     double areaThreshold = 0.0;                       ///< Area threshold used by representative filters.
     WorkloadMetrics maxTreeMetrics;                   ///< Structural metrics of the established max-tree.
@@ -224,20 +230,20 @@ struct Context {
     /** @brief Builds all shared inputs from resolved options. @param benchmarkOptions Resolved benchmark configuration. */
     explicit Context(Options benchmarkOptions)
         : options(std::move(benchmarkOptions)), imageUInt8(makeConfiguredInput(options)), imageInt32(makeTypedConfiguredInput<std::int32_t>(options, imageUInt8)),
-          imageFloat(makeTypedConfiguredInput<float>(options, imageUInt8)), adjacency(options.rows, options.cols, 1.5),
+          imageFloat(makeTypedConfiguredInput<float>(options, imageUInt8)), adjacency(options.rows, options.columns, 1.5),
           maxTree(MorphologicalTreeFactory::createMaxTree(imageUInt8, adjacency)), minTree(MorphologicalTreeFactory::createMinTree(imageUInt8, adjacency)),
-          area(AttributeComputation::computeSingleAttribute<double>(maxTree, AREA)),
-          keepCriterion(static_cast<std::size_t>(maxTree.topology().getNumInternalNodeSlots()), false),
-          scores(static_cast<std::size_t>(maxTree.topology().getNumInternalNodeSlots()), 0.0F),
-          areaThreshold(static_cast<double>(options.rows) * static_cast<double>(options.cols) / 16.0), maxTreeMetrics(metricsOf(maxTree)) {
+          area(AttributeComputation::computeSingleAttribute<double>(maxTree, Area)),
+          nodePreservationDecisions(static_cast<std::size_t>(maxTree.topology().numInternalNodeSlots()), false),
+          scores(static_cast<std::size_t>(maxTree.topology().numInternalNodeSlots()), 0.0F),
+          areaThreshold(static_cast<double>(options.rows) * static_cast<double>(options.columns) / 16.0), maxTreeMetrics(metricsOf(maxTree)) {
         maxTreeMetrics.edges = countUndirectedEdges(adjacency);
-        const double rootArea = area.second[static_cast<std::size_t>(maxTree.topology().getRoot())];
-        for (NodeId node : maxTree.topology().getAliveNodeIds()) {
+        const double rootArea = area.second[static_cast<std::size_t>(maxTree.topology().root())];
+        for (NodeId node : maxTree.topology().aliveNodeIds()) {
             const double value = area.second[static_cast<std::size_t>(node)];
-            keepCriterion[static_cast<std::size_t>(node)] = value >= areaThreshold;
+            nodePreservationDecisions[static_cast<std::size_t>(node)] = value >= areaThreshold;
             scores[static_cast<std::size_t>(node)] = rootArea > 0.0 ? static_cast<float>(value / rootArea) : 0.0F;
         }
-        keepCriterion[static_cast<std::size_t>(maxTree.topology().getRoot())] = true;
+        nodePreservationDecisions[static_cast<std::size_t>(maxTree.topology().root())] = true;
     }
 };
 
@@ -249,17 +255,17 @@ struct Context {
 
 [[nodiscard]] inline std::string groupName(AttributeGroup group) {
     switch (group) {
-    case AttributeGroup::GRAY_LEVEL:
+    case AttributeGroup::GrayLevel:
         return "gray_level";
-    case AttributeGroup::SHAPE:
+    case AttributeGroup::Shape:
         return "shape";
-    case AttributeGroup::MOMENTS:
+    case AttributeGroup::Moments:
         return "moments";
-    case AttributeGroup::BOUNDARY:
+    case AttributeGroup::Boundary:
         return "boundary";
-    case AttributeGroup::TREE_TOPOLOGY:
+    case AttributeGroup::TreeTopology:
         return "tree_topology";
-    case AttributeGroup::ALL:
+    case AttributeGroup::All:
         return "all";
     }
     throw std::invalid_argument("Unknown attribute group in API benchmark.");

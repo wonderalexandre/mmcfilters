@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ContourSideAttributeData.hpp"
-#include "../../../localEvents/EventEngine.hpp"
+#include "../../../localAttributes/FiniteWindowLocalAttributeComputer.hpp"
 
 #include <array>
 #include <cstdint>
@@ -12,14 +12,16 @@ namespace mmcfilters::attributes::computers::detail {
 
 namespace kernel {
 
-/** @brief Event-engine policy that accumulates directional contour-side deltas. */
-struct ContourSideCountPolicy {
-    /** @brief Per-node accumulator used by the event engine. */
-    using Bucket = ContourSideCounts;
+/** @brief Additive local rule for directional contour-side contributions. */
+struct ContourSideLocalRule {
+    /** @brief Additive-group value produced by the rule. */
+    using Value = ContourSideCounts;
 
-    /** @brief Converts a local visibility state into side counts. @param state Five-sample local state. @return Counts represented by the state. */
-    static Bucket value(uint32_t state) {
-        Bucket counts;
+    /** @brief Converts a local visibility state into side counts. @param visibilityState Five-sample visibility state. @return Counts represented by the state.
+     */
+    [[nodiscard]] Value evaluateLocalRule(local_attributes::BinaryVisibilityState visibilityState) const {
+        Value counts;
+        const uint32_t state = visibilityState.bits();
         if ((state & uint32_t{1}) == 0) {
             return counts;
         }
@@ -32,21 +34,11 @@ struct ContourSideCountPolicy {
         return counts;
     }
 
-    /** @brief Adds an initial local state. @param bucket Accumulator to update. @param state Initial local state. */
-    void applyInitial(Bucket& bucket, uint32_t state) const { addAssign(bucket, value(state)); }
-    /**
-     * @brief Applies one local-state transition.
-     * @param bucket Accumulator to update.
-     * @param oldState State before the transition.
-     * @param newState State after the transition.
-     */
-    void applyTransition(Bucket& bucket, uint32_t oldState, uint32_t newState) const { addDelta(bucket, value(newState), value(oldState)); }
-    /** @brief Merges a child accumulator into its parent. @param parent Parent accumulator. @param child Child accumulator. */
-    void merge(Bucket& parent, const Bucket& child) const { addAssign(parent, child); }
+    /** @brief Returns the additive identity. @return Zero side counts. */
+    [[nodiscard]] Value additiveIdentity() const { return {}; }
 
-  private:
-    /** @brief Adds one side-count bucket to another. @param target Accumulator to update. @param source Counts to add. */
-    static void addAssign(Bucket& target, const Bucket& source) {
+    /** @brief Adds one group value. @param target Value to update. @param source Value to add. */
+    void addAssign(Value& target, const Value& source) const {
         target.contourPixels += source.contourPixels;
         target.exposedSides += source.exposedSides;
         target.north += source.north;
@@ -55,21 +47,19 @@ struct ContourSideCountPolicy {
         target.south += source.south;
     }
 
-    /**
-     * @brief Adds the difference between two local side-count states.
-     * @param target Accumulator to update.
-     * @param current Counts after the transition.
-     * @param previous Counts before the transition.
-     */
-    static void addDelta(Bucket& target, const Bucket& current, const Bucket& previous) {
-        target.contourPixels += current.contourPixels - previous.contourPixels;
-        target.exposedSides += current.exposedSides - previous.exposedSides;
-        target.north += current.north - previous.north;
-        target.west += current.west - previous.west;
-        target.east += current.east - previous.east;
-        target.south += current.south - previous.south;
+    /** @brief Subtracts one group value. @param target Value to update. @param source Value to subtract. */
+    void subtractAssign(Value& target, const Value& source) const {
+        target.contourPixels -= source.contourPixels;
+        target.exposedSides -= source.exposedSides;
+        target.north -= source.north;
+        target.west -= source.west;
+        target.east -= source.east;
+        target.south -= source.south;
     }
 };
+
+/** @brief Immutable canonical five-sample contour window. */
+inline const local_attributes::ObservationWindow contourObservationWindow{{{0, 0}, {-1, 0}, {0, -1}, {0, 1}, {1, 0}}};
 
 /**
  * @brief Computes per-node contour-side counts through the established event kernel.
@@ -77,8 +67,14 @@ struct ContourSideCountPolicy {
  * @return Per-node directional contour-side counts.
  */
 inline std::vector<ContourSideCounts> computeContourSideCounts(const MorphologicalTree& tree) {
-    constexpr std::array<local_events::WindowOffset, 5> contourWindow{{{0, 0}, {-1, 0}, {0, -1}, {0, 1}, {1, 0}}};
-    return local_events::detail::kernel::computeWithPolicy(tree, std::span<const local_events::WindowOffset>(contourWindow), ContourSideCountPolicy{});
+    const auto nodeAttributes =
+        local_attributes::detail::kernel::computeFiniteWindowLocalAttribute(tree, contourObservationWindow, ContourSideLocalRule{});
+    std::vector<ContourSideCounts> counts;
+    counts.reserve(nodeAttributes.size());
+    for (const auto& nodeAttribute : nodeAttributes) {
+        counts.push_back(nodeAttribute.value);
+    }
+    return counts;
 }
 
 } // namespace kernel
@@ -87,7 +83,7 @@ inline std::vector<ContourSideCounts> computeContourSideCounts(const Morphologic
  * @brief Side-contour counters computed through local entry events.
  *
  * @details
- * This class is the contour-count primitive for the local event layer. It
+ * This class is the contour-count primitive for the finite-window layer. It
  * evaluates a five-sample window:
  *
  * - bit 0: anchor pixel;
@@ -99,15 +95,15 @@ inline std::vector<ContourSideCounts> computeContourSideCounts(const Morphologic
  * For each visible anchor, it counts which side neighbours are absent from the
  * support. This yields both the number of contour pixels and the number of
  * exposed sides, including directional side counts. Out-of-domain neighbours
- * do not enter the local event state, so border sides are naturally treated as
+ * do not enter the binary visibility state, so border sides are naturally treated as
  * exposed.
  */
-class ContourSideLocalEventComputation {
+class ContourSideFiniteWindowComputation {
   public:
     /**
-     * @brief Reused event-engine window offset type.
+     * @brief Reused observation-window offset type.
      */
-    using WindowOffset = local_events::WindowOffset;
+    using WindowOffset = local_attributes::WindowOffset;
 
     /** @brief Defines the `ContourSideCounts` alias used by the component. */
     using ContourSideCounts = ::mmcfilters::attributes::computers::detail::ContourSideCounts;
@@ -116,19 +112,18 @@ class ContourSideLocalEventComputation {
     /**
      * @brief Computes side-contour counters for every internal node slot.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @return The computed side-contour counters for every internal node slot.
      */
     [[nodiscard]] static std::vector<ContourSideCounts> computeContourSideCounts(const MorphologicalTree& tree) {
-        constexpr std::array<WindowOffset, 5> contourWindow{{{0, 0}, {-1, 0}, {0, -1}, {0, 1}, {1, 0}}};
-        MMCFILTERS_CONTRACT_CHECKED_ONLY(local_events::detail::validateEventEngineInput(tree, contourWindow));
+        MMCFILTERS_CONTRACT_CHECKED_ONLY(local_attributes::detail::validateFiniteWindowLocalAttributeInput(tree));
         return kernel::computeContourSideCounts(tree);
     }
 
     /**
      * @brief Projects side counters to scalar contour-pixel counts.
      *
-     * @param counts Counters used by the operation.
+     * @param counts Counters.
      * @return The projected side counters to scalar contour-pixel counts.
      */
     [[nodiscard]] static std::vector<int> projectContourPixels(std::span<const ContourSideCounts> counts) {
@@ -143,7 +138,7 @@ class ContourSideLocalEventComputation {
     /**
      * @brief Projects side counters to 4-neighbour exposed-side perimeter.
      *
-     * @param counts Counters used by the operation.
+     * @param counts Counters.
      * @return The projected side counters to 4-neighbour exposed-side perimeter.
      */
     [[nodiscard]] static std::vector<int> projectExposedSides(std::span<const ContourSideCounts> counts) {

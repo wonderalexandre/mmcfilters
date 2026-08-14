@@ -5,7 +5,7 @@
  * @brief Public construction policies and option objects for residual trees.
  */
 
-#include "SdrtTiePolicy.hpp"
+#include "ResidualEvolution.hpp"
 
 namespace mmcfilters::sdrt {
 
@@ -24,14 +24,14 @@ enum class SaturatedMinMaxFallbackPolicy {
 
 /** @brief Options that affect saturated residual-tree construction. */
 struct SaturatedResidualTreeOptions {
-    SdrtTiePolicy tiePolicy = SdrtTiePolicy::ContrastInvariantSpatial; ///< Equal-area event ordering.
+    SpatialOrder spatialOrder = RowMajorSpatialOrder{}; ///< Total order defining each support's spatial minimum.
     SaturatedMinMaxLcaPolicy lcaPolicy = SaturatedMinMaxLcaPolicy::ParentClimb; ///< Dynamic LCA strategy.
     SaturatedMinMaxFallbackPolicy fallbackPolicy = SaturatedMinMaxFallbackPolicy::BoundaryMultiSource; ///< Exact fallback strategy.
 };
 
 /** @brief Options that affect unrestricted residual-tree construction. */
 struct UnrestrictedResidualTreeOptions {
-    SdrtTiePolicy tiePolicy = SdrtTiePolicy::ContrastInvariantSpatial; ///< Equal-area event ordering.
+    SpatialOrder spatialOrder = RowMajorSpatialOrder{}; ///< Total order defining each support's spatial minimum.
 };
 
 } // namespace mmcfilters::sdrt

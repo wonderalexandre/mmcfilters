@@ -26,6 +26,21 @@ option(MMCFILTERS_BUILD_BENCHMARKS "Build internal benchmark executables" OFF)
 option(MMCFILTERS_ENABLE_ASSERTS "Keep runtime asserts enabled even in Release" OFF)
 option(MMCFILTERS_ENABLE_DOC_TARGETS "Enable Doxygen documentation targets" ON)
 
+set(MMCFILTERS_REFACTORING_METADATA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/docs/refactoring")
+set(MMCFILTERS_REFACTORING_METADATA_AVAILABLE TRUE)
+foreach(_metadata_file IN ITEMS
+        api-migration-status.json
+        api-vocabulary-audit.json
+        api-contextual-vocabulary-review.json)
+    if(NOT EXISTS "${MMCFILTERS_REFACTORING_METADATA_DIR}/${_metadata_file}")
+        set(MMCFILTERS_REFACTORING_METADATA_AVAILABLE FALSE)
+    endif()
+endforeach()
+if(NOT MMCFILTERS_REFACTORING_METADATA_AVAILABLE)
+    message(STATUS
+        "Internal API refactoring metadata not found; metadata-backed audit checks are disabled.")
+endif()
+
 # Núcleo C++ compartilhado entre as saídas (biblioteca + bindings Python).
 add_subdirectory(mmcfilters)
 
@@ -120,6 +135,7 @@ endif()
 if(MMCFILTERS_ENABLE_DOC_TARGETS)
     find_package(Doxygen QUIET)
     if(DOXYGEN_FOUND)
+        find_package(Python3 COMPONENTS Interpreter REQUIRED)
         # Doxygen canonicalizes Markdown link targets. Canonicalize INPUT paths as
         # well so documentation builds remain warning-free when the checkout is
         # reached through a symlink (for example /Users/... -> /Volumes/...).
@@ -141,13 +157,29 @@ if(MMCFILTERS_ENABLE_DOC_TARGETS)
             @ONLY
         )
 
+        set(MMCFILTERS_DOCS_PUBLIC_AUDIT_ARGS
+            --root "${CMAKE_CURRENT_SOURCE_DIR}"
+        )
+        if(MMCFILTERS_REFACTORING_METADATA_AVAILABLE)
+            list(APPEND MMCFILTERS_DOCS_PUBLIC_AUDIT_ARGS
+                --status "${MMCFILTERS_REFACTORING_METADATA_DIR}/api-migration-status.json"
+                --vocabulary "${MMCFILTERS_REFACTORING_METADATA_DIR}/api-vocabulary-audit.json"
+                --artifact-root "${MMCFILTERS_DOCS_PUBLIC_DIR}/html"
+            )
+        endif()
+
         add_custom_target(docs-public
+            COMMAND "${CMAKE_COMMAND}" -E remove_directory "${MMCFILTERS_DOCS_PUBLIC_DIR}"
             COMMAND "${DOXYGEN_EXECUTABLE}" "${CMAKE_CURRENT_BINARY_DIR}/Doxyfile.public"
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/unit-tests/cmake/audit_api_refactoring.py"
+                ${MMCFILTERS_DOCS_PUBLIC_AUDIT_ARGS}
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-            COMMENT "Generating public API documentation"
+            COMMENT "Generating and auditing public API documentation"
             VERBATIM
         )
         add_custom_target(docs-internal
+            COMMAND "${CMAKE_COMMAND}" -E remove_directory "${MMCFILTERS_DOCS_INTERNAL_DIR}"
             COMMAND "${DOXYGEN_EXECUTABLE}" "${CMAKE_CURRENT_BINARY_DIR}/Doxyfile.internal"
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
             COMMENT "Generating internal contributor documentation"

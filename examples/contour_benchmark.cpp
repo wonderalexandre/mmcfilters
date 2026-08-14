@@ -29,13 +29,13 @@ using namespace mmcfilters;
 
 namespace {
 
-ImageUInt8Ptr makeBenchmarkImage(int rows, int cols) {
-    auto image = ImageUInt8::create(rows, cols);
+ImageUInt8Ptr makeBenchmarkImage(int rows, int columns) {
+    auto image = ImageUInt8::create(rows, columns);
     for (int row = 0; row < rows; ++row) {
-        for (int col = 0; col < cols; ++col) {
-            const int idx = row * cols + col;
-            const int radial = (row - rows / 2) * (row - rows / 2) + (col - cols / 2) * (col - cols / 2);
-            (*image)[idx] = static_cast<uint8_t>((radial / 97 + row * 3 + col * 5) & 0xff);
+        for (int column = 0; column < columns; ++column) {
+            const int idx = row * columns + column;
+            const int radial = (row - rows / 2) * (row - rows / 2) + (column - columns / 2) * (column - columns / 2);
+            (*image)[idx] = static_cast<uint8_t>((radial / 97 + row * 3 + column * 5) & 0xff);
         }
     }
     return image;
@@ -81,7 +81,7 @@ template <typename Fn> void measure(const std::string& label, int repeats, Fn&& 
 
 std::size_t sumContour(const ContoursComputedIncrementally::IncrementalContours& contours, NodeId node) {
     std::size_t sum = 0;
-    for (int pixel : contours.getContour(node)) {
+    for (PixelId pixel : contours.getContour(node)) {
         sum += static_cast<std::size_t>(pixel + 1);
     }
     return sum;
@@ -89,8 +89,8 @@ std::size_t sumContour(const ContoursComputedIncrementally::IncrementalContours&
 
 std::vector<NodeId> aliveNodesInTreeOrder(const MorphologicalTree& tree) {
     std::vector<NodeId> nodes;
-    nodes.reserve(static_cast<std::size_t>(tree.getNumNodes()));
-    for (NodeId node : tree.getAliveNodeIds()) {
+    nodes.reserve(static_cast<std::size_t>(tree.numNodes()));
+    for (NodeId node : tree.aliveNodeIds()) {
         nodes.push_back(node);
     }
     return nodes;
@@ -115,7 +115,7 @@ std::size_t sumContoursByNode(const ContoursComputedIncrementally::IncrementalCo
     std::size_t sum = 0;
     for (auto [node, contour] : contours.contoursByNode()) {
         (void)node;
-        for (int pixel : contour) {
+        for (PixelId pixel : contour) {
             sum += static_cast<std::size_t>(pixel + 1);
         }
     }
@@ -154,9 +154,9 @@ void printTreeStats(const MorphologicalTree& tree, double buildMs) {
     int maxDirectProperParts = 0;
     int minDirectProperParts = std::numeric_limits<int>::max();
 
-    for (NodeId node : tree.getAliveNodeIds()) {
-        const int children = tree.getNumChildren(node);
-        const int properParts = tree.getNumProperParts(node);
+    for (NodeId node : tree.aliveNodeIds()) {
+        const int children = tree.numChildren(node);
+        const int properParts = tree.properPartCardinality(node);
         totalChildren += children;
         totalDirectProperParts += properParts;
         maxChildren = std::max(maxChildren, children);
@@ -164,14 +164,14 @@ void printTreeStats(const MorphologicalTree& tree, double buildMs) {
         minDirectProperParts = std::min(minDirectProperParts, properParts);
     }
 
-    const int numNodes = tree.getNumNodes();
+    const int numNodes = tree.numNodes();
     if (numNodes == 0) {
         minDirectProperParts = 0;
     }
 
     std::cout << "  build: " << buildMs << " ms\n"
-              << "  nodes: live=" << numNodes << " slots=" << tree.getNumInternalNodeSlots() << " leaves=" << tree.getNumLeafNodes()
-              << " proper_parts=" << tree.getNumTotalProperParts() << '\n'
+              << "  nodes: live=" << numNodes << " slots=" << tree.numInternalNodeSlots() << " leaves=" << tree.numLeafNodes()
+              << " proper_parts=" << tree.numPixels() << '\n'
               << "  branching: avg_children=" << (numNodes > 0 ? static_cast<double>(totalChildren) / numNodes : 0.0) << " max_children=" << maxChildren << '\n'
               << "  direct_proper_parts: avg=" << (numNodes > 0 ? static_cast<double>(totalDirectProperParts) / numNodes : 0.0)
               << " min=" << minDirectProperParts << " max=" << maxDirectProperParts << '\n';
@@ -225,7 +225,7 @@ void printSingleRunBreakdown(const MorphologicalTree& tree, const std::vector<No
 }
 
 void runCase(const std::string& label, const MorphologicalTree& tree, double buildMs, int repeats) {
-    const NodeId root = tree.getRoot();
+    const NodeId root = tree.root();
     const auto nodesInTreeOrder = aliveNodesInTreeOrder(tree);
     const auto nodesInRandomOrder = shuffledAliveNodes(tree);
 
@@ -277,18 +277,18 @@ int main(int argc, char** argv) {
         repeats = argc > 2 ? std::stoi(argv[2]) : repeats;
     } else {
         const int rows = argc > 1 ? std::stoi(argv[1]) : 256;
-        const int cols = argc > 2 ? std::stoi(argv[2]) : rows;
+        const int columns = argc > 2 ? std::stoi(argv[2]) : rows;
         repeats = argc > 3 ? std::stoi(argv[3]) : repeats;
-        image = makeBenchmarkImage(rows, cols);
+        image = makeBenchmarkImage(rows, columns);
     }
 
-    std::cout << "domain=" << image->getNumRows() << "x" << image->getNumCols() << " repeats=" << repeats << '\n';
+    std::cout << "domain=" << image->getNumRows() << "x" << image->getNumColumns() << " repeats=" << repeats << '\n';
     printBenchmarkMethods();
 
     auto [componentTree, componentBuildMs] = timed([&]() { return MorphologicalTreeFactory::createMaxTree(image, 1.5); });
     runCase("component-tree max-tree radius=1.5", componentTree.topology(), componentBuildMs, repeats);
 
-    auto [tosTree, tosBuildMs] = timed([&]() { return MorphologicalTreeFactory::createTreeOfShapes(image, ToSInterpolation::SelfDual); });
+    auto [tosTree, tosBuildMs] = timed([&]() { return MorphologicalTreeFactory::createTreeOfShapes(image); });
     runCase("tree-of-shapes SelfDual", tosTree.topology(), tosBuildMs, repeats);
 
     return 0;

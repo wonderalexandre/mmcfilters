@@ -5,7 +5,8 @@
 #include "../../utils/Altitude.hpp"
 #include "../../utils/Common.hpp"
 #include "../MorphologicalTree.hpp"
-#include "../WeightedMorphologicalTree.hpp"
+#include "../detail/MorphologicalTreeConstructionContextQueries.hpp"
+#include "../ValuedMorphologicalTree.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -34,7 +35,7 @@ template <class Value> struct EdgeSaliencyMap {
     /// Number of rows in the proper-part grid.
     int numRows = 0;
     /// Number of columns in the proper-part grid.
-    int numCols = 0;
+    int numColumns = 0;
     /// Radius of the adjacency used to enumerate the edges.
     double adjacencyRadius = 0.0;
     /// Source proper-part id of each undirected edge.
@@ -75,7 +76,7 @@ enum class HierarchyLevelConvention {
 /**
  * @brief Projects a morphological tree hierarchy onto an image adjacency graph.
  *
- * The generic `computeEdgeMap` primitive finds the direct owners of each graph
+ * The generic `computeEdgeMap` primitive finds the inclusion-smallest nodes of each graph
  * edge endpoint, takes their lowest common ancestor in the hierarchy, and writes
  * `nodeValue(lca)` as the edge value. The formal `computeSaliencyEdgeMap` path
  * additionally assigns the base value `0` to edges whose endpoints already
@@ -85,7 +86,7 @@ enum class HierarchyLevelConvention {
  * "Hierarchical segmentations with graphs: quasi-flat zones, minimum spanning
  * trees, and saliency maps". This class implements that edge-indexed hierarchy
  * projection only; it does not build the full `Psi(w) = Phi(QFZ(G, w))`
- * pipeline from an arbitrary edge-weighted graph, nor the paper's MST
+ * pipeline from an arbitrary edge-valuedTree graph, nor the paper's MST
  * characterization.
  *
  * @par Primary reference
@@ -102,19 +103,19 @@ class HierarchySaliencyMap {
     /**
      * @brief Validates tree and adjacency.
      *
-     * @param tree Tree topology used by the operation.
-     * @param adjacency Adjacency relation used by the operation.
+     * @param tree Tree topology.
+     * @param adjacency Adjacency relation.
      * @param context Operation name used in diagnostics.
      */
     static void validateTreeAndAdjacency(const MorphologicalTree& tree, const RegularGridAdjacency2D& adjacency, const char* context) {
         detail::requireCommittedRootedHierarchy(tree, context);
-        if (tree.getNumRowsOfGridDomain2D() <= 0 || tree.getNumColsOfGridDomain2D() <= 0 || tree.getNumTotalProperParts() <= 0) {
-            throw std::invalid_argument(std::string(context) + " requires a non-empty image/proper-part domain.");
+        if (tree.numRows() <= 0 || tree.numColumns() <= 0 || tree.numPixels() <= 0) {
+            throw std::invalid_argument(std::string(context) + " requires a non-empty image/pixel domain.");
         }
-        if (adjacency.getNumRows() != tree.getNumRowsOfGridDomain2D() || adjacency.getNumCols() != tree.getNumColsOfGridDomain2D()) {
+        if (adjacency.getNumRows() != tree.numRows() || adjacency.getNumColumns() != tree.numColumns()) {
             std::ostringstream oss;
-            oss << context << " adjacency domain must match the tree image domain; got " << adjacency.getNumRows() << "x" << adjacency.getNumCols()
-                << " for a tree domain of " << tree.getNumRowsOfGridDomain2D() << "x" << tree.getNumColsOfGridDomain2D() << ".";
+            oss << context << " adjacency domain must match the tree image domain; got " << adjacency.getNumRows() << "x" << adjacency.getNumColumns()
+                << " for a tree domain of " << tree.numRows() << "x" << tree.numColumns() << ".";
             throw std::invalid_argument(oss.str());
         }
     }
@@ -130,11 +131,11 @@ class HierarchySaliencyMap {
      * @return True if two stored relations define the same grid graph; otherwise false.
      */
     static bool sameAdjacencyGraph(const RegularGridAdjacency2D& lhs, const RegularGridAdjacency2D& rhs) noexcept {
-        if (lhs.getNumRows() != rhs.getNumRows() || lhs.getNumCols() != rhs.getNumCols() || lhs.getSize() != rhs.getSize()) {
+        if (lhs.getNumRows() != rhs.getNumRows() || lhs.getNumColumns() != rhs.getNumColumns() || lhs.getSize() != rhs.getSize()) {
             return false;
         }
         for (int index = 0; index < lhs.getSize(); ++index) {
-            if (lhs.getOffsetRow(index) != rhs.getOffsetRow(index) || lhs.getOffsetCol(index) != rhs.getOffsetCol(index)) {
+            if (lhs.getOffsetRow(index) != rhs.getOffsetRow(index) || lhs.getOffsetColumn(index) != rhs.getOffsetColumn(index)) {
                 return false;
             }
         }
@@ -144,21 +145,26 @@ class HierarchySaliencyMap {
     /**
      * @brief Validates stored adjacency.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @param context Operation name used in diagnostics.
-     * @return Reference to the resulting object.
+     * @return Mutable reference to the updated object.
      */
-    static const RegularGridAdjacency2D& requireStoredAdjacency(const MorphologicalTree& tree, const char* context) {
-        if (const RegularGridAdjacency2D* adjacency = tree.getUniformGridAdjacency2D()) {
+    static RegularGridAdjacency2D requireStoredAdjacency(const MorphologicalTree& tree, const char* context) {
+        if (const RegularGridAdjacency2D* adjacency = ::mmcfilters::detail::constructionAdjacency(tree)) {
             return *adjacency;
         }
-        if (const DirectionalGridAdjacency2D* directional = tree.getDirectionalGridAdjacency2D()) {
-            if (sameAdjacencyGraph(directional->decreasing, directional->increasing)) {
-                return directional->decreasing;
+        if (const ComplementaryAdjacencies* adjacencies = ::mmcfilters::detail::complementaryAdjacencies(tree)) {
+            if (sameAdjacencyGraph(adjacencies->minAdjacency, adjacencies->maxAdjacency)) {
+                return adjacencies->minAdjacency;
             }
             throw std::invalid_argument(
                 std::string(context) +
-                " cannot infer one image graph from distinct decreasing/increasing adjacency relations; pass the intended adjacency explicitly.");
+                " cannot infer one image graph from distinct minimum/maximum adjacencies; pass the intended adjacency explicitly.");
+        }
+        if (const TopographicConvention* convention = tree.topographicConvention();
+            convention != nullptr && std::holds_alternative<SelfDualSpanImmersion>(convention->immersion) && tree.hasGridDomain2D()) {
+            const GridDomain2D& domain = *tree.gridDomain2D();
+            return RegularGridAdjacency2D(domain.rows, domain.columns, 1.0);
         }
         throw std::invalid_argument(std::string(context) + " requires an attached adjacency relation; pass an explicit adjacency relation instead.");
     }
@@ -175,8 +181,8 @@ class HierarchySaliencyMap {
      * @return Stored uniform graph, or the common graph of an equivalent
      * directional pair.
      */
-    [[nodiscard]] static const RegularGridAdjacency2D& requireProjectionAdjacency(const MorphologicalTree& tree,
-                                                                                  const char* context = "HierarchySaliencyMap::requireProjectionAdjacency") {
+    [[nodiscard]] static RegularGridAdjacency2D requireProjectionAdjacency(
+        const MorphologicalTree& tree, const char* context = "HierarchySaliencyMap::requireProjectionAdjacency") {
         return requireStoredAdjacency(tree, context);
     }
 
@@ -189,16 +195,16 @@ class HierarchySaliencyMap {
      * from fine regions toward coarse regions independently of altitude
      * polarity.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @return The computed dense topological level buffer indexed by internal NodeId.
      */
     [[nodiscard]] static std::vector<int> computeTopologicalLevels(const MorphologicalTree& tree) {
         detail::requireCommittedRootedHierarchy(tree, "HierarchySaliencyMap::computeTopologicalLevels");
 
-        std::vector<int> levels(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0);
-        for (NodeId nodeId : tree.getPostOrderNodes()) {
+        std::vector<int> levels(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0);
+        for (NodeId nodeId : tree.postOrder()) {
             int level = 0;
-            for (NodeId childId : tree.getChildren(nodeId)) {
+            for (NodeId childId : tree.children(nodeId)) {
                 level = std::max(level, levels[static_cast<std::size_t>(childId)] + 1);
             }
             levels[static_cast<std::size_t>(nodeId)] = level;
@@ -214,12 +220,12 @@ class HierarchySaliencyMap {
      * one: internal leaves receive `1`, and every ancestor receives one plus the
      * maximum child appearance level.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @return Dense positive integer levels indexed by internal NodeId.
      */
     [[nodiscard]] static std::vector<int> computePartitionAppearanceLevels(const MorphologicalTree& tree) {
         std::vector<int> levels = computeTopologicalLevels(tree);
-        for (NodeId nodeId : tree.getAliveNodeIds()) {
+        for (NodeId nodeId : tree.aliveNodeIds()) {
             ++levels[static_cast<std::size_t>(nodeId)];
         }
         return levels;
@@ -229,12 +235,12 @@ class HierarchySaliencyMap {
      * @brief Computes an edge saliency map using an explicit adjacency relation.
      *
      * `NodeValue` must be callable as `nodeValue(NodeId)` and is invoked once per
-     * graph edge on the LCA of the two endpoint owners. This is the generic LCA
+     * graph edge on the LCA of the two endpoint smallest nodes. This is the generic LCA
      * projection primitive; use `computeSaliencyEdgeMap` when arbitrary node
      * values must be validated as a formal hierarchy valuation before projection.
      *
-     * @param tree Tree topology used by the operation.
-     * @param adjacency Adjacency relation used by the operation.
+     * @param tree Tree topology.
+     * @param adjacency Adjacency relation.
      * @param nodeValue Value assigned to the node.
      * @return The computed edge saliency map using an explicit adjacency relation.
      */
@@ -248,25 +254,25 @@ class HierarchySaliencyMap {
         validateTreeAndAdjacency(tree, adjacency, context);
 
         EdgeSaliencyMap<Value> saliency;
-        saliency.numRows = tree.getNumRowsOfGridDomain2D();
-        saliency.numCols = tree.getNumColsOfGridDomain2D();
+        saliency.numRows = tree.numRows();
+        saliency.numColumns = tree.numColumns();
         saliency.adjacencyRadius = adjacency.getRadius();
 
         auto&& scorer = nodeValue;
-        const NodeId numProperParts = tree.getNumTotalProperParts();
-        for (NodeId source = 0; source < numProperParts; ++source) {
-            const NodeId sourceOwner = tree.getProperPartOwner(source);
-            if (!tree.isAlive(sourceOwner)) {
-                throw std::runtime_error("HierarchySaliencyMap::computeEdgeMap found a proper part without a live owner.");
+        const int numPixels = tree.numPixels();
+        for (NodeId source = 0; source < numPixels; ++source) {
+            const NodeId sourceSmallestNode = tree.smallestNode(source);
+            if (!tree.isAlive(sourceSmallestNode)) {
+                throw std::runtime_error("HierarchySaliencyMap::computeEdgeMap found a pixel without a live smallest node.");
             }
 
             for (int target : adjacency.getForwardNeighborIndices(source)) {
-                const NodeId targetOwner = tree.getProperPartOwner(target);
-                if (!tree.isAlive(targetOwner)) {
-                    throw std::runtime_error("HierarchySaliencyMap::computeEdgeMap found a neighbour proper part without a live owner.");
+                const NodeId targetSmallestNode = tree.smallestNode(target);
+                if (!tree.isAlive(targetSmallestNode)) {
+                    throw std::runtime_error("HierarchySaliencyMap::computeEdgeMap found a neighbour pixel without a live smallest node.");
                 }
 
-                const NodeId lca = tree.getLowestCommonAncestor(sourceOwner, targetOwner);
+                const NodeId lca = tree.lowestCommonAncestor(sourceSmallestNode, targetSmallestNode);
                 if (lca == InvalidNode || !tree.isAlive(lca)) {
                     throw std::runtime_error("HierarchySaliencyMap::computeEdgeMap could not find a live LCA for an adjacency edge.");
                 }
@@ -290,7 +296,7 @@ class HierarchySaliencyMap {
      * projection so arbitrary node valuations cannot be mislabeled as a
      * quasi-flat-zone saliency map. The caller provides `H` through the tree
      * topology; this method does not construct `QFZ(G, w)` from an arbitrary
-     * edge-weighted graph.
+     * edge-valuedTree graph.
      *
      * Formal saliency valuations must be non-negative because edges internal to
      * the finest represented regions use the fixed base level `0`. Use
@@ -302,19 +308,19 @@ class HierarchySaliencyMap {
      * `0` when both endpoints already belong to the same finest region exposed
      * by the tree. Otherwise, under `EdgeSaliencyValue` the returned value is:
      *
-     *     valuation(LCA(owner(p), owner(q)))
+     *     valuation(LCA(smallestNode(p), smallestNode(q)))
      *
      * Under `PartitionAppearanceLevel`, the returned transition value is instead
      * `valuation(LCA(...)) - 1`, following Algorithm 1 of Cousty et al. In that
      * convention, live-node values must be positive integer partition indexes.
-     * Here `owner` maps an image proper part to its direct hierarchy node.
+     * Here `smallestNode` maps a pixel to its inclusion-smallest hierarchy node.
      * This keeps the saliency map defined on the full graph edge set while
      * respecting the paper's cut-based definition: edges internal to a finest
      * region are not contour transitions at any positive hierarchy level.
      *
-     * @param tree Tree topology used by the operation.
-     * @param adjacency Adjacency relation used by the operation.
-     * @param valuation Node valuation used by the operation.
+     * @param tree Tree topology.
+     * @param adjacency Adjacency relation.
+     * @param valuation Node valuation.
      * @param policy Policy controlling the operation.
      * @param levelConvention Interpretation of live-node valuation levels.
      * @param connectivityPolicy Whether to validate connected hierarchy supports.
@@ -333,7 +339,7 @@ class HierarchySaliencyMap {
             HierarchySaliencyMapValidation::validateHierarchyConnectivity(tree, adjacency, context);
         }
         if (levelConvention == HierarchyLevelConvention::PartitionAppearanceLevel) {
-            for (NodeId nodeId : tree.getAliveNodeIds()) {
+            for (NodeId nodeId : tree.aliveNodeIds()) {
                 const Value& level = valuation[static_cast<std::size_t>(nodeId)];
                 if (!(Value{} < level)) {
                     throw std::invalid_argument(std::string(context) + " requires positive partition-appearance levels.");
@@ -347,26 +353,26 @@ class HierarchySaliencyMap {
         }
 
         EdgeSaliencyMap<Value> saliency;
-        saliency.numRows = tree.getNumRowsOfGridDomain2D();
-        saliency.numCols = tree.getNumColsOfGridDomain2D();
+        saliency.numRows = tree.numRows();
+        saliency.numColumns = tree.numColumns();
         saliency.adjacencyRadius = adjacency.getRadius();
 
-        const NodeId numProperParts = tree.getNumTotalProperParts();
-        for (NodeId source = 0; source < numProperParts; ++source) {
-            const NodeId sourceOwner = tree.getProperPartOwner(source);
-            if (!tree.isAlive(sourceOwner)) {
-                throw std::runtime_error(std::string(context) + " found a proper part without a live owner.");
+        const int numPixels = tree.numPixels();
+        for (NodeId source = 0; source < numPixels; ++source) {
+            const NodeId sourceSmallestNode = tree.smallestNode(source);
+            if (!tree.isAlive(sourceSmallestNode)) {
+                throw std::runtime_error(std::string(context) + " found a pixel without a live smallest node.");
             }
 
             for (int target : adjacency.getForwardNeighborIndices(source)) {
-                const NodeId targetOwner = tree.getProperPartOwner(target);
-                if (!tree.isAlive(targetOwner)) {
-                    throw std::runtime_error(std::string(context) + " found a neighbour proper part without a live owner.");
+                const NodeId targetSmallestNode = tree.smallestNode(target);
+                if (!tree.isAlive(targetSmallestNode)) {
+                    throw std::runtime_error(std::string(context) + " found a neighbour pixel without a live smallest node.");
                 }
 
                 Value edgeValue{};
-                if (sourceOwner != targetOwner) {
-                    const NodeId lca = tree.getLowestCommonAncestor(sourceOwner, targetOwner);
+                if (sourceSmallestNode != targetSmallestNode) {
+                    const NodeId lca = tree.lowestCommonAncestor(sourceSmallestNode, targetSmallestNode);
                     if (lca == InvalidNode || !tree.isAlive(lca)) {
                         throw std::runtime_error(std::string(context) + " could not find a live LCA for an adjacency edge.");
                     }
@@ -392,8 +398,8 @@ class HierarchySaliencyMap {
      * only when its decreasing and increasing relations have the same stencil;
      * otherwise the caller must select an explicit projection graph.
      *
-     * @param tree Tree topology used by the operation.
-     * @param valuation Node valuation used by the operation.
+     * @param tree Tree topology.
+     * @param valuation Node valuation.
      * @param policy Policy controlling the operation.
      * @param levelConvention Interpretation of live-node valuation levels.
      * @param connectivityPolicy Whether to validate connected hierarchy supports.
@@ -413,12 +419,12 @@ class HierarchySaliencyMap {
      * @brief Computes the canonical dense integer saliency scale of a valuation.
      *
      * Unlike `rankHierarchyValuation`, this operation ranks only values that
-     * actually occur as transition levels on graph edges. Same-owner edges form
+     * actually occur as transition levels on graph edges. Same-smallest-node edges form
      * the base level when present. This removes unused node ranks and produces
      * the minimal dense scale associated with the completed graph hierarchy.
      * Input values may be negative because only their order is retained.
      *
-     * @param tree Hierarchy topology and proper-part ownership.
+     * @param tree Hierarchy topology and smallest-node mapping.
      * @param adjacency Projection graph.
      * @param valuation Finite hierarchy-compatible node valuation.
      * @param policy Whether adjacent equal hierarchy values may collapse.
@@ -438,8 +444,8 @@ class HierarchySaliencyMap {
         }
 
         EdgeSaliencyMap<int> saliency;
-        saliency.numRows = tree.getNumRowsOfGridDomain2D();
-        saliency.numCols = tree.getNumColsOfGridDomain2D();
+        saliency.numRows = tree.numRows();
+        saliency.numColumns = tree.numColumns();
         saliency.adjacencyRadius = adjacency.getRadius();
 
         struct ProjectedLevel {
@@ -450,17 +456,17 @@ class HierarchySaliencyMap {
         std::vector<ProjectedLevel> projected;
         std::vector<Value> effectiveValues;
         bool hasBaseEdge = false;
-        const NodeId numProperParts = tree.getNumTotalProperParts();
-        for (NodeId source = 0; source < numProperParts; ++source) {
-            const NodeId sourceOwner = tree.getProperPartOwner(source);
+        const int numPixels = tree.numPixels();
+        for (NodeId source = 0; source < numPixels; ++source) {
+            const NodeId sourceSmallestNode = tree.smallestNode(source);
             for (int targetValue : adjacency.getForwardNeighborIndices(source)) {
                 const NodeId target = static_cast<NodeId>(targetValue);
-                const NodeId targetOwner = tree.getProperPartOwner(target);
+                const NodeId targetSmallestNode = tree.smallestNode(target);
                 NodeId lca = InvalidNode;
-                if (sourceOwner == targetOwner) {
+                if (sourceSmallestNode == targetSmallestNode) {
                     hasBaseEdge = true;
                 } else {
-                    lca = tree.getLowestCommonAncestor(sourceOwner, targetOwner);
+                    lca = tree.lowestCommonAncestor(sourceSmallestNode, targetSmallestNode);
                     if (lca == InvalidNode || !tree.isAlive(lca)) {
                         throw std::runtime_error(std::string(context) + " could not find a live LCA for an adjacency edge.");
                     }
@@ -520,7 +526,7 @@ class HierarchySaliencyMap {
     template <class Value> [[nodiscard]] static EdgeSaliencyMap<int> rankEdgeSaliencyMap(const EdgeSaliencyMap<Value>& edgeMap) {
         EdgeSaliencyMap<int> ranked;
         ranked.numRows = edgeMap.numRows;
-        ranked.numCols = edgeMap.numCols;
+        ranked.numColumns = edgeMap.numColumns;
         ranked.adjacencyRadius = edgeMap.adjacencyRadius;
         ranked.sources = edgeMap.sources;
         ranked.targets = edgeMap.targets;
@@ -537,7 +543,7 @@ class HierarchySaliencyMap {
     /**
      * @brief Computes an edge saliency map using one unambiguous stored graph.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @param nodeValue Value assigned to the node.
      * @return The computed edge saliency map using one unambiguous stored graph.
      */
@@ -550,8 +556,8 @@ class HierarchySaliencyMap {
     /**
      * @brief Computes a topological-level edge saliency map with explicit adjacency.
      *
-     * @param tree Tree topology used by the operation.
-     * @param adjacency Adjacency relation used by the operation.
+     * @param tree Tree topology.
+     * @param adjacency Adjacency relation.
      * @return The computed topological-level edge saliency map with explicit adjacency.
      */
     [[nodiscard]] static EdgeSaliencyMap<int> computeTopologicalLevelEdgeMap(const MorphologicalTree& tree, const RegularGridAdjacency2D& adjacency) {
@@ -562,7 +568,7 @@ class HierarchySaliencyMap {
     /**
      * @brief Computes a topological-level map using one unambiguous stored graph.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @return The computed topological-level map using one unambiguous stored graph.
      */
     [[nodiscard]] static EdgeSaliencyMap<int> computeTopologicalLevelEdgeMap(const MorphologicalTree& tree) {
@@ -572,12 +578,12 @@ class HierarchySaliencyMap {
     /**
      * @brief Computes a normalized-altitude edge saliency map with explicit adjacency.
      *
-     * @param tree Tree topology used by the operation.
-     * @param adjacency Adjacency relation used by the operation.
+     * @param tree Tree topology.
+     * @param adjacency Adjacency relation.
      * @return The computed normalized-altitude edge saliency map with explicit adjacency.
      */
     template <AltitudeValue T>
-    [[nodiscard]] static EdgeSaliencyMap<double> computeNormalizedAltitudeEdgeMap(const WeightedMorphologicalTree<T>& tree,
+    [[nodiscard]] static EdgeSaliencyMap<double> computeNormalizedAltitudeEdgeMap(const ValuedMorphologicalTree<T>& tree,
                                                                                   const RegularGridAdjacency2D& adjacency) {
         std::vector<double> scores = HierarchySaliencyMapValidation::computeNormalizedScores(tree);
         return computeSaliencyEdgeMap(tree.topology(), adjacency, std::span<const double>(scores), HierarchyValuationPolicy::AllowLevelCollapse);
@@ -586,10 +592,10 @@ class HierarchySaliencyMap {
     /**
      * @brief Computes a normalized-altitude map using one unambiguous stored graph.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @return The computed normalized-altitude map using one unambiguous stored graph.
      */
-    template <AltitudeValue T> [[nodiscard]] static EdgeSaliencyMap<double> computeNormalizedAltitudeEdgeMap(const WeightedMorphologicalTree<T>& tree) {
+    template <AltitudeValue T> [[nodiscard]] static EdgeSaliencyMap<double> computeNormalizedAltitudeEdgeMap(const ValuedMorphologicalTree<T>& tree) {
         return computeNormalizedAltitudeEdgeMap(tree, requireStoredAdjacency(tree.topology(), "HierarchySaliencyMap::computeNormalizedAltitudeEdgeMap"));
     }
 };
@@ -602,7 +608,7 @@ class HierarchySaliencyMap {
  * domain. This adapter states the completion used by this library:
  *
  * - partition 0 contains graph-vertex singletons;
- * - zero-valued same-owner edges form the connected atoms of direct proper
+ * - zero-valued same-smallest-node edges form the connected atoms of direct proper
  *   parts;
  * - component-tree nodes merge those atoms and their child supports;
  * - every resulting node support must be connected in the selected graph.
@@ -616,7 +622,7 @@ class ComponentTreePartitionHierarchyAdapter {
      * @brief Validates the connected complete-partition interpretation.
      *
      * @param tree Component-tree topology to validate.
-     * @param adjacency Projection graph on the tree proper-part domain.
+     * @param adjacency Projection graph on the tree pixel domain.
      * @throws std::invalid_argument If the graph domain is incompatible or a
      * hierarchy support is disconnected.
      */
@@ -639,7 +645,7 @@ class ComponentTreePartitionHierarchyAdapter {
      *
      * @tparam Value Partition-level scalar type.
      * @param tree Component-tree topology to complete and project.
-     * @param adjacency Projection graph on the proper-part domain.
+     * @param adjacency Projection graph on the pixel domain.
      * @param partitionAppearanceLevels Dense positive level per internal node id.
      * @param policy Whether equal parent/child appearance levels are accepted.
      * @return Full edge-indexed saliency map on `adjacency`.

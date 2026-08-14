@@ -1,4 +1,5 @@
 #include "ModuleBindings.hpp"
+#include "PythonValuedMorphologicalTree.hpp"
 
 #include "PybindConversions.hpp"
 
@@ -10,7 +11,7 @@
 #include "../mmcfilters/trees/saliency/ShapeSpaceSaliency.hpp"
 #include "../mmcfilters/trees/MorphologicalTreeFactory.hpp"
 #include "../mmcfilters/trees/TreeAltitudeAlgorithms.hpp"
-#include "../mmcfilters/trees/WeightedMorphologicalTree.hpp"
+#include "../mmcfilters/trees/ValuedMorphologicalTree.hpp"
 #include "../mmcfilters/utils/RegularGridAdjacency2D.hpp"
 #include "../mmcfilters/utils/Common.hpp"
 #include "../mmcfilters/utils/Image.hpp"
@@ -22,6 +23,7 @@
 #include <concepts>
 #include <cstdint>
 #include <memory>
+#include <limits>
 #include <optional>
 #include <set>
 #include <span>
@@ -49,15 +51,23 @@ template <class Range> std::vector<NodeId> collectNodeIds(const Range& range) {
     return ids;
 }
 
+template <class Range> std::vector<PixelId> collectPixelIds(const Range& range) {
+    std::vector<PixelId> ids;
+    for (PixelId id : range) {
+        ids.push_back(id);
+    }
+    return ids;
+}
+
 py::array_t<std::uint8_t> reconstructNodeMask(const MorphologicalTree& tree, NodeId nodeId) {
     if (!tree.isNode(nodeId) || !tree.isAlive(nodeId)) {
         throw std::invalid_argument("invalid NodeId for reconstruction");
     }
 
-    ImageUInt8Ptr output = ImageUInt8::create(tree.getNumRowsOfGridDomain2D(), tree.getNumColsOfGridDomain2D());
+    ImageUInt8Ptr output = ImageUInt8::create(tree.numRows(), tree.numColumns());
     output->fill(0);
-    for (NodeId properPart : tree.getConnectedComponent(nodeId)) {
-        (*output)[properPart] = 255;
+    for (PixelId pixel : tree.nodeSupport(nodeId)) {
+        (*output)[pixel] = 255;
     }
     return pybind_utils::toNumpy(output);
 }
@@ -71,11 +81,11 @@ ImageUInt8Ptr imageFromArray(const UInt8InputArray& input) {
         throw std::invalid_argument("input must be a 2D uint8 array");
     }
     const int rows = static_cast<int>(buf.shape[0]);
-    const int cols = static_cast<int>(buf.shape[1]);
-    if (buf.strides[1] != static_cast<py::ssize_t>(sizeof(uint8_t)) || buf.strides[0] != static_cast<py::ssize_t>(cols * sizeof(uint8_t))) {
+    const int columns = static_cast<int>(buf.shape[1]);
+    if (buf.strides[1] != static_cast<py::ssize_t>(sizeof(uint8_t)) || buf.strides[0] != static_cast<py::ssize_t>(columns * sizeof(uint8_t))) {
         throw std::invalid_argument("input must be a C-contiguous 2D uint8 array");
     }
-    return ImageUInt8::fromExternal(static_cast<uint8_t*>(buf.ptr), rows, cols);
+    return ImageUInt8::fromExternal(static_cast<uint8_t*>(buf.ptr), rows, columns);
 }
 
 std::uint8_t pythonUInt8AltitudeValue(py::handle value, NodeId nodeId, const char* context) {
@@ -131,20 +141,84 @@ std::vector<std::uint8_t> pythonUInt8AltitudeVector(py::handle values, const cha
     return altitude;
 }
 
-template <AltitudeValue T> const MorphologicalTree& topology(const WeightedMorphologicalTree<T>& weighted) { return weighted.topology(); }
-
-template <AltitudeValue T> T getAltitudeValue(const WeightedMorphologicalTree<T>& weighted, NodeId nodeId) { return weighted.getAltitude(nodeId); }
-
-template <AltitudeValue T> AltitudeDiff<T> getResidueValue(const WeightedMorphologicalTree<T>& weighted, NodeId nodeId) {
-    return weighted.getNodeResidue(nodeId);
+template <std::unsigned_integral T> T pythonUnsignedAltitudeValue(py::handle value, NodeId nodeId, const char* context) {
+    if (py::isinstance<py::bool_>(value) || !PyIndex_Check(value.ptr())) {
+        throw std::invalid_argument(std::string(context) + " must be a non-negative integer altitude.");
+    }
+    py::object indexValue = py::reinterpret_steal<py::object>(PyNumber_Index(value.ptr()));
+    const long long rawAltitude = py::cast<long long>(indexValue);
+    if (rawAltitude < 0 || static_cast<unsigned long long>(rawAltitude) > static_cast<unsigned long long>(std::numeric_limits<T>::max())) {
+        std::ostringstream oss;
+        oss << context << " requires node altitudes in [0, " << std::numeric_limits<T>::max() << "]; node " << nodeId << " has altitude "
+            << rawAltitude << ".";
+        throw std::invalid_argument(oss.str());
+    }
+    return static_cast<T>(rawAltitude);
 }
 
-template <AltitudeValue T> py::array_t<T> reconstructionImageOf(const WeightedMorphologicalTree<T>& weighted) {
-    return pybind_utils::toNumpy(weighted.reconstructionImage());
+template <std::unsigned_integral T> std::vector<T> pythonUnsignedAltitudeVector(py::handle values, const char* context) {
+    if (py::isinstance<py::array>(values)) {
+        py::array array = py::reinterpret_borrow<py::array>(values);
+        if (!array.dtype().is(py::dtype::of<T>())) {
+            throw std::invalid_argument(std::string(context) + " numpy array dtype must match the tree altitude dtype.");
+        }
+        const auto buffer = array.request();
+        if (buffer.ndim != 1 || buffer.strides[0] != static_cast<py::ssize_t>(sizeof(T))) {
+            throw std::invalid_argument(std::string(context) + " must be a C-contiguous 1D altitude array.");
+        }
+        const auto* data = static_cast<const T*>(buffer.ptr);
+        return std::vector<T>(data, data + buffer.shape[0]);
+    }
+    if (!py::isinstance<py::sequence>(values)) {
+        throw std::invalid_argument(std::string(context) + " must be a sequence of non-negative integer altitudes.");
+    }
+    py::sequence sequence = py::reinterpret_borrow<py::sequence>(values);
+    std::vector<T> altitude;
+    altitude.reserve(static_cast<std::size_t>(py::len(sequence)));
+    NodeId nodeId = 0;
+    for (py::handle item : sequence) {
+        altitude.push_back(pythonUnsignedAltitudeValue<T>(item, nodeId++, context));
+    }
+    return altitude;
 }
 
-template <AltitudeValue T> std::pair<std::vector<NodeId>, std::vector<T>> exportHigraHierarchyOf(const WeightedMorphologicalTree<T>& weighted) {
-    return weighted.exportHigraHierarchy();
+template <AltitudeValue T> const MorphologicalTree& topology(const ValuedMorphologicalTree<T>& valuedTree) { return valuedTree.topology(); }
+
+const MorphologicalTree& topology(const PythonValuedMorphologicalTree& valuedTree) { return valuedTree.topology(); }
+
+template <AltitudeValue T>
+std::shared_ptr<PythonValuedMorphologicalTree> wrapPythonValuedTree(ValuedMorphologicalTree<T>&& tree) {
+    return std::make_shared<PythonValuedMorphologicalTree>(std::make_shared<ValuedMorphologicalTree<T>>(std::move(tree)));
+}
+
+template <AltitudeValue T> T nodeAltitudeValue(const ValuedMorphologicalTree<T>& valuedTree, NodeId nodeId) { return valuedTree.nodeAltitude(nodeId); }
+
+template <AltitudeValue T> AltitudeDifference<T> nodeResidueValue(const ValuedMorphologicalTree<T>& valuedTree, NodeId nodeId) {
+    return valuedTree.nodeResidue(nodeId);
+}
+
+template <AltitudeValue T> py::array_t<T> reconstructFromNodeAltitudesOf(const ValuedMorphologicalTree<T>& valuedTree) {
+    return pybind_utils::toNumpy(valuedTree.reconstructFromNodeAltitudes());
+}
+
+template <std::floating_point Real>
+py::array reconstructFromNodeContributionsTyped(const PythonValuedMorphologicalTree& valuedTree, py::array nodeContributions) {
+    auto typed = pybind_utils::requireNodeAttributeArray<Real>(std::move(nodeContributions), valuedTree.topology(), "node_contributions");
+    const auto* values = static_cast<const Real*>(typed.request().ptr);
+    const std::span<const Real> contributions(values, static_cast<std::size_t>(valuedTree.topology().numInternalNodeSlots()));
+    return pybind_utils::toNumpy(TreeAltitudeAlgorithms::reconstructFromNodeContributions(
+        valuedTree.topology(), contributions, "ValuedMorphologicalTree.reconstruct_from_node_contributions"));
+}
+
+py::array reconstructFromNodeContributions(const PythonValuedMorphologicalTree& valuedTree, py::array nodeContributions) {
+    if (pybind_utils::parseFloatingArrayDType(nodeContributions, "node_contributions") == pybind_utils::FloatingDType::Float64) {
+        return reconstructFromNodeContributionsTyped<double>(valuedTree, std::move(nodeContributions));
+    }
+    return reconstructFromNodeContributionsTyped<float>(valuedTree, std::move(nodeContributions));
+}
+
+template <AltitudeValue T> std::pair<std::vector<NodeId>, std::vector<T>> exportHigraHierarchyOf(const ValuedMorphologicalTree<T>& valuedTree) {
+    return valuedTree.exportHigraHierarchy();
 }
 
 std::vector<Attribute> parseProjectionAttributes(py::handle attributes, int valuesPerNode) {
@@ -182,61 +256,66 @@ AttributeNames makeProjectionAttributeNames(const std::vector<Attribute>& attrib
     return AttributeNames(std::move(offsets));
 }
 
-template <std::floating_point Real>
-py::array projectNodeValuesToExportedHigraTyped(const WeightedMorphologicalTree<std::uint8_t>& weighted, const py::array& nodeValues, py::object attributes) {
+template <AltitudeValue Altitude, std::floating_point Real>
+py::array projectNodeValuesToExportedHigraTyped(const ValuedMorphologicalTree<Altitude>& valuedTree, const py::array& nodeValues, py::object attributes) {
     const auto buffer = nodeValues.request();
-    const int numNodeSlots = weighted.topology().getNumInternalNodeSlots();
-    const int numHigraVertices = weighted.topology().getNumTotalProperParts() + weighted.topology().getNumNodes();
+    const int numNodeSlots = valuedTree.topology().numInternalNodeSlots();
+    const int numHigraVertices = valuedTree.topology().numPixels() + valuedTree.topology().numNodes();
 
     if (buffer.ndim == 1) {
-        pybind_utils::require1DArray(buffer, numNodeSlots, "nodeValues");
+        pybind_utils::require1DArray(buffer, numNodeSlots, "node_values");
         const auto parsedAttributes = parseProjectionAttributes(attributes, 1);
         const AttributeNames attrNames = makeProjectionAttributeNames(parsedAttributes);
         auto projected = AttributeComputation::projectNodeValuesToExportedHigra<Real>(
-            weighted, attrNames, std::span<const Real>(static_cast<const Real*>(buffer.ptr), static_cast<size_t>(numNodeSlots)));
+            valuedTree, attrNames, std::span<const Real>(static_cast<const Real*>(buffer.ptr), static_cast<size_t>(numNodeSlots)));
         return pybind_utils::toNumpyOwned(std::move(projected), numHigraVertices);
     }
 
     if (buffer.ndim == 2) {
         if (buffer.shape[0] != numNodeSlots) {
             std::ostringstream oss;
-            oss << "nodeValues must have " << numNodeSlots << " rows, got " << buffer.shape[0];
+            oss << "node_values must have " << numNodeSlots << " rows, got " << buffer.shape[0];
             throw std::invalid_argument(oss.str());
         }
         const int valuesPerNode = static_cast<int>(buffer.shape[1]);
         const auto parsedAttributes = parseProjectionAttributes(attributes, valuesPerNode);
         const AttributeNames attrNames = makeProjectionAttributeNames(parsedAttributes);
         auto projected = AttributeComputation::projectNodeValuesToExportedHigra<Real>(
-            weighted, attrNames,
+            valuedTree, attrNames,
             std::span<const Real>(static_cast<const Real*>(buffer.ptr), static_cast<size_t>(numNodeSlots) * static_cast<size_t>(valuesPerNode)));
         return pybind_utils::toNumpyOwned2D(std::move(projected), numHigraVertices, valuesPerNode);
     }
 
-    throw std::invalid_argument("nodeValues must be a 1D or 2D float32 or float64 array");
+    throw std::invalid_argument("node_values must be a 1D or 2D float32 or float64 array");
 }
 
-py::array projectNodeValuesToExportedHigraOf(const WeightedMorphologicalTree<std::uint8_t>& weighted, const py::array& nodeValues, py::object attributes) {
+template <AltitudeValue Altitude>
+py::array projectNodeValuesToExportedHigraOf(const ValuedMorphologicalTree<Altitude>& valuedTree, const py::array& nodeValues, py::object attributes) {
     py::array contiguous = py::array::ensure(nodeValues, py::array::c_style);
     if (!contiguous) {
-        throw std::invalid_argument("nodeValues must be a 1D or 2D C-contiguous float32 or float64 array");
+        throw std::invalid_argument("node_values must be a 1D or 2D C-contiguous float32 or float64 array");
     }
 
     if (contiguous.dtype().is(py::dtype::of<float>())) {
-        return projectNodeValuesToExportedHigraTyped<float>(weighted, contiguous, std::move(attributes));
+        return projectNodeValuesToExportedHigraTyped<Altitude, float>(valuedTree, contiguous, std::move(attributes));
     }
     if (contiguous.dtype().is(py::dtype::of<double>())) {
-        return projectNodeValuesToExportedHigraTyped<double>(weighted, contiguous, std::move(attributes));
+        return projectNodeValuesToExportedHigraTyped<Altitude, double>(valuedTree, contiguous, std::move(attributes));
     }
 
-    throw std::invalid_argument("nodeValues must be a 1D or 2D C-contiguous float32 or float64 array");
+    throw std::invalid_argument("node_values must be a 1D or 2D C-contiguous float32 or float64 array");
+}
+
+py::array projectNodeValuesToExportedHigraOf(const PythonValuedMorphologicalTree& valuedTree, const py::array& nodeValues, py::object attributes) {
+    return valuedTree.visit([&](const auto& native) { return projectNodeValuesToExportedHigraOf(*native, nodeValues, std::move(attributes)); });
 }
 
 template <class Value> py::dict edgeSaliencyMapToDict(EdgeSaliencyMap<Value>&& edgeMap) {
     const int numEdges = static_cast<int>(edgeMap.size());
     py::dict out;
-    out["numRows"] = edgeMap.numRows;
-    out["numCols"] = edgeMap.numCols;
-    out["adjacencyRadius"] = edgeMap.adjacencyRadius;
+    out["num_rows"] = edgeMap.numRows;
+    out["num_columns"] = edgeMap.numColumns;
+    out["adjacency_radius"] = edgeMap.adjacencyRadius;
     out["sources"] = pybind_utils::toNumpyOwned(std::move(edgeMap.sources), numEdges);
     out["targets"] = pybind_utils::toNumpyOwned(std::move(edgeMap.targets), numEdges);
     out["values"] = pybind_utils::toNumpyOwned(std::move(edgeMap.values), numEdges);
@@ -248,8 +327,8 @@ template <std::floating_point Real> py::dict shapeSpaceExtinctionResultToDict(Sh
     for (const ShapeSpaceExtremum<Real>& extremum : result.extrema) {
         py::dict item;
         item["representative"] = extremum.representative;
-        item["birthLevel"] = extremum.birthLevel;
-        item["deathLevel"] = extremum.deathLevel;
+        item["birth_level"] = extremum.birthLevel;
+        item["death_level"] = extremum.deathLevel;
         item["extinction"] = extremum.extinction;
         extrema.append(std::move(item));
     }
@@ -257,7 +336,7 @@ template <std::floating_point Real> py::dict shapeSpaceExtinctionResultToDict(Sh
     const int numNodeScores = static_cast<int>(result.nodeScores.size());
     py::dict out;
     out["extrema"] = std::move(extrema);
-    out["nodeScores"] = pybind_utils::toNumpyOwned(std::move(result.nodeScores), numNodeScores);
+    out["node_scores"] = pybind_utils::toNumpyOwned(std::move(result.nodeScores), numNodeScores);
     return out;
 }
 
@@ -266,8 +345,8 @@ template <std::floating_point Real> py::dict shapeSpaceSaliencyResultToDict(Shap
     for (const ShapeSpaceExtremum<Real>& extremum : result.extrema) {
         py::dict item;
         item["representative"] = extremum.representative;
-        item["birthLevel"] = extremum.birthLevel;
-        item["deathLevel"] = extremum.deathLevel;
+        item["birth_level"] = extremum.birthLevel;
+        item["death_level"] = extremum.deathLevel;
         item["extinction"] = extremum.extinction;
         extrema.append(std::move(item));
     }
@@ -275,17 +354,17 @@ template <std::floating_point Real> py::dict shapeSpaceSaliencyResultToDict(Shap
     const int numNodeScores = static_cast<int>(result.nodeScores.size());
     py::dict out;
     out["extrema"] = std::move(extrema);
-    out["nodeScores"] = pybind_utils::toNumpyOwned(std::move(result.nodeScores), numNodeScores);
-    out["edgeMap"] = edgeSaliencyMapToDict(std::move(result.edgeMap));
+    out["node_scores"] = pybind_utils::toNumpyOwned(std::move(result.nodeScores), numNodeScores);
+    out["edge_map"] = edgeSaliencyMapToDict(std::move(result.edgeMap));
     return out;
 }
 
 py::dict edgeContourMapToDict(EdgeContourMap&& contourMap) {
     const int numEdges = static_cast<int>(contourMap.size());
     py::dict out;
-    out["numRows"] = contourMap.numRows;
-    out["numCols"] = contourMap.numCols;
-    out["adjacencyRadius"] = contourMap.adjacencyRadius;
+    out["num_rows"] = contourMap.numRows;
+    out["num_columns"] = contourMap.numColumns;
+    out["adjacency_radius"] = contourMap.adjacencyRadius;
     out["sources"] = pybind_utils::toNumpyOwned(std::move(contourMap.sources), numEdges);
     out["targets"] = pybind_utils::toNumpyOwned(std::move(contourMap.targets), numEdges);
     return out;
@@ -294,9 +373,9 @@ py::dict edgeContourMapToDict(EdgeContourMap&& contourMap) {
 py::dict nodeContourEdgeMapToDict(NodeContourEdgeMap&& contourMap) {
     const int numEdges = static_cast<int>(contourMap.size());
     py::dict out;
-    out["numRows"] = contourMap.numRows;
-    out["numCols"] = contourMap.numCols;
-    out["adjacencyRadius"] = contourMap.adjacencyRadius;
+    out["num_rows"] = contourMap.numRows;
+    out["num_columns"] = contourMap.numColumns;
+    out["adjacency_radius"] = contourMap.adjacencyRadius;
     out["sources"] = pybind_utils::toNumpyOwned(std::move(contourMap.sources), numEdges);
     out["targets"] = pybind_utils::toNumpyOwned(std::move(contourMap.targets), numEdges);
     out["nodes"] = pybind_utils::toNumpyOwned(std::move(contourMap.nodes), numEdges);
@@ -307,10 +386,10 @@ py::dict incrementalNodeContourMapToDict(IncrementalNodeContourMap&& contourMap)
     const int numEdges = static_cast<int>(contourMap.size());
     const int numOffsets = static_cast<int>(contourMap.offsets.size());
     py::dict out;
-    out["numRows"] = contourMap.numRows;
-    out["numCols"] = contourMap.numCols;
-    out["numNodeSlots"] = contourMap.numNodeSlots;
-    out["adjacencyRadius"] = contourMap.adjacencyRadius;
+    out["num_rows"] = contourMap.numRows;
+    out["num_columns"] = contourMap.numColumns;
+    out["num_node_slots"] = contourMap.numNodeSlots;
+    out["adjacency_radius"] = contourMap.adjacencyRadius;
     out["offsets"] = pybind_utils::toNumpyOwned(std::move(contourMap.offsets), numOffsets);
     out["sources"] = pybind_utils::toNumpyOwned(std::move(contourMap.sources), numEdges);
     out["targets"] = pybind_utils::toNumpyOwned(std::move(contourMap.targets), numEdges);
@@ -318,9 +397,9 @@ py::dict incrementalNodeContourMapToDict(IncrementalNodeContourMap&& contourMap)
 }
 
 EdgeSaliencyMap<double> edgeSaliencyMapFromDictPy(py::dict edgeMap, const char* context) {
-    for (const char* key : {"numRows", "numCols", "adjacencyRadius", "sources", "targets", "values"}) {
+    for (const char* key : {"num_rows", "num_columns", "adjacency_radius", "sources", "targets", "values"}) {
         if (!edgeMap.contains(key)) {
-            throw std::invalid_argument(std::string(context) + " edgeMap is missing key '" + key + "'.");
+            throw std::invalid_argument(std::string(context) + " edge_map is missing key '" + key + "'.");
         }
     }
 
@@ -347,9 +426,9 @@ EdgeSaliencyMap<double> edgeSaliencyMapFromDictPy(py::dict edgeMap, const char* 
     const auto* valueData = static_cast<const double*>(valueInfo.ptr);
 
     EdgeSaliencyMap<double> parsed;
-    parsed.numRows = py::cast<int>(edgeMap["numRows"]);
-    parsed.numCols = py::cast<int>(edgeMap["numCols"]);
-    parsed.adjacencyRadius = py::cast<double>(edgeMap["adjacencyRadius"]);
+    parsed.numRows = py::cast<int>(edgeMap["num_rows"]);
+    parsed.numColumns = py::cast<int>(edgeMap["num_columns"]);
+    parsed.adjacencyRadius = py::cast<double>(edgeMap["adjacency_radius"]);
     parsed.sources.assign(sourceData, sourceData + numEdges);
     parsed.targets.assign(targetData, targetData + numEdges);
     parsed.values.assign(valueData, valueData + numEdges);
@@ -365,90 +444,90 @@ HierarchyValuationRangePolicy saliencyRangePolicyFromNonnegative(bool nonnegativ
 }
 
 template <class Real>
-void validateHierarchyValuationTypedPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation, bool strict, bool nonnegative) {
-    auto scores = pybind_utils::requireNodeAttributeArray<Real>(std::move(valuation), weighted.topology(), "valuation");
+void validateHierarchyValuationTypedPy(const PythonValuedMorphologicalTree& valuedTree, py::array valuation, bool strict, bool nonnegative) {
+    auto scores = pybind_utils::requireNodeAttributeArray<Real>(std::move(valuation), valuedTree.topology(), "valuation");
     const py::buffer_info buffer = scores.request();
     HierarchySaliencyMapValidation::validateHierarchyValuation(
-        weighted.topology(), std::span<const Real>(static_cast<const Real*>(buffer.ptr), static_cast<std::size_t>(buffer.shape[0])),
-        saliencyPolicyFromStrict(strict), saliencyRangePolicyFromNonnegative(nonnegative), "HierarchySaliencyMapValidation.validateHierarchyValuation");
+        valuedTree.topology(), std::span<const Real>(static_cast<const Real*>(buffer.ptr), static_cast<std::size_t>(buffer.shape[0])),
+        saliencyPolicyFromStrict(strict), saliencyRangePolicyFromNonnegative(nonnegative), "HierarchySaliencyMapValidation.validate_hierarchy_valuation");
 }
 
-void validateHierarchyValuationPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation, bool strict, bool nonnegative) {
+void validateHierarchyValuationPy(const PythonValuedMorphologicalTree& valuedTree, py::array valuation, bool strict, bool nonnegative) {
     py::array contiguous = py::array::ensure(valuation, py::array::c_style);
     if (!contiguous) {
         throw std::invalid_argument("valuation must be a 1D C-contiguous int32, float32, or float64 array");
     }
 
     if (contiguous.dtype().is(py::dtype::of<int>())) {
-        validateHierarchyValuationTypedPy<int>(weighted, contiguous, strict, nonnegative);
+        validateHierarchyValuationTypedPy<int>(valuedTree, contiguous, strict, nonnegative);
         return;
     }
     if (contiguous.dtype().is(py::dtype::of<float>())) {
-        validateHierarchyValuationTypedPy<float>(weighted, contiguous, strict, nonnegative);
+        validateHierarchyValuationTypedPy<float>(valuedTree, contiguous, strict, nonnegative);
         return;
     }
     if (contiguous.dtype().is(py::dtype::of<double>())) {
-        validateHierarchyValuationTypedPy<double>(weighted, contiguous, strict, nonnegative);
+        validateHierarchyValuationTypedPy<double>(valuedTree, contiguous, strict, nonnegative);
         return;
     }
 
     throw std::invalid_argument("valuation must be a 1D C-contiguous int32, float32, or float64 array");
 }
 
-template <class Real> py::array rankHierarchyValuationTypedPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation, bool strict) {
-    auto scores = pybind_utils::requireNodeAttributeArray<Real>(std::move(valuation), weighted.topology(), "valuation");
+template <class Real> py::array rankHierarchyValuationTypedPy(const PythonValuedMorphologicalTree& valuedTree, py::array valuation, bool strict) {
+    auto scores = pybind_utils::requireNodeAttributeArray<Real>(std::move(valuation), valuedTree.topology(), "valuation");
     const py::buffer_info buffer = scores.request();
     std::vector<int> ranks = HierarchySaliencyMapValidation::rankHierarchyValuation(
-        weighted.topology(), std::span<const Real>(static_cast<const Real*>(buffer.ptr), static_cast<std::size_t>(buffer.shape[0])),
+        valuedTree.topology(), std::span<const Real>(static_cast<const Real*>(buffer.ptr), static_cast<std::size_t>(buffer.shape[0])),
         saliencyPolicyFromStrict(strict));
     const int numRanks = static_cast<int>(ranks.size());
     return pybind_utils::toNumpyOwned(std::move(ranks), numRanks);
 }
 
-py::array rankHierarchyValuationPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation, bool strict) {
+py::array rankHierarchyValuationPy(const PythonValuedMorphologicalTree& valuedTree, py::array valuation, bool strict) {
     py::array contiguous = py::array::ensure(valuation, py::array::c_style);
     if (!contiguous) {
         throw std::invalid_argument("valuation must be a 1D C-contiguous int32, float32, or float64 array");
     }
 
     if (contiguous.dtype().is(py::dtype::of<int>())) {
-        return rankHierarchyValuationTypedPy<int>(weighted, contiguous, strict);
+        return rankHierarchyValuationTypedPy<int>(valuedTree, contiguous, strict);
     }
     if (contiguous.dtype().is(py::dtype::of<float>())) {
-        return rankHierarchyValuationTypedPy<float>(weighted, contiguous, strict);
+        return rankHierarchyValuationTypedPy<float>(valuedTree, contiguous, strict);
     }
     if (contiguous.dtype().is(py::dtype::of<double>())) {
-        return rankHierarchyValuationTypedPy<double>(weighted, contiguous, strict);
+        return rankHierarchyValuationTypedPy<double>(valuedTree, contiguous, strict);
     }
 
     throw std::invalid_argument("valuation must be a 1D C-contiguous int32, float32, or float64 array");
 }
 
 template <class Real>
-py::array computeNormalizedScoresTypedPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation, bool strict, bool nonnegative) {
-    auto scores = pybind_utils::requireNodeAttributeArray<Real>(std::move(valuation), weighted.topology(), "valuation");
+py::array computeNormalizedScoresTypedPy(const PythonValuedMorphologicalTree& valuedTree, py::array valuation, bool strict, bool nonnegative) {
+    auto scores = pybind_utils::requireNodeAttributeArray<Real>(std::move(valuation), valuedTree.topology(), "valuation");
     const py::buffer_info buffer = scores.request();
     std::vector<double> normalized = HierarchySaliencyMapValidation::computeNormalizedScores(
-        weighted.topology(), std::span<const Real>(static_cast<const Real*>(buffer.ptr), static_cast<std::size_t>(buffer.shape[0])),
+        valuedTree.topology(), std::span<const Real>(static_cast<const Real*>(buffer.ptr), static_cast<std::size_t>(buffer.shape[0])),
         saliencyPolicyFromStrict(strict), saliencyRangePolicyFromNonnegative(nonnegative));
     const int numScores = static_cast<int>(normalized.size());
     return pybind_utils::toNumpyOwned(std::move(normalized), numScores);
 }
 
-py::array computeNormalizedScoresPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation, bool strict, bool nonnegative) {
+py::array computeNormalizedScoresPy(const PythonValuedMorphologicalTree& valuedTree, py::array valuation, bool strict, bool nonnegative) {
     py::array contiguous = py::array::ensure(valuation, py::array::c_style);
     if (!contiguous) {
         throw std::invalid_argument("valuation must be a 1D C-contiguous int32, float32, or float64 array");
     }
 
     if (contiguous.dtype().is(py::dtype::of<int>())) {
-        return computeNormalizedScoresTypedPy<int>(weighted, contiguous, strict, nonnegative);
+        return computeNormalizedScoresTypedPy<int>(valuedTree, contiguous, strict, nonnegative);
     }
     if (contiguous.dtype().is(py::dtype::of<float>())) {
-        return computeNormalizedScoresTypedPy<float>(weighted, contiguous, strict, nonnegative);
+        return computeNormalizedScoresTypedPy<float>(valuedTree, contiguous, strict, nonnegative);
     }
     if (contiguous.dtype().is(py::dtype::of<double>())) {
-        return computeNormalizedScoresTypedPy<double>(weighted, contiguous, strict, nonnegative);
+        return computeNormalizedScoresTypedPy<double>(valuedTree, contiguous, strict, nonnegative);
     }
 
     throw std::invalid_argument("valuation must be a 1D C-contiguous int32, float32, or float64 array");
@@ -456,7 +535,7 @@ py::array computeNormalizedScoresPy(const WeightedMorphologicalTree<std::uint8_t
 
 IncrementalNodeContourMap incrementalNodeContourMapFromDictPy(py::dict contours) {
     constexpr const char* context = "HierarchySaliencyMapProjection incremental contour operation";
-    for (const char* key : {"numRows", "numCols", "numNodeSlots", "adjacencyRadius", "offsets", "sources", "targets"}) {
+    for (const char* key : {"num_rows", "num_columns", "num_node_slots", "adjacency_radius", "offsets", "sources", "targets"}) {
         if (!contours.contains(key)) {
             throw std::invalid_argument(std::string(context) + " contours is missing key '" + key + "'.");
         }
@@ -486,65 +565,69 @@ IncrementalNodeContourMap incrementalNodeContourMapFromDictPy(py::dict contours)
     const auto* targetData = static_cast<const NodeId*>(targetInfo.ptr);
 
     IncrementalNodeContourMap parsed;
-    parsed.numRows = py::cast<int>(contours["numRows"]);
-    parsed.numCols = py::cast<int>(contours["numCols"]);
-    parsed.numNodeSlots = py::cast<int>(contours["numNodeSlots"]);
-    parsed.adjacencyRadius = py::cast<double>(contours["adjacencyRadius"]);
+    parsed.numRows = py::cast<int>(contours["num_rows"]);
+    parsed.numColumns = py::cast<int>(contours["num_columns"]);
+    parsed.numNodeSlots = py::cast<int>(contours["num_node_slots"]);
+    parsed.adjacencyRadius = py::cast<double>(contours["adjacency_radius"]);
     parsed.offsets.assign(offsetData, offsetData + numOffsets);
     parsed.sources.assign(sourceData, sourceData + numEdges);
     parsed.targets.assign(targetData, targetData + numEdges);
     return parsed;
 }
 
-py::dict computeTopologicalLevelEdgeMapPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, std::optional<double> radius) {
+py::dict computeTopologicalLevelEdgeMapPy(const PythonValuedMorphologicalTree& valuedTree, std::optional<double> radius) {
     if (radius.has_value()) {
         RegularGridAdjacency2D adjacency =
-            pybind_utils::makeRegularGridAdjacency2D(weighted.topology().getNumRowsOfGridDomain2D(), weighted.topology().getNumColsOfGridDomain2D(), *radius,
-                                                     "HierarchySaliencyMap.computeTopologicalLevelEdgeMap");
-        return edgeSaliencyMapToDict(HierarchySaliencyMap::computeTopologicalLevelEdgeMap(weighted.topology(), adjacency));
+            pybind_utils::makeRegularGridAdjacency2D(valuedTree.topology().numRows(), valuedTree.topology().numColumns(), *radius,
+                                                     "HierarchySaliencyMap.compute_topological_level_edge_map");
+        return edgeSaliencyMapToDict(HierarchySaliencyMap::computeTopologicalLevelEdgeMap(valuedTree.topology(), adjacency));
     }
-    return edgeSaliencyMapToDict(HierarchySaliencyMap::computeTopologicalLevelEdgeMap(weighted.topology()));
+    return edgeSaliencyMapToDict(HierarchySaliencyMap::computeTopologicalLevelEdgeMap(valuedTree.topology()));
 }
 
-py::dict computeNormalizedAltitudeEdgeMapPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, std::optional<double> radius) {
+py::dict computeNormalizedAltitudeEdgeMapPy(const PythonValuedMorphologicalTree& valuedTree, std::optional<double> radius) {
     if (radius.has_value()) {
         RegularGridAdjacency2D adjacency =
-            pybind_utils::makeRegularGridAdjacency2D(weighted.topology().getNumRowsOfGridDomain2D(), weighted.topology().getNumColsOfGridDomain2D(), *radius,
-                                                     "HierarchySaliencyMap.computeNormalizedAltitudeEdgeMap");
-        return edgeSaliencyMapToDict(HierarchySaliencyMap::computeNormalizedAltitudeEdgeMap(weighted, adjacency));
+            pybind_utils::makeRegularGridAdjacency2D(valuedTree.topology().numRows(), valuedTree.topology().numColumns(), *radius,
+                                                     "HierarchySaliencyMap.compute_normalized_altitude_edge_map");
+        return valuedTree.visit([&](const auto& concreteTree) {
+            return edgeSaliencyMapToDict(HierarchySaliencyMap::computeNormalizedAltitudeEdgeMap(*concreteTree, adjacency));
+        });
     }
-    return edgeSaliencyMapToDict(HierarchySaliencyMap::computeNormalizedAltitudeEdgeMap(weighted));
+    return valuedTree.visit([](const auto& concreteTree) {
+        return edgeSaliencyMapToDict(HierarchySaliencyMap::computeNormalizedAltitudeEdgeMap(*concreteTree));
+    });
 }
 
-RegularGridAdjacency2D saliencyAdjacencyPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, std::optional<double> radius, const char* context) {
+RegularGridAdjacency2D saliencyAdjacencyPy(const PythonValuedMorphologicalTree& valuedTree, std::optional<double> radius, const char* context) {
     if (radius.has_value()) {
-        return pybind_utils::makeRegularGridAdjacency2D(weighted.topology().getNumRowsOfGridDomain2D(), weighted.topology().getNumColsOfGridDomain2D(), *radius,
+        return pybind_utils::makeRegularGridAdjacency2D(valuedTree.topology().numRows(), valuedTree.topology().numColumns(), *radius,
                                                         context);
     }
-    return HierarchySaliencyMap::requireProjectionAdjacency(weighted.topology(), context);
+    return HierarchySaliencyMap::requireProjectionAdjacency(valuedTree.topology(), context);
 }
 
 template <class Real>
-py::dict computeSaliencyEdgeMapTypedPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation, std::optional<double> radius, bool strict,
+py::dict computeSaliencyEdgeMapTypedPy(const PythonValuedMorphologicalTree& valuedTree, py::array valuation, std::optional<double> radius, bool strict,
                                        HierarchyLevelConvention levelConvention, bool validateConnectivity, const char* context) {
-    auto scores = pybind_utils::requireNodeAttributeArray<Real>(std::move(valuation), weighted.topology(), "valuation");
+    auto scores = pybind_utils::requireNodeAttributeArray<Real>(std::move(valuation), valuedTree.topology(), "valuation");
     const py::buffer_info buffer = scores.request();
     const auto* scoreData = static_cast<const Real*>(buffer.ptr);
     const auto valuationSpan = std::span<const Real>(scoreData, static_cast<std::size_t>(buffer.shape[0]));
 
     if (radius.has_value()) {
-        RegularGridAdjacency2D adjacency = pybind_utils::makeRegularGridAdjacency2D(weighted.topology().getNumRowsOfGridDomain2D(),
-                                                                                    weighted.topology().getNumColsOfGridDomain2D(), *radius, context);
+        RegularGridAdjacency2D adjacency = pybind_utils::makeRegularGridAdjacency2D(valuedTree.topology().numRows(),
+                                                                                    valuedTree.topology().numColumns(), *radius, context);
         return edgeSaliencyMapToDict(HierarchySaliencyMap::computeSaliencyEdgeMap(
-            weighted.topology(), adjacency, valuationSpan, saliencyPolicyFromStrict(strict), levelConvention,
+            valuedTree.topology(), adjacency, valuationSpan, saliencyPolicyFromStrict(strict), levelConvention,
             validateConnectivity ? HierarchyConnectivityPolicy::ValidateConnected : HierarchyConnectivityPolicy::AssumeConnected));
     }
     return edgeSaliencyMapToDict(HierarchySaliencyMap::computeSaliencyEdgeMap(
-        weighted.topology(), valuationSpan, saliencyPolicyFromStrict(strict), levelConvention,
+        valuedTree.topology(), valuationSpan, saliencyPolicyFromStrict(strict), levelConvention,
         validateConnectivity ? HierarchyConnectivityPolicy::ValidateConnected : HierarchyConnectivityPolicy::AssumeConnected));
 }
 
-py::dict computeSaliencyEdgeMapPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation, std::optional<double> radius, bool strict,
+py::dict computeSaliencyEdgeMapPy(const PythonValuedMorphologicalTree& valuedTree, py::array valuation, std::optional<double> radius, bool strict,
                                   HierarchyLevelConvention levelConvention, bool validateConnectivity, const char* context) {
     py::array contiguous = py::array::ensure(valuation, py::array::c_style);
     if (!contiguous) {
@@ -552,44 +635,44 @@ py::dict computeSaliencyEdgeMapPy(const WeightedMorphologicalTree<std::uint8_t>&
     }
 
     if (contiguous.dtype().is(py::dtype::of<int>())) {
-        return computeSaliencyEdgeMapTypedPy<int>(weighted, contiguous, radius, strict, levelConvention, validateConnectivity, context);
+        return computeSaliencyEdgeMapTypedPy<int>(valuedTree, contiguous, radius, strict, levelConvention, validateConnectivity, context);
     }
     if (contiguous.dtype().is(py::dtype::of<float>())) {
-        return computeSaliencyEdgeMapTypedPy<float>(weighted, contiguous, radius, strict, levelConvention, validateConnectivity, context);
+        return computeSaliencyEdgeMapTypedPy<float>(valuedTree, contiguous, radius, strict, levelConvention, validateConnectivity, context);
     }
     if (contiguous.dtype().is(py::dtype::of<double>())) {
-        return computeSaliencyEdgeMapTypedPy<double>(weighted, contiguous, radius, strict, levelConvention, validateConnectivity, context);
+        return computeSaliencyEdgeMapTypedPy<double>(valuedTree, contiguous, radius, strict, levelConvention, validateConnectivity, context);
     }
 
     throw std::invalid_argument("valuation must be a 1D C-contiguous int32, float32, or float64 array");
 }
 
 template <class Real>
-py::dict computeCanonicalRankedSaliencyEdgeMapTypedPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation,
+py::dict computeCanonicalRankedSaliencyEdgeMapTypedPy(const PythonValuedMorphologicalTree& valuedTree, py::array valuation,
                                                       std::optional<double> radius, bool strict, bool validateConnectivity) {
-    auto scores = pybind_utils::requireNodeAttributeArray<Real>(std::move(valuation), weighted.topology(), "valuation");
+    auto scores = pybind_utils::requireNodeAttributeArray<Real>(std::move(valuation), valuedTree.topology(), "valuation");
     const py::buffer_info buffer = scores.request();
     const auto valuationSpan = std::span<const Real>(static_cast<const Real*>(buffer.ptr), static_cast<std::size_t>(buffer.shape[0]));
-    const RegularGridAdjacency2D adjacency = saliencyAdjacencyPy(weighted, radius, "HierarchySaliencyMap.computeCanonicalRankedSaliencyEdgeMap");
+    const RegularGridAdjacency2D adjacency = saliencyAdjacencyPy(valuedTree, radius, "HierarchySaliencyMap.compute_canonical_ranked_saliency_edge_map");
     return edgeSaliencyMapToDict(HierarchySaliencyMap::computeCanonicalRankedSaliencyEdgeMap(
-        weighted.topology(), adjacency, valuationSpan, saliencyPolicyFromStrict(strict),
+        valuedTree.topology(), adjacency, valuationSpan, saliencyPolicyFromStrict(strict),
         validateConnectivity ? HierarchyConnectivityPolicy::ValidateConnected : HierarchyConnectivityPolicy::AssumeConnected));
 }
 
-py::dict computeCanonicalRankedSaliencyEdgeMapPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array valuation, std::optional<double> radius,
+py::dict computeCanonicalRankedSaliencyEdgeMapPy(const PythonValuedMorphologicalTree& valuedTree, py::array valuation, std::optional<double> radius,
                                                  bool strict, bool validateConnectivity) {
     py::array contiguous = py::array::ensure(valuation, py::array::c_style);
     if (!contiguous) {
         throw std::invalid_argument("valuation must be a 1D C-contiguous int32, float32, or float64 array");
     }
     if (contiguous.dtype().is(py::dtype::of<int>())) {
-        return computeCanonicalRankedSaliencyEdgeMapTypedPy<int>(weighted, contiguous, radius, strict, validateConnectivity);
+        return computeCanonicalRankedSaliencyEdgeMapTypedPy<int>(valuedTree, contiguous, radius, strict, validateConnectivity);
     }
     if (contiguous.dtype().is(py::dtype::of<float>())) {
-        return computeCanonicalRankedSaliencyEdgeMapTypedPy<float>(weighted, contiguous, radius, strict, validateConnectivity);
+        return computeCanonicalRankedSaliencyEdgeMapTypedPy<float>(valuedTree, contiguous, radius, strict, validateConnectivity);
     }
     if (contiguous.dtype().is(py::dtype::of<double>())) {
-        return computeCanonicalRankedSaliencyEdgeMapTypedPy<double>(weighted, contiguous, radius, strict, validateConnectivity);
+        return computeCanonicalRankedSaliencyEdgeMapTypedPy<double>(valuedTree, contiguous, radius, strict, validateConnectivity);
     }
     throw std::invalid_argument("valuation must be a 1D C-contiguous int32, float32, or float64 array");
 }
@@ -603,123 +686,131 @@ std::span<const Real> shapeSpaceDenseNodeSpan(py::array values, const Morphologi
 }
 
 template <std::floating_point Real>
-py::dict computeShapeSpaceExtinctionValuesTypedPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array attribute,
+py::dict computeShapeSpaceExtinctionValuesTypedPy(const PythonValuedMorphologicalTree& valuedTree, py::array attribute,
                                                   ShapeSpaceExtremaPolarity polarity) {
     py::array_t<Real, py::array::c_style> attributeOwner;
-    const std::span<const Real> attributeSpan = shapeSpaceDenseNodeSpan<Real>(std::move(attribute), weighted.topology(), attributeOwner, "attribute");
-    return shapeSpaceExtinctionResultToDict(ShapeSpaceSaliency::computeExtinctionValues(weighted.topology(), attributeSpan, polarity));
+    const std::span<const Real> attributeSpan = shapeSpaceDenseNodeSpan<Real>(std::move(attribute), valuedTree.topology(), attributeOwner, "attribute");
+    return shapeSpaceExtinctionResultToDict(ShapeSpaceSaliency::computeExtinctionValues(valuedTree.topology(), attributeSpan, polarity));
 }
 
-py::dict computeShapeSpaceExtinctionValuesPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array attribute, ShapeSpaceExtremaPolarity polarity) {
+py::dict computeShapeSpaceExtinctionValuesPy(const PythonValuedMorphologicalTree& valuedTree, py::array attribute, ShapeSpaceExtremaPolarity polarity) {
     py::array contiguous = py::array::ensure(attribute, py::array::c_style);
     if (!contiguous) {
         throw std::invalid_argument("attribute must be a 1D C-contiguous float32 or float64 array");
     }
     if (contiguous.dtype().is(py::dtype::of<float>())) {
-        return computeShapeSpaceExtinctionValuesTypedPy<float>(weighted, contiguous, polarity);
+        return computeShapeSpaceExtinctionValuesTypedPy<float>(valuedTree, contiguous, polarity);
     }
     if (contiguous.dtype().is(py::dtype::of<double>())) {
-        return computeShapeSpaceExtinctionValuesTypedPy<double>(weighted, contiguous, polarity);
+        return computeShapeSpaceExtinctionValuesTypedPy<double>(valuedTree, contiguous, polarity);
     }
     throw std::invalid_argument("attribute must be a 1D C-contiguous float32 or float64 array");
 }
 
 template <std::floating_point Real>
-py::dict projectShapeSpaceContourScoresTypedPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array scores, std::optional<double> radius) {
+py::dict projectShapeSpaceContourScoresTypedPy(const PythonValuedMorphologicalTree& valuedTree, py::array scores, std::optional<double> radius) {
     py::array_t<Real, py::array::c_style> scoreOwner;
-    const std::span<const Real> scoreSpan = shapeSpaceDenseNodeSpan<Real>(std::move(scores), weighted.topology(), scoreOwner, "nodeScores");
+    const std::span<const Real> scoreSpan = shapeSpaceDenseNodeSpan<Real>(std::move(scores), valuedTree.topology(), scoreOwner, "node_scores");
 
     if (radius.has_value()) {
         RegularGridAdjacency2D adjacency = pybind_utils::makeRegularGridAdjacency2D(
-            weighted.topology().getNumRowsOfGridDomain2D(), weighted.topology().getNumColsOfGridDomain2D(), *radius, "ShapeSpaceSaliency.projectContourScores");
-        return edgeSaliencyMapToDict(ShapeSpaceSaliency::projectContourScores(weighted.topology(), scoreSpan, adjacency));
+            valuedTree.topology().numRows(), valuedTree.topology().numColumns(), *radius, "ShapeSpaceSaliency.project_contour_scores");
+        return edgeSaliencyMapToDict(ShapeSpaceSaliency::projectContourScores(valuedTree.topology(), scoreSpan, adjacency));
     }
-    return edgeSaliencyMapToDict(ShapeSpaceSaliency::projectContourScores(weighted.topology(), scoreSpan));
+    return edgeSaliencyMapToDict(ShapeSpaceSaliency::projectContourScores(valuedTree.topology(), scoreSpan));
 }
 
-py::dict projectShapeSpaceContourScoresPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array scores, std::optional<double> radius) {
+py::dict projectShapeSpaceContourScoresPy(const PythonValuedMorphologicalTree& valuedTree, py::array scores, std::optional<double> radius) {
     py::array contiguous = py::array::ensure(scores, py::array::c_style);
     if (!contiguous) {
-        throw std::invalid_argument("nodeScores must be a 1D C-contiguous float32 or float64 array");
+        throw std::invalid_argument("node_scores must be a 1D C-contiguous float32 or float64 array");
     }
     if (contiguous.dtype().is(py::dtype::of<float>())) {
-        return projectShapeSpaceContourScoresTypedPy<float>(weighted, contiguous, radius);
+        return projectShapeSpaceContourScoresTypedPy<float>(valuedTree, contiguous, radius);
     }
     if (contiguous.dtype().is(py::dtype::of<double>())) {
-        return projectShapeSpaceContourScoresTypedPy<double>(weighted, contiguous, radius);
+        return projectShapeSpaceContourScoresTypedPy<double>(valuedTree, contiguous, radius);
     }
-    throw std::invalid_argument("nodeScores must be a 1D C-contiguous float32 or float64 array");
+    throw std::invalid_argument("node_scores must be a 1D C-contiguous float32 or float64 array");
 }
 
 template <std::floating_point Real>
-py::dict computeShapeSpaceSaliencyTypedPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array attribute, ShapeSpaceExtremaPolarity polarity,
+py::dict computeShapeSpaceSaliencyTypedPy(const PythonValuedMorphologicalTree& valuedTree, py::array attribute, ShapeSpaceExtremaPolarity polarity,
                                           std::optional<double> radius) {
     py::array_t<Real, py::array::c_style> attributeOwner;
-    const std::span<const Real> attributeSpan = shapeSpaceDenseNodeSpan<Real>(std::move(attribute), weighted.topology(), attributeOwner, "attribute");
+    const std::span<const Real> attributeSpan = shapeSpaceDenseNodeSpan<Real>(std::move(attribute), valuedTree.topology(), attributeOwner, "attribute");
 
     if (radius.has_value()) {
         RegularGridAdjacency2D adjacency = pybind_utils::makeRegularGridAdjacency2D(
-            weighted.topology().getNumRowsOfGridDomain2D(), weighted.topology().getNumColsOfGridDomain2D(), *radius, "ShapeSpaceSaliency.compute");
-        return shapeSpaceSaliencyResultToDict(ShapeSpaceSaliency::compute(weighted.topology(), attributeSpan, polarity, adjacency));
+            valuedTree.topology().numRows(), valuedTree.topology().numColumns(), *radius, "ShapeSpaceSaliency.compute");
+        return shapeSpaceSaliencyResultToDict(ShapeSpaceSaliency::compute(valuedTree.topology(), attributeSpan, polarity, adjacency));
     }
-    return shapeSpaceSaliencyResultToDict(ShapeSpaceSaliency::compute(weighted.topology(), attributeSpan, polarity));
+    return shapeSpaceSaliencyResultToDict(ShapeSpaceSaliency::compute(valuedTree.topology(), attributeSpan, polarity));
 }
 
-py::dict computeShapeSpaceSaliencyPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, py::array attribute, ShapeSpaceExtremaPolarity polarity,
+py::dict computeShapeSpaceSaliencyPy(const PythonValuedMorphologicalTree& valuedTree, py::array attribute, ShapeSpaceExtremaPolarity polarity,
                                      std::optional<double> radius) {
     py::array contiguous = py::array::ensure(attribute, py::array::c_style);
     if (!contiguous) {
         throw std::invalid_argument("attribute must be a 1D C-contiguous float32 or float64 array");
     }
     if (contiguous.dtype().is(py::dtype::of<float>())) {
-        return computeShapeSpaceSaliencyTypedPy<float>(weighted, contiguous, polarity, radius);
+        return computeShapeSpaceSaliencyTypedPy<float>(valuedTree, contiguous, polarity, radius);
     }
     if (contiguous.dtype().is(py::dtype::of<double>())) {
-        return computeShapeSpaceSaliencyTypedPy<double>(weighted, contiguous, polarity, radius);
+        return computeShapeSpaceSaliencyTypedPy<double>(valuedTree, contiguous, polarity, radius);
     }
     throw std::invalid_argument("attribute must be a 1D C-contiguous float32 or float64 array");
 }
 
 py::dict thresholdCutPy(py::dict edgeMap, double threshold) {
-    EdgeSaliencyMap<double> parsed = edgeSaliencyMapFromDictPy(std::move(edgeMap), "HierarchySaliencyMapProjection.thresholdCut");
+    EdgeSaliencyMap<double> parsed = edgeSaliencyMapFromDictPy(std::move(edgeMap), "HierarchySaliencyMapProjection.threshold_cut");
     return edgeContourMapToDict(HierarchySaliencyMapProjection::thresholdCut(parsed, threshold));
 }
 
 py::array edgeMapToPixelImagePy(py::dict edgeMap, EdgeToPixelReducer reducer) {
-    EdgeSaliencyMap<double> parsed = edgeSaliencyMapFromDictPy(std::move(edgeMap), "HierarchySaliencyMapProjection.edgeMapToPixelImage");
+    EdgeSaliencyMap<double> parsed = edgeSaliencyMapFromDictPy(std::move(edgeMap), "HierarchySaliencyMapProjection.edge_map_to_pixel_image");
     return pybind_utils::toNumpy(HierarchySaliencyMapProjection::edgeMapToPixelImage(parsed, reducer));
 }
 
-py::dict nodeContourEdgesPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, std::optional<double> radius) {
+py::dict nodeContourEdgesPy(const PythonValuedMorphologicalTree& valuedTree, std::optional<double> radius) {
     if (radius.has_value()) {
         RegularGridAdjacency2D adjacency =
-            pybind_utils::makeRegularGridAdjacency2D(weighted.topology().getNumRowsOfGridDomain2D(), weighted.topology().getNumColsOfGridDomain2D(), *radius,
-                                                     "HierarchySaliencyMapProjection.nodeContourEdges");
-        return nodeContourEdgeMapToDict(HierarchySaliencyMapProjection::nodeContourEdges(weighted, adjacency));
+            pybind_utils::makeRegularGridAdjacency2D(valuedTree.topology().numRows(), valuedTree.topology().numColumns(), *radius,
+                                                     "HierarchySaliencyMapProjection.node_contour_edges");
+        return valuedTree.visit([&](const auto& concreteTree) {
+            return nodeContourEdgeMapToDict(HierarchySaliencyMapProjection::nodeContourEdges(*concreteTree, adjacency));
+        });
     }
-    return nodeContourEdgeMapToDict(HierarchySaliencyMapProjection::nodeContourEdges(weighted));
+    return valuedTree.visit([](const auto& concreteTree) {
+        return nodeContourEdgeMapToDict(HierarchySaliencyMapProjection::nodeContourEdges(*concreteTree));
+    });
 }
 
-py::dict computeIncrementalNodeContoursPy(const WeightedMorphologicalTree<std::uint8_t>& weighted, std::optional<double> radius) {
+py::dict computeIncrementalNodeContoursPy(const PythonValuedMorphologicalTree& valuedTree, std::optional<double> radius) {
     if (radius.has_value()) {
         RegularGridAdjacency2D adjacency =
-            pybind_utils::makeRegularGridAdjacency2D(weighted.topology().getNumRowsOfGridDomain2D(), weighted.topology().getNumColsOfGridDomain2D(), *radius,
-                                                     "HierarchySaliencyMapProjection.computeIncrementalNodeContours");
-        return incrementalNodeContourMapToDict(HierarchySaliencyMapProjection::computeIncrementalNodeContours(weighted, adjacency));
+            pybind_utils::makeRegularGridAdjacency2D(valuedTree.topology().numRows(), valuedTree.topology().numColumns(), *radius,
+                                                     "HierarchySaliencyMapProjection.compute_incremental_node_contours");
+        return valuedTree.visit([&](const auto& concreteTree) {
+            return incrementalNodeContourMapToDict(HierarchySaliencyMapProjection::computeIncrementalNodeContours(*concreteTree, adjacency));
+        });
     }
-    return incrementalNodeContourMapToDict(HierarchySaliencyMapProjection::computeIncrementalNodeContours(weighted));
+    return valuedTree.visit([](const auto& concreteTree) {
+        return incrementalNodeContourMapToDict(HierarchySaliencyMapProjection::computeIncrementalNodeContours(*concreteTree));
+    });
 }
 
 template <std::floating_point Real> py::dict projectNodeValuationOnIncrementalContoursTypedPy(py::dict contours, py::array nodeValuation) {
     IncrementalNodeContourMap parsed = incrementalNodeContourMapFromDictPy(std::move(contours));
     auto valuation = py::array_t<Real, py::array::c_style>::ensure(nodeValuation);
     if (!valuation) {
-        throw std::invalid_argument("nodeValuation must be a 1D C-contiguous float32 or float64 array.");
+        throw std::invalid_argument("node_valuation must be a 1D C-contiguous float32 or float64 array.");
     }
     const py::buffer_info info = valuation.request();
-    pybind_utils::require1DArray(info, parsed.numNodeSlots, "nodeValuation");
+    pybind_utils::require1DArray(info, parsed.numNodeSlots, "node_valuation");
     if (info.strides[0] != static_cast<py::ssize_t>(sizeof(Real))) {
-        throw std::invalid_argument("nodeValuation must be C-contiguous.");
+        throw std::invalid_argument("node_valuation must be C-contiguous.");
     }
     return edgeSaliencyMapToDict(HierarchySaliencyMapProjection::projectNodeValuation(
         parsed, std::span<const Real>(static_cast<const Real*>(info.ptr), static_cast<std::size_t>(info.shape[0]))));
@@ -728,7 +819,7 @@ template <std::floating_point Real> py::dict projectNodeValuationOnIncrementalCo
 py::dict projectNodeValuationOnIncrementalContoursPy(py::dict contours, py::array nodeValuation) {
     py::array contiguous = py::array::ensure(nodeValuation, py::array::c_style);
     if (!contiguous) {
-        throw std::invalid_argument("nodeValuation must be a 1D C-contiguous float32 or float64 array");
+        throw std::invalid_argument("node_valuation must be a 1D C-contiguous float32 or float64 array");
     }
     if (contiguous.dtype().is(py::dtype::of<float>())) {
         return projectNodeValuationOnIncrementalContoursTypedPy<float>(std::move(contours), contiguous);
@@ -736,19 +827,19 @@ py::dict projectNodeValuationOnIncrementalContoursPy(py::dict contours, py::arra
     if (contiguous.dtype().is(py::dtype::of<double>())) {
         return projectNodeValuationOnIncrementalContoursTypedPy<double>(std::move(contours), contiguous);
     }
-    throw std::invalid_argument("nodeValuation must be a 1D C-contiguous float32 or float64 array");
+    throw std::invalid_argument("node_valuation must be a 1D C-contiguous float32 or float64 array");
 }
 
 template <std::floating_point Real> py::dict thresholdIncrementalContoursByNodeValuationTypedPy(py::dict contours, py::array nodeValuation, double threshold) {
     IncrementalNodeContourMap parsed = incrementalNodeContourMapFromDictPy(std::move(contours));
     auto valuation = py::array_t<Real, py::array::c_style>::ensure(nodeValuation);
     if (!valuation) {
-        throw std::invalid_argument("nodeValuation must be a 1D C-contiguous float32 or float64 array.");
+        throw std::invalid_argument("node_valuation must be a 1D C-contiguous float32 or float64 array.");
     }
     const py::buffer_info info = valuation.request();
-    pybind_utils::require1DArray(info, parsed.numNodeSlots, "nodeValuation");
+    pybind_utils::require1DArray(info, parsed.numNodeSlots, "node_valuation");
     if (info.strides[0] != static_cast<py::ssize_t>(sizeof(Real))) {
-        throw std::invalid_argument("nodeValuation must be C-contiguous.");
+        throw std::invalid_argument("node_valuation must be C-contiguous.");
     }
     return edgeContourMapToDict(HierarchySaliencyMapProjection::thresholdByNodeValuation(
         parsed, std::span<const Real>(static_cast<const Real*>(info.ptr), static_cast<std::size_t>(info.shape[0])), threshold));
@@ -757,7 +848,7 @@ template <std::floating_point Real> py::dict thresholdIncrementalContoursByNodeV
 py::dict thresholdIncrementalContoursByNodeValuationPy(py::dict contours, py::array nodeValuation, double threshold) {
     py::array contiguous = py::array::ensure(nodeValuation, py::array::c_style);
     if (!contiguous) {
-        throw std::invalid_argument("nodeValuation must be a 1D C-contiguous float32 or float64 array");
+        throw std::invalid_argument("node_valuation must be a 1D C-contiguous float32 or float64 array");
     }
     if (contiguous.dtype().is(py::dtype::of<float>())) {
         return thresholdIncrementalContoursByNodeValuationTypedPy<float>(std::move(contours), contiguous, threshold);
@@ -765,224 +856,194 @@ py::dict thresholdIncrementalContoursByNodeValuationPy(py::dict contours, py::ar
     if (contiguous.dtype().is(py::dtype::of<double>())) {
         return thresholdIncrementalContoursByNodeValuationTypedPy<double>(std::move(contours), contiguous, threshold);
     }
-    throw std::invalid_argument("nodeValuation must be a 1D C-contiguous float32 or float64 array");
+    throw std::invalid_argument("node_valuation must be a 1D C-contiguous float32 or float64 array");
 }
 
 template <class TreeLike, class PyClass> void bindTreeQueryApi(PyClass& cls) {
     cls.def_property_readonly(
-           "numInternalNodeSlots", [](TreeLike& self) { return topology(self).getNumInternalNodeSlots(); }, "Size of the dense internal NodeId slot domain.")
+           "num_internal_node_slots", [](TreeLike& self) { return topology(self).numInternalNodeSlots(); }, "Size of the dense internal NodeId slot domain.")
         .def_property_readonly(
-            "numTotalProperParts", [](TreeLike& self) { return topology(self).getNumTotalProperParts(); },
-            "Number of proper parts in the finite support domain.")
+            "num_pixels", [](TreeLike& self) { return topology(self).numPixels(); }, "Number of pixels in the finite tree domain.")
         .def_property_readonly(
-            "numHigraNodes", [](TreeLike& self) { return topology(self).getNumHigraNodes(); }, "Size of the preserved imported Higra node-id domain.")
-        .def(
-            "getRoot", [](TreeLike& self) { return topology(self).getRoot(); }, "Return the current root node id.")
+            "num_higra_nodes", [](TreeLike& self) { return topology(self).getNumHigraNodes(); }, "Size of the preserved imported Higra node-id domain.")
         .def_property_readonly(
-            "root", [](TreeLike& self) { return topology(self).getRoot(); }, "Current root node id.")
+            "root", [](TreeLike& self) { return topology(self).root(); }, "Current root node id.")
         .def_property_readonly(
-            "numFreeNodeSlots", [](TreeLike& self) { return topology(self).getNumFreeNodeSlots(); }, "Number of currently free internal-node slots.")
+            "num_free_node_slots", [](TreeLike& self) { return topology(self).getNumFreeNodeSlots(); }, "Number of currently free internal-node slots.")
         .def_property_readonly(
-            "numLeafNodes", [](TreeLike& self) { return topology(self).getNumLeafNodes(); }, "Number of alive leaf nodes.")
-        .def(
-            "getAliveNodeIds", [](TreeLike& self) { return collectNodeIds(topology(self).getAliveNodeIds()); },
-            "Return all alive internal-node ids in the dense node-id domain.")
+            "num_leaf_nodes", [](TreeLike& self) { return topology(self).numLeafNodes(); }, "Number of alive leaf nodes.")
         .def_property_readonly(
-            "aliveNodeIds", [](TreeLike& self) { return collectNodeIds(topology(self).getAliveNodeIds()); },
+            "alive_node_ids", [](TreeLike& self) { return collectNodeIds(topology(self).aliveNodeIds()); },
             "Alive internal-node ids in the dense node-id domain.")
         .def_property_readonly(
-            "alive_node_ids", [](TreeLike& self) { return collectNodeIds(topology(self).getAliveNodeIds()); },
-            "Alive internal-node ids in the dense node-id domain.")
+            "leaves", [](TreeLike& self) { return topology(self).leaves(); }, "Alive leaf node ids in the dense node-id domain.")
         .def(
-            "getLeafNodeIds", [](TreeLike& self) { return topology(self).getLeaves(); }, "Return alive leaf node ids in the dense node-id domain.")
-        .def_property_readonly(
-            "leafNodeIds", [](TreeLike& self) { return topology(self).getLeaves(); }, "Alive leaf node ids in the dense node-id domain.")
-        .def_property_readonly(
-            "leaf_node_ids", [](TreeLike& self) { return topology(self).getLeaves(); }, "Alive leaf node ids in the dense node-id domain.")
-        .def(
-            "getChildren", [](TreeLike& self, NodeId nodeId) { return collectNodeIds(topology(self).getChildren(nodeId)); }, "nodeId"_a,
+            "children", [](TreeLike& self, NodeId nodeId) { return collectNodeIds(topology(self).children(nodeId)); }, "node_id"_a,
             "Return the direct children of a node in the dense node-id domain.")
         .def(
-            "getNodeNumDescendants", [](TreeLike& self, NodeId nodeId) { return topology(self).getNodeNumDescendants(nodeId); }, "nodeId"_a,
-            "Return the number of descendants of nodeId.")
+            "num_descendants", [](TreeLike& self, NodeId nodeId) { return topology(self).numDescendants(nodeId); }, "node_id"_a,
+            "Return the number of strict descendants of node_id.")
         .def(
-            "getNodeNumSiblings", [](TreeLike& self, NodeId nodeId) { return topology(self).getNodeNumSiblings(nodeId); }, "nodeId"_a,
-            "Return the number of siblings of nodeId.")
+            "num_siblings", [](TreeLike& self, NodeId nodeId) { return topology(self).numSiblings(nodeId); }, "node_id"_a,
+            "Return the number of siblings of node_id.")
         .def(
-            "getNumProperParts", [](TreeLike& self, NodeId nodeId) { return topology(self).getNumProperParts(nodeId); }, "nodeId"_a,
-            "Return the number of direct proper parts owned by nodeId.")
+            "proper_part_cardinality", [](TreeLike& self, NodeId nodeId) { return topology(self).properPartCardinality(nodeId); }, "node_id"_a,
+            "Return the number of pixels in the proper part of node_id.")
         .def(
-            "getNodeTimePreOrder", [](TreeLike& self, NodeId nodeId) { return topology(self).getNodeTimePreOrder(nodeId); }, "nodeId"_a,
-            "Return the preorder timestamp of nodeId.")
+            "dfs_entry_index", [](TreeLike& self, NodeId nodeId) { return topology(self).dfsEntryIndex(nodeId); }, "node_id"_a,
+            "Return the zero-based entry-event index of node_id in the interleaved DFS event sequence.")
         .def(
-            "getNodeTimePostOrder", [](TreeLike& self, NodeId nodeId) { return topology(self).getNodeTimePostOrder(nodeId); }, "nodeId"_a,
-            "Return the postorder timestamp of nodeId.")
+            "dfs_exit_index", [](TreeLike& self, NodeId nodeId) { return topology(self).dfsExitIndex(nodeId); }, "node_id"_a,
+            "Return the zero-based exit-event index of node_id in the interleaved DFS event sequence.")
         .def(
-            "getProperParts", [](TreeLike& self, NodeId nodeId) { return collectNodeIds(topology(self).getProperParts(nodeId)); }, "nodeId"_a,
-            "Return the proper parts owned directly by a node.")
+            "proper_part", [](TreeLike& self, NodeId nodeId) { return collectPixelIds(topology(self).properPart(nodeId)); }, "node_id"_a,
+            "Return the pixels in the proper part of a node.")
         .def(
-            "getConnectedComponent",
+            "node_support",
             [](TreeLike& self, NodeId nodeId) {
-                auto range = topology(self).getConnectedComponent(nodeId);
+                auto range = topology(self).nodeSupport(nodeId);
                 return py::make_iterator(range.begin(), range.end());
             },
-            py::keep_alive<0, 1>(), "nodeId"_a, "Iterate over all proper parts in the connected component represented by nodeId.")
+            py::keep_alive<0, 1>(), "node_id"_a, "Iterate over all pixels in the support represented by node_id.")
         .def(
-            "reconstructNode", [](TreeLike& self, NodeId nodeId) { return reconstructNodeMask(topology(self), nodeId); }, "nodeId"_a,
-            "Reconstruct a binary mask for the connected component represented by nodeId.")
+            "reconstruct_node", [](TreeLike& self, NodeId nodeId) { return reconstructNodeMask(topology(self), nodeId); }, "node_id"_a,
+            "Reconstruct a binary mask for the support represented by node_id.")
         .def(
-            "getPostOrderNodes",
+            "post_order",
             [](TreeLike& self, std::optional<NodeId> rootNodeId) {
-                return rootNodeId.has_value() ? collectNodeIds(topology(self).getPostOrderNodes(*rootNodeId))
-                                              : collectNodeIds(topology(self).getPostOrderNodes());
+                return rootNodeId.has_value() ? collectNodeIds(topology(self).postOrder(*rootNodeId))
+                                              : collectNodeIds(topology(self).postOrder());
             },
-            "rootNodeId"_a = std::nullopt, "Return post-order traversal node ids under `rootNodeId`, or under the tree root.")
+            "root_node_id"_a = std::nullopt, "Return a post-order traversal schedule under root_node_id, or under the tree root.")
         .def(
-            "getIteratorBreadthFirstTraversal",
+            "breadth_first_traversal",
             [](TreeLike& self, std::optional<NodeId> rootNodeId) {
-                return rootNodeId.has_value() ? collectNodeIds(topology(self).getIteratorBreadthFirstTraversal(*rootNodeId))
-                                              : collectNodeIds(topology(self).getIteratorBreadthFirstTraversal());
+                return rootNodeId.has_value() ? collectNodeIds(topology(self).breadthFirstTraversal(*rootNodeId))
+                                              : collectNodeIds(topology(self).breadthFirstTraversal());
             },
-            "rootNodeId"_a = std::nullopt, "Return breadth-first traversal node ids under `rootNodeId`, or under the tree root.")
+            "root_node_id"_a = std::nullopt, "Return breadth-first traversal node ids under root_node_id, or under the tree root.")
         .def(
-            "getPathToRootNodes", [](TreeLike& self, NodeId nodeId) { return collectNodeIds(topology(self).getPathToRootNodes(nodeId)); }, "nodeId"_a,
-            "Return the path from `nodeId` to the current root.")
+            "ancestors", [](TreeLike& self, NodeId nodeId) { return collectNodeIds(topology(self).ancestors(nodeId)); }, "node_id"_a,
+            "Return node_id followed by its proper ancestors up to and including the root.")
         .def(
-            "getPathBetweenNodes",
+            "lowest_common_ancestor", [](TreeLike& self, NodeId u, NodeId v) { return topology(self).lowestCommonAncestor(u, v); }, "u"_a, "v"_a,
+            "Return the inclusion-lowest common ancestor of two live nodes.")
+        .def(
+            "path_between_nodes",
             [](TreeLike& self, NodeId sourceNodeId, NodeId targetNodeId) {
                 return collectNodeIds(topology(self).getPathBetweenNodes(sourceNodeId, targetNodeId));
             },
-            "sourceNodeId"_a, "targetNodeId"_a, "Return the upward path from `sourceNodeId` toward `targetNodeId`.")
+            "source_node_id"_a, "target_node_id"_a, "Return the upward path from source_node_id toward target_node_id.")
         .def(
-            "getNodeSubtree", [](TreeLike& self, NodeId nodeId) { return collectNodeIds(topology(self).getNodeSubtree(nodeId)); }, "nodeId"_a,
-            "Return all alive node ids in the subtree rooted at `nodeId`.")
+            "subtree_nodes", [](TreeLike& self, NodeId nodeId) { return collectNodeIds(topology(self).subtreeNodes(nodeId)); }, "node_id"_a,
+            "Return node_id and all of its descendants in pre-order.")
         .def(
-            "getDescendants", [](TreeLike& self, NodeId nodeId) { return collectNodeIds(topology(self).getDescendants(nodeId)); }, "nodeId"_a,
-            "Return all strict descendant node ids of `nodeId`.")
+            "descendants", [](TreeLike& self, NodeId nodeId) { return collectNodeIds(topology(self).descendants(nodeId)); }, "node_id"_a,
+            "Return all strict descendant node ids of node_id in pre-order.")
         .def(
-            "getNodeParent", [](TreeLike& self, NodeId nodeId) { return topology(self).getNodeParent(nodeId); }, "nodeId"_a,
-            "Return the parent node id of `nodeId`, or `InvalidNode` when absent.")
+            "parent", [](TreeLike& self, NodeId nodeId) { return topology(self).parent(nodeId); }, "node_id"_a,
+            "Return the parent of node_id; the root is its own parent.")
         .def(
-            "getProperPartOwner", [](TreeLike& self, NodeId properPartId) { return topology(self).getProperPartOwner(properPartId); }, "properPartId"_a,
-            "Return the internal node that directly owns `properPartId`.")
+            "smallest_node", [](TreeLike& self, PixelId pixel) { return topology(self).smallestNode(pixel); }, "pixel"_a,
+            "Return the inclusion-smallest node containing pixel.")
+        .def_property_readonly(
+            "smallest_node_map",
+            [](TreeLike& self) {
+                const auto map = topology(self).smallestNodeMap();
+                return std::vector<NodeId>(map.begin(), map.end());
+            },
+            "Pixel-indexed smallest-node map.")
         .def(
-            "getHigraNodeId", [](TreeLike& self, NodeId nodeId) { return topology(self).getHigraNodeId(nodeId); }, "nodeId"_a,
+            "higra_node_id", [](TreeLike& self, NodeId nodeId) { return topology(self).getHigraNodeId(nodeId); }, "node_id"_a,
             "Return the preserved imported Higra node id for a live internal NodeId, or InvalidNode.")
         .def(
-            "getNumChildren", [](TreeLike& self, NodeId nodeId) { return topology(self).getNumChildren(nodeId); }, "nodeId"_a,
-            "Return the number of direct children of `nodeId`.")
+            "num_children", [](TreeLike& self, NodeId nodeId) { return topology(self).numChildren(nodeId); }, "node_id"_a,
+            "Return the number of direct children of node_id.")
         .def(
-            "getFirstChild", [](TreeLike& self, NodeId nodeId) { return topology(self).getFirstChild(nodeId); }, "nodeId"_a,
-            "Return the first child of `nodeId`, or `InvalidNode`.")
+            "first_child", [](TreeLike& self, NodeId nodeId) { return topology(self).getFirstChild(nodeId); }, "node_id"_a,
+            "Return the first child of `node_id`, or `InvalidNode`.")
         .def(
-            "getNextSibling", [](TreeLike& self, NodeId nodeId) { return topology(self).getNextSibling(nodeId); }, "nodeId"_a,
-            "Return the next sibling of `nodeId`, or `InvalidNode`.")
+            "next_sibling", [](TreeLike& self, NodeId nodeId) { return topology(self).getNextSibling(nodeId); }, "node_id"_a,
+            "Return the next sibling of `node_id`, or `InvalidNode`.")
         .def(
-            "isNode", [](TreeLike& self, NodeId nodeId) { return topology(self).isNode(nodeId); }, "nodeId"_a,
-            "Return true when `nodeId` is in the internal-node slot domain.")
+            "is_node", [](TreeLike& self, NodeId nodeId) { return topology(self).isNode(nodeId); }, "node_id"_a,
+            "Return true when `node_id` is in the internal-node slot domain.")
         .def(
-            "isProperPart", [](TreeLike& self, NodeId nodeId) { return topology(self).isProperPart(nodeId); }, "nodeId"_a,
-            "Return true when the id is in the proper-part domain.")
+            "is_pixel", [](TreeLike& self, PixelId pixel) { return topology(self).isPixel(pixel); }, "pixel"_a,
+            "Return true when pixel is in the finite tree domain.")
         .def(
-            "isAlive", [](TreeLike& self, NodeId nodeId) { return topology(self).isAlive(nodeId); }, "nodeId"_a,
-            "Return true when `nodeId` is an alive internal node.")
+            "is_alive", [](TreeLike& self, NodeId nodeId) { return topology(self).isAlive(nodeId); }, "node_id"_a,
+            "Return true when `node_id` is an alive internal node.")
         .def(
-            "isRoot", [](TreeLike& self, NodeId nodeId) { return topology(self).isRoot(nodeId); }, "nodeId"_a, "Return true when `nodeId` is the current root.")
+            "is_root", [](TreeLike& self, NodeId nodeId) { return topology(self).isRoot(nodeId); }, "node_id"_a, "Return true when node_id is the current root.")
         .def(
-            "isLeaf", [](TreeLike& self, NodeId nodeId) { return topology(self).isLeaf(nodeId); }, "nodeId"_a,
-            "Return true when `nodeId` is an alive leaf node.")
+            "is_leaf", [](TreeLike& self, NodeId nodeId) { return topology(self).isLeaf(nodeId); }, "node_id"_a,
+            "Return true when `node_id` is an alive leaf node.")
         .def(
-            "isStructuralNode", [](TreeLike& self, NodeId nodeId) { return topology(self).isStructuralNode(nodeId); }, "nodeId"_a,
-            "Return true when `nodeId` owns no direct proper parts.")
+            "has_empty_proper_part", [](TreeLike& self, NodeId nodeId) { return topology(self).hasEmptyProperPart(nodeId); }, "node_id"_a,
+            "Return true when node_id has an empty proper part.")
         .def(
-            "hasChild", [](TreeLike& self, NodeId parentId, NodeId childId) { return topology(self).hasChild(parentId, childId); }, "parentId"_a, "childId"_a,
-            "Return true when `childId` is a direct child of `parentId`.")
+            "is_tree_of_partial_partitions", [](TreeLike& self) { return topology(self).isTreeOfPartialPartitions(); },
+            "Whether every live node has a non-empty proper part.")
         .def(
-            "pruneNode", [](TreeLike& self, NodeId nodeId) { self.pruneNode(nodeId); }, "nodeId"_a,
+            "validate_tree_of_partial_partitions", [](TreeLike& self) { topology(self).validateTreeOfPartialPartitions(); },
+            "Validate the connected-subset tree and require every live node to have a non-empty proper part.")
+        .def(
+            "has_child", [](TreeLike& self, NodeId parentId, NodeId childId) { return topology(self).hasChild(parentId, childId); }, "parent_id"_a, "child_id"_a,
+            "Return true when child_id is a direct child of parent_id.")
+        .def(
+            "prune_node", [](TreeLike& self, NodeId nodeId) { self.pruneNode(nodeId); }, "node_id"_a,
             "Prune one node from the topology, preserving a valid rooted tree.")
         .def(
-            "mergeNodeIntoParent", [](TreeLike& self, NodeId nodeId) { self.mergeNodeIntoParent(nodeId); }, "nodeId"_a,
+            "merge_node_into_parent", [](TreeLike& self, NodeId nodeId) { self.mergeNodeIntoParent(nodeId); }, "node_id"_a,
             "Merge `nodeId` into its parent and reattach descendants/proper parts.")
         .def_property_readonly(
-            "descriptiveKind", [](TreeLike& self) { return topology(self).getDescriptiveKind(); }, "Optional descriptive hierarchy-family label.")
+            "kind", [](TreeLike& self) { return topology(self).kind(); }, "Optional descriptive hierarchy-family label.")
         .def_property_readonly(
-            "altitudeOrder", [](TreeLike& self) { return topology(self).getAltitudeOrder(); }, "Global parent-to-child altitude ordering capability.")
+            "node_altitude_order", [](TreeLike& self) { return topology(self).nodeAltitudeOrder(); }, "Global parent-to-child altitude ordering capability.")
         .def_property_readonly(
-            "adjacencyMode", [](TreeLike& self) { return topology(self).getAdjacencyMode(); }, "Shape of the hierarchy's adjacency context.")
+            "semantics", [](TreeLike& self) -> const MorphologicalTreeSemantics& { return topology(self).semantics(); },
+            py::return_value_policy::reference_internal, "Immutable scientific semantics retained by the tree.")
         .def_property_readonly(
-            "hasUniformGridAdjacency2D", [](TreeLike& self) { return topology(self).hasUniformGridAdjacency2D(); },
-            "Whether one immutable regular-grid 2D adjacency is available.")
+            "construction_context", [](TreeLike& self) -> const MorphologicalTreeConstructionContext& { return topology(self).constructionContext(); },
+            py::return_value_policy::reference_internal, "Typed construction context retained by the tree.")
         .def_property_readonly(
-            "hasDirectionalGridAdjacency2D", [](TreeLike& self) { return topology(self).hasDirectionalGridAdjacency2D(); },
-            "Whether decreasing/increasing regular-grid 2D relations are available.")
+            "shared_adjacency_context", [](TreeLike& self) { return topology(self).sharedAdjacencyContext(); },
+            py::return_value_policy::reference_internal, "Shared-adjacency context, or None.")
         .def_property_readonly(
-            "hasGridDomain2D", [](TreeLike& self) { return topology(self).hasGridDomain2D(); }, "Whether proper-part ids have a regular row/column layout.")
+            "saturated_residual_context", [](TreeLike& self) { return topology(self).saturatedResidualContext(); },
+            py::return_value_policy::reference_internal, "Saturated-residual context, or None.")
         .def_property_readonly(
-            "gridDomain2D", [](TreeLike& self) { return topology(self).getGridDomain2D(); }, "Optional regular 2D proper-part domain.")
-        .def(
-            "getUniformGridAdjacency2D",
-            [](TreeLike& self) -> const RegularGridAdjacency2D& {
-                const RegularGridAdjacency2D* adjacency = topology(self).getUniformGridAdjacency2D();
-                if (!adjacency) {
-                    throw std::runtime_error("Uniform regular-grid 2D adjacency context is not available.");
-                }
-                return *adjacency;
-            },
-            py::return_value_policy::reference_internal, "Return the borrowed immutable regular-grid 2D adjacency.")
-        .def(
-            "getDirectionalGridAdjacency2D",
-            [](TreeLike& self) -> const DirectionalGridAdjacency2D& {
-                const DirectionalGridAdjacency2D* adjacency = topology(self).getDirectionalGridAdjacency2D();
-                if (!adjacency) {
-                    throw std::runtime_error("Directional regular-grid 2D adjacency context is not available.");
-                }
-                return *adjacency;
-            },
-            py::return_value_policy::reference_internal, "Return the borrowed directional regular-grid 2D adjacency context.")
-        .def(
-            "getDecreasingGridAdjacency2D",
-            [](TreeLike& self) -> const RegularGridAdjacency2D& {
-                const RegularGridAdjacency2D* adjacency = topology(self).getDecreasingGridAdjacency2D();
-                if (!adjacency) {
-                    throw std::runtime_error("Decreasing regular-grid 2D adjacency context is not available.");
-                }
-                return *adjacency;
-            },
-            py::return_value_policy::reference_internal, "Return the borrowed adjacency used by decreasing branches.")
-        .def(
-            "getIncreasingGridAdjacency2D",
-            [](TreeLike& self) -> const RegularGridAdjacency2D& {
-                const RegularGridAdjacency2D* adjacency = topology(self).getIncreasingGridAdjacency2D();
-                if (!adjacency) {
-                    throw std::runtime_error("Increasing regular-grid 2D adjacency context is not available.");
-                }
-                return *adjacency;
-            },
-            py::return_value_policy::reference_internal, "Return the borrowed adjacency used by increasing branches.")
+            "topographic_convention", [](TreeLike& self) { return topology(self).topographicConvention(); },
+            py::return_value_policy::reference_internal, "Topographic convention, or None.")
         .def_property_readonly(
-            "numRows", [](TreeLike& self) { return topology(self).getNumRowsOfGridDomain2D(); }, "Number of rows in the active proper-part domain.")
+            "has_grid_domain_2d", [](TreeLike& self) { return topology(self).hasGridDomain2D(); }, "Whether pixel ids have a regular row/column layout.")
         .def_property_readonly(
-            "numCols", [](TreeLike& self) { return topology(self).getNumColsOfGridDomain2D(); }, "Number of columns in the active proper-part domain.")
-        .def_property_readonly("numNodes", [](TreeLike& self) { return topology(self).getNumNodes(); }, "Number of currently alive internal nodes.");
+            "grid_domain_2d", [](TreeLike& self) { return topology(self).gridDomain2D(); }, "Optional regular 2D pixel domain.")
+        .def_property_readonly(
+            "num_rows", [](TreeLike& self) { return topology(self).numRows(); }, "Number of rows in the active pixel domain.")
+        .def_property_readonly(
+            "num_columns", [](TreeLike& self) { return topology(self).numColumns(); }, "Number of columns in the active pixel domain.")
+        .def_property_readonly("num_nodes", [](TreeLike& self) { return topology(self).numNodes(); }, "Number of currently alive internal nodes.");
 
     if constexpr (requires(TreeLike& self, NodeId nodeId) {
-                      typename TreeLike::altitude_type;
-                      self.getAltitude(nodeId);
-                      self.getNodeResidue(nodeId);
-                      self.reconstructionImage();
+                      typename TreeLike::AltitudeType;
+                      self.nodeAltitude(nodeId);
+                      self.nodeResidue(nodeId);
+                      self.reconstructFromNodeAltitudes();
                       self.exportHigraHierarchy();
                   }) {
         cls.def(
-               "getAltitude", [](TreeLike& self, NodeId nodeId) { return getAltitudeValue(self, nodeId); }, "nodeId"_a,
-               "Return the altitude associated with nodeId.")
+               "node_altitude", [](TreeLike& self, NodeId nodeId) { return nodeAltitudeValue(self, nodeId); }, "node_id"_a,
+               "Return the altitude associated with node_id.")
             .def(
-                "getNodeResidue", [](TreeLike& self, NodeId nodeId) { return getResidueValue(self, nodeId); }, "nodeId"_a,
-                "Return the residue between nodeId and its parent.")
+                "node_residue", [](TreeLike& self, NodeId nodeId) { return nodeResidueValue(self, nodeId); }, "node_id"_a,
+                "Return the residue between node_id and its parent.")
             .def(
-                "reconstructionImage", [](TreeLike& self) { return reconstructionImageOf(self); },
-                "Reconstruct the current tree into a 2D image using the attached GridDomain2D.")
+                "reconstruct_from_node_altitudes", [](TreeLike& self) { return reconstructFromNodeAltitudesOf(self); },
+                "Reconstruct the current tree from node altitudes into a 2D image using the attached GridDomain2D.")
             .def(
-                "exportHigraHierarchy", [](TreeLike& self) { return exportHigraHierarchyOf(self); },
+                "export_higra_hierarchy", [](TreeLike& self) { return exportHigraHierarchyOf(self); },
                 "Export the current rooted tree to a new compact Higra (parent, altitude) representation.");
     }
 }
@@ -995,263 +1056,280 @@ template <class TreeLike, class PyClass> void bindTreeQueryApi(PyClass& cls) {
  * @param m Python module receiving the bindings.
  */
 void initMorphologicalTree(py::module_& m) {
-    py::enum_<ToSInterpolation>(m, "ToSInterpolation", py::module_local(false))
-        .value("SelfDual", ToSInterpolation::SelfDual)
-        .value("Min4cMax8c", ToSInterpolation::Min4cMax8c)
-        .value("Min8cMax4c", ToSInterpolation::Min8cMax4c)
-        .export_values();
-
-    py::enum_<ToSPaddingPolicy>(m, "ToSPaddingPolicy", py::module_local(false))
-        .value("Exterior", ToSPaddingPolicy::Exterior)
-        .value("NoPadding", ToSPaddingPolicy::NoPadding);
-
-    py::class_<TreeOfShapesProducerOptions>(m, "TreeOfShapesProducerOptions", py::module_local(false),
-                                            "Tree-of-Shapes producer options. These settings affect construction "
-                                            "only; the resulting tree remains on the original image domain.")
-        .def(py::init([](ToSInterpolation interpolation, ToSPaddingPolicy padding, int infinitySeedRow, int infinitySeedCol) {
-                 return TreeOfShapesProducerOptions{interpolation, padding, infinitySeedRow, infinitySeedCol};
-             }),
-             "interpolation"_a = ToSInterpolation::SelfDual, "padding"_a = ToSPaddingPolicy::Exterior, "infinitySeedRow"_a = ToSDefaultInfinityRow,
-             "infinitySeedCol"_a = ToSDefaultInfinityCol)
-        .def_readwrite("interpolation", &TreeOfShapesProducerOptions::interpolation)
-        .def_readwrite("padding", &TreeOfShapesProducerOptions::padding)
-        .def_readwrite("infinitySeedRow", &TreeOfShapesProducerOptions::infinitySeedRow)
-        .def_readwrite("infinitySeedCol", &TreeOfShapesProducerOptions::infinitySeedCol);
-
     py::enum_<NodeIdSpace>(m, "NodeIdSpace", py::module_local(false))
-        .value("MORPHOLOGICAL_TREE", NodeIdSpace::MORPHOLOGICAL_TREE)
-        .value("HIGRA", NodeIdSpace::HIGRA)
+        .value("MORPHOLOGICAL_TREE", NodeIdSpace::MorphologicalTree)
+        .value("HIGRA", NodeIdSpace::Higra)
         .export_values();
 
     py::enum_<MorphologicalTreeKind>(m, "MorphologicalTreeKind", py::module_local(false))
-        .value("GENERIC", MorphologicalTreeKind::GENERIC)
-        .value("MAX_TREE", MorphologicalTreeKind::MAX_TREE)
-        .value("MIN_TREE", MorphologicalTreeKind::MIN_TREE)
-        .value("TREE_OF_SHAPES", MorphologicalTreeKind::TREE_OF_SHAPES)
-        .value("SELF_DUAL_RESIDUAL_TREE", MorphologicalTreeKind::SELF_DUAL_RESIDUAL_TREE)
+        .value("GENERIC", MorphologicalTreeKind::Generic)
+        .value("MAX_TREE", MorphologicalTreeKind::MaxTree)
+        .value("MIN_TREE", MorphologicalTreeKind::MinTree)
+        .value("TREE_OF_SHAPES", MorphologicalTreeKind::TreeOfShapes)
+        .value("UNRESTRICTED_RESIDUAL_TREE", MorphologicalTreeKind::UnrestrictedResidualTree)
+        .value("SATURATED_RESIDUAL_TREE", MorphologicalTreeKind::SaturatedResidualTree)
         .export_values();
 
-    py::enum_<sdrt::SdrtTiePolicy>(m, "SdrtTiePolicy", py::module_local(false))
-        .value("MAX_BEFORE_MIN_THEN_SPATIAL", sdrt::SdrtTiePolicy::MaxBeforeMinThenSpatial)
-        .value("CONTRAST_INVARIANT_SPATIAL", sdrt::SdrtTiePolicy::ContrastInvariantSpatial)
+    py::enum_<sdrt::Polarity>(m, "Polarity", py::module_local(false))
+        .value("MAXIMUM", sdrt::Polarity::Maximum)
+        .value("MINIMUM", sdrt::Polarity::Minimum)
         .export_values();
 
-    py::enum_<AltitudeOrder>(m, "AltitudeOrder", py::module_local(false))
-        .value("INCREASING_FROM_ROOT", AltitudeOrder::INCREASING_FROM_ROOT, "Every parent altitude is strictly smaller than each child altitude.")
-        .value("DECREASING_FROM_ROOT", AltitudeOrder::DECREASING_FROM_ROOT, "Every parent altitude is strictly greater than each child altitude.")
-        .value("UNCONSTRAINED", AltitudeOrder::UNCONSTRAINED, "No global parent-child altitude order is declared.")
+    py::class_<sdrt::SpatialOrder>(m, "SpatialOrder", py::module_local(false),
+                                   "A total order over one dense pixel domain.")
+        .def(py::init<std::vector<PixelId>>(), "pixels_in_order"_a)
+        .def_property_readonly("is_row_major", &sdrt::SpatialOrder::isRowMajor)
+        .def("precedes", &sdrt::SpatialOrder::precedes, "lhs"_a, "rhs"_a)
+        .def("spatial_minimum", [](const sdrt::SpatialOrder& self, const std::vector<PixelId>& support) {
+            return self.spatialMinimum(support);
+        }, "support"_a);
+
+    py::class_<sdrt::RowMajorSpatialOrder, sdrt::SpatialOrder>(m, "RowMajorSpatialOrder", py::module_local(false),
+                                                                "The default row-major pixel order.")
+        .def(py::init<>());
+
+    py::class_<sdrt::SelfDualResidualKey>(m, "SelfDualResidualKey", py::module_local(false))
+        .def(py::init<std::size_t, PixelId>(), "support_cardinality"_a, "spatial_minimum"_a)
+        .def_readwrite("support_cardinality", &sdrt::SelfDualResidualKey::supportCardinality)
+        .def_readwrite("spatial_minimum", &sdrt::SelfDualResidualKey::spatialMinimum);
+
+    py::class_<sdrt::SelfDualResidualOrder>(m, "SelfDualResidualOrder", py::module_local(false))
+        .def(py::init<sdrt::SpatialOrder>(), "spatial_order"_a = sdrt::RowMajorSpatialOrder{})
+        .def("compare_residual_candidates", &sdrt::SelfDualResidualOrder::compareResidualCandidates, "lhs"_a, "rhs"_a);
+
+    py::class_<sdrt::SelfDualResidualSchedule>(m, "SelfDualResidualSchedule", py::module_local(false))
+        .def(py::init<sdrt::SpatialOrder>(), "spatial_order"_a = sdrt::RowMajorSpatialOrder{})
+        .def("select_residual_candidate", [](const sdrt::SelfDualResidualSchedule& self,
+                                              const std::vector<sdrt::SelfDualResidualKey>& keys) {
+            return self.selectResidualCandidate(keys);
+        }, "residual_keys"_a);
+
+    py::enum_<NodeAltitudeOrder>(m, "NodeAltitudeOrder", py::module_local(false))
+        .value("INCREASING", NodeAltitudeOrder::Increasing, "Every child altitude is strictly greater than its parent altitude.")
+        .value("DECREASING", NodeAltitudeOrder::Decreasing, "Every child altitude is strictly smaller than its parent altitude.")
+        .value("UNCONSTRAINED", NodeAltitudeOrder::Unconstrained, "No global parent-child altitude order is declared.")
         .export_values();
 
-    py::enum_<AdjacencyMode>(m, "AdjacencyMode", py::module_local(false))
-        .value("NONE", AdjacencyMode::NONE)
-        .value("UNIFORM", AdjacencyMode::UNIFORM)
-        .value("DIRECTIONAL", AdjacencyMode::DIRECTIONAL)
-        .export_values();
-
-    py::class_<GridDomain2D>(m, "GridDomain2D", py::module_local(false), "Optional row/column layout attached to a proper-part domain.")
-        .def(py::init<int, int>(), "rows"_a, "cols"_a)
+    py::class_<GridDomain2D>(m, "GridDomain2D", py::module_local(false), "Optional row/column layout attached to a pixel domain.")
+        .def(py::init<int, int>(), "rows"_a, "columns"_a)
         .def_readonly("rows", &GridDomain2D::rows)
-        .def_readonly("cols", &GridDomain2D::cols);
+        .def_readonly("columns", &GridDomain2D::columns);
 
-    py::class_<DirectionalGridAdjacency2D>(m, "DirectionalGridAdjacency2D", py::module_local(false),
-                                           "Generic adjacency context for decreasing and increasing hierarchy branches.")
-        .def(py::init([](RegularGridAdjacency2D decreasing, RegularGridAdjacency2D increasing) {
-                 return DirectionalGridAdjacency2D{std::move(decreasing), std::move(increasing)};
+    py::class_<NoConstructionContext>(m, "NoConstructionContext", py::module_local(false), "Explicitly unavailable construction provenance.")
+        .def(py::init<>());
+
+    py::class_<SharedAdjacencyContext>(m, "SharedAdjacencyContext", py::module_local(false),
+                                       "One adjacency shared by both construction polarities.")
+        .def(py::init<RegularGridAdjacency2D>(), "adjacency"_a)
+        .def_readonly("adjacency", &SharedAdjacencyContext::adjacency);
+
+    py::class_<SaturatedResidualContext>(m, "SaturatedResidualContext", py::module_local(false),
+                                         "Adjacency and infinity pixel of a saturated residual construction.")
+        .def(py::init<RegularGridAdjacency2D, PixelId>(), "adjacency"_a, "infinity_pixel"_a = PixelId{0})
+        .def_readonly("adjacency", &SaturatedResidualContext::adjacency)
+        .def_readonly("infinity_pixel", &SaturatedResidualContext::infinityPixel);
+
+    py::class_<ComplementaryAdjacencies>(m, "ComplementaryAdjacencies", py::module_local(false),
+                                         "Minimum and maximum adjacencies of a complementary-grid immersion.")
+        .def(py::init<RegularGridAdjacency2D, RegularGridAdjacency2D>(), "min_adjacency"_a, "max_adjacency"_a)
+        .def_readonly("min_adjacency", &ComplementaryAdjacencies::minAdjacency)
+        .def_readonly("max_adjacency", &ComplementaryAdjacencies::maxAdjacency);
+
+    py::class_<SelfDualSpanImmersion>(m, "SelfDualSpanImmersion", py::module_local(false), "Self-dual span-valued immersion.")
+        .def(py::init<>());
+
+    py::class_<ComplementaryGridImmersion>(m, "ComplementaryGridImmersion", py::module_local(false), "Complementary-grid immersion.")
+        .def(py::init<ComplementaryAdjacencies>(), "complementary_adjacencies"_a)
+        .def_readonly("complementary_adjacencies", &ComplementaryGridImmersion::complementaryAdjacencies);
+
+    py::enum_<TopographicDomainExtension>(m, "TopographicDomainExtension", py::module_local(false))
+        .value("EXTERIOR_RING", TopographicDomainExtension::ExteriorRing)
+        .value("NONE", TopographicDomainExtension::None)
+        .export_values();
+
+    py::class_<TopographicConvention>(m, "TopographicConvention", py::module_local(false),
+                                      "Complete discrete convention retained by a tree of shapes.")
+        .def(py::init<TreeOfShapesImmersion, TopographicDomainExtension, PixelId>(), "immersion"_a = SelfDualSpanImmersion{},
+             "domain_extension"_a = TopographicDomainExtension::ExteriorRing, "infinity_pixel"_a = PixelId{0})
+        .def_readonly("immersion", &TopographicConvention::immersion)
+        .def_readonly("domain_extension", &TopographicConvention::domainExtension)
+        .def_readonly("infinity_pixel", &TopographicConvention::infinityPixel);
+
+    py::class_<MorphologicalTreeSemantics>(m, "MorphologicalTreeSemantics", py::module_local(false),
+                                   "Immutable scientific semantics attached to a morphological tree.")
+        .def(py::init([](MorphologicalTreeKind kind, NodeAltitudeOrder nodeAltitudeOrder,
+                         MorphologicalTreeConstructionContext constructionContext) {
+                 MorphologicalTreeSemantics semantics{kind, nodeAltitudeOrder, std::move(constructionContext)};
+                 validateMorphologicalTreeSemantics(semantics);
+                 return semantics;
              }),
-             "decreasing"_a, "increasing"_a)
-        .def_readonly("decreasing", &DirectionalGridAdjacency2D::decreasing, "Adjacency used by decreasing branches.")
-        .def_readonly("increasing", &DirectionalGridAdjacency2D::increasing, "Adjacency used by increasing branches.");
-    py::class_<HierarchySemantics>(m, "HierarchySemantics", py::module_local(false),
-                                   "Generic interpretation capabilities attached to a morphological hierarchy.")
-        .def(py::init([](AltitudeOrder altitudeOrder, MorphologicalTreeKind descriptiveKind, std::optional<RegularGridAdjacency2D> uniformAdjacency,
-                         std::optional<DirectionalGridAdjacency2D> directionalAdjacency) {
-                 if (uniformAdjacency && directionalAdjacency) {
-                     throw std::invalid_argument("HierarchySemantics accepts either uniform or directional adjacency, not both.");
-                 }
-                 AdjacencyContext adjacency = NoAdjacency{};
-                 if (directionalAdjacency) {
-                     adjacency = std::move(*directionalAdjacency);
-                 } else if (uniformAdjacency) {
-                     adjacency = UniformGridAdjacency2D{std::move(*uniformAdjacency)};
-                 }
-                 return HierarchySemantics{descriptiveKind, altitudeOrder, std::move(adjacency)};
-             }),
-             "altitudeOrder"_a = AltitudeOrder::UNCONSTRAINED, "descriptiveKind"_a = MorphologicalTreeKind::GENERIC, "uniformAdjacency"_a = py::none(),
-             "directionalAdjacency"_a = py::none())
-        .def_readonly("descriptiveKind", &HierarchySemantics::descriptiveKind)
-        .def_readonly("altitudeOrder", &HierarchySemantics::altitudeOrder)
-        .def_property_readonly("adjacencyMode", &HierarchySemantics::adjacencyMode);
+             "kind"_a = MorphologicalTreeKind::Generic, "node_altitude_order"_a = NodeAltitudeOrder::Unconstrained,
+             "construction_context"_a = NoConstructionContext{})
+        .def_readonly("kind", &MorphologicalTreeSemantics::kind)
+        .def_readonly("node_altitude_order", &MorphologicalTreeSemantics::nodeAltitudeOrder)
+        .def_readonly("construction_context", &MorphologicalTreeSemantics::constructionContext);
 
     py::enum_<EdgeToPixelReducer>(m, "EdgeToPixelReducer", py::module_local(false))
-        .value("Max", EdgeToPixelReducer::Max)
-        .value("Mean", EdgeToPixelReducer::Mean)
+        .value("MAX", EdgeToPixelReducer::Max)
+        .value("MEAN", EdgeToPixelReducer::Mean)
         .export_values();
 
     py::enum_<HierarchyLevelConvention>(m, "HierarchyLevelConvention", py::module_local(false))
-        .value("EdgeSaliencyValue", HierarchyLevelConvention::EdgeSaliencyValue)
-        .value("PartitionAppearanceLevel", HierarchyLevelConvention::PartitionAppearanceLevel)
+        .value("EDGE_SALIENCY_VALUE", HierarchyLevelConvention::EdgeSaliencyValue)
+        .value("PARTITION_APPEARANCE_LEVEL", HierarchyLevelConvention::PartitionAppearanceLevel)
         .export_values();
 
     py::enum_<ShapeSpaceExtremaPolarity>(m, "ShapeSpaceExtremaPolarity", py::module_local(false))
-        .value("Minima", ShapeSpaceExtremaPolarity::Minima)
-        .value("Maxima", ShapeSpaceExtremaPolarity::Maxima)
+        .value("MINIMA", ShapeSpaceExtremaPolarity::Minima)
+        .value("MAXIMA", ShapeSpaceExtremaPolarity::Maxima)
         .export_values();
 
-    auto weightedCls = py::class_<WeightedMorphologicalTree<std::uint8_t>, std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>>(
-        m, "WeightedMorphologicalTree", py::module_local(false),
+    auto valuedTreeCls = py::class_<PythonValuedMorphologicalTree, std::shared_ptr<PythonValuedMorphologicalTree>>(
+        m, "ValuedMorphologicalTree", py::module_local(false),
         "Wrapper pairing MorphologicalTree topology with an external dense altitude buffer. "
         "Imports can preserve an original Higra node-id domain; exports always create a new compact Higra domain.");
 
     py::class_<MorphologicalTreeFactory>(m, "MorphologicalTreeFactory", py::module_local(false))
         .def_static(
-            "createMaxTree",
+            "create_max_tree",
             [](UInt8InputArray input, double radius) {
-                const double validatedRadius = pybind_utils::requireAdjacencyRadius(radius, "MorphologicalTreeFactory.createMaxTree");
-                return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(
-                    MorphologicalTreeFactory::createMaxTree(imageFromArray(input), validatedRadius));
+                const double validatedRadius = pybind_utils::requireAdjacencyRadius(radius, "MorphologicalTreeFactory.create_max_tree");
+                return wrapPythonValuedTree(MorphologicalTreeFactory::createMaxTree(imageFromArray(input), validatedRadius));
             },
             "input"_a, "radius"_a = 1.5, "Create a max-tree from a 2D C-contiguous `np.uint8` image.")
         .def_static(
-            "createMaxTree",
+            "create_max_tree",
             [](UInt8InputArray input, RegularGridAdjacency2D adjacency) {
-                return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(
-                    MorphologicalTreeFactory::createMaxTree(imageFromArray(input), std::move(adjacency)));
+                return wrapPythonValuedTree(MorphologicalTreeFactory::createMaxTree(imageFromArray(input), std::move(adjacency)));
             },
             "input"_a, "adjacency"_a, "Create a max-tree with an explicit regular-grid 2D adjacency.")
         .def_static(
-            "createMinTree",
+            "create_min_tree",
             [](UInt8InputArray input, double radius) {
-                const double validatedRadius = pybind_utils::requireAdjacencyRadius(radius, "MorphologicalTreeFactory.createMinTree");
-                return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(
-                    MorphologicalTreeFactory::createMinTree(imageFromArray(input), validatedRadius));
+                const double validatedRadius = pybind_utils::requireAdjacencyRadius(radius, "MorphologicalTreeFactory.create_min_tree");
+                return wrapPythonValuedTree(MorphologicalTreeFactory::createMinTree(imageFromArray(input), validatedRadius));
             },
             "input"_a, "radius"_a = 1.5, "Create a min-tree from a 2D C-contiguous `np.uint8` image.")
         .def_static(
-            "createMinTree",
+            "create_min_tree",
             [](UInt8InputArray input, RegularGridAdjacency2D adjacency) {
-                return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(
-                    MorphologicalTreeFactory::createMinTree(imageFromArray(input), std::move(adjacency)));
+                return wrapPythonValuedTree(MorphologicalTreeFactory::createMinTree(imageFromArray(input), std::move(adjacency)));
             },
             "input"_a, "adjacency"_a, "Create a min-tree with an explicit regular-grid 2D adjacency.")
         .def_static(
-            "createSelfDualResidualTree",
-            [](UInt8InputArray input, double radius, sdrt::SdrtTiePolicy tiePolicy) {
-                const double validatedRadius = pybind_utils::requireAdjacencyRadius(radius, "MorphologicalTreeFactory.createSelfDualResidualTree");
-                return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(
-                    MorphologicalTreeFactory::createSelfDualResidualTree(
-                        imageFromArray(input), validatedRadius, sdrt::UnrestrictedResidualTreeOptions{tiePolicy}));
+            "create_unrestricted_residual_tree",
+            [](UInt8InputArray input, double radius, sdrt::SpatialOrder spatialOrder) {
+                const double validatedRadius =
+                    pybind_utils::requireAdjacencyRadius(radius, "MorphologicalTreeFactory.create_unrestricted_residual_tree");
+                return wrapPythonValuedTree(MorphologicalTreeFactory::createUnrestrictedResidualTree(
+                    imageFromArray(input), validatedRadius, sdrt::UnrestrictedResidualTreeOptions{std::move(spatialOrder)}));
             },
-            "input"_a, "radius"_a = 1.5, "tiePolicy"_a = sdrt::SdrtTiePolicy::ContrastInvariantSpatial,
+            "input"_a, "radius"_a = 1.5, "spatial_order"_a = sdrt::RowMajorSpatialOrder{},
             "Create the unrestricted residual tree with synchronized max-tree and min-tree states.")
         .def_static(
-            "createSelfDualResidualTree",
-            [](UInt8InputArray input, RegularGridAdjacency2D adjacency, sdrt::SdrtTiePolicy tiePolicy) {
-                return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(
-                    MorphologicalTreeFactory::createSelfDualResidualTree(
-                        imageFromArray(input), std::move(adjacency), sdrt::UnrestrictedResidualTreeOptions{tiePolicy}));
+            "create_unrestricted_residual_tree",
+            [](UInt8InputArray input, RegularGridAdjacency2D adjacency, sdrt::SpatialOrder spatialOrder) {
+                return wrapPythonValuedTree(MorphologicalTreeFactory::createUnrestrictedResidualTree(
+                    imageFromArray(input), std::move(adjacency), sdrt::UnrestrictedResidualTreeOptions{std::move(spatialOrder)}));
             },
-            "input"_a, "adjacency"_a, "tiePolicy"_a = sdrt::SdrtTiePolicy::ContrastInvariantSpatial,
+            "input"_a, "adjacency"_a, "spatial_order"_a = sdrt::RowMajorSpatialOrder{},
             "Create the unrestricted residual tree with an explicit shared symmetric adjacency.")
         .def_static(
-            "createSaturatedSelfDualResidualTree",
-            [](UInt8InputArray input, NodeId infinityPixel, double radius, sdrt::SdrtTiePolicy tiePolicy) {
-                const double validatedRadius = pybind_utils::requireAdjacencyRadius(radius, "MorphologicalTreeFactory.createSaturatedSelfDualResidualTree");
-                return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(
-                    MorphologicalTreeFactory::createSaturatedSelfDualResidualTree(
-                        imageFromArray(input), infinityPixel, validatedRadius, sdrt::SaturatedResidualTreeOptions{tiePolicy}));
+            "create_saturated_residual_tree",
+            [](UInt8InputArray input, PixelId infinityPixel, double radius, sdrt::SpatialOrder spatialOrder) {
+                const double validatedRadius =
+                    pybind_utils::requireAdjacencyRadius(radius, "MorphologicalTreeFactory.create_saturated_residual_tree");
+                sdrt::SaturatedResidualTreeOptions options;
+                options.spatialOrder = std::move(spatialOrder);
+                return wrapPythonValuedTree(MorphologicalTreeFactory::createSaturatedResidualTree(
+                    imageFromArray(input), infinityPixel, validatedRadius, std::move(options)));
             },
-            "input"_a, "infinityPixel"_a = NodeId{0}, "radius"_a = 1.5, "tiePolicy"_a = sdrt::SdrtTiePolicy::ContrastInvariantSpatial,
+            "input"_a, "infinity_pixel"_a = PixelId{0}, "radius"_a = 1.5, "spatial_order"_a = sdrt::RowMajorSpatialOrder{},
             "Create the saturated residual tree with synchronized max-tree and min-tree states.")
         .def_static(
-            "createSaturatedSelfDualResidualTree",
-            [](UInt8InputArray input, RegularGridAdjacency2D adjacency, NodeId infinityPixel, sdrt::SdrtTiePolicy tiePolicy) {
-                return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(
-                    MorphologicalTreeFactory::createSaturatedSelfDualResidualTree(
-                        imageFromArray(input), std::move(adjacency), infinityPixel, sdrt::SaturatedResidualTreeOptions{tiePolicy}));
+            "create_saturated_residual_tree",
+            [](UInt8InputArray input, RegularGridAdjacency2D adjacency, PixelId infinityPixel, sdrt::SpatialOrder spatialOrder) {
+                sdrt::SaturatedResidualTreeOptions options;
+                options.spatialOrder = std::move(spatialOrder);
+                return wrapPythonValuedTree(MorphologicalTreeFactory::createSaturatedResidualTree(
+                    imageFromArray(input), std::move(adjacency), infinityPixel, std::move(options)));
             },
-            "input"_a, "adjacency"_a, "infinityPixel"_a = NodeId{0}, "tiePolicy"_a = sdrt::SdrtTiePolicy::ContrastInvariantSpatial,
+            "input"_a, "adjacency"_a, "infinity_pixel"_a = PixelId{0}, "spatial_order"_a = sdrt::RowMajorSpatialOrder{},
             "Create the saturated residual tree with an explicit shared symmetric adjacency.")
         .def_static(
-            "createTreeOfShapes",
-            [](UInt8InputArray input, ToSInterpolation interpolation, int infinitySeedRow, int infinitySeedCol) {
-                return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(
-                    MorphologicalTreeFactory::createTreeOfShapes(imageFromArray(input), interpolation, infinitySeedRow, infinitySeedCol));
+            "create_tree_of_shapes",
+            [](UInt8InputArray input, TopographicConvention convention) {
+                return wrapPythonValuedTree(MorphologicalTreeFactory::createTreeOfShapes(imageFromArray(input), std::move(convention)));
             },
-            "input"_a, "interpolation"_a = ToSInterpolation::SelfDual, "infinitySeedRow"_a = ToSDefaultInfinityRow, "infinitySeedCol"_a = ToSDefaultInfinityCol,
-            "Create a tree of shapes on the original image domain from a 2D C-contiguous `np.uint8` image.")
+            "input"_a, "convention"_a = TopographicConvention{},
+            "Create a tree of shapes using a complete topographic convention retained by the result.")
         .def_static(
-            "createTreeOfShapes",
-            [](UInt8InputArray input, TreeOfShapesProducerOptions options) {
-                return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(MorphologicalTreeFactory::createTreeOfShapes(imageFromArray(input), options));
+            "create_from_native_topology",
+            [](const std::vector<NodeId>& parent, const std::vector<NodeId>& smallestNodeMap, py::object nodeAltitudesInput, NodeId root,
+               MorphologicalTreeSemantics semantics) {
+                const std::vector<std::uint8_t> nodeAltitudes =
+                    pythonUInt8AltitudeVector(nodeAltitudesInput, "MorphologicalTreeFactory.create_from_native_topology node_altitudes");
+                return wrapPythonValuedTree(MorphologicalTreeFactory::createFromNativeTopology(
+                    std::span<const NodeId>(parent), std::span<const NodeId>(smallestNodeMap), std::span<const std::uint8_t>(nodeAltitudes), root,
+                    std::move(semantics)));
             },
-            "input"_a, "options"_a,
-            "Create a tree of shapes with producer-local interpolation, "
-            "padding, and infinity-seed options. The returned tree uses the "
-            "original image domain.")
-        .def_static(
-            "createFromNativeTopology",
-            [](const std::vector<NodeId>& nodeParent, const std::vector<NodeId>& properPartOwner, py::object altitudeInput, NodeId root,
-               HierarchySemantics semantics) {
-                const std::vector<std::uint8_t> altitude =
-                    pythonUInt8AltitudeVector(altitudeInput, "MorphologicalTreeFactory.createFromNativeTopology altitude");
-                return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(
-                    MorphologicalTreeFactory::createFromNativeTopology(std::span<const NodeId>(nodeParent), std::span<const NodeId>(properPartOwner),
-                                                                       std::span<const std::uint8_t>(altitude), root, std::move(semantics)));
-            },
-            "nodeParent"_a, "properPartOwner"_a, "altitude"_a, "root"_a, "semantics"_a,
-            R"doc(Create a morphological tree over an abstract finite proper-part domain.
+            "parent"_a, "smallest_node_map"_a, "node_altitudes"_a, "root"_a, "semantics"_a,
+            R"doc(Create a morphological tree over an abstract finite pixel domain.
 
 No row/column interpretation is attached. Topological and support-based
 algorithms remain available; image reconstruction and geometric attributes
 require a separate regular 2D domain.)doc")
         .def_static(
-            "createFromNativeTopology",
-            [](const std::vector<NodeId>& nodeParent, const std::vector<NodeId>& properPartOwner, py::object altitudeInput, NodeId root, int rows, int cols,
-               HierarchySemantics semantics) {
-                const std::vector<std::uint8_t> altitude =
-                    pythonUInt8AltitudeVector(altitudeInput, "MorphologicalTreeFactory.createFromNativeTopology altitude");
-                return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(
-                    MorphologicalTreeFactory::createFromNativeTopology(std::span<const NodeId>(nodeParent), std::span<const NodeId>(properPartOwner),
-                                                                       std::span<const std::uint8_t>(altitude), root, rows, cols, std::move(semantics)));
+            "create_from_native_topology",
+            [](const std::vector<NodeId>& parent, const std::vector<NodeId>& smallestNodeMap, py::object nodeAltitudesInput, NodeId root, int rows, int columns,
+               MorphologicalTreeSemantics semantics) {
+                const std::vector<std::uint8_t> nodeAltitudes =
+                    pythonUInt8AltitudeVector(nodeAltitudesInput, "MorphologicalTreeFactory.create_from_native_topology node_altitudes");
+                return wrapPythonValuedTree(MorphologicalTreeFactory::createFromNativeTopology(
+                    std::span<const NodeId>(parent), std::span<const NodeId>(smallestNodeMap), std::span<const std::uint8_t>(nodeAltitudes), root, rows,
+                    columns, std::move(semantics)));
             },
-            "nodeParent"_a, "properPartOwner"_a, "altitude"_a, "root"_a, "rows"_a, "cols"_a, "semantics"_a,
-            R"doc(Create a morphological tree from native partial-partition buffers and explicit generic capabilities.
+            "parent"_a, "smallest_node_map"_a, "node_altitudes"_a, "root"_a, "rows"_a, "columns"_a, "semantics"_a,
+            R"doc(Create a morphological tree from native connected-subset buffers and explicit generic capabilities.
 
-`nodeParent` and `altitude` use the dense internal-node domain.
-`properPartOwner` uses the row-major proper-part domain and must contain
-`rows * cols` entries. Every committed node must have non-empty subtree
-support, although structural nodes may own no direct proper parts.)doc")
+`parent` and `node_altitudes` use the dense internal-node domain.
+`smallest_node_map` uses the row-major pixel domain and must contain
+`rows * columns` entries. Every committed node must have non-empty node
+support, although a node may have an empty proper part.)doc")
         .def_static(
-            "createFromHigraParent",
-            [](const std::vector<NodeId>& parent, py::object altitudeInput, int rows, int cols, MorphologicalTreeKind kind, std::optional<double> radius) {
-                const std::vector<std::uint8_t> altitude = pythonUInt8AltitudeVector(altitudeInput, "MorphologicalTreeFactory.createFromHigraParent altitude");
-                if (parent.size() != altitude.size()) {
-                    throw std::invalid_argument("parent and altitude must have the same size");
+            "create_from_higra_parent",
+            [](const std::vector<NodeId>& parent, py::object nodeAltitudesInput, int rows, int columns, MorphologicalTreeKind kind,
+               std::optional<double> radius) {
+                const std::vector<std::uint8_t> nodeAltitudes =
+                    pythonUInt8AltitudeVector(nodeAltitudesInput, "MorphologicalTreeFactory.create_from_higra_parent node_altitudes");
+                if (parent.size() != nodeAltitudes.size()) {
+                    throw std::invalid_argument("parent and node_altitudes must have the same size");
                 }
 
                 std::optional<RegularGridAdjacency2D> adjacency;
                 if (radius.has_value()) {
-                    adjacency.emplace(pybind_utils::makeRegularGridAdjacency2D(rows, cols, *radius, "MorphologicalTreeFactory.createFromHigraParent"));
+                    adjacency.emplace(
+                        pybind_utils::makeRegularGridAdjacency2D(rows, columns, *radius, "MorphologicalTreeFactory.create_from_higra_parent"));
                 }
 
-                return std::make_shared<WeightedMorphologicalTree<std::uint8_t>>(MorphologicalTreeFactory::createFromHigraParent(
-                    std::span<const NodeId>(parent), std::span<const std::uint8_t>(altitude), rows, cols, kind, std::move(adjacency)));
+                return wrapPythonValuedTree(MorphologicalTreeFactory::createFromHigraParent(
+                    std::span<const NodeId>(parent), std::span<const std::uint8_t>(nodeAltitudes), rows, columns, kind, std::move(adjacency)));
             },
-            "parent"_a, "altitude"_a, "rows"_a, "cols"_a, "kind"_a, "radius"_a = py::none(),
-            "Create a weighted tree from an imported static Higra parent/altitude representation [leaves | internal nodes]. "
+            "parent"_a, "node_altitudes"_a, "rows"_a, "columns"_a, "kind"_a, "radius"_a = py::none(),
+            "Create a valued tree from an imported static Higra parent/node-altitude representation [leaves | internal nodes]. "
             "The imported Higra node-id domain is preserved until the tree is edited.");
 
     py::class_<HierarchySaliencyMapValidation>(m, "HierarchySaliencyMapValidation", py::module_local(false),
                                                "Utilities for validating and transforming hierarchy valuations used by saliency maps.")
         .def_static(
-            "validateHierarchyConnectivity",
-            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, std::optional<double> radius) {
-                if (!weighted) {
-                    throw std::invalid_argument("weighted tree must not be null");
+            "validate_hierarchy_connectivity",
+            [](std::shared_ptr<PythonValuedMorphologicalTree> valuedTree, std::optional<double> radius) {
+                if (!valuedTree) {
+                    throw std::invalid_argument("valued tree must not be null");
                 }
-                const RegularGridAdjacency2D adjacency = saliencyAdjacencyPy(*weighted, radius, "HierarchySaliencyMapValidation.validateHierarchyConnectivity");
-                HierarchySaliencyMapValidation::validateHierarchyConnectivity(weighted->topology(), adjacency,
-                                                                              "HierarchySaliencyMapValidation.validateHierarchyConnectivity");
+                const RegularGridAdjacency2D adjacency = saliencyAdjacencyPy(*valuedTree, radius, "HierarchySaliencyMapValidation.validate_hierarchy_connectivity");
+                HierarchySaliencyMapValidation::validateHierarchyConnectivity(valuedTree->topology(), adjacency,
+                                                                              "HierarchySaliencyMapValidation.validate_hierarchy_connectivity");
             },
             "tree"_a, "radius"_a = py::none(),
             R"doc(Validate that every hierarchy support is connected in the projection graph.
@@ -1259,12 +1337,12 @@ support, although structural nodes may own no direct proper parts.)doc")
 This is the graph-connectivity hypothesis required by the Cousty correspondence;
 it is distinct from checking that the parent array forms one rooted tree.)doc")
         .def_static(
-            "validateHierarchyValuation",
-            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, py::array valuation, bool strict, bool nonnegative) {
-                if (!weighted) {
-                    throw std::invalid_argument("weighted tree must not be null");
+            "validate_hierarchy_valuation",
+            [](std::shared_ptr<PythonValuedMorphologicalTree> valuedTree, py::array valuation, bool strict, bool nonnegative) {
+                if (!valuedTree) {
+                    throw std::invalid_argument("valued tree must not be null");
                 }
-                validateHierarchyValuationPy(*weighted, std::move(valuation), strict, nonnegative);
+                validateHierarchyValuationPy(*valuedTree, std::move(valuation), strict, nonnegative);
             },
             "tree"_a, "valuation"_a, "strict"_a = false, "nonnegative"_a = false,
             R"doc(Validate that a dense node-indexed valuation is compatible with the hierarchy.
@@ -1276,12 +1354,12 @@ the induced QFZ hierarchy. With `strict=True`, every live parent-child relation
 must be strictly increasing toward the root. Set `nonnegative=True` to enforce
 the paper's literal non-negative edge-weight domain.)doc")
         .def_static(
-            "rankHierarchyValuation",
-            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, py::array valuation, bool strict) {
-                if (!weighted) {
-                    throw std::invalid_argument("weighted tree must not be null");
+            "rank_hierarchy_valuation",
+            [](std::shared_ptr<PythonValuedMorphologicalTree> valuedTree, py::array valuation, bool strict) {
+                if (!valuedTree) {
+                    throw std::invalid_argument("valued tree must not be null");
                 }
-                return rankHierarchyValuationPy(*weighted, std::move(valuation), strict);
+                return rankHierarchyValuationPy(*valuedTree, std::move(valuation), strict);
             },
             "tree"_a, "valuation"_a, "strict"_a = false,
             R"doc(Convert a compatible hierarchy valuation to dense non-negative integer levels.
@@ -1290,15 +1368,15 @@ The input valuation must be a 1D int32, float32, or float64 array. Distinct
 live-node valuation values are ranked as `0..k-1` while preserving order. Equal
 values receive the same rank, so level collapse is preserved. Use `strict=True`
 to reject equal parent-child valuation levels before ranking. This ranks all
-live nodes; use `HierarchySaliencyMap.computeCanonicalRankedSaliencyEdgeMap`
+live nodes; use `HierarchySaliencyMap.compute_canonical_ranked_saliency_edge_map`
 when only levels that occur on graph edges should define the dense scale.)doc")
         .def_static(
-            "computeNormalizedScores",
-            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, py::array valuation, bool strict, bool nonnegative) {
-                if (!weighted) {
-                    throw std::invalid_argument("weighted tree must not be null");
+            "compute_normalized_scores",
+            [](std::shared_ptr<PythonValuedMorphologicalTree> valuedTree, py::array valuation, bool strict, bool nonnegative) {
+                if (!valuedTree) {
+                    throw std::invalid_argument("valued tree must not be null");
                 }
-                return computeNormalizedScoresPy(*weighted, std::move(valuation), strict, nonnegative);
+                return computeNormalizedScoresPy(*valuedTree, std::move(valuation), strict, nonnegative);
             },
             "tree"_a, "valuation"_a, "strict"_a = false, "nonnegative"_a = false,
             R"doc(Normalize a compatible hierarchy valuation to double values in [0, 1].
@@ -1319,54 +1397,55 @@ spanning trees, and saliency maps," Journal of Mathematical Imaging and Vision
 projection corresponds to Section 4, Equations (5)-(6), and Section 7,
 Algorithm 1.)doc")
         .def_static(
-            "computeSaliencyEdgeMap",
-            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, py::array valuation, std::optional<double> radius, bool strict,
+            "compute_saliency_edge_map",
+            [](std::shared_ptr<PythonValuedMorphologicalTree> valuedTree, py::array valuation, std::optional<double> radius, bool strict,
                HierarchyLevelConvention levelConvention, bool validateConnectivity) {
-                if (!weighted) {
-                    throw std::invalid_argument("weighted tree must not be null");
+                if (!valuedTree) {
+                    throw std::invalid_argument("valued tree must not be null");
                 }
-                return computeSaliencyEdgeMapPy(*weighted, std::move(valuation), radius, strict, levelConvention, validateConnectivity,
-                                                "HierarchySaliencyMap.computeSaliencyEdgeMap");
+                return computeSaliencyEdgeMapPy(*valuedTree, std::move(valuation), radius, strict, levelConvention, validateConnectivity,
+                                                "HierarchySaliencyMap.compute_saliency_edge_map");
             },
-            "tree"_a, "valuation"_a, "radius"_a = py::none(), "strict"_a = false, "levelConvention"_a = HierarchyLevelConvention::EdgeSaliencyValue,
-            "validateConnectivity"_a = true,
+            "tree"_a, "valuation"_a, "radius"_a = py::none(), "strict"_a = false, "level_convention"_a = HierarchyLevelConvention::EdgeSaliencyValue,
+            "validate_connectivity"_a = true,
             R"doc(Compute the formal edge-indexed saliency map induced by a hierarchy valuation.
 
 This method implements `Phi(H)` for a connected hierarchy under the
 quasi-flat-zone saliency convention: each adjacency edge receives
-`valuation[LCA(owner(source), owner(target))]` when the endpoint owners differ,
+`valuation[LCA(smallest_node(source), smallest_node(target))]` when the endpoint smallest nodes differ,
 and value 0 when both endpoints already belong to the same finest represented
-region under `EdgeSaliencyValue`. With `PartitionAppearanceLevel`, transition
+region under `HierarchyLevelConvention.EDGE_SALIENCY_VALUE`. With
+`HierarchyLevelConvention.PARTITION_APPEARANCE_LEVEL`, transition
 edges receive `valuation[LCA] - 1`, exactly as in Algorithm 1 of Cousty et al.
 It does not build the full `Psi(w) = Phi(QFZ(G, w))` pipeline from an
-arbitrary edge-weighted graph. The valuation is validated before projection. Use
+arbitrary edge-valuedTree graph. The valuation is validated before projection. Use
 `strict=True` when the map must preserve every explicit parent-child level of
 the tree; leave it false when equal-valued adjacent levels may be collapsed.
 Formal saliency valuations must be non-negative. Graph connectivity is validated
 by default; disable it only for a trusted producer-internal path.)doc")
         .def_static(
-            "computeCanonicalRankedSaliencyEdgeMap",
-            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, py::array valuation, std::optional<double> radius, bool strict,
+            "compute_canonical_ranked_saliency_edge_map",
+            [](std::shared_ptr<PythonValuedMorphologicalTree> valuedTree, py::array valuation, std::optional<double> radius, bool strict,
                bool validateConnectivity) {
-                if (!weighted) {
-                    throw std::invalid_argument("weighted tree must not be null");
+                if (!valuedTree) {
+                    throw std::invalid_argument("valued tree must not be null");
                 }
-                return computeCanonicalRankedSaliencyEdgeMapPy(*weighted, std::move(valuation), radius, strict, validateConnectivity);
+                return computeCanonicalRankedSaliencyEdgeMapPy(*valuedTree, std::move(valuation), radius, strict, validateConnectivity);
             },
-            "tree"_a, "valuation"_a, "radius"_a = py::none(), "strict"_a = false, "validateConnectivity"_a = true,
+            "tree"_a, "valuation"_a, "radius"_a = py::none(), "strict"_a = false, "validate_connectivity"_a = true,
             R"doc(Project and rank only hierarchy levels that actually occur on graph edges.
 
-Same-owner edges form the base rank when present. Unlike node-wise ranking,
+Same-smallest-node edges form the base rank when present. Unlike node-wise ranking,
 unused leaf or incomparable-node values cannot introduce gaps in the canonical
 edge scale. The input may contain negative values because only its order is
 retained.)doc")
         .def_static(
-            "computeTopologicalLevelEdgeMap",
-            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, std::optional<double> radius) {
-                if (!weighted) {
-                    throw std::invalid_argument("weighted tree must not be null");
+            "compute_topological_level_edge_map",
+            [](std::shared_ptr<PythonValuedMorphologicalTree> valuedTree, std::optional<double> radius) {
+                if (!valuedTree) {
+                    throw std::invalid_argument("valued tree must not be null");
                 }
-                return computeTopologicalLevelEdgeMapPy(*weighted, radius);
+                return computeTopologicalLevelEdgeMapPy(*valuedTree, radius);
             },
             "tree"_a, "radius"_a = py::none(),
             R"doc(Compute a topological-level hierarchy saliency map on adjacency edges.
@@ -1374,12 +1453,12 @@ retained.)doc")
 Leaf internal nodes receive level 0, and each ancestor receives one plus the
 maximum level of its children.)doc")
         .def_static(
-            "computeNormalizedAltitudeEdgeMap",
-            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, std::optional<double> radius) {
-                if (!weighted) {
-                    throw std::invalid_argument("weighted tree must not be null");
+            "compute_normalized_altitude_edge_map",
+            [](std::shared_ptr<PythonValuedMorphologicalTree> valuedTree, std::optional<double> radius) {
+                if (!valuedTree) {
+                    throw std::invalid_argument("valued tree must not be null");
                 }
-                return computeNormalizedAltitudeEdgeMapPy(*weighted, radius);
+                return computeNormalizedAltitudeEdgeMapPy(*valuedTree, radius);
             },
             "tree"_a, "radius"_a = py::none(),
             R"doc(Compute a normalized-altitude hierarchy saliency map on adjacency edges.
@@ -1391,41 +1470,41 @@ equal to descendants for max-trees and min-trees.)doc");
                                                        "Explicit proper-part completion of a component tree into connected graph partitions.")
         .def_static(
             "validate",
-            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, std::optional<double> radius) {
-                if (!weighted) {
-                    throw std::invalid_argument("weighted tree must not be null");
+            [](std::shared_ptr<PythonValuedMorphologicalTree> valuedTree, std::optional<double> radius) {
+                if (!valuedTree) {
+                    throw std::invalid_argument("valued tree must not be null");
                 }
-                const RegularGridAdjacency2D adjacency = saliencyAdjacencyPy(*weighted, radius, "ComponentTreePartitionHierarchyAdapter.validate");
-                ComponentTreePartitionHierarchyAdapter::validate(weighted->topology(), adjacency);
+                const RegularGridAdjacency2D adjacency = saliencyAdjacencyPy(*valuedTree, radius, "ComponentTreePartitionHierarchyAdapter.validate");
+                ComponentTreePartitionHierarchyAdapter::validate(valuedTree->topology(), adjacency);
             },
             "tree"_a, "radius"_a = py::none(), "Validate the connected proper-part completion in the selected graph.")
         .def_static(
-            "computePartitionAppearanceLevels",
-            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted) {
-                if (!weighted) {
-                    throw std::invalid_argument("weighted tree must not be null");
+            "compute_partition_appearance_levels",
+            [](std::shared_ptr<PythonValuedMorphologicalTree> valuedTree) {
+                if (!valuedTree) {
+                    throw std::invalid_argument("valued tree must not be null");
                 }
-                std::vector<int> levels = ComponentTreePartitionHierarchyAdapter::computePartitionAppearanceLevels(weighted->topology());
+                std::vector<int> levels = ComponentTreePartitionHierarchyAdapter::computePartitionAppearanceLevels(valuedTree->topology());
                 const int size = static_cast<int>(levels.size());
                 return pybind_utils::toNumpyOwned(std::move(levels), size);
             },
             "tree"_a,
             R"doc(Return positive partition-appearance levels for the component-tree completion.
 
-Use these levels with `HierarchyLevelConvention.PartitionAppearanceLevel` to
+Use these levels with `HierarchyLevelConvention.PARTITION_APPEARANCE_LEVEL` to
 apply the exact `level(LCA)-1` convention.)doc")
         .def_static(
-            "computeSaliencyEdgeMap",
-            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, py::array partitionAppearanceLevels, std::optional<double> radius,
+            "compute_saliency_edge_map",
+            [](std::shared_ptr<PythonValuedMorphologicalTree> valuedTree, py::array partitionAppearanceLevels, std::optional<double> radius,
                bool strict) {
-                if (!weighted) {
-                    throw std::invalid_argument("weighted tree must not be null");
+                if (!valuedTree) {
+                    throw std::invalid_argument("valued tree must not be null");
                 }
-                return computeSaliencyEdgeMapPy(*weighted, std::move(partitionAppearanceLevels), radius, strict,
+                return computeSaliencyEdgeMapPy(*valuedTree, std::move(partitionAppearanceLevels), radius, strict,
                                                 HierarchyLevelConvention::PartitionAppearanceLevel, true,
-                                                "ComponentTreePartitionHierarchyAdapter.computeSaliencyEdgeMap");
+                                                "ComponentTreePartitionHierarchyAdapter.compute_saliency_edge_map");
             },
-            "tree"_a, "partitionAppearanceLevels"_a, "radius"_a = py::none(), "strict"_a = false,
+            "tree"_a, "partition_appearance_levels"_a, "radius"_a = py::none(), "strict"_a = false,
             R"doc(Project positive partition-appearance levels using `level(LCA)-1`.
 
 The component-tree support completion is validated for connectivity in the
@@ -1440,12 +1519,12 @@ Transactions on Pattern Analysis and Machine Intelligence 39(3):457-469, 2017,
 https://doi.org/10.1109/TPAMI.2016.2554550, Section 4.3. The minima construction
 is generalized here to minima or maxima and regular-grid graph edges.)doc")
         .def_static(
-            "computeExtinctionValues",
-            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, py::array attribute, ShapeSpaceExtremaPolarity polarity) {
-                if (!weighted) {
-                    throw std::invalid_argument("weighted tree must not be null");
+            "compute_extinction_values",
+            [](std::shared_ptr<PythonValuedMorphologicalTree> valuedTree, py::array attribute, ShapeSpaceExtremaPolarity polarity) {
+                if (!valuedTree) {
+                    throw std::invalid_argument("valued tree must not be null");
                 }
-                return computeShapeSpaceExtinctionValuesPy(*weighted, std::move(attribute), polarity);
+                return computeShapeSpaceExtinctionValuesPy(*valuedTree, std::move(attribute), polarity);
             },
             "tree"_a, "attribute"_a, "polarity"_a,
             R"doc(Compute shaping extinction values on the original tree-node graph.
@@ -1454,17 +1533,17 @@ is generalized here to minima or maxima and regular-grid graph edges.)doc")
 internal NodeId slot. The values need not be monotone on the original tree.
 Parent-child relations form the graph for a second component-tree computation;
 `polarity` selects its local minima or maxima. The returned dictionary contains
-an `extrema` list and the dense extinction array `nodeScores`, preserving the
+an `extrema` list and the dense extinction array `node_scores`, preserving the
 input dtype.)doc")
         .def_static(
-            "projectContourScores",
-            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, py::array nodeScores, std::optional<double> radius) {
-                if (!weighted) {
-                    throw std::invalid_argument("weighted tree must not be null");
+            "project_contour_scores",
+            [](std::shared_ptr<PythonValuedMorphologicalTree> valuedTree, py::array nodeScores, std::optional<double> radius) {
+                if (!valuedTree) {
+                    throw std::invalid_argument("valued tree must not be null");
                 }
-                return projectShapeSpaceContourScoresPy(*weighted, std::move(nodeScores), radius);
+                return projectShapeSpaceContourScoresPy(*valuedTree, std::move(nodeScores), radius);
             },
-            "tree"_a, "nodeScores"_a, "radius"_a = py::none(),
+            "tree"_a, "node_scores"_a, "radius"_a = py::none(),
             R"doc(Project dense original-node scores onto their full region contours.
 
 Every image adjacency edge receives the maximum score among original regions
@@ -1473,131 +1552,163 @@ dictionary. If `radius` is omitted, the tree's stored construction adjacency is
 used. This operation is distinct from projecting an LCA valuation.)doc")
         .def_static(
             "compute",
-            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, py::array attribute, ShapeSpaceExtremaPolarity polarity,
+            [](std::shared_ptr<PythonValuedMorphologicalTree> valuedTree, py::array attribute, ShapeSpaceExtremaPolarity polarity,
                std::optional<double> radius) {
-                if (!weighted) {
-                    throw std::invalid_argument("weighted tree must not be null");
+                if (!valuedTree) {
+                    throw std::invalid_argument("valued tree must not be null");
                 }
-                return computeShapeSpaceSaliencyPy(*weighted, std::move(attribute), polarity, radius);
+                return computeShapeSpaceSaliencyPy(*valuedTree, std::move(attribute), polarity, radius);
             },
             "tree"_a, "attribute"_a, "polarity"_a, "radius"_a = py::none(),
             R"doc(Compute Xu shaping extinctions and their maximum-on-contours map.
 
-The returned dictionary contains `extrema`, dense extinction `nodeScores`, and
-the standard edge-map dictionary `edgeMap`. If `radius` is omitted, the tree's
+The returned dictionary contains `extrema`, dense extinction `node_scores`, and
+the standard edge-map dictionary `edge_map`. If `radius` is omitted, the tree's
 stored construction adjacency is used.)doc");
 
     py::class_<HierarchySaliencyMapProjection>(m, "HierarchySaliencyMapProjection", py::module_local(false),
                                                "Derived projections and contour materializations of hierarchy edge saliency maps.")
         .def_static(
-            "edgeMapToPixelImage", [](py::dict edgeMap, EdgeToPixelReducer reducer) { return edgeMapToPixelImagePy(std::move(edgeMap), reducer); }, "edgeMap"_a,
+            "edge_map_to_pixel_image", [](py::dict edgeMap, EdgeToPixelReducer reducer) { return edgeMapToPixelImagePy(std::move(edgeMap), reducer); }, "edge_map"_a,
             "reducer"_a = EdgeToPixelReducer::Max,
             R"doc(Rasterize an edge-indexed map into a pixel image for display.
 
 This helper is a visualization projection only. Each edge value contributes to
-both endpoint pixels. `EdgeToPixelReducer.Max` writes the maximum incident edge
-value per pixel; `EdgeToPixelReducer.Mean` writes the arithmetic mean of
+both endpoint pixels. `EdgeToPixelReducer.MAX` writes the maximum incident edge
+value per pixel; `EdgeToPixelReducer.MEAN` writes the arithmetic mean of
 incident edge values. The formal saliency representation remains the edge map
 dictionary.)doc")
         .def_static(
-            "thresholdCut", [](py::dict edgeMap, double threshold) { return thresholdCutPy(std::move(edgeMap), threshold); }, "edgeMap"_a, "threshold"_a,
+            "threshold_cut", [](py::dict edgeMap, double threshold) { return thresholdCutPy(std::move(edgeMap), threshold); }, "edge_map"_a, "threshold"_a,
             R"doc(Threshold an edge saliency map into a contour edge set.
 
 The input is the dictionary returned by `HierarchySaliencyMap`. The returned
-dictionary contains `numRows`, `numCols`, `adjacencyRadius`, `sources`, and
+dictionary contains `num_rows`, `num_columns`, `adjacency_radius`, `sources`, and
 `targets`, selecting edges whose saliency is greater than or equal to
 `threshold`.)doc")
         .def_static(
-            "nodeContourEdges",
-            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, std::optional<double> radius) {
-                if (!weighted) {
-                    throw std::invalid_argument("weighted tree must not be null");
+            "node_contour_edges",
+            [](std::shared_ptr<PythonValuedMorphologicalTree> valuedTree, std::optional<double> radius) {
+                if (!valuedTree) {
+                    throw std::invalid_argument("valued tree must not be null");
                 }
-                return nodeContourEdgesPy(*weighted, radius);
+                return nodeContourEdgesPy(*valuedTree, radius);
             },
             "tree"_a, "radius"_a = py::none(),
-            R"doc(Project transition adjacency edges onto their hierarchy owner node.
+            R"doc(Project transition adjacency edges onto their hierarchy node.
 
-Each returned edge carries the node id `LCA(owner(source), owner(target))` in the
-`nodes` array. Edges whose endpoints have the same owner are omitted and have
+Each returned edge carries the node id `LCA(smallest_node(source), smallest_node(target))` in the
+`nodes` array. Edges whose endpoints have the same smallest node are omitted and have
 implicit value 0 in the full formal saliency map. If `radius` is not provided,
 the tree's stored construction adjacency is used.)doc")
         .def_static(
-            "computeIncrementalNodeContours",
-            [](std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> weighted, std::optional<double> radius) {
-                if (!weighted) {
-                    throw std::invalid_argument("weighted tree must not be null");
+            "compute_incremental_node_contours",
+            [](std::shared_ptr<PythonValuedMorphologicalTree> valuedTree, std::optional<double> radius) {
+                if (!valuedTree) {
+                    throw std::invalid_argument("valued tree must not be null");
                 }
-                return computeIncrementalNodeContoursPy(*weighted, radius);
+                return computeIncrementalNodeContoursPy(*valuedTree, radius);
             },
             "tree"_a, "radius"_a = py::none(),
             R"doc(Compute per-node incremental contour edges.
 
 The returned dictionary contains `offsets`, `sources`, and `targets`.
 For node `u`, the slice `offsets[u]:offsets[u + 1]` stores all transition
-adjacency edges whose endpoint owners differ and whose endpoint-owner LCA is
+adjacency edges whose endpoint smallest nodes differ and whose endpoint-smallest-node LCA is
 `u`.)doc")
         .def_static(
-            "projectNodeValuation",
+            "project_node_valuation",
             [](py::dict contours, py::array nodeValuation) {
                 return projectNodeValuationOnIncrementalContoursPy(std::move(contours), std::move(nodeValuation));
             },
-            "contours"_a, "nodeValuation"_a,
+            "contours"_a, "node_valuation"_a,
             R"doc(Project a dense node valuation onto per-node transition contour edges.
 
-`contours` must be the dictionary returned by `computeIncrementalNodeContours`.
-`nodeValuation` must be a 1D float32 or float64 array with one value per dense
-internal node slot. The result is sparse over transition edges; same-owner graph
+`contours` must be the dictionary returned by `compute_incremental_node_contours`.
+`node_valuation` must be a 1D float32 or float64 array with one value per dense
+internal node slot. The result is sparse over transition edges; same-smallest-node graph
 edges are omitted and have implicit value 0 in the full formal saliency map.)doc")
         .def_static(
-            "thresholdByNodeValuation",
+            "threshold_by_node_valuation",
             [](py::dict contours, py::array nodeValuation, double threshold) {
                 return thresholdIncrementalContoursByNodeValuationPy(std::move(contours), std::move(nodeValuation), threshold);
             },
-            "contours"_a, "nodeValuation"_a, "threshold"_a,
+            "contours"_a, "node_valuation"_a, "threshold"_a,
             R"doc(Threshold per-node transition contours by dense node valuation.
 
-All edges in a node slice are selected when `nodeValuation[node] >= threshold`.)doc");
+All edges in a node slice are selected when `node_valuation[node] >= threshold`.)doc");
 
-    weightedCls
+    valuedTreeCls
         .def(
-            "setAltitude",
-            [](WeightedMorphologicalTree<std::uint8_t>& tree, NodeId nodeId, py::object altitudeInput) {
+            "set_node_altitude",
+            [](PythonValuedMorphologicalTree& tree, NodeId nodeId, py::object altitudeInput) {
                 if (!tree.topology().isNode(nodeId)) {
                     throw std::invalid_argument("invalid NodeId for altitude update");
                 }
-                const std::uint8_t altitude = pythonUInt8AltitudeValue(altitudeInput, nodeId, "WeightedMorphologicalTree.setAltitude");
-                tree.setAltitude(nodeId, altitude);
+                tree.visit([&](auto& native) {
+                    using Altitude = typename std::remove_reference_t<decltype(*native)>::AltitudeType;
+                    native->setNodeAltitude(nodeId, pythonUnsignedAltitudeValue<Altitude>(altitudeInput, nodeId, "ValuedMorphologicalTree.set_node_altitude"));
+                });
             },
-            "nodeId"_a, "altitude"_a, "Set one node altitude while preserving the declared strict parent-child altitude order.")
-        .def(
-            "setAltitudeBuffer",
-            [](WeightedMorphologicalTree<std::uint8_t>& tree, py::object altitudeInput) {
-                const std::vector<std::uint8_t> altitude = pythonUInt8AltitudeVector(altitudeInput, "WeightedMorphologicalTree.setAltitudeBuffer");
-                pybind_utils::requireVectorSize(altitude, static_cast<std::size_t>(tree.topology().getNumInternalNodeSlots()), "altitude");
-                tree.setAltitudeBuffer(altitude);
-            },
-            "altitude"_a, "Replace the dense altitude buffer indexed by internal NodeId after validating the declared strict altitude order.")
+            "node_id"_a, "altitude"_a, "Set one node altitude while preserving the declared strict parent-child altitude order.")
         .def_property(
-            "altitude", [](const WeightedMorphologicalTree<std::uint8_t>& tree) { return AltitudeBuffer<std::uint8_t>(tree.getAltitudeBuffer()); },
-            [](WeightedMorphologicalTree<std::uint8_t>& tree, py::object altitudeInput) {
-                const std::vector<std::uint8_t> altitude = pythonUInt8AltitudeVector(altitudeInput, "WeightedMorphologicalTree.altitude");
-                pybind_utils::requireVectorSize(altitude, static_cast<std::size_t>(tree.topology().getNumInternalNodeSlots()), "altitude");
-                tree.setAltitudeBuffer(altitude);
+            "node_altitudes",
+            [](const PythonValuedMorphologicalTree& tree) -> py::array {
+                return tree.visit([](const auto& native) -> py::array {
+                    using Altitude = typename std::remove_reference_t<decltype(*native)>::AltitudeType;
+                    const auto altitude = native->nodeAltitudes();
+                    return pybind_utils::toNumpyOwned(std::vector<Altitude>(altitude.begin(), altitude.end()), static_cast<int>(altitude.size()));
+                });
+            },
+            [](PythonValuedMorphologicalTree& tree, py::object altitudeInput) {
+                tree.visit([&](auto& native) {
+                    using Altitude = typename std::remove_reference_t<decltype(*native)>::AltitudeType;
+                    std::vector<Altitude> altitude = pythonUnsignedAltitudeVector<Altitude>(altitudeInput, "ValuedMorphologicalTree.node_altitudes");
+                    pybind_utils::requireVectorSize(altitude, static_cast<std::size_t>(native->topology().numInternalNodeSlots()), "altitude");
+                    native->setNodeAltitudes(std::move(altitude));
+                });
             },
             "Dense altitude buffer indexed by internal NodeId. Assignments validate the declared strict altitude order.")
-        .def("validateAltitudeBufferShape",
-             static_cast<void (WeightedMorphologicalTree<std::uint8_t>::*)() const>(&WeightedMorphologicalTree<std::uint8_t>::validateAltitudeBufferShape),
+        .def(
+            "node_altitude",
+            [](const PythonValuedMorphologicalTree& tree, NodeId nodeId) {
+                return tree.visit([&](const auto& native) -> std::uint64_t { return static_cast<std::uint64_t>(native->nodeAltitude(nodeId)); });
+            },
+            "node_id"_a, "Return the altitude associated with node_id.")
+        .def(
+            "node_residue",
+            [](const PythonValuedMorphologicalTree& tree, NodeId nodeId) {
+                return tree.visit([&](const auto& native) -> std::int64_t { return static_cast<std::int64_t>(native->nodeResidue(nodeId)); });
+            },
+            "node_id"_a, "Return the residue between node_id and its parent.")
+        .def(
+            "reconstruct_from_node_altitudes",
+            [](const PythonValuedMorphologicalTree& tree) -> py::array {
+                return tree.visit([](const auto& native) -> py::array { return reconstructFromNodeAltitudesOf(*native); });
+            },
+            "Reconstruct the current tree from node altitudes using the concrete altitude dtype.")
+        .def("reconstruct_from_node_contributions", &reconstructFromNodeContributions, "node_contributions"_a,
+             "Reconstruct floating-point node contributions by zero-baseline ancestor summation.")
+        .def(
+            "export_higra_hierarchy",
+            [](const PythonValuedMorphologicalTree& tree) -> py::object {
+                return tree.visit([](const auto& native) -> py::object { return py::cast(exportHigraHierarchyOf(*native)); });
+            },
+            "Export the current rooted tree to a compact Higra parent/altitude representation.")
+        .def("validate_node_altitude_buffer_shape",
+             [](const PythonValuedMorphologicalTree& tree) { tree.visit([](const auto& native) { native->validateNodeAltitudeBufferShape(); }); },
              "Validate that the dense altitude buffer covers every internal node slot.")
-        .def("validateMonotoneAltitude",
-             static_cast<void (WeightedMorphologicalTree<std::uint8_t>::*)() const>(&WeightedMorphologicalTree<std::uint8_t>::validateMonotoneAltitude),
+        .def("validate_monotone_node_altitudes",
+             [](const PythonValuedMorphologicalTree& tree) { tree.visit([](const auto& native) { native->validateMonotoneNodeAltitudes(); }); },
              "Validate the declared strict parent-child altitude order where applicable.")
-        .def("projectNodeValuesToExportedHigra", &projectNodeValuesToExportedHigraOf, "nodeValues"_a, "attributes"_a,
-             "Project a node-indexed scalar or 2D attribute buffer to the compact Higra layout produced by exportHigraHierarchy().")
-        .def("project_node_values_to_exported_higra", &projectNodeValuesToExportedHigraOf, "nodeValues"_a, "attributes"_a,
-             "Project a node-indexed scalar or 2D attribute buffer to the compact Higra layout produced by exportHigraHierarchy().");
+        .def("project_node_values_to_exported_higra",
+             [](const PythonValuedMorphologicalTree& tree, const py::array& nodeValues, py::object attributes) {
+                 return projectNodeValuesToExportedHigraOf(tree, nodeValues, std::move(attributes));
+             },
+             "node_values"_a, "attributes"_a,
+             "Project a node-indexed scalar or 2D attribute buffer to the compact Higra layout produced by export_higra_hierarchy().");
 
-    bindTreeQueryApi<WeightedMorphologicalTree<std::uint8_t>>(weightedCls);
+    bindTreeQueryApi<PythonValuedMorphologicalTree>(valuedTreeCls);
 }
 
 } // namespace mmcfilters::pybindings

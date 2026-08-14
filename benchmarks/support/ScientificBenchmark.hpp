@@ -2,7 +2,7 @@
 
 #include "mmcfilters/attributes/AttributeRegistry.hpp"
 #include "mmcfilters/attributes/AttributeResultTypes.hpp"
-#include "mmcfilters/trees/WeightedMorphologicalTree.hpp"
+#include "mmcfilters/trees/ValuedMorphologicalTree.hpp"
 #include "mmcfilters/utils/Contract.hpp"
 #include "mmcfilters/utils/Image.hpp"
 
@@ -125,7 +125,7 @@ template <typename Value> void appendImage(Fnv1a64& hash, const ImagePtr<Value>&
         throw std::invalid_argument("Scientific benchmark checksum requires a non-null image.");
     }
     hash.append(image->getNumRows());
-    hash.append(image->getNumCols());
+    hash.append(image->getNumColumns());
     hash.append(image->getSize());
     for (int index = 0; index < image->getSize(); ++index) {
         hash.append((*image)[index]);
@@ -142,7 +142,7 @@ template <typename Value> [[nodiscard]] std::uint64_t imageChecksum(const ImageP
     if (!image) {
         throw std::invalid_argument("Scientific benchmark input checksum requires a non-null image.");
     }
-    const std::string header = std::to_string(image->getNumRows()) + "x" + std::to_string(image->getNumCols()) + ":";
+    const std::string header = std::to_string(image->getNumRows()) + "x" + std::to_string(image->getNumColumns()) + ":";
     Fnv1a64 hash;
     hash.appendBytes(reinterpret_cast<const unsigned char*>(header.data()), header.size());
     for (int index = 0; index < image->getSize(); ++index) {
@@ -157,35 +157,35 @@ void appendExportedHierarchy(Fnv1a64& hash, const std::pair<std::vector<NodeId>,
     hash.appendVector(hierarchy.second);
 }
 
-template <AltitudeValue T> [[nodiscard]] std::uint64_t weightedTreeChecksum(const WeightedMorphologicalTree<T>& tree) {
+template <AltitudeValue T> [[nodiscard]] std::uint64_t valuedTreeChecksum(const ValuedMorphologicalTree<T>& tree) {
     Fnv1a64 hash;
-    hash.append(tree.topology().getNumRowsOfGridDomain2D());
-    hash.append(tree.topology().getNumColsOfGridDomain2D());
-    hash.append(tree.topology().getNumInternalNodeSlots());
-    hash.append(tree.topology().getNumNodes());
-    hash.append(tree.topology().getRoot());
-    hash.append(tree.topology().getNumTotalProperParts());
-    for (NodeId properPart = 0; properPart < tree.topology().getNumTotalProperParts(); ++properPart) {
-        hash.append(tree.topology().getProperPartOwner(properPart));
+    hash.append(tree.topology().numRows());
+    hash.append(tree.topology().numColumns());
+    hash.append(tree.topology().numInternalNodeSlots());
+    hash.append(tree.topology().numNodes());
+    hash.append(tree.topology().root());
+    hash.append(tree.topology().numPixels());
+    for (PixelId pixel = 0; pixel < tree.topology().numPixels(); ++pixel) {
+        hash.append(tree.topology().smallestNode(pixel));
     }
     appendExportedHierarchy(hash, tree.exportHigraHierarchy());
     return hash.value();
 }
 
-template <AltitudeValue T> [[nodiscard]] WorkloadMetrics metricsOf(const WeightedMorphologicalTree<T>& tree) {
+template <AltitudeValue T> [[nodiscard]] WorkloadMetrics metricsOf(const ValuedMorphologicalTree<T>& tree) {
     const MorphologicalTree& topology = tree.topology();
     return WorkloadMetrics{
-        .pixels = static_cast<std::int64_t>(topology.getNumRowsOfGridDomain2D()) * topology.getNumColsOfGridDomain2D(),
-        .properParts = topology.getNumTotalProperParts(),
-        .primaryNodeSlots = topology.getNumInternalNodeSlots(),
-        .primaryLiveNodes = topology.getNumNodes(),
+        .pixels = static_cast<std::int64_t>(topology.numRows()) * topology.numColumns(),
+        .properParts = topology.numPixels(),
+        .primaryNodeSlots = topology.numInternalNodeSlots(),
+        .primaryLiveNodes = topology.numNodes(),
     };
 }
 
 template <class Map> [[nodiscard]] std::uint64_t edgeMapChecksum(const Map& map) noexcept {
     Fnv1a64 hash;
     hash.append(map.numRows);
-    hash.append(map.numCols);
+    hash.append(map.numColumns);
     hash.append(map.adjacencyRadius);
     hash.appendVector(map.sources);
     hash.appendVector(map.targets);
@@ -254,14 +254,14 @@ template <std::floating_point Real> [[nodiscard]] std::uint64_t semanticAttribut
     return semanticAttributeChecksum<Real>(std::span<const ComputedAttributeData<Real>* const>(results));
 }
 
-template <std::floating_point Real> [[nodiscard]] std::uint64_t deltaAttributeChecksum(const ComputedAttributeDataWithDelta<Real>& result) {
+template <std::floating_point Real> [[nodiscard]] std::uint64_t sampledNodeAttributeChecksum(const SampledNodeAttributeData<Real>& result) {
     struct Column {
-        AttributeKey key;
+        NodeAttributeSampleKey key;
         int offset;
     };
 
     if (result.first.NUM_ATTRIBUTES <= 0 || result.second.size() % static_cast<std::size_t>(result.first.NUM_ATTRIBUTES) != 0) {
-        throw std::invalid_argument("Delta attribute checksum received an invalid layout.");
+        throw std::invalid_argument("Sampled node-attribute checksum received an invalid layout.");
     }
     std::vector<Column> columns;
     columns.reserve(result.first.indexMap.size());
@@ -269,10 +269,10 @@ template <std::floating_point Real> [[nodiscard]] std::uint64_t deltaAttributeCh
         columns.push_back(Column{key, offset});
     }
     std::sort(columns.begin(), columns.end(), [](const Column& lhs, const Column& rhs) {
-        if (lhs.key.delta != rhs.key.delta) {
-            return lhs.key.delta < rhs.key.delta;
+        if (lhs.key.sampleOffset != rhs.key.sampleOffset) {
+            return lhs.key.sampleOffset < rhs.key.sampleOffset;
         }
-        return static_cast<int>(lhs.key.attr) < static_cast<int>(rhs.key.attr);
+        return static_cast<int>(lhs.key.attribute) < static_cast<int>(rhs.key.attribute);
     });
 
     const std::size_t rowCount = result.second.size() / static_cast<std::size_t>(result.first.NUM_ATTRIBUTES);
@@ -281,8 +281,8 @@ template <std::floating_point Real> [[nodiscard]] std::uint64_t deltaAttributeCh
     hash.append(rowCount);
     hash.append(columns.size());
     for (const Column& column : columns) {
-        hash.append(column.key.attr);
-        hash.append(column.key.delta);
+        hash.append(column.key.attribute);
+        hash.append(column.key.sampleOffset);
         for (std::size_t row = 0; row < rowCount; ++row) {
             hash.append(result.second[row * static_cast<std::size_t>(result.first.NUM_ATTRIBUTES) + static_cast<std::size_t>(column.offset)]);
         }

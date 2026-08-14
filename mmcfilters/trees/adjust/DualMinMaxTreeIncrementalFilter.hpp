@@ -1,7 +1,7 @@
 #pragma once
 
 #include "DynamicTreeAttributeComputer.hpp"
-#include "../WeightedMorphologicalTree.hpp"
+#include "../ValuedMorphologicalTree.hpp"
 #include "../../utils/GenerationStampSet.hpp"
 
 #include <algorithm>
@@ -25,7 +25,7 @@ namespace mmcfilters::adjust {
  * @brief Incremental updater for a paired min-tree / max-tree state.
  *
  * This class ports the Higra dual component-tree adjustment algorithm to this
- * repository's `WeightedMorphologicalTree<T>` representation. It implements the
+ * repository's `ValuedMorphologicalTree<T>` representation. It implements the
  * update-rather-than-rebuild strategy used for efficient connected alternating
  * sequential filters: when a rooted subtree is removed from one component tree,
  * the dual tree is updated in place so both trees remain consistent with the
@@ -52,7 +52,7 @@ namespace mmcfilters::adjust {
  *
  * State managed by this class:
  *
- * - two mutable weighted component trees (`mintree_`, `maxtree_`);
+ * - two mutable valuedTree component trees (`mintree_`, `maxtree_`);
  * - one adjacency relation shared by both trees;
  * - optional incremental attribute computers and two external attribute
  *   buffers;
@@ -69,13 +69,13 @@ namespace mmcfilters::adjust {
  * Representation notes:
  *
  * - node ids are this project's dense internal node ids, not Higra global ids;
- * - altitudes are read from `WeightedMorphologicalTree<T>::getAltitude`;
- * - this is a mutable weighted-tree boundary, not a `WeightedTreeView`
- *   boundary: topology, proper-part ownership, owned altitude, and
+ * - altitudes are read from `ValuedMorphologicalTree<T>::nodeAltitude`;
+ * - this is a mutable valued-tree boundary, not a `ValuedMorphologicalTreeView`
+ *   boundary: topology, smallest-node mapping, owned altitude, and
  *   optional dynamic attributes are updated in lockstep;
  * - the `altitude_t` template parameter is the owned tree altitude type and
  *   also controls merge-bucket keys/backends;
- * - low-level edits go through `WeightedTreeEditor<T>` and publish with the
+ * - low-level edits go through `ValuedMorphologicalTreeEditor<T>` and publish with the
  *   generic move-only proof protocol; the update establishes its invariants
  *   during the existing algorithmic passes, while assertion-enabled builds
  *   retain the complete validation oracle;
@@ -107,9 +107,9 @@ namespace mmcfilters::adjust {
 template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
   private:
     /** @brief Defines the `tree_t` alias used by the component. */
-    using tree_t = WeightedMorphologicalTree<altitude_t>;
+    using tree_t = ValuedMorphologicalTree<altitude_t>;
     /** @brief Defines the `editor_t` alias used by the component. */
-    using editor_t = WeightedTreeEditor<altitude_t>;
+    using editor_t = ValuedMorphologicalTreeEditor<altitude_t>;
     /** @brief Defines the `attribute_computer_t` alias used by the component. */
     using attribute_computer_t = DynamicTreeAttributeComputer<altitude_t>;
 
@@ -146,15 +146,15 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
      */
     class MergedNodesCollection {
       private:
-        template <bool dense, typename altitude_type> struct StorageSelector;
+        template <bool dense, typename AltitudeType> struct StorageSelector;
 
         /**
          * @brief Dense bucket storage for small integral altitude domains.
          */
-        template <typename altitude_type> struct StorageSelector<true, altitude_type> {
-            /** @brief Stores the domain size. */
-            static constexpr std::size_t domain_size = static_cast<std::size_t>(static_cast<long long>(std::numeric_limits<altitude_type>::max()) -
-                                                                                static_cast<long long>(std::numeric_limits<altitude_type>::lowest()) + 1);
+        template <typename AltitudeType> struct StorageSelector<true, AltitudeType> {
+            /** @brief Domain size. */
+            static constexpr std::size_t domain_size = static_cast<std::size_t>(static_cast<long long>(std::numeric_limits<AltitudeType>::max()) -
+                                                                                static_cast<long long>(std::numeric_limits<AltitudeType>::lowest()) + 1);
             /** @brief Defines the `type` alias used by the component. */
             using type = std::array<std::vector<NodeId>, domain_size>;
         };
@@ -162,29 +162,29 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
         /**
          * @brief Sparse ordered storage for large or non-integral altitude domains.
          */
-        template <typename altitude_type> struct StorageSelector<false, altitude_type> {
+        template <typename AltitudeType> struct StorageSelector<false, AltitudeType> {
             /** @brief Defines the `type` alias used by the component. */
-            using type = std::map<altitude_type, std::vector<NodeId>>;
+            using type = std::map<AltitudeType, std::vector<NodeId>>;
         };
 
         /** @brief Defines the `storage_t` alias used by the component. */
         using storage_t = typename StorageSelector<use_dense_levels, altitude_t>::type;
 
-        /** @brief Stores the merge nodes by level storage. */
+        /** @brief Merge nodes by level storage. */
         storage_t mergeNodesByLevelStorage_;
-        /** @brief Stores the merge levels. */
+        /** @brief Merge levels buffer. */
         std::vector<altitude_t> mergeLevels_;
-        /** @brief Stores the frontier nodes above b. */
+        /** @brief Dense node identifier of the frontier nodes above b. */
         std::vector<NodeId> frontierNodesAboveB_;
-        /** @brief Stores the collected node marks. */
+        /** @brief Collected node marks. */
         GenerationStampSet collectedNodeMarks_;
-        /** @brief Stores the merge bucket node marks. */
+        /** @brief Merge bucket node marks. */
         GenerationStampSet mergeBucketNodeMarks_;
-        /** @brief Stores the adjacent seed marks. */
+        /** @brief Adjacent seed marks. */
         GenerationStampSet adjacentSeedMarks_;
-        /** @brief Stores the max bucket size. */
+        /** @brief Max bucket size. */
         std::size_t maxBucketSize_ = 0;
-        /** @brief Stores the current merge level index. */
+        /** @brief Current merge level index. */
         int currentMergeLevelIndex_ = 0;
         /** @brief Indicates whether this side represents the max-tree. */
         bool isMaxtree_ = false;
@@ -195,7 +195,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
          * @details Signed integral domains are shifted by their lowest value so
          * negative altitudes still map to non-negative array indices.
          *
-         * @param level Altitude level used by the operation.
+         * @param level Altitude level.
          * @return The mapped altitude value to an order-preserving dense bucket index.
          */
         static std::size_t denseBucketIndex(altitude_t level) {
@@ -209,7 +209,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
         /**
          * @brief Converts a dense bucket index back to its altitude value.
          *
-         * @param index Zero-based index used by the operation.
+         * @param index Zero-based index.
          * @return The converted dense bucket index back to its altitude value.
          */
         static altitude_t levelFromDenseBucketIndex(std::size_t index) {
@@ -260,7 +260,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
         /**
          * @brief Returns the bucket associated with one altitude value.
          *
-         * @param level Altitude level used by the operation.
+         * @param level Altitude level.
          * @return The bucket associated with one altitude value.
          */
         std::vector<NodeId>& getMergedNodes(const altitude_t& level) {
@@ -291,7 +291,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
         /**
          * @brief Marks one adjacent seed at most once in the current step.
          *
-         * @param nodeId Identifier of the node used by the operation.
+         * @param nodeId Dense internal node identifier.
          * @return `true` if the seed was accepted now; `false` if it had already been seen.
          *
          */
@@ -306,7 +306,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
         /**
          * @brief Registers one frontier root above `b` only once.
          *
-         * @param nodeId Identifier of the node used by the operation.
+         * @param nodeId Dense internal node identifier.
          */
         void addFrontierNodeAboveB(NodeId nodeId) {
             if (!collectedNodeMarks_.isMarked(static_cast<size_t>(nodeId))) {
@@ -320,14 +320,14 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
          * @details Each visited node is registered only in the bucket of its own
          * level, without materializing the full ancestor path in advance.
          *
-         * @param tree Tree topology used by the operation.
-         * @param nodeId Identifier of the node used by the operation.
+         * @param tree Tree topology.
+         * @param nodeId Dense internal node identifier.
          */
         void addMergeNode(const tree_t& tree, NodeId nodeId) {
             if (collectedNodeMarks_.isMarked(static_cast<size_t>(nodeId))) {
                 return;
             }
-            auto& bucket = getMergedNodes(tree.getAltitude(nodeId));
+            auto& bucket = getMergedNodes(tree.nodeAltitude(nodeId));
             bucket.push_back(nodeId);
             maxBucketSize_ = std::max(maxBucketSize_, bucket.size());
             collectedNodeMarks_.mark(static_cast<size_t>(nodeId));
@@ -337,7 +337,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
         /**
          * @brief Tests whether a node was inserted in a merge bucket.
          *
-         * @param nodeId Identifier of the node used by the operation.
+         * @param nodeId Dense internal node identifier.
          * @return True if a node was inserted in a merge bucket; otherwise false.
          */
         bool isMergeNode(NodeId nodeId) const { return mergeBucketNodeMarks_.isMarked(static_cast<size_t>(nodeId)); }
@@ -400,48 +400,48 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
     };
 
     // Dynamic primal/dual trees and shared domain adjacency.
-    /** @brief Stores the mintree. */
+    /** @brief Mintree. */
     tree_t* mintree_ = nullptr;
-    /** @brief Stores the maxtree. */
+    /** @brief Maxtree. */
     tree_t* maxtree_ = nullptr;
-    /** @brief Stores the graph. */
+    /** @brief Graph. */
     const RegularGridAdjacency2D* graph_ = nullptr;
 
     // Transient state of the current adjustment step.
-    /** @brief Stores the merge nodes by level. */
+    /** @brief Merge nodes by level. */
     MergedNodesCollection mergeNodesByLevel_;
-    /** @brief Stores the removed marks. */
+    /** @brief Removed marks. */
     GenerationStampSet removedMarks_;
-    /** @brief Stores the pixels in c marks. */
+    /** @brief Pixels in c marks. */
     GenerationStampSet pixelsInCMarks_;
-    /** @brief Stores the climbed node marks. */
+    /** @brief Climbed node marks. */
     GenerationStampSet climbedNodeMarks_;
-    /** @brief Stores the attribute update marks. */
+    /** @brief Attribute update marks. */
     GenerationStampSet attributeUpdateMarks_;
-    /** @brief Stores the proper part set c. */
-    std::vector<NodeId> properPartSetC_;
-    /** @brief Stores the nodes pending removal. */
+    /** @brief Pixel identifier of the proper part set c. */
+    std::vector<PixelId> properPartSetC_;
+    /** @brief Dense node identifier of the nodes pending removal. */
     std::vector<NodeId> nodesPendingRemoval_;
-    /** @brief Stores the removed nodes pending absorption. */
+    /** @brief Dense node identifier of the removed nodes pending absorption. */
     std::vector<NodeId> removedNodesPendingAbsorption_;
-    /** @brief Stores the altitude ca. */
+    /** @brief Altitude ca. */
     altitude_t altitudeCa_ = altitude_t{};
 
     // Incremental attribute computation and external attribute buffers.
-    /** @brief Stores the attribute computer min. */
+    /** @brief Attribute computer min. */
     const attribute_computer_t* attributeComputerMin_ = nullptr;
-    /** @brief Stores the attribute computer max. */
+    /** @brief Attribute computer max. */
     const attribute_computer_t* attributeComputerMax_ = nullptr;
-    /** @brief Stores the attribute buffer min. */
+    /** @brief Attribute buffer min buffer. */
     std::vector<double>* attributeBufferMin_ = nullptr;
-    /** @brief Stores the attribute buffer max. */
+    /** @brief Attribute buffer max buffer. */
     std::vector<double>* attributeBufferMax_ = nullptr;
 
     /**
-     * @brief Returns the topology view of one weighted tree.
+     * @brief Returns the topology view of one valued tree.
      *
-     * @param tree Tree topology used by the operation.
-     * @return The topology view of one weighted tree.
+     * @param tree Tree topology.
+     * @return The topology view of one valued tree.
      */
     static const MorphologicalTree& topologyOf(const tree_t* tree) {
         assert(tree != nullptr);
@@ -451,7 +451,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
     /**
      * @brief Returns the attribute buffer associated with one tree.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @return `nullptr` when no incremental attribute computer is configured.
      *
      */
@@ -466,7 +466,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
     /**
      * @brief Returns the attribute computer associated with one tree.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @return The attribute computer associated with one tree.
      */
     const attribute_computer_t* getAttributeComputer(tree_t* tree) const {
@@ -481,8 +481,8 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
      * @details The notification is skipped when no computer is configured or
      * when the removed node id is invalid.
      *
-     * @param tree Tree topology used by the operation.
-     * @param nodeId Identifier of the node used by the operation.
+     * @param tree Tree topology.
+     * @param nodeId Dense internal node identifier.
      */
     void notifyNodeRemoved(tree_t* tree, NodeId nodeId) const {
         const auto* computer = getAttributeComputer(tree);
@@ -494,9 +494,9 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
     /**
      * @brief Forwards a bulk proper-part transfer to the incremental attribute computer of `tree`.
      *
-     * @param tree Tree topology used by the operation.
-     * @param targetNodeId Node identifier represented by `targetNodeId`.
-     * @param sourceNodeId Node identifier represented by `sourceNodeId`.
+     * @param tree Tree topology.
+     * @param targetNodeId Node identifier.
+     * @param sourceNodeId Node identifier.
      */
     void notifyMoveProperParts(tree_t* tree, NodeId targetNodeId, NodeId sourceNodeId) const {
         const auto* computer = getAttributeComputer(tree);
@@ -508,12 +508,12 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
     /**
      * @brief Forwards a single proper-part transfer to the incremental attribute computer of `tree`.
      *
-     * @param tree Tree topology used by the operation.
-     * @param targetNodeId Node identifier represented by `targetNodeId`.
-     * @param sourceNodeId Node identifier represented by `sourceNodeId`.
-     * @param pixelId Pixel identifier used by the operation.
+     * @param tree Tree topology.
+     * @param targetNodeId Node identifier.
+     * @param sourceNodeId Node identifier.
+     * @param pixelId Pixel identifier.
      */
-    void notifyMoveProperPart(tree_t* tree, NodeId targetNodeId, NodeId sourceNodeId, NodeId pixelId) const {
+    void notifyMoveProperPart(tree_t* tree, NodeId targetNodeId, NodeId sourceNodeId, PixelId pixelId) const {
         const auto* computer = getAttributeComputer(tree);
         if (computer != nullptr && tree != nullptr) {
             computer->onMoveProperPart(targetNodeId, sourceNodeId, pixelId, *tree);
@@ -523,13 +523,13 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
     /**
      * @brief Returns the current altitude of one tree node.
      *
-     * @param tree Tree topology used by the operation.
-     * @param nodeId Identifier of the node used by the operation.
+     * @param tree Tree topology.
+     * @param nodeId Dense internal node identifier.
      * @return The current altitude of one tree node.
      */
     altitude_t nodeAltitude(const tree_t* tree, NodeId nodeId) const {
         assert(tree != nullptr);
-        return tree->getAltitude(nodeId);
+        return tree->nodeAltitude(nodeId);
     }
 
     /**
@@ -540,8 +540,8 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
      * recomputed only on nodes whose local child/proper-part state can have
      * changed in the active sweep.
      *
-     * @param tree Tree topology used by the operation.
-     * @param nodeId Identifier of the node used by the operation.
+     * @param tree Tree topology.
+     * @param nodeId Dense internal node identifier.
      */
     void computeAttributeOnTreeNode(tree_t* tree, NodeId nodeId) {
         const auto* computer = getAttributeComputer(tree);
@@ -576,8 +576,8 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
     /**
      * @brief Marks one alive node for later attribute recomputation.
      *
-     * @param tree Tree topology used by the operation.
-     * @param nodeId Identifier of the node used by the operation.
+     * @param tree Tree topology.
+     * @param nodeId Dense internal node identifier.
      */
     void markAttributeUpdate(tree_t* tree, NodeId nodeId) {
         if (getAttributeComputer(tree) == nullptr || tree == nullptr || nodeId == InvalidNode) {
@@ -591,13 +591,13 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
 
     /**
      * @brief Detaches a node from its parent, optionally releasing it.
-     * @details Delegates to `WeightedTreeEditor<std::uint8_t>::removeChild`, preserving the
+     * @details Delegates to `ValuedMorphologicalTreeEditor<std::uint8_t>::removeChild`, preserving the
      * root case and ignoring nodes with invalid parents.
      *
-     * @param tree Tree topology used by the operation.
-     * @param editor Active tree editor used by the operation.
-     * @param nodeId Identifier of the node used by the operation.
-     * @param releaseNode Node identifier represented by `releaseNode`.
+     * @param tree Tree topology.
+     * @param editor Active tree editor.
+     * @param nodeId Dense internal node identifier.
+     * @param releaseNode Node identifier.
      */
     void disconnect(tree_t* tree, editor_t& editor, NodeId nodeId, bool releaseNode) {
         assert(tree != nullptr);
@@ -605,7 +605,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
         if (topology.isRoot(nodeId)) {
             return;
         }
-        const NodeId parentId = topology.getNodeParent(nodeId);
+        const NodeId parentId = topology.parent(nodeId);
         if (parentId == InvalidNode || parentId == nodeId) {
             return;
         }
@@ -622,25 +622,25 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
      * and later contracted in post-order after the sweep has finished reconnecting
      * the local hierarchy.
      *
-     * @param dualTree Dual tree used by the operation.
-     * @param editor Active tree editor used by the operation.
-     * @param unionNode Node identifier represented by `unionNode`.
-     * @param properPartSetC Proper-part data represented by `properPartSetC`.
+     * @param dualTree Dual tree.
+     * @param editor Active tree editor.
+     * @param unionNode Node identifier.
+     * @param properPartSetC Proper-part data.
      */
-    void moveSelectedProperPartsToNode(tree_t* dualTree, editor_t& editor, NodeId unionNode, const std::vector<NodeId>& properPartSetC) {
-        for (NodeId pixelId : properPartSetC) {
-            const NodeId ownerId = topologyOf(dualTree).getProperPartOwner(pixelId);
-            if (ownerId == InvalidNode || ownerId == unionNode) {
+    void moveSelectedProperPartsToNode(tree_t* dualTree, editor_t& editor, NodeId unionNode, const std::vector<PixelId>& properPartSetC) {
+        for (PixelId pixelId : properPartSetC) {
+            const NodeId smallestNodeId = topologyOf(dualTree).smallestNode(pixelId);
+            if (smallestNodeId == InvalidNode || smallestNodeId == unionNode) {
                 continue;
             }
 
-            notifyMoveProperPart(dualTree, unionNode, ownerId, pixelId);
-            editor.moveProperPart(unionNode, ownerId, pixelId);
+            notifyMoveProperPart(dualTree, unionNode, smallestNodeId, pixelId);
+            editor.movePixelToProperPart(unionNode, smallestNodeId, pixelId);
 
-            if (topologyOf(dualTree).isAlive(ownerId) && topologyOf(dualTree).getNumProperParts(ownerId) == 0 && ownerId != unionNode &&
-                !removedMarks_.isMarked(static_cast<size_t>(ownerId))) {
-                removedMarks_.mark(static_cast<size_t>(ownerId));
-                removedNodesPendingAbsorption_.push_back(ownerId);
+            if (topologyOf(dualTree).isAlive(smallestNodeId) && topologyOf(dualTree).properPartCardinality(smallestNodeId) == 0 && smallestNodeId != unionNode &&
+                !removedMarks_.isMarked(static_cast<size_t>(smallestNodeId))) {
+                removedMarks_.mark(static_cast<size_t>(smallestNodeId));
+                removedNodesPendingAbsorption_.push_back(smallestNodeId);
             }
         }
     }
@@ -648,26 +648,26 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
     /**
      * @brief Tests whether a marked empty node is still absorbable.
      *
-     * @param dualTree Dual tree used by the operation.
-     * @param nodeId Identifier of the node used by the operation.
+     * @param dualTree Dual tree.
+     * @param nodeId Dense internal node identifier.
      * @return True if a marked empty node is still absorbable; otherwise false.
      */
     bool canAbsorbRemovedNode(tree_t* dualTree, NodeId nodeId) const {
         return dualTree != nullptr && nodeId != InvalidNode && topologyOf(dualTree).isNode(nodeId) && topologyOf(dualTree).isAlive(nodeId) &&
-               removedMarks_.isMarked(static_cast<size_t>(nodeId)) && topologyOf(dualTree).getNumProperParts(nodeId) == 0;
+               removedMarks_.isMarked(static_cast<size_t>(nodeId)) && topologyOf(dualTree).properPartCardinality(nodeId) == 0;
     }
 
     /**
      * @brief Contracts one empty non-root node into its current parent.
      *
-     * @param dualTree Dual tree used by the operation.
-     * @param editor Active tree editor used by the operation.
-     * @param removedNodeId Node identifier represented by `removedNodeId`.
+     * @param dualTree Dual tree.
+     * @param editor Active tree editor.
+     * @param removedNodeId Node identifier.
      * @return The surviving parent empty non-root node into its current parent.
      */
     NodeId absorbRemovedNonRootNode(tree_t* dualTree, editor_t& editor, NodeId removedNodeId) {
         const MorphologicalTree& topology = topologyOf(dualTree);
-        const NodeId parentId = topology.getNodeParent(removedNodeId);
+        const NodeId parentId = topology.parent(removedNodeId);
         if (parentId == InvalidNode || parentId == removedNodeId || !topology.isAlive(parentId)) {
             return InvalidNode;
         }
@@ -675,14 +675,14 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
         const bool parentChanged = topology.getFirstChild(removedNodeId) != InvalidNode;
         editor.moveChildren(parentId, removedNodeId);
         notifyMoveProperParts(dualTree, parentId, removedNodeId);
-        editor.moveProperParts(parentId, removedNodeId);
+        editor.mergeProperParts(parentId, removedNodeId);
         disconnect(dualTree, editor, removedNodeId, true);
         if (parentChanged) {
             markAttributeUpdate(dualTree, parentId);
         }
         computeAttributeOnTreeNode(dualTree, parentId);
 
-        if (topologyOf(dualTree).isAlive(parentId) && topologyOf(dualTree).getNumProperParts(parentId) == 0) {
+        if (topologyOf(dualTree).isAlive(parentId) && topologyOf(dualTree).properPartCardinality(parentId) == 0) {
             removedMarks_.mark(static_cast<size_t>(parentId));
             return parentId;
         }
@@ -692,9 +692,9 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
     /**
      * @brief Contracts an empty root by promoting the altitude-compatible child.
      *
-     * @param dualTree Dual tree used by the operation.
-     * @param editor Active tree editor used by the operation.
-     * @param removedNodeId Node identifier represented by `removedNodeId`.
+     * @param dualTree Dual tree.
+     * @param editor Active tree editor.
+     * @param removedNodeId Node identifier.
      */
     void absorbRemovedRootNode(tree_t* dualTree, editor_t& editor, NodeId removedNodeId) {
         const bool isMaxtree = dualTree == maxtree_;
@@ -735,9 +735,9 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
     /**
      * @brief Contracts all still-empty marked nodes in post-order.
      *
-     * @param dualTree Dual tree used by the operation.
-     * @param editor Active tree editor used by the operation.
-     * @param removedNodeIds Node identifier represented by `removedNodeIds`.
+     * @param dualTree Dual tree.
+     * @param editor Active tree editor.
+     * @param removedNodeIds Node identifier.
      */
     void absorbRemovedNodes(tree_t* dualTree, editor_t& editor, const std::vector<NodeId>& removedNodeIds) {
         struct Frame {
@@ -800,8 +800,8 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
      * root candidate. This helper repeatedly promotes the altitude-compatible
      * child while preserving all other grandchildren under the promoted node.
      *
-     * @param dualTree Dual tree used by the operation.
-     * @param editor Active tree editor used by the operation.
+     * @param dualTree Dual tree.
+     * @param editor Active tree editor.
      * @param rootId Identifier of the root node.
      * @param childId Identifier of the child node.
      * @return The surviving node chain of empty marked nodes immediately below the root.
@@ -812,8 +812,8 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
 
         NodeId current = childId;
         while (current != InvalidNode && topologyOf(dualTree).isNode(current) && topologyOf(dualTree).isAlive(current) &&
-               topologyOf(dualTree).getNodeParent(current) == rootId && removedMarks_.isMarked(static_cast<size_t>(current)) &&
-               topologyOf(dualTree).getNumProperParts(current) == 0) {
+               topologyOf(dualTree).parent(current) == rootId && removedMarks_.isMarked(static_cast<size_t>(current)) &&
+               topologyOf(dualTree).properPartCardinality(current) == 0) {
             const NodeId firstGrandchild = topologyOf(dualTree).getFirstChild(current);
             if (firstGrandchild == InvalidNode) {
                 break;
@@ -859,10 +859,10 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
      * below `nodeCa`. The method then contracts every empty node accumulated
      * during the step.
      *
-     * @param dualTree Dual tree used by the operation.
-     * @param editor Active tree editor used by the operation.
+     * @param dualTree Dual tree.
+     * @param editor Active tree editor.
      * @param nodeCa Identifier of the common-ancestor node.
-     * @param finalUnionNode Node identifier represented by `finalUnionNode`.
+     * @param finalUnionNode Node identifier.
      */
     void finalizeUpdateTreeAndContractRemovedNodes(tree_t* dualTree, editor_t& editor, NodeId nodeCa, NodeId finalUnionNode) {
         if (dualTree == nullptr) {
@@ -874,7 +874,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
         if (finalUnionNode != InvalidNode && topologyOf(dualTree).isAlive(finalUnionNode)) {
             if (removedMarks_.isMarked(static_cast<size_t>(nodeCa))) {
                 if (!topologyOf(dualTree).isRoot(nodeCa)) {
-                    const NodeId nodeCaParentId = topologyOf(dualTree).getNodeParent(nodeCa);
+                    const NodeId nodeCaParentId = topologyOf(dualTree).parent(nodeCa);
                     bool finalUnionNodeChanged = false;
 
                     if (!topologyOf(dualTree).isRoot(finalUnionNode)) {
@@ -980,10 +980,10 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
      * own level in the sweep. The remaining children are moved to the current
      * union node to preserve the hierarchy around the local edit.
      *
-     * @param tree Tree topology used by the operation.
-     * @param editor Active tree editor used by the operation.
-     * @param targetNodeId Node identifier represented by `targetNodeId`.
-     * @param sourceNodeId Node identifier represented by `sourceNodeId`.
+     * @param tree Tree topology.
+     * @param editor Active tree editor.
+     * @param targetNodeId Node identifier.
+     * @param sourceNodeId Node identifier.
      */
     void reattachOutsideIntervalChildren(tree_t* tree, editor_t& editor, NodeId targetNodeId, NodeId sourceNodeId) {
         assert(tree != nullptr);
@@ -1021,25 +1021,25 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
      * boundary are stored as frontier roots and reattached when the sweep
      * reaches `b`.
      *
-     * @param tree Tree topology used by the operation.
-     * @param properPartSetC Proper-part data represented by `properPartSetC`.
+     * @param tree Tree topology.
+     * @param properPartSetC Proper-part data.
      * @param nodeCa Identifier of the common-ancestor node.
-     * @param b Branch or side selector used by the operation.
+     * @param b Branch or side selector.
      * @param isMaxtree Flag controlling is maxtree.
      */
-    void buildMergedAndNestedCollections(const tree_t& tree, const std::vector<NodeId>& properPartSetC, NodeId nodeCa, altitude_t b, bool isMaxtree) {
+    void buildMergedAndNestedCollections(const tree_t& tree, const std::vector<PixelId>& properPartSetC, NodeId nodeCa, altitude_t b, bool isMaxtree) {
         mergeNodesByLevel_.resetCollection(isMaxtree);
         assert(nodeCa != InvalidNode);
         climbedNodeMarks_.resetAll();
         const altitude_t altitudeCa = nodeAltitude(&tree, nodeCa);
 
-        for (NodeId p : properPartSetC) {
-            for (NodeId q : graph_->getNeighborIndices(p)) {
-                if (pixelsInCMarks_.isMarked(static_cast<size_t>(q))) {
+        for (PixelId pixel : properPartSetC) {
+            for (PixelId neighbor : graph_->getNeighborIndices(pixel)) {
+                if (pixelsInCMarks_.isMarked(static_cast<size_t>(neighbor))) {
                     continue;
                 }
 
-                const NodeId nodeQ = tree.topology().getProperPartOwner(q);
+                const NodeId nodeQ = tree.topology().smallestNode(neighbor);
                 if (nodeQ == InvalidNode) {
                     continue;
                 }
@@ -1065,7 +1065,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
                         if ((isMaxtree && levelCurrent <= b) || (!isMaxtree && levelCurrent >= b)) {
                             mergeNodesByLevel_.addMergeNode(tree, nodeSubtree);
                         } else {
-                            NodeId parentId = tree.topology().getNodeParent(nodeSubtree);
+                            NodeId parentId = tree.topology().parent(nodeSubtree);
                             if (parentId == nodeSubtree) {
                                 parentId = InvalidNode;
                             }
@@ -1075,7 +1075,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
                             }
                         }
 
-                        const NodeId parentId = tree.topology().getNodeParent(n);
+                        const NodeId parentId = tree.topology().parent(n);
                         if (parentId == n) {
                             break;
                         }
@@ -1101,12 +1101,12 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
      * - finalize by promoting/reattaching the final union node and contracting
      *   nodes emptied by the update.
      *
-     * All tree mutations are performed through `WeightedTreeEditor<T>`. The
+     * All tree mutations are performed through `ValuedMorphologicalTreeEditor<T>`. The
      * generic move-only proof at the end records that this algorithm
      * established the edit invariants during its existing passes and avoids
      * duplicate global validation in the Release hot loop.
      *
-     * @param dualTree Dual tree used by the operation.
+     * @param dualTree Dual tree.
      * @param subtreeRoot Root of the subtree being processed.
      */
     void updateTree(tree_t* dualTree, NodeId subtreeRoot) {
@@ -1120,7 +1120,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
         assert(primalTree->topology().isNode(subtreeRoot));
         assert(primalTree->topology().isAlive(subtreeRoot));
 
-        const NodeId subtreeParentId = primalTree->topology().getNodeParent(subtreeRoot);
+        const NodeId subtreeParentId = primalTree->topology().parent(subtreeRoot);
         assert(subtreeParentId != InvalidNode && subtreeParentId != subtreeRoot);
         const altitude_t b = nodeAltitude(primalTree, subtreeParentId);
 
@@ -1130,12 +1130,12 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
         properPartSetC_.clear();
         properPartSetC_.reserve(64);
         pixelsInCMarks_.resetAll();
-        for (NodeId subtreeNodeId : primalTree->topology().getNodeSubtree(subtreeRoot)) {
-            for (NodeId p : primalTree->topology().getProperParts(subtreeNodeId)) {
-                properPartSetC_.push_back(p);
-                pixelsInCMarks_.mark(static_cast<size_t>(p));
+        for (NodeId subtreeNodeId : primalTree->topology().subtreeNodes(subtreeRoot)) {
+            for (PixelId pixel : primalTree->topology().properPart(subtreeNodeId)) {
+                properPartSetC_.push_back(pixel);
+                pixelsInCMarks_.mark(static_cast<size_t>(pixel));
 
-                const NodeId nodeP = dualTree->topology().getProperPartOwner(p);
+                const NodeId nodeP = dualTree->topology().smallestNode(pixel);
                 if (nodeP == InvalidNode) {
                     continue;
                 }
@@ -1153,7 +1153,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
 
         buildMergedAndNestedCollections(*dualTree, properPartSetC_, nodeCa, b, isMaxtree);
 
-        editor_t editor = mmcfilters::detail::beginEstablishedWeightedEdit(*dualTree);
+        editor_t editor = mmcfilters::detail::beginEstablishedValuedEdit(*dualTree);
         altitude_t currentMergeLevel = mergeNodesByLevel_.firstMergeLevel();
         NodeId currentUnionNode = InvalidNode;
         NodeId previousLevelUnionNode = InvalidNode;
@@ -1183,7 +1183,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
                     for (NodeId pendingNodeId : nodesPendingRemoval_) {
                         reattachOutsideIntervalChildren(dualTree, editor, currentUnionNode, pendingNodeId);
                         notifyMoveProperParts(dualTree, currentUnionNode, pendingNodeId);
-                        editor.moveProperParts(currentUnionNode, pendingNodeId);
+                        editor.mergeProperParts(currentUnionNode, pendingNodeId);
                         disconnect(dualTree, editor, pendingNodeId, true);
                     }
                     nodesPendingRemoval_.clear();
@@ -1192,7 +1192,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
 
                 reattachOutsideIntervalChildren(dualTree, editor, currentUnionNode, nodeId);
                 notifyMoveProperParts(dualTree, currentUnionNode, nodeId);
-                editor.moveProperParts(currentUnionNode, nodeId);
+                editor.mergeProperParts(currentUnionNode, nodeId);
                 disconnect(dualTree, editor, nodeId, true);
             }
 
@@ -1201,10 +1201,10 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
                     if (!dualTree->topology().isAlive(nodeId) || dualTree->topology().isRoot(nodeId)) {
                         continue;
                     }
-                    const NodeId parentId = dualTree->topology().getNodeParent(nodeId);
+                    const NodeId parentId = dualTree->topology().parent(nodeId);
                     editor.moveChildren(parentId, nodeId);
                     notifyMoveProperParts(dualTree, parentId, nodeId);
-                    editor.moveProperParts(parentId, nodeId);
+                    editor.mergeProperParts(parentId, nodeId);
                     disconnect(dualTree, editor, nodeId, true);
                 }
                 currentMergeLevel = mergeNodesByLevel_.nextMergeLevel();
@@ -1268,16 +1268,16 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
      * adjuster.
      */
     DualMinMaxTreeIncrementalFilter(tree_t* mintree, tree_t* maxtree, const RegularGridAdjacency2D& graph)
-        : mintree_(mintree), maxtree_(maxtree), graph_(&graph), mergeNodesByLevel_(std::max(mintree ? mintree->topology().getNumInternalNodeSlots() : 0,
-                                                                                            maxtree ? maxtree->topology().getNumInternalNodeSlots() : 0)),
+        : mintree_(mintree), maxtree_(maxtree), graph_(&graph), mergeNodesByLevel_(std::max(mintree ? mintree->topology().numInternalNodeSlots() : 0,
+                                                                                            maxtree ? maxtree->topology().numInternalNodeSlots() : 0)),
           removedMarks_(static_cast<size_t>(
-              std::max(mintree ? mintree->topology().getNumInternalNodeSlots() : 0, maxtree ? maxtree->topology().getNumInternalNodeSlots() : 0))),
+              std::max(mintree ? mintree->topology().numInternalNodeSlots() : 0, maxtree ? maxtree->topology().numInternalNodeSlots() : 0))),
           pixelsInCMarks_(static_cast<size_t>(
-              std::max(mintree ? mintree->topology().getNumTotalProperParts() : 0, maxtree ? maxtree->topology().getNumTotalProperParts() : 0))),
+              std::max(mintree ? mintree->topology().numPixels() : 0, maxtree ? maxtree->topology().numPixels() : 0))),
           climbedNodeMarks_(static_cast<size_t>(
-              std::max(mintree ? mintree->topology().getNumInternalNodeSlots() : 0, maxtree ? maxtree->topology().getNumInternalNodeSlots() : 0))),
+              std::max(mintree ? mintree->topology().numInternalNodeSlots() : 0, maxtree ? maxtree->topology().numInternalNodeSlots() : 0))),
           attributeUpdateMarks_(static_cast<size_t>(
-              std::max(mintree ? mintree->topology().getNumInternalNodeSlots() : 0, maxtree ? maxtree->topology().getNumInternalNodeSlots() : 0))) {
+              std::max(mintree ? mintree->topology().numInternalNodeSlots() : 0, maxtree ? maxtree->topology().numInternalNodeSlots() : 0))) {
         assert(mintree_ != nullptr);
         assert(maxtree_ != nullptr);
         assert(graph_ != nullptr);
@@ -1326,7 +1326,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
         assert(mintree_ != nullptr);
         assert(maxtree_ != nullptr);
         for (NodeId rootSubtree : nodesToPrune) {
-            if (rootSubtree == InvalidNode || rootSubtree == maxtree_->topology().getRoot() || !maxtree_->topology().isNode(rootSubtree) ||
+            if (rootSubtree == InvalidNode || rootSubtree == maxtree_->topology().root() || !maxtree_->topology().isNode(rootSubtree) ||
                 !maxtree_->topology().isAlive(rootSubtree)) {
                 continue;
             }
@@ -1348,7 +1348,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilter {
         assert(mintree_ != nullptr);
         assert(maxtree_ != nullptr);
         for (NodeId rootSubtree : nodesToPrune) {
-            if (rootSubtree == InvalidNode || rootSubtree == mintree_->topology().getRoot() || !mintree_->topology().isNode(rootSubtree) ||
+            if (rootSubtree == InvalidNode || rootSubtree == mintree_->topology().root() || !mintree_->topology().isNode(rootSubtree) ||
                 !mintree_->topology().isAlive(rootSubtree)) {
                 continue;
             }

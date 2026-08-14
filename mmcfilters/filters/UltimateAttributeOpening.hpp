@@ -2,8 +2,8 @@
 
 #include "../utils/Image.hpp"
 #include "../utils/Common.hpp"
-#include "../trees/WeightedMorphologicalTree.hpp"
-#include "../trees/WeightedTreeView.hpp"
+#include "../trees/ValuedMorphologicalTree.hpp"
+#include "../trees/ValuedMorphologicalTreeView.hpp"
 #include "../trees/detail/CommittedTreeAccess.hpp"
 #include "../utils/Contract.hpp"
 #include "DepthStableRegionComputer.hpp"
@@ -29,49 +29,49 @@ namespace mmcfilters {
  * materialised through image-producing accessors after `execute(...)` or
  * `executeWithMSER(...)`.
  *
- * Like other weighted-tree filter objects, it captures the tree mutation version
+ * Like other valued-tree filter objects, it captures the tree mutation version
  * at construction time and rejects public operations after topology mutation.
  *
- * @tparam T Altitude type used by the weighted tree or weighted view.
+ * @tparam T Altitude type used by the valued tree or valued-tree view.
  * @tparam Real Attribute-buffer floating-point type.
  */
 template <AltitudeValue T, std::floating_point Real = float> class UltimateAttributeOpening {
   public:
-    /// Floating-point type used for the input attribute buffer and criteria.
+    /// Floating-point type used for the input attribute buffer and thresholds.
     using attribute_value_type = Real;
 
   protected:
     /// @cond INTERNAL
-    /** @brief Defines the weighted altitude-view type used by the filter. */
-    using AltitudeView = WeightedTreeView<T>;
+    /** @brief Defines the valuedTree altitude-view type used by the filter. */
+    using AltitudeView = ValuedMorphologicalTreeView<T>;
 
-    /** @brief Stores the largest criterion evaluated by the last execution. */
-    Real maxCriterion = Real{0};
-    /** @brief References the monotonically increasing attribute criteria. */
+    /** @brief Largest attribute threshold evaluated by the last execution. */
+    Real maximumAttributeThreshold = Real{0};
+    /** @brief References the monotonically increasing node attributes. */
     const Real* const attrs_increasing;
     /** @brief Owns a copied attribute buffer when ownership is required. */
     std::shared_ptr<Real[]> ownedAttrsIncreasing_;
-    /** @brief References the weighted-tree owner when one was supplied. */
-    const WeightedMorphologicalTree<T>* weighted_ = nullptr;
-    /** @brief Stores the non-owning weighted-tree view supplied at construction. */
+    /** @brief References the valued-tree owner when one was supplied. */
+    const ValuedMorphologicalTree<T>* valuedTree_ = nullptr;
+    /** @brief Non-owning valued-tree view supplied at construction. */
     AltitudeView view_;
     /** @brief References the tree topology processed by the filter. */
     const MorphologicalTree& tree;
-    /** @brief Stores the topology mutation version captured at construction. */
+    /** @brief Topology mutation version captured at construction used to detect stale derived state. */
     std::size_t treeMutationVersion_ = 0;
-    /** @brief Stores the maximum contrast selected for each tree node. */
+    /** @brief Maximum contrast selected for each tree node buffer. */
     std::vector<T> maxContrastLUT;
-    /** @brief Stores the selected attribute index for each tree node. */
+    /** @brief Selected attribute index for each tree node buffer. */
     std::vector<int> associatedIndexLUT;
-    /** @brief Marks the nodes selected for filtering by the current criterion. */
+    /** @brief Marks nodes eligible within the current UAO primitive. */
     std::vector<uint8_t> selectedForFiltering;
 
     /**
-     * @brief Returns the active weighted-tree view.
+     * @brief Returns the active valued-tree view.
      *
-     * @return The active weighted-tree view.
+     * @return The active valued-tree view.
      */
-    AltitudeView view() const { return weighted_ != nullptr ? weighted_->asView() : view_; }
+    AltitudeView view() const { return valuedTree_ != nullptr ? valuedTree_->asView() : view_; }
 
     /**
      * @brief Validates stable tree.
@@ -83,12 +83,12 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
     /**
      * @brief Returns the altitude of a tree node.
      *
-     * @param view Weighted-tree view used by the operation.
-     * @param nodeId Identifier of the node used by the operation.
+     * @param view Valued-tree view.
+     * @param nodeId Dense internal node identifier.
      * @return Altitude associated with the node.
      */
     static T altitudeOf(const AltitudeView& view, NodeId nodeId) noexcept {
-        return view.altitude()[static_cast<std::size_t>(nodeId)];
+        return view.nodeAltitudes()[static_cast<std::size_t>(nodeId)];
     }
 
     /**
@@ -105,13 +105,13 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
     /**
      * @brief Validates attribute buffer.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @param attr Attribute requested by the operation.
      * @param context Operation name used in diagnostics.
      * @return Pointer to the resulting object.
      */
     static const Real* requireAttributeBuffer(const MorphologicalTree& tree, const std::vector<Real>& attr, const char* context) {
-        MMCFILTERS_CONTRACT_REQUIRE(attr.size() == static_cast<std::size_t>(tree.getNumInternalNodeSlots()),
+        MMCFILTERS_CONTRACT_REQUIRE(attr.size() == static_cast<std::size_t>(tree.numInternalNodeSlots()),
                                     throw std::invalid_argument(std::string(context) + " attribute size must match the internal node slot count."));
         return attr.data();
     }
@@ -123,7 +123,7 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
      * @param rhs Right-hand operand.
      * @return Computed altitude difference.
      */
-    static T absoluteAltitudeDifference(AltitudeDiff<T> lhs, AltitudeDiff<T> rhs) {
+    static T absoluteAltitudeDifference(AltitudeDifference<T> lhs, AltitudeDifference<T> rhs) {
         const long double difference = std::abs(static_cast<long double>(lhs) - static_cast<long double>(rhs));
         // UAO stores the contrast in the same type as the altitude by API
         // decision. For signed integral altitudes, contrasts that do not fit in
@@ -135,26 +135,26 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
     /**
      * @brief Computes uao.
      *
-     * @param view Weighted-tree view used by the operation.
-     * @param currentNodeId Identifier represented by `currentNodeId`.
-     * @param altitudeNodeNotInNR Altitude or level represented by `altitudeNodeNotInNR`.
+     * @param view Valued-tree view.
+     * @param currentNodeId Identifier.
+     * @param altitudeNodeNotInNR Altitude or level.
      * @param qPropag Propagation queue used while updating the tree response.
      * @param isCalculateResidue Flag controlling is calculate residue.
      */
-    void computeUAO(const AltitudeView& view, NodeId currentNodeId, AltitudeDiff<T> altitudeNodeNotInNR, bool qPropag, bool isCalculateResidue) {
+    void computeUAO(const AltitudeView& view, NodeId currentNodeId, AltitudeDifference<T> altitudeNodeNotInNR, bool qPropag, bool isCalculateResidue) {
         const NodeId parentNodeId = detail::CommittedTreeAccess::nodeParent(tree, currentNodeId);
-        const AltitudeDiff<T> altitudeNodeInNR = static_cast<AltitudeDiff<T>>(altitudeOf(view, currentNodeId));
+        const AltitudeDifference<T> altitudeNodeInNR = static_cast<AltitudeDifference<T>>(altitudeOf(view, currentNodeId));
         bool flagPropag = false;
         T contrast = T{};
 
         if (this->isSelectedForPruning(currentNodeId)) {
-            altitudeNodeNotInNR = static_cast<AltitudeDiff<T>>(altitudeOf(view, parentNodeId));
-            if (this->attrs_increasing[currentNodeId] <= this->maxCriterion) {
+            altitudeNodeNotInNR = static_cast<AltitudeDifference<T>>(altitudeOf(view, parentNodeId));
+            if (this->attrs_increasing[currentNodeId] <= this->maximumAttributeThreshold) {
                 isCalculateResidue = hasNodeSelectedInPrimitive(currentNodeId);
             }
         }
 
-        if (this->attrs_increasing[currentNodeId] <= this->maxCriterion) {
+        if (this->attrs_increasing[currentNodeId] <= this->maximumAttributeThreshold) {
             if (isCalculateResidue) {
                 contrast = absoluteAltitudeDifference(altitudeNodeInNR, altitudeNodeNotInNR);
             }
@@ -178,21 +178,21 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
     /**
      * @brief Implements ultimate attribute opening for the selected node mask.
      *
-     * @param maxCriterion Largest attribute criterion evaluated by the filter.
+     * @param maximumAttributeThreshold Largest increasing-attribute value evaluated by the filter.
      * @param selectedForFiltering Per-node flags indicating which nodes are filtered.
      */
-    void executeImpl(Real maxCriterion, const std::vector<uint8_t>& selectedForFiltering) {
+    void executeImpl(Real maximumAttributeThreshold, const std::vector<uint8_t>& selectedForFiltering) {
         const AltitudeView altitudeView = view();
-        this->maxCriterion = maxCriterion;
+        this->maximumAttributeThreshold = maximumAttributeThreshold;
         this->selectedForFiltering = selectedForFiltering;
 
-        for (NodeId id : tree.getAliveNodeIds()) {
+        for (NodeId id : tree.aliveNodeIds()) {
             maxContrastLUT[id] = T{};
             associatedIndexLUT[id] = 0;
         }
 
-        const NodeId rootNodeId = tree.getRoot();
-        const AltitudeDiff<T> level = static_cast<AltitudeDiff<T>>(altitudeOf(altitudeView, rootNodeId));
+        const NodeId rootNodeId = tree.root();
+        const AltitudeDifference<T> level = static_cast<AltitudeDifference<T>>(altitudeOf(altitudeView, rootNodeId));
         for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, rootNodeId)) {
             computeUAO(altitudeView, childNodeId, level, false, false);
         }
@@ -201,7 +201,7 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
     /**
      * @brief Tests whether selected for pruning holds.
      *
-     * @param currentNodeId Identifier represented by `currentNodeId`.
+     * @param currentNodeId Identifier.
      * @return True when selected for pruning; otherwise false.
      */
     bool isSelectedForPruning(NodeId currentNodeId) const {
@@ -215,7 +215,7 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
     /**
      * @brief Tests whether node selected in primitive holds.
      *
-     * @param currentNodeId Identifier represented by `currentNodeId`.
+     * @param currentNodeId Identifier.
      * @return True when node selected in primitive; otherwise false.
      */
     bool hasNodeSelectedInPrimitive(NodeId currentNodeId) const {
@@ -240,9 +240,9 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
 
   public:
     /**
-     * @brief Creates a UAO computation over a non-owning weighted view.
+     * @brief Creates a UAO computation over a non-owning valued-tree view.
      *
-     * @param view Weighted tree view whose topology and altitude define the
+     * @param view Valued tree view whose topology and altitude define the
      * reconstruction domain.
      * @param attrs_increasing Shared increasing-attribute buffer indexed by
      * dense internal `NodeId`.
@@ -253,9 +253,9 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
     }
 
     /**
-     * @brief Creates a UAO computation over a non-owning weighted view.
+     * @brief Creates a UAO computation over a non-owning valued-tree view.
      *
-     * @param view Weighted tree view whose topology and altitude define the
+     * @param view Valued tree view whose topology and altitude define the
      * reconstruction domain.
      * @param attrs_increasing Increasing-attribute values indexed by dense
      * internal `NodeId`.
@@ -266,9 +266,9 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
         : UltimateAttributeOpening(view, requireAttributeBuffer(view.topology(), attrs_increasing, "UltimateAttributeOpening")) {}
 
     /**
-     * @brief Creates a UAO computation over a non-owning weighted view.
+     * @brief Creates a UAO computation over a non-owning valued-tree view.
      *
-     * @param view Weighted tree view whose topology and altitude define the
+     * @param view Valued tree view whose topology and altitude define the
      * reconstruction domain.
      * @param attrs_increasing Non-null increasing-attribute buffer indexed by
      * dense internal `NodeId`.
@@ -277,57 +277,57 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
      */
     UltimateAttributeOpening(const AltitudeView& view, const Real* attrs_increasing)
         : attrs_increasing(attrs_increasing), view_(view), tree(view_.topology()), treeMutationVersion_(tree.getMutationVersion()),
-          maxContrastLUT(this->tree.getNumInternalNodeSlots()), associatedIndexLUT(this->tree.getNumInternalNodeSlots()) {
+          maxContrastLUT(this->tree.numInternalNodeSlots()), associatedIndexLUT(this->tree.numInternalNodeSlots()) {
         view_.requireTopologyUnchanged("UltimateAttributeOpening");
         requireAttributePointer(attrs_increasing, "UltimateAttributeOpening");
-        this->selectedForFiltering.assign(this->tree.getNumInternalNodeSlots(), true);
+        this->selectedForFiltering.assign(this->tree.numInternalNodeSlots(), true);
     }
 
     /**
-     * @brief Creates a UAO computation over a borrowed weighted tree.
+     * @brief Creates a UAO computation over a borrowed valued tree.
      *
-     * The weighted tree is borrowed; it must outlive this object.
+     * The valued tree is borrowed; it must outlive this object.
      *
-     * @param weighted Weighted tree whose topology and altitude define the
+     * @param valuedTree Valued tree whose topology and altitude define the
      * reconstruction domain.
      * @param attrs_increasing Shared increasing-attribute buffer indexed by
      * dense internal `NodeId`.
      */
-    UltimateAttributeOpening(const WeightedMorphologicalTree<T>& weighted, const std::shared_ptr<Real[]>& attrs_increasing)
-        : UltimateAttributeOpening(weighted, attrs_increasing.get()) {
+    UltimateAttributeOpening(const ValuedMorphologicalTree<T>& valuedTree, const std::shared_ptr<Real[]>& attrs_increasing)
+        : UltimateAttributeOpening(valuedTree, attrs_increasing.get()) {
         this->ownedAttrsIncreasing_ = attrs_increasing;
     }
 
     /**
-     * @brief Creates a UAO computation over a borrowed weighted tree.
+     * @brief Creates a UAO computation over a borrowed valued tree.
      *
-     * The weighted tree is borrowed; it must outlive this object.
+     * The valued tree is borrowed; it must outlive this object.
      *
-     * @param weighted Weighted tree whose topology and altitude define the
+     * @param valuedTree Valued tree whose topology and altitude define the
      * reconstruction domain.
      * @param attrs_increasing Increasing-attribute values indexed by dense
      * internal `NodeId`.
      * @throws std::invalid_argument If `attrs_increasing` does not match the
      * internal node slot count.
      */
-    UltimateAttributeOpening(const WeightedMorphologicalTree<T>& weighted, const std::vector<Real>& attrs_increasing)
-        : UltimateAttributeOpening(weighted.asView(), attrs_increasing) {
-        weighted_ = &weighted;
+    UltimateAttributeOpening(const ValuedMorphologicalTree<T>& valuedTree, const std::vector<Real>& attrs_increasing)
+        : UltimateAttributeOpening(valuedTree.asView(), attrs_increasing) {
+        valuedTree_ = &valuedTree;
     }
 
     /**
-     * @brief Creates a UAO computation over a borrowed weighted tree.
+     * @brief Creates a UAO computation over a borrowed valued tree.
      *
-     * The weighted tree is borrowed; it must outlive this object.
+     * The valued tree is borrowed; it must outlive this object.
      *
-     * @param weighted Weighted tree whose topology and altitude define the
+     * @param valuedTree Valued tree whose topology and altitude define the
      * reconstruction domain.
      * @param attrs_increasing Non-null increasing-attribute buffer indexed by
      * dense internal `NodeId`.
      */
-    UltimateAttributeOpening(const WeightedMorphologicalTree<T>& weighted, const Real* attrs_increasing)
-        : UltimateAttributeOpening(weighted.asView(), attrs_increasing) {
-        weighted_ = &weighted;
+    UltimateAttributeOpening(const ValuedMorphologicalTree<T>& valuedTree, const Real* attrs_increasing)
+        : UltimateAttributeOpening(valuedTree.asView(), attrs_increasing) {
+        valuedTree_ = &valuedTree;
     }
 
     /**
@@ -339,20 +339,20 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
     /**
      * @brief Executes UAO using all internal tree nodes as selectable candidates.
      *
-     * @param maxCriterion Maximum increasing-attribute threshold considered by
+     * @param maximumAttributeThreshold Maximum increasing-attribute threshold considered by
      * the UAO traversal.
      * @throws std::logic_error If the tree topology changed after construction.
      */
-    void execute(Real maxCriterion) {
+    void execute(Real maximumAttributeThreshold) {
         requireStableTree("UltimateAttributeOpening::execute");
-        std::vector<uint8_t> tmp(this->tree.getNumInternalNodeSlots(), true);
-        executeImpl(maxCriterion, tmp);
+        std::vector<uint8_t> tmp(this->tree.numInternalNodeSlots(), true);
+        executeImpl(maximumAttributeThreshold, tmp);
     }
 
     /**
      * @brief Executes UAO with an explicit node-selection mask.
      *
-     * @param maxCriterion Maximum increasing-attribute threshold considered by
+     * @param maximumAttributeThreshold Maximum increasing-attribute threshold considered by
      * the UAO traversal.
      * @param selectedForFiltering Dense internal-node mask marking selectable
      * primitive nodes.
@@ -360,48 +360,48 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
      * internal node slot count.
      * @throws std::logic_error If the tree topology changed after construction.
      */
-    void execute(Real maxCriterion, const std::vector<uint8_t>& selectedForFiltering) {
+    void execute(Real maximumAttributeThreshold, const std::vector<uint8_t>& selectedForFiltering) {
         requireStableTree("UltimateAttributeOpening::execute");
         MMCFILTERS_CONTRACT_REQUIRE(
-            selectedForFiltering.size() == static_cast<std::size_t>(this->tree.getNumInternalNodeSlots()),
+            selectedForFiltering.size() == static_cast<std::size_t>(this->tree.numInternalNodeSlots()),
             throw std::invalid_argument("UltimateAttributeOpening::execute selectedForFiltering size must match the internal node slot count."));
-        executeImpl(maxCriterion, selectedForFiltering);
+        executeImpl(maximumAttributeThreshold, selectedForFiltering);
     }
 
     /**
      * @brief Executes UAO with an MSER-derived node-selection mask.
      *
-     * @param maxCriterion Maximum increasing-attribute threshold considered by
+     * @param maximumAttributeThreshold Maximum increasing-attribute threshold considered by
      * the UAO traversal.
-     * @param deltaMSER Altitude delta used to compute the MSER stability mask.
+     * @param altitudeWindowRadius Radius of the altitude-based stability window.
      * @throws std::logic_error If this object was constructed from a view rather
-     * than a weighted tree owner, or if the tree topology changed after
+     * than a valued tree owner, or if the tree topology changed after
      * construction.
      */
-    void executeWithMSER(Real maxCriterion, AltitudeDiff<T> deltaMSER) {
+    void executeWithMSER(Real maximumAttributeThreshold, AltitudeDifference<T> altitudeWindowRadius) {
         requireStableTree("UltimateAttributeOpening::executeWithMSER");
-        if (weighted_ == nullptr) {
+        if (valuedTree_ == nullptr) {
             throw std::logic_error(
-                "UltimateAttributeOpening::executeWithMSER requires a WeightedMorphologicalTree owner because MSER uses the tree-owned altitude.");
+                "UltimateAttributeOpening::executeWithMSER requires a ValuedMorphologicalTree owner because MSER uses the tree-owned altitude.");
         }
-        MSERComputer<T, Real> mser(*weighted_);
-        executeImpl(maxCriterion, mser.computeMSER(deltaMSER));
+        MSERComputer<T, Real> mser(*valuedTree_);
+        executeImpl(maximumAttributeThreshold, mser.computeMSER(altitudeWindowRadius));
     }
 
     /**
      * @brief Executes UAO with a depth-stability node-selection mask.
      *
-     * @param maxCriterion Maximum increasing-attribute threshold considered by
+     * @param maximumAttributeThreshold Maximum increasing-attribute threshold considered by
      * the UAO traversal.
-     * @param depthDelta Positive number of tree edges used to build the stability
+     * @param depthWindowRadius Positive number of tree edges used to build the stability
      * window. Altitude is not read by the stability selection.
-     * @throws std::invalid_argument If `depthDelta` is not positive.
+     * @throws std::invalid_argument If `depthWindowRadius` is not positive.
      * @throws std::logic_error If the tree topology changed after construction.
      */
-    void executeWithDepthStability(Real maxCriterion, int depthDelta) {
+    void executeWithDepthStability(Real maximumAttributeThreshold, int depthWindowRadius) {
         requireStableTree("UltimateAttributeOpening::executeWithDepthStability");
         DepthStableRegionComputer<Real> stabilityComputer(this->tree);
-        executeImpl(maxCriterion, stabilityComputer.computeByDepth(depthDelta));
+        executeImpl(maximumAttributeThreshold, stabilityComputer.computeByDepth(depthWindowRadius));
     }
 
     /**
@@ -412,12 +412,12 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
      */
     [[nodiscard]] ImagePtr<T> getMaxContrastImage() const {
         requireStableTree("UltimateAttributeOpening::getMaxContrastImage");
-        const int size = this->tree.getNumColsOfGridDomain2D() * this->tree.getNumRowsOfGridDomain2D();
-        ImagePtr<T> imgOut = Image<T>::create(this->tree.getNumRowsOfGridDomain2D(), this->tree.getNumColsOfGridDomain2D());
+        const int size = this->tree.numColumns() * this->tree.numRows();
+        ImagePtr<T> imgOut = Image<T>::create(this->tree.numRows(), this->tree.numColumns());
         auto out = imgOut->rawData();
 
         for (int pidx = 0; pidx < size; pidx++) {
-            out[pidx] = this->maxContrastLUT[detail::CommittedTreeAccess::properPartOwner(tree, pidx)];
+            out[pidx] = this->maxContrastLUT[detail::CommittedTreeAccess::smallestNodeMap(tree, pidx)];
         }
         return imgOut;
     }
@@ -430,12 +430,12 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
      */
     [[nodiscard]] ImageInt32Ptr getAssociatedImage() const {
         requireStableTree("UltimateAttributeOpening::getAssociatedImage");
-        const int size = this->tree.getNumColsOfGridDomain2D() * this->tree.getNumRowsOfGridDomain2D();
-        ImageInt32Ptr imgOut = ImageInt32::create(this->tree.getNumRowsOfGridDomain2D(), this->tree.getNumColsOfGridDomain2D());
+        const int size = this->tree.numColumns() * this->tree.numRows();
+        ImageInt32Ptr imgOut = ImageInt32::create(this->tree.numRows(), this->tree.numColumns());
         auto out = imgOut->rawData();
 
         for (int pidx = 0; pidx < size; pidx++) {
-            out[pidx] = this->associatedIndexLUT[detail::CommittedTreeAccess::properPartOwner(tree, pidx)];
+            out[pidx] = this->associatedIndexLUT[detail::CommittedTreeAccess::smallestNodeMap(tree, pidx)];
         }
         return imgOut;
     }
@@ -447,8 +447,8 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
      * @throws std::logic_error If the tree topology changed after construction.
      */
     [[nodiscard]] ImageUInt8Ptr getAssociatedColorImage() const {
-        return ImageUtils::createRandomColor(this->getAssociatedImage()->rawData(), this->tree.getNumRowsOfGridDomain2D(),
-                                             this->tree.getNumColsOfGridDomain2D());
+        return ImageUtils::createRandomColor(this->getAssociatedImage()->rawData(), this->tree.numRows(),
+                                             this->tree.numColumns());
     }
 };
 

@@ -122,8 +122,8 @@ def run_benchmark(
         actual = parsed.get("contract_mode", "missing")
         raise RuntimeError(f"expected {mode} executable, received contract_mode={actual}")
     if expected_legacy_dimensions is not None:
-        rows, cols, repetitions = expected_legacy_dimensions
-        for key, expected in (("rows", rows), ("cols", cols), ("repetitions", repetitions)):
+        rows, columns, repetitions = expected_legacy_dimensions
+        for key, expected in (("rows", rows), ("columns", columns), ("repetitions", repetitions)):
             if parsed.get(key) != str(expected):
                 raise RuntimeError(f"{mode} benchmark reported inconsistent {key}")
     return parsed, completed.stdout
@@ -141,7 +141,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("checked", type=Path, help="path to the CHECKED benchmark executable")
     parser.add_argument("unchecked", type=Path, help="path to the UNCHECKED benchmark executable")
     parser.add_argument("--rows", type=int, default=256)
-    parser.add_argument("--cols", type=int, default=256)
+    parser.add_argument("--columns", type=int, default=256)
     parser.add_argument("--repetitions", type=int, default=9, help="timed samples within each process")
     parser.add_argument("--process-runs", type=int, default=5, help="number of process invocations per contract mode")
     parser.add_argument("--output-dir", type=Path, help="persist raw runs, reproducibility metadata, JSONL, and CSV summaries")
@@ -154,8 +154,8 @@ def parse_arguments() -> argparse.Namespace:
         benchmark_arguments = raw_arguments[separator + 1 :]
         raw_arguments = raw_arguments[:separator]
     arguments = parser.parse_args(raw_arguments)
-    if arguments.rows <= 0 or arguments.cols <= 0 or arguments.repetitions <= 0 or arguments.process_runs <= 0:
-        parser.error("rows, cols, repetitions, and process-runs must be positive")
+    if arguments.rows <= 0 or arguments.columns <= 0 or arguments.repetitions <= 0 or arguments.process_runs <= 0:
+        parser.error("rows, columns, repetitions, and process-runs must be positive")
     arguments.benchmark_arguments = benchmark_arguments
     if arguments.capture_samples and not benchmark_arguments:
         parser.error("--capture-samples requires forwarded benchmark arguments after --")
@@ -386,8 +386,8 @@ def main() -> int:
             benchmark_arguments.append("--emit-samples")
         expected_legacy_dimensions = None
     else:
-        benchmark_arguments = [str(arguments.rows), str(arguments.cols), str(arguments.repetitions)]
-        expected_legacy_dimensions = (arguments.rows, arguments.cols, arguments.repetitions)
+        benchmark_arguments = [str(arguments.rows), str(arguments.columns), str(arguments.repetitions)]
+        expected_legacy_dimensions = (arguments.rows, arguments.columns, arguments.repetitions)
 
     for process_run in range(arguments.process_runs):
         order = ("CHECKED", "UNCHECKED") if process_run % 2 == 0 else ("UNCHECKED", "CHECKED")
@@ -413,7 +413,7 @@ def main() -> int:
                 "attribute_bundles",
                 "suite",
                 "rows",
-                "cols",
+                "columns",
                 "repetitions",
                 "scenario_count",
                 "samples_emitted",
@@ -493,7 +493,7 @@ def main() -> int:
             print(f"{key}={value}")
     else:
         print(f"rows={arguments.rows}")
-        print(f"cols={arguments.cols}")
+        print(f"columns={arguments.columns}")
         print(f"repetitions_per_process={arguments.repetitions}")
     print(f"process_runs_per_mode={arguments.process_runs}")
     print("scenario\tchecked_median_ms\tunchecked_median_ms\tunchecked_vs_checked_percent\tchecksum")

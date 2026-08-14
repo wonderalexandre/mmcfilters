@@ -6,6 +6,7 @@
  */
 
 #include "ResidualTreeRegionTypes.hpp"
+#include "../ResidualEvolution.hpp"
 #include "../../detail/NativeHierarchyValidationDetail.hpp"
 #include "../../../utils/Common.hpp"
 
@@ -33,11 +34,11 @@ template <AltitudeValue T> class ResidualTreeEventAssembler {
     /** @brief Fully materialized native buffers returned at finalization. */
     struct Output {
         /// Parent indexed by residual node id; the root is self-parented.
-        std::vector<NodeId> nodeParent;
-        /// Direct residual-node owner indexed by row-major pixel id.
-        std::vector<NodeId> properPartOwner;
+        std::vector<NodeId> parents;
+        /// Smallest residual node indexed by row-major pixel id.
+        std::vector<NodeId> smallestNodeMap;
         /// Valuation indexed by residual node id.
-        std::vector<T> altitude;
+        std::vector<T> nodeAltitudes;
         /// Inductive evidence that every emitted node has subtree support.
         mmcfilters::detail::NativeSubtreeSupportProof subtreeSupportProof;
     };
@@ -50,19 +51,19 @@ template <AltitudeValue T> class ResidualTreeEventAssembler {
      * @throws std::out_of_range if a pixel refers to an invalid region.
      */
     ResidualTreeEventAssembler(std::size_t numRegions, const std::vector<RegionId>& regionByPixel)
-        : regions_(numRegions), properPartOwner_(regionByPixel.size(), InvalidNode), nextPixel_(regionByPixel.size(), InvalidNode), nodeParent_(1, InvalidNode),
-          altitude_(1, T{}), nextOpenRoot_(1, InvalidNode) {
+        : regions_(numRegions), smallestNodeMap_(regionByPixel.size(), InvalidNode), nextPixel_(regionByPixel.size(), InvalidPixel), parents_(1, InvalidNode),
+          nodeAltitudes_(1, T{}), nextOpenRoot_(1, InvalidNode) {
         if (numRegions > static_cast<std::size_t>(std::numeric_limits<RegionId>::max())) {
             throw std::length_error("Too many regions for the residual-tree region-id type.");
         }
-        if (regionByPixel.size() > static_cast<std::size_t>(std::numeric_limits<NodeId>::max())) {
-            throw std::length_error("Too many pixels for the residual-tree node-id type.");
+        if (regionByPixel.size() > static_cast<std::size_t>(std::numeric_limits<PixelId>::max())) {
+            throw std::length_error("Too many pixels for the residual-tree pixel-id type.");
         }
 
-        nodeParent_.reserve(numRegions);
-        altitude_.reserve(numRegions);
+        parents_.reserve(numRegions);
+        nodeAltitudes_.reserve(numRegions);
         nextOpenRoot_.reserve(numRegions);
-        for (NodeId pixel = 0; pixel < static_cast<NodeId>(regionByPixel.size()); ++pixel) {
+        for (PixelId pixel = 0; pixel < static_cast<PixelId>(regionByPixel.size()); ++pixel) {
             const RegionId region = regionByPixel[static_cast<std::size_t>(pixel)];
             requireRegion(region);
             appendPixel(regions_[static_cast<std::size_t>(region)], pixel);
@@ -75,46 +76,57 @@ template <AltitudeValue T> class ResidualTreeEventAssembler {
      * Existing open residual roots become children of the new event, and
      * previously unowned pixels become its proper parts.
      *
-     * @param region Region identifier used by the operation.
-     * @param eventAltitude Altitude or level represented by `eventAltitude`.
+     * @param region Region identifier.
+     * @param residualEvent Immutable event captured before elementary leveling.
      * @return The newly allocated residual node id.
      *
      */
-    [[nodiscard]] NodeId emitEvent(RegionId region, T eventAltitude) {
+    [[nodiscard]] NodeId emitEvent(RegionId region, const ResidualEvent<T>& residualEvent) {
         requireRegion(region);
-        if (nodeParent_.size() >= static_cast<std::size_t>(std::numeric_limits<NodeId>::max())) {
+        if (residualEvent.eventIndex != numEvents()) {
+            throw std::invalid_argument("Residual events must be emitted in contiguous chronological order.");
+        }
+        if (residualEvent.support.empty()) {
+            throw std::invalid_argument("A residual event requires non-empty pre-leveling support.");
+        }
+        const auto expectedResidualValue = static_cast<AltitudeDifference<T>>(residualEvent.nodeAltitude) -
+                                           static_cast<AltitudeDifference<T>>(residualEvent.firstMergingLevel);
+        if (residualEvent.signedResidualValue != expectedResidualValue) {
+            throw std::invalid_argument("A residual event has an inconsistent signed residual value.");
+        }
+        if (parents_.size() >= static_cast<std::size_t>(std::numeric_limits<NodeId>::max())) {
             throw std::length_error("Too many residual events for the node-id type.");
         }
 
         RegionLists& lists = regions_[static_cast<std::size_t>(region)];
-        if (lists.freshPixelHead == InvalidNode && lists.openRootHead == InvalidNode) {
+        if (lists.freshPixelHead == InvalidPixel && lists.openRootHead == InvalidNode) {
             throw std::runtime_error("A residual-tree event cannot have empty subtree support.");
         }
         subtreeSupportRecorder_.recordSupportedNode();
-        const NodeId event = static_cast<NodeId>(nodeParent_.size());
-        nodeParent_.push_back(InvalidNode);
-        altitude_.push_back(eventAltitude);
+        const NodeId event = static_cast<NodeId>(parents_.size());
+        parents_.push_back(InvalidNode);
+        nodeAltitudes_.push_back(residualEvent.nodeAltitude);
         nextOpenRoot_.push_back(InvalidNode);
 
         for (NodeId root = lists.openRootHead; root != InvalidNode;) {
             const NodeId next = nextOpenRoot_[static_cast<std::size_t>(root)];
-            if (nodeParent_[static_cast<std::size_t>(root)] != InvalidNode) {
+            if (parents_[static_cast<std::size_t>(root)] != InvalidNode) {
                 throw std::runtime_error("A residual-tree node received more than one parent.");
             }
-            nodeParent_[static_cast<std::size_t>(root)] = event;
+            parents_[static_cast<std::size_t>(root)] = event;
             root = next;
         }
-        for (NodeId pixel = lists.freshPixelHead; pixel != InvalidNode;) {
-            const NodeId next = nextPixel_[static_cast<std::size_t>(pixel)];
-            if (properPartOwner_[static_cast<std::size_t>(pixel)] != InvalidNode) {
-                throw std::runtime_error("A proper part received more than one direct owner.");
+        for (PixelId pixel = lists.freshPixelHead; pixel != InvalidPixel;) {
+            const PixelId next = nextPixel_[static_cast<std::size_t>(pixel)];
+            if (smallestNodeMap_[static_cast<std::size_t>(pixel)] != InvalidNode) {
+                throw std::runtime_error("A proper part received more than one smallest residual node.");
             }
-            properPartOwner_[static_cast<std::size_t>(pixel)] = event;
+            smallestNodeMap_[static_cast<std::size_t>(pixel)] = event;
             pixel = next;
         }
 
-        lists.freshPixelHead = InvalidNode;
-        lists.freshPixelTail = InvalidNode;
+        lists.freshPixelHead = InvalidPixel;
+        lists.freshPixelTail = InvalidPixel;
         lists.openRootHead = event;
         lists.openRootTail = event;
         return event;
@@ -125,7 +137,7 @@ template <AltitudeValue T> class ResidualTreeEventAssembler {
      *
      * @return Number of emitted residual events, excluding the reserved root.
      */
-    [[nodiscard]] std::size_t numEvents() const noexcept { return nodeParent_.size() - 1; }
+    [[nodiscard]] std::size_t numEvents() const noexcept { return parents_.size() - 1; }
 
     /**
      * @brief Transfers unresolved lists after one live region contraction.
@@ -151,57 +163,57 @@ template <AltitudeValue T> class ResidualTreeEventAssembler {
      * @brief Attaches remaining content to node 0 and consumes the assembler.
      * @param terminalRegion Sole live quotient-partition root.
      * @param terminalAltitude Valuation assigned to root node 0.
-     * @return Complete parent, proper-part owner, and altitude buffers.
+     * @return Complete parent, smallest node, and altitude buffers.
      */
     [[nodiscard]] Output finalize(RegionId terminalRegion, T terminalAltitude) && {
         requireRegion(terminalRegion);
         RegionLists& terminal = regions_[static_cast<std::size_t>(terminalRegion)];
-        if (terminal.freshPixelHead == InvalidNode && terminal.openRootHead == InvalidNode) {
+        if (terminal.freshPixelHead == InvalidPixel && terminal.openRootHead == InvalidNode) {
             throw std::runtime_error("The residual-tree root cannot have empty subtree support.");
         }
         subtreeSupportRecorder_.recordSupportedNode();
-        altitude_[0] = terminalAltitude;
-        nodeParent_[0] = 0;
+        nodeAltitudes_[0] = terminalAltitude;
+        parents_[0] = 0;
 
         for (NodeId root = terminal.openRootHead; root != InvalidNode;) {
             const NodeId next = nextOpenRoot_[static_cast<std::size_t>(root)];
-            if (nodeParent_[static_cast<std::size_t>(root)] != InvalidNode) {
+            if (parents_[static_cast<std::size_t>(root)] != InvalidNode) {
                 throw std::runtime_error("A terminal residual-tree root already has a parent.");
             }
-            nodeParent_[static_cast<std::size_t>(root)] = 0;
+            parents_[static_cast<std::size_t>(root)] = 0;
             root = next;
         }
-        for (NodeId pixel = terminal.freshPixelHead; pixel != InvalidNode;) {
-            const NodeId next = nextPixel_[static_cast<std::size_t>(pixel)];
-            if (properPartOwner_[static_cast<std::size_t>(pixel)] != InvalidNode) {
-                throw std::runtime_error("A terminal proper part already has an owner.");
+        for (PixelId pixel = terminal.freshPixelHead; pixel != InvalidPixel;) {
+            const PixelId next = nextPixel_[static_cast<std::size_t>(pixel)];
+            if (smallestNodeMap_[static_cast<std::size_t>(pixel)] != InvalidNode) {
+                throw std::runtime_error("A terminal proper part already has a smallest residual node.");
             }
-            properPartOwner_[static_cast<std::size_t>(pixel)] = 0;
+            smallestNodeMap_[static_cast<std::size_t>(pixel)] = 0;
             pixel = next;
         }
 
-        for (NodeId parent : nodeParent_) {
+        for (NodeId parent : parents_) {
             if (parent == InvalidNode) {
                 throw std::runtime_error("Residual-tree assembly left an unparented residual node.");
             }
         }
-        for (NodeId owner : properPartOwner_) {
-            if (owner == InvalidNode) {
-                throw std::runtime_error("Residual-tree assembly left an unowned proper part.");
+        for (NodeId smallestNode : smallestNodeMap_) {
+            if (smallestNode == InvalidNode) {
+                throw std::runtime_error("Residual-tree assembly left a proper part without a smallest node.");
             }
         }
 
-        auto subtreeSupportProof = std::move(subtreeSupportRecorder_).finish(nodeParent_.size());
-        return Output{std::move(nodeParent_), std::move(properPartOwner_), std::move(altitude_), std::move(subtreeSupportProof)};
+        auto subtreeSupportProof = std::move(subtreeSupportRecorder_).finish(parents_.size());
+        return Output{std::move(parents_), std::move(smallestNodeMap_), std::move(nodeAltitudes_), std::move(subtreeSupportProof)};
     }
 
   private:
     /** @brief Intrusive-list endpoints owned by one dense region slot. */
     struct RegionLists {
-        /// First pixel whose proper-part owner has not been emitted.
-        NodeId freshPixelHead = InvalidNode;
+        /// First pixel whose smallest node has not been emitted.
+        PixelId freshPixelHead = InvalidPixel;
         /// Last pixel in the fresh-pixel list.
-        NodeId freshPixelTail = InvalidNode;
+        PixelId freshPixelTail = InvalidPixel;
         /// First emitted residual root still missing a parent.
         NodeId openRootHead = InvalidNode;
         /// Last residual root in the open-root list.
@@ -209,17 +221,17 @@ template <AltitudeValue T> class ResidualTreeEventAssembler {
     };
 
     std::vector<RegionLists> regions_;                                        ///< List endpoints indexed by initial region id.
-    std::vector<NodeId> properPartOwner_;                                     ///< Output owner indexed by pixel id.
-    std::vector<NodeId> nextPixel_;                                           ///< Intrusive next link for fresh pixels.
-    std::vector<NodeId> nodeParent_;                                          ///< Output parent indexed by node id.
-    std::vector<T> altitude_;                                                 ///< Output valuation indexed by node id.
+    std::vector<NodeId> smallestNodeMap_;                                     ///< Output smallest node indexed by pixel id.
+    std::vector<PixelId> nextPixel_;                                          ///< Intrusive next link for fresh pixels.
+    std::vector<NodeId> parents_;                                             ///< Output parent indexed by node id.
+    std::vector<T> nodeAltitudes_;                                            ///< Output node altitude indexed by node id.
     std::vector<NodeId> nextOpenRoot_;                                        ///< Intrusive next link for open roots.
     mmcfilters::detail::NativeSubtreeSupportRecorder subtreeSupportRecorder_; ///< O(1)-per-node support evidence.
 
     /**
      * @brief Rejects a region outside the assembler's dense domain.
      *
-     * @param region Region identifier used by the operation.
+     * @param region Region identifier.
      */
     void requireRegion(RegionId region) const {
         if (region < 0 || region >= static_cast<RegionId>(regions_.size())) {
@@ -230,11 +242,11 @@ template <AltitudeValue T> class ResidualTreeEventAssembler {
     /**
      * @brief Appends one pixel to a region's fresh-pixel list.
      *
-     * @param lists Per-node lists used by the operation.
-     * @param pixel Pixel identifier used by the operation.
+     * @param lists Per-node lists.
+     * @param pixel Pixel identifier.
      */
-    void appendPixel(RegionLists& lists, NodeId pixel) {
-        if (lists.freshPixelHead == InvalidNode) {
+    void appendPixel(RegionLists& lists, PixelId pixel) {
+        if (lists.freshPixelHead == InvalidPixel) {
             lists.freshPixelHead = pixel;
         } else {
             nextPixel_[static_cast<std::size_t>(lists.freshPixelTail)] = pixel;
@@ -245,14 +257,14 @@ template <AltitudeValue T> class ResidualTreeEventAssembler {
     /**
      * @brief Concatenates fresh-pixel lists in constant time.
      *
-     * @param destination Destination represented by `destination`.
+     * @param destination Destination.
      * @param source Source object or value.
      */
     void concatenatePixels(RegionLists& destination, const RegionLists& source) {
-        if (source.freshPixelHead == InvalidNode) {
+        if (source.freshPixelHead == InvalidPixel) {
             return;
         }
-        if (destination.freshPixelHead == InvalidNode) {
+        if (destination.freshPixelHead == InvalidPixel) {
             destination.freshPixelHead = source.freshPixelHead;
         } else {
             nextPixel_[static_cast<std::size_t>(destination.freshPixelTail)] = source.freshPixelHead;
@@ -263,7 +275,7 @@ template <AltitudeValue T> class ResidualTreeEventAssembler {
     /**
      * @brief Concatenates unresolved residual-root lists in constant time.
      *
-     * @param destination Destination represented by `destination`.
+     * @param destination Destination.
      * @param source Source object or value.
      */
     void concatenateOpenRoots(RegionLists& destination, const RegionLists& source) {

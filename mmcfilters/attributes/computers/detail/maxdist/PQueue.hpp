@@ -45,18 +45,18 @@ class PQueue // sPQueue
         /**
          * Element is not currently stored in any bucket.
          */
-        NOT_PROCESSED,
+        NotProcessed,
 
         /**
          * Element is present in exactly one bucket.
          */
-        QUEUED,
+        Queued,
 
         /**
          * Element was removed from a bucket and its current label is final for
          * the active propagation pass.
          */
-        POPPED
+        Popped
     };
 
     // ------------------------------------------------------------------------------------------
@@ -97,7 +97,7 @@ class PQueue // sPQueue
         for (int pidx = 0; pidx < pixels_.nelems; pidx++) {
             pixels_.elem[pidx].next = NIL;
             pixels_.elem[pidx].prev = NIL;
-            pixels_.elem[pidx].state = State::NOT_PROCESSED;
+            pixels_.elem[pidx].state = State::NotProcessed;
         }
     }
 
@@ -138,7 +138,7 @@ class PQueue // sPQueue
      * @brief Mutable access to an element cost label.
      *
      * @param elem Element identifier addressed by the queue.
-     * @return Reference to the resulting object.
+     * @return Mutable reference to the updated object.
      */
     int& cost(int elem) { return pixels_.cost[elem]; }
 
@@ -156,14 +156,14 @@ class PQueue // sPQueue
      * Changing costs of queued elements can invalidate bucket membership. The
      * current MAX_DIST code uses this primarily for visualization/readback.
      *
-     * @return Reference to the resulting object.
+     * @return Mutable reference to the updated object.
      */
     std::vector<int>& cost() { return pixels_.cost; }
 
     /**
      * @brief Read-only access to all cost labels.
      *
-     * @return Reference to the resulting object.
+     * @return Mutable reference to the updated object.
      */
     const std::vector<int>& cost() const { return pixels_.cost; }
 
@@ -171,7 +171,7 @@ class PQueue // sPQueue
      * @brief Mutable access to an element state.
      *
      * @param elem Element identifier addressed by the queue.
-     * @return Reference to the resulting object.
+     * @return Mutable reference to the updated object.
      */
     State& state(int elem) { return pixels_.elem[elem].state; }
 
@@ -212,7 +212,7 @@ class PQueue // sPQueue
 
         buckets_.last[bucket] = elem;
         pixels_.elem[elem].next = NIL;
-        pixels_.elem[elem].state = State::QUEUED;
+        pixels_.elem[elem].state = State::Queued;
     }
 
     /**
@@ -242,7 +242,7 @@ class PQueue // sPQueue
             else
                 pixels_.elem[next].prev = prev;
         }
-        pixels_.elem[elem].state = State::POPPED;
+        pixels_.elem[elem].state = State::Popped;
     }
 
     /**
@@ -469,7 +469,7 @@ class PQueue // sPQueue
             buckets_.first[bucket] = next;
             pixels_.elem[next].prev = NIL;
         }
-        pixels_.elem[elem].state = State::POPPED;
+        pixels_.elem[elem].state = State::Popped;
         return elem;
     }
 
@@ -493,7 +493,7 @@ class PQueue // sPQueue
             buckets_.last[bucket] = prev;
             pixels_.elem[prev].next = NIL;
         }
-        pixels_.elem[elem].state = State::POPPED;
+        pixels_.elem[elem].state = State::Popped;
         return elem;
     }
 

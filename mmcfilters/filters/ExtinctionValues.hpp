@@ -1,8 +1,8 @@
 #pragma once
 
 #include "../trees/TreeAltitudeAlgorithms.hpp"
-#include "../trees/WeightedMorphologicalTree.hpp"
-#include "../trees/WeightedTreeView.hpp"
+#include "../trees/ValuedMorphologicalTree.hpp"
+#include "../trees/ValuedMorphologicalTreeView.hpp"
 #include "../trees/detail/CommittedTreeAccess.hpp"
 #include "../trees/detail/HierarchyCapabilityValidation.hpp"
 #include "../trees/saliency/HierarchySaliencyMapValidation.hpp"
@@ -62,11 +62,11 @@ template <std::floating_point Real = float> class ExtinctionSelectionPolicy {
     /** @brief Enumerates the supported mode values. */
     enum class Mode { TopK, MinimumExtinction };
 
-    /** @brief Stores the mode. */
+    /** @brief Mode. */
     Mode mode_ = Mode::TopK;
-    /** @brief Stores the extrema to keep. */
+    /** @brief Extrema to keep. */
     int extremaToKeep_ = 0;
-    /** @brief Stores the threshold. */
+    /** @brief Threshold. */
     Real threshold_ = Real{0};
 
   public:
@@ -150,8 +150,8 @@ enum class ExtinctionContourScorePolicy {
  * represented by the explicit finite sentinel `numeric_limits<Real>::max()`.
  *
  * Standard tree-of-shapes and self-dual residual-tree producers declare
- * `AltitudeOrder::UNCONSTRAINED` and are rejected because their complete
- * regional-extrema set is not generally equivalent to `tree.getLeaves()`.
+ * `NodeAltitudeOrder::Unconstrained` and are rejected because their complete
+ * regional-extrema set is not generally equivalent to `tree.leaves()`.
  * Acceptance is based on the altitude-order capability, not the descriptive
  * tree kind.
  *
@@ -167,47 +167,47 @@ enum class ExtinctionContourScorePolicy {
  * an already constructed tree and attribute buffer instead of incrementally
  * computing them during tree construction.
  *
- * @tparam T Altitude type used by the weighted tree or weighted view.
+ * @tparam T Altitude type used by the valued tree or valued-tree view.
  * @tparam Real Attribute-buffer floating-point type.
  */
 template <AltitudeValue T, std::floating_point Real = float> class ExtinctionValues {
   protected:
     /// @cond INTERNAL
-    /** @brief Defines the weighted altitude-view type used by the computation. */
-    using AltitudeView = WeightedTreeView<T>;
+    /** @brief Defines the valuedTree altitude-view type used by the computation. */
+    using AltitudeView = ValuedMorphologicalTreeView<T>;
 
-    /** @brief Stores the regional extrema ordered by the extinction computation. */
+    /** @brief Regional extrema ordered by the extinction computation buffer. */
     std::vector<RegionalExtremaNode<Real>> regionalExtremaNodes_;
-    /** @brief Stores the extinction value indexed by tree node. */
+    /** @brief Extinction value indexed by tree node buffer. */
     std::vector<Real> extinctionValueAttribute_;
-    /** @brief Stores the non-owning weighted-tree view supplied at construction. */
+    /** @brief Non-owning valued-tree view supplied at construction. */
     AltitudeView view_;
-    /** @brief References the weighted-tree owner when one was supplied. */
-    const WeightedMorphologicalTree<T>* weighted_ = nullptr;
+    /** @brief References the valued-tree owner when one was supplied. */
+    const ValuedMorphologicalTree<T>* valuedTree_ = nullptr;
     /** @brief References the tree topology processed by the computation. */
     const MorphologicalTree& tree;
-    /** @brief Stores the topology mutation version captured at construction. */
+    /** @brief Topology mutation version captured at construction used to detect stale derived state. */
     std::size_t treeMutationVersion_ = 0;
 
     /** @brief Associates one regional-extremum record with its deterministic rank. */
     struct SelectedExtremum {
         /** @brief References the selected regional-extremum record. */
         const RegionalExtremaNode<Real>* record = nullptr;
-        /** @brief Stores the ranking score assigned to the selected extremum. */
+        /** @brief Ranking score assigned to the selected extremum. */
         int rankScore = 0;
     };
 
     /**
-     * @brief Returns the freshest weighted view used for reconstruction.
+     * @brief Returns the freshest valued-tree view used for reconstruction.
      *
-     * Instances built from a `WeightedMorphologicalTree` keep a pointer to that
+     * Instances built from a `ValuedMorphologicalTree` keep a pointer to that
      * owner so later altitude-buffer replacements are observed. Instances built
-     * from an external `WeightedTreeView` keep the view snapshot supplied at
+     * from an external `ValuedMorphologicalTreeView` keep the view snapshot supplied at
      * construction time.
      *
-     * @return Weighted view over the same topology captured by this object.
+     * @return Valued-tree view over the same topology captured by this object.
      */
-    [[nodiscard]] AltitudeView view() const { return weighted_ != nullptr ? weighted_->asView() : view_; }
+    [[nodiscard]] AltitudeView view() const { return valuedTree_ != nullptr ? valuedTree_->asView() : view_; }
 
     /**
      * @brief Rejects operations after the borrowed tree topology changes.
@@ -243,23 +243,23 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
      * slot count of `tree`.
      */
     static const Real* requireAttributeBuffer(const MorphologicalTree& tree, const std::vector<Real>& attr, const char* context) {
-        MMCFILTERS_CONTRACT_REQUIRE(attr.size() == static_cast<std::size_t>(tree.getNumInternalNodeSlots()),
+        MMCFILTERS_CONTRACT_REQUIRE(attr.size() == static_cast<std::size_t>(tree.numInternalNodeSlots()),
                                     throw std::invalid_argument(std::string(context) + " attribute size must match the internal node slot count."));
         return attr.data();
     }
 
     /**
-     * @brief Reads one node altitude through the active weighted view.
+     * @brief Reads one node altitude through the active valued-tree view.
      *
      * This wrapper keeps reconstruction code independent from whether the object
-     * was built from a weighted owner or from an external view.
+     * was built from a valued-tree owner or from an external view.
      *
-     * @param view Weighted view containing the altitude buffer.
+     * @param view Valued-tree view containing the altitude buffer.
      * @param nodeId Dense internal node id to read.
      * @return Altitude value associated with `nodeId`.
      */
     static T altitudeOf(const AltitudeView& view, NodeId nodeId) noexcept {
-        return view.altitude()[static_cast<std::size_t>(nodeId)];
+        return view.nodeAltitudes()[static_cast<std::size_t>(nodeId)];
     }
 
     /**
@@ -269,11 +269,11 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
      * are represented by tree leaves. Standard tree-of-shapes and self-dual
      * residual-tree producers are rejected before this helper is used because
      * they declare unconstrained altitude order and their extrema are not
-     * generally equivalent to `getLeaves()`.
+     * generally equivalent to `leaves()`.
      *
      * @return Leaf node ids in topology order.
      */
-    std::vector<NodeId> collectComponentTreeExtrema() const { return this->tree.getLeaves(); }
+    std::vector<NodeId> collectComponentTreeExtrema() const { return this->tree.leaves(); }
 
     /**
      * @brief Sentinel used for the dominant extremum.
@@ -363,7 +363,7 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
      * is subsequently the minimum of its two child extinctions.
      */
     void buildExtinctionValueAttribute() {
-        extinctionValueAttribute_.assign(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), Real{0});
+        extinctionValueAttribute_.assign(static_cast<std::size_t>(tree.numInternalNodeSlots()), Real{0});
         for (const RegionalExtremaNode<Real>& record : regionalExtremaNodes_) {
             Real& localValue = extinctionValueAttribute_[static_cast<std::size_t>(record.leaf)];
             if (localValue < record.extinction) {
@@ -371,7 +371,7 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
             }
         }
 
-        for (NodeId nodeId : tree.getPostOrderNodes()) {
+        for (NodeId nodeId : tree.postOrder()) {
             Real& nodeValue = extinctionValueAttribute_[static_cast<std::size_t>(nodeId)];
             for (NodeId childId : detail::CommittedTreeAccess::children(tree, nodeId)) {
                 const Real childValue = extinctionValueAttribute_[static_cast<std::size_t>(childId)];
@@ -444,44 +444,44 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
     }
 
     /**
-     * @brief Reconstructs an image from a dense keep/remove node criterion.
+     * @brief Reconstructs an image from a dense extremum-preservation mask.
      *
-     * The criterion marks regional-extremum leaves that must be preserved. This
+     * The mask marks regional-extremum leaves that must be preserved. This
      * helper propagates preserved marks to ancestors, then traverses the tree
      * top-down. Preserved child branches are explored; unpreserved child subtrees
      * are collapsed to the current node altitude.
      *
-     * @param criterion Dense internal-node boolean buffer; non-zero means keep.
+     * @param extremumPreservationMask Dense internal-node boolean buffer; non-zero means keep.
      * @param context Name used in exception messages.
      * @return Reconstructed image on the original image domain.
      * @throws std::logic_error If the topology changed after construction.
      */
-    [[nodiscard]] ImagePtr<T> filteringFromExtremumCriterion(std::vector<uint8_t> criterion, const char* context) const {
+    [[nodiscard]] ImagePtr<T> filteringFromExtremumPreservationMask(std::vector<uint8_t> extremumPreservationMask, const char* context) const {
         requireStableTree(context);
         const AltitudeView altitudeView = view();
-        for (NodeId nodeId : tree.getPostOrderNodes()) {
-            if (!tree.isRoot(nodeId) && criterion[static_cast<std::size_t>(nodeId)]) {
-                criterion[static_cast<std::size_t>(detail::CommittedTreeAccess::nodeParent(tree, nodeId))] = true;
+        for (NodeId nodeId : tree.postOrder()) {
+            if (!tree.isRoot(nodeId) && extremumPreservationMask[static_cast<std::size_t>(nodeId)]) {
+                extremumPreservationMask[static_cast<std::size_t>(detail::CommittedTreeAccess::nodeParent(tree, nodeId))] = true;
             }
         }
 
-        ImagePtr<T> imgOutputPtr = Image<T>::create(tree.getNumRowsOfGridDomain2D(), tree.getNumColsOfGridDomain2D(), T{});
+        ImagePtr<T> imgOutputPtr = Image<T>::create(tree.numRows(), tree.numColumns(), T{});
         auto imgOutput = imgOutputPtr->rawData();
         std::stack<NodeId> stack;
-        stack.push(tree.getRoot());
+        stack.push(tree.root());
         while (!stack.empty()) {
             const NodeId nodeId = stack.top();
             stack.pop();
             const T level = altitudeOf(altitudeView, nodeId);
-            for (int pixel : detail::CommittedTreeAccess::properParts(tree, nodeId)) {
+            for (PixelId pixel : detail::CommittedTreeAccess::properParts(tree, nodeId)) {
                 imgOutput[pixel] = level;
             }
             for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, nodeId)) {
-                if (criterion[static_cast<std::size_t>(childNodeId)]) {
+                if (extremumPreservationMask[static_cast<std::size_t>(childNodeId)]) {
                     stack.push(childNodeId);
                 } else {
                     for (NodeId subtreeNodeId : detail::CommittedTreeAccess::subtree(tree, childNodeId)) {
-                        for (int pixel : detail::CommittedTreeAccess::properParts(tree, subtreeNodeId)) {
+                        for (PixelId pixel : detail::CommittedTreeAccess::properParts(tree, subtreeNodeId)) {
                             imgOutput[pixel] = level;
                         }
                     }
@@ -494,19 +494,19 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
     /**
      * @brief Reconstructs an image from selected regional-extremum records.
      *
-     * This adapter converts selected records to the dense leaf criterion consumed
-     * by `filteringFromExtremumCriterion`.
+     * This adapter converts selected records to the dense leaf-preservation mask consumed
+     * by `filteringFromExtremumPreservationMask`.
      *
      * @param selected Regional extrema chosen by `selectExtrema`.
      * @param context Name used in exception messages.
      * @return Reconstructed image on the original image domain.
      */
     [[nodiscard]] ImagePtr<T> filteringFromSelectedExtrema(const std::vector<SelectedExtremum>& selected, const char* context) const {
-        std::vector<uint8_t> criterion(tree.getNumInternalNodeSlots(), false);
+        std::vector<uint8_t> extremumPreservationMask(tree.numInternalNodeSlots(), false);
         for (const SelectedExtremum& item : selected) {
-            criterion[static_cast<std::size_t>(item.record->leaf)] = true;
+            extremumPreservationMask[static_cast<std::size_t>(item.record->leaf)] = true;
         }
-        return filteringFromExtremumCriterion(std::move(criterion), context);
+        return filteringFromExtremumPreservationMask(std::move(extremumPreservationMask), context);
     }
 
     /**
@@ -534,7 +534,7 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
         requireAttributePointer(attr, "ExtinctionValues");
         std::vector<NodeId> leaves = collectComponentTreeExtrema();
         regionalExtremaNodes_.reserve(leaves.size());
-        std::vector<uint8_t> visited(this->tree.getNumInternalNodeSlots(), false);
+        std::vector<uint8_t> visited(this->tree.numInternalNodeSlots(), false);
         for (NodeId leafNodeId : leaves) {
             Real extinction = dominantExtremumSentinel();
             NodeId cutoffNodeId = leafNodeId;
@@ -582,9 +582,9 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
     using value_type = Real;
 
     /**
-     * @brief Computes extinction values from a weighted view and shared attribute buffer.
+     * @brief Computes extinction values from a valued-tree view and shared attribute buffer.
      *
-     * @param view Weighted tree view whose topology and altitude define the
+     * @param view Valued tree view whose topology and altitude define the
      * reconstruction domain.
      * @param attr Shared buffer with one scalar attribute value per internal
      * node slot.
@@ -594,9 +594,9 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
     ExtinctionValues(const AltitudeView& view, const std::shared_ptr<Real[]>& attr) : ExtinctionValues(view, attr.get()) {}
 
     /**
-     * @brief Computes extinction values from a weighted view and vector attribute buffer.
+     * @brief Computes extinction values from a valued-tree view and vector attribute buffer.
      *
-     * @param view Weighted tree view whose topology and altitude define the
+     * @param view Valued tree view whose topology and altitude define the
      * reconstruction domain.
      * @param attr Vector with one scalar attribute value per internal node slot.
      * @throws std::invalid_argument If `attr` does not match the internal node
@@ -607,9 +607,9 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
         : ExtinctionValues(view, requireAttributeBuffer(view.topology(), attr, "ExtinctionValues")) {}
 
     /**
-     * @brief Computes extinction values from a weighted view and raw attribute buffer.
+     * @brief Computes extinction values from a valued-tree view and raw attribute buffer.
      *
-     * @param view Weighted tree view whose topology and altitude define the
+     * @param view Valued tree view whose topology and altitude define the
      * reconstruction domain.
      * @param attr Non-null buffer indexed by dense internal `NodeId`.
      * @throws std::invalid_argument If `attr` is null.
@@ -622,46 +622,46 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
     }
 
     /**
-     * @brief Computes extinction values from a weighted tree and shared attribute buffer.
+     * @brief Computes extinction values from a valued tree and shared attribute buffer.
      *
-     * The weighted tree is borrowed; it must outlive this object.
+     * The valued tree is borrowed; it must outlive this object.
      *
-     * @param weighted Weighted tree whose topology and altitude define the
+     * @param valuedTree Valued tree whose topology and altitude define the
      * reconstruction domain.
      * @param attr Shared buffer with one scalar attribute value per internal
      * node slot.
      * @throws std::invalid_argument If `attr` is null.
      */
-    ExtinctionValues(const WeightedMorphologicalTree<T>& weighted, const std::shared_ptr<Real[]>& attr) : ExtinctionValues(weighted.asView(), attr.get()) {
-        weighted_ = &weighted;
+    ExtinctionValues(const ValuedMorphologicalTree<T>& valuedTree, const std::shared_ptr<Real[]>& attr) : ExtinctionValues(valuedTree.asView(), attr.get()) {
+        valuedTree_ = &valuedTree;
     }
 
     /**
-     * @brief Computes extinction values from a weighted tree and vector attribute buffer.
+     * @brief Computes extinction values from a valued tree and vector attribute buffer.
      *
-     * The weighted tree is borrowed; it must outlive this object.
+     * The valued tree is borrowed; it must outlive this object.
      *
-     * @param weighted Weighted tree whose topology and altitude define the
+     * @param valuedTree Valued tree whose topology and altitude define the
      * reconstruction domain.
      * @param attr Vector with one scalar attribute value per internal node slot.
      * @throws std::invalid_argument If `attr` does not match the internal node
      * slot count of the tree.
      */
-    ExtinctionValues(const WeightedMorphologicalTree<T>& weighted, const std::vector<Real>& attr) : ExtinctionValues(weighted.asView(), attr) {
-        weighted_ = &weighted;
+    ExtinctionValues(const ValuedMorphologicalTree<T>& valuedTree, const std::vector<Real>& attr) : ExtinctionValues(valuedTree.asView(), attr) {
+        valuedTree_ = &valuedTree;
     }
 
     /**
-     * @brief Computes extinction values from a weighted tree and raw attribute buffer.
+     * @brief Computes extinction values from a valued tree and raw attribute buffer.
      *
-     * The weighted tree is borrowed; it must outlive this object.
+     * The valued tree is borrowed; it must outlive this object.
      *
-     * @param weighted Weighted tree whose topology and altitude define the
+     * @param valuedTree Valued tree whose topology and altitude define the
      * reconstruction domain.
      * @param attr Non-null buffer indexed by dense internal `NodeId`.
      * @throws std::invalid_argument If `attr` is null.
      */
-    ExtinctionValues(const WeightedMorphologicalTree<T>& weighted, const Real* attr) : ExtinctionValues(weighted.asView(), attr) { weighted_ = &weighted; }
+    ExtinctionValues(const ValuedMorphologicalTree<T>& valuedTree, const Real* attr) : ExtinctionValues(valuedTree.asView(), attr) { valuedTree_ = &valuedTree; }
 
     /**
      * @brief Builds a contour-valued image from selected extinction events.
@@ -683,8 +683,8 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
         requireStableTree(context);
         const std::vector<SelectedExtremum> selected = selectExtrema(selection, context);
 
-        std::vector<uint8_t> keep(tree.getNumInternalNodeSlots(), false);
-        std::vector<Real> scoreByNode(tree.getNumInternalNodeSlots(), Real{0});
+        std::vector<uint8_t> keep(tree.numInternalNodeSlots(), false);
+        std::vector<Real> scoreByNode(tree.numInternalNodeSlots(), Real{0});
         std::vector<NodeId> keptNodes;
         for (const SelectedExtremum& item : selected) {
             const NodeId cutoffNode = item.record->cutoffNode;
@@ -708,7 +708,7 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
             }
         }
 
-        ImagePtr<Real> imgOutputPtr = Image<Real>::create(tree.getNumRowsOfGridDomain2D(), tree.getNumColsOfGridDomain2D(), Real{0});
+        ImagePtr<Real> imgOutputPtr = Image<Real>::create(tree.numRows(), tree.numColumns(), Real{0});
         auto contourOutput = imgOutputPtr->rawData();
 
         auto contours = ContoursComputedIncrementally::extractCompactContours(tree);
@@ -777,7 +777,7 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
      * This is the Section 8.1 persistence path of Cousty et al.: a Kruskal BPTAO
      * is represented by an MST, each binary merge receives the minimum of the
      * maximum descendant extinctions of its two children, and the resulting
-     * persistence-weighted MST is converted to its full-graph QFZ saliency map.
+     * persistence-valuedTree MST is converted to its full-graph QFZ saliency map.
      * The return type is an edge map, not the image-domain contour visualization
      * returned by `contourMap`.
      *
@@ -803,7 +803,7 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
     /**
      * @brief Computes the formal extinction saliency edge map using stored adjacency.
      *
-     * The weighted tree must carry a construction adjacency relation. Use the
+     * The valued tree must carry a construction adjacency relation. Use the
      * overload receiving `RegularGridAdjacency2D` when the tree was imported without
      * stored adjacency metadata.
      *
@@ -837,7 +837,7 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
     /**
      * @brief Computes a ranked formal extinction saliency edge map using stored adjacency.
      *
-     * The weighted tree must carry a construction adjacency relation. Use the
+     * The valued tree must carry a construction adjacency relation. Use the
      * overload receiving `RegularGridAdjacency2D` when the tree was imported without
      * stored adjacency metadata.
      *

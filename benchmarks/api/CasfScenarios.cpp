@@ -36,12 +36,12 @@ template <AltitudeValue T> [[nodiscard]] WorkloadMetrics casfMetrics(const adjus
     const MorphologicalTree& minTopology = casf.minTree().topology();
     const MorphologicalTree& maxTopology = casf.maxTree().topology();
     return WorkloadMetrics{
-        .pixels = static_cast<std::int64_t>(minTopology.getNumRowsOfGridDomain2D()) * minTopology.getNumColsOfGridDomain2D(),
-        .properParts = minTopology.getNumTotalProperParts(),
-        .primaryNodeSlots = minTopology.getNumInternalNodeSlots(),
-        .primaryLiveNodes = minTopology.getNumNodes(),
-        .secondaryNodeSlots = maxTopology.getNumInternalNodeSlots(),
-        .secondaryLiveNodes = maxTopology.getNumNodes(),
+        .pixels = static_cast<std::int64_t>(minTopology.numRows()) * minTopology.numColumns(),
+        .properParts = minTopology.numPixels(),
+        .primaryNodeSlots = minTopology.numInternalNodeSlots(),
+        .primaryLiveNodes = minTopology.numNodes(),
+        .secondaryNodeSlots = maxTopology.numInternalNodeSlots(),
+        .secondaryLiveNodes = maxTopology.numNodes(),
         .edges = edges,
     };
 }
@@ -52,8 +52,8 @@ template <AltitudeValue T> [[nodiscard]] EditSnapshot editSnapshot(const adjust:
     const TreeEditValidationStatistics& minStatistics = minTopology.getEditValidationStatistics();
     const TreeEditValidationStatistics& maxStatistics = maxTopology.getEditValidationStatistics();
     return EditSnapshot{
-        .minNodes = minTopology.getNumNodes(),
-        .maxNodes = maxTopology.getNumNodes(),
+        .minNodes = minTopology.numNodes(),
+        .maxNodes = maxTopology.numNodes(),
         .completeCommits = static_cast<std::int64_t>(minStatistics.completeValidationCommits + maxStatistics.completeValidationCommits),
         .incrementalCommits = static_cast<std::int64_t>(minStatistics.incrementalValidationCommits + maxStatistics.incrementalValidationCommits),
     };
@@ -81,9 +81,9 @@ template <AltitudeValue T> [[nodiscard]] EditSnapshot editSnapshot(const adjust:
 }
 
 template <AltitudeValue T>
-void appendNonRootAttributeValues(const WeightedMorphologicalTree<T>& tree, Attribute attribute, std::vector<double>& values) {
+void appendNonRootAttributeValues(const ValuedMorphologicalTree<T>& tree, Attribute attribute, std::vector<double>& values) {
     const auto computed = AttributeComputation::computeSingleAttribute<double>(tree, attribute);
-    for (NodeId node : tree.topology().getAliveNodeIds()) {
+    for (NodeId node : tree.topology().aliveNodeIds()) {
         if (!tree.topology().isRoot(node)) {
             values.push_back(computed.second[static_cast<std::size_t>(node)]);
         }
@@ -93,13 +93,13 @@ void appendNonRootAttributeValues(const WeightedMorphologicalTree<T>& tree, Attr
 template <AltitudeValue T>
 [[nodiscard]] ThresholdPlan thresholdsFromQuantiles(const adjust::CasfComponentTrees<T>& casf, CasfComponentTreesAttribute attribute,
                                                     const std::vector<double>& quantiles) {
-    const Attribute scalarAttribute = attribute == CasfComponentTreesAttribute::AREA ? AREA
-                                      : attribute == CasfComponentTreesAttribute::BOUNDING_BOX_WIDTH
-                                          ? BOX_WIDTH
-                                      : attribute == CasfComponentTreesAttribute::BOUNDING_BOX_HEIGHT ? BOX_HEIGHT
-                                                                                                      : DIAGONAL_LENGTH;
+    const Attribute scalarAttribute = attribute == CasfComponentTreesAttribute::Area ? Area
+                                      : attribute == CasfComponentTreesAttribute::BoundingBoxWidth
+                                          ? BoxWidth
+                                      : attribute == CasfComponentTreesAttribute::BoundingBoxHeight ? BoundingBoxHeight
+                                                                                                      : DiagonalLength;
     std::vector<double> values;
-    values.reserve(static_cast<std::size_t>(casf.minTree().topology().getNumNodes() + casf.maxTree().topology().getNumNodes()));
+    values.reserve(static_cast<std::size_t>(casf.minTree().topology().numNodes() + casf.maxTree().topology().numNodes()));
     appendNonRootAttributeValues(casf.minTree(), scalarAttribute, values);
     appendNonRootAttributeValues(casf.maxTree(), scalarAttribute, values);
     if (values.empty()) {
@@ -148,8 +148,8 @@ template <AltitudeValue T>
 }
 
 template <AltitudeValue T> void appendCasfState(Fnv1a64& hash, const adjust::CasfComponentTrees<T>& casf, bool requireIncrementalEdit) {
-    hash.append(weightedTreeChecksum(casf.minTree()));
-    hash.append(weightedTreeChecksum(casf.maxTree()));
+    hash.append(valuedTreeChecksum(casf.minTree()));
+    hash.append(valuedTreeChecksum(casf.maxTree()));
     const EditSnapshot snapshot = editSnapshot(casf);
     if (snapshot.completeCommits != 0) {
         throw std::runtime_error("CASF benchmark detected a complete validation commit in the incremental hot path.");
@@ -204,7 +204,7 @@ void addAreaStepScenario(Context& context, std::vector<ScenarioResult>& results,
     ScenarioResult scenario = benchmarkPreparedScenario(
         "casf", std::move(name), context.options.repetitions, metrics,
         [&] {
-            auto casf = std::make_unique<adjust::CasfComponentTrees<std::uint8_t>>(context.imageUInt8, CasfComponentTreesAttribute::AREA, 1.5);
+            auto casf = std::make_unique<adjust::CasfComponentTrees<std::uint8_t>>(context.imageUInt8, CasfComponentTreesAttribute::Area, 1.5);
             if (!prefix.empty()) {
                 static_cast<void>(casf->filter(prefix));
             }
@@ -214,30 +214,30 @@ void addAreaStepScenario(Context& context, std::vector<ScenarioResult>& results,
         [&](const std::unique_ptr<adjust::CasfComponentTrees<std::uint8_t>>& state, const ImageUInt8Ptr& result) {
             return casfImageChecksum(*state, result, false);
         });
-    scenario.outcome = observeStep(context.imageUInt8, CasfComponentTreesAttribute::AREA, plan, stepIndex);
+    scenario.outcome = observeStep(context.imageUInt8, CasfComponentTreesAttribute::Area, plan, stepIndex);
     results.push_back(std::move(scenario));
 }
 
 } // namespace
 
 void addCasfScenarios(Context& context, std::vector<ScenarioResult>& results) {
-    adjust::CasfComponentTrees<std::uint8_t> baseline(context.imageUInt8, CasfComponentTreesAttribute::AREA, 1.5);
-    const ThresholdPlan areaPlan = thresholdsFromQuantiles(baseline, CasfComponentTreesAttribute::AREA, context.options.casfQuantiles);
+    adjust::CasfComponentTrees<std::uint8_t> baseline(context.imageUInt8, CasfComponentTreesAttribute::Area, 1.5);
+    const ThresholdPlan areaPlan = thresholdsFromQuantiles(baseline, CasfComponentTreesAttribute::Area, context.options.casfQuantiles);
     const WorkloadMetrics metrics = casfMetrics(baseline, context.maxTreeMetrics.edges);
 
     results.push_back(benchmarkScenario(
         "casf", "construction_area", TimingScope::EndToEnd, context.options.repetitions, metrics,
-        [&] { return std::make_unique<adjust::CasfComponentTrees<std::uint8_t>>(context.imageUInt8, CasfComponentTreesAttribute::AREA, 1.5); },
+        [&] { return std::make_unique<adjust::CasfComponentTrees<std::uint8_t>>(context.imageUInt8, CasfComponentTreesAttribute::Area, 1.5); },
         [](const std::unique_ptr<adjust::CasfComponentTrees<std::uint8_t>>& result) { return casfStateChecksum(*result, false); }));
 
     ScenarioResult areaSequence = benchmarkPreparedScenario(
         "casf", "incremental_area_sequence", context.options.repetitions, metrics,
-        [&] { return std::make_unique<adjust::CasfComponentTrees<std::uint8_t>>(context.imageUInt8, CasfComponentTreesAttribute::AREA, 1.5); },
+        [&] { return std::make_unique<adjust::CasfComponentTrees<std::uint8_t>>(context.imageUInt8, CasfComponentTreesAttribute::Area, 1.5); },
         [&](std::unique_ptr<adjust::CasfComponentTrees<std::uint8_t>>& state) { return state->filter(areaPlan.thresholds); },
         [&](const std::unique_ptr<adjust::CasfComponentTrees<std::uint8_t>>& state, const ImageUInt8Ptr& result) {
             return casfImageChecksum(*state, result, areaPlan.hasPruningCandidates);
         });
-    areaSequence.outcome = observeSequence(context.imageUInt8, CasfComponentTreesAttribute::AREA, areaPlan);
+    areaSequence.outcome = observeSequence(context.imageUInt8, CasfComponentTreesAttribute::Area, areaPlan);
     results.push_back(std::move(areaSequence));
 
     if (!atLeast(context.options.profile, Profile::Core)) {
@@ -247,42 +247,42 @@ void addCasfScenarios(Context& context, std::vector<ScenarioResult>& results) {
     ScenarioResult pipeline = benchmarkScenario(
         "casf", "pipeline_area_sequence", TimingScope::EndToEnd, context.options.repetitions, metrics,
         [&] {
-            auto casf = std::make_unique<adjust::CasfComponentTrees<std::uint8_t>>(context.imageUInt8, CasfComponentTreesAttribute::AREA, 1.5);
+            auto casf = std::make_unique<adjust::CasfComponentTrees<std::uint8_t>>(context.imageUInt8, CasfComponentTreesAttribute::Area, 1.5);
             auto image = casf->filter(areaPlan.thresholds);
             return OwnedCasfResult<std::uint8_t>{std::move(casf), std::move(image)};
         },
         [&](const OwnedCasfResult<std::uint8_t>& result) {
             return casfImageChecksum(*result.casf, result.image, areaPlan.hasPruningCandidates);
         });
-    pipeline.outcome = observeSequence(context.imageUInt8, CasfComponentTreesAttribute::AREA, areaPlan);
+    pipeline.outcome = observeSequence(context.imageUInt8, CasfComponentTreesAttribute::Area, areaPlan);
     results.push_back(std::move(pipeline));
 
     addAreaStepScenario(context, results, metrics, areaPlan, "incremental_area_light_step", 0);
     addAreaStepScenario(context, results, metrics, areaPlan, "incremental_area_medium_step_after_light", 1);
     addAreaStepScenario(context, results, metrics, areaPlan, "incremental_area_heavy_step_after_medium", 2);
 
-    adjust::CasfComponentTrees<std::uint8_t> boundingBoxBaseline(context.imageUInt8, CasfComponentTreesAttribute::BOUNDING_BOX_DIAGONAL, 1.5);
+    adjust::CasfComponentTrees<std::uint8_t> boundingBoxBaseline(context.imageUInt8, CasfComponentTreesAttribute::BoundingBoxDiagonal, 1.5);
     const ThresholdPlan boundingBoxPlan =
-        thresholdsFromQuantiles(boundingBoxBaseline, CasfComponentTreesAttribute::BOUNDING_BOX_DIAGONAL, context.options.casfQuantiles);
+        thresholdsFromQuantiles(boundingBoxBaseline, CasfComponentTreesAttribute::BoundingBoxDiagonal, context.options.casfQuantiles);
     ScenarioResult boundingBox = benchmarkPreparedScenario(
         "casf", "incremental_bounding_box_diagonal_sequence", context.options.repetitions, metrics,
         [&] {
-            return std::make_unique<adjust::CasfComponentTrees<std::uint8_t>>(context.imageUInt8, CasfComponentTreesAttribute::BOUNDING_BOX_DIAGONAL, 1.5);
+            return std::make_unique<adjust::CasfComponentTrees<std::uint8_t>>(context.imageUInt8, CasfComponentTreesAttribute::BoundingBoxDiagonal, 1.5);
         },
         [&](std::unique_ptr<adjust::CasfComponentTrees<std::uint8_t>>& state) { return state->filter(boundingBoxPlan.thresholds); },
         [&](const std::unique_ptr<adjust::CasfComponentTrees<std::uint8_t>>& state, const ImageUInt8Ptr& result) {
             return casfImageChecksum(*state, result, boundingBoxPlan.hasPruningCandidates);
         });
-    boundingBox.outcome = observeSequence(context.imageUInt8, CasfComponentTreesAttribute::BOUNDING_BOX_DIAGONAL, boundingBoxPlan);
+    boundingBox.outcome = observeSequence(context.imageUInt8, CasfComponentTreesAttribute::BoundingBoxDiagonal, boundingBoxPlan);
     results.push_back(std::move(boundingBox));
 
     if (!atLeast(context.options.profile, Profile::Publication)) {
         return;
     }
 
-    addTypedCasfPublicationScenarios<std::int32_t>(context, results, context.imageInt32, "int32_area", CasfComponentTreesAttribute::AREA);
+    addTypedCasfPublicationScenarios<std::int32_t>(context, results, context.imageInt32, "int32_area", CasfComponentTreesAttribute::Area);
     addTypedCasfPublicationScenarios<float>(context, results, context.imageFloat, "float_bounding_box_diagonal",
-                                            CasfComponentTreesAttribute::BOUNDING_BOX_DIAGONAL);
+                                            CasfComponentTreesAttribute::BoundingBoxDiagonal);
 }
 
 } // namespace mmcfilters::benchmarks::api

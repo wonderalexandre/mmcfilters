@@ -22,15 +22,15 @@ saliency map.
 
 ## Hierarchy model
 
-Let \f$E\f$ be a finite proper-part domain and
+Let \f$E\f$ be a finite pixel domain and
 \f$G=(E,\mathcal{A})\f$ an undirected graph. A rooted hierarchy is
 
 \f[
 \mathcal{T}=(\mathcal{V},r,{\rm par}),
 \f]
 
-where every proper part \f$p\in E\f$ has one proper-part owner
-\f$o(p)\in\mathcal{V}\f$. A compatible valuation
+where every pixel \f$p\in E\f$ has one smallest node
+\f$P(p)\in\mathcal{V}\f$. A compatible valuation
 \f$h:\mathcal{V}\rightarrow\mathbb{R}_{\ge 0}\f$ is non-decreasing toward the
 root:
 
@@ -39,14 +39,14 @@ h({\rm par}(v))\ge h(v).
 \f]
 
 For an edge \f$\{p,q\}\f$, let
-\f$a={\rm LCA}(o(p),o(q))\f$ be the lowest common ancestor (LCA). Under
+\f$a={\rm LCA}(P(p),P(q))\f$ be the lowest common ancestor (LCA). Under
 `HierarchyLevelConvention::EdgeSaliencyValue`,
 
 \f[
 \Phi_h(\{p,q\})=
 \left\{\begin{array}{ll}
-0, & o(p)=o(q),\\
-h(a), & o(p)\ne o(q).
+0, & P(p)=P(q),\\
+h(a), & P(p)\ne P(q).
 \end{array}\right.
 \f]
 
@@ -57,11 +57,11 @@ construct a hierarchy from arbitrary graph-edge weights.
 ## Direct hierarchy projection
 
 `HierarchySaliencyMap` enumerates each undirected adjacency edge once, obtains
-its endpoint owners, computes their LCA, and writes the selected hierarchy
+its endpoints' smallest nodes, computes their LCA, and writes the selected hierarchy
 level. `EdgeSaliencyMap<T>` stores parallel `sources`, `targets`, and `values`
 arrays with image-domain metadata.
 
-Same-owner edges are present with value zero. Formal valuations must therefore
+Edges whose endpoints have the same smallest node are present with value zero. Formal valuations must therefore
 be finite and non-negative. Equal parent/child levels are accepted by
 `AllowLevelCollapse`; `RequireStrictHierarchy` rejects them.
 
@@ -80,7 +80,7 @@ supplied non-decreasing structural or attribute valuation.
 
 For component trees, `ComponentTreePartitionHierarchyAdapter` completes the
 partial-partition interpretation: pixel singletons form partition zero,
-same-owner zero edges form proper-part atoms, and component nodes merge those
+same-smallest-node zero edges form proper-part atoms, and component nodes merge those
 atoms with child supports.
 
 ## Extinction persistence
@@ -126,7 +126,7 @@ w(\{p,q\})=
 \max\{s(v)\mid \{p,q\}\subseteq\partial C(v)\}.
 \f]
 
-Equivalently, the maximum is taken over the two owner-to-LCA paths, excluding
+Equivalently, the maximum is taken over the two smallest-node-to-LCA paths, excluding
 the LCA. Use this operation when the input attribute is not a monotone valuation
 of the original hierarchy.
 
@@ -137,7 +137,7 @@ objects reject use after topology mutation.
 
 - Node buffers contain one slot per internal `NodeId`; live values consumed by
   an operation must be finite.
-- The graph domain must match the tree's rows, columns, and proper parts.
+- The graph domain must match the tree's rows, columns, and pixels.
 - A stored adjacency is used only when it defines one unambiguous graph;
   otherwise the caller supplies an explicit relation.
 - Formal LCA projection requires a finite, non-negative valuation that is
@@ -145,8 +145,8 @@ objects reject use after topology mutation.
 - Formal hierarchy connectivity requires every node support to be connected in
   the selected graph.
 - Extinction persistence additionally requires globally monotone component-tree
-  altitude and at least one directly owned proper part for each leaf.
-- Shape-space contour projection requires one proper part per image pixel. Its
+  altitude and a non-empty proper part for each leaf.
+- Shape-space contour projection requires the tree pixel domain to match the image grid. Its
   input attribute may be negative, but projected scores must be finite and
   non-negative.
 
@@ -196,11 +196,11 @@ number of component-tree leaves.
 
 | Operation | C++ | Python |
 | --- | --- | --- |
-| direct LCA projection | `HierarchySaliencyMap::computeSaliencyEdgeMap` | `HierarchySaliencyMap.computeSaliencyEdgeMap` |
-| canonical transition ranks | `computeCanonicalRankedSaliencyEdgeMap` | same method name |
-| extinction persistence | `ExtinctionValues::computeFormalSaliencyEdgeMap` | `extinction.computeFormalSaliencyEdgeMap` |
-| direct extinction projection | `computeMonotoneExtinctionProjection` | `extinction.computeMonotoneExtinctionProjection` |
-| cutoff contour visualization | `ExtinctionValues::contourMap` | `extinction.contourMap` |
+| direct LCA projection | `HierarchySaliencyMap::computeSaliencyEdgeMap` | `HierarchySaliencyMap.compute_saliency_edge_map` |
+| canonical transition ranks | `computeCanonicalRankedSaliencyEdgeMap` | `compute_canonical_ranked_saliency_edge_map` |
+| extinction persistence | `ExtinctionValues::computeFormalSaliencyEdgeMap` | `extinction.compute_formal_saliency_edge_map` |
+| direct extinction projection | `computeMonotoneExtinctionProjection` | `extinction.compute_monotone_extinction_projection` |
+| cutoff contour visualization | `ExtinctionValues::contourMap` | `extinction.contour_map` |
 | shape-space extinction | `ShapeSpaceSaliency` | `mmcfilters.ShapeSpaceSaliency` |
 | cuts and display | `HierarchySaliencyMapProjection` | `mmcfilters.HierarchySaliencyMapProjection` |
 

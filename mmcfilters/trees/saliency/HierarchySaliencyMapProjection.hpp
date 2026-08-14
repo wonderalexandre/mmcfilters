@@ -2,6 +2,7 @@
 
 #include "HierarchySaliencyMap.hpp"
 #include "../../utils/Image.hpp"
+#include "../detail/MorphologicalTreeConstructionContextQueries.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -23,7 +24,7 @@ struct EdgeContourMap {
     /// Number of rows in the proper-part grid.
     int numRows = 0;
     /// Number of columns in the proper-part grid.
-    int numCols = 0;
+    int numColumns = 0;
     /// Radius of the adjacency used to enumerate the edges.
     double adjacencyRadius = 0.0;
     /// Source proper-part id of each selected edge.
@@ -61,13 +62,13 @@ enum class EdgeToPixelReducer {
  *
  * `nodes[i]` is the hierarchy node whose boundary contains the image-domain
  * transition edge `(sources[i], targets[i])`. It is computed as
- * `LCA(owner(sources[i]), owner(targets[i]))`.
+ * `LCA(smallestNode(sources[i]), smallestNode(targets[i]))`.
  */
 struct NodeContourEdgeMap {
     /// Number of rows in the proper-part grid.
     int numRows = 0;
     /// Number of columns in the proper-part grid.
-    int numCols = 0;
+    int numColumns = 0;
     /// Radius of the adjacency used to enumerate the edges.
     double adjacencyRadius = 0.0;
     /// Source proper-part id of each contour edge.
@@ -98,7 +99,7 @@ struct NodeContourEdgeMap {
  * For a node `u`, the slice
  * `sources[offsets[u]:offsets[u + 1]]` and
  * `targets[offsets[u]:offsets[u + 1]]` stores exactly the transition adjacency
- * edges whose endpoint owners are distinct and whose endpoint-owner LCA is `u`.
+ * edges whose endpoint smallest nodes are distinct and whose endpoint-smallest-node LCA is `u`.
  * Edges whose endpoints already belong to the same finest region are omitted;
  * in the full formal saliency map they have the implicit base value `0`.
  */
@@ -106,16 +107,16 @@ struct IncrementalNodeContourMap {
     /// Number of rows in the proper-part grid.
     int numRows = 0;
     /// Number of columns in the proper-part grid.
-    int numCols = 0;
+    int numColumns = 0;
     /// Number of slots in the dense node-id domain.
     int numNodeSlots = 0;
     /// Radius of the adjacency used to enumerate the edges.
     double adjacencyRadius = 0.0;
     /// CSR-style boundaries of the edge slice owned by each node.
     std::vector<std::size_t> offsets;
-    /// Source proper-part ids grouped by boundary-owning node.
+    /// Source pixel ids grouped by boundary-owning node.
     std::vector<NodeId> sources;
-    /// Target proper-part ids parallel to `sources`.
+    /// Target pixel ids parallel to `sources`.
     std::vector<NodeId> targets;
 
     /**
@@ -135,7 +136,7 @@ struct IncrementalNodeContourMap {
     /**
      * @brief Returns the inclusive edge offset for `nodeId`.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      * @return The inclusive edge offset for nodeId.
      */
     [[nodiscard]] std::size_t nodeBegin(NodeId nodeId) const { return offsets.at(static_cast<std::size_t>(nodeId)); }
@@ -143,7 +144,7 @@ struct IncrementalNodeContourMap {
     /**
      * @brief Returns the exclusive edge offset for `nodeId`.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      * @return The exclusive edge offset for nodeId.
      */
     [[nodiscard]] std::size_t nodeEnd(NodeId nodeId) const { return offsets.at(static_cast<std::size_t>(nodeId) + 1); }
@@ -151,7 +152,7 @@ struct IncrementalNodeContourMap {
     /**
      * @brief Returns the number of contour edges owned by `nodeId`.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      * @return The number of contour edges owned by nodeId.
      */
     [[nodiscard]] std::size_t nodeSize(NodeId nodeId) const { return nodeEnd(nodeId) - nodeBegin(nodeId); }
@@ -176,7 +177,7 @@ class HierarchySaliencyMapProjection {
         if (edgeMap.sources.size() != edgeMap.targets.size() || edgeMap.sources.size() != edgeMap.values.size()) {
             throw std::invalid_argument(std::string(context) + " requires sources, targets, and values to have the same length.");
         }
-        if (edgeMap.numRows <= 0 || edgeMap.numCols <= 0) {
+        if (edgeMap.numRows <= 0 || edgeMap.numColumns <= 0) {
             throw std::invalid_argument(std::string(context) + " requires a non-empty image domain.");
         }
     }
@@ -188,7 +189,7 @@ class HierarchySaliencyMapProjection {
      * @param context Operation name used in diagnostics.
      */
     static void validateIncrementalContours(const IncrementalNodeContourMap& contours, const char* context) {
-        if (contours.numRows <= 0 || contours.numCols <= 0) {
+        if (contours.numRows <= 0 || contours.numColumns <= 0) {
             throw std::invalid_argument(std::string(context) + " requires a non-empty image domain.");
         }
         if (contours.numNodeSlots < 0) {
@@ -217,7 +218,7 @@ class HierarchySaliencyMapProjection {
      * @param context Operation name used in diagnostics.
      */
     template <class Value> static void validateEdgeEndpoints(const EdgeSaliencyMap<Value>& edgeMap, const char* context) {
-        const auto pixelCount = static_cast<std::size_t>(edgeMap.numRows) * static_cast<std::size_t>(edgeMap.numCols);
+        const auto pixelCount = static_cast<std::size_t>(edgeMap.numRows) * static_cast<std::size_t>(edgeMap.numColumns);
         for (std::size_t i = 0; i < edgeMap.size(); ++i) {
             const NodeId source = edgeMap.sources[i];
             const NodeId target = edgeMap.targets[i];
@@ -230,18 +231,18 @@ class HierarchySaliencyMapProjection {
     /**
      * @brief Validates tree and adjacency.
      *
-     * @param tree Tree topology used by the operation.
-     * @param adjacency Adjacency relation used by the operation.
+     * @param tree Tree topology.
+     * @param adjacency Adjacency relation.
      * @param context Operation name used in diagnostics.
      */
     static void validateTreeAndAdjacency(const MorphologicalTree& tree, const RegularGridAdjacency2D& adjacency, const char* context) {
-        if (tree.getRoot() == InvalidNode) {
+        if (tree.root() == InvalidNode) {
             throw std::invalid_argument(std::string(context) + " requires a non-empty rooted tree.");
         }
-        if (tree.getNumRowsOfGridDomain2D() <= 0 || tree.getNumColsOfGridDomain2D() <= 0 || tree.getNumTotalProperParts() <= 0) {
-            throw std::invalid_argument(std::string(context) + " requires a non-empty image/proper-part domain.");
+        if (tree.numRows() <= 0 || tree.numColumns() <= 0 || tree.numPixels() <= 0) {
+            throw std::invalid_argument(std::string(context) + " requires a non-empty image/pixel domain.");
         }
-        if (adjacency.getNumRows() != tree.getNumRowsOfGridDomain2D() || adjacency.getNumCols() != tree.getNumColsOfGridDomain2D()) {
+        if (adjacency.getNumRows() != tree.numRows() || adjacency.getNumColumns() != tree.numColumns()) {
             throw std::invalid_argument(std::string(context) + " adjacency domain must match the tree image domain.");
         }
     }
@@ -250,13 +251,13 @@ class HierarchySaliencyMapProjection {
      * @brief Groups node contour edges.
      *
      * @param flat Flattened saliency values to reshape into the image domain.
-     * @param numNodeSlots Count represented by `numNodeSlots`.
+     * @param numNodeSlots Count.
      * @return Contour edges grouped by tree node.
      */
     static IncrementalNodeContourMap groupNodeContourEdges(NodeContourEdgeMap&& flat, int numNodeSlots) {
         IncrementalNodeContourMap contours;
         contours.numRows = flat.numRows;
-        contours.numCols = flat.numCols;
+        contours.numColumns = flat.numColumns;
         contours.numNodeSlots = numNodeSlots;
         contours.adjacencyRadius = flat.adjacencyRadius;
         contours.offsets.assign(static_cast<std::size_t>(contours.numNodeSlots) + 1, 0);
@@ -302,9 +303,9 @@ class HierarchySaliencyMapProjection {
         validateEdgeMap(edgeMap, context);
         validateEdgeEndpoints(edgeMap, context);
 
-        ImagePtr<double> image = Image<double>::create(edgeMap.numRows, edgeMap.numCols, 0.0);
+        ImagePtr<double> image = Image<double>::create(edgeMap.numRows, edgeMap.numColumns, 0.0);
         double* pixels = image->rawData();
-        const auto pixelCount = static_cast<std::size_t>(edgeMap.numRows) * static_cast<std::size_t>(edgeMap.numCols);
+        const auto pixelCount = static_cast<std::size_t>(edgeMap.numRows) * static_cast<std::size_t>(edgeMap.numColumns);
 
         switch (reducer) {
         case EdgeToPixelReducer::Max: {
@@ -364,7 +365,7 @@ class HierarchySaliencyMapProjection {
 
         EdgeContourMap contours;
         contours.numRows = edgeMap.numRows;
-        contours.numCols = edgeMap.numCols;
+        contours.numColumns = edgeMap.numColumns;
         contours.adjacencyRadius = edgeMap.adjacencyRadius;
         contours.sources.reserve(edgeMap.size());
         contours.targets.reserve(edgeMap.size());
@@ -379,42 +380,42 @@ class HierarchySaliencyMapProjection {
     }
 
     /**
-     * @brief Projects transition adjacency edges onto their hierarchy owner node.
+     * @brief Projects transition adjacency edges onto their hierarchy node.
      *
-     * Edges whose endpoints already have the same direct hierarchy owner are
-     * omitted. They are internal to the finest region represented by that owner
+     * Edges whose endpoints already have the same smallest hierarchy node are
+     * omitted. They are internal to the finest region represented by that smallest node
      * and carry the implicit base value `0` in a full formal saliency map.
      *
-     * @param tree Tree topology used by the operation.
-     * @param adjacency Adjacency relation used by the operation.
-     * @return The projected transition adjacency edges onto their hierarchy owner node.
+     * @param tree Tree topology.
+     * @param adjacency Adjacency relation.
+     * @return The projected transition adjacency edges onto their hierarchy node.
      */
     [[nodiscard]] static NodeContourEdgeMap nodeContourEdges(const MorphologicalTree& tree, const RegularGridAdjacency2D& adjacency) {
         constexpr const char* context = "HierarchySaliencyMapProjection::nodeContourEdges";
         validateTreeAndAdjacency(tree, adjacency, context);
 
         NodeContourEdgeMap contours;
-        contours.numRows = tree.getNumRowsOfGridDomain2D();
-        contours.numCols = tree.getNumColsOfGridDomain2D();
+        contours.numRows = tree.numRows();
+        contours.numColumns = tree.numColumns();
         contours.adjacencyRadius = adjacency.getRadius();
 
-        const NodeId numProperParts = tree.getNumTotalProperParts();
-        for (NodeId source = 0; source < numProperParts; ++source) {
-            const NodeId sourceOwner = tree.getProperPartOwner(source);
-            if (!tree.isAlive(sourceOwner)) {
-                throw std::runtime_error(std::string(context) + " found a proper part without a live owner.");
+        const int numPixels = tree.numPixels();
+        for (NodeId source = 0; source < numPixels; ++source) {
+            const NodeId sourceSmallestNode = tree.smallestNode(source);
+            if (!tree.isAlive(sourceSmallestNode)) {
+                throw std::runtime_error(std::string(context) + " found a pixel without a live smallest node.");
             }
 
             for (int target : adjacency.getForwardNeighborIndices(source)) {
-                const NodeId targetOwner = tree.getProperPartOwner(target);
-                if (!tree.isAlive(targetOwner)) {
-                    throw std::runtime_error(std::string(context) + " found a neighbour proper part without a live owner.");
+                const NodeId targetSmallestNode = tree.smallestNode(target);
+                if (!tree.isAlive(targetSmallestNode)) {
+                    throw std::runtime_error(std::string(context) + " found a neighbour pixel without a live smallest node.");
                 }
-                if (sourceOwner == targetOwner) {
+                if (sourceSmallestNode == targetSmallestNode) {
                     continue;
                 }
 
-                const NodeId lca = tree.getLowestCommonAncestor(sourceOwner, targetOwner);
+                const NodeId lca = tree.lowestCommonAncestor(sourceSmallestNode, targetSmallestNode);
                 if (lca == InvalidNode || !tree.isAlive(lca)) {
                     throw std::runtime_error(std::string(context) + " could not find a live LCA for an adjacency edge.");
                 }
@@ -430,11 +431,11 @@ class HierarchySaliencyMapProjection {
     /**
      * @brief Projects stored-adjacency transition edges onto hierarchy nodes.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @return The projected stored-adjacency transition edges onto hierarchy nodes.
      */
     [[nodiscard]] static NodeContourEdgeMap nodeContourEdges(const MorphologicalTree& tree) {
-        const RegularGridAdjacency2D* adjacency = tree.getUniformGridAdjacency2D();
+        const RegularGridAdjacency2D* adjacency = ::mmcfilters::detail::constructionAdjacency(tree);
         if (adjacency == nullptr) {
             throw std::invalid_argument(
                 "HierarchySaliencyMapProjection::nodeContourEdges requires an attached adjacency relation; pass an explicit adjacency relation instead.");
@@ -443,24 +444,24 @@ class HierarchySaliencyMapProjection {
     }
 
     /**
-     * @brief Projects weighted-tree adjacency edges onto their hierarchy owner node.
+     * @brief Projects valued-tree adjacency edges onto their hierarchy node.
      *
-     * @param tree Tree topology used by the operation.
-     * @param adjacency Adjacency relation used by the operation.
-     * @return The projected weighted-tree adjacency edges onto their hierarchy owner node.
+     * @param tree Tree topology.
+     * @param adjacency Adjacency relation.
+     * @return The projected valued-tree adjacency edges onto their hierarchy node.
      */
     template <AltitudeValue T>
-    [[nodiscard]] static NodeContourEdgeMap nodeContourEdges(const WeightedMorphologicalTree<T>& tree, const RegularGridAdjacency2D& adjacency) {
+    [[nodiscard]] static NodeContourEdgeMap nodeContourEdges(const ValuedMorphologicalTree<T>& tree, const RegularGridAdjacency2D& adjacency) {
         return nodeContourEdges(tree.topology(), adjacency);
     }
 
     /**
-     * @brief Projects weighted-tree stored-adjacency edges onto hierarchy nodes.
+     * @brief Projects valued-tree stored-adjacency edges onto hierarchy nodes.
      *
-     * @param tree Tree topology used by the operation.
-     * @return The projected weighted-tree stored-adjacency edges onto hierarchy nodes.
+     * @param tree Tree topology.
+     * @return The projected valued-tree stored-adjacency edges onto hierarchy nodes.
      */
-    template <AltitudeValue T> [[nodiscard]] static NodeContourEdgeMap nodeContourEdges(const WeightedMorphologicalTree<T>& tree) {
+    template <AltitudeValue T> [[nodiscard]] static NodeContourEdgeMap nodeContourEdges(const ValuedMorphologicalTree<T>& tree) {
         return nodeContourEdges(tree.topology());
     }
 
@@ -468,47 +469,47 @@ class HierarchySaliencyMapProjection {
      * @brief Computes per-node incremental contour edges with explicit adjacency.
      *
      * The output stores one contiguous edge slice per dense internal `NodeId`.
-     * A transition edge belongs to node `u` iff its endpoint owners are distinct
-     * and `u = LCA(owner(source), owner(target))`.
+     * A transition edge belongs to node `u` iff its endpoint smallest nodes are distinct
+     * and `u = LCA(smallestNode(source), smallestNode(target))`.
      *
-     * @param tree Tree topology used by the operation.
-     * @param adjacency Adjacency relation used by the operation.
+     * @param tree Tree topology.
+     * @param adjacency Adjacency relation.
      * @return The computed per-node incremental contour edges with explicit adjacency.
      */
     [[nodiscard]] static IncrementalNodeContourMap computeIncrementalNodeContours(const MorphologicalTree& tree, const RegularGridAdjacency2D& adjacency) {
-        return groupNodeContourEdges(nodeContourEdges(tree, adjacency), tree.getNumInternalNodeSlots());
+        return groupNodeContourEdges(nodeContourEdges(tree, adjacency), tree.numInternalNodeSlots());
     }
 
     /**
      * @brief Computes per-node incremental contour edges using stored adjacency.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @return The computed per-node incremental contour edges using stored adjacency.
      */
     [[nodiscard]] static IncrementalNodeContourMap computeIncrementalNodeContours(const MorphologicalTree& tree) {
-        return groupNodeContourEdges(nodeContourEdges(tree), tree.getNumInternalNodeSlots());
+        return groupNodeContourEdges(nodeContourEdges(tree), tree.numInternalNodeSlots());
     }
 
     /**
-     * @brief Computes weighted-tree incremental contours with explicit adjacency.
+     * @brief Computes valued-tree incremental contours with explicit adjacency.
      *
-     * @param tree Tree topology used by the operation.
-     * @param adjacency Adjacency relation used by the operation.
-     * @return The computed weighted-tree incremental contours with explicit adjacency.
+     * @param tree Tree topology.
+     * @param adjacency Adjacency relation.
+     * @return The computed valued-tree incremental contours with explicit adjacency.
      */
     template <AltitudeValue T>
-    [[nodiscard]] static IncrementalNodeContourMap computeIncrementalNodeContours(const WeightedMorphologicalTree<T>& tree,
+    [[nodiscard]] static IncrementalNodeContourMap computeIncrementalNodeContours(const ValuedMorphologicalTree<T>& tree,
                                                                                   const RegularGridAdjacency2D& adjacency) {
         return computeIncrementalNodeContours(tree.topology(), adjacency);
     }
 
     /**
-     * @brief Computes weighted-tree incremental contours using stored adjacency.
+     * @brief Computes valued-tree incremental contours using stored adjacency.
      *
-     * @param tree Tree topology used by the operation.
-     * @return The computed weighted-tree incremental contours using stored adjacency.
+     * @param tree Tree topology.
+     * @return The computed valued-tree incremental contours using stored adjacency.
      */
-    template <AltitudeValue T> [[nodiscard]] static IncrementalNodeContourMap computeIncrementalNodeContours(const WeightedMorphologicalTree<T>& tree) {
+    template <AltitudeValue T> [[nodiscard]] static IncrementalNodeContourMap computeIncrementalNodeContours(const ValuedMorphologicalTree<T>& tree) {
         return computeIncrementalNodeContours(tree.topology());
     }
 
@@ -521,7 +522,7 @@ class HierarchySaliencyMapProjection {
      * map. Use `HierarchySaliencyMap::computeSaliencyEdgeMap` when the output must
      * explicitly contain every graph edge.
      *
-     * @param contours Contour data used by the operation.
+     * @param contours Contour data.
      * @param nodeValuation Dense valuation indexed by node identifier.
      * @return The projected dense node valuation onto transition contour edges.
      */
@@ -535,7 +536,7 @@ class HierarchySaliencyMapProjection {
 
         EdgeSaliencyMap<Value> edgeMap;
         edgeMap.numRows = contours.numRows;
-        edgeMap.numCols = contours.numCols;
+        edgeMap.numColumns = contours.numColumns;
         edgeMap.adjacencyRadius = contours.adjacencyRadius;
         edgeMap.sources.reserve(contours.size());
         edgeMap.targets.reserve(contours.size());
@@ -561,7 +562,7 @@ class HierarchySaliencyMapProjection {
      * separately when this cut is intended to represent a quasi-flat-zone saliency
      * level.
      *
-     * @param contours Contour data used by the operation.
+     * @param contours Contour data.
      * @param nodeValuation Dense valuation indexed by node identifier.
      * @param threshold Threshold applied by the operation.
      * @return The thresholded incremental contour edges by dense node valuation.
@@ -577,7 +578,7 @@ class HierarchySaliencyMapProjection {
 
         EdgeContourMap cut;
         cut.numRows = contours.numRows;
-        cut.numCols = contours.numCols;
+        cut.numColumns = contours.numColumns;
         cut.adjacencyRadius = contours.adjacencyRadius;
         cut.sources.reserve(contours.size());
         cut.targets.reserve(contours.size());

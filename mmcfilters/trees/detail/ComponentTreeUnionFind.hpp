@@ -24,7 +24,7 @@ namespace mmcfilters::detail {
  * for the duration of one build.
  */
 class ComponentTreeUnionFind {
-    /** @brief Stores the adjacency. */
+    /** @brief Adjacency. */
     const RegularGridAdjacency2D* adjacency_;
     /** @brief Indicates whether the union-find builds a max-tree. */
     bool isMaxTree_;
@@ -33,7 +33,7 @@ class ComponentTreeUnionFind {
     /**
      * @brief Constructs `ComponentTreeUnionFind` from the supplied inputs.
      *
-     * @param adjacency Adjacency relation used by the operation.
+     * @param adjacency Adjacency relation.
      * @param isMaxTree Flag controlling is max tree.
      */
     explicit ComponentTreeUnionFind(const RegularGridAdjacency2D* adjacency, bool isMaxTree) noexcept : adjacency_(adjacency), isMaxTree_(isMaxTree) {}
@@ -41,12 +41,12 @@ class ComponentTreeUnionFind {
     /**
      * @brief Sorts image pixels in the order required by component-tree construction.
      *
-     * @param image Image used by the operation.
+     * @param image Image.
      * @return Values produced by the operation.
      */
-    template <typename PixelType> [[nodiscard]] std::vector<int> sort(const ImagePtr<PixelType>& image) const {
+    template <typename PixelType> [[nodiscard]] std::vector<PixelId> sort(const ImagePtr<PixelType>& image) const {
         const int numPixels = image->getSize();
-        std::vector<int> orderedPixels(static_cast<std::size_t>(numPixels));
+        std::vector<PixelId> orderedPixels(static_cast<std::size_t>(numPixels));
         const PixelType* values = image->rawData();
 
         if constexpr (!std::is_same_v<PixelType, std::uint8_t>) {
@@ -55,9 +55,9 @@ class ComponentTreeUnionFind {
             }
             std::iota(orderedPixels.begin(), orderedPixels.end(), 0);
             if (isMaxTree_) {
-                std::stable_sort(orderedPixels.begin(), orderedPixels.end(), [&](int lhs, int rhs) { return values[lhs] < values[rhs]; });
+                std::stable_sort(orderedPixels.begin(), orderedPixels.end(), [&](PixelId lhs, PixelId rhs) { return values[lhs] < values[rhs]; });
             } else {
-                std::stable_sort(orderedPixels.begin(), orderedPixels.end(), [&](int lhs, int rhs) { return values[lhs] > values[rhs]; });
+                std::stable_sort(orderedPixels.begin(), orderedPixels.end(), [&](PixelId lhs, PixelId rhs) { return values[lhs] > values[rhs]; });
             }
         } else {
             if (PRINT_LOG) {
@@ -98,21 +98,21 @@ class ComponentTreeUnionFind {
     }
 
     template <typename PixelType>
-    [[nodiscard]] std::tuple<std::vector<int>, std::vector<int>, int>
+    [[nodiscard]] std::tuple<std::vector<PixelId>, std::vector<PixelId>, int>
     /**
      * @brief Builds a component tree from the input image.
      *
-     * @param image Image used by the operation.
+     * @param image Image.
      * @return Component tree built from the input image.
      */
     build(const ImagePtr<PixelType>& image) const {
-        std::vector<int> orderedPixels = sort(image);
+        std::vector<PixelId> orderedPixels = sort(image);
         const PixelType* values = image->rawData();
 
         const int numPixels = image->getSize();
-        std::vector<int> unionParent(static_cast<std::size_t>(numPixels), InvalidNode);
-        std::vector<int> pixelParent(static_cast<std::size_t>(numPixels), InvalidNode);
-        auto findRoot = [&](int pixel) {
+        std::vector<PixelId> unionParent(static_cast<std::size_t>(numPixels), InvalidPixel);
+        std::vector<PixelId> pixelParent(static_cast<std::size_t>(numPixels), InvalidPixel);
+        auto findRoot = [&](PixelId pixel) {
             while (unionParent[pixel] != pixel) {
                 unionParent[pixel] = unionParent[unionParent[pixel]];
                 pixel = unionParent[pixel];
@@ -121,14 +121,14 @@ class ComponentTreeUnionFind {
         };
 
         for (int index = numPixels - 1; index >= 0; --index) {
-            const int pixel = orderedPixels[static_cast<std::size_t>(index)];
+            const PixelId pixel = orderedPixels[static_cast<std::size_t>(index)];
             pixelParent[pixel] = pixel;
             unionParent[pixel] = pixel;
-            for (int neighbor : CommittedGridAccess::neighbors(*adjacency_, pixel)) {
-                if (unionParent[neighbor] == InvalidNode) {
+            for (PixelId neighbor : CommittedGridAccess::neighbors(*adjacency_, pixel)) {
+                if (unionParent[neighbor] == InvalidPixel) {
                     continue;
                 }
-                const int neighborRoot = findRoot(neighbor);
+                const PixelId neighborRoot = findRoot(neighbor);
                 if (pixel != neighborRoot) {
                     pixelParent[neighborRoot] = pixel;
                     unionParent[neighborRoot] = pixel;
@@ -138,8 +138,8 @@ class ComponentTreeUnionFind {
 
         int numNodes = 0;
         for (int index = 0; index < numPixels; ++index) {
-            const int pixel = orderedPixels[static_cast<std::size_t>(index)];
-            const int parent = pixelParent[pixel];
+            const PixelId pixel = orderedPixels[static_cast<std::size_t>(index)];
+            const PixelId parent = pixelParent[pixel];
             if (values[pixelParent[parent]] == values[parent]) {
                 pixelParent[pixel] = pixelParent[parent];
             }

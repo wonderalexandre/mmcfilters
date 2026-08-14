@@ -66,22 +66,22 @@ namespace {
 [[nodiscard]] AttributeGroup parseGroup(std::string_view value) {
     const std::string name = uppercase(value);
     if (name == "GRAY_LEVEL") {
-        return AttributeGroup::GRAY_LEVEL;
+        return AttributeGroup::GrayLevel;
     }
     if (name == "SHAPE") {
-        return AttributeGroup::SHAPE;
+        return AttributeGroup::Shape;
     }
     if (name == "MOMENTS") {
-        return AttributeGroup::MOMENTS;
+        return AttributeGroup::Moments;
     }
     if (name == "BOUNDARY") {
-        return AttributeGroup::BOUNDARY;
+        return AttributeGroup::Boundary;
     }
     if (name == "TREE_TOPOLOGY") {
-        return AttributeGroup::TREE_TOPOLOGY;
+        return AttributeGroup::TreeTopology;
     }
     if (name == "ALL") {
-        return AttributeGroup::ALL;
+        return AttributeGroup::All;
     }
     throw std::invalid_argument("Unknown attribute group in workload manifest: " + std::string(value));
 }
@@ -112,17 +112,17 @@ void setProfileDefaults(Options& options, std::string_view value) {
     if (value == "smoke") {
         options.profile = Profile::Smoke;
         options.rows = 48;
-        options.cols = 48;
+        options.columns = 48;
         options.repetitions = 2;
     } else if (value == "core") {
         options.profile = Profile::Core;
         options.rows = 192;
-        options.cols = 192;
+        options.columns = 192;
         options.repetitions = 5;
     } else if (value == "publication") {
         options.profile = Profile::Publication;
         options.rows = 512;
-        options.cols = 512;
+        options.columns = 512;
         options.repetitions = 15;
     } else {
         throw std::invalid_argument("Unknown profile in workload manifest: " + std::string(value));
@@ -236,9 +236,9 @@ ManifestAppliedFields applyWorkloadManifest(Options& options, const std::filesys
         options.rows = positiveInteger(item->first, item->second);
         applied.rows = true;
     }
-    if (const auto item = fields.find("cols"); item != fields.end()) {
-        options.cols = positiveInteger(item->first, item->second);
-        applied.cols = true;
+    if (const auto item = fields.find("columns"); item != fields.end()) {
+        options.columns = positiveInteger(item->first, item->second);
+        applied.columns = true;
     }
     if (const auto item = fields.find("repetitions"); item != fields.end()) {
         options.repetitions = positiveInteger(item->first, item->second);
@@ -286,7 +286,7 @@ ManifestAppliedFields applyWorkloadManifest(Options& options, const std::filesys
         options.attributeBundles.push_back(std::move(bundle));
     }
 
-    const std::set<std::string> knownFields{"profile", "input", "rows", "cols", "repetitions", "suites", "input_checksum", "casf_quantiles"};
+    const std::set<std::string> knownFields{"profile", "input", "rows", "columns", "repetitions", "suites", "input_checksum", "casf_quantiles"};
     for (const auto& [key, value] : fields) {
         static_cast<void>(value);
         if (!knownFields.contains(key) && !key.starts_with("attribute_bundle.")) {
@@ -294,8 +294,8 @@ ManifestAppliedFields applyWorkloadManifest(Options& options, const std::filesys
         }
     }
 
-    if (options.inputSource == InputSource::File && (!applied.rows || !applied.cols)) {
-        throw std::invalid_argument("File workloads must declare rows and cols so image dimensions are never resampled implicitly.");
+    if (options.inputSource == InputSource::File && (!applied.rows || !applied.columns)) {
+        throw std::invalid_argument("File workloads must declare rows and columns so image dimensions are never resampled implicitly.");
     }
     return applied;
 }
@@ -303,7 +303,7 @@ ManifestAppliedFields applyWorkloadManifest(Options& options, const std::filesys
 ImageUInt8Ptr makeConfiguredInput(const Options& options) {
     ImageUInt8Ptr image;
     if (options.inputSource == InputSource::Synthetic) {
-        image = makeInput<std::uint8_t>(options.inputPattern, options.rows, options.cols);
+        image = makeInput<std::uint8_t>(options.inputPattern, options.rows, options.columns);
     } else {
         int width = 0;
         int height = 0;
@@ -313,9 +313,9 @@ ImageUInt8Ptr makeConfiguredInput(const Options& options) {
         if (!pixels || width <= 0 || height <= 0) {
             throw std::runtime_error("Could not load workload image: " + options.inputPath.string());
         }
-        if (height != options.rows || width != options.cols) {
+        if (height != options.rows || width != options.columns) {
             throw std::invalid_argument("Workload image dimensions do not match the manifest: loaded " + std::to_string(height) + "x" +
-                                        std::to_string(width) + ", expected " + std::to_string(options.rows) + "x" + std::to_string(options.cols) + ".");
+                                        std::to_string(width) + ", expected " + std::to_string(options.rows) + "x" + std::to_string(options.columns) + ".");
         }
         image = ImageUInt8::create(height, width);
         std::copy_n(pixels.get(), image->getSize(), image->rawData());

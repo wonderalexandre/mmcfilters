@@ -53,10 +53,10 @@
  */
 
 #include "../utils/Common.hpp"
+#include "../localAttributes/FiniteWindowLocalAttributeComputer.hpp"
 #include "../trees/MorphologicalTree.hpp"
-#include "../trees/WeightedTreeView.hpp"
+#include "../trees/ValuedMorphologicalTreeView.hpp"
 #include "../trees/detail/CommittedTreeAccess.hpp"
-#include "../trees/detail/ProperPartEntryNode.hpp"
 #include "../trees/detail/TreeTraversalDetail.hpp"
 #include "../utils/CommittedGridAccess.hpp"
 #include "../utils/Contract.hpp"
@@ -83,28 +83,28 @@ struct ExtractedContourDeltas {
  * @return Extracted deltas and capacity hint.
  */
 inline ExtractedContourDeltas extractContourDeltas(const MorphologicalTree& tree) {
-    const int numNodes = tree.getNumInternalNodeSlots();
+    const int numNodes = tree.numInternalNodeSlots();
     const GridDomain2D& domain = CommittedTreeAccess::gridDomain2D(tree);
-    const int totalPixels = domain.rows * domain.cols;
+    const int totalPixels = domain.rows * domain.columns;
     const int capacityHint = std::max(totalPixels / 4, 1);
 
     PendingPixelLists localContourPixels(numNodes, capacityHint);
     PendingPixelLists localRemovalPixels(numNodes, capacityHint);
     PendingPixelLists pendingContourRemovals(numNodes, capacityHint);
     std::vector<int> neighborCount(static_cast<std::size_t>(totalPixels), 0);
-    std::vector<int> removalBuffer;
+    std::vector<PixelId> removalBuffer;
     removalBuffer.reserve(64);
-    RegularGridAdjacency2D adjacency = CommittedGridAccess::radiusAdjacency(domain.rows, domain.cols, ContourSideAdjacencyRadius);
+    RegularGridAdjacency2D adjacency = CommittedGridAccess::radiusAdjacency(domain.rows, domain.columns, ContourSideAdjacencyRadius);
 
     traversePostOrder(
-        tree, tree.getRoot(), [](NodeId) {}, [](NodeId, NodeId) {},
+        tree, tree.root(), [](NodeId) {}, [](NodeId, NodeId) {},
         [&](NodeId node) {
             removalBuffer.clear();
             pendingContourRemovals.consumeInto(node, removalBuffer);
-            for (int pixel : removalBuffer) {
+            for (PixelId pixel : removalBuffer) {
                 bool removePixel = true;
-                for (int neighbor : CommittedGridAccess::neighbors(adjacency, pixel)) {
-                    const NodeId entry = properPartEntryNode(tree, pixel, neighbor);
+                for (PixelId neighbor : CommittedGridAccess::neighbors(adjacency, pixel)) {
+                    const NodeId entry = local_attributes::detail::kernel::anchoredEntry(tree, pixel, neighbor);
                     if (entry != node && CommittedTreeAccess::isAncestor(tree, entry, node)) {
                         pendingContourRemovals.add(entry, pixel);
                         removePixel = false;
@@ -115,14 +115,14 @@ inline ExtractedContourDeltas extractContourDeltas(const MorphologicalTree& tree
                 }
             }
 
-            for (int pixel : CommittedTreeAccess::properParts(tree, node)) {
+            for (PixelId pixel : CommittedTreeAccess::properParts(tree, node)) {
                 if (CommittedGridAccess::isBoundary(adjacency, pixel)) {
                     ++neighborCount[static_cast<std::size_t>(pixel)];
                 }
 
-                for (int neighbor : CommittedGridAccess::neighbors(adjacency, pixel)) {
-                    const NodeId neighborOwner = CommittedTreeAccess::properPartOwner(tree, neighbor);
-                    const NodeId entry = properPartEntryNode(tree, pixel, neighbor);
+                for (PixelId neighbor : CommittedGridAccess::neighbors(adjacency, pixel)) {
+                    const NodeId neighborOwner = CommittedTreeAccess::smallestNodeMap(tree, neighbor);
+                    const NodeId entry = local_attributes::detail::kernel::anchoredEntry(tree, pixel, neighbor);
                     if (entry != node) {
                         ++neighborCount[static_cast<std::size_t>(pixel)];
                         if (entry != neighborOwner) {
@@ -192,7 +192,7 @@ class ContoursComputedIncrementally {
         /// Immutable compact local additions/removals produced by extraction.
         ContourDeltaStore localDeltas_;
         /// Concatenated storage for all materialized contour slices.
-        mutable std::vector<int> cachedContourValues_;
+        mutable std::vector<PixelId> cachedContourValues_;
         /// Per-node offset into `cachedContourValues_`; valid only when ready.
         mutable std::vector<uint32_t> cachedContourOffset_;
         /// Per-node slice length in `cachedContourValues_`; valid only when ready.
@@ -214,10 +214,10 @@ class ContoursComputedIncrementally {
          */
         IncrementalContours(const MorphologicalTree& tree, ContourDeltaStore localDeltas, int capacityHint)
             : tree(tree), treeMutationVersion_(tree.getMutationVersion()), localDeltas_(std::move(localDeltas)),
-              cachedContourOffset_(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0),
-              cachedContourSize_(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0),
-              cachedContourReady_(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0),
-              pixelMark_(tree.getNumRowsOfGridDomain2D() * tree.getNumColsOfGridDomain2D(), 0) {
+              cachedContourOffset_(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0),
+              cachedContourSize_(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0),
+              cachedContourReady_(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0),
+              pixelMark_(tree.numRows() * tree.numColumns(), 0) {
             if (capacityHint > 0) {
                 cachedContourValues_.reserve(static_cast<size_t>(capacityHint));
             }
@@ -252,15 +252,15 @@ class ContoursComputedIncrementally {
         class ContourRange {
           public:
             /// Immutable iterator over materialized contour pixel indices.
-            using iterator = std::vector<int>::const_iterator;
+            using iterator = std::vector<PixelId>::const_iterator;
 
             /**
-             * @brief Creates a range for `node` backed by `owner`.
+             * @brief Creates a range for `node` backed by the contour source.
              *
-             * @param owner Owner associated with the view or node.
-             * @param node Node identifier used by the operation.
+             * @param source Incremental contour computation serving the range.
+             * @param node Node identifier.
              */
-            ContourRange(const IncrementalContours* owner, NodeId node) : owner_(owner), node_(node) {}
+            ContourRange(const IncrementalContours* source, NodeId node) : source_(source), node_(node) {}
 
             /**
              * @brief Returns the first contour pixel, materializing on demand.
@@ -269,7 +269,7 @@ class ContoursComputedIncrementally {
              */
             iterator begin() const {
                 ensureReadable_();
-                return owner_->cachedContourBegin(node_);
+                return source_->cachedContourBegin(node_);
             }
 
             /**
@@ -279,7 +279,7 @@ class ContoursComputedIncrementally {
              */
             iterator end() const {
                 ensureReadable_();
-                return owner_->cachedContourEnd(node_);
+                return source_->cachedContourEnd(node_);
             }
 
             /**
@@ -293,11 +293,11 @@ class ContoursComputedIncrementally {
             /**
              * @brief Ensures readable.
              */
-            void ensureReadable_() const { owner_->ensureSubtreeMaterialized(node_); }
+            void ensureReadable_() const { source_->ensureSubtreeMaterialized(node_); }
 
-            /** @brief References the owner used by the component. */
-            const IncrementalContours* owner_ = nullptr;
-            /** @brief Stores the node. */
+            /** @brief References the incremental contour computation serving this range. */
+            const IncrementalContours* source_ = nullptr;
+            /** @brief Dense node identifier held by this record. */
             NodeId node_ = InvalidNode;
         };
 
@@ -336,24 +336,24 @@ class ContoursComputedIncrementally {
                 iterator() = default;
 
                 /**
-                 * @brief Creates an iterator over `owner` starting at `node`.
+                 * @brief Creates an iterator over `source` starting at `node`.
                  *
-                 * @param owner Owner associated with the view or node.
-                 * @param node Node identifier used by the operation.
+                 * @param source Incremental contour computation serving the iterator.
+                 * @param node Node identifier.
                  */
-                iterator(const IncrementalContours* owner, NodeId node) : owner_(owner), node_(node) { settle_(); }
+                iterator(const IncrementalContours* source, NodeId node) : source_(source), node_(node) { settle_(); }
 
                 /**
                  * @brief Returns the current `(nodeId, contourRange)` pair.
                  *
                  * @return The current (nodeId, contourRange) pair.
                  */
-                value_type operator*() const { return {node_, ContourRange(owner_, node_)}; }
+                value_type operator*() const { return {node_, ContourRange(source_, node_)}; }
 
                 /**
                  * @brief Advances to the next live node.
                  *
-                 * @return Reference to the resulting object.
+                 * @return Mutable reference to the updated object.
                  */
                 iterator& operator++() {
                     ++node_;
@@ -387,12 +387,12 @@ class ContoursComputedIncrementally {
                  * @brief Advances to the next node with a materialized contour.
                  */
                 void settle_() {
-                    if (!owner_) {
+                    if (!source_) {
                         node_ = InvalidNode;
                         return;
                     }
-                    const NodeId numNodeSlots = owner_->tree.getNumInternalNodeSlots();
-                    while (node_ >= 0 && node_ < numNodeSlots && !owner_->tree.isAlive(node_)) {
+                    const int numNodeSlots = source_->tree.numInternalNodeSlots();
+                    while (node_ >= 0 && node_ < numNodeSlots && !source_->tree.isAlive(node_)) {
                         ++node_;
                     }
                     if (node_ >= numNodeSlots) {
@@ -400,18 +400,18 @@ class ContoursComputedIncrementally {
                     }
                 }
 
-                /** @brief References the owner used by the component. */
-                const IncrementalContours* owner_ = nullptr;
-                /** @brief Stores the node. */
+                /** @brief References the incremental contour computation serving this iterator. */
+                const IncrementalContours* source_ = nullptr;
+                /** @brief Dense node identifier held by this record. */
                 NodeId node_ = 0;
             };
 
             /**
-             * @brief Creates a lazy all-node contour range backed by `owner`.
+             * @brief Creates a lazy all-node contour range backed by the contour source.
              *
-             * @param owner Owner associated with the view or node.
+             * @param source Incremental contour computation serving the range.
              */
-            explicit ContoursByNodeRange(const IncrementalContours* owner) : owner_(owner) {}
+            explicit ContoursByNodeRange(const IncrementalContours* source) : source_(source) {}
 
             /**
              * @brief Returns an iterator positioned at the first live node.
@@ -419,8 +419,8 @@ class ContoursComputedIncrementally {
              * @return An iterator positioned at the first live node.
              */
             iterator begin() const {
-                owner_->requireStableTree("IncrementalContours::contoursByNode");
-                return iterator(owner_, 0);
+                source_->requireStableTree("IncrementalContours::contoursByNode");
+                return iterator(source_, 0);
             }
 
             /**
@@ -429,13 +429,13 @@ class ContoursComputedIncrementally {
              * @return The all-node range sentinel.
              */
             iterator end() const {
-                owner_->requireStableTree("IncrementalContours::contoursByNode");
-                return iterator(owner_, owner_->tree.getNumInternalNodeSlots());
+                source_->requireStableTree("IncrementalContours::contoursByNode");
+                return iterator(source_, source_->tree.numInternalNodeSlots());
             }
 
           private:
-            /** @brief References the owner used by the component. */
-            const IncrementalContours* owner_ = nullptr;
+            /** @brief References the incremental contour computation serving this range. */
+            const IncrementalContours* source_ = nullptr;
         };
 
         /**
@@ -466,7 +466,7 @@ class ContoursComputedIncrementally {
         /**
          * @brief Returns cache-aware range that iterates the contour of nodeId.
          *
-         * @param node Node identifier used by the operation.
+         * @param node Node identifier.
          * @return Cache-aware range that iterates the contour of `nodeId`.
          *
          */
@@ -494,7 +494,7 @@ class ContoursComputedIncrementally {
          */
         void materializeAll() const {
             requireStableTree("IncrementalContours::materializeAll");
-            ensureSubtreeMaterialized(tree.getRoot());
+            ensureSubtreeMaterialized(tree.root());
         }
 
         /**
@@ -504,7 +504,7 @@ class ContoursComputedIncrementally {
          */
         [[nodiscard]] bool isMaterialized() const {
             requireStableTree("IncrementalContours::isMaterialized");
-            for (NodeId node : tree.getAliveNodeIds()) {
+            for (NodeId node : tree.aliveNodeIds()) {
                 if (!cachedContourReady_[node]) {
                     return false;
                 }
@@ -515,7 +515,7 @@ class ContoursComputedIncrementally {
         /**
          * @brief Tests whether one live node contour is already materialized.
          *
-         * @param node Node identifier used by the operation.
+         * @param node Node identifier.
          * @return True if one live node contour is already materialized; otherwise false.
          */
         [[nodiscard]] bool isContourMaterialized(NodeId node) const {
@@ -535,7 +535,7 @@ class ContoursComputedIncrementally {
         /**
          * @brief Rejects invalid or dead nodes before exposing contour ranges.
          *
-         * @param node Node identifier used by the operation.
+         * @param node Node identifier.
          * @param context Operation context or diagnostic label.
          */
         void requireLiveContourNode(NodeId node, const char* context) const {
@@ -547,20 +547,20 @@ class ContoursComputedIncrementally {
         /**
          * @brief Returns an iterator to the first cached contour element of a node.
          *
-         * @param node Node identifier used by the operation.
+         * @param node Node identifier.
          * @return Values produced by the operation.
          */
-        std::vector<int>::const_iterator cachedContourBegin(NodeId node) const {
+        std::vector<PixelId>::const_iterator cachedContourBegin(NodeId node) const {
             return cachedContourValues_.begin() + static_cast<std::ptrdiff_t>(cachedContourOffset_[node]);
         }
 
         /**
          * @brief Returns an iterator past the last cached contour element of a node.
          *
-         * @param node Node identifier used by the operation.
+         * @param node Node identifier.
          * @return Values produced by the operation.
          */
-        std::vector<int>::const_iterator cachedContourEnd(NodeId node) const {
+        std::vector<PixelId>::const_iterator cachedContourEnd(NodeId node) const {
             return cachedContourBegin(node) + static_cast<std::ptrdiff_t>(cachedContourSize_[node]);
         }
 
@@ -579,9 +579,9 @@ class ContoursComputedIncrementally {
          * @brief Adds if unmarked.
          *
          * @param values Values read or written by the operation.
-         * @param pixel Pixel identifier used by the operation.
+         * @param pixel Pixel identifier.
          */
-        void addIfUnmarked(std::vector<int>& values, int pixel) const {
+        void addIfUnmarked(std::vector<PixelId>& values, PixelId pixel) const {
             if (pixel < 0 || pixel >= static_cast<int>(pixelMark_.size())) {
                 return;
             }
@@ -594,9 +594,9 @@ class ContoursComputedIncrementally {
         /**
          * @brief Removes if marked.
          *
-         * @param pixel Pixel identifier used by the operation.
+         * @param pixel Pixel identifier.
          */
-        void removeIfMarked(int pixel) const {
+        void removeIfMarked(PixelId pixel) const {
             if (pixel >= 0 && pixel < static_cast<int>(pixelMark_.size())) {
                 pixelMark_[pixel] = 0;
             }
@@ -605,10 +605,10 @@ class ContoursComputedIncrementally {
         /**
          * @brief Stores a materialized node contour in the shared cache.
          *
-         * @param node Node identifier used by the operation.
+         * @param node Node identifier.
          * @param values Values read or written by the operation.
          */
-        void commitMaterializedContour(NodeId node, const std::vector<int>& values) const {
+        void commitMaterializedContour(NodeId node, const std::vector<PixelId>& values) const {
             cachedContourOffset_[node] = checkedU32(cachedContourValues_.size(), "cached contour offset");
             cachedContourSize_[node] = checkedU32(values.size(), "cached contour size");
             cachedContourValues_.insert(cachedContourValues_.end(), values.begin(), values.end());
@@ -618,7 +618,7 @@ class ContoursComputedIncrementally {
         /**
          * @brief Checks and converts u32.
          *
-         * @param value Value used by the operation.
+         * @param value Value.
          * @param context Operation name used in diagnostics.
          * @return Value converted to `uint32_t` after range validation.
          */
@@ -650,7 +650,7 @@ class ContoursComputedIncrementally {
 
             std::vector<std::pair<NodeId, bool>> stack;
             stack.emplace_back(root, false);
-            std::vector<int> values;
+            std::vector<PixelId> values;
 
             while (!stack.empty()) {
                 const auto [node, expanded] = stack.back();
@@ -660,7 +660,7 @@ class ContoursComputedIncrementally {
                 }
                 if (!expanded) {
                     stack.emplace_back(node, true);
-                    for (NodeId child : tree.getChildren(node)) {
+                    for (NodeId child : tree.children(node)) {
                         if (!cachedContourReady_[child]) {
                             stack.emplace_back(child, false);
                         }
@@ -671,13 +671,13 @@ class ContoursComputedIncrementally {
                 values.clear();
                 const auto additions = localDeltas_.additions(node);
                 std::size_t reserveSize = additions.size();
-                for (NodeId child : tree.getChildren(node)) {
+                for (NodeId child : tree.children(node)) {
                     reserveSize += static_cast<std::size_t>(cachedContourSize_[child]);
                 }
                 values.reserve(reserveSize);
                 nextMarkGeneration();
 
-                for (NodeId child : tree.getChildren(node)) {
+                for (NodeId child : tree.children(node)) {
                     for (auto it = cachedContourBegin(child); it != cachedContourEnd(child); ++it) {
                         addIfUnmarked(values, *it);
                     }
@@ -711,29 +711,29 @@ class ContoursComputedIncrementally {
      * `IncrementalContours`. It is intended for algorithms that consume local
      * contour events directly, such as incremental distance-transform updates.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @return The extracted compact local contour additions/removals without materializing aggregate contours.
      */
     [[nodiscard]] static LocalContourDeltas extractContourDeltas(const MorphologicalTree& tree) {
-        MMCFILTERS_CONTRACT_REQUIRE(tree.getNumRowsOfGridDomain2D() > 0 && tree.getNumColsOfGridDomain2D() > 0,
+        MMCFILTERS_CONTRACT_REQUIRE(tree.numRows() > 0 && tree.numColumns() > 0,
                                     throw std::invalid_argument("Contour extraction requires a non-empty image domain."));
-        MMCFILTERS_CONTRACT_REQUIRE(tree.isAlive(tree.getRoot()), throw std::invalid_argument("Contour extraction requires a live tree root."));
+        MMCFILTERS_CONTRACT_REQUIRE(tree.isAlive(tree.root()), throw std::invalid_argument("Contour extraction requires a live tree root."));
         return detail::kernel::extractLocalContourDeltas(tree);
     }
 
   public:
     template <AltitudeValue T>
     /**
-     * @brief Extracts compact local contour additions/removals from a weighted view.
+     * @brief Extracts compact local contour additions/removals from a valued-tree view.
      *
-     * @param tree Tree topology used by the operation.
-     * @return The extracted compact local contour additions/removals from a weighted view.
+     * @param tree Tree topology.
+     * @return The extracted compact local contour additions/removals from a valued-tree view.
      */
-    [[nodiscard]] static LocalContourDeltas extractContourDeltas(const WeightedTreeView<T>& tree) {
+    [[nodiscard]] static LocalContourDeltas extractContourDeltas(const ValuedMorphologicalTreeView<T>& tree) {
         MMCFILTERS_CONTRACT_CHECKED_ONLY(tree.requireTopologyUnchanged("ContoursComputedIncrementally::extractContourDeltas"));
-        MMCFILTERS_CONTRACT_REQUIRE(tree.topology().getNumRowsOfGridDomain2D() > 0 && tree.topology().getNumColsOfGridDomain2D() > 0,
+        MMCFILTERS_CONTRACT_REQUIRE(tree.topology().numRows() > 0 && tree.topology().numColumns() > 0,
                                     throw std::invalid_argument("Contour extraction requires a non-empty image domain."));
-        MMCFILTERS_CONTRACT_REQUIRE(tree.topology().isAlive(tree.topology().getRoot()),
+        MMCFILTERS_CONTRACT_REQUIRE(tree.topology().isAlive(tree.topology().root()),
                                     throw std::invalid_argument("Contour extraction requires a live tree root."));
         return detail::kernel::extractLocalContourDeltas(tree.topology());
     }
@@ -760,29 +760,29 @@ class ContoursComputedIncrementally {
      * @code
      * auto contours = ContoursComputedIncrementally::extractCompactContours(tree);
      * auto contour = contours.getContour(nodeId);
-     * std::vector<int> pixels(contour.begin(), contour.end());
+     * std::vector<PixelId> pixels(contour.begin(), contour.end());
      * @endcode
      */
     [[nodiscard]] static IncrementalContours extractCompactContours(const MorphologicalTree& tree) {
-        MMCFILTERS_CONTRACT_REQUIRE(tree.getNumRowsOfGridDomain2D() > 0 && tree.getNumColsOfGridDomain2D() > 0,
+        MMCFILTERS_CONTRACT_REQUIRE(tree.numRows() > 0 && tree.numColumns() > 0,
                                     throw std::invalid_argument("Contour extraction requires a non-empty image domain."));
-        MMCFILTERS_CONTRACT_REQUIRE(tree.isAlive(tree.getRoot()), throw std::invalid_argument("Contour extraction requires a live tree root."));
+        MMCFILTERS_CONTRACT_REQUIRE(tree.isAlive(tree.root()), throw std::invalid_argument("Contour extraction requires a live tree root."));
         detail::kernel::ExtractedContourDeltas extracted = detail::kernel::extractContourDeltas(tree);
         return IncrementalContours(tree, std::move(extracted.deltas), extracted.capacityHint);
     }
 
     template <AltitudeValue T>
     /**
-     * @brief Runs incremental contour computation on a weighted view.
+     * @brief Runs incremental contour computation on a valued-tree view.
      *
-     * @param tree Tree topology used by the operation.
-     * @return Result produced by running incremental contour computation on a weighted view.
+     * @param tree Tree topology.
+     * @return Result produced by running incremental contour computation on a valued-tree view.
      */
-    [[nodiscard]] static IncrementalContours extractCompactContours(const WeightedTreeView<T>& tree) {
+    [[nodiscard]] static IncrementalContours extractCompactContours(const ValuedMorphologicalTreeView<T>& tree) {
         MMCFILTERS_CONTRACT_CHECKED_ONLY(tree.requireTopologyUnchanged("ContoursComputedIncrementally::extractCompactContours"));
-        MMCFILTERS_CONTRACT_REQUIRE(tree.topology().getNumRowsOfGridDomain2D() > 0 && tree.topology().getNumColsOfGridDomain2D() > 0,
+        MMCFILTERS_CONTRACT_REQUIRE(tree.topology().numRows() > 0 && tree.topology().numColumns() > 0,
                                     throw std::invalid_argument("Contour extraction requires a non-empty image domain."));
-        MMCFILTERS_CONTRACT_REQUIRE(tree.topology().isAlive(tree.topology().getRoot()),
+        MMCFILTERS_CONTRACT_REQUIRE(tree.topology().isAlive(tree.topology().root()),
                                     throw std::invalid_argument("Contour extraction requires a live tree root."));
         detail::kernel::ExtractedContourDeltas extracted = detail::kernel::extractContourDeltas(tree.topology());
         return IncrementalContours(tree.topology(), std::move(extracted.deltas), extracted.capacityHint);

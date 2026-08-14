@@ -1,8 +1,8 @@
 #pragma once
 
+#include "../localAttributes/FiniteWindowLocalAttributeComputer.hpp"
 #include "../trees/MorphologicalTree.hpp"
-#include "../trees/WeightedTreeView.hpp"
-#include "../trees/detail/ProperPartEntryNode.hpp"
+#include "../trees/ValuedMorphologicalTreeView.hpp"
 #include "../trees/detail/TreeTraversalDetail.hpp"
 #include "../utils/Common.hpp"
 #include "../utils/Image.hpp"
@@ -40,7 +40,7 @@ enum class ContourLoopKind : uint8_t { External, Internal };
  */
 struct ContourTraceEdge {
     /// Row-major support-pixel index incident to the boundary edge.
-    int pixel = -1;
+    PixelId pixel = InvalidPixel;
     /// Side of the support pixel occupied by the boundary edge.
     ContourTraceSide side = ContourTraceSide::North;
 
@@ -81,11 +81,11 @@ class ContourTraceComputation {
     /**
      * @brief Packs one pixel-side edge into a compact integer id.
      *
-     * @param pixel Pixel identifier used by the operation.
+     * @param pixel Pixel identifier.
      * @param side Side selected by the operation.
      * @return The packed pixel-side edge into a compact integer id.
      */
-    [[nodiscard]] static int packEdge(int pixel, ContourTraceSide side) { return (4 * pixel) + static_cast<int>(side); }
+    [[nodiscard]] static int packEdge(PixelId pixel, ContourTraceSide side) { return (4 * pixel) + static_cast<int>(side); }
 
     /**
      * @brief Unpacks one compact edge id.
@@ -116,15 +116,15 @@ class ContourTraceComputation {
 
         /** @brief Stores one oriented contour edge and its accumulated geometry. */
         struct DirectedEdge {
-            /** @brief Stores the packed edge. */
+            /** @brief Packed edge. */
             int packedEdge = -1;
-            /** @brief Stores the start vertex. */
+            /** @brief Start vertex. */
             int startVertex = -1;
-            /** @brief Stores the end vertex. */
+            /** @brief End vertex. */
             int endVertex = -1;
-            /** @brief Stores the direction. */
+            /** @brief Direction. */
             Direction direction = Direction::North;
-            /** @brief Stores the signed area2. */
+            /** @brief Signed area2. */
             int signedArea2 = 0;
 
             /**
@@ -179,69 +179,69 @@ class ContourTraceComputation {
 
         /** @brief References the tree used by the component. */
         const MorphologicalTree& tree;
-        /** @brief Stores the tree mutation version. */
+        /** @brief Tree mutation version used to detect stale derived state. */
         std::size_t treeMutationVersion_ = 0;
-        /** @brief Stores the local deltas. */
+        /** @brief Local deltas. */
         mutable LocalTraceDeltas localDeltas_;
 
-        /** @brief Stores the cached edge values. */
+        /** @brief Cached edge values buffer. */
         mutable std::vector<int> cachedEdgeValues_;
-        /** @brief Stores the cached edge offset. */
+        /** @brief Cached edge offset buffer. */
         mutable std::vector<uint32_t> cachedEdgeOffset_;
-        /** @brief Stores the cached edge size. */
+        /** @brief Cached edge size buffer. */
         mutable std::vector<uint32_t> cachedEdgeSize_;
-        /** @brief Stores the cached edge ready. */
+        /** @brief Cached edge ready buffer. */
         mutable std::vector<uint8_t> cachedEdgeReady_;
-        /** @brief Stores the cached edge ready count. */
+        /** @brief Cached edge ready count. */
         mutable std::size_t cachedEdgeReadyCount_ = 0;
 
-        /** @brief Stores the cached loop infos. */
+        /** @brief Cached loop infos buffer. */
         mutable std::vector<ContourTraceLoop> cachedLoopInfos_;
-        /** @brief Stores the cached loop info offset. */
+        /** @brief Cached loop info offset buffer. */
         mutable std::vector<uint32_t> cachedLoopInfoOffset_;
-        /** @brief Stores the cached loop info size. */
+        /** @brief Cached loop info size buffer. */
         mutable std::vector<uint32_t> cachedLoopInfoSize_;
-        /** @brief Stores the cached loop ready. */
+        /** @brief Cached loop ready buffer. */
         mutable std::vector<uint8_t> cachedLoopReady_;
-        /** @brief Stores the cached loop ready count. */
+        /** @brief Cached loop ready count. */
         mutable std::size_t cachedLoopReadyCount_ = 0;
-        /** @brief Stores the cached loop edge count. */
+        /** @brief Cached loop edge count. */
         mutable std::size_t cachedLoopEdgeCount_ = 0;
 
-        /** @brief Stores the edge mark. */
+        /** @brief Edge mark buffer. */
         mutable std::vector<uint16_t> edgeMark_;
-        /** @brief Stores the mark generation. */
+        /** @brief Mark generation. */
         mutable uint16_t markGeneration_ = 1;
         /** @brief Indicates whether edge-materialization scratch storage was released. */
         mutable bool edgeMaterializationScratchReleased_ = false;
 
-        /** @brief Stores the trace directed edges. */
+        /** @brief Trace directed edges buffer. */
         mutable std::vector<DirectedEdge> traceDirectedEdges_;
-        /** @brief Stores the trace outgoing head. */
+        /** @brief Trace outgoing head buffer. */
         mutable std::vector<int> traceOutgoingHead_;
-        /** @brief Stores the trace outgoing next. */
+        /** @brief Trace outgoing next buffer. */
         mutable std::vector<int> traceOutgoingNext_;
-        /** @brief Stores the trace touched vertices. */
+        /** @brief Trace touched vertices buffer. */
         mutable std::vector<int> traceTouchedVertices_;
-        /** @brief Stores the trace sparse vertex keys. */
+        /** @brief Trace sparse vertex keys buffer. */
         mutable std::vector<int> traceSparseVertexKeys_;
-        /** @brief Stores the trace sparse outgoing head. */
+        /** @brief Trace sparse outgoing head buffer. */
         mutable std::vector<int> traceSparseOutgoingHead_;
-        /** @brief Stores the trace sparse slot generation. */
+        /** @brief Trace sparse slot generation buffer. */
         mutable std::vector<uint32_t> traceSparseSlotGeneration_;
-        /** @brief Stores the trace sparse touched slots. */
+        /** @brief Trace sparse touched slots buffer. */
         mutable std::vector<int> traceSparseTouchedSlots_;
-        /** @brief Stores the trace sparse generation. */
+        /** @brief Trace sparse generation. */
         mutable uint32_t traceSparseGeneration_ = 1;
-        /** @brief Stores the node local loop trace count. */
+        /** @brief Node local loop trace count. */
         mutable std::size_t nodeLocalLoopTraceCount_ = 0;
-        /** @brief Stores the trace visited generation. */
+        /** @brief Trace visited generation buffer. */
         mutable std::vector<uint32_t> traceVisitedGeneration_;
-        /** @brief Stores the trace visit generation. */
+        /** @brief Trace visit generation. */
         mutable uint32_t traceVisitGeneration_ = 1;
-        /** @brief Stores the trace node loop edges. */
+        /** @brief Trace node loop edges buffer. */
         mutable std::vector<int> traceNodeLoopEdges_;
-        /** @brief Stores the trace node loops. */
+        /** @brief Trace node loops buffer. */
         mutable std::vector<ContourTraceLoop> traceNodeLoops_;
         /** @brief Indicates whether trace-construction scratch storage was released. */
         mutable bool traceScratchReleased_ = false;
@@ -249,19 +249,19 @@ class ContourTraceComputation {
         /**
          * @brief Constructs `IncrementalContourTraces` from the supplied inputs.
          *
-         * @param tree Tree topology used by the operation.
+         * @param tree Tree topology.
          * @param localDeltas Local contour deltas to append to the trace store.
          * @param capacityHint Estimated number of entries used to reserve storage.
          */
         IncrementalContourTraces(const MorphologicalTree& tree, LocalTraceDeltas localDeltas, int capacityHint)
             : tree(tree), treeMutationVersion_(tree.getMutationVersion()), localDeltas_(std::move(localDeltas)),
-              cachedEdgeOffset_(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0),
-              cachedEdgeSize_(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0),
-              cachedEdgeReady_(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0),
-              cachedLoopInfoOffset_(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0),
-              cachedLoopInfoSize_(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0),
-              cachedLoopReady_(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0),
-              edgeMark_(static_cast<std::size_t>(4 * tree.getNumRowsOfGridDomain2D() * tree.getNumColsOfGridDomain2D()), 0) {
+              cachedEdgeOffset_(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0),
+              cachedEdgeSize_(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0),
+              cachedEdgeReady_(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0),
+              cachedLoopInfoOffset_(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0),
+              cachedLoopInfoSize_(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0),
+              cachedLoopReady_(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0),
+              edgeMark_(static_cast<std::size_t>(4 * tree.numRows() * tree.numColumns()), 0) {
             if (capacityHint > 0) {
                 cachedEdgeValues_.reserve(static_cast<std::size_t>(capacityHint));
             }
@@ -298,7 +298,7 @@ class ContourTraceComputation {
                  * @brief Creates an iterator over a packed-edge buffer position.
                  *
                  * @param values Values read or written by the operation.
-                 * @param index Zero-based index used by the operation.
+                 * @param index Zero-based index.
                  */
                 iterator(const std::vector<int>* values, std::size_t index) : values_(values), index_(index) {}
 
@@ -312,7 +312,7 @@ class ContourTraceComputation {
                 /**
                  * @brief Advances to the next packed edge.
                  *
-                 * @return Reference to the resulting object.
+                 * @return Mutable reference to the updated object.
                  */
                 iterator& operator++() {
                     ++index_;
@@ -337,9 +337,9 @@ class ContourTraceComputation {
                 friend bool operator!=(const iterator& lhs, const iterator& rhs) { return !(lhs == rhs); }
 
               private:
-                /** @brief Stores the values. */
+                /** @brief Values buffer. */
                 const std::vector<int>* values_ = nullptr;
-                /** @brief Stores the index. */
+                /** @brief Index. */
                 std::size_t index_ = 0;
             };
 
@@ -353,7 +353,7 @@ class ContourTraceComputation {
              *
              * @param values Values read or written by the operation.
              * @param offset Offset into the underlying storage.
-             * @param size Number represented by `size`.
+             * @param size Number.
              */
             EdgeRange(const std::vector<int>* values, std::size_t offset, std::size_t size) : values_(values), offset_(offset), size_(size) {}
 
@@ -386,11 +386,11 @@ class ContourTraceComputation {
             [[nodiscard]] std::size_t size() const noexcept { return size_; }
 
           private:
-            /** @brief Stores the values. */
+            /** @brief Values buffer. */
             const std::vector<int>* values_ = nullptr;
-            /** @brief Stores the offset. */
+            /** @brief Offset. */
             std::size_t offset_ = 0;
-            /** @brief Stores the size. */
+            /** @brief Size. */
             std::size_t size_ = 0;
         };
 
@@ -442,7 +442,7 @@ class ContourTraceComputation {
         /**
          * @brief Returns unordered materialized boundary edges for one node.
          *
-         * @param node Node identifier used by the operation.
+         * @param node Node identifier.
          * @return Unordered materialized boundary edges for one node.
          */
         [[nodiscard]] EdgeRange getEdges(NodeId node) const {
@@ -458,7 +458,7 @@ class ContourTraceComputation {
          * The returned vector remains valid when later lazy queries materialize
          * loops for other nodes.
          *
-         * @param node Node identifier used by the operation.
+         * @param node Node identifier.
          * @return An owning copy of the loop metadata for one node.
          */
         [[nodiscard]] std::vector<ContourTraceLoop> getLoops(NodeId node) const {
@@ -495,7 +495,7 @@ class ContourTraceComputation {
          */
         void materializeAll() const {
             requireStableTree("IncrementalContourTraces::materializeAll");
-            ensureLoopsMaterialized(tree.getRoot());
+            ensureLoopsMaterialized(tree.root());
         }
 
         /**
@@ -505,7 +505,7 @@ class ContourTraceComputation {
          */
         [[nodiscard]] bool isMaterialized() const {
             requireStableTree("IncrementalContourTraces::isMaterialized");
-            for (NodeId node : tree.getAliveNodeIds()) {
+            for (NodeId node : tree.aliveNodeIds()) {
                 if (!cachedLoopReady_[static_cast<std::size_t>(node)]) {
                     return false;
                 }
@@ -516,7 +516,7 @@ class ContourTraceComputation {
         /**
          * @brief Returns whether packed boundary edges are materialized for `node`.
          *
-         * @param node Node identifier used by the operation.
+         * @param node Node identifier.
          * @return Whether packed boundary edges are materialized for node.
          */
         [[nodiscard]] bool isEdgeMaterialized(NodeId node) const {
@@ -528,7 +528,7 @@ class ContourTraceComputation {
         /**
          * @brief Returns whether ordered loops are materialized for `node`.
          *
-         * @param node Node identifier used by the operation.
+         * @param node Node identifier.
          * @return Whether ordered loops are materialized for node.
          */
         [[nodiscard]] bool isNodeTraced(NodeId node) const {
@@ -544,7 +544,7 @@ class ContourTraceComputation {
             TraceProfileStats* previousProfile = activeTraceProfile_;
             activeTraceProfile_ = &stats;
             try {
-                ensureLoopsMaterialized(tree.getRoot());
+                ensureLoopsMaterialized(tree.root());
             } catch (...) {
                 activeTraceProfile_ = previousProfile;
                 throw;
@@ -565,7 +565,7 @@ class ContourTraceComputation {
         /**
          * @brief Validates live trace node.
          *
-         * @param node Node identifier used by the operation.
+         * @param node Node identifier.
          * @param context Operation name used in diagnostics.
          */
         void requireLiveTraceNode(NodeId node, const char* context) const {
@@ -577,7 +577,7 @@ class ContourTraceComputation {
         /**
          * @brief Checks and converts u32.
          *
-         * @param value Value used by the operation.
+         * @param value Value.
          * @param context Operation name used in diagnostics.
          * @return Owned native hierarchy storage.
          */
@@ -610,14 +610,14 @@ class ContourTraceComputation {
          *
          * @return True when the documented condition holds; otherwise false.
          */
-        [[nodiscard]] bool allEdgesMaterialized() const { return cachedEdgeReadyCount_ == static_cast<std::size_t>(tree.getNumNodes()); }
+        [[nodiscard]] bool allEdgesMaterialized() const { return cachedEdgeReadyCount_ == static_cast<std::size_t>(tree.numNodes()); }
 
         /**
          * @brief Checks whether the loop representation is cached for every tree node.
          *
          * @return True when the documented condition holds; otherwise false.
          */
-        [[nodiscard]] bool allLoopsMaterialized() const { return cachedLoopReadyCount_ == static_cast<std::size_t>(tree.getNumNodes()); }
+        [[nodiscard]] bool allLoopsMaterialized() const { return cachedLoopReadyCount_ == static_cast<std::size_t>(tree.numNodes()); }
 
         /**
          * @brief Releases edge materialization scratch if complete.
@@ -707,7 +707,7 @@ class ContourTraceComputation {
         /**
          * @brief Returns an iterator to the first cached edge of a node.
          *
-         * @param node Node identifier used by the operation.
+         * @param node Node identifier.
          * @return Values produced by the operation.
          */
         std::vector<int>::const_iterator cachedEdgeBegin(NodeId node) const {
@@ -717,7 +717,7 @@ class ContourTraceComputation {
         /**
          * @brief Returns an iterator past the last cached edge of a node.
          *
-         * @param node Node identifier used by the operation.
+         * @param node Node identifier.
          * @return Values produced by the operation.
          */
         std::vector<int>::const_iterator cachedEdgeEnd(NodeId node) const {
@@ -725,9 +725,9 @@ class ContourTraceComputation {
         }
 
         /**
-         * @brief Stores the materialized edge sequence for a node in the shared cache.
+         * @brief Materializes one node's boundary-edge sequence in the shared cache.
          *
-         * @param node Node identifier used by the operation.
+         * @param node Node identifier.
          * @param values Values read or written by the operation.
          */
         void commitMaterializedEdges(NodeId node, const std::vector<int>& values) const {
@@ -765,7 +765,7 @@ class ContourTraceComputation {
                 }
                 if (!expanded) {
                     stack.emplace_back(node, true);
-                    for (NodeId child : tree.getChildren(node)) {
+                    for (NodeId child : tree.children(node)) {
                         if (!cachedEdgeReady_[static_cast<std::size_t>(child)]) {
                             stack.emplace_back(child, false);
                         }
@@ -776,13 +776,13 @@ class ContourTraceComputation {
                 values.clear();
                 const auto additions = localDeltas_.additions(node);
                 std::size_t reserveSize = additions.size();
-                for (NodeId child : tree.getChildren(node)) {
+                for (NodeId child : tree.children(node)) {
                     reserveSize += static_cast<std::size_t>(cachedEdgeSize_[static_cast<std::size_t>(child)]);
                 }
                 values.reserve(reserveSize);
                 nextMarkGeneration();
 
-                for (NodeId child : tree.getChildren(node)) {
+                for (NodeId child : tree.children(node)) {
                     for (auto it = cachedEdgeBegin(child); it != cachedEdgeEnd(child); ++it) {
                         addIfUnmarked(values, *it);
                     }
@@ -812,21 +812,21 @@ class ContourTraceComputation {
          * @brief Computes the row-major identifier of a grid vertex.
          *
          * @param row Zero-based row coordinate.
-         * @param col Zero-based column coordinate.
-         * @param numVertexCols Count represented by `numVertexCols`.
+         * @param column Zero-based column coordinate.
+         * @param numVertexColumns Count.
          * @return Row-major vertex identifier.
          */
-        static int vertexId(int row, int col, int numVertexCols) { return (row * numVertexCols) + col; }
+        static int vertexId(int row, int column, int numVertexColumns) { return (row * numVertexColumns) + column; }
 
         /** @brief Stores signed geometric measurements for one oriented contour. */
         struct OrientedGeometry {
-            /** @brief Stores the start vertex. */
+            /** @brief Start vertex. */
             int startVertex = -1;
-            /** @brief Stores the end vertex. */
+            /** @brief End vertex. */
             int endVertex = -1;
-            /** @brief Stores the direction. */
+            /** @brief Direction. */
             Direction direction = Direction::North;
-            /** @brief Stores the signed area2. */
+            /** @brief Signed area2. */
             int signedArea2 = 0;
         };
 
@@ -838,19 +838,19 @@ class ContourTraceComputation {
          */
         OrientedGeometry orientedGeometry(int packedEdge) const {
             const ContourTraceEdge edge = ContourTraceComputation::unpackEdge(packedEdge);
-            const int cols = tree.getNumColsOfGridDomain2D();
-            const int numVertexCols = cols + 1;
-            const auto [row, col] = ImageUtils::to2D(edge.pixel, cols);
+            const int columns = tree.numColumns();
+            const int numVertexColumns = columns + 1;
+            const auto [row, column] = ImageUtils::to2D(edge.pixel, columns);
 
             switch (edge.side) {
             case ContourTraceSide::North:
-                return {vertexId(row, col, numVertexCols), vertexId(row, col + 1, numVertexCols), Direction::East, -row};
+                return {vertexId(row, column, numVertexColumns), vertexId(row, column + 1, numVertexColumns), Direction::East, -row};
             case ContourTraceSide::East:
-                return {vertexId(row, col + 1, numVertexCols), vertexId(row + 1, col + 1, numVertexCols), Direction::South, col + 1};
+                return {vertexId(row, column + 1, numVertexColumns), vertexId(row + 1, column + 1, numVertexColumns), Direction::South, column + 1};
             case ContourTraceSide::South:
-                return {vertexId(row + 1, col + 1, numVertexCols), vertexId(row + 1, col, numVertexCols), Direction::West, row + 1};
+                return {vertexId(row + 1, column + 1, numVertexColumns), vertexId(row + 1, column, numVertexColumns), Direction::West, row + 1};
             case ContourTraceSide::West:
-                return {vertexId(row + 1, col, numVertexCols), vertexId(row, col, numVertexCols), Direction::North, -col};
+                return {vertexId(row + 1, column, numVertexColumns), vertexId(row, column, numVertexColumns), Direction::North, -column};
             }
             throw std::runtime_error("Invalid contour trace side.");
         }
@@ -876,7 +876,7 @@ class ContourTraceComputation {
         /**
          * @brief Chooses next edge.
          *
-         * @param current Current item in the traversal or local event.
+         * @param current Current item in the traversal.
          * @param outgoingHead Head indices of each vertex outgoing-edge list.
          * @param directedEdges Directed edges that form the traced contour graph.
          * @param outgoingNext Next-edge links for the outgoing adjacency lists.
@@ -933,7 +933,7 @@ class ContourTraceComputation {
          * @return Vertex count.
          */
         [[nodiscard]] std::size_t imageVertexCount() const {
-            return static_cast<std::size_t>((tree.getNumRowsOfGridDomain2D() + 1) * (tree.getNumColsOfGridDomain2D() + 1));
+            return static_cast<std::size_t>((tree.numRows() + 1) * (tree.numColumns() + 1));
         }
 
         /**
@@ -949,7 +949,7 @@ class ContourTraceComputation {
         /**
          * @brief Advances power of two at least.
          *
-         * @param value Value used by the operation.
+         * @param value Value.
          * @return Smallest power of two greater than or equal to `value`.
          */
         static std::size_t nextPowerOfTwoAtLeast(std::size_t value) {
@@ -1172,7 +1172,7 @@ class ContourTraceComputation {
         void reserveLoopInfoCapacityForGlobalTrace(NodeId root) const {
             std::size_t pendingNonEmptyNodes = 0;
             std::size_t pendingEdgeCount = 0;
-            for (NodeId node : tree.getNodeSubtree(root)) {
+            for (NodeId node : tree.subtreeNodes(root)) {
                 if (cachedLoopReady_[static_cast<std::size_t>(node)]) {
                     continue;
                 }
@@ -1198,21 +1198,21 @@ class ContourTraceComputation {
         /**
          * @brief Tests whether reuse edge segment for loops holds.
          *
-         * @param node Node identifier used by the operation.
+         * @param node Node identifier.
          * @return True when reuse edge segment for loops; otherwise false.
          */
         bool canReuseEdgeSegmentForLoops(NodeId node) const {
             if (tree.isRoot(node)) {
                 return true;
             }
-            const NodeId parent = tree.getNodeParent(node);
+            const NodeId parent = tree.parent(node);
             return parent == InvalidNode || parent == node || cachedEdgeReady_[static_cast<std::size_t>(parent)] != 0;
         }
 
         /**
          * @brief Ensures node loops materialized.
          *
-         * @param node Node identifier used by the operation.
+         * @param node Node identifier.
          */
         void ensureNodeLoopsMaterialized(NodeId node) const {
             requireStableTree("IncrementalContourTraces::ensureNodeLoopsMaterialized");
@@ -1243,7 +1243,7 @@ class ContourTraceComputation {
                 stack.pop_back();
                 if (!expanded) {
                     stack.emplace_back(node, true);
-                    for (NodeId child : tree.getChildren(node)) {
+                    for (NodeId child : tree.children(node)) {
                         if (!cachedLoopReady_[static_cast<std::size_t>(child)]) {
                             stack.emplace_back(child, false);
                         }
@@ -1259,7 +1259,7 @@ class ContourTraceComputation {
         /**
          * @brief Traces and caches all contour loops associated with a tree node.
          *
-         * @param node Node identifier used by the operation.
+         * @param node Node identifier.
          * @param streamLoopInfosDirectly Whether loop descriptors are streamed directly.
          */
         void traceNodeLoops(NodeId node, bool streamLoopInfosDirectly) const {
@@ -1278,7 +1278,7 @@ class ContourTraceComputation {
         /**
          * @brief Traces a node contour using the supplied adjacency representation.
          *
-         * @param node Node identifier used by the operation.
+         * @param node Node identifier.
          * @param streamLoopInfosDirectly Whether loop descriptors are streamed directly.
          * @param edgeCount Number of boundary edges.
          */
@@ -1541,34 +1541,34 @@ class ContourTraceComputation {
 
     /** @brief Owns the trace deltas extracted from an incremental contour computation. */
     struct ExtractedTraceDeltas {
-        /** @brief Stores the deltas. */
+        /** @brief Deltas. */
         LocalTraceDeltas deltas;
-        /** @brief Stores the capacity hint. */
+        /** @brief Capacity hint. */
         int capacityHint = 0;
     };
 
     /**
      * @brief Returns the neighboring pixel reached in the requested direction.
      *
-     * @param tree Tree topology used by the operation.
-     * @param pixel Pixel identifier used by the operation.
+     * @param tree Tree topology.
+     * @param pixel Pixel identifier.
      * @param side Contour or boundary side.
      * @return Identifier of the neighboring pixel.
      */
-    static int neighborPixel(const MorphologicalTree& tree, int pixel, ContourTraceSide side) {
-        const int rows = tree.getNumRowsOfGridDomain2D();
-        const int cols = tree.getNumColsOfGridDomain2D();
-        const auto [row, col] = ImageUtils::to2D(pixel, cols);
+    static PixelId neighborPixel(const MorphologicalTree& tree, PixelId pixel, ContourTraceSide side) {
+        const int rows = tree.numRows();
+        const int columns = tree.numColumns();
+        const auto [row, column] = ImageUtils::to2D(pixel, columns);
 
         switch (side) {
         case ContourTraceSide::North:
-            return row == 0 ? -1 : ImageUtils::to1D(row - 1, col, cols);
+            return row == 0 ? -1 : ImageUtils::to1D(row - 1, column, columns);
         case ContourTraceSide::West:
-            return col == 0 ? -1 : ImageUtils::to1D(row, col - 1, cols);
+            return column == 0 ? -1 : ImageUtils::to1D(row, column - 1, columns);
         case ContourTraceSide::East:
-            return col == cols - 1 ? -1 : ImageUtils::to1D(row, col + 1, cols);
+            return column == columns - 1 ? -1 : ImageUtils::to1D(row, column + 1, columns);
         case ContourTraceSide::South:
-            return row == rows - 1 ? -1 : ImageUtils::to1D(row + 1, col, cols);
+            return row == rows - 1 ? -1 : ImageUtils::to1D(row + 1, column, columns);
         }
         return -1;
     }
@@ -1576,19 +1576,19 @@ class ContourTraceComputation {
     /**
      * @brief Extracts trace deltas impl.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @return Extracted trace deltas impl.
      */
     [[nodiscard]] static ExtractedTraceDeltas extractTraceDeltasImpl(const MorphologicalTree& tree) {
-        if (tree.getNumRowsOfGridDomain2D() <= 0 || tree.getNumColsOfGridDomain2D() <= 0) {
+        if (tree.numRows() <= 0 || tree.numColumns() <= 0) {
             throw std::invalid_argument("Contour trace extraction requires a non-empty image domain.");
         }
-        if (!tree.isAlive(tree.getRoot())) {
+        if (!tree.isAlive(tree.root())) {
             throw std::invalid_argument("Contour trace extraction requires a live tree root.");
         }
 
-        const int numNodes = tree.getNumInternalNodeSlots();
-        const int totalPixels = tree.getNumRowsOfGridDomain2D() * tree.getNumColsOfGridDomain2D();
+        const int numNodes = tree.numInternalNodeSlots();
+        const int totalPixels = tree.numRows() * tree.numColumns();
         const int totalPackedEdges = 4 * totalPixels;
         const int capacityHint = std::max(totalPixels, 1);
 
@@ -1599,18 +1599,18 @@ class ContourTraceComputation {
                                                                ContourTraceSide::South};
 
         detail::traversePostOrder(
-            tree, tree.getRoot(), [](NodeId) -> void {}, [](NodeId, NodeId) -> void {},
+            tree, tree.root(), [](NodeId) -> void {}, [](NodeId, NodeId) -> void {},
             [&](NodeId nodeId) {
-                for (int pixel : tree.getProperParts(nodeId)) {
+                for (PixelId pixel : tree.properPart(nodeId)) {
                     for (ContourTraceSide side : sides) {
                         const int packedEdge = packEdge(pixel, side);
-                        const int neighbor = neighborPixel(tree, pixel, side);
+                        const PixelId neighbor = neighborPixel(tree, pixel, side);
                         if (neighbor < 0) {
                             localEdgeAdditions.add(nodeId, packedEdge);
                             continue;
                         }
 
-                        const NodeId entry = detail::properPartEntryNode(tree, pixel, neighbor);
+                        const NodeId entry = local_attributes::detail::kernel::anchoredEntry(tree, pixel, neighbor);
                         if (entry == InvalidNode || entry == nodeId) {
                             continue;
                         }
@@ -1628,7 +1628,7 @@ class ContourTraceComputation {
     /**
      * @brief Runs incremental side-level contour extraction and returns lazy traces.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @return Result produced by running incremental side-level contour extraction and returns lazy traces.
      */
     [[nodiscard]] static IncrementalContourTraces extract(const MorphologicalTree& tree) {
@@ -1638,12 +1638,12 @@ class ContourTraceComputation {
 
     template <AltitudeValue T>
     /**
-     * @brief Runs incremental side-level contour extraction on a weighted view.
+     * @brief Runs incremental side-level contour extraction on a valued-tree view.
      *
-     * @param tree Tree topology used by the operation.
-     * @return Result produced by running incremental side-level contour extraction on a weighted view.
+     * @param tree Tree topology.
+     * @return Result produced by running incremental side-level contour extraction on a valued-tree view.
      */
-    [[nodiscard]] static IncrementalContourTraces extract(const WeightedTreeView<T>& tree) {
+    [[nodiscard]] static IncrementalContourTraces extract(const ValuedMorphologicalTreeView<T>& tree) {
         tree.requireTopologyUnchanged("ContourTraceComputation::extract");
         return extract(tree.topology());
     }

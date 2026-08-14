@@ -15,19 +15,21 @@ def main() -> None:
         dtype=np.uint8,
     )
 
-    tree = mmcfilters.MorphologicalTreeFactory.createMaxTree(image, radius=1.5)
-    area = mmcfilters.Attribute.computeSingleTopologyAttribute(
+    tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image, radius=1.5)
+    area = mmcfilters.Attribute.compute_single_topology_attribute(
         tree,
         mmcfilters.Attribute.AREA,
     )
     filters = mmcfilters.AttributeFilters(tree)
 
-    keep_large = (area >= 4.0).tolist()
-    direct = filters.filteringDirectRule(keep_large)
-    pruning_min = filters.filteringByPruningMin(area, 4.0)
-    pruning_max = filters.filteringByPruningMax(area, 4.0)
+    keep_large_decisions = (area >= 4.0).tolist()
+    keep_large_decisions[tree.root] = True
+    keep_large = mmcfilters.NodePreservationMask(keep_large_decisions)
+    direct = mmcfilters.DirectAttributeFilter(tree).apply_direct_attribute_filter(keep_large)
+    pruning_min = filters.filtering_by_pruning_min(area, 4.0)
+    pruning_max = filters.filtering_by_pruning_max(area, 4.0)
 
-    print("Direct rule:\n", direct)
+    print("Direct filter:\n", direct)
     print("Pruning-min rule:\n", pruning_min)
     print("Pruning-max rule:\n", pruning_max)
 

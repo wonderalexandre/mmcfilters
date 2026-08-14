@@ -39,13 +39,13 @@ struct CentralMomentsRequest {
      * @return Central-moment selection mask.
      */
     [[nodiscard]] static CentralMomentsRequest from(std::span<const Attribute> requestedAttributes) {
-        return {.mu20 = requestsAttribute(requestedAttributes, CENTRAL_MOMENT_20),
-                .mu02 = requestsAttribute(requestedAttributes, CENTRAL_MOMENT_02),
-                .mu11 = requestsAttribute(requestedAttributes, CENTRAL_MOMENT_11),
-                .mu30 = requestsAttribute(requestedAttributes, CENTRAL_MOMENT_30),
-                .mu03 = requestsAttribute(requestedAttributes, CENTRAL_MOMENT_03),
-                .mu21 = requestsAttribute(requestedAttributes, CENTRAL_MOMENT_21),
-                .mu12 = requestsAttribute(requestedAttributes, CENTRAL_MOMENT_12)};
+        return {.mu20 = requestsAttribute(requestedAttributes, CentralMoment20),
+                .mu02 = requestsAttribute(requestedAttributes, CentralMoment02),
+                .mu11 = requestsAttribute(requestedAttributes, CentralMoment11),
+                .mu30 = requestsAttribute(requestedAttributes, CentralMoment30),
+                .mu03 = requestsAttribute(requestedAttributes, CentralMoment03),
+                .mu21 = requestsAttribute(requestedAttributes, CentralMoment21),
+                .mu12 = requestsAttribute(requestedAttributes, CentralMoment12)};
     }
 };
 
@@ -68,13 +68,13 @@ struct HuMomentsRequest {
      * @return Hu-moment selection mask.
      */
     [[nodiscard]] static HuMomentsRequest from(std::span<const Attribute> requestedAttributes) {
-        return {.hu1 = requestsAttribute(requestedAttributes, HU_MOMENT_1),
-                .hu2 = requestsAttribute(requestedAttributes, HU_MOMENT_2),
-                .hu3 = requestsAttribute(requestedAttributes, HU_MOMENT_3),
-                .hu4 = requestsAttribute(requestedAttributes, HU_MOMENT_4),
-                .hu5 = requestsAttribute(requestedAttributes, HU_MOMENT_5),
-                .hu6 = requestsAttribute(requestedAttributes, HU_MOMENT_6),
-                .hu7 = requestsAttribute(requestedAttributes, HU_MOMENT_7)};
+        return {.hu1 = requestsAttribute(requestedAttributes, HuMoment1),
+                .hu2 = requestsAttribute(requestedAttributes, HuMoment2),
+                .hu3 = requestsAttribute(requestedAttributes, HuMoment3),
+                .hu4 = requestsAttribute(requestedAttributes, HuMoment4),
+                .hu5 = requestsAttribute(requestedAttributes, HuMoment5),
+                .hu6 = requestsAttribute(requestedAttributes, HuMoment6),
+                .hu7 = requestsAttribute(requestedAttributes, HuMoment7)};
     }
 };
 
@@ -99,13 +99,13 @@ struct MomentDerivedRequest {
      * @return Moment-derived selection mask.
      */
     [[nodiscard]] static MomentDerivedRequest from(std::span<const Attribute> requestedAttributes) {
-        return {.inertia = requestsAttribute(requestedAttributes, INERTIA),
-                .compactness = requestsAttribute(requestedAttributes, COMPACTNESS),
-                .eccentricity = requestsAttribute(requestedAttributes, ECCENTRICITY),
-                .majorAxis = requestsAttribute(requestedAttributes, LENGTH_MAJOR_AXIS),
-                .minorAxis = requestsAttribute(requestedAttributes, LENGTH_MINOR_AXIS),
-                .axisOrientation = requestsAttribute(requestedAttributes, AXIS_ORIENTATION),
-                .circularity = requestsAttribute(requestedAttributes, CIRCULARITY)};
+        return {.inertia = requestsAttribute(requestedAttributes, Inertia),
+                .compactness = requestsAttribute(requestedAttributes, Compactness),
+                .eccentricity = requestsAttribute(requestedAttributes, Eccentricity),
+                .majorAxis = requestsAttribute(requestedAttributes, LengthMajorAxis),
+                .minorAxis = requestsAttribute(requestedAttributes, LengthMinorAxis),
+                .axisOrientation = requestsAttribute(requestedAttributes, AxisOrientation),
+                .circularity = requestsAttribute(requestedAttributes, Circularity)};
     }
 };
 
@@ -152,25 +152,25 @@ inline void computeCentralMoments(const AttributeComputeContext<Real>& context, 
 
     const int stride = context.attrNames.NUM_ATTRIBUTES;
     const auto offsetOf = [&](Attribute attribute) { return context.attrNames.indexMap.find(attribute)->second; };
-    const int mu20Offset = request.mu20 ? offsetOf(CENTRAL_MOMENT_20) : 0;
-    const int mu02Offset = request.mu02 ? offsetOf(CENTRAL_MOMENT_02) : 0;
-    const int mu11Offset = request.mu11 ? offsetOf(CENTRAL_MOMENT_11) : 0;
-    const int mu30Offset = request.mu30 ? offsetOf(CENTRAL_MOMENT_30) : 0;
-    const int mu03Offset = request.mu03 ? offsetOf(CENTRAL_MOMENT_03) : 0;
-    const int mu21Offset = request.mu21 ? offsetOf(CENTRAL_MOMENT_21) : 0;
-    const int mu12Offset = request.mu12 ? offsetOf(CENTRAL_MOMENT_12) : 0;
+    const int mu20Offset = request.mu20 ? offsetOf(CentralMoment20) : 0;
+    const int mu02Offset = request.mu02 ? offsetOf(CentralMoment02) : 0;
+    const int mu11Offset = request.mu11 ? offsetOf(CentralMoment11) : 0;
+    const int mu30Offset = request.mu30 ? offsetOf(CentralMoment30) : 0;
+    const int mu03Offset = request.mu03 ? offsetOf(CentralMoment03) : 0;
+    const int mu21Offset = request.mu21 ? offsetOf(CentralMoment21) : 0;
+    const int mu12Offset = request.mu12 ? offsetOf(CentralMoment12) : 0;
     const auto outputIndex = [&](NodeId node, int offset) { return static_cast<std::size_t>(node * stride + offset); };
 
     const GridDomain2D& domain = ::mmcfilters::detail::CommittedTreeAccess::gridDomain2D(context.tree);
-    std::vector<RawMoments> raw(static_cast<std::size_t>(context.tree.getNumInternalNodeSlots()));
+    std::vector<RawMoments> raw(static_cast<std::size_t>(context.tree.numInternalNodeSlots()));
     ::mmcfilters::detail::kernel::traversePostOrder(
-        context.tree, context.tree.getRoot(),
+        context.tree, context.tree.root(),
         [&](NodeId node) {
             RawMoments& moments = raw[static_cast<std::size_t>(node)];
             moments = RawMoments{};
-            for (int properPart : ::mmcfilters::detail::CommittedTreeAccess::properParts(context.tree, node)) {
-                const Real x = static_cast<Real>(properPart % domain.cols);
-                const Real y = static_cast<Real>(properPart / domain.cols);
+            for (PixelId pixel : ::mmcfilters::detail::CommittedTreeAccess::properParts(context.tree, node)) {
+                const Real x = static_cast<Real>(pixel % domain.columns);
+                const Real y = static_cast<Real>(pixel / domain.columns);
                 const Real x2 = x * x;
                 const Real y2 = y * y;
                 moments.m00 += Real{1};
@@ -232,13 +232,13 @@ inline void computeHuMoments(const AttributeComputeContext<Real>& context, const
 
     const int stride = context.attrNames.NUM_ATTRIBUTES;
     const auto offsetOf = [&](Attribute attribute) { return context.attrNames.indexMap.find(attribute)->second; };
-    const int hu1Offset = request.hu1 ? offsetOf(HU_MOMENT_1) : 0;
-    const int hu2Offset = request.hu2 ? offsetOf(HU_MOMENT_2) : 0;
-    const int hu3Offset = request.hu3 ? offsetOf(HU_MOMENT_3) : 0;
-    const int hu4Offset = request.hu4 ? offsetOf(HU_MOMENT_4) : 0;
-    const int hu5Offset = request.hu5 ? offsetOf(HU_MOMENT_5) : 0;
-    const int hu6Offset = request.hu6 ? offsetOf(HU_MOMENT_6) : 0;
-    const int hu7Offset = request.hu7 ? offsetOf(HU_MOMENT_7) : 0;
+    const int hu1Offset = request.hu1 ? offsetOf(HuMoment1) : 0;
+    const int hu2Offset = request.hu2 ? offsetOf(HuMoment2) : 0;
+    const int hu3Offset = request.hu3 ? offsetOf(HuMoment3) : 0;
+    const int hu4Offset = request.hu4 ? offsetOf(HuMoment4) : 0;
+    const int hu5Offset = request.hu5 ? offsetOf(HuMoment5) : 0;
+    const int hu6Offset = request.hu6 ? offsetOf(HuMoment6) : 0;
+    const int hu7Offset = request.hu7 ? offsetOf(HuMoment7) : 0;
     const auto outputIndex = [&](NodeId node, int offset) { return static_cast<std::size_t>(node * stride + offset); };
 
     const int momentStride = momentDependency.attrNames->NUM_ATTRIBUTES;
@@ -247,26 +247,26 @@ inline void computeHuMoments(const AttributeComputeContext<Real>& context, const
         return static_cast<std::size_t>(node * momentStride + momentOffset(attribute));
     };
     const int areaStride = areaDependency.attrNames->NUM_ATTRIBUTES;
-    const int areaOffset = areaDependency.attrNames->indexMap.find(AREA)->second;
+    const int areaOffset = areaDependency.attrNames->indexMap.find(Area)->second;
     const auto areaIndex = [&](NodeId node) { return static_cast<std::size_t>(node * areaStride + areaOffset); };
     const auto normMoment = [](Real area, Real moment, int p, int q) {
         return ::mmcfilters::attributes::numeric::safeDivide(moment, std::pow(area, static_cast<Real>(p + q + 2) / Real{2}));
     };
 
     ::mmcfilters::detail::kernel::traversePostOrder(
-        context.tree, context.tree.getRoot(), [](NodeId) {}, [](NodeId, NodeId) {},
+        context.tree, context.tree.root(), [](NodeId) {}, [](NodeId, NodeId) {},
         [&](NodeId node) {
             const Real area = areaDependency.buffer[areaIndex(node)];
             if (area <= Real{0}) {
                 return;
             }
-            const Real eta20 = normMoment(area, momentDependency.buffer[momentIndex(node, CENTRAL_MOMENT_20)], 2, 0);
-            const Real eta02 = normMoment(area, momentDependency.buffer[momentIndex(node, CENTRAL_MOMENT_02)], 0, 2);
-            const Real eta11 = normMoment(area, momentDependency.buffer[momentIndex(node, CENTRAL_MOMENT_11)], 1, 1);
-            const Real eta30 = normMoment(area, momentDependency.buffer[momentIndex(node, CENTRAL_MOMENT_30)], 3, 0);
-            const Real eta03 = normMoment(area, momentDependency.buffer[momentIndex(node, CENTRAL_MOMENT_03)], 0, 3);
-            const Real eta21 = normMoment(area, momentDependency.buffer[momentIndex(node, CENTRAL_MOMENT_21)], 2, 1);
-            const Real eta12 = normMoment(area, momentDependency.buffer[momentIndex(node, CENTRAL_MOMENT_12)], 1, 2);
+            const Real eta20 = normMoment(area, momentDependency.buffer[momentIndex(node, CentralMoment20)], 2, 0);
+            const Real eta02 = normMoment(area, momentDependency.buffer[momentIndex(node, CentralMoment02)], 0, 2);
+            const Real eta11 = normMoment(area, momentDependency.buffer[momentIndex(node, CentralMoment11)], 1, 1);
+            const Real eta30 = normMoment(area, momentDependency.buffer[momentIndex(node, CentralMoment30)], 3, 0);
+            const Real eta03 = normMoment(area, momentDependency.buffer[momentIndex(node, CentralMoment03)], 0, 3);
+            const Real eta21 = normMoment(area, momentDependency.buffer[momentIndex(node, CentralMoment21)], 2, 1);
+            const Real eta12 = normMoment(area, momentDependency.buffer[momentIndex(node, CentralMoment12)], 1, 2);
 
             if (request.hu1)
                 context.buffer[outputIndex(node, hu1Offset)] = eta20 + eta02;
@@ -307,26 +307,26 @@ inline void computeMomentDerived(const AttributeComputeContext<Real>& context, c
 
     const int stride = context.attrNames.NUM_ATTRIBUTES;
     const auto offsetOf = [&](Attribute attribute) { return context.attrNames.indexMap.find(attribute)->second; };
-    const int inertiaOffset = request.inertia ? offsetOf(INERTIA) : 0;
-    const int compactnessOffset = request.compactness ? offsetOf(COMPACTNESS) : 0;
-    const int eccentricityOffset = request.eccentricity ? offsetOf(ECCENTRICITY) : 0;
-    const int majorAxisOffset = request.majorAxis ? offsetOf(LENGTH_MAJOR_AXIS) : 0;
-    const int minorAxisOffset = request.minorAxis ? offsetOf(LENGTH_MINOR_AXIS) : 0;
-    const int orientationOffset = request.axisOrientation ? offsetOf(AXIS_ORIENTATION) : 0;
-    const int circularityOffset = request.circularity ? offsetOf(CIRCULARITY) : 0;
+    const int inertiaOffset = request.inertia ? offsetOf(Inertia) : 0;
+    const int compactnessOffset = request.compactness ? offsetOf(Compactness) : 0;
+    const int eccentricityOffset = request.eccentricity ? offsetOf(Eccentricity) : 0;
+    const int majorAxisOffset = request.majorAxis ? offsetOf(LengthMajorAxis) : 0;
+    const int minorAxisOffset = request.minorAxis ? offsetOf(LengthMinorAxis) : 0;
+    const int orientationOffset = request.axisOrientation ? offsetOf(AxisOrientation) : 0;
+    const int circularityOffset = request.circularity ? offsetOf(Circularity) : 0;
     const auto outputIndex = [&](NodeId node, int offset) { return static_cast<std::size_t>(node * stride + offset); };
 
     const int momentStride = momentDependency.attrNames->NUM_ATTRIBUTES;
-    const int mu20Offset = momentDependency.attrNames->indexMap.find(CENTRAL_MOMENT_20)->second;
-    const int mu02Offset = momentDependency.attrNames->indexMap.find(CENTRAL_MOMENT_02)->second;
-    const int mu11Offset = momentDependency.attrNames->indexMap.find(CENTRAL_MOMENT_11)->second;
+    const int mu20Offset = momentDependency.attrNames->indexMap.find(CentralMoment20)->second;
+    const int mu02Offset = momentDependency.attrNames->indexMap.find(CentralMoment02)->second;
+    const int mu11Offset = momentDependency.attrNames->indexMap.find(CentralMoment11)->second;
     const auto momentIndex = [&](NodeId node, int offset) { return static_cast<std::size_t>(node * momentStride + offset); };
     const int areaStride = areaDependency.attrNames->NUM_ATTRIBUTES;
-    const int areaOffset = areaDependency.attrNames->indexMap.find(AREA)->second;
+    const int areaOffset = areaDependency.attrNames->indexMap.find(Area)->second;
     const auto areaIndex = [&](NodeId node) { return static_cast<std::size_t>(node * areaStride + areaOffset); };
 
     ::mmcfilters::detail::kernel::traversePostOrder(
-        context.tree, context.tree.getRoot(), [](NodeId) {}, [](NodeId, NodeId) {},
+        context.tree, context.tree.root(), [](NodeId) {}, [](NodeId, NodeId) {},
         [&](NodeId node) {
             const Real mu20 = momentDependency.buffer[momentIndex(node, mu20Offset)];
             const Real mu02 = momentDependency.buffer[momentIndex(node, mu02Offset)];
@@ -430,8 +430,8 @@ class CentralMomentsComputer {
     /**
      * @brief Canonical list of central moments produced together.
      */
-    inline static constexpr std::array<Attribute, 7> producedAttributes{CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11, CENTRAL_MOMENT_30,
-                                                                        CENTRAL_MOMENT_03, CENTRAL_MOMENT_21, CENTRAL_MOMENT_12};
+    inline static constexpr std::array<Attribute, 7> producedAttributes{CentralMoment20, CentralMoment02, CentralMoment11, CentralMoment30,
+                                                                        CentralMoment03, CentralMoment21, CentralMoment12};
 
     /**
      * @brief Computes the requested central moments.
@@ -439,7 +439,7 @@ class CentralMomentsComputer {
      * @details
      * The output buffer is indexed by dense internal node id and interpreted by
      * `context.attrNames`. Coordinates are row-major image coordinates
-     * interpreted as `(x = col, y = row)`. The method accumulates raw moments
+     * interpreted as `(x = column, y = row)`. The method accumulates raw moments
      * bottom-up and converts them to central moments after each subtree support
      * has been assembled.
      *
@@ -460,14 +460,14 @@ class CentralMomentsComputer {
      * @param context Operation context or diagnostic label.
      */
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
-        requireUnitAttributeBufferShape(context.tree, context.unitProperParts, context.buffer, context.attrNames);
-        constexpr std::array<Attribute, 7> zeroAttributes{CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11, CENTRAL_MOMENT_30,
-                                                          CENTRAL_MOMENT_03, CENTRAL_MOMENT_21, CENTRAL_MOMENT_12};
+        requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
+        constexpr std::array<Attribute, 7> zeroAttributes{CentralMoment20, CentralMoment02, CentralMoment11, CentralMoment30,
+                                                          CentralMoment03, CentralMoment21, CentralMoment12};
         for (const Attribute attribute : zeroAttributes) {
             if (!requestsAttribute(context.requestedAttributes, attribute)) {
                 continue;
             }
-            for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitProperParts.size()); ++leafIndex) {
+            for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitPixels.size()); ++leafIndex) {
                 context.buffer[context.attrNames.linearIndex(leafIndex, attribute)] = Real{0};
             }
         }
@@ -501,8 +501,8 @@ class HuMomentsComputer {
     /**
      * @brief Canonical list of Hu moments produced together.
      */
-    inline static constexpr std::array<Attribute, 7> producedAttributes{HU_MOMENT_1, HU_MOMENT_2, HU_MOMENT_3, HU_MOMENT_4,
-                                                                        HU_MOMENT_5, HU_MOMENT_6, HU_MOMENT_7};
+    inline static constexpr std::array<Attribute, 7> producedAttributes{HuMoment1, HuMoment2, HuMoment3, HuMoment4,
+                                                                        HuMoment5, HuMoment6, HuMoment7};
 
     /**
      * @brief Computes the requested Hu invariant moments.
@@ -525,12 +525,12 @@ class HuMomentsComputer {
         const DependencySourceT<Real>* momentDependency = nullptr;
         const DependencySourceT<Real>* areaDependency = nullptr;
         if constexpr (contract::validationsEnabled) {
-            momentDependency = &context.dependencies.requireAll({CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11, CENTRAL_MOMENT_30,
-                                                                 CENTRAL_MOMENT_03, CENTRAL_MOMENT_21, CENTRAL_MOMENT_12});
-            areaDependency = &context.dependencies.require(AREA);
+            momentDependency = &context.dependencies.requireAll({CentralMoment20, CentralMoment02, CentralMoment11, CentralMoment30,
+                                                                 CentralMoment03, CentralMoment21, CentralMoment12});
+            areaDependency = &context.dependencies.require(Area);
         } else {
-            momentDependency = ::mmcfilters::findDependencySource(context.dependencySources, CENTRAL_MOMENT_20);
-            areaDependency = ::mmcfilters::findDependencySource(context.dependencySources, AREA);
+            momentDependency = ::mmcfilters::findDependencySource(context.dependencySources, CentralMoment20);
+            areaDependency = ::mmcfilters::findDependencySource(context.dependencySources, Area);
         }
         detail::kernel::computeHuMoments(context, request, *momentDependency, *areaDependency);
     }
@@ -545,13 +545,13 @@ class HuMomentsComputer {
      * @param context Operation context or diagnostic label.
      */
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
-        requireUnitAttributeBufferShape(context.tree, context.unitProperParts, context.buffer, context.attrNames);
-        constexpr std::array<Attribute, 7> zeroAttributes{HU_MOMENT_1, HU_MOMENT_2, HU_MOMENT_3, HU_MOMENT_4, HU_MOMENT_5, HU_MOMENT_6, HU_MOMENT_7};
+        requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
+        constexpr std::array<Attribute, 7> zeroAttributes{HuMoment1, HuMoment2, HuMoment3, HuMoment4, HuMoment5, HuMoment6, HuMoment7};
         for (const Attribute attribute : zeroAttributes) {
             if (!requestsAttribute(context.requestedAttributes, attribute)) {
                 continue;
             }
-            for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitProperParts.size()); ++leafIndex) {
+            for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitPixels.size()); ++leafIndex) {
                 context.buffer[context.attrNames.linearIndex(leafIndex, attribute)] = Real{0};
             }
         }
@@ -602,8 +602,8 @@ class MomentBasedAttributeComputer {
     /**
      * @brief Canonical list of moment-derived descriptors produced by this computer.
      */
-    inline static constexpr std::array<Attribute, 7> producedAttributes{INERTIA,           COMPACTNESS,      ECCENTRICITY, LENGTH_MAJOR_AXIS,
-                                                                        LENGTH_MINOR_AXIS, AXIS_ORIENTATION, CIRCULARITY};
+    inline static constexpr std::array<Attribute, 7> producedAttributes{Inertia,           Compactness,      Eccentricity, LengthMajorAxis,
+                                                                        LengthMinorAxis, AxisOrientation, Circularity};
 
     /**
      * @brief Computes the requested moment-derived descriptors.
@@ -626,11 +626,11 @@ class MomentBasedAttributeComputer {
         const DependencySourceT<Real>* momentDependency = nullptr;
         const DependencySourceT<Real>* areaDependency = nullptr;
         if constexpr (contract::validationsEnabled) {
-            momentDependency = &context.dependencies.requireAll({CENTRAL_MOMENT_20, CENTRAL_MOMENT_02, CENTRAL_MOMENT_11});
-            areaDependency = &context.dependencies.require(AREA);
+            momentDependency = &context.dependencies.requireAll({CentralMoment20, CentralMoment02, CentralMoment11});
+            areaDependency = &context.dependencies.require(Area);
         } else {
-            momentDependency = ::mmcfilters::findDependencySource(context.dependencySources, CENTRAL_MOMENT_20);
-            areaDependency = ::mmcfilters::findDependencySource(context.dependencySources, AREA);
+            momentDependency = ::mmcfilters::findDependencySource(context.dependencySources, CentralMoment20);
+            areaDependency = ::mmcfilters::findDependencySource(context.dependencySources, Area);
         }
         detail::kernel::computeMomentDerived(context, request, *momentDependency, *areaDependency);
     }
@@ -645,16 +645,16 @@ class MomentBasedAttributeComputer {
      * @param context Operation context or diagnostic label.
      */
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
-        requireUnitAttributeBufferShape(context.tree, context.unitProperParts, context.buffer, context.attrNames);
-        constexpr std::array<Attribute, 7> zeroAttributes{COMPACTNESS,      ECCENTRICITY, LENGTH_MAJOR_AXIS, LENGTH_MINOR_AXIS,
-                                                          AXIS_ORIENTATION, INERTIA,      CIRCULARITY};
+        requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
+        constexpr std::array<Attribute, 7> zeroAttributes{Compactness,      Eccentricity, LengthMajorAxis, LengthMinorAxis,
+                                                          AxisOrientation, Inertia,      Circularity};
         for (const Attribute attribute : zeroAttributes) {
             if (!requestsAttribute(context.requestedAttributes, attribute)) {
                 continue;
             }
-            for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitProperParts.size()); ++leafIndex) {
+            for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitPixels.size()); ++leafIndex) {
                 context.buffer[context.attrNames.linearIndex(leafIndex, attribute)] =
-                    (attribute == ECCENTRICITY || attribute == CIRCULARITY) ? Real{1} : Real{0};
+                    (attribute == Eccentricity || attribute == Circularity) ? Real{1} : Real{0};
             }
         }
     }

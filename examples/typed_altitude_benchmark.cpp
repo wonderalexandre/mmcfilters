@@ -121,13 +121,13 @@ Options parseOptions(int argc, char** argv) {
     return options;
 }
 
-template <class T> ImagePtr<T> makeBenchmarkImage(int rows, int cols) {
-    auto image = Image<T>::create(rows, cols);
+template <class T> ImagePtr<T> makeBenchmarkImage(int rows, int columns) {
+    auto image = Image<T>::create(rows, columns);
     for (int row = 0; row < rows; ++row) {
-        for (int col = 0; col < cols; ++col) {
-            const int idx = row * cols + col;
-            const int radial = (row - rows / 2) * (row - rows / 2) + (col - cols / 2) * (col - cols / 2);
-            const int waves = (row * 17) ^ (col * 31) ^ ((row + col) * 7);
+        for (int column = 0; column < columns; ++column) {
+            const int idx = row * columns + column;
+            const int radial = (row - rows / 2) * (row - rows / 2) + (column - columns / 2) * (column - columns / 2);
+            const int waves = (row * 17) ^ (column * 31) ^ ((row + column) * 7);
             const int value = (radial / 113 + waves) & 0xff;
             (*image)[idx] = static_cast<T>(value);
         }
@@ -154,11 +154,11 @@ std::vector<Attribute> expandChecksumAttributes(const std::vector<AttributeOrGro
 std::vector<AttributeRequest> requestsForSuite(const std::string& suite) {
     std::vector<AttributeRequest> requests;
     if (suite == "light" || suite == "both") {
-        std::vector<AttributeOrGroup> light{LEVEL, AREA, VOLUME, GRAY_HEIGHT};
+        std::vector<AttributeOrGroup> light{MeanGrayLevel, Area, Volume, GrayLevelHeight};
         requests.push_back({"light", light, expandChecksumAttributes(light)});
     }
     if (suite == "all" || suite == "both") {
-        std::vector<AttributeOrGroup> all{AttributeGroup::ALL};
+        std::vector<AttributeOrGroup> all{AttributeGroup::All};
         requests.push_back({"all", all, expandChecksumAttributes(all)});
     }
     return requests;
@@ -177,18 +177,18 @@ template <class Fn> Measurement measure(int repeats, Fn&& fn) {
 
 std::uint64_t checksumTree(const MorphologicalTree& tree) {
     std::uint64_t checksum = 1469598103934665603ull;
-    checksum ^= static_cast<std::uint64_t>(tree.getNumNodes());
+    checksum ^= static_cast<std::uint64_t>(tree.numNodes());
     checksum *= 1099511628211ull;
-    checksum ^= static_cast<std::uint64_t>(tree.getNumInternalNodeSlots());
+    checksum ^= static_cast<std::uint64_t>(tree.numInternalNodeSlots());
     checksum *= 1099511628211ull;
-    checksum ^= static_cast<std::uint64_t>(tree.getNumTotalProperParts());
+    checksum ^= static_cast<std::uint64_t>(tree.numPixels());
     checksum *= 1099511628211ull;
     return checksum;
 }
 
 std::uint64_t checksumComputed(const MorphologicalTree& tree, const ComputedAttributeData<float>& data, const std::vector<Attribute>& attributes) {
     std::uint64_t checksum = 1469598103934665603ull;
-    for (NodeId nodeId : tree.getAliveNodeIds()) {
+    for (NodeId nodeId : tree.aliveNodeIds()) {
         for (Attribute attribute : attributes) {
             const float value = data.second[data.first.linearIndex(nodeId, attribute)];
             std::uint64_t encodedValue = 0;
@@ -209,10 +209,10 @@ std::uint64_t checksumComputed(const MorphologicalTree& tree, const ComputedAttr
     return checksum;
 }
 
-template <class T> std::uint64_t checksumAltitude(const WeightedMorphologicalTree<T>& weighted) {
-    std::uint64_t checksum = checksumTree(weighted.topology());
-    for (NodeId nodeId : weighted.topology().getAliveNodeIds()) {
-        const auto scaled = static_cast<std::int64_t>(std::llround(static_cast<double>(weighted.getAltitude(nodeId)) * 1000.0));
+template <class T> std::uint64_t checksumAltitude(const ValuedMorphologicalTree<T>& valuedTree) {
+    std::uint64_t checksum = checksumTree(valuedTree.topology());
+    for (NodeId nodeId : valuedTree.topology().aliveNodeIds()) {
+        const auto scaled = static_cast<std::int64_t>(std::llround(static_cast<double>(valuedTree.nodeAltitude(nodeId)) * 1000.0));
         checksum ^= static_cast<std::uint64_t>(scaled) + 0x9e3779b97f4a7c15ull;
         checksum *= 1099511628211ull;
     }
@@ -226,24 +226,24 @@ template <class T> auto createTree(const ImagePtr<T>& image, bool maxTree, doubl
 template <class T> void runTypedCase(int size, bool maxTree, const Options& options, const std::vector<AttributeRequest>& requests) {
     auto image = makeBenchmarkImage<T>(size, size);
     const Measurement build = measure(options.repeats, [&]() {
-        auto weighted = createTree<T>(image, maxTree, options.radius);
-        return checksumAltitude(weighted);
+        auto valuedTree = createTree<T>(image, maxTree, options.radius);
+        return checksumAltitude(valuedTree);
     });
 
-    auto weighted = createTree<T>(image, maxTree, options.radius);
-    const MorphologicalTree& tree = weighted.topology();
-    const std::size_t slots = static_cast<std::size_t>(tree.getNumInternalNodeSlots());
+    auto valuedTree = createTree<T>(image, maxTree, options.radius);
+    const MorphologicalTree& tree = valuedTree.topology();
+    const std::size_t slots = static_cast<std::size_t>(tree.numInternalNodeSlots());
     const std::size_t altitudeBytes = slots * sizeof(T);
 
     for (const AttributeRequest& request : requests) {
         const std::size_t resultBytes = slots * request.checksumAttributes.size() * sizeof(float);
         const Measurement attr = measure(options.repeats, [&]() {
-            const auto data = AttributeComputation::computeAttributes(weighted, request.request);
+            const auto data = AttributeComputation::computeAttributes(valuedTree, request.request);
             return checksumComputed(tree, data, request.checksumAttributes);
         });
 
-        std::cout << size << ',' << (maxTree ? "max" : "min") << ',' << typeName<T>() << ',' << request.name << ',' << tree.getNumNodes() << ','
-                  << tree.getNumInternalNodeSlots() << ',' << request.checksumAttributes.size() << ',' << altitudeBytes << ',' << resultBytes << ','
+        std::cout << size << ',' << (maxTree ? "max" : "min") << ',' << typeName<T>() << ',' << request.name << ',' << tree.numNodes() << ','
+                  << tree.numInternalNodeSlots() << ',' << request.checksumAttributes.size() << ',' << altitudeBytes << ',' << resultBytes << ','
                   << std::fixed << std::setprecision(3) << build.msPerRun << ',' << std::fixed << std::setprecision(3) << attr.msPerRun << ',' << build.checksum
                   << ',' << attr.checksum << '\n';
     }

@@ -83,24 +83,24 @@ namespace {
     return result;
 }
 
-void applyProfileDefaults(Options& options, bool rowsExplicit, bool colsExplicit, bool repetitionsExplicit) {
+void applyProfileDefaults(Options& options, bool rowsExplicit, bool columnsExplicit, bool repetitionsExplicit) {
     int rows = 48;
-    int cols = 48;
+    int columns = 48;
     int repetitions = 2;
     if (options.profile == Profile::Core) {
         rows = 192;
-        cols = 192;
+        columns = 192;
         repetitions = 5;
     } else if (options.profile == Profile::Publication) {
         rows = 512;
-        cols = 512;
+        columns = 512;
         repetitions = 15;
     }
     if (!rowsExplicit) {
         options.rows = rows;
     }
-    if (!colsExplicit) {
-        options.cols = cols;
+    if (!columnsExplicit) {
+        options.columns = columns;
     }
     if (!repetitionsExplicit) {
         options.repetitions = repetitions;
@@ -128,10 +128,10 @@ void printHelp(std::ostream& output) {
               "  --suite all|construction|attributes|filters|interoperability|editing|casf|pipelines\n"
               "          May be repeated or receive a comma-separated list.\n"
               "  --input structured|noise|ramp|geometric|flat\n"
-              "  --input-file PATH       Load a real grayscale image; rows and cols are verified.\n"
+              "  --input-file PATH       Load a real grayscale image; rows and columns are verified.\n"
               "  --manifest PATH --workload NAME\n"
               "  --casf-quantiles Q1,Q2,Q3\n"
-              "  --rows N --cols N --repetitions N\n"
+              "  --rows N --columns N --repetitions N\n"
               "  --emit-samples           Include every timed repetition in the output.\n"
               "  --format key-value|jsonl\n";
 }
@@ -160,7 +160,7 @@ void printHelp(std::ostream& output) {
     }
 
     bool rowsExplicit = manifestFields.rows;
-    bool colsExplicit = manifestFields.cols;
+    bool columnsExplicit = manifestFields.columns;
     bool repetitionsExplicit = manifestFields.repetitions;
     bool suitesExplicit = false;
 
@@ -179,7 +179,7 @@ void printHelp(std::ostream& output) {
         }
         if (argument == "--profile") {
             options.profile = parseProfile(requireValue(argument));
-            applyProfileDefaults(options, rowsExplicit, colsExplicit, repetitionsExplicit);
+            applyProfileDefaults(options, rowsExplicit, columnsExplicit, repetitionsExplicit);
         } else if (argument == "--suite") {
             addSuites(options, requireValue(argument), suitesExplicit);
         } else if (argument == "--input") {
@@ -196,9 +196,9 @@ void printHelp(std::ostream& output) {
         } else if (argument == "--rows") {
             options.rows = parsePositiveInteger(argument, requireValue(argument));
             rowsExplicit = true;
-        } else if (argument == "--cols") {
-            options.cols = parsePositiveInteger(argument, requireValue(argument));
-            colsExplicit = true;
+        } else if (argument == "--columns") {
+            options.columns = parsePositiveInteger(argument, requireValue(argument));
+            columnsExplicit = true;
         } else if (argument == "--repetitions") {
             options.repetitions = parsePositiveInteger(argument, requireValue(argument));
             repetitionsExplicit = true;
@@ -279,7 +279,7 @@ int run(int argc, char** argv) {
                                      {"attribute_bundles", bundleNames.empty() ? "none" : bundleNames},
                                      {"suite", suiteSelectionName(options)},
                                      {"rows", std::to_string(options.rows)},
-                                     {"cols", std::to_string(options.cols)},
+                                     {"columns", std::to_string(options.columns)},
                                      {"repetitions", std::to_string(options.repetitions)},
                                      {"samples_emitted", options.emitSamples ? "true" : "false"},
                                      {"cplusplus", std::to_string(__cplusplus)},

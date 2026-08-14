@@ -4,6 +4,8 @@
 #include "../../utils/RegularGridAdjacency2D.hpp"
 #include "../../utils/Common.hpp"
 #include "../MorphologicalTree.hpp"
+#include "../detail/CommittedTreeAccess.hpp"
+#include "../detail/MorphologicalTreeConstructionContextQueries.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -69,8 +71,9 @@ template <std::floating_point Real> struct ShapeSpaceSaliencyResult {
  * undirected edge per parent-child relation. Regional extrema are the connected
  * equal-attribute plateaus born during a lower-level (minima) or upper-level
  * (maxima) component sweep. When components merge, only the strongest extremum
- * survives. Equal-strength extrema are resolved by increasing representative
- * NodeId. The dominant extremum dies at the opposite global attribute level.
+ * survives. Equal-strength extrema are resolved by a canonical spatial and
+ * structural node order that is independent of internal `NodeId` assignment.
+ * The dominant extremum dies at the opposite global attribute level.
  *
  * @par Primary reference
  * Yongchao Xu, Edwin Carlinet, Thierry Géraud, and Laurent Najman,
@@ -101,7 +104,7 @@ class ShapeSpaceSaliency {
     /**
      * @brief Validates rooted tree.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @param context Operation name used in diagnostics.
      */
     static void validateRootedTree(const MorphologicalTree& tree, const char* context) { detail::requireCommittedRootedHierarchy(tree, context); }
@@ -109,7 +112,7 @@ class ShapeSpaceSaliency {
     /**
      * @brief Validates node buffer.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @param values Values read or written by the operation.
      * @param requireNonNegative Whether negative values must be rejected.
      * @param valueName Value label included in validation error messages.
@@ -118,7 +121,7 @@ class ShapeSpaceSaliency {
     template <std::floating_point Real>
     static void validateNodeBuffer(const MorphologicalTree& tree, std::span<const Real> values, bool requireNonNegative, const char* valueName,
                                    const char* context) {
-        const std::size_t expected = static_cast<std::size_t>(tree.getNumInternalNodeSlots());
+        const std::size_t expected = static_cast<std::size_t>(tree.numInternalNodeSlots());
         if (values.size() != expected) {
             std::ostringstream oss;
             oss << context << " requires one " << valueName << " value per dense internal node slot; expected " << expected << " values but got "
@@ -126,7 +129,7 @@ class ShapeSpaceSaliency {
             throw std::invalid_argument(oss.str());
         }
 
-        for (NodeId nodeId : tree.getAliveNodeIds()) {
+        for (NodeId nodeId : tree.aliveNodeIds()) {
             const Real value = values[static_cast<std::size_t>(nodeId)];
             if (!std::isfinite(value)) {
                 std::ostringstream oss;
@@ -144,32 +147,32 @@ class ShapeSpaceSaliency {
     /**
      * @brief Validates tree and adjacency.
      *
-     * @param tree Tree topology used by the operation.
-     * @param adjacency Adjacency relation used by the operation.
+     * @param tree Tree topology.
+     * @param adjacency Adjacency relation.
      * @param context Operation name used in diagnostics.
      */
     static void validateTreeAndAdjacency(const MorphologicalTree& tree, const RegularGridAdjacency2D& adjacency, const char* context) {
         validateRootedTree(tree, context);
 
-        const int rows = tree.getNumRowsOfGridDomain2D();
-        const int cols = tree.getNumColsOfGridDomain2D();
-        const int numProperParts = tree.getNumTotalProperParts();
-        if (rows <= 0 || cols <= 0 || numProperParts <= 0) {
-            throw std::invalid_argument(std::string(context) + " requires a non-empty image/proper-part domain.");
+        const int rows = tree.numRows();
+        const int columns = tree.numColumns();
+        const int numPixels = tree.numPixels();
+        if (rows <= 0 || columns <= 0 || numPixels <= 0) {
+            throw std::invalid_argument(std::string(context) + " requires a non-empty image/pixel domain.");
         }
 
-        const long long pixelCount = static_cast<long long>(rows) * static_cast<long long>(cols);
-        if (pixelCount != static_cast<long long>(numProperParts)) {
+        const long long pixelCount = static_cast<long long>(rows) * static_cast<long long>(columns);
+        if (pixelCount != static_cast<long long>(numPixels)) {
             std::ostringstream oss;
-            oss << context << " requires one proper part per image pixel; got " << numProperParts << " proper parts for a " << rows << "x" << cols
+            oss << context << " requires the tree pixel domain to match the image grid; got " << numPixels << " pixels for a " << rows << "x" << columns
                 << " image domain.";
             throw std::invalid_argument(oss.str());
         }
 
-        if (adjacency.getNumRows() != rows || adjacency.getNumCols() != cols) {
+        if (adjacency.getNumRows() != rows || adjacency.getNumColumns() != columns) {
             std::ostringstream oss;
-            oss << context << " adjacency domain must match the tree image domain; got " << adjacency.getNumRows() << "x" << adjacency.getNumCols()
-                << " for a tree domain of " << rows << "x" << cols << ".";
+            oss << context << " adjacency domain must match the tree image domain; got " << adjacency.getNumRows() << "x" << adjacency.getNumColumns()
+                << " for a tree domain of " << rows << "x" << columns << ".";
             throw std::invalid_argument(oss.str());
         }
     }
@@ -177,12 +180,12 @@ class ShapeSpaceSaliency {
     /**
      * @brief Validates stored adjacency.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @param context Operation name used in diagnostics.
-     * @return Reference to the resulting object.
+     * @return Mutable reference to the updated object.
      */
     static const RegularGridAdjacency2D& requireStoredAdjacency(const MorphologicalTree& tree, const char* context) {
-        const RegularGridAdjacency2D* adjacency = tree.getUniformGridAdjacency2D();
+        const RegularGridAdjacency2D* adjacency = ::mmcfilters::detail::constructionAdjacency(tree);
         if (adjacency == nullptr) {
             throw std::invalid_argument(std::string(context) + " requires an attached adjacency relation; pass an explicit adjacency relation instead.");
         }
@@ -192,8 +195,8 @@ class ShapeSpaceSaliency {
     /**
      * @brief Checks and converts extinction.
      *
-     * @param birthLevel Altitude or level represented by `birthLevel`.
-     * @param deathLevel Altitude or level represented by `deathLevel`.
+     * @param birthLevel Altitude or level.
+     * @param deathLevel Altitude or level.
      * @param polarity Polarity that determines whether maxima or minima are processed.
      * @param representative Representative node or pixel used for the shape-space mapping.
      * @param context Operation name used in diagnostics.
@@ -233,9 +236,10 @@ class ShapeSpaceSaliency {
      *
      * `attribute` is indexed by the tree's dense internal NodeId domain. Birth
      * and death levels remain in the original attribute domain for both
-     * polarities. Results are sorted by increasing representative NodeId.
+     * polarities. Results are sorted by the canonical spatial and structural
+     * representative-node order, independently of internal `NodeId` assignment.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @param attribute Attribute requested by the operation.
      * @param polarity Extremum polarity selected by the operation.
      * @return The computed regional extrema and finite extinction values.
@@ -249,19 +253,56 @@ class ShapeSpaceSaliency {
         validateNodeBuffer(tree, attribute, false, "attribute", context);
 
         std::vector<NodeId> nodes;
-        nodes.reserve(static_cast<std::size_t>(tree.getNumInternalNodeSlots()));
-        for (NodeId nodeId : tree.getAliveNodeIds()) {
+        nodes.reserve(static_cast<std::size_t>(tree.numInternalNodeSlots()));
+        for (NodeId nodeId : tree.aliveNodeIds()) {
             nodes.push_back(nodeId);
         }
         if (nodes.empty()) {
             throw std::invalid_argument(std::string(context) + " requires at least one live node.");
         }
 
+        const int numSlots = tree.numInternalNodeSlots();
+        const std::size_t slotCount = static_cast<std::size_t>(numSlots);
+
+        std::vector<int> depth(slotCount, -1);
+        std::vector<NodeId> stack;
+        stack.push_back(tree.root());
+        depth[static_cast<std::size_t>(tree.root())] = 0;
+        while (!stack.empty()) {
+            const NodeId nodeId = stack.back();
+            stack.pop_back();
+            for (NodeId childId : tree.children(nodeId)) {
+                depth[static_cast<std::size_t>(childId)] = depth[static_cast<std::size_t>(nodeId)] + 1;
+                stack.push_back(childId);
+            }
+        }
+
+        const std::span<const PixelId> smallestSupportPixelByNode = detail::CommittedTreeAccess::smallestNodeSupportPixels(tree);
+        const std::span<const std::int32_t> supportCardinalityByNode = detail::CommittedTreeAccess::nodeSupportCardinalities(tree);
+        const auto canonicalShapeSpaceNodePrecedes = [&](NodeId lhs, NodeId rhs) {
+            if (lhs == rhs) {
+                return false;
+            }
+            const std::size_t lhsIndex = static_cast<std::size_t>(lhs);
+            const std::size_t rhsIndex = static_cast<std::size_t>(rhs);
+            if (smallestSupportPixelByNode[lhsIndex] != smallestSupportPixelByNode[rhsIndex]) {
+                return smallestSupportPixelByNode[lhsIndex] < smallestSupportPixelByNode[rhsIndex];
+            }
+            if (supportCardinalityByNode[lhsIndex] != supportCardinalityByNode[rhsIndex]) {
+                return supportCardinalityByNode[lhsIndex] < supportCardinalityByNode[rhsIndex];
+            }
+            if (depth[lhsIndex] != depth[rhsIndex]) {
+                return depth[lhsIndex] < depth[rhsIndex];
+            }
+            throw std::logic_error(std::string(context) +
+                                   " cannot distinguish two live nodes by spatial support and hierarchy depth.");
+        };
+
         std::sort(nodes.begin(), nodes.end(), [&](NodeId lhs, NodeId rhs) {
             const Real lhsLevel = attribute[static_cast<std::size_t>(lhs)];
             const Real rhsLevel = attribute[static_cast<std::size_t>(rhs)];
             if (lhsLevel == rhsLevel) {
-                return lhs < rhs;
+                return canonicalShapeSpaceNodePrecedes(lhs, rhs);
             }
             if (polarity == ShapeSpaceExtremaPolarity::Minima) {
                 return lhsLevel < rhsLevel;
@@ -275,22 +316,6 @@ class ShapeSpaceSaliency {
             const Real level = attribute[static_cast<std::size_t>(nodeId)];
             globalMinimum = std::min(globalMinimum, level);
             globalMaximum = std::max(globalMaximum, level);
-        }
-
-        const int numSlots = tree.getNumInternalNodeSlots();
-        const std::size_t slotCount = static_cast<std::size_t>(numSlots);
-
-        std::vector<int> depth(slotCount, -1);
-        std::vector<NodeId> stack;
-        stack.push_back(tree.getRoot());
-        depth[static_cast<std::size_t>(tree.getRoot())] = 0;
-        while (!stack.empty()) {
-            const NodeId nodeId = stack.back();
-            stack.pop_back();
-            for (NodeId childId : tree.getChildren(nodeId)) {
-                depth[static_cast<std::size_t>(childId)] = depth[static_cast<std::size_t>(nodeId)] + 1;
-                stack.push_back(childId);
-            }
         }
 
         std::vector<NodeId> componentParent(slotCount, InvalidNode);
@@ -321,7 +346,7 @@ class ShapeSpaceSaliency {
             }
             const int lhsSize = componentSize[static_cast<std::size_t>(lhs)];
             const int rhsSize = componentSize[static_cast<std::size_t>(rhs)];
-            if (lhsSize < rhsSize || (lhsSize == rhsSize && rhs < lhs)) {
+            if (lhsSize < rhsSize || (lhsSize == rhsSize && canonicalShapeSpaceNodePrecedes(rhs, lhs))) {
                 std::swap(lhs, rhs);
             }
             componentParent[static_cast<std::size_t>(rhs)] = lhs;
@@ -331,9 +356,9 @@ class ShapeSpaceSaliency {
 
         auto forEachShapeNeighbor = [&](NodeId nodeId, auto&& visitor) {
             if (!tree.isRoot(nodeId)) {
-                visitor(tree.getNodeParent(nodeId));
+                visitor(tree.parent(nodeId));
             }
-            for (NodeId childId : tree.getChildren(nodeId)) {
+            for (NodeId childId : tree.children(nodeId)) {
                 visitor(childId);
             }
         };
@@ -360,7 +385,7 @@ class ShapeSpaceSaliency {
                 }
                 return rhs.birthLevel < lhs.birthLevel;
             }
-            return lhs.representative < rhs.representative;
+            return canonicalShapeSpaceNodePrecedes(lhs.representative, rhs.representative);
         };
 
         std::size_t batchBegin = 0;
@@ -398,7 +423,8 @@ class ShapeSpaceSaliency {
 
                 NodeId& representative = plateauRepresentative[static_cast<std::size_t>(plateauRoot)];
                 if (representative == InvalidNode || depth[static_cast<std::size_t>(nodeId)] < depth[static_cast<std::size_t>(representative)] ||
-                    (depth[static_cast<std::size_t>(nodeId)] == depth[static_cast<std::size_t>(representative)] && nodeId < representative)) {
+                    (depth[static_cast<std::size_t>(nodeId)] == depth[static_cast<std::size_t>(representative)] &&
+                     canonicalShapeSpaceNodePrecedes(nodeId, representative))) {
                     representative = nodeId;
                 }
 
@@ -409,7 +435,7 @@ class ShapeSpaceSaliency {
                 });
             }
 
-            std::sort(plateauRoots.begin(), plateauRoots.end());
+            std::sort(plateauRoots.begin(), plateauRoots.end(), canonicalShapeSpaceNodePrecedes);
             plateauRoots.erase(std::unique(plateauRoots.begin(), plateauRoots.end()), plateauRoots.end());
 
             for (NodeId plateauRoot : plateauRoots) {
@@ -417,7 +443,7 @@ class ShapeSpaceSaliency {
                 for (NodeId& component : adjacentComponents) {
                     component = findComponent(component);
                 }
-                std::sort(adjacentComponents.begin(), adjacentComponents.end());
+                std::sort(adjacentComponents.begin(), adjacentComponents.end(), canonicalShapeSpaceNodePrecedes);
                 adjacentComponents.erase(std::unique(adjacentComponents.begin(), adjacentComponents.end()), adjacentComponents.end());
 
                 int winningExtremum = -1;
@@ -477,7 +503,8 @@ class ShapeSpaceSaliency {
             }
         }
 
-        std::sort(extrema.begin(), extrema.end(), [](const auto& lhs, const auto& rhs) { return lhs.representative < rhs.representative; });
+        std::sort(extrema.begin(), extrema.end(),
+                  [&](const auto& lhs, const auto& rhs) { return canonicalShapeSpaceNodePrecedes(lhs.representative, rhs.representative); });
 
         ShapeSpaceExtinctionResult<Real> result;
         result.extrema = std::move(extrema);
@@ -492,12 +519,12 @@ class ShapeSpaceSaliency {
      * @brief Projects sparse node scores onto every image-domain adjacency edge.
      *
      * For an edge `(p, q)`, the result is the maximum score on the two paths
-     * `owner(p) -> LCA` and `owner(q) -> LCA`, excluding the LCA. These are
+     * `smallestNode(p) -> LCA` and `smallestNode(q) -> LCA`, excluding the LCA. These are
      * exactly the nodes whose regions contain that edge in their contour.
      *
-     * @param tree Tree topology used by the operation.
-     * @param nodeScores Per-node scores used by the operation.
-     * @param adjacency Adjacency relation used by the operation.
+     * @param tree Tree topology.
+     * @param nodeScores Per-node scores.
+     * @param adjacency Adjacency relation.
      * @return The projected sparse node scores onto every image-domain adjacency edge.
      */
     template <std::floating_point Real>
@@ -508,34 +535,34 @@ class ShapeSpaceSaliency {
         validateNodeBuffer(tree, nodeScores, true, "node-score", context);
 
         EdgeSaliencyMap<Real> edgeMap;
-        edgeMap.numRows = tree.getNumRowsOfGridDomain2D();
-        edgeMap.numCols = tree.getNumColsOfGridDomain2D();
+        edgeMap.numRows = tree.numRows();
+        edgeMap.numColumns = tree.numColumns();
         edgeMap.adjacencyRadius = adjacency.getRadius();
 
-        const std::size_t slotCount = static_cast<std::size_t>(tree.getNumInternalNodeSlots());
+        const std::size_t slotCount = static_cast<std::size_t>(tree.numInternalNodeSlots());
         const std::size_t liftingLevelCount = std::max<std::size_t>(1, static_cast<std::size_t>(std::bit_width(slotCount - 1)));
 
         std::vector<int> depth(slotCount, -1);
         std::vector<std::vector<NodeId>> ancestor(liftingLevelCount, std::vector<NodeId>(slotCount, InvalidNode));
         std::vector<std::vector<Real>> pathMaximum(liftingLevelCount, std::vector<Real>(slotCount, Real{0}));
 
-        std::vector<NodeId> stack{tree.getRoot()};
-        depth[static_cast<std::size_t>(tree.getRoot())] = 0;
+        std::vector<NodeId> stack{tree.root()};
+        depth[static_cast<std::size_t>(tree.root())] = 0;
         while (!stack.empty()) {
             const NodeId nodeId = stack.back();
             stack.pop_back();
             const std::size_t nodeIndex = static_cast<std::size_t>(nodeId);
-            ancestor[0][nodeIndex] = tree.getNodeParent(nodeId);
+            ancestor[0][nodeIndex] = tree.parent(nodeId);
             pathMaximum[0][nodeIndex] = nodeScores[nodeIndex];
 
-            for (NodeId childId : tree.getChildren(nodeId)) {
+            for (NodeId childId : tree.children(nodeId)) {
                 depth[static_cast<std::size_t>(childId)] = depth[nodeIndex] + 1;
                 stack.push_back(childId);
             }
         }
 
         for (std::size_t level = 1; level < liftingLevelCount; ++level) {
-            for (NodeId nodeId : tree.getAliveNodeIds()) {
+            for (NodeId nodeId : tree.aliveNodeIds()) {
                 const std::size_t nodeIndex = static_cast<std::size_t>(nodeId);
                 const NodeId middle = ancestor[level - 1][nodeIndex];
                 const std::size_t middleIndex = static_cast<std::size_t>(middle);
@@ -544,15 +571,15 @@ class ShapeSpaceSaliency {
             }
         }
 
-        auto accumulateBranch = [&](NodeId owner, NodeId lca, Real& edgeScore) {
-            const int ownerDepth = depth[static_cast<std::size_t>(owner)];
+        auto accumulateBranch = [&](NodeId smallestNode, NodeId lca, Real& edgeScore) {
+            const int smallestNodeDepth = depth[static_cast<std::size_t>(smallestNode)];
             const int lcaDepth = depth[static_cast<std::size_t>(lca)];
-            if (ownerDepth < lcaDepth) {
-                throw std::runtime_error(std::string(context) + " found an LCA below an edge-endpoint owner.");
+            if (smallestNodeDepth < lcaDepth) {
+                throw std::runtime_error(std::string(context) + " found an LCA below an edge-endpoint smallestNode.");
             }
 
-            NodeId current = owner;
-            std::size_t remaining = static_cast<std::size_t>(ownerDepth - lcaDepth);
+            NodeId current = smallestNode;
+            std::size_t remaining = static_cast<std::size_t>(smallestNodeDepth - lcaDepth);
             std::size_t level = 0;
             while (remaining != 0) {
                 if ((remaining & std::size_t{1}) != 0) {
@@ -568,32 +595,32 @@ class ShapeSpaceSaliency {
             }
         };
 
-        const NodeId numProperParts = tree.getNumTotalProperParts();
-        for (NodeId source = 0; source < numProperParts; ++source) {
-            const NodeId sourceOwner = tree.getProperPartOwner(source);
-            if (!tree.isAlive(sourceOwner)) {
-                throw std::runtime_error(std::string(context) + " found a proper part without a live owner.");
+        const int numPixels = tree.numPixels();
+        for (NodeId source = 0; source < numPixels; ++source) {
+            const NodeId sourceSmallestNode = tree.smallestNode(source);
+            if (!tree.isAlive(sourceSmallestNode)) {
+                throw std::runtime_error(std::string(context) + " found a pixel without a live smallest node.");
             }
 
             for (int targetValue : adjacency.getForwardNeighborIndices(source)) {
                 const NodeId target = static_cast<NodeId>(targetValue);
-                if (target < 0 || target >= numProperParts) {
-                    throw std::runtime_error(std::string(context) + " adjacency produced an endpoint outside the proper-part domain.");
+                if (target < 0 || target >= numPixels) {
+                    throw std::runtime_error(std::string(context) + " adjacency produced an endpoint outside the pixel domain.");
                 }
 
-                const NodeId targetOwner = tree.getProperPartOwner(target);
-                if (!tree.isAlive(targetOwner)) {
-                    throw std::runtime_error(std::string(context) + " found a neighbour proper part without a live owner.");
+                const NodeId targetSmallestNode = tree.smallestNode(target);
+                if (!tree.isAlive(targetSmallestNode)) {
+                    throw std::runtime_error(std::string(context) + " found a neighbour pixel without a live smallest node.");
                 }
 
-                const NodeId lca = tree.getLowestCommonAncestor(sourceOwner, targetOwner);
+                const NodeId lca = tree.lowestCommonAncestor(sourceSmallestNode, targetSmallestNode);
                 if (lca == InvalidNode || !tree.isAlive(lca)) {
                     throw std::runtime_error(std::string(context) + " could not find a live LCA for an adjacency edge.");
                 }
 
                 Real edgeScore{0};
-                accumulateBranch(sourceOwner, lca, edgeScore);
-                accumulateBranch(targetOwner, lca, edgeScore);
+                accumulateBranch(sourceSmallestNode, lca, edgeScore);
+                accumulateBranch(targetSmallestNode, lca, edgeScore);
 
                 edgeMap.sources.push_back(source);
                 edgeMap.targets.push_back(target);
@@ -607,8 +634,8 @@ class ShapeSpaceSaliency {
     /**
      * @brief Projects node scores using the adjacency stored by the tree.
      *
-     * @param tree Tree topology used by the operation.
-     * @param nodeScores Per-node scores used by the operation.
+     * @param tree Tree topology.
+     * @param nodeScores Per-node scores.
      * @return The projected node scores using the adjacency stored by the tree.
      */
     template <std::floating_point Real>
@@ -619,10 +646,10 @@ class ShapeSpaceSaliency {
     /**
      * @brief Computes extinction values, sparse representative scores, and contours.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @param attribute Attribute requested by the operation.
      * @param polarity Extremum polarity selected by the operation.
-     * @param adjacency Adjacency relation used by the operation.
+     * @param adjacency Adjacency relation.
      * @return The computed extinction values, sparse representative scores, and contours.
      */
     template <std::floating_point Real>
@@ -639,7 +666,7 @@ class ShapeSpaceSaliency {
     /**
      * @brief Computes the complete result using the adjacency stored by the tree.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @param attribute Attribute requested by the operation.
      * @param polarity Extremum polarity selected by the operation.
      * @return The computed complete result using the adjacency stored by the tree.

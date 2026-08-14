@@ -29,7 +29,7 @@ Each sample invokes the public API for one complete operation:
 - extinction-value computation followed by top-k reconstruction;
 - MSER selection from an altitude window;
 - stable-region selection from a topological-depth window;
-- delta-augmented `AREA` materialisation;
+- increment-augmented `AREA` materialisation;
 - joint bitquad area, perimeter, and circularity materialisation;
 - compact Higra hierarchy export.
 
@@ -60,7 +60,7 @@ cmake --build build-benchmark-unchecked --target mmcfilters_validation_sensitive
 python3 benchmarks/compare_validation_modes.py \
   build-benchmark-checked/benchmarks/mmcfilters_validation_sensitive_algorithms_benchmark \
   build-benchmark-unchecked/benchmarks/mmcfilters_validation_sensitive_algorithms_benchmark \
-  --rows 256 --cols 256 --repetitions 9 --process-runs 5
+  --rows 256 --columns 256 --repetitions 9 --process-runs 5
 ```
 
 The runner alternates executable order, rejects any checksum mismatch, and

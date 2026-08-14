@@ -10,7 +10,7 @@
 
 namespace mmcfilters {
 
-template <AltitudeValue T> class WeightedTreeEditor;
+template <AltitudeValue T> class ValuedMorphologicalTreeEditor;
 
 /**
  * @brief Thin edit-session facade for multi-step topology updates.
@@ -27,7 +27,7 @@ template <AltitudeValue T> class WeightedTreeEditor;
  */
 class TreeEditor {
     friend class MorphologicalTree;
-    template <AltitudeValue T> friend class WeightedTreeEditor;
+    template <AltitudeValue T> friend class ValuedMorphologicalTreeEditor;
 
   public:
     /**
@@ -37,13 +37,13 @@ class TreeEditor {
     class IncrementalProof {
         friend class TreeEditor;
 
-        /** @brief Stores the editor. */
+        /** @brief Editor. */
         const TreeEditor* editor_ = nullptr;
         /** @brief References the tree used by the component. */
         const MorphologicalTree* tree_ = nullptr;
-        /** @brief Stores the mutation version. */
+        /** @brief Mutation version used to detect stale derived state. */
         std::size_t mutationVersion_ = 0;
-        /** @brief Stores the validation mode. */
+        /** @brief Validation mode. */
         TreeEditValidationMode validationMode_ = TreeEditValidationMode::Complete;
 
         /**
@@ -92,42 +92,42 @@ class TreeEditor {
 
   private:
     /**
-     * @brief Flat open-addressing set of node ids touched by the edit.
+     * @brief Flat open-addressing set of identifiers touched by the edit.
      *
      * Storage is proportional to the mutation delta. Repeated proper-part
      * moves between the same nodes remain O(1) insertions and do not grow the
      * ledger with duplicate ids.
      */
-    class DeltaNodeSet {
-        /** @brief Stores the nodes. */
-        std::vector<NodeId> nodes_;
-        /** @brief Stores the table. */
-        std::vector<NodeId> table_;
+    template <class Id, Id InvalidId> class DeltaIdSet {
+        /** @brief Identifiers buffer. */
+        std::vector<Id> ids_;
+        /** @brief Table buffer. */
+        std::vector<Id> table_;
 
         /**
-         * @brief Hashes a node identifier for sparse-set storage.
+         * @brief Hashes an identifier for sparse-set storage.
          *
-         * @param node Node identifier used by the operation.
-         * @return Hash value for the node identifier.
+         * @param id Identifier.
+         * @return Hash value for the identifier.
          */
-        [[nodiscard]] static std::size_t hash(NodeId node) noexcept {
-            return static_cast<std::size_t>(static_cast<std::uint32_t>(node) * std::uint32_t{2654435761u});
+        [[nodiscard]] static std::size_t hash(Id id) noexcept {
+            return static_cast<std::size_t>(static_cast<std::uint32_t>(id) * std::uint32_t{2654435761u});
         }
 
         /**
-         * @brief Rebuilds the node set with the requested capacity.
+         * @brief Rebuilds the identifier set with the requested capacity.
          *
          * @param capacity Requested storage capacity.
          */
         void rebuild(std::size_t capacity) {
-            std::vector<NodeId> newTable(capacity, InvalidNode);
+            std::vector<Id> newTable(capacity, InvalidId);
             const std::size_t mask = capacity - 1;
-            for (NodeId node : nodes_) {
-                std::size_t slot = hash(node) & mask;
-                while (newTable[slot] != InvalidNode) {
+            for (Id id : ids_) {
+                std::size_t slot = hash(id) & mask;
+                while (newTable[slot] != InvalidId) {
                     slot = (slot + 1) & mask;
                 }
-                newTable[slot] = node;
+                newTable[slot] = id;
             }
             table_ = std::move(newTable);
         }
@@ -136,17 +136,17 @@ class TreeEditor {
         /**
          * @brief Tests whether contains holds.
          *
-         * @param node Node identifier used by the operation.
+         * @param id Identifier.
          * @return True when contains; otherwise false.
          */
-        [[nodiscard]] bool contains(NodeId node) const noexcept {
-            if (node == InvalidNode || table_.empty()) {
+        [[nodiscard]] bool contains(Id id) const noexcept {
+            if (id == InvalidId || table_.empty()) {
                 return false;
             }
             const std::size_t mask = table_.size() - 1;
-            std::size_t slot = hash(node) & mask;
-            while (table_[slot] != InvalidNode) {
-                if (table_[slot] == node) {
+            std::size_t slot = hash(id) & mask;
+            while (table_[slot] != InvalidId) {
+                if (table_[slot] == id) {
                     return true;
                 }
                 slot = (slot + 1) & mask;
@@ -155,82 +155,88 @@ class TreeEditor {
         }
 
         /**
-         * @brief Inserts a node identifier into the set.
+         * @brief Inserts an identifier into the set.
          *
-         * @param node Node identifier used by the operation.
+         * @param id Identifier.
          * @return True when the documented condition holds; otherwise false.
          */
-        [[nodiscard]] bool insert(NodeId node) {
-            if (node == InvalidNode) {
+        [[nodiscard]] bool insert(Id id) {
+            if (id == InvalidId) {
                 return false;
             }
             if (table_.empty()) {
-                nodes_.reserve(16);
+                ids_.reserve(16);
                 rebuild(32);
-            } else if ((nodes_.size() + 1) * 10 > table_.size() * 7) {
+            } else if ((ids_.size() + 1) * 10 > table_.size() * 7) {
                 rebuild(table_.size() * 2);
             }
 
             const std::size_t mask = table_.size() - 1;
-            std::size_t slot = hash(node) & mask;
-            while (table_[slot] != InvalidNode) {
-                if (table_[slot] == node) {
+            std::size_t slot = hash(id) & mask;
+            while (table_[slot] != InvalidId) {
+                if (table_[slot] == id) {
                     return false;
                 }
                 slot = (slot + 1) & mask;
             }
-            nodes_.push_back(node);
-            table_[slot] = node;
+            ids_.push_back(id);
+            table_[slot] = id;
             return true;
         }
 
-        [[nodiscard]] const std::vector<NodeId>&
+        [[nodiscard]] const std::vector<Id>&
         /**
          * @brief Returns the stored entries.
          *
          * @return The stored entries.
          */
         entries() const noexcept {
-            return nodes_;
+            return ids_;
         }
     };
 
+    /** @brief Deduplicated node identifiers captured by one edit delta. */
+    using DeltaNodeSet = DeltaIdSet<NodeId, InvalidNode>;
+
+    /** @brief Deduplicated pixel identifiers captured by one edit delta. */
+    using DeltaPixelSet = DeltaIdSet<PixelId, InvalidPixel>;
+
     /** @brief Captures one node slot so a recoverable tree edit can be rolled back. */
     struct NodeRollbackState {
-        /** @brief Stores the node. */
+        /** @brief Dense node identifier held by this record. */
         NodeId node = InvalidNode;
-        /** @brief Stores the parent. */
+        /** @brief Dense node identifier of the parent. */
         NodeId parent = InvalidNode;
-        /** @brief Stores the first child. */
+        /** @brief Dense node identifier of the first child. */
         NodeId firstChild = InvalidNode;
-        /** @brief Stores the next sibling. */
+        /** @brief Dense node identifier of the next sibling. */
         NodeId nextSibling = InvalidNode;
-        /** @brief Stores the prev sibling. */
+        /** @brief Dense node identifier of the previous sibling. */
         NodeId prevSibling = InvalidNode;
-        /** @brief Stores the last child. */
+        /** @brief Dense node identifier of the last child. */
         NodeId lastChild = InvalidNode;
-        /** @brief Stores the num children. */
+        /** @brief Number of children. */
         int numChildren = 0;
-        /** @brief Stores the alive. */
+        /** @brief Alive. */
         std::uint8_t alive = 0;
-        /** @brief Stores the proper head. */
-        NodeId properHead = InvalidNode;
-        /** @brief Stores the proper tail. */
-        NodeId properTail = InvalidNode;
-        /** @brief Stores the num proper parts. */
-        int numProperParts = 0;
+        /** @brief Pixel identifier of the proper head. */
+        PixelId properHead = InvalidPixel;
+        /** @brief Pixel identifier of the proper tail. */
+        PixelId properTail = InvalidPixel;
+        /** @brief Number of proper parts. */
+        int properPartCardinality = 0;
     };
 
     /** @brief Captures one proper-part slot so a recoverable tree edit can be rolled back. */
-    struct ProperPartRollbackState {
-        /** @brief Stores the proper part. */
-        NodeId properPart = InvalidNode;
-        /** @brief Stores the owner. */
-        NodeId owner = InvalidNode;
-        /** @brief Stores the next. */
-        NodeId next = InvalidNode;
-        /** @brief Stores the previous. */
-        NodeId previous = InvalidNode;
+    struct PixelRollbackState {
+        /** @brief Identifies the pixel slot whose links are restored. */
+        PixelId pixel = InvalidPixel;
+        /** @brief Identifies the pixel's inclusion-smallest node. */
+        NodeId smallestNodeId = InvalidNode;
+        /** @brief Identifies the next pixel in the same proper part. */
+        PixelId next = InvalidPixel;
+        /** @brief Identifies the previous pixel in the same proper part. */
+        PixelId previous = InvalidPixel;
     };
 
     /** @brief Enumerates the supported free list mutation values. */
@@ -238,9 +244,9 @@ class TreeEditor {
 
     /** @brief Records one free-list mutation for reverse replay during rollback. */
     struct FreeListRollbackState {
-        /** @brief Stores the mutation. */
+        /** @brief Mutation. */
         FreeListMutation mutation = FreeListMutation::Popped;
-        /** @brief Stores the node. */
+        /** @brief Dense node identifier held by this record. */
         NodeId node = InvalidNode;
     };
 
@@ -252,31 +258,31 @@ class TreeEditor {
      * pushes and pops are replayed in reverse.
      */
     struct RollbackJournal {
-        /** @brief Stores the original node slots. */
+        /** @brief Original node slots. */
         std::size_t originalNodeSlots = 0;
-        /** @brief Stores the root. */
+        /** @brief Dense node identifier of the root. */
         NodeId root = InvalidNode;
-        /** @brief Stores the num nodes. */
+        /** @brief Number of nodes. */
         int numNodes = 0;
-        /** @brief Stores the preserved external node identifier offset. */
+        /** @brief Dense node identifier of the preserved external node identifier offset. */
         std::optional<NodeId> preservedExternalNodeIdOffset;
-        /** @brief Stores the node structure version. */
+        /** @brief Node structure version used to detect stale derived state. */
         std::size_t nodeStructureVersion = 0;
-        /** @brief Stores the topology version. */
+        /** @brief Topology version used to detect stale derived state. */
         std::size_t topologyVersion = 0;
-        /** @brief Stores the proper part version. */
+        /** @brief Proper part version used to detect stale derived state. */
         std::size_t properPartVersion = 0;
-        /** @brief Stores the mutation version. */
+        /** @brief Mutation version used to detect stale derived state. */
         std::size_t mutationVersion = 0;
-        /** @brief Stores the captured nodes. */
+        /** @brief Captured nodes. */
         DeltaNodeSet capturedNodes;
-        /** @brief Stores the captured proper parts. */
-        DeltaNodeSet capturedProperParts;
-        /** @brief Stores the nodes. */
+        /** @brief Records pixel slots captured by the rollback journal. */
+        DeltaPixelSet capturedPixels;
+        /** @brief Nodes buffer. */
         std::vector<NodeRollbackState> nodes;
-        /** @brief Stores the proper parts. */
-        std::vector<ProperPartRollbackState> properParts;
-        /** @brief Stores the free list mutations. */
+        /** @brief Captured pixel-link states buffer. */
+        std::vector<PixelRollbackState> pixels;
+        /** @brief Free list mutations buffer. */
         std::vector<FreeListRollbackState> freeListMutations;
     };
 
@@ -286,13 +292,13 @@ class TreeEditor {
     bool active_ = false;
     /** @brief Indicates whether the active edit can be rolled back. */
     bool recoverable_ = false;
-    /** @brief Stores the rollback journal. */
+    /** @brief Rollback journal. */
     std::unique_ptr<RollbackJournal> rollbackJournal_;
-    /** @brief Stores the touched nodes. */
+    /** @brief Touched nodes. */
     DeltaNodeSet touchedNodes_;
-    /** @brief Stores the detached node balance. */
+    /** @brief Detached node balance. */
     int detachedNodeBalance_ = 0;
-    /** @brief Stores the unsupported leaf balance. */
+    /** @brief Unsupported leaf balance. */
     int unsupportedLeafBalance_ = 0;
     /** @brief Indicates whether incremental validation remains supported. */
     bool incrementalValidationSupported_ = true;
@@ -317,7 +323,7 @@ class TreeEditor {
         /**
          * @brief Constructs `EditSessionPause` from the supplied inputs.
          *
-         * @param tree Tree topology used by the operation.
+         * @param tree Tree topology.
          */
         explicit EditSessionPause(MorphologicalTree& tree) noexcept : tree_(tree), wasEditing_(tree.editSessionOpen_) { tree_.editSessionOpen_ = false; }
 
@@ -330,7 +336,7 @@ class TreeEditor {
     /**
      * @brief Opens an edit session on construction.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @param invariantsEstablishedByConstruction Whether construction already established every edit invariant.
      */
     explicit TreeEditor(MorphologicalTree& tree, bool invariantsEstablishedByConstruction = false)
@@ -375,7 +381,7 @@ class TreeEditor {
      *
      * This boundary is private so ordinary callers cannot publish an
      * unvalidated topology. The topology editor reaches it after validation;
-     * the weighted editor reaches it only after its corresponding topology
+     * the valuedTree editor reaches it only after its corresponding topology
      * and altitude proof has been established.
      *
      * @param validationMode Validation strategy used by the edit session.
@@ -393,7 +399,7 @@ class TreeEditor {
     /**
      * @brief Captures one original node slot before its first mutation.
      *
-     * @param node Node identifier used by the operation.
+     * @param node Node identifier.
      */
     void captureNodeForRollback(NodeId node) {
         if (!recoverable_ || node < 0 || static_cast<std::size_t>(node) >= tree_->nodeParent_.size()) {
@@ -410,34 +416,34 @@ class TreeEditor {
         const std::size_t slot = static_cast<std::size_t>(node);
         rollbackJournal_->nodes.push_back({node, tree_->nodeParent_[slot], tree_->firstChild_[slot], tree_->nextSibling_[slot], tree_->prevSibling_[slot],
                                            tree_->lastChild_[slot], tree_->numChildrenByNode_[slot], tree_->alive_[slot], tree_->properHead_[slot],
-                                           tree_->properTail_[slot], tree_->numProperPartsByNode_[slot]});
+                                           tree_->properTail_[slot], tree_->properPartCardinalityByNode_[slot]});
     }
 
     /**
      * @brief Captures one original proper-part slot before its first mutation.
      *
-     * @param properPart Proper-part data represented by `properPart`.
+     * @param pixel Proper-part data.
      */
-    void captureProperPartForRollback(NodeId properPart) {
-        if (!recoverable_ || !tree_->isProperPart(properPart)) {
+    void capturePixelForRollback(PixelId pixel) {
+        if (!recoverable_ || !tree_->isPixel(pixel)) {
             return;
         }
         ensureRollbackJournal();
-        if (rollbackJournal_->capturedProperParts.contains(properPart)) {
+        if (rollbackJournal_->capturedPixels.contains(pixel)) {
             return;
         }
-        rollbackJournal_->properParts.reserve(rollbackJournal_->properParts.size() + 1);
-        if (!rollbackJournal_->capturedProperParts.insert(properPart)) {
+        rollbackJournal_->pixels.reserve(rollbackJournal_->pixels.size() + 1);
+        if (!rollbackJournal_->capturedPixels.insert(pixel)) {
             return;
         }
-        const std::size_t slot = static_cast<std::size_t>(properPart);
-        rollbackJournal_->properParts.push_back({properPart, tree_->properPartOwner_[slot], tree_->nextProperPart_[slot], tree_->prevProperPart_[slot]});
+        const std::size_t slot = static_cast<std::size_t>(pixel);
+        rollbackJournal_->pixels.push_back({pixel, tree_->smallestNodeMap_[slot], tree_->nextProperPart_[slot], tree_->prevProperPart_[slot]});
     }
 
     /**
      * @brief Captures node link neighborhood.
      *
-     * @param node Node identifier used by the operation.
+     * @param node Node identifier.
      */
     void captureNodeLinkNeighborhood(NodeId node) {
         if (node < 0 || static_cast<std::size_t>(node) >= tree_->nodeParent_.size()) {
@@ -452,15 +458,15 @@ class TreeEditor {
     /**
      * @brief Captures proper part link neighborhood.
      *
-     * @param properPart Proper-part identifier.
+     * @param pixel Proper-part identifier.
      */
-    void captureProperPartLinkNeighborhood(NodeId properPart) {
-        if (!tree_->isProperPart(properPart)) {
+    void capturePixelLinkNeighborhood(PixelId pixel) {
+        if (!tree_->isPixel(pixel)) {
             return;
         }
-        captureProperPartForRollback(properPart);
-        captureProperPartForRollback(tree_->prevProperPart_[static_cast<std::size_t>(properPart)]);
-        captureProperPartForRollback(tree_->nextProperPart_[static_cast<std::size_t>(properPart)]);
+        capturePixelForRollback(pixel);
+        capturePixelForRollback(tree_->prevProperPart_[static_cast<std::size_t>(pixel)]);
+        capturePixelForRollback(tree_->nextProperPart_[static_cast<std::size_t>(pixel)]);
     }
 
     /**
@@ -480,7 +486,7 @@ class TreeEditor {
     /**
      * @brief Records free list growth.
      *
-     * @param previousSize Count represented by `previousSize`.
+     * @param previousSize Count.
      */
     void recordFreeListGrowth(std::size_t previousSize) noexcept {
         if (!rollbackJournal_) {
@@ -525,7 +531,7 @@ class TreeEditor {
         tree_->alive_.resize(originalSlots);
         tree_->properHead_.resize(originalSlots);
         tree_->properTail_.resize(originalSlots);
-        tree_->numProperPartsByNode_.resize(originalSlots);
+        tree_->properPartCardinalityByNode_.resize(originalSlots);
 
         for (const NodeRollbackState& state : rollbackJournal_->nodes) {
             const std::size_t slot = static_cast<std::size_t>(state.node);
@@ -538,12 +544,12 @@ class TreeEditor {
             tree_->alive_[slot] = state.alive;
             tree_->properHead_[slot] = state.properHead;
             tree_->properTail_[slot] = state.properTail;
-            tree_->numProperPartsByNode_[slot] = state.numProperParts;
+            tree_->properPartCardinalityByNode_[slot] = state.properPartCardinality;
         }
 
-        for (const ProperPartRollbackState& state : rollbackJournal_->properParts) {
-            const std::size_t slot = static_cast<std::size_t>(state.properPart);
-            tree_->properPartOwner_[slot] = state.owner;
+        for (const PixelRollbackState& state : rollbackJournal_->pixels) {
+            const std::size_t slot = static_cast<std::size_t>(state.pixel);
+            tree_->smallestNodeMap_[slot] = state.smallestNodeId;
             tree_->nextProperPart_[slot] = state.next;
             tree_->prevProperPart_[slot] = state.previous;
         }
@@ -555,7 +561,7 @@ class TreeEditor {
         tree_->topologyVersion_ = rollbackJournal_->topologyVersion;
         tree_->properPartVersion_ = rollbackJournal_->properPartVersion;
         tree_->mutationVersion_ = rollbackJournal_->mutationVersion;
-        tree_->invalidatePrePostOrderCache();
+        tree_->invalidateDfsIntervalCache();
         tree_->invalidateLcaCache();
         tree_->endEditSession();
         rollbackJournal_.reset();
@@ -566,8 +572,8 @@ class TreeEditor {
     /**
      * @brief Tests whether detached holds.
      *
-     * @param tree Tree topology used by the operation.
-     * @param node Node identifier used by the operation.
+     * @param tree Tree topology.
+     * @param node Node identifier.
      * @return True when detached; otherwise false.
      */
     [[nodiscard]] static bool isDetached(const MorphologicalTree& tree, NodeId node) noexcept {
@@ -590,13 +596,13 @@ class TreeEditor {
     /**
      * @brief Tests whether unsupported leaf holds.
      *
-     * @param tree Tree topology used by the operation.
-     * @param node Node identifier used by the operation.
+     * @param tree Tree topology.
+     * @param node Node identifier.
      * @return True when unsupported leaf; otherwise false.
      */
     [[nodiscard]] static bool isUnsupportedLeaf(const MorphologicalTree& tree, NodeId node) noexcept {
         return tree.isAlive(node) && tree.numChildrenByNode_[static_cast<std::size_t>(node)] == 0 &&
-               tree.numProperPartsByNode_[static_cast<std::size_t>(node)] == 0;
+               tree.properPartCardinalityByNode_[static_cast<std::size_t>(node)] == 0;
     }
 
     /**
@@ -615,7 +621,7 @@ class TreeEditor {
     /**
      * @brief Marks touch.
      *
-     * @param node Node identifier used by the operation.
+     * @param node Node identifier.
      */
     void touch(NodeId node) {
         if (invariantsEstablishedByConstruction_) {
@@ -724,7 +730,7 @@ class TreeEditor {
     /**
      * @brief Detaches one non-root node from the connected rooted component.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      */
     void detach(NodeId nodeId) {
         MorphologicalTree& t = tree();
@@ -738,7 +744,7 @@ class TreeEditor {
             t.detachNode(nodeId);
             return;
         }
-        const NodeId oldParent = t.getNodeParent(nodeId);
+        const NodeId oldParent = t.parent(nodeId);
         captureNodeLinkNeighborhood(nodeId);
         touch(nodeId);
         const bool wasDetached = isDetached(t, nodeId);
@@ -754,8 +760,8 @@ class TreeEditor {
      * This is a staged structural edit: cycle freedom is enforced at commit
      * time rather than by an ancestry walk on every call.
      *
-     * @param nodeId Identifier of the node used by the operation.
-     * @param newParentId Parent-node value represented by `newParentId`.
+     * @param nodeId Dense internal node identifier.
+     * @param newParentId Parent-node value.
      */
     void reparent(NodeId nodeId, NodeId newParentId) {
         MorphologicalTree& t = tree();
@@ -772,7 +778,7 @@ class TreeEditor {
             t.moveNode(nodeId, newParentId);
             return;
         }
-        const NodeId oldParent = t.getNodeParent(nodeId);
+        const NodeId oldParent = t.parent(nodeId);
         captureNodeLinkNeighborhood(nodeId);
         captureNodeForRollback(newParentId);
         captureNodeForRollback(t.lastChild_[static_cast<std::size_t>(newParentId)]);
@@ -795,7 +801,7 @@ class TreeEditor {
      * remains the responsibility of `commit()` / `validateAndCommit()`.
      *
      * @param parentId Identifier of the parent node.
-     * @param detachedNodeId Node identifier represented by `detachedNodeId`.
+     * @param detachedNodeId Node identifier.
      */
     void attach(NodeId parentId, NodeId detachedNodeId) {
         MorphologicalTree& t = tree();
@@ -805,7 +811,7 @@ class TreeEditor {
         if (parentId == detachedNodeId) {
             throw std::invalid_argument("TreeEditor::attach requires distinct node ids.");
         }
-        if (t.getNodeParent(detachedNodeId) != detachedNodeId) {
+        if (t.parent(detachedNodeId) != detachedNodeId) {
             throw std::invalid_argument("TreeEditor::attach expects a detached self-parented node.");
         }
         if (invariantsEstablishedByConstruction_) {
@@ -831,7 +837,7 @@ class TreeEditor {
      * committing.
      *
      * @param parentId Identifier of the parent node.
-     * @param sourceId Input represented by `sourceId`.
+     * @param sourceId Input.
      */
     void moveChildren(NodeId parentId, NodeId sourceId) {
         MorphologicalTree& t = tree();
@@ -863,34 +869,34 @@ class TreeEditor {
      * @brief Transfers one direct proper part from `sourceNodeId` to `targetNodeId`.
      *
      * Moving one proper part is proportional to the linked-list update only; it
-     * does not rebuild the full ownership index.
+     * does not rebuild the full smallest-node map.
      *
-     * @param targetNodeId Node identifier represented by `targetNodeId`.
-     * @param sourceNodeId Node identifier represented by `sourceNodeId`.
-     * @param properPartId Proper-part identifier used by the operation.
+     * @param targetNodeId Node identifier.
+     * @param sourceNodeId Node identifier.
+     * @param pixel Proper-part identifier.
      */
-    void moveProperPart(NodeId targetNodeId, NodeId sourceNodeId, NodeId properPartId) {
+    void movePixelToProperPart(NodeId targetNodeId, NodeId sourceNodeId, PixelId pixel) {
         MorphologicalTree& t = tree();
         if (!t.isAlive(targetNodeId) || !t.isAlive(sourceNodeId)) {
-            throw std::invalid_argument("TreeEditor::moveProperPart requires live node ids.");
+            throw std::invalid_argument("TreeEditor::movePixelToProperPart requires live node ids.");
         }
         if (targetNodeId == sourceNodeId) {
-            throw std::invalid_argument("TreeEditor::moveProperPart requires distinct source and target nodes.");
+            throw std::invalid_argument("TreeEditor::movePixelToProperPart requires distinct source and target nodes.");
         }
-        if (!t.isProperPart(properPartId)) {
-            throw std::invalid_argument("TreeEditor::moveProperPart requires a valid proper-part id.");
+        if (!t.isPixel(pixel)) {
+            throw std::invalid_argument("TreeEditor::movePixelToProperPart requires a valid proper-part id.");
         }
         if (invariantsEstablishedByConstruction_) {
-            t.moveProperPart(targetNodeId, sourceNodeId, properPartId);
+            t.movePixelToProperPart(targetNodeId, sourceNodeId, pixel);
             return;
         }
         captureNodeForRollback(targetNodeId);
         captureNodeForRollback(sourceNodeId);
-        captureProperPartLinkNeighborhood(properPartId);
-        captureProperPartForRollback(t.properTail_[static_cast<std::size_t>(targetNodeId)]);
+        capturePixelLinkNeighborhood(pixel);
+        capturePixelForRollback(t.properTail_[static_cast<std::size_t>(targetNodeId)]);
         const bool targetWasUnsupported = isUnsupportedLeaf(t, targetNodeId);
         const bool sourceWasUnsupported = isUnsupportedLeaf(t, sourceNodeId);
-        t.moveProperPart(targetNodeId, sourceNodeId, properPartId);
+        t.movePixelToProperPart(targetNodeId, sourceNodeId, pixel);
         recordUnsupportedLeafTransition(targetWasUnsupported, isUnsupportedLeaf(t, targetNodeId));
         recordUnsupportedLeafTransition(sourceWasUnsupported, isUnsupportedLeaf(t, sourceNodeId));
     }
@@ -901,31 +907,31 @@ class TreeEditor {
      * The underlying splice is linear only in the number of moved direct proper
      * parts.
      *
-     * @param targetNodeId Node identifier represented by `targetNodeId`.
-     * @param sourceNodeId Node identifier represented by `sourceNodeId`.
+     * @param targetNodeId Node identifier.
+     * @param sourceNodeId Node identifier.
      */
-    void moveProperParts(NodeId targetNodeId, NodeId sourceNodeId) {
+    void mergeProperParts(NodeId targetNodeId, NodeId sourceNodeId) {
         MorphologicalTree& t = tree();
         if (!t.isAlive(targetNodeId) || !t.isAlive(sourceNodeId)) {
-            throw std::invalid_argument("TreeEditor::moveProperParts requires live node ids.");
+            throw std::invalid_argument("TreeEditor::mergeProperParts requires live node ids.");
         }
         if (targetNodeId == sourceNodeId) {
-            throw std::invalid_argument("TreeEditor::moveProperParts requires distinct source and target nodes.");
+            throw std::invalid_argument("TreeEditor::mergeProperParts requires distinct source and target nodes.");
         }
         if (invariantsEstablishedByConstruction_) {
-            t.moveProperParts(targetNodeId, sourceNodeId);
+            t.mergeProperParts(targetNodeId, sourceNodeId);
             return;
         }
         captureNodeForRollback(targetNodeId);
         captureNodeForRollback(sourceNodeId);
-        captureProperPartForRollback(t.properTail_[static_cast<std::size_t>(targetNodeId)]);
-        for (NodeId properPart = t.properHead_[static_cast<std::size_t>(sourceNodeId)]; properPart != InvalidNode;
-             properPart = t.nextProperPart_[static_cast<std::size_t>(properPart)]) {
-            captureProperPartForRollback(properPart);
+        capturePixelForRollback(t.properTail_[static_cast<std::size_t>(targetNodeId)]);
+        for (PixelId pixel = t.properHead_[static_cast<std::size_t>(sourceNodeId)]; pixel != InvalidPixel;
+             pixel = t.nextProperPart_[static_cast<std::size_t>(pixel)]) {
+            capturePixelForRollback(pixel);
         }
         const bool targetWasUnsupported = isUnsupportedLeaf(t, targetNodeId);
         const bool sourceWasUnsupported = isUnsupportedLeaf(t, sourceNodeId);
-        t.moveProperParts(targetNodeId, sourceNodeId);
+        t.mergeProperParts(targetNodeId, sourceNodeId);
         recordUnsupportedLeafTransition(targetWasUnsupported, isUnsupportedLeaf(t, targetNodeId));
         recordUnsupportedLeafTransition(sourceWasUnsupported, isUnsupportedLeaf(t, sourceNodeId));
     }
@@ -952,7 +958,7 @@ class TreeEditor {
         captureNodeLinkNeighborhood(childId);
         captureNodeForRollback(parentNodeId);
         const bool willRelease =
-            releaseNodeFlag && t.numChildrenByNode_[static_cast<std::size_t>(childId)] == 0 && t.numProperPartsByNode_[static_cast<std::size_t>(childId)] == 0;
+            releaseNodeFlag && t.numChildrenByNode_[static_cast<std::size_t>(childId)] == 0 && t.properPartCardinalityByNode_[static_cast<std::size_t>(childId)] == 0;
         if (willRelease) {
             prepareFreeListGrowth(1);
         }
@@ -971,7 +977,7 @@ class TreeEditor {
     /**
      * @brief Releases an empty detached non-root node slot.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      */
     void releaseNode(NodeId nodeId) {
         MorphologicalTree& t = tree();
@@ -981,7 +987,7 @@ class TreeEditor {
         if (t.isRoot(nodeId)) {
             throw std::invalid_argument("TreeEditor::releaseNode cannot release the connected root.");
         }
-        if (t.getNodeParent(nodeId) != nodeId) {
+        if (t.parent(nodeId) != nodeId) {
             throw std::invalid_argument("TreeEditor::releaseNode expects a detached self-parented node.");
         }
         if (invariantsEstablishedByConstruction_) {
@@ -989,7 +995,7 @@ class TreeEditor {
             return;
         }
         captureNodeForRollback(nodeId);
-        const bool willRelease = t.numChildrenByNode_[static_cast<std::size_t>(nodeId)] == 0 && t.numProperPartsByNode_[static_cast<std::size_t>(nodeId)] == 0;
+        const bool willRelease = t.numChildrenByNode_[static_cast<std::size_t>(nodeId)] == 0 && t.properPartCardinalityByNode_[static_cast<std::size_t>(nodeId)] == 0;
         if (willRelease) {
             prepareFreeListGrowth(1);
         }
@@ -1008,7 +1014,7 @@ class TreeEditor {
      * The previous root becomes detached; callers must reconnect or explicitly
      * tolerate that state before a checked commit.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      */
     void setRoot(NodeId nodeId) {
         MorphologicalTree& t = tree();
@@ -1019,8 +1025,8 @@ class TreeEditor {
             t.setRoot(nodeId);
             return;
         }
-        const NodeId oldRoot = t.getRoot();
-        const NodeId oldParent = t.getNodeParent(nodeId);
+        const NodeId oldRoot = t.root();
+        const NodeId oldParent = t.parent(nodeId);
         captureNodeForRollback(oldRoot);
         captureNodeLinkNeighborhood(nodeId);
         captureNodeForRollback(oldParent);
@@ -1039,7 +1045,7 @@ class TreeEditor {
     /**
      * @brief Applies the committed-safe subtree prune inside the staged edit.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      */
     void pruneNode(NodeId nodeId) {
         MorphologicalTree& t = tree();
@@ -1065,12 +1071,12 @@ class TreeEditor {
 
                 captureNodeForRollback(parent);
                 captureNodeLinkNeighborhood(nodeId);
-                captureProperPartForRollback(t.properTail_[static_cast<std::size_t>(parent)]);
+                capturePixelForRollback(t.properTail_[static_cast<std::size_t>(parent)]);
                 for (NodeId current : subtree) {
                     captureNodeForRollback(current);
-                    for (NodeId properPart = t.properHead_[static_cast<std::size_t>(current)]; properPart != InvalidNode;
-                         properPart = t.nextProperPart_[static_cast<std::size_t>(properPart)]) {
-                        captureProperPartForRollback(properPart);
+                    for (PixelId pixel = t.properHead_[static_cast<std::size_t>(current)]; pixel != InvalidPixel;
+                         pixel = t.nextProperPart_[static_cast<std::size_t>(pixel)]) {
+                        capturePixelForRollback(pixel);
                     }
                 }
                 prepareFreeListGrowth(subtree.size());
@@ -1086,7 +1092,7 @@ class TreeEditor {
     /**
      * @brief Applies the committed-safe parent merge inside the staged edit.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      */
     void mergeNodeIntoParent(NodeId nodeId) {
         MorphologicalTree& t = tree();
@@ -1102,10 +1108,10 @@ class TreeEditor {
             if (parent != InvalidNode && parent != nodeId) {
                 captureNodeForRollback(parent);
                 captureNodeLinkNeighborhood(nodeId);
-                captureProperPartForRollback(t.properTail_[static_cast<std::size_t>(parent)]);
-                for (NodeId properPart = t.properHead_[static_cast<std::size_t>(nodeId)]; properPart != InvalidNode;
-                     properPart = t.nextProperPart_[static_cast<std::size_t>(properPart)]) {
-                    captureProperPartForRollback(properPart);
+                capturePixelForRollback(t.properTail_[static_cast<std::size_t>(parent)]);
+                for (PixelId pixel = t.properHead_[static_cast<std::size_t>(nodeId)]; pixel != InvalidPixel;
+                     pixel = t.nextProperPart_[static_cast<std::size_t>(pixel)]) {
+                    capturePixelForRollback(pixel);
                 }
                 for (NodeId child = t.firstChild_[static_cast<std::size_t>(nodeId)]; child != InvalidNode;
                      child = t.nextSibling_[static_cast<std::size_t>(child)]) {
@@ -1133,7 +1139,7 @@ class TreeEditor {
      * @brief Validates only nodes and parent paths affected by supported edit
      * primitives.
      *
-     * @param changedParentCyclesExcluded Parent-node value represented by `changedParentCyclesExcluded`.
+     * @param changedParentCyclesExcluded Parent-node value.
      * @return Validation result for only nodes and parent paths affected by supported edit primitives.
      */
     [[nodiscard]] TreeValidationResult validateIncrementalTopology(bool changedParentCyclesExcluded) const noexcept {
@@ -1148,12 +1154,12 @@ class TreeEditor {
                 return {false, "Incremental topology validation found a live node whose subtree support is empty."};
             }
 
-            const NodeId root = tree_->getRoot();
-            if (!tree_->isAlive(root) || tree_->getNodeParent(root) != root) {
+            const NodeId root = tree_->root();
+            if (!tree_->isAlive(root) || tree_->parent(root) != root) {
                 return {false, "Incremental topology validation requires a live self-parented root."};
             }
 
-            const int numNodes = tree_->getNumNodes();
+            const int numNodes = tree_->numNodes();
             for (NodeId node : touchedNodes_.entries()) {
                 if (!tree_->isAlive(node)) {
                     continue;
@@ -1166,7 +1172,7 @@ class TreeEditor {
                         if (!tree_->isAlive(cursor)) {
                             return {false, "Incremental topology validation found a parent path outside the alive node domain."};
                         }
-                        const NodeId parent = tree_->getNodeParent(cursor);
+                        const NodeId parent = tree_->parent(cursor);
                         if (parent == InvalidNode || parent == cursor || !tree_->isAlive(parent)) {
                             return {false, "Incremental topology validation found a detached or invalid parent path."};
                         }
@@ -1188,7 +1194,7 @@ class TreeEditor {
     /**
      * @brief Builds the validation proof for the current incremental edit state.
      *
-     * @param changedParentCyclesExcluded Parent-related value represented by `changedParentCyclesExcluded`.
+     * @param changedParentCyclesExcluded Parent-related value.
      * @return Proof describing the invariants established by the edit.
      */
     [[nodiscard]] IncrementalProof proveIncrementalImpl(bool changedParentCyclesExcluded) {
@@ -1219,7 +1225,7 @@ class TreeEditor {
     /**
      * @brief Uses strict monotone changed arcs as generic acyclicity evidence.
      *
-     * Only `WeightedTreeEditor` can issue this evidence after checking the
+     * Only `ValuedMorphologicalTreeEditor` can issue this evidence after checking the
      * declared altitude order around every touched node.
      *
      * @return Proof produced by uses strict monotone changed arcs as generic acyclicity evidence.
@@ -1284,7 +1290,7 @@ class TreeEditor {
      * @brief Finalizes the edit by validating that the tree is connected again.
      *
      * This validation is linear in the current dense internal-node domain plus
-     * the direct proper-part domain.
+     * the direct pixel domain.
      */
     void commit() {
         TreeValidationResult result = validateAndCommit();

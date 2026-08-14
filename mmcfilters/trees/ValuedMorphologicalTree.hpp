@@ -3,115 +3,116 @@
 #include "MorphologicalTree.hpp"
 #include "TreeAltitudeAlgorithms.hpp"
 #include "TreeEditor.hpp"
-#include "WeightedTreeView.hpp"
+#include "ValuedMorphologicalTreeView.hpp"
 #include "../utils/Contract.hpp"
 #include "../utils/Image.hpp"
 
 #include <memory>
 #include <span>
 #include <stdexcept>
+#include <type_traits>
 #include <optional>
 #include <utility>
 #include <vector>
 
 namespace mmcfilters {
 
-template <AltitudeValue T> class WeightedTreeEditor;
+template <AltitudeValue T> class ValuedMorphologicalTreeEditor;
 
-template <AltitudeValue T> class WeightedMorphologicalTree;
+template <AltitudeValue T> class ValuedMorphologicalTree;
 
 namespace detail {
 
-template <AltitudeValue T> [[nodiscard]] WeightedTreeEditor<T> beginEstablishedWeightedEdit(WeightedMorphologicalTree<T>& tree);
+template <AltitudeValue T> [[nodiscard]] ValuedMorphologicalTreeEditor<T> beginEstablishedValuedEdit(ValuedMorphologicalTree<T>& tree);
 
 } // namespace detail
 
 /**
  * @brief Wrapper pairing `MorphologicalTree` topology with an external altitude buffer.
  *
- * `WeightedMorphologicalTree` owns the mutable topology and node-altitude state
+ * `ValuedMorphologicalTree` owns the mutable topology and node-altitude state
  * internally, indexed by dense internal `NodeId`. Read-only topology access and
- * weighted convenience methods are exposed without leaking structural mutation.
+ * valued-tree convenience methods are exposed without leaking structural mutation.
  * Staged structural edits must go through `edit()`, which returns a
- * `WeightedTreeEditor`.
+ * `ValuedMorphologicalTreeEditor`.
  *
  * Static Higra imports preserve their original node-id domain until the
  * topology is edited. `exportHigraHierarchy()` creates a new compact Higra
  * domain for the current live rooted tree.
  */
-template <AltitudeValue T> class WeightedMorphologicalTree {
-    friend class WeightedTreeEditor<T>;
+template <AltitudeValue T> class ValuedMorphologicalTree {
+    friend class ValuedMorphologicalTreeEditor<T>;
 
   public:
-    /// Altitude scalar type stored by this weighted tree.
-    using altitude_type = T;
+    /// Altitude scalar type stored by this valued morphological tree.
+    using AltitudeType = T;
 
     /// Dense altitude buffer indexed by internal `NodeId`.
-    using altitude_buffer = std::vector<T>;
+    using NodeAltitudeBuffer = mmcfilters::NodeAltitudeBuffer<T>;
 
   private:
     /** @brief References the tree used by the component. */
     MorphologicalTree tree_;
-    /** @brief Stores the altitude. */
-    altitude_buffer altitude_;
+    /** @brief Altitude. */
+    NodeAltitudeBuffer nodeAltitudes_;
 
     /**
      * @brief Copies an altitude buffer already indexed by internal node slots.
      *
-     * @param altitudeValues Altitude or level represented by `altitudeValues`.
+     * @param altitudeValues Altitude or level.
      */
-    void assignInternalAltitude(std::span<const T> altitudeValues) {
-        if (altitudeValues.size() != static_cast<size_t>(tree_.getNumInternalNodeSlots())) {
+    void assignInternalNodeAltitudes(std::span<const T> altitudeValues) {
+        if (altitudeValues.size() != static_cast<size_t>(tree_.numInternalNodeSlots())) {
             throw std::invalid_argument("Internal altitude buffer size must match the dense internal-node domain.");
         }
-        TreeAltitudeAlgorithms::validateFiniteAltitudeValues(altitudeValues, "WeightedMorphologicalTree internal altitude input");
-        altitude_.assign(altitudeValues.begin(), altitudeValues.end());
+        TreeAltitudeAlgorithms::validateFiniteAltitudeValues(altitudeValues, "ValuedMorphologicalTree internal altitude input");
+        nodeAltitudes_.assign(altitudeValues.begin(), altitudeValues.end());
     }
 
     /**
      * @brief Takes ownership of an altitude buffer already indexed by internal
      * node slots.
      *
-     * @param altitudeValues Altitude or level represented by `altitudeValues`.
+     * @param altitudeValues Altitude or level.
      */
-    void assignInternalAltitude(altitude_buffer&& altitudeValues) {
-        if (altitudeValues.size() != static_cast<size_t>(tree_.getNumInternalNodeSlots())) {
+    void assignInternalNodeAltitudes(NodeAltitudeBuffer&& altitudeValues) {
+        if (altitudeValues.size() != static_cast<size_t>(tree_.numInternalNodeSlots())) {
             throw std::invalid_argument("Internal altitude buffer size must match the dense internal-node domain.");
         }
-        TreeAltitudeAlgorithms::validateFiniteAltitudeValues(std::span<const T>(altitudeValues), "WeightedMorphologicalTree internal altitude input");
-        altitude_ = std::move(altitudeValues);
+        TreeAltitudeAlgorithms::validateFiniteAltitudeValues(std::span<const T>(altitudeValues), "ValuedMorphologicalTree internal altitude input");
+        nodeAltitudes_ = std::move(altitudeValues);
     }
 
     /**
      * @brief Returns whether this tree kind has no global monotone altitude order.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @return Whether this tree kind has no global monotone altitude order.
      */
-    static bool skipsMonotoneValidation(const MorphologicalTree& tree) noexcept { return tree.getAltitudeOrder() == AltitudeOrder::UNCONSTRAINED; }
+    static bool skipsMonotoneValidation(const MorphologicalTree& tree) noexcept { return tree.nodeAltitudeOrder() == NodeAltitudeOrder::Unconstrained; }
 
     /**
      * @brief Checks the local parent/children altitude constraints for one edit.
      *
-     * This keeps `setAltitude()` proportional to the node degree instead of
+     * This keeps `setNodeAltitude()` proportional to the node degree instead of
      * scanning the full tree.
      *
-     * @param nodeId Identifier of the node used by the operation.
-     * @param value Value used by the operation.
+     * @param nodeId Dense internal node identifier.
+     * @param value Value.
      * @return True when the documented condition holds; otherwise false.
      */
-    [[nodiscard]] bool validateLocalMonotoneAltitudeUpdate(NodeId nodeId, T value) const {
+    [[nodiscard]] bool validateLocalMonotoneNodeAltitudeUpdate(NodeId nodeId, T value) const {
         if (skipsMonotoneValidation(tree_)) {
             return false;
         }
 
-        const bool increasingFromRoot = tree_.getAltitudeOrder() == AltitudeOrder::INCREASING_FROM_ROOT;
+        const bool increasingFromRoot = tree_.nodeAltitudeOrder() == NodeAltitudeOrder::Increasing;
         if (!tree_.isRoot(nodeId)) {
-            const NodeId parentNodeId = tree_.getNodeParent(nodeId);
+            const NodeId parentNodeId = tree_.parent(nodeId);
             if (parentNodeId == InvalidNode || !tree_.isAlive(parentNodeId)) {
                 throw std::runtime_error("Monotone altitude update requires an alive non-root node to have an alive parent.");
             }
-            const T parentAltitude = altitude_[static_cast<size_t>(parentNodeId)];
+            const T parentAltitude = nodeAltitudes_[static_cast<size_t>(parentNodeId)];
             if (increasingFromRoot && parentAltitude >= value) {
                 throw std::runtime_error("Hierarchy altitude update must remain strictly increasing from parent to child.");
             }
@@ -120,8 +121,8 @@ template <AltitudeValue T> class WeightedMorphologicalTree {
             }
         }
 
-        for (NodeId childId : tree_.getChildren(nodeId)) {
-            const T childAltitude = altitude_[static_cast<size_t>(childId)];
+        for (NodeId childId : tree_.children(nodeId)) {
+            const T childAltitude = nodeAltitudes_[static_cast<size_t>(childId)];
             if (increasingFromRoot && value >= childAltitude) {
                 throw std::runtime_error("Hierarchy altitude update must remain strictly increasing from parent to child.");
             }
@@ -136,43 +137,43 @@ template <AltitudeValue T> class WeightedMorphologicalTree {
     /**
      * @brief Disables default construction.
      */
-    WeightedMorphologicalTree() = delete;
+    ValuedMorphologicalTree() = delete;
 
   public:
     /**
      * @brief Disables copy construction.
      */
-    WeightedMorphologicalTree(const WeightedMorphologicalTree&) = delete;
+    ValuedMorphologicalTree(const ValuedMorphologicalTree&) = delete;
     /**
      * @brief Disables copy assignment.
      */
-    WeightedMorphologicalTree& operator=(const WeightedMorphologicalTree&) = delete;
+    ValuedMorphologicalTree& operator=(const ValuedMorphologicalTree&) = delete;
 
     /**
      * @brief Transfers committed topology and altitude ownership.
      *
-     * The topology move rejects an active weighted editor before any state is
+     * The topology move rejects an active valued-tree editor before any state is
      * transferred.
      *
      * @param other Object to compare with or transfer from.
      */
-    WeightedMorphologicalTree(WeightedMorphologicalTree&& other) : tree_(std::move(other.tree_)), altitude_(std::move(other.altitude_)) {}
+    ValuedMorphologicalTree(ValuedMorphologicalTree&& other) : tree_(std::move(other.tree_)), nodeAltitudes_(std::move(other.nodeAltitudes_)) {}
 
     /**
      * @brief Move-assigns committed topology and altitude ownership.
      *
      * Both topology owners must be outside edit sessions. This keeps every
-     * active `WeightedTreeEditor` bound to the storage it opened.
+     * active `ValuedMorphologicalTreeEditor` bound to the storage it opened.
      *
      * @param other Object to compare with or transfer from.
-     * @return Reference to the resulting object.
+     * @return Mutable reference to the updated object.
      */
-    WeightedMorphologicalTree& operator=(WeightedMorphologicalTree&& other) {
+    ValuedMorphologicalTree& operator=(ValuedMorphologicalTree&& other) {
         if (this != &other) {
             tree_ = std::move(other.tree_);
-            altitude_ = std::move(other.altitude_);
+            nodeAltitudes_ = std::move(other.nodeAltitudes_);
         } else {
-            tree_.requireNotEditing("WeightedMorphologicalTree self move assignment");
+            tree_.requireNotEditing("ValuedMorphologicalTree self move assignment");
         }
         return *this;
     }
@@ -181,19 +182,19 @@ template <AltitudeValue T> class WeightedMorphologicalTree {
      * @brief Consumes a producer-owned altitude buffer in the internal node-id
      * domain.
      *
-     * @param topology Tree topology used by the operation.
+     * @param topology Tree topology.
      * @param altitude Altitude data indexed by node identifier.
      */
-    WeightedMorphologicalTree(detail::MorphologicalTreeConstructionTag, MorphologicalTree&& topology, altitude_buffer&& altitude) : tree_(std::move(topology)) {
-        assignInternalAltitude(std::move(altitude));
-        validateAltitudeBufferShape();
-        validateMonotoneAltitude();
+    ValuedMorphologicalTree(detail::MorphologicalTreeConstructionTag, MorphologicalTree&& topology, NodeAltitudeBuffer&& altitude) : tree_(std::move(topology)) {
+        assignInternalNodeAltitudes(std::move(altitude));
+        validateNodeAltitudeBufferShape();
+        validateMonotoneNodeAltitudes();
     }
 
     /**
      * @brief Checks that the altitude buffer covers the dense internal-node domain.
      */
-    void validateAltitudeBufferShape() const { TreeAltitudeAlgorithms::validateAltitudeBufferShape(tree_, altitudeSpan()); }
+    void validateNodeAltitudeBufferShape() const { TreeAltitudeAlgorithms::validateNodeAltitudeBufferShape(tree_, nodeAltitudeSpan()); }
 
     /**
      * @brief Returns read-only access to the owned topology.
@@ -211,21 +212,21 @@ template <AltitudeValue T> class WeightedMorphologicalTree {
      *
      * @return The dense altitude buffer indexed by internal NodeId.
      */
-    [[nodiscard]] const altitude_buffer& getAltitudeBuffer() const noexcept { return altitude_; }
+    [[nodiscard]] const NodeAltitudeBuffer& nodeAltitudes() const noexcept { return nodeAltitudes_; }
 
     /**
      * @brief Returns a read-only span over the dense altitude buffer.
      *
      * @return A read-only span over the dense altitude buffer.
      */
-    [[nodiscard]] AltitudeSpan<T> altitudeSpan() const noexcept { return std::span<const T>(altitude_); }
+    [[nodiscard]] NodeAltitudeSpan<T> nodeAltitudeSpan() const noexcept { return std::span<const T>(nodeAltitudes_); }
 
     /**
-     * @brief Creates a non-owning weighted view over this owner.
+     * @brief Creates a non-owning valued-tree view over this owner.
      *
-     * @return The created non-owning weighted view over this owner.
+     * @return The created non-owning valued-tree view over this owner.
      */
-    [[nodiscard]] WeightedTreeView<T> asView() const { return WeightedTreeView<T>(tree_, altitudeSpan()); }
+    [[nodiscard]] ValuedMorphologicalTreeView<T> asView() const { return ValuedMorphologicalTreeView<T>(tree_, nodeAltitudeSpan()); }
 
     /**
      * @brief Replaces the owned altitude buffer after full validation.
@@ -233,92 +234,108 @@ template <AltitudeValue T> class WeightedMorphologicalTree {
      * Shape and finite-value checks are followed by validation of the
      * hierarchy's declared global altitude order.
      *
-     * @param altitudeBuffer Altitude or level represented by `altitudeBuffer`.
+     * @param altitudeBuffer Altitude or level.
      */
-    void setAltitudeBuffer(altitude_buffer altitudeBuffer) {
-        tree_.requireNotEditing("WeightedMorphologicalTree::setAltitudeBuffer");
-        if (altitudeBuffer.size() != static_cast<size_t>(tree_.getNumInternalNodeSlots())) {
+    void setNodeAltitudes(NodeAltitudeBuffer altitudeBuffer) {
+        tree_.requireNotEditing("ValuedMorphologicalTree::setNodeAltitudes");
+        if (altitudeBuffer.size() != static_cast<size_t>(tree_.numInternalNodeSlots())) {
             throw std::runtime_error("Altitude buffer size must match the dense internal-node domain.");
         }
-        TreeAltitudeAlgorithms::validateFiniteAltitudeValues(std::span<const T>(altitudeBuffer), "WeightedMorphologicalTree::setAltitudeBuffer");
-        TreeAltitudeAlgorithms::validateMonotoneAltitude(tree_, std::span<const T>(altitudeBuffer));
-        altitude_ = std::move(altitudeBuffer);
+        TreeAltitudeAlgorithms::validateFiniteAltitudeValues(std::span<const T>(altitudeBuffer), "ValuedMorphologicalTree::setNodeAltitudes");
+        TreeAltitudeAlgorithms::validateMonotoneNodeAltitudes(tree_, std::span<const T>(altitudeBuffer));
+        nodeAltitudes_ = std::move(altitudeBuffer);
     }
 
     /**
      * @brief Validates the current altitude buffer against the topology order.
      */
-    void validateMonotoneAltitude() const { TreeAltitudeAlgorithms::validateMonotoneAltitude(tree_, altitudeSpan()); }
+    void validateMonotoneNodeAltitudes() const { TreeAltitudeAlgorithms::validateMonotoneNodeAltitudes(tree_, nodeAltitudeSpan()); }
 
     /**
      * @brief Returns one live node altitude from the dense buffer.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      * @return One live node altitude from the dense buffer.
      */
-    [[nodiscard]] T getAltitude(NodeId nodeId) const {
-        MMCFILTERS_CONTRACT_REQUIRE(tree_.isAlive(nodeId) && static_cast<size_t>(nodeId) < altitude_.size(),
-                                    throw std::invalid_argument("WeightedMorphologicalTree::getAltitude requires a live internal NodeId."));
-        return altitude_[static_cast<size_t>(nodeId)];
+    [[nodiscard]] T nodeAltitude(NodeId nodeId) const {
+        MMCFILTERS_CONTRACT_REQUIRE(tree_.isAlive(nodeId) && static_cast<size_t>(nodeId) < nodeAltitudes_.size(),
+                                    throw std::invalid_argument("ValuedMorphologicalTree::nodeAltitude requires a live internal NodeId."));
+        return nodeAltitudes_[static_cast<size_t>(nodeId)];
     }
 
     /**
      * @brief Updates one live node altitude with local monotonicity validation.
      *
-     * @param nodeId Identifier of the node used by the operation.
-     * @param value Value used by the operation.
+     * @param nodeId Dense internal node identifier.
+     * @param value Value.
      */
-    void setAltitude(NodeId nodeId, T value) {
-        tree_.requireNotEditing("WeightedMorphologicalTree::setAltitude");
-        if (!tree_.isAlive(nodeId) || static_cast<size_t>(nodeId) >= altitude_.size()) {
-            throw std::invalid_argument("WeightedMorphologicalTree::setAltitude requires a live internal NodeId.");
+    void setNodeAltitude(NodeId nodeId, T value) {
+        tree_.requireNotEditing("ValuedMorphologicalTree::setNodeAltitude");
+        if (!tree_.isAlive(nodeId) || static_cast<size_t>(nodeId) >= nodeAltitudes_.size()) {
+            throw std::invalid_argument("ValuedMorphologicalTree::setNodeAltitude requires a live internal NodeId.");
         }
-        TreeAltitudeAlgorithms::validateFiniteAltitudeValue(value, static_cast<std::size_t>(nodeId), "WeightedMorphologicalTree::setAltitude");
-        static_cast<void>(validateLocalMonotoneAltitudeUpdate(nodeId, value));
-        altitude_[static_cast<size_t>(nodeId)] = value;
+        TreeAltitudeAlgorithms::validateFiniteAltitudeValue(value, static_cast<std::size_t>(nodeId), "ValuedMorphologicalTree::setNodeAltitude");
+        static_cast<void>(validateLocalMonotoneNodeAltitudeUpdate(nodeId, value));
+        nodeAltitudes_[static_cast<size_t>(nodeId)] = value;
     }
 
     /**
      * @brief Prunes a complete subtree through the owned topology.
      *
-     * The altitude buffer is kept as the canonical dense weighted state; dead
+     * The altitude buffer is kept as the canonical dense valued-tree state; dead
      * slots may retain their old values until a compact export is requested.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      */
     void pruneNode(NodeId nodeId) {
-        tree_.requireNotEditing("WeightedMorphologicalTree::pruneNode");
+        tree_.requireNotEditing("ValuedMorphologicalTree::pruneNode");
         tree_.pruneNode(nodeId);
     }
 
     /**
      * @brief Merges one node into its parent through the owned topology.
      *
-     * This is the weighted counterpart of the safe public topology mutator. Dead
+     * This is the valued-tree counterpart of the safe public topology mutator. Dead
      * slots keep stale altitude values until a compact export is requested.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      */
     void mergeNodeIntoParent(NodeId nodeId) {
-        tree_.requireNotEditing("WeightedMorphologicalTree::mergeNodeIntoParent");
+        tree_.requireNotEditing("ValuedMorphologicalTree::mergeNodeIntoParent");
         tree_.mergeNodeIntoParent(nodeId);
     }
 
     /**
      * @brief Returns the altitude difference between a node and its parent.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * The project uses a fixed zero reconstruction baseline, so the root
+     * residue is equal to the root altitude.
+     *
+     * @param nodeId Dense internal node identifier.
      * @return The altitude difference between a node and its parent.
      */
-    [[nodiscard]] AltitudeDiff<T> getNodeResidue(NodeId nodeId) const { return TreeAltitudeAlgorithms::getNodeResidue(tree_, altitudeSpan(), nodeId); }
+    [[nodiscard]] AltitudeDifference<T> nodeResidue(NodeId nodeId) const { return TreeAltitudeAlgorithms::nodeResidue(tree_, nodeAltitudeSpan(), nodeId); }
 
     /**
-     * @brief Reconstructs an image by assigning each proper part its owner altitude.
+     * @brief Reconstructs an image by assigning each proper part its smallest-node altitude.
      *
-     * @return The reconstructed image by assigning each proper part its owner altitude.
+     * @return The reconstructed image by assigning each proper part its smallest-node altitude.
      */
-    [[nodiscard]] ImagePtr<T> reconstructionImage() const {
-        return TreeAltitudeAlgorithms::reconstructImage(tree_, altitudeSpan(), "WeightedMorphologicalTree::reconstructImage");
+    [[nodiscard]] ImagePtr<T> reconstructFromNodeAltitudes() const {
+        return TreeAltitudeAlgorithms::reconstructFromNodeAltitudes(tree_, nodeAltitudeSpan(), "ValuedMorphologicalTree::reconstructFromNodeAltitudes");
+    }
+
+    /**
+     * @brief Reconstructs from arbitrary dense node contributions using the fixed zero baseline.
+     * @tparam Contribution Arithmetic contribution and output value type.
+     * @param nodeContributions Dense contribution buffer indexed by the internal node-slot domain.
+     * @return Image obtained by accumulating contributions from the root to each smallest node.
+     */
+    template <class Contribution>
+        requires(std::is_arithmetic_v<Contribution> && !std::is_same_v<std::remove_cv_t<Contribution>, bool>)
+    [[nodiscard]] ImagePtr<Contribution> reconstructFromNodeContributions(std::span<const Contribution> nodeContributions) const {
+        return TreeAltitudeAlgorithms::reconstructFromNodeContributions(tree_, nodeContributions,
+                                                                         "ValuedMorphologicalTree::reconstructFromNodeContributions");
     }
 
     /**
@@ -327,68 +344,68 @@ template <AltitudeValue T> class WeightedMorphologicalTree {
      * @details
      * Attribute buffers are projected through
      * `AttributeComputation::projectNodeValuesToExportedHigra()` so
-     * weighted-tree export remains limited to topology and altitudes.
+     * valued-tree export remains limited to topology and altitudes.
      *
      * @return The exported current live rooted tree to a new compact Higra parent/altitude representation.
      */
     [[nodiscard]] std::pair<std::vector<NodeId>, std::vector<T>> exportHigraHierarchy() const {
-        return TreeAltitudeAlgorithms::exportHigraHierarchy(tree_, altitudeSpan());
+        return TreeAltitudeAlgorithms::exportHigraHierarchy(tree_, nodeAltitudeSpan());
     }
 
     /**
-     * @brief Opens the only public entrypoint for staged weighted edits.
+     * @brief Opens the only public entrypoint for staged valued-tree edits.
      *
-     * @return The opened only public entrypoint for staged weighted edits.
+     * @return The opened only public entrypoint for staged valued-tree edits.
      */
-    [[nodiscard]] WeightedTreeEditor<T> edit() { return WeightedTreeEditor<T>(*this); }
+    [[nodiscard]] ValuedMorphologicalTreeEditor<T> edit() { return ValuedMorphologicalTreeEditor<T>(*this); }
 };
 
 /**
- * @brief Edit-session facade for `WeightedMorphologicalTree`.
+ * @brief Edit-session facade for `ValuedMorphologicalTree`.
  *
- * The weighted editor reuses the structural `TreeEditor` for topology while
- * keeping the external altitude buffer as the canonical weighted state.
+ * The valued-tree editor reuses the structural `TreeEditor` for topology while
+ * keeping the external altitude buffer as the canonical valued-tree state.
  * `commit()` first validates the topology and then validates monotone altitude.
  */
-template <AltitudeValue T> class WeightedTreeEditor {
-    friend class WeightedMorphologicalTree<T>;
-    /** @brief Grants `detail::beginEstablishedWeightedEdit` access to the enclosing type. */
-    friend WeightedTreeEditor<T> detail::beginEstablishedWeightedEdit<T>(WeightedMorphologicalTree<T>& tree);
+template <AltitudeValue T> class ValuedMorphologicalTreeEditor {
+    friend class ValuedMorphologicalTree<T>;
+    /** @brief Grants `detail::beginEstablishedValuedEdit` access to the enclosing type. */
+    friend ValuedMorphologicalTreeEditor<T> detail::beginEstablishedValuedEdit<T>(ValuedMorphologicalTree<T>& tree);
 
   private:
-    /** @brief Records altitude changes for rollback of a weighted-tree edit. */
+    /** @brief Records altitude changes for rollback of a valued-tree edit. */
     struct AltitudeRollbackJournal {
-        /** @brief Stores the original size. */
+        /** @brief Original size. */
         std::size_t originalSize = 0;
-        /** @brief Stores the captured. */
+        /** @brief Captured. */
         TreeEditor::DeltaNodeSet captured;
-        /** @brief Stores the values. */
+        /** @brief Dense node identifier of the values. */
         std::vector<std::pair<NodeId, T>> values;
     };
 
-    /** @brief Stores the weighted. */
-    WeightedMorphologicalTree<T>& weighted_;
-    /** @brief Stores the editor. */
+    /** @brief Valued morphological tree. */
+    ValuedMorphologicalTree<T>& valuedTree_;
+    /** @brief Editor. */
     TreeEditor editor_;
-    /** @brief Stores the original altitude size. */
+    /** @brief Original altitude size. */
     std::size_t originalAltitudeSize_ = 0;
-    /** @brief Stores the altitude rollback journal. */
+    /** @brief Altitude rollback journal. */
     std::unique_ptr<AltitudeRollbackJournal> altitudeRollbackJournal_;
-    /** @brief Stores the edit revision. */
+    /** @brief Edit revision. */
     std::size_t editRevision_ = 0;
-    /** @brief Stores the proven revision. */
+    /** @brief Proven revision. */
     std::optional<std::size_t> provenRevision_;
 
     /**
      * @brief Opens the underlying topology edit session.
      *
-     * @param weighted Weighted tree used by the operation.
+     * @param valuedTree Valued tree.
      * @param transactional Whether the edit records rollback information.
      * @param invariantsEstablishedByConstruction Whether construction already established every edit invariant.
      */
-    explicit WeightedTreeEditor(WeightedMorphologicalTree<T>& weighted, [[maybe_unused]] bool transactional = false,
+    explicit ValuedMorphologicalTreeEditor(ValuedMorphologicalTree<T>& valuedTree, [[maybe_unused]] bool transactional = false,
                                 bool invariantsEstablishedByConstruction = false)
-        : weighted_(weighted), editor_(weighted.tree_, invariantsEstablishedByConstruction), originalAltitudeSize_(weighted.altitude_.size()) {}
+        : valuedTree_(valuedTree), editor_(valuedTree.tree_, invariantsEstablishedByConstruction), originalAltitudeSize_(valuedTree.nodeAltitudes_.size()) {}
 
     /**
      * @brief Ensures altitude rollback journal.
@@ -407,7 +424,7 @@ template <AltitudeValue T> class WeightedTreeEditor {
     /**
      * @brief Captures altitude for rollback.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      */
     void captureAltitudeForRollback(NodeId nodeId) {
         ensureAltitudeRollbackJournal();
@@ -424,7 +441,7 @@ template <AltitudeValue T> class WeightedTreeEditor {
         if (!altitudeRollbackJournal_->captured.insert(nodeId)) {
             return;
         }
-        altitudeRollbackJournal_->values.emplace_back(nodeId, weighted_.altitude_[static_cast<std::size_t>(nodeId)]);
+        altitudeRollbackJournal_->values.emplace_back(nodeId, valuedTree_.nodeAltitudes_[static_cast<std::size_t>(nodeId)]);
     }
 
     /**
@@ -434,9 +451,9 @@ template <AltitudeValue T> class WeightedTreeEditor {
         if (!altitudeRollbackJournal_ || !editor_.canRollback()) {
             return;
         }
-        weighted_.altitude_.resize(altitudeRollbackJournal_->originalSize);
+        valuedTree_.nodeAltitudes_.resize(altitudeRollbackJournal_->originalSize);
         for (const auto& [nodeId, altitude] : altitudeRollbackJournal_->values) {
-            weighted_.altitude_[static_cast<std::size_t>(nodeId)] = altitude;
+            valuedTree_.nodeAltitudes_[static_cast<std::size_t>(nodeId)] = altitude;
         }
     }
 
@@ -455,19 +472,19 @@ template <AltitudeValue T> class WeightedTreeEditor {
     /**
      * @brief Disables copy construction.
      */
-    WeightedTreeEditor(const WeightedTreeEditor&) = delete;
+    ValuedMorphologicalTreeEditor(const ValuedMorphologicalTreeEditor&) = delete;
     /**
      * @brief Disables copy assignment.
      */
-    WeightedTreeEditor& operator=(const WeightedTreeEditor&) = delete;
+    ValuedMorphologicalTreeEditor& operator=(const ValuedMorphologicalTreeEditor&) = delete;
 
     /**
-     * @brief Transfers the active weighted edit session and rollback journal.
+     * @brief Transfers the active valued-tree edit session and rollback journal.
      *
      * @param other Object to compare with or transfer from.
      */
-    WeightedTreeEditor(WeightedTreeEditor&& other) noexcept
-        : weighted_(other.weighted_), editor_(std::move(other.editor_)), originalAltitudeSize_(other.originalAltitudeSize_),
+    ValuedMorphologicalTreeEditor(ValuedMorphologicalTreeEditor&& other) noexcept
+        : valuedTree_(other.valuedTree_), editor_(std::move(other.editor_)), originalAltitudeSize_(other.originalAltitudeSize_),
           altitudeRollbackJournal_(std::move(other.altitudeRollbackJournal_)), editRevision_(other.editRevision_), provenRevision_(other.provenRevision_) {
         other.altitudeRollbackJournal_.reset();
         other.provenRevision_.reset();
@@ -476,12 +493,12 @@ template <AltitudeValue T> class WeightedTreeEditor {
     /**
      * @brief Disables move assignment.
      */
-    WeightedTreeEditor& operator=(WeightedTreeEditor&&) = delete;
+    ValuedMorphologicalTreeEditor& operator=(ValuedMorphologicalTreeEditor&&) = delete;
 
     /**
-     * @brief Restores the altitude journal and closes the weighted edit session.
+     * @brief Restores the altitude journal and closes the valued-tree edit session.
      */
-    ~WeightedTreeEditor() { restoreAltitudeJournal(); }
+    ~ValuedMorphologicalTreeEditor() { restoreAltitudeJournal(); }
 
     /**
      * @brief Tests whether topology and altitude can be rolled back.
@@ -495,7 +512,7 @@ template <AltitudeValue T> class WeightedTreeEditor {
      */
     void rollback() {
         if (!canRollback()) {
-            throw std::logic_error("WeightedTreeEditor::rollback is unavailable for the internal journal-free editor.");
+            throw std::logic_error("ValuedMorphologicalTreeEditor::rollback is unavailable for the internal journal-free editor.");
         }
         restoreAltitudeJournal();
         editor_.rollback();
@@ -511,15 +528,15 @@ template <AltitudeValue T> class WeightedTreeEditor {
      * @return The created detached topology node and initializes its altitude.
      */
     [[nodiscard("Discarding a detached node id makes the staged edit impossible to complete safely")]] NodeId createDetachedNode(T altitude = T{}) {
-        TreeAltitudeAlgorithms::validateFiniteAltitudeValue(altitude, 0, "WeightedTreeEditor::createDetachedNode");
+        TreeAltitudeAlgorithms::validateFiniteAltitudeValue(altitude, 0, "ValuedMorphologicalTreeEditor::createDetachedNode");
         const std::size_t requiredAltitudeSize =
-            static_cast<std::size_t>(weighted_.tree_.getNumInternalNodeSlots()) + (weighted_.tree_.getNumFreeNodeSlots() == 0 ? 1u : 0u);
-        weighted_.altitude_.reserve(requiredAltitudeSize);
+            static_cast<std::size_t>(valuedTree_.tree_.numInternalNodeSlots()) + (valuedTree_.tree_.getNumFreeNodeSlots() == 0 ? 1u : 0u);
+        valuedTree_.nodeAltitudes_.reserve(requiredAltitudeSize);
         ensureAltitudeRollbackJournal();
         const NodeId nodeId = editor_.createDetachedNode();
-        weighted_.altitude_.resize(static_cast<size_t>(weighted_.tree_.getNumInternalNodeSlots()), T{});
+        valuedTree_.nodeAltitudes_.resize(static_cast<size_t>(valuedTree_.tree_.numInternalNodeSlots()), T{});
         captureAltitudeForRollback(nodeId);
-        weighted_.altitude_[static_cast<size_t>(nodeId)] = altitude;
+        valuedTree_.nodeAltitudes_[static_cast<size_t>(nodeId)] = altitude;
         recordMutation();
         return nodeId;
     }
@@ -527,20 +544,20 @@ template <AltitudeValue T> class WeightedTreeEditor {
     /**
      * @brief Sets a live node altitude during a staged topology edit.
      *
-     * Monotone order is intentionally checked at weighted commit time because
+     * Monotone order is intentionally checked at valued-tree commit time because
      * intermediate staged topologies may not yet have final parent/child
      * relations.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      * @param altitude Altitude data indexed by node identifier.
      */
     void setNodeAltitude(NodeId nodeId, T altitude) {
-        if (!weighted_.tree_.isAlive(nodeId)) {
-            throw std::invalid_argument("WeightedTreeEditor::setNodeAltitude requires a live node.");
+        if (!valuedTree_.tree_.isAlive(nodeId)) {
+            throw std::invalid_argument("ValuedMorphologicalTreeEditor::setNodeAltitude requires a live node.");
         }
-        TreeAltitudeAlgorithms::validateFiniteAltitudeValue(altitude, static_cast<std::size_t>(nodeId), "WeightedTreeEditor::setNodeAltitude");
+        TreeAltitudeAlgorithms::validateFiniteAltitudeValue(altitude, static_cast<std::size_t>(nodeId), "ValuedMorphologicalTreeEditor::setNodeAltitude");
         captureAltitudeForRollback(nodeId);
-        weighted_.altitude_[static_cast<size_t>(nodeId)] = altitude;
+        valuedTree_.nodeAltitudes_[static_cast<size_t>(nodeId)] = altitude;
         editor_.touch(nodeId);
         recordMutation();
     }
@@ -548,7 +565,7 @@ template <AltitudeValue T> class WeightedTreeEditor {
     /**
      * @brief Detaches one non-root node through the structural editor.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      */
     void detach(NodeId nodeId) {
         editor_.detach(nodeId);
@@ -558,8 +575,8 @@ template <AltitudeValue T> class WeightedTreeEditor {
     /**
      * @brief Reparents one node through the structural editor.
      *
-     * @param nodeId Identifier of the node used by the operation.
-     * @param newParentId Parent-node value represented by `newParentId`.
+     * @param nodeId Dense internal node identifier.
+     * @param newParentId Parent-node value.
      */
     void reparent(NodeId nodeId, NodeId newParentId) {
         editor_.reparent(nodeId, newParentId);
@@ -570,7 +587,7 @@ template <AltitudeValue T> class WeightedTreeEditor {
      * @brief Attaches one detached node through the structural editor.
      *
      * @param parentId Identifier of the parent node.
-     * @param detachedNodeId Node identifier represented by `detachedNodeId`.
+     * @param detachedNodeId Node identifier.
      */
     void attach(NodeId parentId, NodeId detachedNodeId) {
         editor_.attach(parentId, detachedNodeId);
@@ -581,7 +598,7 @@ template <AltitudeValue T> class WeightedTreeEditor {
      * @brief Moves all direct children from `sourceId` under `parentId`.
      *
      * @param parentId Identifier of the parent node.
-     * @param sourceId Input represented by `sourceId`.
+     * @param sourceId Input.
      */
     void moveChildren(NodeId parentId, NodeId sourceId) {
         editor_.moveChildren(parentId, sourceId);
@@ -591,23 +608,23 @@ template <AltitudeValue T> class WeightedTreeEditor {
     /**
      * @brief Moves one direct proper part between nodes.
      *
-     * @param targetNodeId Node identifier represented by `targetNodeId`.
-     * @param sourceNodeId Node identifier represented by `sourceNodeId`.
-     * @param properPartId Proper-part identifier used by the operation.
+     * @param targetNodeId Node identifier.
+     * @param sourceNodeId Node identifier.
+     * @param pixel Proper-part identifier.
      */
-    void moveProperPart(NodeId targetNodeId, NodeId sourceNodeId, NodeId properPartId) {
-        editor_.moveProperPart(targetNodeId, sourceNodeId, properPartId);
+    void movePixelToProperPart(NodeId targetNodeId, NodeId sourceNodeId, PixelId pixel) {
+        editor_.movePixelToProperPart(targetNodeId, sourceNodeId, pixel);
         recordMutation();
     }
 
     /**
      * @brief Moves all direct proper parts between nodes.
      *
-     * @param targetNodeId Node identifier represented by `targetNodeId`.
-     * @param sourceNodeId Node identifier represented by `sourceNodeId`.
+     * @param targetNodeId Node identifier.
+     * @param sourceNodeId Node identifier.
      */
-    void moveProperParts(NodeId targetNodeId, NodeId sourceNodeId) {
-        editor_.moveProperParts(targetNodeId, sourceNodeId);
+    void mergeProperParts(NodeId targetNodeId, NodeId sourceNodeId) {
+        editor_.mergeProperParts(targetNodeId, sourceNodeId);
         recordMutation();
     }
 
@@ -626,7 +643,7 @@ template <AltitudeValue T> class WeightedTreeEditor {
     /**
      * @brief Releases an empty detached node slot.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      */
     void releaseNode(NodeId nodeId) {
         editor_.releaseNode(nodeId);
@@ -636,7 +653,7 @@ template <AltitudeValue T> class WeightedTreeEditor {
     /**
      * @brief Promotes one node to the topology root.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      */
     void setRoot(NodeId nodeId) {
         editor_.setRoot(nodeId);
@@ -644,9 +661,9 @@ template <AltitudeValue T> class WeightedTreeEditor {
     }
 
     /**
-     * @brief Applies the topology prune helper inside the weighted edit session.
+     * @brief Applies the topology prune helper inside the valued-tree edit session.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      */
     void pruneNode(NodeId nodeId) {
         editor_.pruneNode(nodeId);
@@ -654,9 +671,9 @@ template <AltitudeValue T> class WeightedTreeEditor {
     }
 
     /**
-     * @brief Applies the topology merge helper inside the weighted edit session.
+     * @brief Applies the topology merge helper inside the valued-tree edit session.
      *
-     * @param nodeId Identifier of the node used by the operation.
+     * @param nodeId Dense internal node identifier.
      */
     void mergeNodeIntoParent(NodeId nodeId) {
         editor_.mergeNodeIntoParent(nodeId);
@@ -671,24 +688,24 @@ template <AltitudeValue T> class WeightedTreeEditor {
     [[nodiscard]] bool hasDetachedAliveNodes() const noexcept { return editor_.hasDetachedAliveNodes(); }
 
     /**
-     * @brief Produces a generic move-only proof for the current weighted edit
+     * @brief Produces a generic move-only proof for the current valued-tree edit
      * revision.
      *
      * Topology is checked on the mutation delta whenever every primitive is
      * supported. Altitude order is then checked only around touched nodes. A
      * topology fallback also selects complete altitude validation.
      *
-     * @return The produced generic move-only proof for the current weighted edit revision.
+     * @return The produced generic move-only proof for the current valued-tree edit revision.
      */
     [[nodiscard]] TreeEditor::IncrementalProof proveIncremental() {
-        bool strictAltitudeExcludesCycles = !WeightedMorphologicalTree<T>::skipsMonotoneValidation(weighted_.tree_);
+        bool strictAltitudeExcludesCycles = !ValuedMorphologicalTree<T>::skipsMonotoneValidation(valuedTree_.tree_);
         if (!editor_.invariantsEstablishedByConstruction_) {
             for (NodeId node : editor_.touchedNodes_.entries()) {
-                if (!weighted_.tree_.isAlive(node)) {
+                if (!valuedTree_.tree_.isAlive(node)) {
                     continue;
                 }
                 strictAltitudeExcludesCycles =
-                    weighted_.validateLocalMonotoneAltitudeUpdate(node, weighted_.altitude_[static_cast<std::size_t>(node)]) && strictAltitudeExcludesCycles;
+                    valuedTree_.validateLocalMonotoneNodeAltitudeUpdate(node, valuedTree_.nodeAltitudes_[static_cast<std::size_t>(node)]) && strictAltitudeExcludesCycles;
             }
         }
 
@@ -696,10 +713,10 @@ template <AltitudeValue T> class WeightedTreeEditor {
 #ifndef NDEBUG
         // The assertion-enabled oracle runs exactly once, including when the
         // topology proof already fell back to complete validation.
-        weighted_.validateMonotoneAltitude();
+        valuedTree_.validateMonotoneNodeAltitudes();
 #else
         if (proof.usedCompleteValidation()) {
-            weighted_.validateMonotoneAltitude();
+            valuedTree_.validateMonotoneNodeAltitudes();
         }
 #endif
         provenRevision_ = editRevision_;
@@ -707,13 +724,13 @@ template <AltitudeValue T> class WeightedTreeEditor {
     }
 
     /**
-     * @brief Commits the exact weighted edit revision represented by `proof`.
+     * @brief Commits the exact valued-tree edit revision represented by `proof`.
      *
      * @param proof Validation proof consumed by the operation.
      */
     void commit(TreeEditor::IncrementalProof&& proof) {
         if (!provenRevision_ || *provenRevision_ != editRevision_) {
-            throw std::logic_error("Incremental weighted proof is stale or belongs to another edit revision.");
+            throw std::logic_error("Incremental valued-tree proof is stale or belongs to another edit revision.");
         }
         editor_.commit(std::move(proof));
         provenRevision_.reset();
@@ -740,11 +757,11 @@ template <AltitudeValue T> class WeightedTreeEditor {
             return result;
         }
         try {
-            weighted_.validateMonotoneAltitude();
+            valuedTree_.validateMonotoneNodeAltitudes();
         } catch (const std::exception& ex) {
             return {false, ex.what()};
         } catch (...) {
-            return {false, "WeightedTreeEditor monotone-altitude validation failed with an unknown error."};
+            return {false, "ValuedMorphologicalTreeEditor monotone-altitude validation failed with an unknown error."};
         }
         editor_.finishCommit(TreeEditValidationMode::Complete);
         altitudeRollbackJournal_.reset();
@@ -772,11 +789,11 @@ namespace detail {
  * Release builds avoid duplicating that work. Assertion-enabled builds still
  * execute the complete topology and altitude oracle when the proof is issued.
  *
- * @param tree Tree topology used by the operation.
- * @return Editor for an invariant-preserving weighted edit.
+ * @param tree Tree topology.
+ * @return Editor for an invariant-preserving valued-tree edit.
  */
-template <AltitudeValue T> [[nodiscard]] WeightedTreeEditor<T> beginEstablishedWeightedEdit(WeightedMorphologicalTree<T>& tree) {
-    return WeightedTreeEditor<T>(tree, false, true);
+template <AltitudeValue T> [[nodiscard]] ValuedMorphologicalTreeEditor<T> beginEstablishedValuedEdit(ValuedMorphologicalTree<T>& tree) {
+    return ValuedMorphologicalTreeEditor<T>(tree, false, true);
 }
 
 } // namespace detail

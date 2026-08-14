@@ -38,13 +38,13 @@ void requireFloatEquivalent(float actual, float expected, const std::string& lab
 
 void requireExportedHigraUnitProjectionMatchesOnePixelOracle(double adjacencyRadius) {
     auto image = makeImage(1, 1, {7});
-    auto weighted = makeWeightedComponentTree(image, true, adjacencyRadius);
-    const MorphologicalTree& topology = weighted->topology();
+    auto valuedTree = makeValuedComponentTree(image, true, adjacencyRadius);
+    const MorphologicalTree& topology = valuedTree->topology();
 
-    for (Attribute attribute : ATTRIBUTE_GROUPS.at(AttributeGroup::ALL)) {
-        const auto computed = AttributeComputation::computeSingleAttribute(*weighted, attribute);
-        const auto projected = AttributeComputation::projectNodeValuesToExportedHigra(*weighted, computed.attributeNames(), computed.values());
-        const float expected = computed.values()[computed.attributeNames().linearIndex(topology.getRoot(), attribute)];
+    for (Attribute attribute : ATTRIBUTE_GROUPS.at(AttributeGroup::All)) {
+        const auto computed = AttributeComputation::computeSingleAttribute(*valuedTree, attribute);
+        const auto projected = AttributeComputation::projectNodeValuesToExportedHigra(*valuedTree, computed.attributeNames(), computed.values());
+        const float expected = computed.values()[computed.attributeNames().linearIndex(topology.root(), attribute)];
 
         std::ostringstream label;
         label << "unit value for " << AttributeNames::toString(attribute) << " at radius " << adjacencyRadius;
@@ -53,38 +53,39 @@ void requireExportedHigraUnitProjectionMatchesOnePixelOracle(double adjacencyRad
 }
 
 void requireUnitComputersUseProvidedLeafOrder() {
-    auto weighted = makeWeightedComponentTree(makeComponentTreeFixture(), true);
-    const MorphologicalTree& topology = weighted->topology();
-    const std::vector<NodeId> exportedProperParts{10, 0};
-    const std::vector<Attribute> attributes{LEVEL, VOLUME, BOX_COL_MIN, BOX_ROW_MIN};
+    auto valuedTree = makeValuedComponentTree(makeComponentTreeFixture(), true);
+    const MorphologicalTree& topology = valuedTree->topology();
+    const std::vector<PixelId> exportedProperParts{10, 0};
+    const std::vector<Attribute> attributes{MeanGrayLevel, Volume, BoxColumnMin, BoxRowMin};
     const AttributeNames unitNames = makeDenseAttributeNames(attributes);
     std::vector<float> unitValues(exportedProperParts.size() * static_cast<size_t>(unitNames.NUM_ATTRIBUTES), std::numeric_limits<float>::quiet_NaN());
 
-    const std::span<const std::uint8_t> altitude = weighted->altitudeSpan();
+    const std::span<const std::uint8_t> altitude = valuedTree->nodeAltitudeSpan();
 
-    const std::array<Attribute, 1> levelRequest{LEVEL};
+    const std::array<Attribute, 1> meanGrayLevelRequest{MeanGrayLevel};
     GrayLevelStatsComputer::computeUnitRows(AltitudeUnitAttributeComputeContext<float, std::uint8_t>{
-        topology, altitude, std::span<const NodeId>(exportedProperParts), std::span<float>(unitValues), unitNames, std::span<const Attribute>(levelRequest)});
+        topology, altitude, std::span<const PixelId>(exportedProperParts), std::span<float>(unitValues), unitNames,
+        std::span<const Attribute>(meanGrayLevelRequest)});
 
-    const std::array<Attribute, 1> volumeRequest{VOLUME};
+    const std::array<Attribute, 1> volumeRequest{Volume};
     VolumeComputer::computeUnitRows(AltitudeUnitAttributeComputeContext<float, std::uint8_t>{
-        topology, altitude, std::span<const NodeId>(exportedProperParts), std::span<float>(unitValues), unitNames, std::span<const Attribute>(volumeRequest)});
+        topology, altitude, std::span<const PixelId>(exportedProperParts), std::span<float>(unitValues), unitNames, std::span<const Attribute>(volumeRequest)});
 
-    const std::array<Attribute, 2> boundingBoxRequest{BOX_COL_MIN, BOX_ROW_MIN};
+    const std::array<Attribute, 2> boundingBoxRequest{BoxColumnMin, BoxRowMin};
     BoundingBoxComputer::computeUnitRows(UnitAttributeComputeContext<float>{
-        topology, std::span<const NodeId>(exportedProperParts), std::span<float>(unitValues), unitNames, std::span<const Attribute>(boundingBoxRequest)});
+        topology, std::span<const PixelId>(exportedProperParts), std::span<float>(unitValues), unitNames, std::span<const Attribute>(boundingBoxRequest)});
 
     for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(exportedProperParts.size()); ++leafIndex) {
-        const NodeId properPart = exportedProperParts[static_cast<size_t>(leafIndex)];
-        const NodeId owner = topology.getProperPartOwner(properPart);
-        const auto [row, col] = ImageUtils::to2D(properPart, topology.getNumColsOfGridDomain2D());
-        requireEqual(unitValues[unitNames.linearIndex(leafIndex, LEVEL)], static_cast<float>(weighted->getAltitude(owner)),
-                     "unit LEVEL must follow the exported leaf order");
-        requireEqual(unitValues[unitNames.linearIndex(leafIndex, VOLUME)], static_cast<float>(weighted->getAltitude(owner)),
+        const PixelId pixel = exportedProperParts[static_cast<size_t>(leafIndex)];
+        const NodeId smallestNodeId = topology.smallestNode(pixel);
+        const auto [row, column] = ImageUtils::to2D(pixel, topology.numColumns());
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, MeanGrayLevel)], static_cast<float>(valuedTree->nodeAltitude(smallestNodeId)),
+                     "unit MEAN_GRAY_LEVEL must follow the exported leaf order");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, Volume)], static_cast<float>(valuedTree->nodeAltitude(smallestNodeId)),
                      "unit VOLUME must follow the exported leaf order");
-        requireEqual(unitValues[unitNames.linearIndex(leafIndex, BOX_COL_MIN)], static_cast<float>(col),
-                     "unit BOX_COL_MIN must follow the exported leaf order");
-        requireEqual(unitValues[unitNames.linearIndex(leafIndex, BOX_ROW_MIN)], static_cast<float>(row),
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, BoxColumnMin)], static_cast<float>(column),
+                     "unit BOX_COLUMN_MIN must follow the exported leaf order");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, BoxRowMin)], static_cast<float>(row),
                      "unit BOX_ROW_MIN must follow the exported leaf order");
     }
 }

@@ -1,15 +1,15 @@
 /**
- * Internal validation program for Tree-of-Shapes bitquad local-event data.
+ * Internal validation program for Tree-of-Shapes bitquad finite-window data.
  *
  * Build with `-DMMCFILTERS_BUILD_EXAMPLES=ON` and run:
  * `./build/examples/mmcfilters_tos_bitquad_naive_validation path/to/image.pgm`.
  *
- * The program compares implementation histograms, aggregated deltas, and
+ * The program compares implementation histograms, aggregated increments, and
  * proper-part projections against a naive reference. It includes `detail/`
  * headers and is not public API.
  */
 #include "mmcfilters/attributes/computers/detail/BitquadAttributeData.hpp"
-#include "mmcfilters/attributes/computers/detail/BitquadLocalEventComputation.hpp"
+#include "mmcfilters/attributes/computers/detail/BitquadFiniteWindowComputation.hpp"
 #include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
 #include "mmcfilters/utils/Image.hpp"
 #include "stb_image.h"
@@ -29,7 +29,7 @@ namespace bitquad_detail = mmcfilters::attributes::computers::detail;
 
 namespace {
 
-using Histogram = bitquad_detail::BitquadLocalEventComputation::BitquadStateHistogram;
+using Histogram = bitquad_detail::BitquadFiniteWindowComputation::BitquadStateHistogram;
 using Families = bitquad_detail::BitquadFamilyCounts;
 
 struct Summary {
@@ -46,7 +46,7 @@ struct FamilySummary {
 
 struct LoadedImage {
     int rows = 0;
-    int cols = 0;
+    int columns = 0;
     std::vector<std::uint8_t> pixels;
 };
 
@@ -65,61 +65,72 @@ LoadedImage loadImage(const std::filesystem::path& path) {
 
     LoadedImage image;
     image.rows = height;
-    image.cols = width;
+    image.columns = width;
     image.pixels.assign(raw, raw + static_cast<std::size_t>(height * width));
     stbi_image_free(raw);
     return image;
 }
 
-maf::ImageUInt8Ptr makeImage(int rows, int cols, std::span<const std::uint8_t> values) {
-    auto image = maf::ImageUInt8::create(rows, cols);
-    for (int i = 0; i < rows * cols; ++i) {
+maf::ImageUInt8Ptr makeImage(int rows, int columns, std::span<const std::uint8_t> values) {
+    auto image = maf::ImageUInt8::create(rows, columns);
+    for (int i = 0; i < rows * columns; ++i) {
         (*image)[i] = values[static_cast<std::size_t>(i)];
     }
     return image;
 }
 
-const char* interpolationName(maf::ToSInterpolation interpolation) {
-    switch (interpolation) {
-    case maf::ToSInterpolation::SelfDual:
+enum class ExampleImmersion { SelfDualSpan, Min4Max8, Min8Max4 };
+
+maf::TopographicConvention makeConvention(ExampleImmersion immersion, int rows, int columns) {
+    if (immersion == ExampleImmersion::SelfDualSpan) {
+        return {};
+    }
+    const bool minIs4 = immersion == ExampleImmersion::Min4Max8;
+    return maf::TopographicConvention{maf::ComplementaryGridImmersion{maf::ComplementaryAdjacencies{
+        maf::RegularGridAdjacency2D(rows, columns, minIs4 ? 1.0 : 1.5), maf::RegularGridAdjacency2D(rows, columns, minIs4 ? 1.5 : 1.0)}}};
+}
+
+const char* immersionName(ExampleImmersion immersion) {
+    switch (immersion) {
+    case ExampleImmersion::SelfDualSpan:
         return "SelfDual";
-    case maf::ToSInterpolation::Min4cMax8c:
+    case ExampleImmersion::Min4Max8:
         return "Min4cMax8c";
-    case maf::ToSInterpolation::Min8cMax4c:
+    case ExampleImmersion::Min8Max4:
         return "Min8cMax4c";
     }
     return "unknown";
 }
 
 std::vector<Histogram> naiveSupportBitquadHistograms(const maf::MorphologicalTree& tree) {
-    const int rows = tree.getNumRowsOfGridDomain2D();
-    const int cols = tree.getNumColsOfGridDomain2D();
+    const int rows = tree.numRows();
+    const int columns = tree.numColumns();
     const std::array<std::pair<int, int>, 4> offsets = {{
         {0, 0},
-        {1, 0},
         {0, 1},
+        {1, 0},
         {1, 1},
     }};
 
-    std::vector<Histogram> histograms(static_cast<std::size_t>(tree.getNumInternalNodeSlots()));
+    std::vector<Histogram> histograms(static_cast<std::size_t>(tree.numInternalNodeSlots()));
 
-    std::vector<std::uint8_t> stateByNode(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0);
+    std::vector<std::uint8_t> stateByNode(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0);
     std::vector<maf::NodeId> touchedNodes;
     touchedNodes.reserve(128);
 
     for (int row = -1; row < rows; ++row) {
-        for (int col = -1; col < cols; ++col) {
+        for (int column = -1; column < columns; ++column) {
             touchedNodes.clear();
             for (std::size_t bit = 0; bit < offsets.size(); ++bit) {
                 const int qRow = row + offsets[bit].first;
-                const int qCol = col + offsets[bit].second;
-                if (qRow < 0 || qRow >= rows || qCol < 0 || qCol >= cols) {
+                const int qColumn = column + offsets[bit].second;
+                if (qRow < 0 || qRow >= rows || qColumn < 0 || qColumn >= columns) {
                     continue;
                 }
 
-                const int q = maf::ImageUtils::to1D(qRow, qCol, cols);
-                for (maf::NodeId nodeId = tree.getProperPartOwner(q); nodeId != maf::InvalidNode;
-                     nodeId = tree.isRoot(nodeId) ? maf::InvalidNode : tree.getNodeParent(nodeId)) {
+                const int q = maf::ImageUtils::to1D(qRow, qColumn, columns);
+                for (maf::NodeId nodeId = tree.smallestNode(q); nodeId != maf::InvalidNode;
+                     nodeId = tree.isRoot(nodeId) ? maf::InvalidNode : tree.parent(nodeId)) {
                     auto& state = stateByNode[static_cast<std::size_t>(nodeId)];
                     if (state == 0) {
                         touchedNodes.push_back(nodeId);
@@ -130,20 +141,20 @@ std::vector<Histogram> naiveSupportBitquadHistograms(const maf::MorphologicalTre
 
             for (maf::NodeId nodeId : touchedNodes) {
                 auto& state = stateByNode[static_cast<std::size_t>(nodeId)];
-                histograms[static_cast<std::size_t>(nodeId)][static_cast<std::size_t>(state)] += 1;
+                histograms[static_cast<std::size_t>(nodeId)].count(state) += 1;
                 state = 0;
             }
         }
     }
 
-    const int totalCells = (rows + 1) * (cols + 1);
-    for (maf::NodeId nodeId : tree.getAliveNodeIds()) {
+    const int totalCells = (rows + 1) * (columns + 1);
+    for (maf::NodeId nodeId : tree.aliveNodeIds()) {
         Histogram& histogram = histograms[static_cast<std::size_t>(nodeId)];
         int nonEmpty = 0;
-        for (std::size_t state = 1; state < histogram.size(); ++state) {
-            nonEmpty += histogram[state];
+        for (std::uint8_t state = 1; state < 16; ++state) {
+            nonEmpty += histogram.count(state);
         }
-        histogram[0] = totalCells - nonEmpty;
+        histogram.count(0) = totalCells - nonEmpty;
     }
 
     return histograms;
@@ -152,10 +163,11 @@ std::vector<Histogram> naiveSupportBitquadHistograms(const maf::MorphologicalTre
 Summary compareHistograms(const maf::MorphologicalTree& tree, std::span<const Histogram> actual, std::span<const Histogram> expected, const char* label) {
     Summary summary;
     int printed = 0;
-    for (maf::NodeId nodeId : tree.getAliveNodeIds()) {
+    for (maf::NodeId nodeId : tree.aliveNodeIds()) {
         bool nodeDiffers = false;
         for (std::size_t state = 0; state < 16; ++state) {
-            const int diff = actual[static_cast<std::size_t>(nodeId)][state] - expected[static_cast<std::size_t>(nodeId)][state];
+            const int diff = actual[static_cast<std::size_t>(nodeId)].count(static_cast<std::uint8_t>(state)) -
+                             expected[static_cast<std::size_t>(nodeId)].count(static_cast<std::uint8_t>(state));
             if (diff == 0) {
                 continue;
             }
@@ -168,8 +180,8 @@ Summary compareHistograms(const maf::MorphologicalTree& tree, std::span<const Hi
             if (printed < 5) {
                 std::cout << "  " << label << " mismatch node=" << nodeId << " states:";
                 for (std::size_t state = 0; state < 16; ++state) {
-                    const int a = actual[static_cast<std::size_t>(nodeId)][state];
-                    const int e = expected[static_cast<std::size_t>(nodeId)][state];
+                    const int a = actual[static_cast<std::size_t>(nodeId)].count(static_cast<std::uint8_t>(state));
+                    const int e = expected[static_cast<std::size_t>(nodeId)].count(static_cast<std::uint8_t>(state));
                     if (a != e) {
                         std::cout << " s" << state << "=" << a << "/" << e;
                     }
@@ -182,9 +194,8 @@ Summary compareHistograms(const maf::MorphologicalTree& tree, std::span<const Hi
     return summary;
 }
 
-std::array<int, 6> familyValues(const Families& families) {
+std::array<int, 5> familyValues(const Families& families) {
     return {{
-        families.empty,
         families.q1,
         families.q2,
         families.qd,
@@ -196,7 +207,7 @@ std::array<int, 6> familyValues(const Families& families) {
 FamilySummary compareFamilies(const maf::MorphologicalTree& tree, std::span<const Families> actual, std::span<const Families> expected, const char* label) {
     FamilySummary summary;
     int printed = 0;
-    for (maf::NodeId nodeId : tree.getAliveNodeIds()) {
+    for (maf::NodeId nodeId : tree.aliveNodeIds()) {
         const auto a = familyValues(actual[static_cast<std::size_t>(nodeId)]);
         const auto e = familyValues(expected[static_cast<std::size_t>(nodeId)]);
         bool nodeDiffers = false;
@@ -212,9 +223,9 @@ FamilySummary compareFamilies(const maf::MorphologicalTree& tree, std::span<cons
         if (nodeDiffers) {
             ++summary.mismatchedNodes;
             if (printed < 5) {
-                std::cout << "  " << label << " mismatch node=" << nodeId << " actual={empty=" << a[0] << " q1=" << a[1] << " q2=" << a[2] << " qd=" << a[3]
-                          << " q3=" << a[4] << " q4=" << a[5] << "}"
-                          << " expected={empty=" << e[0] << " q1=" << e[1] << " q2=" << e[2] << " qd=" << e[3] << " q3=" << e[4] << " q4=" << e[5] << "}\n";
+                std::cout << "  " << label << " mismatch node=" << nodeId << " actual={q1=" << a[0] << " q2=" << a[1] << " qd=" << a[2] << " q3=" << a[3]
+                          << " q4=" << a[4] << "}"
+                          << " expected={q1=" << e[0] << " q2=" << e[1] << " qd=" << e[2] << " q3=" << e[3] << " q4=" << e[4] << "}\n";
                 ++printed;
             }
         }
@@ -226,10 +237,10 @@ FamilySummary compareProjectedFamilies(const maf::MorphologicalTree& tree, std::
                                        const char* label) {
     FamilySummary summary;
     int printed = 0;
-    for (maf::NodeId properPart = 0; properPart < tree.getNumTotalProperParts(); ++properPart) {
-        const maf::NodeId owner = tree.getProperPartOwner(properPart);
-        const auto a = familyValues(projected[static_cast<std::size_t>(properPart)]);
-        const auto e = familyValues(nodeExpected[static_cast<std::size_t>(owner)]);
+    for (maf::PixelId pixel = 0; pixel < tree.numPixels(); ++pixel) {
+        const maf::NodeId smallestNodeId = tree.smallestNode(pixel);
+        const auto a = familyValues(projected[static_cast<std::size_t>(pixel)]);
+        const auto e = familyValues(nodeExpected[static_cast<std::size_t>(smallestNodeId)]);
         bool differs = false;
         for (std::size_t i = 0; i < a.size(); ++i) {
             const int diff = a[i] - e[i];
@@ -243,7 +254,7 @@ FamilySummary compareProjectedFamilies(const maf::MorphologicalTree& tree, std::
         if (differs) {
             ++summary.mismatchedNodes;
             if (printed < 5) {
-                std::cout << "  " << label << " mismatch proper_part=" << properPart << " owner=" << owner << "\n";
+                std::cout << "  " << label << " mismatch proper_part=" << pixel << " smallestNodeId=" << smallestNodeId << "\n";
                 ++printed;
             }
         }
@@ -261,34 +272,36 @@ void printSummary(const char* name, const FamilySummary& summary) {
               << "\n";
 }
 
-bool compareOne(const std::filesystem::path& imagePath, int rows, int cols, std::span<const std::uint8_t> pixels, maf::ToSInterpolation interpolation) {
-    auto weighted = maf::MorphologicalTreeFactory::createTreeOfShapes(makeImage(rows, cols, pixels), interpolation);
-    const maf::MorphologicalTree& tree = weighted.topology();
+bool compareOne(const std::filesystem::path& imagePath, int rows, int columns, std::span<const std::uint8_t> pixels, ExampleImmersion immersion) {
+    auto valuedTree = maf::MorphologicalTreeFactory::createTreeOfShapes(makeImage(rows, columns, pixels), makeConvention(immersion, rows, columns));
+    const maf::MorphologicalTree& tree = valuedTree.topology();
 
     const auto naiveHistograms = naiveSupportBitquadHistograms(tree);
-    const auto naiveFamilies = bitquad_detail::BitquadLocalEventComputation::computeBitquadFamilyCounts(naiveHistograms);
+    const auto naiveFamilies = bitquad_detail::BitquadFiniteWindowComputation::computeBitquadFamilyCounts(naiveHistograms);
 
-    const auto mafHistograms = bitquad_detail::BitquadLocalEventComputation::computeBitquadStateHistograms(tree);
-    const auto mafFamilies = bitquad_detail::BitquadLocalEventComputation::computeBitquadFamilyCounts(tree);
-    const auto mafFamilyDeltas = bitquad_detail::BitquadLocalEventComputation::computeBitquadFamilyDeltas(tree);
-    const auto mafAggregatedFamilies = bitquad_detail::BitquadLocalEventComputation::aggregateBitquadFamilyDeltas(tree, mafFamilyDeltas);
-    const auto mafStateDeltas = bitquad_detail::BitquadLocalEventComputation::computeBitquadStateHistogramDeltas(tree);
-    const auto mafAggregatedHistograms = bitquad_detail::BitquadLocalEventComputation::aggregateBitquadStateHistogramDeltas(tree, mafStateDeltas);
-    const auto mafProjectedFamilies = bitquad_detail::BitquadLocalEventComputation::projectBitquadFamilyCountsToProperParts(tree, mafFamilies);
+    const auto mafHistograms = bitquad_detail::BitquadFiniteWindowComputation::computeBitquadStateHistograms(tree);
+    const auto mafFamilies = bitquad_detail::BitquadFiniteWindowComputation::computeBitquadFamilyCounts(tree);
+    const auto mafFamilyIncrements = bitquad_detail::BitquadFiniteWindowComputation::computeBitquadFamilyIncrements(tree);
+    const auto mafAggregatedFamilies = bitquad_detail::BitquadFiniteWindowComputation::aggregateBitquadFamilyIncrements(tree, mafFamilyIncrements);
+    const auto mafStateIncrements = bitquad_detail::BitquadFiniteWindowComputation::computeNonemptyBitquadStateHistogramIncrements(tree);
+    const auto mafAggregatedNonemptyHistograms =
+        bitquad_detail::BitquadFiniteWindowComputation::aggregateNonemptyBitquadStateHistogramIncrements(tree, mafStateIncrements);
+    const auto mafAggregatedHistograms = bitquad_detail::BitquadFiniteWindowComputation::materializeEmptyBitquadCount(tree, mafAggregatedNonemptyHistograms);
+    const auto mafProjectedFamilies = bitquad_detail::BitquadFiniteWindowComputation::projectBitquadFamilyCountsToProperParts(tree, mafFamilies);
 
-    std::cout << "image=\"" << imagePath.string() << "\" size=" << rows << "x" << cols << " interpolation=" << interpolationName(interpolation)
-              << " nodes=" << tree.getNumNodes() << " node_slots=" << tree.getNumInternalNodeSlots() << " pixels=" << tree.getNumTotalProperParts() << "\n";
+    std::cout << "image=\"" << imagePath.string() << "\" size=" << rows << "x" << columns << " immersion=" << immersionName(immersion)
+              << " nodes=" << tree.numNodes() << " node_slots=" << tree.numInternalNodeSlots() << " pixels=" << tree.numPixels() << "\n";
 
     const Summary stateSummary = compareHistograms(tree, mafHistograms, naiveHistograms, "state");
-    const Summary aggregatedStateSummary = compareHistograms(tree, mafAggregatedHistograms, naiveHistograms, "aggregated-state-delta");
+    const Summary aggregatedStateSummary = compareHistograms(tree, mafAggregatedHistograms, naiveHistograms, "aggregated-state-increment");
     const FamilySummary familySummary = compareFamilies(tree, mafFamilies, naiveFamilies, "family");
-    const FamilySummary aggregatedFamilySummary = compareFamilies(tree, mafAggregatedFamilies, naiveFamilies, "aggregated-family-delta");
+    const FamilySummary aggregatedFamilySummary = compareFamilies(tree, mafAggregatedFamilies, naiveFamilies, "aggregated-family-increment");
     const FamilySummary projectedSummary = compareProjectedFamilies(tree, mafProjectedFamilies, naiveFamilies, "proper-part-projection");
 
     printSummary("state", stateSummary);
-    printSummary("aggregated-state-delta", aggregatedStateSummary);
+    printSummary("aggregated-state-increment", aggregatedStateSummary);
     printSummary("family", familySummary);
-    printSummary("aggregated-family-delta", aggregatedFamilySummary);
+    printSummary("aggregated-family-increment", aggregatedFamilySummary);
     printSummary("proper-part-projection", projectedSummary);
 
     return stateSummary.mismatchedNodes == 0 && aggregatedStateSummary.mismatchedNodes == 0 && familySummary.mismatchedNodes == 0 &&
@@ -306,8 +319,8 @@ int main(int argc, char** argv) {
 
     const LoadedImage image = loadImage(imagePath);
     bool ok = true;
-    ok = compareOne(imagePath, image.rows, image.cols, image.pixels, maf::ToSInterpolation::SelfDual) && ok;
-    ok = compareOne(imagePath, image.rows, image.cols, image.pixels, maf::ToSInterpolation::Min4cMax8c) && ok;
-    ok = compareOne(imagePath, image.rows, image.cols, image.pixels, maf::ToSInterpolation::Min8cMax4c) && ok;
+    ok = compareOne(imagePath, image.rows, image.columns, image.pixels, ExampleImmersion::SelfDualSpan) && ok;
+    ok = compareOne(imagePath, image.rows, image.columns, image.pixels, ExampleImmersion::Min4Max8) && ok;
+    ok = compareOne(imagePath, image.rows, image.columns, image.pixels, ExampleImmersion::Min8Max4) && ok;
     return ok ? 0 : 2;
 }

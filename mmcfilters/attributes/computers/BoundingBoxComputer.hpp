@@ -23,7 +23,7 @@ namespace detail {
 /**
  * @brief Returns the bounding-box buffer slot for a tree node.
  *
- * @param nodeId Identifier of the node used by the operation.
+ * @param nodeId Dense internal node identifier.
  * @return Dense buffer slot for the node bounding box.
  */
 inline NodeId boundingBoxSlotOf(const MorphologicalTree&, NodeId nodeId) noexcept { return nodeId; }
@@ -39,9 +39,9 @@ struct BoundingBoxRequest {
     /** @brief Indicates whether the width-to-height ratio was requested. */
     bool ratioWH = false;
     /** @brief Indicates whether the minimum-column coordinate was requested. */
-    bool colMin = false;
+    bool columnMin = false;
     /** @brief Indicates whether the maximum-column coordinate was requested. */
-    bool colMax = false;
+    bool columnMax = false;
     /** @brief Indicates whether the minimum-row coordinate was requested. */
     bool rowMin = false;
     /** @brief Indicates whether the maximum-row coordinate was requested. */
@@ -54,7 +54,7 @@ struct BoundingBoxRequest {
      *
      * @return True when any requested feature is enabled; otherwise false.
      */
-    [[nodiscard]] bool any() const noexcept { return width || height || rectangularity || ratioWH || colMin || colMax || rowMin || rowMax || diagonalLength; }
+    [[nodiscard]] bool any() const noexcept { return width || height || rectangularity || ratioWH || columnMin || columnMax || rowMin || rowMax || diagonalLength; }
 
     /**
      * @brief Tests whether area dependency holds.
@@ -70,15 +70,15 @@ struct BoundingBoxRequest {
      * @return Resulting request descriptor from the requested attributes.
      */
     [[nodiscard]] static BoundingBoxRequest from(std::span<const Attribute> requestedAttributes) {
-        return {.width = contains(requestedAttributes, BOX_WIDTH),
-                .height = contains(requestedAttributes, BOX_HEIGHT),
-                .rectangularity = contains(requestedAttributes, RECTANGULARITY),
-                .ratioWH = contains(requestedAttributes, RATIO_WH),
-                .colMin = contains(requestedAttributes, BOX_COL_MIN),
-                .colMax = contains(requestedAttributes, BOX_COL_MAX),
-                .rowMin = contains(requestedAttributes, BOX_ROW_MIN),
-                .rowMax = contains(requestedAttributes, BOX_ROW_MAX),
-                .diagonalLength = contains(requestedAttributes, DIAGONAL_LENGTH)};
+        return {.width = contains(requestedAttributes, BoxWidth),
+                .height = contains(requestedAttributes, BoundingBoxHeight),
+                .rectangularity = contains(requestedAttributes, Rectangularity),
+                .ratioWH = contains(requestedAttributes, RatioWh),
+                .columnMin = contains(requestedAttributes, BoxColumnMin),
+                .columnMax = contains(requestedAttributes, BoxColumnMax),
+                .rowMin = contains(requestedAttributes, BoxRowMin),
+                .rowMax = contains(requestedAttributes, BoxRowMax),
+                .diagonalLength = contains(requestedAttributes, DiagonalLength)};
     }
 
   private:
@@ -111,34 +111,34 @@ inline void computeBoundingBox(const AttributeComputeContext<Real>& context, con
 
     const int stride = context.attrNames.NUM_ATTRIBUTES;
     const auto offsetOf = [&](Attribute attribute) { return context.attrNames.indexMap.find(attribute)->second; };
-    const int widthOffset = request.width ? offsetOf(BOX_WIDTH) : 0;
-    const int heightOffset = request.height ? offsetOf(BOX_HEIGHT) : 0;
-    const int rectangularityOffset = request.rectangularity ? offsetOf(RECTANGULARITY) : 0;
-    const int ratioOffset = request.ratioWH ? offsetOf(RATIO_WH) : 0;
-    const int colMinOffset = request.colMin ? offsetOf(BOX_COL_MIN) : 0;
-    const int colMaxOffset = request.colMax ? offsetOf(BOX_COL_MAX) : 0;
-    const int rowMinOffset = request.rowMin ? offsetOf(BOX_ROW_MIN) : 0;
-    const int rowMaxOffset = request.rowMax ? offsetOf(BOX_ROW_MAX) : 0;
-    const int diagonalOffset = request.diagonalLength ? offsetOf(DIAGONAL_LENGTH) : 0;
+    const int widthOffset = request.width ? offsetOf(BoxWidth) : 0;
+    const int heightOffset = request.height ? offsetOf(BoundingBoxHeight) : 0;
+    const int rectangularityOffset = request.rectangularity ? offsetOf(Rectangularity) : 0;
+    const int ratioOffset = request.ratioWH ? offsetOf(RatioWh) : 0;
+    const int columnMinOffset = request.columnMin ? offsetOf(BoxColumnMin) : 0;
+    const int columnMaxOffset = request.columnMax ? offsetOf(BoxColumnMax) : 0;
+    const int rowMinOffset = request.rowMin ? offsetOf(BoxRowMin) : 0;
+    const int rowMaxOffset = request.rowMax ? offsetOf(BoxRowMax) : 0;
+    const int diagonalOffset = request.diagonalLength ? offsetOf(DiagonalLength) : 0;
     auto outputIndex = [&](NodeId node, int offset) { return static_cast<std::size_t>(node * stride + offset); };
 
     const int areaStride = areaDependency != nullptr ? areaDependency->attrNames->NUM_ATTRIBUTES : 0;
-    const int areaOffset = areaDependency != nullptr ? areaDependency->attrNames->indexMap.find(AREA)->second : 0;
+    const int areaOffset = areaDependency != nullptr ? areaDependency->attrNames->indexMap.find(Area)->second : 0;
     auto areaIndex = [&](NodeId node) { return static_cast<std::size_t>(node * areaStride + areaOffset); };
 
-    const int numNodes = context.tree.getNumInternalNodeSlots();
+    const int numNodes = context.tree.numInternalNodeSlots();
     const GridDomain2D& domain = ::mmcfilters::detail::CommittedTreeAccess::gridDomain2D(context.tree);
-    std::vector<int> columnMin(static_cast<std::size_t>(numNodes), domain.cols);
+    std::vector<int> columnMin(static_cast<std::size_t>(numNodes), domain.columns);
     std::vector<int> columnMax(static_cast<std::size_t>(numNodes), 0);
     std::vector<int> rowMin(static_cast<std::size_t>(numNodes), domain.rows);
     std::vector<int> rowMax(static_cast<std::size_t>(numNodes), 0);
 
     ::mmcfilters::detail::kernel::traversePostOrder(
-        context.tree, context.tree.getRoot(),
+        context.tree, context.tree.root(),
         [&](NodeId node) {
-            for (int properPart : ::mmcfilters::detail::CommittedTreeAccess::properParts(context.tree, node)) {
-                const int row = properPart / domain.cols;
-                const int column = properPart % domain.cols;
+            for (PixelId pixel : ::mmcfilters::detail::CommittedTreeAccess::properParts(context.tree, node)) {
+                const int row = pixel / domain.columns;
+                const int column = pixel % domain.columns;
                 columnMin[static_cast<std::size_t>(node)] = std::min(columnMin[static_cast<std::size_t>(node)], column);
                 columnMax[static_cast<std::size_t>(node)] = std::max(columnMax[static_cast<std::size_t>(node)], column);
                 rowMin[static_cast<std::size_t>(node)] = std::min(rowMin[static_cast<std::size_t>(node)], row);
@@ -166,10 +166,10 @@ inline void computeBoundingBox(const AttributeComputeContext<Real>& context, con
             if (request.ratioWH)
                 context.buffer[outputIndex(node, ratioOffset)] =
                     ::mmcfilters::attributes::numeric::safeDivide(std::max(width, height), std::min(width, height));
-            if (request.colMin)
-                context.buffer[outputIndex(node, colMinOffset)] = static_cast<Real>(columnMin[static_cast<std::size_t>(node)]);
-            if (request.colMax)
-                context.buffer[outputIndex(node, colMaxOffset)] = static_cast<Real>(columnMax[static_cast<std::size_t>(node)]);
+            if (request.columnMin)
+                context.buffer[outputIndex(node, columnMinOffset)] = static_cast<Real>(columnMin[static_cast<std::size_t>(node)]);
+            if (request.columnMax)
+                context.buffer[outputIndex(node, columnMaxOffset)] = static_cast<Real>(columnMax[static_cast<std::size_t>(node)]);
             if (request.rowMin)
                 context.buffer[outputIndex(node, rowMinOffset)] = static_cast<Real>(rowMin[static_cast<std::size_t>(node)]);
             if (request.rowMax)
@@ -210,7 +210,7 @@ inline void validateBoundingBoxContext(const AttributeComputeContext<Real>& cont
  * outputs come directly from the tracked extrema.
  *
  * @note The computed box is purely image-domain based. It assumes that the
- * tree exposes a valid original image domain through `rows` and `cols`.
+ * tree exposes a valid original image domain through `rows` and `columns`.
  */
 class BoundingBoxComputer {
   public:
@@ -226,8 +226,8 @@ class BoundingBoxComputer {
     /**
      * @brief Canonical list of bounding-box descriptors produced by this computer.
      */
-    inline static constexpr std::array<Attribute, 9> producedAttributes{BOX_WIDTH,   BOX_HEIGHT,  DIAGONAL_LENGTH, RECTANGULARITY, RATIO_WH,
-                                                                        BOX_COL_MIN, BOX_COL_MAX, BOX_ROW_MIN,     BOX_ROW_MAX};
+    inline static constexpr std::array<Attribute, 9> producedAttributes{BoxWidth,   BoundingBoxHeight,  DiagonalLength, Rectangularity, RatioWh,
+                                                                        BoxColumnMin, BoxColumnMax, BoxRowMin,     BoxRowMax};
 
     /**
      * @brief Computes the requested bounding-box descriptors.
@@ -248,9 +248,9 @@ class BoundingBoxComputer {
         const DependencySourceT<Real>* areaDependency = nullptr;
         if (request.needsAreaDependency()) {
             if constexpr (contract::validationsEnabled) {
-                areaDependency = &context.dependencies.require(AREA);
+                areaDependency = &context.dependencies.require(Area);
             } else {
-                areaDependency = ::mmcfilters::findDependencySource(context.dependencySources, AREA);
+                areaDependency = ::mmcfilters::findDependencySource(context.dependencySources, Area);
             }
         }
         detail::kernel::computeBoundingBox(context, request, areaDependency);
@@ -265,43 +265,43 @@ class BoundingBoxComputer {
      * @param context Operation context or diagnostic label.
      */
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
-        requireUnitAttributeBufferShape(context.tree, context.unitProperParts, context.buffer, context.attrNames);
+        requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
 
         const detail::BoundingBoxRequest request = detail::BoundingBoxRequest::from(context.requestedAttributes);
         if (!request.any()) {
             return;
         }
 
-        const int numCols = context.tree.getNumColsOfGridDomain2D();
-        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitProperParts.size()); ++leafIndex) {
-            const NodeId properPart = context.unitProperParts[static_cast<size_t>(leafIndex)];
-            const auto [row, col] = ImageUtils::to2D(properPart, numCols);
+        const int numColumns = context.tree.numColumns();
+        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitPixels.size()); ++leafIndex) {
+            const PixelId pixel = context.unitPixels[static_cast<size_t>(leafIndex)];
+            const auto [row, column] = ImageUtils::to2D(pixel, numColumns);
             if (request.width) {
-                context.buffer[context.attrNames.linearIndex(leafIndex, BOX_WIDTH)] = Real{1};
+                context.buffer[context.attrNames.linearIndex(leafIndex, BoxWidth)] = Real{1};
             }
             if (request.height) {
-                context.buffer[context.attrNames.linearIndex(leafIndex, BOX_HEIGHT)] = Real{1};
+                context.buffer[context.attrNames.linearIndex(leafIndex, BoundingBoxHeight)] = Real{1};
             }
             if (request.rectangularity) {
-                context.buffer[context.attrNames.linearIndex(leafIndex, RECTANGULARITY)] = Real{1};
+                context.buffer[context.attrNames.linearIndex(leafIndex, Rectangularity)] = Real{1};
             }
             if (request.ratioWH) {
-                context.buffer[context.attrNames.linearIndex(leafIndex, RATIO_WH)] = Real{1};
+                context.buffer[context.attrNames.linearIndex(leafIndex, RatioWh)] = Real{1};
             }
-            if (request.colMin) {
-                context.buffer[context.attrNames.linearIndex(leafIndex, BOX_COL_MIN)] = static_cast<Real>(col);
+            if (request.columnMin) {
+                context.buffer[context.attrNames.linearIndex(leafIndex, BoxColumnMin)] = static_cast<Real>(column);
             }
-            if (request.colMax) {
-                context.buffer[context.attrNames.linearIndex(leafIndex, BOX_COL_MAX)] = static_cast<Real>(col);
+            if (request.columnMax) {
+                context.buffer[context.attrNames.linearIndex(leafIndex, BoxColumnMax)] = static_cast<Real>(column);
             }
             if (request.rowMin) {
-                context.buffer[context.attrNames.linearIndex(leafIndex, BOX_ROW_MIN)] = static_cast<Real>(row);
+                context.buffer[context.attrNames.linearIndex(leafIndex, BoxRowMin)] = static_cast<Real>(row);
             }
             if (request.rowMax) {
-                context.buffer[context.attrNames.linearIndex(leafIndex, BOX_ROW_MAX)] = static_cast<Real>(row);
+                context.buffer[context.attrNames.linearIndex(leafIndex, BoxRowMax)] = static_cast<Real>(row);
             }
             if (request.diagonalLength) {
-                context.buffer[context.attrNames.linearIndex(leafIndex, DIAGONAL_LENGTH)] = std::sqrt(Real{2});
+                context.buffer[context.attrNames.linearIndex(leafIndex, DiagonalLength)] = std::sqrt(Real{2});
             }
         }
     }

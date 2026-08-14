@@ -364,7 +364,7 @@ def main() -> int:
         "## Experimental context",
         "",
         f"- Workload: `{benchmark.get('workload', 'unknown')}` ({benchmark.get('input_source', 'unknown')})",
-        f"- Domain: {benchmark.get('rows', '?')} x {benchmark.get('cols', '?')}",
+        f"- Domain: {benchmark.get('rows', '?')} x {benchmark.get('columns', '?')}",
         f"- Repetitions per process: {benchmark.get('repetitions', '?')}",
         f"- Process runs per mode: {metadata.get('process_runs_per_mode', '?')}",
         f"- Git commit: `{git.get('commit', 'unknown')}`; dirty worktree: `{git.get('dirty', 'unknown')}`",

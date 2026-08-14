@@ -14,6 +14,7 @@
 #include <limits>
 #include <stdexcept>
 
+#include "Common.hpp"
 #include "Contract.hpp"
 
 namespace mmcfilters {
@@ -32,10 +33,10 @@ class CommittedImageAccess;
  *
  * Ownership semantics:
  *
- * - `create(rows, cols)` allocates and owns a fresh buffer;
- * - `create(rows, cols, initValue)` allocates, owns, and fills the buffer;
- * - `fromExternal(rawPtr, rows, cols)` wraps external memory without taking ownership;
- * - `fromRaw(rawPtr, rows, cols)` wraps external memory and assumes ownership.
+ * - `create(rows, columns)` allocates and owns a fresh buffer;
+ * - `create(rows, columns, initValue)` allocates, owns, and fills the buffer;
+ * - `fromExternal(rawPtr, rows, columns)` wraps external memory without taking ownership;
+ * - `fromRaw(rawPtr, rows, columns)` wraps external memory and assumes ownership.
  *
  * @tparam PixelType Pixel scalar type, such as `uint8_t`, `int32_t`, or `float`.
  */
@@ -43,11 +44,11 @@ template <typename PixelType> class Image {
   private:
     friend class detail::CommittedImageAccess;
     struct EstablishedDimensionsTag {};
-    /** @brief Stores the num rows. */
+    /** @brief Number of rows. */
     int numRows;
-    /** @brief Stores the num cols. */
-    int numCols;
-    /** @brief Stores the data. */
+    /** @brief Number of columns. */
+    int numColumns;
+    /** @brief Data. */
     std::shared_ptr<PixelType[]> data;
     /** @brief Defines the `Ptr` alias used by the component. */
     using Ptr = std::shared_ptr<Image<PixelType>>;
@@ -56,27 +57,27 @@ template <typename PixelType> class Image {
      * @brief Checks and converts size.
      *
      * @param rows Number of rows in the domain.
-     * @param cols Number of columns in the domain.
+     * @param columns Number of columns in the domain.
      * @return Validated number of pixels in the image.
      */
-    static std::size_t checkedSize(int rows, int cols) {
-        MMCFILTERS_CONTRACT_REQUIRE(rows > 0 && cols > 0, throw std::invalid_argument("Image dimensions must be positive."));
+    static std::size_t checkedSize(int rows, int columns) {
+        MMCFILTERS_CONTRACT_REQUIRE(rows > 0 && columns > 0, throw std::invalid_argument("Image dimensions must be positive."));
         const auto rowCount = static_cast<std::size_t>(rows);
-        const auto colCount = static_cast<std::size_t>(cols);
-        MMCFILTERS_CONTRACT_REQUIRE(rowCount <= static_cast<std::size_t>(std::numeric_limits<int>::max()) / colCount,
+        const auto columnCount = static_cast<std::size_t>(columns);
+        MMCFILTERS_CONTRACT_REQUIRE(rowCount <= static_cast<std::size_t>(std::numeric_limits<int>::max()) / columnCount,
                                     throw std::overflow_error("Image dimensions exceed the supported int-indexed size."));
-        return rowCount * colCount;
+        return rowCount * columnCount;
     }
 
     /**
      * @brief Allocates storage after dimensions were established by a dominating boundary.
      * @param rows Established positive row count.
-     * @param cols Established positive column count.
+     * @param columns Established positive column count.
      * @param tag Proof tag selecting the validation-free constructor.
      */
-    Image(int rows, int cols, [[maybe_unused]] EstablishedDimensionsTag tag)
-        : numRows(rows), numCols(cols),
-          data(new PixelType[static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols)], std::default_delete<PixelType[]>()) {}
+    Image(int rows, int columns, [[maybe_unused]] EstablishedDimensionsTag tag)
+        : numRows(rows), numColumns(columns),
+          data(new PixelType[static_cast<std::size_t>(rows) * static_cast<std::size_t>(columns)], [](PixelType* pixels) { delete[] pixels; }) {}
 
   public:
     /// Pixel scalar type stored by this image.
@@ -86,35 +87,35 @@ template <typename PixelType> class Image {
      * @brief Allocates an owned row-major image buffer.
      *
      * @param rows Number of image rows.
-     * @param cols Number of image columns.
+     * @param columns Number of image columns.
      * @throws std::invalid_argument If either dimension is not positive.
-     * @throws std::overflow_error If `rows * cols` exceeds the supported size.
+     * @throws std::overflow_error If `rows * columns` exceeds the supported size.
      */
-    Image(int rows, int cols) : numRows(rows), numCols(cols), data(new PixelType[checkedSize(rows, cols)], std::default_delete<PixelType[]>()) {}
+    Image(int rows, int columns) : numRows(rows), numColumns(columns), data(new PixelType[checkedSize(rows, columns)], [](PixelType* pixels) { delete[] pixels; }) {}
 
     /**
      * @brief Creates an owned image with uninitialised pixel values.
      *
      * @param rows Number of image rows.
-     * @param cols Number of image columns.
+     * @param columns Number of image columns.
      * @return Shared owning image wrapper.
      * @throws std::invalid_argument If either dimension is not positive.
-     * @throws std::overflow_error If `rows * cols` exceeds the supported size.
+     * @throws std::overflow_error If `rows * columns` exceeds the supported size.
      */
-    [[nodiscard]] static Ptr create(int rows, int cols) { return std::make_shared<Image>(rows, cols); }
+    [[nodiscard]] static Ptr create(int rows, int columns) { return std::make_shared<Image>(rows, columns); }
 
     /**
      * @brief Creates an owned image and fills every pixel with `initValue`.
      *
      * @param rows Number of image rows.
-     * @param cols Number of image columns.
+     * @param columns Number of image columns.
      * @param initValue Value assigned to every pixel.
      * @return Shared owning image wrapper.
      * @throws std::invalid_argument If either dimension is not positive.
-     * @throws std::overflow_error If `rows * cols` exceeds the supported size.
+     * @throws std::overflow_error If `rows * columns` exceeds the supported size.
      */
-    [[nodiscard]] static Ptr create(int rows, int cols, PixelType initValue) {
-        auto img = create(rows, cols);
+    [[nodiscard]] static Ptr create(int rows, int columns, PixelType initValue) {
+        auto img = create(rows, columns);
         img->fill(initValue);
         return img;
     }
@@ -125,16 +126,16 @@ template <typename PixelType> class Image {
      * The caller remains responsible for keeping `rawPtr` alive while the image
      * wrapper is used.
      *
-     * @param rawPtr Pointer to `rows * cols` row-major pixels.
+     * @param rawPtr Pointer to `rows * columns` row-major pixels.
      * @param rows Number of image rows.
-     * @param cols Number of image columns.
+     * @param columns Number of image columns.
      * @return Shared non-owning image wrapper.
      * @throws std::invalid_argument If `rawPtr` is null or dimensions are invalid.
-     * @throws std::overflow_error If `rows * cols` exceeds the supported size.
+     * @throws std::overflow_error If `rows * columns` exceeds the supported size.
      */
-    [[nodiscard]] static Ptr fromExternal(PixelType* rawPtr, int rows, int cols) {
+    [[nodiscard]] static Ptr fromExternal(PixelType* rawPtr, int rows, int columns) {
         MMCFILTERS_CONTRACT_REQUIRE(rawPtr != nullptr, throw std::invalid_argument("Image::fromExternal requires a non-null raw pointer."));
-        auto img = create(rows, cols);
+        auto img = create(rows, columns);
         img->data = std::shared_ptr<PixelType[]>(rawPtr, [](PixelType*) {
             // Empty deleter: the wrapper does not release external memory.
         });
@@ -146,26 +147,26 @@ template <typename PixelType> class Image {
      *
      * @param rawPtr Pointer allocated with `new PixelType[]`.
      * @param rows Number of image rows.
-     * @param cols Number of image columns.
+     * @param columns Number of image columns.
      * @return Shared owning image wrapper.
      * @throws std::invalid_argument If `rawPtr` is null or dimensions are invalid.
-     * @throws std::overflow_error If `rows * cols` exceeds the supported size.
+     * @throws std::overflow_error If `rows * columns` exceeds the supported size.
      */
-    [[nodiscard]] static Ptr fromRaw(PixelType* rawPtr, int rows, int cols) {
+    [[nodiscard]] static Ptr fromRaw(PixelType* rawPtr, int rows, int columns) {
         MMCFILTERS_CONTRACT_REQUIRE(rawPtr != nullptr, throw std::invalid_argument("Image::fromRaw requires a non-null raw pointer."));
-        auto img = create(rows, cols);
-        img->data = std::shared_ptr<PixelType[]>(rawPtr, std::default_delete<PixelType[]>());
+        auto img = create(rows, columns);
+        img->data = std::shared_ptr<PixelType[]>(rawPtr, [](PixelType* pixels) { delete[] pixels; });
         return img;
     }
 
     /**
      * @brief Fills every pixel with `value`.
      *
-     * Complexity: O(rows * cols).
+     * Complexity: O(rows * columns).
      *
-     * @param value Value used by the operation.
+     * @param value Value.
      */
-    void fill(PixelType value) { std::fill_n(data.get(), numRows * numCols, value); }
+    void fill(PixelType value) { std::fill_n(data.get(), numRows * numColumns, value); }
 
     /**
      * @brief Returns true when shape and pixel values match `other`.
@@ -173,12 +174,12 @@ template <typename PixelType> class Image {
      * @param other Non-null image pointer to compare against.
      * @return True only when dimensions and every row-major pixel match.
      *
-     * Complexity: O(rows * cols).
+     * Complexity: O(rows * columns).
      */
     bool isEqual(const Ptr& other) const {
-        if (numRows != other->numRows || numCols != other->numCols)
+        if (numRows != other->numRows || numColumns != other->numColumns)
             return false;
-        int n = numRows * numCols;
+        int n = numRows * numColumns;
         for (int i = 0; i < n; ++i) {
             if (data[i] != (*other)[i])
                 return false;
@@ -191,11 +192,11 @@ template <typename PixelType> class Image {
      *
      * @return New image with the same dimensions and pixel values.
      *
-     * Complexity: O(rows * cols).
+     * Complexity: O(rows * columns).
      */
     [[nodiscard]] Ptr clone() const {
-        auto newImg = create(numRows, numCols);
-        std::copy(data.get(), data.get() + (numRows * numCols), newImg->data.get());
+        auto newImg = create(numRows, numColumns);
+        std::copy(data.get(), data.get() + (numRows * numColumns), newImg->data.get());
         return newImg;
     }
 
@@ -232,36 +233,36 @@ template <typename PixelType> class Image {
      *
      * @return The number of image columns.
      */
-    int getNumCols() const { return numCols; }
+    int getNumColumns() const { return numColumns; }
 
     /**
      * @brief Returns the total number of pixels.
      *
      * @return The total number of pixels.
      */
-    int getSize() const { return numRows * numCols; }
+    int getSize() const { return numRows * numColumns; }
 
     /**
      * @brief Returns mutable linear access to pixel `index`.
      *
-     * `index` is interpreted in row-major order as `row * getNumCols() + col`.
+     * `index` is interpreted in row-major order as `row * getNumColumns() + column`.
      * The operator does not perform bounds checking.
      *
-     * @param index Zero-based index used by the operation.
+     * @param index Zero-based index.
      * @return Mutable linear access to pixel index.
      */
-    PixelType& operator[](int index) { return data[index]; }
+    PixelType& operator[](PixelId index) { return data[index]; }
 
     /**
      * @brief Returns immutable linear access to pixel `index`.
      *
-     * `index` is interpreted in row-major order as `row * getNumCols() + col`.
+     * `index` is interpreted in row-major order as `row * getNumColumns() + column`.
      * The operator does not perform bounds checking.
      *
-     * @param index Zero-based index used by the operation.
+     * @param index Zero-based index.
      * @return Immutable linear access to pixel index.
      */
-    const PixelType& operator[](int index) const { return data[index]; }
+    const PixelType& operator[](PixelId index) const { return data[index]; }
 };
 
 /// 8-bit unsigned image container.
@@ -292,26 +293,26 @@ template <typename PixelType> using ImagePtr = std::shared_ptr<Image<PixelType>>
 class ImageUtils {
   public:
     /**
-     * @brief Converts `(row, col)` to a row-major linear index.
+     * @brief Converts `(row, column)` to a row-major linear index.
      *
      * @param row Zero-based row coordinate.
-     * @param col Zero-based column coordinate.
-     * @param numCols Number of columns in the image domain.
-     * @return Linear index `row * numCols + col`.
+     * @param column Zero-based column coordinate.
+     * @param numColumns Number of columns in the image domain.
+     * @return Linear index `row * numColumns + column`.
      */
-    inline static int to1D(int row, int col, int numCols) noexcept { return row * numCols + col; }
+    inline static PixelId to1D(int row, int column, int numColumns) noexcept { return row * numColumns + column; }
 
     /**
-     * @brief Converts a row-major linear index to `(row, col)`.
+     * @brief Converts a row-major linear index to `(row, column)`.
      *
      * @param index Row-major linear index.
-     * @param numCols Number of columns in the image domain.
-     * @return Pair `(row, col)`.
+     * @param numColumns Number of columns in the image domain.
+     * @return Pair `(row, column)`.
      */
-    inline static std::pair<int, int> to2D(int index, int numCols) noexcept {
-        int row = index / numCols;
-        int col = index - row * numCols;
-        return {row, col};
+    inline static std::pair<int, int> to2D(PixelId index, int numColumns) noexcept {
+        int row = index / numColumns;
+        int column = index - row * numColumns;
+        return {row, column};
     }
 
     /**
@@ -321,15 +322,15 @@ class ImageUtils {
      * input pixel, storing RGB triples as `(R, G, B)`. Labels are used as array
      * indices and therefore must be non-negative.
      *
-     * @param img Pointer to `numRowsOfImage * numColsOfImage` integer labels.
+     * @param img Pointer to `numRowsOfImage * numColumnsOfImage` integer labels.
      * @param numRowsOfImage Number of input rows.
-     * @param numColsOfImage Number of input columns.
-     * @return RGB visualisation encoded as an image with `numColsOfImage * 3`
+     * @param numColumnsOfImage Number of input columns.
+     * @return RGB visualisation encoded as an image with `numColumnsOfImage * 3`
      * columns.
      */
-    [[nodiscard]] static ImageUInt8Ptr createRandomColor(int* img, int numRowsOfImage, int numColsOfImage) {
+    [[nodiscard]] static ImageUInt8Ptr createRandomColor(int* img, int numRowsOfImage, int numColumnsOfImage) {
         int max = 0;
-        int sizeImage = numColsOfImage * numRowsOfImage;
+        int sizeImage = numColumnsOfImage * numRowsOfImage;
         for (int i = 0; i < sizeImage; i++) {
             if (img[i] > max)
                 max = img[i];
@@ -348,7 +349,7 @@ class ImageUtils {
         }
 
         int sizeOutput = sizeImage * 3; // [(R,G,B), (R,G,B), ...]
-        ImageUInt8Ptr outImage = ImageUInt8::create(numRowsOfImage, numColsOfImage * 3);
+        ImageUInt8Ptr outImage = ImageUInt8::create(numRowsOfImage, numColumnsOfImage * 3);
 
         auto output = outImage->rawData();
         // Initialise with zero.

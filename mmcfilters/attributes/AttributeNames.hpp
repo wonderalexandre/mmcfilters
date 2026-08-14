@@ -22,25 +22,19 @@ namespace mmcfilters {
 inline const std::unordered_map<AttributeGroup, std::vector<Attribute>>& ATTRIBUTE_GROUPS = attributes::registry::attributeGroups();
 
 /**
- * @brief Layout object for buffers that store several `(attribute, delta)`
- * combinations per node.
+ * @brief Layout for node attributes sampled at signed ancestor/current/descendant offsets.
  *
  * @details
- * The layout is node-major: for a given node, all requested delta variants are
- * stored contiguously. `NUM_ATTRIBUTES` therefore counts the number of
- * `(attribute, delta)` entries associated with each node, not the number of
- * live nodes.
- *
- * The class is primarily used by delta-based APIs such as MSER-like stability
- * descriptors, where each node needs access to values sampled at ancestor and
- * descendant offsets around the current position.
+ * The layout is node-major: for a given node, all requested sample positions
+ * are stored contiguously. `NUM_ATTRIBUTES` therefore counts the number of
+ * `(attribute, sampleOffset)` entries associated with each node.
  */
-class AttributeNamesWithDelta {
+class NodeAttributeSampleLayout {
   public:
-    /// Maps each `(attribute, delta)` key to its per-node offset.
-    std::unordered_map<AttributeKey, int> indexMap;
+    /// Maps each `(attribute, sampleOffset)` key to its per-node offset.
+    std::unordered_map<NodeAttributeSampleKey, int> indexMap;
 
-    /// Number of delta-augmented entries stored for each node.
+    /// Number of sampled entries stored for each node.
     const int NUM_ATTRIBUTES;
 
     /**
@@ -51,88 +45,97 @@ class AttributeNamesWithDelta {
      *
      * @param map Mapping used to initialize the layout.
      */
-    AttributeNamesWithDelta(std::unordered_map<AttributeKey, int>&& map) : indexMap(std::move(map)), NUM_ATTRIBUTES(static_cast<int>(indexMap.size())) {}
+    NodeAttributeSampleLayout(std::unordered_map<NodeAttributeSampleKey, int>&& map)
+        : indexMap(std::move(map)), NUM_ATTRIBUTES(static_cast<int>(indexMap.size())) {}
 
     /**
-     * @brief Builds the canonical dense layout for all deltas in `[-delta, delta]`.
+     * @brief Builds the canonical dense layout for offsets in `[-samplingRadius, samplingRadius]`.
      *
-     * @param delta Delta offset or radius used by the operation.
+     * @param samplingRadius Maximum ancestor/descendant sample offset.
      * @param attributes Attributes requested by the operation.
-     * @return The resulting canonical dense layout for all deltas in [-delta, delta].
+     * @return The resulting canonical dense sampled layout.
      */
-    [[nodiscard]] static AttributeNamesWithDelta create(int delta, const std::vector<Attribute>& attributes) {
-        std::unordered_map<AttributeKey, int> map;
+    [[nodiscard]] static NodeAttributeSampleLayout create(int samplingRadius, const std::vector<Attribute>& attributes) {
+        std::unordered_map<NodeAttributeSampleKey, int> map;
         int offset = 0;
-        for (int d = -delta; d <= delta; ++d) {
+        for (int sampleOffset = -samplingRadius; sampleOffset <= samplingRadius; ++sampleOffset) {
             for (std::size_t i = 0; i < attributes.size(); ++i) {
-                const AttributeKey key{attributes[i], d};
+                const NodeAttributeSampleKey key{attributes[i], sampleOffset};
                 const auto [_, inserted] = map.emplace(key, offset++);
                 MMCFILTERS_CONTRACT_REQUIRE(
-                    inserted, throw std::invalid_argument("AttributeNamesWithDelta::create received duplicate attribute " + toString(key)));
+                    inserted, throw std::invalid_argument("NodeAttributeSampleLayout::create received duplicate attribute " + toString(key)));
             }
         }
-        return AttributeNamesWithDelta(std::move(map));
+        return NodeAttributeSampleLayout(std::move(map));
     }
 
     /**
-     * @brief Returns the per-node offset associated with `(attr, delta)`.
+     * @brief Returns the per-node offset associated with `(attribute, sampleOffset)`.
      *
-     * @param attr Attribute requested by the operation.
-     * @param delta Delta offset or radius used by the operation.
-     * @return The per-node offset associated with (attr, delta).
+     * @param attribute Attribute requested by the operation.
+     * @param sampleOffset Signed sample coordinate.
+     * @return The per-node offset associated with the key.
      */
-    [[nodiscard]] int getIndex(Attribute attr, int delta) const { return getIndex(AttributeKey{attr, delta}); }
+    [[nodiscard]] int getIndex(Attribute attribute, int sampleOffset) const {
+        return getIndex(NodeAttributeSampleKey{attribute, sampleOffset});
+    }
 
     /**
-     * @brief Returns the per-node offset associated with a composite delta key.
+     * @brief Returns the per-node offset associated with a composite sample key.
      *
-     * @param attrKey Attribute information represented by `attrKey`.
-     * @return The per-node offset associated with a composite delta key.
+     * @param sampleKey Composite sampled-attribute key.
+     * @return The per-node offset associated with the key.
      */
-    [[nodiscard]] int getIndex(AttributeKey attrKey) const { return indexMap.at(attrKey); }
+    [[nodiscard]] int getIndex(NodeAttributeSampleKey sampleKey) const { return indexMap.at(sampleKey); }
 
     /**
      * @brief Returns the linear index in the flat buffer for a given node and
-     * delta-augmented attribute.
+     * sampled attribute.
      *
-     * @param nodeIndex Index represented by `nodeIndex`.
-     * @param attr Attribute requested by the operation.
-     * @param delta Delta offset or radius used by the operation.
-     * @return The linear index in the flat buffer for a given node and delta-augmented attribute.
+     * @param nodeIndex Index.
+     * @param attribute Attribute requested by the operation.
+     * @param sampleOffset Signed sample coordinate.
+     * @return The linear index in the flat buffer.
      */
-    [[nodiscard]] int linearIndex(int nodeIndex, Attribute attr, int delta) const { return nodeIndex * NUM_ATTRIBUTES + getIndex(attr, delta); }
+    [[nodiscard]] int linearIndex(int nodeIndex, Attribute attribute, int sampleOffset) const {
+        return nodeIndex * NUM_ATTRIBUTES + getIndex(attribute, sampleOffset);
+    }
 
     /**
-     * @brief Convenience overload taking an `AttributeKey`.
+     * @brief Convenience overload taking a `NodeAttributeSampleKey`.
      *
-     * @param nodeIndex Index represented by `nodeIndex`.
-     * @param attrKey Attribute information represented by `attrKey`.
+     * @param nodeIndex Index.
+     * @param sampleKey Composite sampled-attribute key.
      * @return Value returned by the convenience overload.
      */
-    [[nodiscard]] int linearIndex(int nodeIndex, AttributeKey attrKey) const { return linearIndex(nodeIndex, attrKey.attr, attrKey.delta); }
+    [[nodiscard]] int linearIndex(int nodeIndex, NodeAttributeSampleKey sampleKey) const {
+        return linearIndex(nodeIndex, sampleKey.attribute, sampleKey.sampleOffset);
+    }
 
     /**
      * @brief Returns a human-readable label for a composite key.
      *
-     * @param attrKey Attribute information represented by `attrKey`.
+     * @param sampleKey Composite sampled-attribute key.
      * @return A human-readable label for a composite key.
      */
-    [[nodiscard]] static std::string toString(AttributeKey attrKey) { return toString(attrKey.attr, attrKey.delta); }
+    [[nodiscard]] static std::string toString(NodeAttributeSampleKey sampleKey) {
+        return toString(sampleKey.attribute, sampleKey.sampleOffset);
+    }
 
     /**
-     * @brief Returns a human-readable label for an attribute at a given delta.
+     * @brief Returns a serialized label for an attribute at a sample offset.
      *
-     * @param attr Attribute requested by the operation.
-     * @param delta Delta offset or radius used by the operation.
-     * @return A human-readable label for an attribute at a given delta.
+     * @param attribute Attribute requested by the operation.
+     * @param sampleOffset Signed sample coordinate.
+     * @return The canonical serialized label.
      */
-    [[nodiscard]] static std::string toString(Attribute attr, int delta) {
-        std::string name(attributes::registry::name(attr));
+    [[nodiscard]] static std::string toString(Attribute attribute, int sampleOffset) {
+        std::string name(attributes::registry::name(attribute));
 
-        if (delta < 0) {
-            name += "_ASC_" + std::to_string(-delta);
-        } else if (delta > 0) {
-            name += "_DESC_" + std::to_string(delta);
+        if (sampleOffset < 0) {
+            name += "_ANCESTOR_" + std::to_string(-sampleOffset);
+        } else if (sampleOffset > 0) {
+            name += "_DESCENDANT_" + std::to_string(sampleOffset);
         }
 
         return name;
@@ -233,7 +236,7 @@ class AttributeNames {
     /**
      * @brief Returns the linear index in the flat buffer for `(node, attr)`.
      *
-     * @param nodeIndex Index represented by `nodeIndex`.
+     * @param nodeIndex Index.
      * @param attr Attribute requested by the operation.
      * @return The linear index in the flat buffer for (node, attr).
      */

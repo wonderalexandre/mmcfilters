@@ -20,126 +20,143 @@ namespace mmcfilters {
  * separately through `AttributeGroup`.
  */
 enum class Attribute {
-    AREA,
+    Area,
 
-    VOLUME,
-    RELATIVE_VOLUME,
-    LEVEL,
-    GRAY_HEIGHT,
-    MEAN_LEVEL,
-    VARIANCE_LEVEL,
+    Volume,
+    RelativeVolume,
+    GrayLevelHeight,
+    MeanGrayLevel,
+    GrayLevelVariance,
 
-    BOX_WIDTH,
-    BOX_HEIGHT,
-    DIAGONAL_LENGTH,
-    RECTANGULARITY,
-    RATIO_WH,
-    BOX_COL_MIN,
-    BOX_COL_MAX,
-    BOX_ROW_MIN,
-    BOX_ROW_MAX,
+    BoxWidth,
+    BoundingBoxHeight,
+    DiagonalLength,
+    Rectangularity,
+    RatioWh,
+    BoxColumnMin,
+    BoxColumnMax,
+    BoxRowMin,
+    BoxRowMax,
 
-    CENTRAL_MOMENT_20,
-    CENTRAL_MOMENT_02,
-    CENTRAL_MOMENT_11,
-    CENTRAL_MOMENT_30,
-    CENTRAL_MOMENT_03,
-    CENTRAL_MOMENT_21,
-    CENTRAL_MOMENT_12,
+    CentralMoment20,
+    CentralMoment02,
+    CentralMoment11,
+    CentralMoment30,
+    CentralMoment03,
+    CentralMoment21,
+    CentralMoment12,
 
-    HU_MOMENT_1,
-    HU_MOMENT_2,
-    HU_MOMENT_3,
-    HU_MOMENT_4,
-    HU_MOMENT_5,
-    HU_MOMENT_6,
-    HU_MOMENT_7,
+    HuMoment1,
+    HuMoment2,
+    HuMoment3,
+    HuMoment4,
+    HuMoment5,
+    HuMoment6,
+    HuMoment7,
 
-    INERTIA,
-    COMPACTNESS,
-    ECCENTRICITY,
-    LENGTH_MAJOR_AXIS,
-    LENGTH_MINOR_AXIS,
-    AXIS_ORIENTATION,
-    CIRCULARITY,
+    Inertia,
+    Compactness,
+    Eccentricity,
+    LengthMajorAxis,
+    LengthMinorAxis,
+    AxisOrientation,
+    Circularity,
 
-    BITQUADS_AREA,
-    BITQUADS_NUMBER_EULER,
-    BITQUADS_NUMBER_HOLES,
-    BITQUADS_PERIMETER,
-    BITQUADS_PERIMETER_CONTINUOUS,
-    BITQUADS_CIRCULARITY,
-    BITQUADS_PERIMETER_AVERAGE,
-    BITQUADS_LENGTH_AVERAGE,
-    BITQUADS_WIDTH_AVERAGE,
+    BitquadArea,
+    BitquadNumberEuler,
+    BitquadNumberHoles,
+    BitquadPerimeter,
+    BitquadPerimeterContinuous,
+    BitquadCircularity,
+    BitquadPerimeterAverage,
+    BitquadLengthAverage,
+    BitquadWidthAverage,
 
-    HEIGHT_NODE,
-    DEPTH_NODE,
-    IS_LEAF_NODE,
-    IS_ROOT_NODE,
-    NUM_CHILDREN_NODE,
-    NUM_SIBLINGS_NODE,
-    NUM_DESCENDANTS_NODE,
-    NUM_LEAF_DESCENDANTS_NODE,
-    LEAF_RATIO_NODE,
-    BALANCE_NODE,
+    SubtreeHeight,
+    DepthNode,
+    IsLeafNode,
+    IsRootNode,
+    NumChildrenNode,
+    NumSiblingsNode,
+    NumDescendantsNode,
+    NumLeafDescendantsNode,
+    LeafRatioNode,
+    BalanceNode,
 
-    MAX_DIST,
+    MaxDist,
 
-    AVG_CHILD_HEIGHT_NODE,
+    AvgChildHeightNode,
 
-    CONTOUR_PIXELS,
-    CONTOUR_PERIMETER,
-    CONTOUR_SIDE_NORTH,
-    CONTOUR_SIDE_WEST,
-    CONTOUR_SIDE_EAST,
-    CONTOUR_SIDE_SOUTH
+    ContourPixels,
+    ContourPerimeter,
+    ContourSideNorth,
+    ContourSideWest,
+    ContourSideEast,
+    ContourSideSouth
 };
 
 /**
  * @brief Enumeration of attribute groups used for bulk requests.
  */
 enum class AttributeGroup {
-    ALL,
-    GRAY_LEVEL,
-    SHAPE,
-    MOMENTS,
-    BOUNDARY,
-    TREE_TOPOLOGY,
+    All,
+    GrayLevel,
+    Shape,
+    Moments,
+    Boundary,
+    TreeTopology,
 };
 
 using AttributeOrGroup = std::variant<Attribute, AttributeGroup>;
 using enum Attribute;
 
 /**
- * @brief Composite key used to index delta-augmented attribute layouts.
+ * @brief Policy used to select one representative descendant sample.
  */
-struct AttributeKey {
+enum class NodeAttributeSamplingPolicy {
+    LargestSupportDescendant,
+};
+
+/**
+ * @brief Policy used when a requested node-attribute sample is unavailable.
+ */
+enum class MissingNodeAttributeSamplePolicy {
+    RepeatNearest,
+    NotANumber,
+    Zero,
+};
+
+/**
+ * @brief Composite key used to index sampled node-attribute layouts.
+ */
+struct NodeAttributeSampleKey {
     /// Attribute component of the composite lookup key.
-    Attribute attr;
+    Attribute attribute;
 
-    /// Relative ancestor/descendant offset associated with `attr`.
-    int delta = 0;
+    /// Signed ancestor/current/representative-descendant sample coordinate.
+    int sampleOffset = 0;
 
     /**
-     * @brief Builds a composite key for `a` at delta offset `d`.
+     * @brief Builds a composite key for `value` at `offset`.
      *
-     * A zero delta denotes the current node. Negative deltas refer to ancestor
-     * samples and positive deltas refer to descendant samples in delta-aware
-     * layouts.
+     * A zero offset denotes the current node. Negative offsets refer to
+     * ancestor samples and positive offsets refer to representative-descendant
+     * samples.
      *
-     * @param a Attribute component of the composite key.
-     * @param d Delta component of the composite key.
+     * @param value Attribute component of the composite key.
+     * @param offset Sample coordinate of the composite key.
      */
-    AttributeKey(Attribute a, int d = 0) : attr(a), delta(d) {}
+    NodeAttributeSampleKey(Attribute value, int offset = 0) : attribute(value), sampleOffset(offset) {}
 
     /**
-     * @brief Returns true when both the attribute and delta offset match.
+     * @brief Returns true when both the attribute and sample offset match.
      *
      * @param other Object to compare with or transfer from.
-     * @return True when both the attribute and delta offset match.
+     * @return True when both key components match.
      */
-    bool operator==(const AttributeKey& other) const { return attr == other.attr && delta == other.delta; }
+    bool operator==(const NodeAttributeSampleKey& other) const {
+        return attribute == other.attribute && sampleOffset == other.sampleOffset;
+    }
 };
 
 } // namespace mmcfilters
@@ -180,14 +197,16 @@ template <> struct hash<mmcfilters::AttributeOrGroup> {
     }
 };
 
-/** @brief Provides standard-library hashing for `mmcfilters::AttributeKey`. */
-template <> struct hash<mmcfilters::AttributeKey> {
+/** @brief Provides standard-library hashing for `mmcfilters::NodeAttributeSampleKey`. */
+template <> struct hash<mmcfilters::NodeAttributeSampleKey> {
     /**
      * @brief Applies the function-call operator.
      *
-     * @param k Key whose hash value is computed.
+     * @param key Key whose hash value is computed.
      * @return Hash value for the supplied key.
      */
-    std::size_t operator()(const mmcfilters::AttributeKey& k) const { return std::hash<int>()(static_cast<int>(k.attr)) ^ (std::hash<int>()(k.delta) << 1); }
+    std::size_t operator()(const mmcfilters::NodeAttributeSampleKey& key) const {
+        return std::hash<int>()(static_cast<int>(key.attribute)) ^ (std::hash<int>()(key.sampleOffset) << 1);
+    }
 };
 } // namespace std

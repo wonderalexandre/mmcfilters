@@ -19,7 +19,7 @@ namespace detail {
 
 template <std::floating_point Real> inline void validateAreaContext(const AttributeComputeContext<Real>& context) {
     requireAttributeBufferShape(context.tree, context.buffer, context.attrNames);
-    if (!context.attrNames.contains(AREA)) {
+    if (!context.attrNames.contains(Area)) {
         throw std::invalid_argument("AREA computation requires an AREA column in the output layout.");
     }
 }
@@ -29,12 +29,12 @@ namespace kernel {
 /** @brief Computes subtree area over an established tree. @param context Established tree, AREA column, and output buffer. */
 template <std::floating_point Real> inline void computeArea(const AttributeComputeContext<Real>& context) {
     const int stride = context.attrNames.NUM_ATTRIBUTES;
-    const int offset = context.attrNames.indexMap.find(AREA)->second;
+    const int offset = context.attrNames.indexMap.find(Area)->second;
     auto indexOfArea = [&](NodeId node) { return static_cast<std::size_t>(node * stride + offset); };
     ::mmcfilters::detail::kernel::traversePostOrder(
-        context.tree, context.tree.getRoot(),
+        context.tree, context.tree.root(),
         [&](NodeId node) {
-            context.buffer[indexOfArea(node)] = static_cast<Real>(::mmcfilters::detail::CommittedTreeAccess::numProperParts(context.tree, node));
+            context.buffer[indexOfArea(node)] = static_cast<Real>(::mmcfilters::detail::CommittedTreeAccess::properPartCardinality(context.tree, node));
         },
         [&](NodeId parent, NodeId child) { context.buffer[indexOfArea(parent)] += context.buffer[indexOfArea(child)]; }, [](NodeId) {});
 }
@@ -75,7 +75,7 @@ class AreaComputer {
     /**
      * @brief Canonical list of attributes produced by this computer.
      */
-    inline static constexpr std::array<Attribute, 1> producedAttributes{AREA};
+    inline static constexpr std::array<Attribute, 1> producedAttributes{Area};
 
     /**
      * @brief Computes area by summing direct proper-part counts bottom-up.
@@ -102,12 +102,12 @@ class AreaComputer {
      * @param context Operation context or diagnostic label.
      */
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
-        requireUnitAttributeBufferShape(context.tree, context.unitProperParts, context.buffer, context.attrNames);
-        if (!requestsAttribute(context.requestedAttributes, AREA)) {
+        requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
+        if (!requestsAttribute(context.requestedAttributes, Area)) {
             return;
         }
-        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitProperParts.size()); ++leafIndex) {
-            context.buffer[context.attrNames.linearIndex(leafIndex, AREA)] = Real{1};
+        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitPixels.size()); ++leafIndex) {
+            context.buffer[context.attrNames.linearIndex(leafIndex, Area)] = Real{1};
         }
     }
 };

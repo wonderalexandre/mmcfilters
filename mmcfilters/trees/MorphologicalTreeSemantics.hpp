@@ -1,0 +1,154 @@
+#pragma once
+
+/**
+ * @file MorphologicalTreeSemantics.hpp
+ * @brief Immutable scientific metadata attached to a morphological tree.
+ */
+
+#include "../utils/Common.hpp"
+#include "../utils/RegularGridAdjacency2D.hpp"
+
+#include <utility>
+#include <stdexcept>
+#include <variant>
+
+namespace mmcfilters {
+
+/** @brief Declared construction family of one morphological tree. */
+enum class MorphologicalTreeKind {
+    Generic,
+    MaxTree,
+    MinTree,
+    TreeOfShapes,
+    UnrestrictedResidualTree,
+    SaturatedResidualTree
+};
+
+/** @brief Global ordering constraint of node altitudes along parent-child arcs. */
+enum class NodeAltitudeOrder {
+    /// Every alive parent-child arc satisfies `nodeAltitude(parent) < nodeAltitude(child)`.
+    Increasing,
+    /// Every alive parent-child arc satisfies `nodeAltitude(parent) > nodeAltitude(child)`.
+    Decreasing,
+    /// No global parent-child altitude order is declared.
+    Unconstrained
+};
+
+/** @brief Explicitly records that no construction context is available. */
+struct NoConstructionContext {};
+
+/** @brief Records one adjacency shared by both construction polarities. */
+struct SharedAdjacencyContext {
+    RegularGridAdjacency2D adjacency; ///< Shared construction adjacency.
+};
+
+/** @brief Records the shared adjacency and infinity pixel of a saturated residual construction. */
+struct SaturatedResidualContext {
+    RegularGridAdjacency2D adjacency; ///< Shared construction adjacency.
+    PixelId infinityPixel = 0;        ///< Declared infinity pixel in the active domain.
+};
+
+/** @brief Ordered pair of complementary minimum and maximum adjacencies. */
+struct ComplementaryAdjacencies {
+    RegularGridAdjacency2D minAdjacency; ///< Adjacency used for minimum-oriented processing.
+    RegularGridAdjacency2D maxAdjacency; ///< Adjacency used for maximum-oriented processing.
+};
+
+/** @brief Selects the self-dual span-valued tree-of-shapes immersion. */
+struct SelfDualSpanImmersion {};
+
+/** @brief Selects the optimized complementary-grid immersion. */
+struct ComplementaryGridImmersion {
+    ComplementaryAdjacencies complementaryAdjacencies; ///< Ordered minimum/maximum adjacency pair.
+};
+
+/** @brief Tagged tree-of-shapes immersion family. */
+using TreeOfShapesImmersion = std::variant<SelfDualSpanImmersion, ComplementaryGridImmersion>;
+
+/** @brief Relation between the source pixel domain and active topographic domain. */
+enum class TopographicDomainExtension { ExteriorRing, None };
+
+/** @brief Complete discrete convention retained by a tree-of-shapes result. */
+struct TopographicConvention {
+    TreeOfShapesImmersion immersion = SelfDualSpanImmersion{}; ///< Selected topographic immersion.
+    TopographicDomainExtension domainExtension = TopographicDomainExtension::ExteriorRing; ///< Active-domain extension convention.
+    PixelId infinityPixel = 0; ///< Declared infinity pixel in the active topographic domain.
+};
+
+/** @brief Tagged construction context retained by morphological-tree semantics. */
+using MorphologicalTreeConstructionContext =
+    std::variant<NoConstructionContext, SharedAdjacencyContext, SaturatedResidualContext, TopographicConvention>;
+
+/**
+ * @brief Immutable scientific interpretation attached to one morphological tree.
+ *
+ * The metadata do not alter topology. Algorithms query the typed construction
+ * context they require and do not infer capabilities from `kind`.
+ */
+struct MorphologicalTreeSemantics {
+    MorphologicalTreeKind kind = MorphologicalTreeKind::Generic; ///< Declared construction/result kind.
+    NodeAltitudeOrder nodeAltitudeOrder = NodeAltitudeOrder::Unconstrained; ///< Global parent-child altitude order.
+    MorphologicalTreeConstructionContext constructionContext = NoConstructionContext{}; ///< Typed retained construction context.
+};
+
+/** @brief Returns the conventional node-altitude order of a declared tree kind. @param kind Declared tree kind. @return Conventional altitude order. */
+inline NodeAltitudeOrder defaultNodeAltitudeOrder(MorphologicalTreeKind kind) noexcept {
+    switch (kind) {
+    case MorphologicalTreeKind::MaxTree:
+        return NodeAltitudeOrder::Increasing;
+    case MorphologicalTreeKind::MinTree:
+        return NodeAltitudeOrder::Decreasing;
+    case MorphologicalTreeKind::Generic:
+    case MorphologicalTreeKind::TreeOfShapes:
+    case MorphologicalTreeKind::UnrestrictedResidualTree:
+    case MorphologicalTreeKind::SaturatedResidualTree:
+        return NodeAltitudeOrder::Unconstrained;
+    }
+    return NodeAltitudeOrder::Unconstrained;
+}
+
+/** @brief Constructs semantics using the conventional altitude order of `kind`. @param kind Declared tree kind. @param constructionContext Retained typed context. @return Coherent semantics descriptor. */
+inline MorphologicalTreeSemantics makeMorphologicalTreeSemantics(
+    MorphologicalTreeKind kind,
+    MorphologicalTreeConstructionContext constructionContext = NoConstructionContext{}) {
+    return MorphologicalTreeSemantics{kind, defaultNodeAltitudeOrder(kind), std::move(constructionContext)};
+}
+
+/**
+ * @brief Validates the scientific compatibility of a semantics descriptor.
+ *
+ * `NoConstructionContext` is valid for every kind because it explicitly
+ * records unavailable provenance. Every concrete context is restricted to the
+ * construction families whose parameters it represents.
+ * @param semantics Descriptor to validate.
+ */
+inline void validateMorphologicalTreeSemantics(const MorphologicalTreeSemantics& semantics) {
+    if (semantics.kind != MorphologicalTreeKind::Generic && semantics.nodeAltitudeOrder != defaultNodeAltitudeOrder(semantics.kind)) {
+        throw std::invalid_argument("Morphological-tree kind and node-altitude order are incompatible.");
+    }
+    if (std::holds_alternative<NoConstructionContext>(semantics.constructionContext)) {
+        return;
+    }
+    if (std::holds_alternative<SharedAdjacencyContext>(semantics.constructionContext)) {
+        if (semantics.kind == MorphologicalTreeKind::Generic || semantics.kind == MorphologicalTreeKind::MaxTree ||
+            semantics.kind == MorphologicalTreeKind::MinTree || semantics.kind == MorphologicalTreeKind::UnrestrictedResidualTree) {
+            return;
+        }
+        throw std::invalid_argument("SharedAdjacencyContext is incompatible with the declared morphological-tree kind.");
+    }
+    if (std::holds_alternative<SaturatedResidualContext>(semantics.constructionContext)) {
+        if (semantics.kind == MorphologicalTreeKind::SaturatedResidualTree) {
+            return;
+        }
+        throw std::invalid_argument("SaturatedResidualContext requires SaturatedResidualTree kind.");
+    }
+    if (std::holds_alternative<TopographicConvention>(semantics.constructionContext)) {
+        if (semantics.kind == MorphologicalTreeKind::TreeOfShapes) {
+            return;
+        }
+        throw std::invalid_argument("TopographicConvention requires TreeOfShapes kind.");
+    }
+    throw std::invalid_argument("Unsupported morphological-tree construction context.");
+}
+
+} // namespace mmcfilters

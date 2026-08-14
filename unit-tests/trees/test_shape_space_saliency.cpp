@@ -17,26 +17,26 @@ using namespace mmcfilters::unit_tests;
 
 namespace {
 
-WeightedMorphologicalTree<std::uint8_t> makeNestedChain(MorphologicalTreeKind kind = MorphologicalTreeKind::MAX_TREE,
+ValuedMorphologicalTree<std::uint8_t> makeNestedChain(MorphologicalTreeKind kind = MorphologicalTreeKind::MaxTree,
                                                         std::optional<RegularGridAdjacency2D> adjacency = RegularGridAdjacency2D(1, 4, 1.0)) {
     // Proper-part supports form B subset A subset Omega:
     // B={0}, A={0,1}, Omega={0,1,2,3}.
-    // The last two neighbouring proper parts have the same direct owner.
+    // The last two neighbouring proper parts have the same inclusion-smallest node.
     const std::vector<NodeId> parent = {4, 5, 6, 6, 5, 6, 6};
     const std::vector<std::uint8_t> altitude = {3, 2, 1, 1, 3, 2, 1};
     return MorphologicalTreeFactory::createFromHigraParent(std::span<const NodeId>(parent), std::span<const std::uint8_t>(altitude), 1, 4, kind,
                                                            std::move(adjacency));
 }
 
-WeightedMorphologicalTree<std::uint8_t> makeTiedBranchingTree() {
+ValuedMorphologicalTree<std::uint8_t> makeTiedBranchingTree() {
     // Two sibling singleton regions separated by a root-owned proper part.
     const std::vector<NodeId> parent = {3, 5, 4, 5, 5, 5};
     const std::vector<std::uint8_t> altitude = {2, 1, 2, 2, 2, 1};
     return MorphologicalTreeFactory::createFromHigraParent(std::span<const NodeId>(parent), std::span<const std::uint8_t>(altitude), 1, 3,
-                                                           MorphologicalTreeKind::MAX_TREE, RegularGridAdjacency2D(1, 3, 1.0));
+                                                           MorphologicalTreeKind::MaxTree, RegularGridAdjacency2D(1, 3, 1.0));
 }
 
-WeightedMorphologicalTree<std::uint8_t> makeMultiStageTieTree() {
+ValuedMorphologicalTree<std::uint8_t> makeMultiStageTieTree() {
     // Shape-space topology:
     //
     //          4
@@ -46,16 +46,46 @@ WeightedMorphologicalTree<std::uint8_t> makeMultiStageTieTree() {
     //    0     1
     //
     // Proper parts are ordered so every represented region is connected in
-    // the 1-D image domain: owner sequence [0, 2, 1, 4, 3].
+    // the 1-D image domain: smallest-node sequence [0, 2, 1, 4, 3].
     const std::vector<NodeId> parent = {5, 7, 6, 9, 8, 7, 7, 9, 9, 9};
     const std::vector<std::uint8_t> altitude = {3, 2, 3, 1, 2, 3, 3, 2, 2, 1};
     return MorphologicalTreeFactory::createFromHigraParent(std::span<const NodeId>(parent), std::span<const std::uint8_t>(altitude), 1, 5,
-                                                           MorphologicalTreeKind::MAX_TREE, RegularGridAdjacency2D(1, 5, 1.0));
+                                                           MorphologicalTreeKind::MaxTree, RegularGridAdjacency2D(1, 5, 1.0));
+}
+
+struct RenumberedShapeSpaceTieFixture {
+    ValuedMorphologicalTree<std::uint8_t> valuedTree;
+    std::vector<double> attribute;
+    NodeId spatiallyFirstMinimum = InvalidNode;
+    NodeId spatiallySecondMinimum = InvalidNode;
+    NodeId strongerMinimum = InvalidNode;
+};
+
+RenumberedShapeSpaceTieFixture makeRenumberedShapeSpaceTieFixture(bool spatiallyFirstMinimumUsesLowerNodeId) {
+    if (spatiallyFirstMinimumUsesLowerNodeId) {
+        const std::vector<NodeId> parent{2, 2, 4, 4, 4};
+        const std::vector<NodeId> smallestNodeMap{0, 2, 1, 4, 3};
+        const std::vector<std::uint8_t> altitude{2, 2, 1, 1, 0};
+        return {
+            MorphologicalTreeFactory::createFromNativeTopology(
+                std::span<const NodeId>(parent), std::span<const NodeId>(smallestNodeMap), std::span<const std::uint8_t>(altitude), NodeId{4}, 1, 5,
+                MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Increasing, NoConstructionContext{}}),
+            {1.0, 1.0, 5.0, 0.0, 10.0}, NodeId{0}, NodeId{1}, NodeId{3}};
+    }
+
+    const std::vector<NodeId> parent{0, 0, 0, 1, 1};
+    const std::vector<NodeId> smallestNodeMap{4, 1, 3, 0, 2};
+    const std::vector<std::uint8_t> altitude{0, 1, 1, 2, 2};
+    return {
+        MorphologicalTreeFactory::createFromNativeTopology(
+            std::span<const NodeId>(parent), std::span<const NodeId>(smallestNodeMap), std::span<const std::uint8_t>(altitude), NodeId{0}, 1, 5,
+            MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Increasing, NoConstructionContext{}}),
+        {10.0, 5.0, 0.0, 1.0, 1.0}, NodeId{4}, NodeId{3}, NodeId{2}};
 }
 
 void verifyNestedChainPipeline() {
-    auto weighted = makeNestedChain();
-    const MorphologicalTree& tree = weighted.topology();
+    auto valuedTree = makeNestedChain();
+    const MorphologicalTree& tree = valuedTree.topology();
     const std::vector<float> attribute = {1.0f, 4.0f, 10.0f};
 
     const auto extinction = ShapeSpaceSaliency::computeExtinctionValues(tree, std::span<const float>(attribute), ShapeSpaceExtremaPolarity::Minima);
@@ -96,12 +126,12 @@ void verifyNestedChainPipeline() {
     require(lcaMap.values != storedResult.edgeMap.values, "shaping saliency must not collapse to LCA projection");
 
     require(std::isfinite(extinction.nodeScores[0]), "dominant extinction must be finite");
-    requireEqual(explicitProjection.values[2], 0.0f, "same-owner proper-part edge must have zero saliency");
+    requireEqual(explicitProjection.values[2], 0.0f, "same-smallest-node proper-part edge must have zero saliency");
 }
 
 void verifyMinimaAndMaximaPolarity() {
-    auto weighted = makeNestedChain();
-    const MorphologicalTree& tree = weighted.topology();
+    auto valuedTree = makeNestedChain();
+    const MorphologicalTree& tree = valuedTree.topology();
     const std::vector<double> attribute = {1.0, 5.0, 2.0};
 
     const auto minima = ShapeSpaceSaliency::compute(tree, std::span<const double>(attribute), ShapeSpaceExtremaPolarity::Minima);
@@ -154,8 +184,8 @@ void verifyPlateauxAndTiesAreDeterministic() {
 }
 
 void verifyMultiStageBranchMerges() {
-    auto weighted = makeMultiStageTieTree();
-    const MorphologicalTree& tree = weighted.topology();
+    auto valuedTree = makeMultiStageTieTree();
+    const MorphologicalTree& tree = valuedTree.topology();
 
     // Nodes 0 and 1 are tied minima born at level 1. They first meet through
     // node 2 at level 5, so node 1 dies there and node 0 wins by NodeId. The
@@ -186,9 +216,29 @@ void verifyMultiStageBranchMerges() {
     requireVectorEqual(result.edgeMap.values, {9.0, 4.0, 4.0, 10.0}, "multi-stage contour scores");
 }
 
+void verifyShapeSpaceTiesAreIndependentOfNodeId() {
+    for (const bool spatiallyFirstMinimumUsesLowerNodeId : {true, false}) {
+        RenumberedShapeSpaceTieFixture fixture = makeRenumberedShapeSpaceTieFixture(spatiallyFirstMinimumUsesLowerNodeId);
+        const MorphologicalTree& tree = fixture.valuedTree.topology();
+        const auto result = ShapeSpaceSaliency::computeExtinctionValues(
+            tree, std::span<const double>(fixture.attribute), ShapeSpaceExtremaPolarity::Minima);
+
+        requireEqual(result.extrema.size(), std::size_t{3}, "renumbered shape-space extrema count");
+        requireEqual(result.extrema[0].representative, fixture.spatiallyFirstMinimum,
+                     "equal-strength shape-space extrema must prefer the spatially first support");
+        requireEqual(result.extrema[0].extinction, 9.0, "spatially first tied minimum must survive to the later merge");
+        requireEqual(result.extrema[1].representative, fixture.spatiallySecondMinimum,
+                     "shape-space output order must follow spatial support rather than NodeId");
+        requireEqual(result.extrema[1].extinction, 4.0, "spatially second tied minimum must die at the first merge");
+        requireEqual(result.extrema[2].representative, fixture.strongerMinimum,
+                     "stronger shape-space minimum must retain its spatially ordered record");
+        requireEqual(result.extrema[2].extinction, 10.0, "stronger shape-space minimum extinction");
+    }
+}
+
 void verifyValidation() {
-    auto weighted = makeNestedChain();
-    const MorphologicalTree& tree = weighted.topology();
+    auto valuedTree = makeNestedChain();
+    const MorphologicalTree& tree = valuedTree.topology();
     const std::vector<float> attribute = {1.0f, 4.0f, 10.0f};
     const std::vector<float> shortAttribute = {1.0f, 4.0f};
     requireThrows<std::invalid_argument>(
@@ -220,7 +270,7 @@ void verifyValidation() {
     requireThrows<std::invalid_argument>([&]() { static_cast<void>(ShapeSpaceSaliency::projectContourScores(tree, std::span<const float>(nanScores))); },
                                          "shape-space contour projection must reject NaN node scores");
 
-    auto noAdjacency = makeNestedChain(MorphologicalTreeKind::TREE_OF_SHAPES, std::nullopt);
+    auto noAdjacency = makeNestedChain(MorphologicalTreeKind::TreeOfShapes, std::nullopt);
     const auto explicitTreeOfShapes = ShapeSpaceSaliency::compute(noAdjacency.topology(), std::span<const float>(attribute), ShapeSpaceExtremaPolarity::Minima,
                                                                   RegularGridAdjacency2D(1, 4, 1.0));
     requireVectorEqual(explicitTreeOfShapes.edgeMap.values, {9.0f, 0.0f, 0.0f}, "shape-space saliency accepts a tree of shapes with explicit adjacency");
@@ -239,7 +289,7 @@ void verifyValidation() {
         "shape-space extinction must reject a non-finite level difference");
 
     {
-        auto editor = weighted.edit();
+        auto editor = valuedTree.edit();
         requireThrows<std::invalid_argument>(
             [&]() {
                 static_cast<void>(ShapeSpaceSaliency::computeExtinctionValues(tree, std::span<const float>(attribute), ShapeSpaceExtremaPolarity::Minima));
@@ -250,9 +300,9 @@ void verifyValidation() {
 }
 
 void verifyDeadNodeSlots() {
-    auto weighted = makeNestedChain();
-    weighted.mergeNodeIntoParent(1);
-    const MorphologicalTree& tree = weighted.topology();
+    auto valuedTree = makeNestedChain();
+    valuedTree.mergeNodeIntoParent(1);
+    const MorphologicalTree& tree = valuedTree.topology();
     require(!tree.isAlive(1), "dead-slot fixture must remove the middle node");
 
     const std::vector<float> attribute = {1.0f, 0.0f, 10.0f};
@@ -268,6 +318,7 @@ int main() {
     verifyMinimaAndMaximaPolarity();
     verifyPlateauxAndTiesAreDeterministic();
     verifyMultiStageBranchMerges();
+    verifyShapeSpaceTiesAreIndependentOfNodeId();
     verifyValidation();
     verifyDeadNodeSlots();
     return 0;

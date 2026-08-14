@@ -9,17 +9,17 @@ updates, rollback, and the lifetime of derived state.
 
 - dense internal `NodeId` slots;
 - parent/child relations;
-- direct proper-part ownership;
+- direct smallest-node mapping;
 - optional regular 2D geometry and adjacency semantics.
 
-`WeightedMorphologicalTree<T>` owns a private topology and a dense altitude
+`ValuedMorphologicalTree<T>` owns a private topology and a dense altitude
 buffer. Its `topology()` accessor returns `const MorphologicalTree&`, so callers
-cannot bypass the weighted edit boundary.
+cannot bypass the valued-tree edit boundary.
 
 ## Safe local edits
 
 Two semantically complete mutations are public on `MorphologicalTree` and
-`WeightedMorphologicalTree<T>`:
+`ValuedMorphologicalTree<T>`:
 
 - `pruneNode(NodeId nodeId)`;
 - `mergeNodeIntoParent(NodeId nodeId)`.
@@ -50,11 +50,11 @@ and committed-tree operations are unavailable.
 
 `MorphologicalTree` cannot be moved or cloned during an edit session. Finish the
 session with `commit()` or `rollback()` before moving or cloning the tree. The
-same rule applies to `WeightedMorphologicalTree<T>`.
+same rule applies to `ValuedMorphologicalTree<T>`.
 
 ### Commit and repair
 
-`validateAndCommit()` validates one connected rooted tree, valid ownership, and
+`validateAndCommit()` validates one connected rooted tree, a valid smallest-node map, and
 non-empty support for every live node. It returns `TreeValidationResult`:
 
 - on success, it publishes the edit and closes the session;
@@ -67,7 +67,7 @@ throws when validation fails.
 Complete validation is linear in the internal node slots plus proper parts:
 
 ```text
-O(numInternalNodeSlots + numTotalProperParts)
+O(numInternalNodeSlots + numPixels)
 ```
 
 There is no public unchecked commit path.
@@ -108,13 +108,13 @@ The proof is bound to one editor, tree, and mutation version. It cannot be copie
 or reused after another mutation. If a primitive has no incremental validator,
 proof construction uses complete validation.
 
-## Weighted edits
+## Valued-tree edits
 
-`WeightedMorphologicalTree<T>::edit()` returns `WeightedTreeEditor<T>`, which
+`ValuedMorphologicalTree<T>::edit()` returns `ValuedMorphologicalTreeEditor<T>`, which
 updates topology and altitude as one staged state:
 
 ```cpp
-auto editor = weighted.edit();
+auto editor = valuedTree.edit();
 const NodeId inserted = editor.createDetachedNode(insertedAltitude);
 
 editor.reparent(childA, inserted);
@@ -130,22 +130,22 @@ topology or altitudes.
 
 For ordered hierarchies:
 
-- `INCREASING_FROM_ROOT` requires `altitude(parent) < altitude(child)`;
-- `DECREASING_FROM_ROOT` requires `altitude(parent) > altitude(child)`;
-- `UNCONSTRAINED` imposes no global direction but still requires valid finite
+- `NodeAltitudeOrder::Increasing` requires `altitude(parent) < altitude(child)`;
+- `NodeAltitudeOrder::Decreasing` requires `altitude(parent) > altitude(child)`;
+- `NodeAltitudeOrder::Unconstrained` imposes no global direction but still requires valid finite
   values and a correctly sized buffer.
 
 ## Altitude setters
 
-Committed weighted trees expose checked setters:
+Committed valued morphological trees expose checked setters:
 
-- `setAltitude(nodeId, value)` validates the ID, value, parent arc, and child
+- `setNodeAltitude(nodeId, value)` validates the ID, value, parent arc, and child
   arcs in `O(degree(nodeId))`;
-- `setAltitudeBuffer(buffer)` validates buffer shape, finite floating-point
+- `setNodeAltitudes(buffer)` validates buffer shape, finite floating-point
   values, and all ordered parent/child arcs in `O(numInternalNodeSlots)`.
 
-Staged algorithms use `WeightedTreeEditor<T>::setNodeAltitude()` and cannot
-publish until the weighted commit succeeds. Unchecked altitude setters are not
+Staged algorithms use `ValuedMorphologicalTreeEditor<T>::setNodeAltitude()` and cannot
+publish until the valued-tree commit succeeds. Unchecked altitude setters are not
 public API.
 
 ## Derived-state lifetime
@@ -155,7 +155,7 @@ state. Guarded objects include:
 
 - `ContoursComputedIncrementally::IncrementalContours`;
 - `ContourTraceComputation::IncrementalContourTraces`;
-- `WeightedTreeView<T>`;
+- `ValuedMorphologicalTreeView<T>`;
 - `AttributeFilters`;
 - `ExtinctionValues`;
 - `UltimateAttributeOpening`.
@@ -171,14 +171,14 @@ recompute attributes, contours, extinction values, and filter or
 
 Python exposes safe queries and local mutations:
 
-- `pruneNode`;
-- `mergeNodeIntoParent`;
-- `setAltitude`;
-- `setAltitudeBuffer` and `altitude`;
-- queries such as `getRoot`, `getAliveNodeIds`, `getChildren`, and
-  `getProperParts`.
+- `prune_node`;
+- `merge_node_into_parent`;
+- `set_node_altitude`;
+- the writable `node_altitudes` property;
+- queries such as `root`, `alive_node_ids`, `children`, and
+  `proper_part`.
 
-Python does not expose `TreeEditor`, `WeightedTreeEditor`, `edit()`, unchecked
+Python does not expose `TreeEditor`, `ValuedMorphologicalTreeEditor`, `edit()`, unchecked
 setters, or a mutable topology handle.
 
 ## Related guides

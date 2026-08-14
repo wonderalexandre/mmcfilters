@@ -4,6 +4,7 @@
 #include "mmcfilters/filters/DepthStableRegionComputer.hpp"
 #include "mmcfilters/filters/ExtinctionValues.hpp"
 #include "mmcfilters/filters/MSERComputer.hpp"
+#include "mmcfilters/filters/NodePreservationStability.hpp"
 #include "mmcfilters/filters/UltimateAttributeOpening.hpp"
 
 #include <cstdint>
@@ -43,10 +44,10 @@ struct UaoResult {
 
 void addFilterScenarios(Context& context, std::vector<ScenarioResult>& results) {
     results.push_back(benchmarkScenario(
-        "filters", "direct_criterion", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
+        "filters", "direct_preservation_mask", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
         [&] {
-            AttributeFilters<std::uint8_t> filters(context.maxTree);
-            return filters.filteringByDirectRule(context.keepCriterion);
+            DirectAttributeFilter<std::uint8_t> filter(context.maxTree);
+            return filter.applyDirectAttributeFilter(NodePreservationMask(context.nodePreservationDecisions));
         },
         [](const ImageUInt8Ptr& result) { return imageChecksum(result); }));
 
@@ -71,34 +72,34 @@ void addFilterScenarios(Context& context, std::vector<ScenarioResult>& results) 
     }
 
     results.push_back(benchmarkScenario(
-        "filters", "subtractive_criterion", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
+        "filters", "subtractive_preservation_mask", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
         [&] {
-            AttributeFilters<std::uint8_t> filters(context.maxTree);
-            return filters.filteringBySubtractiveRule(context.keepCriterion);
+            HardSubtractiveAttributeFilter<std::uint8_t> filter(context.maxTree);
+            return filter.applyHardSubtractiveAttributeFilter(NodePreservationMask(context.nodePreservationDecisions));
         },
-        [](const ImageUInt8Ptr& result) { return imageChecksum(result); }));
+        [](const auto& result) { return imageChecksum(result); }));
 
     results.push_back(benchmarkScenario(
         "filters", "subtractive_score", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
         [&] {
-            AttributeFilters<std::uint8_t> filters(context.maxTree);
-            return filters.filteringBySubtractiveScoreRule(context.scores);
+            SoftSubtractiveAttributeFilter<std::uint8_t, float> filter(context.maxTree);
+            return filter.applySoftSubtractiveAttributeFilter(context.scores);
         },
         [](const ImageFloatPtr& result) { return imageChecksum(result); }));
 
     results.push_back(benchmarkScenario(
-        "filters", "pruning_min_criterion", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
+        "filters", "pruning_min_preservation_mask", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
         [&] {
             AttributeFilters<std::uint8_t> filters(context.maxTree);
-            return filters.filteringByPruningMin(context.keepCriterion);
+            return filters.filteringByPruningMin(NodePreservationMask(context.nodePreservationDecisions));
         },
         [](const ImageUInt8Ptr& result) { return imageChecksum(result); }));
 
     results.push_back(benchmarkScenario(
-        "filters", "pruning_max_criterion", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
+        "filters", "pruning_max_preservation_mask", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
         [&] {
             AttributeFilters<std::uint8_t> filters(context.maxTree);
-            return filters.filteringByPruningMax(context.keepCriterion);
+            return filters.filteringByPruningMax(NodePreservationMask(context.nodePreservationDecisions));
         },
         [](const ImageUInt8Ptr& result) { return imageChecksum(result); }));
 
@@ -111,20 +112,20 @@ void addFilterScenarios(Context& context, std::vector<ScenarioResult>& results) 
         [](const ImageUInt8Ptr& result) { return imageChecksum(result); }));
 
     results.push_back(benchmarkScenario(
-        "filters", "adaptive_mser_criterion", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
+        "filters", "altitude_stability_adjustment", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
         [&] {
-            AttributeFilters<std::uint8_t> filters(context.maxTree);
-            return filters.getAdaptiveCriterion(context.keepCriterion, AltitudeDiff<std::uint8_t>{4});
+            return adjustNodePreservationMaskByAltitudeStability(
+                context.maxTree, NodePreservationMask(context.nodePreservationDecisions), AltitudeDifference<std::uint8_t>{4});
         },
-        [](const std::vector<bool>& result) { return boolMaskChecksum(result); }));
+        [](const NodePreservationMask& result) { return boolMaskChecksum(result.decisions()); }));
 
     results.push_back(benchmarkScenario(
-        "filters", "adaptive_depth_criterion", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
+        "filters", "depth_stability_adjustment", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
         [&] {
-            AttributeFilters<std::uint8_t> filters(context.maxTree);
-            return filters.getAdaptiveCriterionByDepth(context.keepCriterion, 4);
+            return adjustNodePreservationMaskByDepthStability(
+                context.maxTree, NodePreservationMask(context.nodePreservationDecisions), 4);
         },
-        [](const std::vector<bool>& result) { return boolMaskChecksum(result); }));
+        [](const NodePreservationMask& result) { return boolMaskChecksum(result.decisions()); }));
 
     results.push_back(benchmarkScenario(
         "filters", "ultimate_attribute_opening", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
@@ -155,7 +156,7 @@ void addFilterScenarios(Context& context, std::vector<ScenarioResult>& results) 
         "filters", "mser", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
         [&] {
             MSERComputer<std::uint8_t, double> mser(context.maxTree, context.area.second.data());
-            return mser.computeMSER(AltitudeDiff<std::uint8_t>{4});
+            return mser.computeMSER(AltitudeDifference<std::uint8_t>{4});
         },
         [](const std::vector<std::uint8_t>& result) { return byteMaskChecksum(result); }));
 

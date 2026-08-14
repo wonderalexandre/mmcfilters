@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../WeightedMorphologicalTree.hpp"
+#include "../ValuedMorphologicalTree.hpp"
 #include "../../utils/GenerationStampSet.hpp"
 
 #include <algorithm>
@@ -27,7 +27,7 @@ namespace mmcfilters::adjust {
  * This is the leaf-granularity counterpart of
  * `DualMinMaxTreeIncrementalFilter`. It is adapted from the MorphoTreeAdjust
  * `DualMinMaxTreeIncrementalFilterLeaf`, but targets this repository's
- * `WeightedMorphologicalTree<T>` and `WeightedTreeEditor<T>` representation.
+ * `ValuedMorphologicalTree<T>` and `ValuedMorphologicalTreeEditor<T>` representation.
  *
  * The final min/max semantics are the same as the subtree updater: one tree is
  * pruned and the dual tree is updated in place so both trees keep representing
@@ -63,12 +63,12 @@ namespace mmcfilters::adjust {
  * - both trees share the same image domain and adjacency relation;
  * - the selected leaf is alive, non-root, and has at least one direct proper
  *   part at the time `updateTree` is called;
- * - this is a mutable weighted-tree boundary, not a `WeightedTreeView`
- *   boundary: one update changes topology/proper-part ownership and the
- *   owned weighted state that subsequent steps observe;
+ * - this is a mutable valued-tree boundary, not a `ValuedMorphologicalTreeView`
+ *   boundary: one update changes topology/smallest-node mapping and the
+ *   owned valuedTree state that subsequent steps observe;
  * - the `altitude_t` template parameter is the owned tree altitude type and
  *   also controls merge-bucket keys/backends;
- * - all topology mutations go through one `WeightedTreeEditor<T>` edit session
+ * - all topology mutations go through one `ValuedMorphologicalTreeEditor<T>` edit session
  *   per dual update and publish with the generic move-only proof protocol; the
  *   update establishes its invariants during the existing algorithmic passes,
  *   and assertion-enabled builds retain the complete oracle.
@@ -82,9 +82,9 @@ namespace mmcfilters::adjust {
 template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
   private:
     /** @brief Defines the `tree_t` alias used by the component. */
-    using tree_t = WeightedMorphologicalTree<altitude_t>;
+    using tree_t = ValuedMorphologicalTree<altitude_t>;
     /** @brief Defines the `editor_t` alias used by the component. */
-    using editor_t = WeightedTreeEditor<altitude_t>;
+    using editor_t = ValuedMorphologicalTreeEditor<altitude_t>;
 
     /**
      * @brief Decides whether altitude buckets can be represented by a dense array.
@@ -126,15 +126,15 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
         /**
          * @brief Selects dense or sparse bucket storage for the configured altitude type.
          */
-        template <bool dense, typename altitude_type> struct StorageSelector;
+        template <bool dense, typename AltitudeType> struct StorageSelector;
 
         /**
          * @brief Dense storage: one bucket for each representable altitude value.
          */
-        template <typename altitude_type> struct StorageSelector<true, altitude_type> {
-            /** @brief Stores the domain size. */
-            static constexpr std::size_t domain_size = static_cast<std::size_t>(static_cast<long long>(std::numeric_limits<altitude_type>::max()) -
-                                                                                static_cast<long long>(std::numeric_limits<altitude_type>::lowest()) + 1);
+        template <typename AltitudeType> struct StorageSelector<true, AltitudeType> {
+            /** @brief Domain size. */
+            static constexpr std::size_t domain_size = static_cast<std::size_t>(static_cast<long long>(std::numeric_limits<AltitudeType>::max()) -
+                                                                                static_cast<long long>(std::numeric_limits<AltitudeType>::lowest()) + 1);
             /** @brief Defines the `type` alias used by the component. */
             using type = std::array<std::vector<NodeId>, domain_size>;
         };
@@ -142,9 +142,9 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
         /**
          * @brief Sparse storage used when the altitude domain is too large to index directly.
          */
-        template <typename altitude_type> struct StorageSelector<false, altitude_type> {
+        template <typename AltitudeType> struct StorageSelector<false, AltitudeType> {
             /** @brief Defines the `type` alias used by the component. */
-            using type = std::map<altitude_type, std::vector<NodeId>>;
+            using type = std::map<AltitudeType, std::vector<NodeId>>;
         };
 
         /** @brief Defines the `storage_t` alias used by the component. */
@@ -184,7 +184,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
         /**
          * @brief Converts an altitude value into an array index for dense storage.
          *
-         * @param level Altitude level used by the operation.
+         * @param level Altitude level.
          * @return The converted altitude value into an array index for dense storage.
          */
         static std::size_t denseBucketIndex(altitude_t level) {
@@ -198,7 +198,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
         /**
          * @brief Converts a dense bucket index back to the corresponding altitude value.
          *
-         * @param index Zero-based index used by the operation.
+         * @param index Zero-based index.
          * @return The converted dense bucket index back to the corresponding altitude value.
          */
         static altitude_t levelFromDenseBucketIndex(std::size_t index) {
@@ -252,7 +252,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
         /**
          * @brief Returns the merge bucket for `level`, creating it for sparse storage.
          *
-         * @param level Altitude level used by the operation.
+         * @param level Altitude level.
          * @return The merge bucket for level, creating it for sparse storage.
          */
         std::vector<NodeId>& getMergedNodes(const altitude_t& level) {
@@ -266,21 +266,21 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
         /**
          * @brief Exposes the distinct adjacent seed nodes collected in this step.
          *
-         * @return Reference to the resulting object.
+         * @return Mutable reference to the updated object.
          */
         std::vector<NodeId>& getAdjacentNodes() { return adjacentNodes_; }
 
         /**
          * @brief Exposes frontier nodes outside the merge interval.
          *
-         * @return Reference to the resulting object.
+         * @return Mutable reference to the updated object.
          */
         std::vector<NodeId>& getFrontierNodesAboveB() { return frontierNodesAboveB_; }
 
         /**
          * @brief Adds `nodeId` as a frontier node if it was not collected before.
          *
-         * @param nodeId Identifier of the node used by the operation.
+         * @param nodeId Dense internal node identifier.
          */
         void addFrontierNodeAboveB(NodeId nodeId) {
             if (nodeId == InvalidNode || collectedNodeMarks_.isMarked(static_cast<std::size_t>(nodeId))) {
@@ -293,15 +293,15 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
         /**
          * @brief Adds `nodeId` to the merge bucket matching its current altitude.
          *
-         * @param tree Tree topology used by the operation.
-         * @param nodeId Identifier of the node used by the operation.
+         * @param tree Tree topology.
+         * @param nodeId Dense internal node identifier.
          */
         void addMergeNode(const tree_t& tree, NodeId nodeId) {
             if (nodeId == InvalidNode || collectedNodeMarks_.isMarked(static_cast<std::size_t>(nodeId))) {
                 return;
             }
 
-            auto& bucket = getMergedNodes(tree.getAltitude(nodeId));
+            auto& bucket = getMergedNodes(tree.nodeAltitude(nodeId));
             bucket.push_back(nodeId);
             maxBucketSize_ = std::max(maxBucketSize_, bucket.size());
             collectedNodeMarks_.mark(static_cast<std::size_t>(nodeId));
@@ -311,7 +311,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
         /**
          * @brief Returns whether `nodeId` was bucketed as a merge node in this step.
          *
-         * @param nodeId Identifier of the node used by the operation.
+         * @param nodeId Dense internal node identifier.
          * @return Whether nodeId was bucketed as a merge node in this step.
          */
         bool isMergeNode(NodeId nodeId) const { return nodeId != InvalidNode && mergeBucketNodeMarks_.isMarked(static_cast<std::size_t>(nodeId)); }
@@ -319,7 +319,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
         /**
          * @brief Registers a dual-tree adjacency seed once and records it for inspection.
          *
-         * @param nodeId Identifier of the node used by the operation.
+         * @param nodeId Dense internal node identifier.
          * @return True when the documented condition holds; otherwise false.
          */
         bool markAdjacentSeed(NodeId nodeId) {
@@ -434,7 +434,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
     bool lastBulkProperPartTransfer_ = false;
 
     /**
-     * @brief Exact external dual owners supplied by a preceding leaf certificate.
+     * @brief Exact external dual smallest nodes supplied by a preceding leaf certificate.
      *
      * Min/max residual construction already scans the selected leaf boundary
      * before committing it. These fields let the immediately following dual
@@ -443,9 +443,9 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
      * original self-contained update path.
      */
     tree_t* primedDualTree_ = nullptr;
-    /** @brief Stores the primed leaf identifier. */
+    /** @brief Dense node identifier of the primed leaf identifier. */
     NodeId primedLeafId_ = InvalidNode;
-    /** @brief Stores the primed adjacent nodes. */
+    /** @brief Dense node identifier of the primed adjacent nodes. */
     std::vector<NodeId> primedAdjacentNodes_;
 
     /**
@@ -455,13 +455,13 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
      * Other callers retain the self-contained API and pay one local copy, after
      * which all phases of the update reuse the same contiguous pixel sequence.
      */
-    std::vector<NodeId> selectedSupportScratch_;
+    std::vector<PixelId> selectedSupportScratch_;
 
     /**
-     * @brief Returns the read-only topology view associated with a weighted tree.
+     * @brief Returns the read-only topology view associated with a valued tree.
      *
-     * @param tree Tree topology used by the operation.
-     * @return The read-only topology view associated with a weighted tree.
+     * @param tree Tree topology.
+     * @return The read-only topology view associated with a valued tree.
      */
     static const MorphologicalTree& topologyOf(const tree_t* tree) {
         assert(tree != nullptr);
@@ -471,13 +471,13 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
     /**
      * @brief Returns the current altitude of one tree node.
      *
-     * @param tree Tree topology used by the operation.
-     * @param nodeId Identifier of the node used by the operation.
+     * @param tree Tree topology.
+     * @param nodeId Dense internal node identifier.
      * @return The current altitude of one tree node.
      */
     altitude_t nodeAltitude(const tree_t* tree, NodeId nodeId) const {
         assert(tree != nullptr);
-        return tree->getAltitude(nodeId);
+        return tree->nodeAltitude(nodeId);
     }
 
     /**
@@ -529,9 +529,9 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
      * when the caller only needs a temporary detached subtree, `editor.detach`
      * avoids the parent/child relation check required by `removeChild`.
      *
-     * @param topology Tree topology used by the operation.
-     * @param editor Active tree editor used by the operation.
-     * @param nodeId Identifier of the node used by the operation.
+     * @param topology Tree topology.
+     * @param editor Active tree editor.
+     * @param nodeId Dense internal node identifier.
      */
     void detachIfNonRoot(const MorphologicalTree& topology, editor_t& editor, NodeId nodeId) {
         if (nodeId == InvalidNode || !topology.isNode(nodeId) || !topology.isAlive(nodeId) || topology.isRoot(nodeId)) {
@@ -560,10 +560,10 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
      * operations keep using `removeChild(..., true)` because they must return the
      * now-empty node slot to the tree's free list.
      *
-     * @param tree Tree topology used by the operation.
-     * @param editor Active tree editor used by the operation.
-     * @param nodeId Identifier of the node used by the operation.
-     * @param releaseNode Node identifier represented by `releaseNode`.
+     * @param tree Tree topology.
+     * @param editor Active tree editor.
+     * @param nodeId Dense internal node identifier.
+     * @param releaseNode Node identifier.
      */
     void disconnect(tree_t* tree, editor_t& editor, NodeId nodeId, bool releaseNode) {
         assert(tree != nullptr);
@@ -576,7 +576,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
             return;
         }
 
-        const NodeId parentId = topology.getNodeParent(nodeId);
+        const NodeId parentId = topology.parent(nodeId);
         if (parentId == InvalidNode || parentId == nodeId) {
             return;
         }
@@ -591,19 +591,19 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
      * After this operation, `childId` is structurally empty but still attached
      * until the caller explicitly disconnects or releases it.
      *
-     * @param tree Tree topology used by the operation.
-     * @param editor Active tree editor used by the operation.
+     * @param tree Tree topology.
+     * @param editor Active tree editor.
      * @param parentId Identifier of the parent node.
      * @param childId Identifier of the child node.
      */
     void mergedParentAndChildren(tree_t* tree, editor_t& editor, NodeId parentId, NodeId childId) {
         assert(tree != nullptr);
         const MorphologicalTree& topology = topologyOf(tree);
-        for (NodeId child : topology.getChildren(childId)) {
+        for (NodeId child : topology.children(childId)) {
             noteTopologyChanged(child);
         }
         editor.moveChildren(parentId, childId);
-        editor.moveProperParts(parentId, childId);
+        editor.mergeProperParts(parentId, childId);
     }
 
     /**
@@ -611,53 +611,53 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
      *
      * The support is represented by the direct proper parts of `leafId` in the
      * primal tree. Each pixel is looked up in the dual tree and moved from its
-     * current owner to `unionNode`. Donor nodes that become empty are marked for
+     * current smallest node to `unionNode`. Donor nodes that become empty are marked for
      * deferred absorption; if the emptied donor is `nodeCa`, the caller must handle
      * the special replacement/root cases after the sweep.
      *
-     * @param dualTree Dual tree used by the operation.
-     * @param editor Active tree editor used by the operation.
-     * @param unionNode Node identifier represented by `unionNode`.
+     * @param dualTree Dual tree.
+     * @param editor Active tree editor.
+     * @param unionNode Node identifier.
      * @param support Direct proper-part support of the selected primal leaf.
      * @param nodeCa Identifier of the common-ancestor node.
      * @param nodeCaRemoved Whether the common-ancestor node was removed.
-     * @param certifiedWholeSupportOwner Optional certified owner of the complete
+     * @param certifiedWholeSupportSmallestNode Optional certified smallest node of the complete
      *        support, enabling one bulk proper-part transfer.
      */
-    void moveSelectedProperPartsToNode(tree_t* dualTree, editor_t& editor, NodeId unionNode, std::span<const NodeId> support, NodeId nodeCa,
-                                       bool& nodeCaRemoved, NodeId certifiedWholeSupportOwner) {
+    void moveSelectedProperPartsToNode(tree_t* dualTree, editor_t& editor, NodeId unionNode, std::span<const PixelId> support, NodeId nodeCa,
+                                       bool& nodeCaRemoved, NodeId certifiedWholeSupportSmallestNode) {
         const MorphologicalTree& dualTopology = topologyOf(dualTree);
-        if (certifiedWholeSupportOwner != InvalidNode && certifiedWholeSupportOwner != unionNode && dualTopology.isNode(certifiedWholeSupportOwner) &&
-            dualTopology.isAlive(certifiedWholeSupportOwner) &&
-            dualTopology.getNumProperParts(certifiedWholeSupportOwner) == static_cast<int>(support.size())) {
+        if (certifiedWholeSupportSmallestNode != InvalidNode && certifiedWholeSupportSmallestNode != unionNode && dualTopology.isNode(certifiedWholeSupportSmallestNode) &&
+            dualTopology.isAlive(certifiedWholeSupportSmallestNode) &&
+            dualTopology.properPartCardinality(certifiedWholeSupportSmallestNode) == static_cast<int>(support.size())) {
 #ifndef NDEBUG
-            for (NodeId pixelId : support) {
-                assert(dualTopology.getProperPartOwner(pixelId) == certifiedWholeSupportOwner);
+            for (PixelId pixelId : support) {
+                assert(dualTopology.smallestNode(pixelId) == certifiedWholeSupportSmallestNode);
             }
 #endif
-            editor.moveProperParts(unionNode, certifiedWholeSupportOwner);
+            editor.mergeProperParts(unionNode, certifiedWholeSupportSmallestNode);
             lastBulkProperPartTransfer_ = true;
-            if (dualTopology.isAlive(certifiedWholeSupportOwner) && dualTopology.getNumProperParts(certifiedWholeSupportOwner) == 0 &&
-                !removedMarks_.isMarked(static_cast<std::size_t>(certifiedWholeSupportOwner))) {
-                removedMarks_.mark(static_cast<std::size_t>(certifiedWholeSupportOwner));
-                removedNodesPendingAbsorption_.push_back(certifiedWholeSupportOwner);
-                if (certifiedWholeSupportOwner == nodeCa) {
+            if (dualTopology.isAlive(certifiedWholeSupportSmallestNode) && dualTopology.properPartCardinality(certifiedWholeSupportSmallestNode) == 0 &&
+                !removedMarks_.isMarked(static_cast<std::size_t>(certifiedWholeSupportSmallestNode))) {
+                removedMarks_.mark(static_cast<std::size_t>(certifiedWholeSupportSmallestNode));
+                removedNodesPendingAbsorption_.push_back(certifiedWholeSupportSmallestNode);
+                if (certifiedWholeSupportSmallestNode == nodeCa) {
                     nodeCaRemoved = true;
                 }
             }
             return;
         }
-        for (NodeId pixelId : support) {
-            const NodeId ownerId = dualTopology.getProperPartOwner(pixelId);
-            if (ownerId == InvalidNode || ownerId == unionNode) {
+        for (PixelId pixelId : support) {
+            const NodeId smallestNodeId = dualTopology.smallestNode(pixelId);
+            if (smallestNodeId == InvalidNode || smallestNodeId == unionNode) {
                 continue;
             }
 
-            editor.moveProperPart(unionNode, ownerId, pixelId);
-            if (dualTopology.isAlive(ownerId) && dualTopology.getNumProperParts(ownerId) == 0 && !removedMarks_.isMarked(static_cast<std::size_t>(ownerId))) {
-                removedMarks_.mark(static_cast<std::size_t>(ownerId));
-                removedNodesPendingAbsorption_.push_back(ownerId);
-                if (ownerId == nodeCa) {
+            editor.movePixelToProperPart(unionNode, smallestNodeId, pixelId);
+            if (dualTopology.isAlive(smallestNodeId) && dualTopology.properPartCardinality(smallestNodeId) == 0 && !removedMarks_.isMarked(static_cast<std::size_t>(smallestNodeId))) {
+                removedMarks_.mark(static_cast<std::size_t>(smallestNodeId));
+                removedNodesPendingAbsorption_.push_back(smallestNodeId);
+                if (smallestNodeId == nodeCa) {
                     nodeCaRemoved = true;
                 }
             }
@@ -667,13 +667,13 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
     /**
      * @brief Tests whether a marked empty node is still alive and safe to absorb.
      *
-     * @param tree Tree topology used by the operation.
-     * @param nodeId Identifier of the node used by the operation.
+     * @param tree Tree topology.
+     * @param nodeId Dense internal node identifier.
      * @return True if a marked empty node is still alive and safe to absorb; otherwise false.
      */
     bool canAbsorbRemovedNode(tree_t* tree, NodeId nodeId) const {
         return tree != nullptr && nodeId != InvalidNode && topologyOf(tree).isNode(nodeId) && topologyOf(tree).isAlive(nodeId) &&
-               removedMarks_.isMarked(static_cast<std::size_t>(nodeId)) && topologyOf(tree).getNumProperParts(nodeId) == 0;
+               removedMarks_.isMarked(static_cast<std::size_t>(nodeId)) && topologyOf(tree).properPartCardinality(nodeId) == 0;
     }
 
     /**
@@ -683,9 +683,9 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
      * to a parent. The child with the extremal altitude for the dual tree polarity
      * becomes the new root and all other children are reattached below it.
      *
-     * @param tree Tree topology used by the operation.
-     * @param editor Active tree editor used by the operation.
-     * @param removedNodeId Node identifier represented by `removedNodeId`.
+     * @param tree Tree topology.
+     * @param editor Active tree editor.
+     * @param removedNodeId Node identifier.
      */
     void absorbRemovedRootNode(tree_t* tree, editor_t& editor, NodeId removedNodeId) {
         const bool isMaxtree = tree == maxtree_;
@@ -726,14 +726,14 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
      * the merge, the parent is marked so the post-order absorption pass can keep
      * contracting upward.
      *
-     * @param tree Tree topology used by the operation.
-     * @param editor Active tree editor used by the operation.
-     * @param removedNodeId Node identifier represented by `removedNodeId`.
+     * @param tree Tree topology.
+     * @param editor Active tree editor.
+     * @param removedNodeId Node identifier.
      * @return The surviving parent empty non-root node into its current parent.
      */
     NodeId absorbRemovedNonRootNode(tree_t* tree, editor_t& editor, NodeId removedNodeId) {
         const MorphologicalTree& topology = topologyOf(tree);
-        const NodeId parentId = topology.getNodeParent(removedNodeId);
+        const NodeId parentId = topology.parent(removedNodeId);
         if (parentId == InvalidNode || parentId == removedNodeId || !topology.isAlive(parentId)) {
             return InvalidNode;
         }
@@ -741,7 +741,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
         mergedParentAndChildren(tree, editor, parentId, removedNodeId);
         disconnect(tree, editor, removedNodeId, true);
 
-        if (topology.isAlive(parentId) && topology.getNumProperParts(parentId) == 0) {
+        if (topology.isAlive(parentId) && topology.properPartCardinality(parentId) == 0) {
             removedMarks_.mark(static_cast<std::size_t>(parentId));
             return parentId;
         }
@@ -756,9 +756,9 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
      * node itself so moving children/proper parts never leaves dangling links in
      * the connected component. Newly emptied parents are pushed back on the stack.
      *
-     * @param tree Tree topology used by the operation.
-     * @param editor Active tree editor used by the operation.
-     * @param removedNodeIds Node identifier represented by `removedNodeIds`.
+     * @param tree Tree topology.
+     * @param editor Active tree editor.
+     * @param removedNodeIds Node identifier.
      */
     void absorbRemovedNodes(tree_t* tree, editor_t& editor, const std::vector<NodeId>& removedNodeIds) {
         struct Frame {
@@ -816,12 +816,12 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
     /**
      * @brief Collects a subtree in post-order so leaf pruning remains the elementary step.
      *
-     * @param tree Tree topology used by the operation.
-     * @param nodeId Identifier of the node used by the operation.
+     * @param tree Tree topology.
+     * @param nodeId Dense internal node identifier.
      * @param out Destination receiving the result.
      */
     static void collectPostOrderNodes(const tree_t& tree, NodeId nodeId, std::vector<NodeId>& out) {
-        for (NodeId childId : tree.topology().getChildren(nodeId)) {
+        for (NodeId childId : tree.topology().children(nodeId)) {
             collectPostOrderNodes(tree, childId, out);
         }
         out.push_back(nodeId);
@@ -843,54 +843,54 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
     static constexpr int denseLevelBackendMaxBits() { return MMCFILTERS_COMPONENT_TREE_ADJUSTMENT_DENSE_MAX_BITS; }
 
     /**
-     * @brief Builds the leaf adjuster over a fixed weighted min-tree / max-tree pair.
+     * @brief Builds the leaf adjuster over a fixed valuedTree min-tree / max-tree pair.
      *
      * The adjuster does not own the trees or the adjacency relation. Public prune
      * methods always operate on this same pair; they do not rebind trees per call.
      * Both trees must represent the same image domain and must use node ids from
      * this repository's internal dense node-id space.
      *
-     * @param minTree Min-tree used by the operation.
-     * @param maxTree Max-tree used by the operation.
-     * @param graph Region or adjacency graph used by the operation.
+     * @param minTree Min-tree.
+     * @param maxTree Max-tree.
+     * @param graph Region or adjacency graph.
      */
     DualMinMaxTreeIncrementalFilterLeaf(tree_t* minTree, tree_t* maxTree, const RegularGridAdjacency2D& graph)
-        : mintree_(minTree), maxtree_(maxTree), graph_(&graph), mergeNodesByLevel_(std::max(minTree ? minTree->topology().getNumInternalNodeSlots() : 0,
-                                                                                            maxTree ? maxTree->topology().getNumInternalNodeSlots() : 0)),
+        : mintree_(minTree), maxtree_(maxTree), graph_(&graph), mergeNodesByLevel_(std::max(minTree ? minTree->topology().numInternalNodeSlots() : 0,
+                                                                                            maxTree ? maxTree->topology().numInternalNodeSlots() : 0)),
           removedMarks_(static_cast<std::size_t>(
-              std::max(minTree ? minTree->topology().getNumInternalNodeSlots() : 0, maxTree ? maxTree->topology().getNumInternalNodeSlots() : 0))),
+              std::max(minTree ? minTree->topology().numInternalNodeSlots() : 0, maxTree ? maxTree->topology().numInternalNodeSlots() : 0))),
           pixelsInLeafMarks_(static_cast<std::size_t>(
-              std::max(minTree ? minTree->topology().getNumTotalProperParts() : 0, maxTree ? maxTree->topology().getNumTotalProperParts() : 0))),
+              std::max(minTree ? minTree->topology().numPixels() : 0, maxTree ? maxTree->topology().numPixels() : 0))),
           climbedNodeMarks_(static_cast<std::size_t>(
-              std::max(minTree ? minTree->topology().getNumInternalNodeSlots() : 0, maxTree ? maxTree->topology().getNumInternalNodeSlots() : 0))),
+              std::max(minTree ? minTree->topology().numInternalNodeSlots() : 0, maxTree ? maxTree->topology().numInternalNodeSlots() : 0))),
           topologyChangedMarks_(static_cast<std::size_t>(
-              std::max(minTree ? minTree->topology().getNumInternalNodeSlots() : 0, maxTree ? maxTree->topology().getNumInternalNodeSlots() : 0))) {
+              std::max(minTree ? minTree->topology().numInternalNodeSlots() : 0, maxTree ? maxTree->topology().numInternalNodeSlots() : 0))) {
         assert(mintree_ != nullptr);
         assert(maxtree_ != nullptr);
         assert(graph_ != nullptr);
-        assert(mintree_->topology().getNumRowsOfGridDomain2D() == maxtree_->topology().getNumRowsOfGridDomain2D());
-        assert(mintree_->topology().getNumColsOfGridDomain2D() == maxtree_->topology().getNumColsOfGridDomain2D());
+        assert(mintree_->topology().numRows() == maxtree_->topology().numRows());
+        assert(mintree_->topology().numColumns() == maxtree_->topology().numColumns());
     }
 
     /**
      * @brief Exposes adjacent seed nodes collected for the current update.
      *
-     * @return Reference to the resulting object.
+     * @return Mutable reference to the updated object.
      */
     std::vector<NodeId>& getAdjacentNodes() { return mergeNodesByLevel_.getAdjacentNodes(); }
 
     /**
      * @brief Exposes frontier nodes outside the merge interval for the current update.
      *
-     * @return Reference to the resulting object.
+     * @return Mutable reference to the updated object.
      */
     std::vector<NodeId>& getFrontierNodesAboveB() { return mergeNodesByLevel_.getFrontierNodesAboveB(); }
 
     /**
      * @brief Exposes the merge bucket associated with an altitude level.
      *
-     * @param level Altitude level used by the operation.
-     * @return Reference to the resulting object.
+     * @param level Altitude level.
+     * @return Mutable reference to the updated object.
      */
     std::vector<NodeId>& getMergedNodes(const altitude_t& level) { return mergeNodesByLevel_.getMergedNodes(level); }
 
@@ -926,12 +926,12 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
     /**
      * @brief Reuses a certified max-leaf boundary in the next min-tree update.
      *
-     * `adjacentNodes` must contain every distinct current min-tree owner
+     * `adjacentNodes` must contain every distinct current min-tree smallest node
      * touching the external pixel boundary of `leafId`. The cache is consumed
      * by the next matching update and ignored by all other calls.
      *
-     * @param leafId Leaf identifier used by the operation.
-     * @param adjacentNodes Adjacent nodes used by the operation.
+     * @param leafId Leaf identifier.
+     * @param adjacentNodes Adjacent nodes.
      */
     void primeMaxLeafBoundary(NodeId leafId, std::span<const NodeId> adjacentNodes) {
         primedDualTree_ = mintree_;
@@ -942,11 +942,11 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
     /**
      * @brief Reuses a certified min-leaf boundary in the next max-tree update.
      *
-     * `adjacentNodes` must contain every distinct current max-tree owner
+     * `adjacentNodes` must contain every distinct current max-tree smallest node
      * touching the external pixel boundary of `leafId`.
      *
-     * @param leafId Leaf identifier used by the operation.
-     * @param adjacentNodes Adjacent nodes used by the operation.
+     * @param leafId Leaf identifier.
+     * @param adjacentNodes Adjacent nodes.
      */
     void primeMinLeafBoundary(NodeId leafId, std::span<const NodeId> adjacentNodes) {
         primedDualTree_ = maxtree_;
@@ -959,23 +959,23 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
      *
      * Starting from the leaf support `C` in `primalTree`, the method marks all
      * pixels in `C`, scans their graph neighbors, maps each external neighbor to
-     * its owner in `dualTree`, and climbs ancestor paths that belong to the
+     * its smallest node in `dualTree`, and climbs ancestor paths that belong to the
      * altitude interval governed by `nodeCa` and `b`.
      *
      * Nodes whose level is inside the merge side of the interval are inserted in
      * `mergeNodesByLevel_`. Boundary nodes outside the merge side are recorded as
      * frontiers and later attached to the union node created at level `b`.
      *
-     * @param dualTree Dual tree used by the operation.
+     * @param dualTree Dual tree.
      * @param support Direct proper-part support of the selected primal leaf.
-     * @param certifiedAdjacentNodes Exact distinct dual owners on the external
+     * @param certifiedAdjacentNodes Exact distinct dual smallest nodes on the external
      *        boundary. When non-empty, the method does not rescan or mark the
      *        support to rediscover that boundary.
      * @param nodeCa Identifier of the common-ancestor node.
-     * @param b Branch or side selector used by the operation.
+     * @param b Branch or side selector.
      * @param isMaxtree Flag controlling is maxtree.
      */
-    void buildMergedAndNestedCollections(tree_t* dualTree, std::span<const NodeId> support, std::span<const NodeId> certifiedAdjacentNodes, NodeId nodeCa,
+    void buildMergedAndNestedCollections(tree_t* dualTree, std::span<const PixelId> support, std::span<const NodeId> certifiedAdjacentNodes, NodeId nodeCa,
                                          altitude_t b, bool isMaxtree) {
         assert(dualTree != nullptr);
         const MorphologicalTree& dualTopology = topologyOf(dualTree);
@@ -1009,7 +1009,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
                 if ((isMaxtree && levelCurrent <= b) || (!isMaxtree && levelCurrent >= b)) {
                     mergeNodesByLevel_.addMergeNode(*dualTree, nodeSubtree);
                 } else {
-                    NodeId parentId = dualTopology.getNodeParent(nodeSubtree);
+                    NodeId parentId = dualTopology.parent(nodeSubtree);
                     if (parentId == nodeSubtree) {
                         parentId = InvalidNode;
                     }
@@ -1019,7 +1019,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
                     }
                 }
 
-                const NodeId parentId = dualTopology.getNodeParent(n);
+                const NodeId parentId = dualTopology.parent(n);
                 if (parentId == n) {
                     break;
                 }
@@ -1032,15 +1032,15 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
                 addAdjacentNode(nodeQ);
             }
         } else {
-            for (NodeId pixelId : support) {
+            for (PixelId pixelId : support) {
                 pixelsInLeafMarks_.mark(static_cast<std::size_t>(pixelId));
             }
-            for (NodeId p : support) {
-                for (NodeId q : graph_->getNeighborIndices(p)) {
-                    if (pixelsInLeafMarks_.isMarked(static_cast<std::size_t>(q))) {
+            for (PixelId pixel : support) {
+                for (PixelId neighbor : graph_->getNeighborIndices(pixel)) {
+                    if (pixelsInLeafMarks_.isMarked(static_cast<std::size_t>(neighbor))) {
                         continue;
                     }
-                    addAdjacentNode(dualTopology.getProperPartOwner(q));
+                    addAdjacentNode(dualTopology.smallestNode(neighbor));
                 }
             }
         }
@@ -1063,18 +1063,18 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
      * The caller is responsible for pruning `leafId` from the primal tree after
      * this dual update completes.
      *
-     * @param dualTree Dual tree used by the operation.
+     * @param dualTree Dual tree.
      * @param leafId Identifier of the leaf node.
      * @param certifiedSupport Optional support already collected by a preceding
      *        certificate.
-     * @param certifiedNodeCa Optional exact extremal dual owner of that support.
-     * @param certifiedAdjacentNodes Optional exact distinct owners touching the
+     * @param certifiedNodeCa Optional exact extremal dual smallest node of that support.
+     * @param certifiedAdjacentNodes Optional exact distinct smallest nodes touching the
      *        external boundary.
-     * @param certifiedWholeSupportOwner Optional certified owner of the complete
+     * @param certifiedWholeSupportSmallestNode Optional certified smallest node of the complete
      *        support, enabling one bulk proper-part transfer.
      */
-    void updateTree(tree_t* dualTree, NodeId leafId, std::span<const NodeId> certifiedSupport = {}, NodeId certifiedNodeCa = InvalidNode,
-                    std::span<const NodeId> certifiedAdjacentNodes = {}, NodeId certifiedWholeSupportOwner = InvalidNode) {
+    void updateTree(tree_t* dualTree, NodeId leafId, std::span<const PixelId> certifiedSupport = {}, NodeId certifiedNodeCa = InvalidNode,
+                    std::span<const NodeId> certifiedAdjacentNodes = {}, NodeId certifiedWholeSupportSmallestNode = InvalidNode) {
         assert(dualTree != nullptr);
         assert(leafId != InvalidNode);
 
@@ -1088,18 +1088,18 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
         assert(primalTopology.isNode(leafId) && primalTopology.isAlive(leafId));
         assert(primalTopology.isLeaf(leafId));
 
-        const NodeId leafParent = primalTopology.getNodeParent(leafId);
+        const NodeId leafParent = primalTopology.parent(leafId);
         assert(leafParent != InvalidNode && leafParent != leafId);
         const altitude_t b = nodeAltitude(primalTree, leafParent);
 
-        assert(primalTopology.getNumProperParts(leafId) > 0);
-        std::span<const NodeId> support = certifiedSupport;
+        assert(primalTopology.properPartCardinality(leafId) > 0);
+        std::span<const PixelId> support = certifiedSupport;
         if (support.empty()) {
-            const auto properParts = primalTopology.getProperParts(leafId);
+            const auto properParts = primalTopology.properPart(leafId);
             selectedSupportScratch_.assign(properParts.begin(), properParts.end());
             support = selectedSupportScratch_;
         }
-        assert(support.size() == static_cast<std::size_t>(primalTopology.getNumProperParts(leafId)));
+        assert(support.size() == static_cast<std::size_t>(primalTopology.properPartCardinality(leafId)));
 
         NodeId nodeCa = certifiedNodeCa;
         altitude_t altitudeCa = altitude_t{};
@@ -1107,16 +1107,16 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
             assert(dualTopology.isNode(nodeCa) && dualTopology.isAlive(nodeCa));
             altitudeCa = nodeAltitude(dualTree, nodeCa);
         } else {
-            for (NodeId pixelId : support) {
-                const NodeId ownerId = dualTopology.getProperPartOwner(pixelId);
-                if (ownerId == InvalidNode) {
+            for (PixelId pixelId : support) {
+                const NodeId smallestNodeId = dualTopology.smallestNode(pixelId);
+                if (smallestNodeId == InvalidNode) {
                     continue;
                 }
 
-                const altitude_t ownerAltitude = nodeAltitude(dualTree, ownerId);
-                if (nodeCa == InvalidNode || (isMaxtree && ownerAltitude < altitudeCa) || (!isMaxtree && ownerAltitude > altitudeCa)) {
-                    nodeCa = ownerId;
-                    altitudeCa = ownerAltitude;
+                const altitude_t smallestNodeAltitude = nodeAltitude(dualTree, smallestNodeId);
+                if (nodeCa == InvalidNode || (isMaxtree && smallestNodeAltitude < altitudeCa) || (!isMaxtree && smallestNodeAltitude > altitudeCa)) {
+                    nodeCa = smallestNodeId;
+                    altitudeCa = smallestNodeAltitude;
                 }
             }
         }
@@ -1131,7 +1131,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
         primedLeafId_ = InvalidNode;
         primedAdjacentNodes_.clear();
 
-        editor_t editor = mmcfilters::detail::beginEstablishedWeightedEdit(*dualTree);
+        editor_t editor = mmcfilters::detail::beginEstablishedValuedEdit(*dualTree);
         altitude_t mergeLevel = mergeNodesByLevel_.firstMergeLevel();
         NodeId unionNode = InvalidNode;
         NodeId previousUnionNode = InvalidNode;
@@ -1177,7 +1177,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
             lastCandidateNodes_.push_back(unionNode);
 
             if (mergeLevel == b) {
-                moveSelectedProperPartsToNode(dualTree, editor, unionNode, support, nodeCa, nodeCaRemoved, certifiedWholeSupportOwner);
+                moveSelectedProperPartsToNode(dualTree, editor, unionNode, support, nodeCa, nodeCaRemoved, certifiedWholeSupportSmallestNode);
 
                 for (auto nodeId : mergeNodesByLevel_.getFrontierNodesAboveB()) {
                     if (!dualTopology.isAlive(nodeId)) {
@@ -1208,7 +1208,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
 
         if (nodeCaRemoved) {
             if (!dualTopology.isRoot(nodeCa)) {
-                const NodeId parentIdNodeCa = dualTopology.getNodeParent(nodeCa);
+                const NodeId parentIdNodeCa = dualTopology.parent(nodeCa);
                 if (!dualTopology.isRoot(finalUnionNode)) {
                     disconnect(dualTree, editor, finalUnionNode, false);
                 }
@@ -1278,7 +1278,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
     void pruneMaxTreeAndUpdateMinTree(std::vector<NodeId>& nodesToPrune) {
         std::vector<NodeId> postOrderNodes;
         for (NodeId rootSubtree : nodesToPrune) {
-            if (rootSubtree == InvalidNode || rootSubtree == maxtree_->topology().getRoot() || !maxtree_->topology().isNode(rootSubtree) ||
+            if (rootSubtree == InvalidNode || rootSubtree == maxtree_->topology().root() || !maxtree_->topology().isNode(rootSubtree) ||
                 !maxtree_->topology().isAlive(rootSubtree)) {
                 continue;
             }
@@ -1286,7 +1286,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
             postOrderNodes.clear();
             collectPostOrderNodes(*maxtree_, rootSubtree, postOrderNodes);
             for (NodeId leafId : postOrderNodes) {
-                if (leafId == InvalidNode || leafId == maxtree_->topology().getRoot() || !maxtree_->topology().isNode(leafId) ||
+                if (leafId == InvalidNode || leafId == maxtree_->topology().root() || !maxtree_->topology().isNode(leafId) ||
                     !maxtree_->topology().isAlive(leafId)) {
                     continue;
                 }
@@ -1303,7 +1303,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
      * @param leafId Identifier of the leaf node.
      */
     void pruneMaxLeafAndUpdateMinTree(NodeId leafId) {
-        if (leafId == InvalidNode || leafId == maxtree_->topology().getRoot() || !maxtree_->topology().isNode(leafId) ||
+        if (leafId == InvalidNode || leafId == maxtree_->topology().root() || !maxtree_->topology().isNode(leafId) ||
             !maxtree_->topology().isAlive(leafId)) {
             return;
         }
@@ -1318,20 +1318,20 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
      * The three certificate fields must describe the current leaf and min-tree
      * state. They are consumed synchronously before the primal leaf is pruned.
      *
-     * @param leafId Leaf identifier used by the operation.
-     * @param certifiedSupport Certified support used by the operation.
-     * @param certifiedNodeCa Certified node ca used by the operation.
-     * @param certifiedAdjacentNodes Certified adjacent nodes used by the operation.
-     * @param certifiedWholeSupportOwner Certified whole support owner used by the operation.
+     * @param leafId Leaf identifier.
+     * @param certifiedSupport Certified support.
+     * @param certifiedNodeCa Certified node ca.
+     * @param certifiedAdjacentNodes Certified adjacent nodes.
+     * @param certifiedWholeSupportSmallestNode Certified whole-support smallest node.
      */
-    void pruneMaxLeafAndUpdateMinTree(NodeId leafId, std::span<const NodeId> certifiedSupport, NodeId certifiedNodeCa,
-                                      std::span<const NodeId> certifiedAdjacentNodes, NodeId certifiedWholeSupportOwner = InvalidNode) {
-        if (leafId == InvalidNode || leafId == maxtree_->topology().getRoot() || !maxtree_->topology().isNode(leafId) ||
+    void pruneMaxLeafAndUpdateMinTree(NodeId leafId, std::span<const PixelId> certifiedSupport, NodeId certifiedNodeCa,
+                                      std::span<const NodeId> certifiedAdjacentNodes, NodeId certifiedWholeSupportSmallestNode = InvalidNode) {
+        if (leafId == InvalidNode || leafId == maxtree_->topology().root() || !maxtree_->topology().isNode(leafId) ||
             !maxtree_->topology().isAlive(leafId)) {
             return;
         }
         assert(maxtree_->topology().isLeaf(leafId));
-        updateTree(mintree_, leafId, certifiedSupport, certifiedNodeCa, certifiedAdjacentNodes, certifiedWholeSupportOwner);
+        updateTree(mintree_, leafId, certifiedSupport, certifiedNodeCa, certifiedAdjacentNodes, certifiedWholeSupportSmallestNode);
         maxtree_->pruneNode(leafId);
     }
 
@@ -1345,7 +1345,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
     void pruneMinTreeAndUpdateMaxTree(std::vector<NodeId>& nodesToPrune) {
         std::vector<NodeId> postOrderNodes;
         for (NodeId rootSubtree : nodesToPrune) {
-            if (rootSubtree == InvalidNode || rootSubtree == mintree_->topology().getRoot() || !mintree_->topology().isNode(rootSubtree) ||
+            if (rootSubtree == InvalidNode || rootSubtree == mintree_->topology().root() || !mintree_->topology().isNode(rootSubtree) ||
                 !mintree_->topology().isAlive(rootSubtree)) {
                 continue;
             }
@@ -1353,7 +1353,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
             postOrderNodes.clear();
             collectPostOrderNodes(*mintree_, rootSubtree, postOrderNodes);
             for (NodeId leafId : postOrderNodes) {
-                if (leafId == InvalidNode || leafId == mintree_->topology().getRoot() || !mintree_->topology().isNode(leafId) ||
+                if (leafId == InvalidNode || leafId == mintree_->topology().root() || !mintree_->topology().isNode(leafId) ||
                     !mintree_->topology().isAlive(leafId)) {
                     continue;
                 }
@@ -1370,7 +1370,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
      * @param leafId Identifier of the leaf node.
      */
     void pruneMinLeafAndUpdateMaxTree(NodeId leafId) {
-        if (leafId == InvalidNode || leafId == mintree_->topology().getRoot() || !mintree_->topology().isNode(leafId) ||
+        if (leafId == InvalidNode || leafId == mintree_->topology().root() || !mintree_->topology().isNode(leafId) ||
             !mintree_->topology().isAlive(leafId)) {
             return;
         }
@@ -1382,20 +1382,20 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
     /**
      * @brief Prunes one certified min-tree leaf without rediscovering its workset.
      *
-     * @param leafId Leaf identifier used by the operation.
-     * @param certifiedSupport Certified support used by the operation.
-     * @param certifiedNodeCa Certified node ca used by the operation.
-     * @param certifiedAdjacentNodes Certified adjacent nodes used by the operation.
-     * @param certifiedWholeSupportOwner Certified whole support owner used by the operation.
+     * @param leafId Leaf identifier.
+     * @param certifiedSupport Certified support.
+     * @param certifiedNodeCa Certified node ca.
+     * @param certifiedAdjacentNodes Certified adjacent nodes.
+     * @param certifiedWholeSupportSmallestNode Certified whole-support smallest node.
      */
-    void pruneMinLeafAndUpdateMaxTree(NodeId leafId, std::span<const NodeId> certifiedSupport, NodeId certifiedNodeCa,
-                                      std::span<const NodeId> certifiedAdjacentNodes, NodeId certifiedWholeSupportOwner = InvalidNode) {
-        if (leafId == InvalidNode || leafId == mintree_->topology().getRoot() || !mintree_->topology().isNode(leafId) ||
+    void pruneMinLeafAndUpdateMaxTree(NodeId leafId, std::span<const PixelId> certifiedSupport, NodeId certifiedNodeCa,
+                                      std::span<const NodeId> certifiedAdjacentNodes, NodeId certifiedWholeSupportSmallestNode = InvalidNode) {
+        if (leafId == InvalidNode || leafId == mintree_->topology().root() || !mintree_->topology().isNode(leafId) ||
             !mintree_->topology().isAlive(leafId)) {
             return;
         }
         assert(mintree_->topology().isLeaf(leafId));
-        updateTree(maxtree_, leafId, certifiedSupport, certifiedNodeCa, certifiedAdjacentNodes, certifiedWholeSupportOwner);
+        updateTree(maxtree_, leafId, certifiedSupport, certifiedNodeCa, certifiedAdjacentNodes, certifiedWholeSupportSmallestNode);
         mintree_->pruneNode(leafId);
     }
 

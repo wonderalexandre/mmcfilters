@@ -2,6 +2,7 @@
 
 #include "../utils/Image.hpp"
 #include "../utils/Common.hpp"
+#include "MorphologicalTreeSemantics.hpp"
 #include "detail/NativeHierarchyValidationDetail.hpp"
 
 #include <algorithm>
@@ -16,66 +17,18 @@
 
 namespace mmcfilters {
 
-/**
- * @brief Selects the interpolation/connectivity convention used to build a tree of shapes.
- */
-enum class ToSInterpolation { SelfDual, Min4cMax8c, Min8cMax4c };
+namespace detail {
+/** @brief Internal dispatch selected from a validated topographic immersion. */
+enum class TopographicImmersionMode { SelfDualSpan, Min4Max8, Min8Max4 };
+} // namespace detail
 
-/**
- * @brief Selects whether the transient immersion domain has an exterior ring.
- *
- * This is strictly a producer policy. Both choices project the published
- * hierarchy back onto the original proper-part domain.
- */
-enum class ToSPaddingPolicy { Exterior, NoPadding };
-
-inline constexpr int ToSInterpolationScale = 2;
-inline constexpr int ToSInterpolationPadding = 1;
+inline constexpr int TopographicInterpolationScale = 2;
+inline constexpr int TopographicInterpolationPadding = 1;
 inline constexpr int ToSUInt8Depth = 8;
 inline constexpr int ToSSelfDualDepth = 9;
-inline constexpr int ToSDefaultInfinityRow = 0;
-inline constexpr int ToSDefaultInfinityCol = 0;
 
 using ToSGrayLevel = uint16_t;
 using ToSFloodDepth = uint32_t;
-
-/**
- * @brief Runtime selection of built-in Tree-of-Shapes producer policies.
- *
- * Built-in interpolation dispatch happens once before the propagation loop.
- * The options are never persisted in `MorphologicalTree`.
- */
-struct TreeOfShapesProducerOptions {
-    /// Interpolation/connectivity convention used on the transient immersion.
-    ToSInterpolation interpolation = ToSInterpolation::SelfDual;
-    /// Whether the transient immersion contains an exterior ring.
-    ToSPaddingPolicy padding = ToSPaddingPolicy::Exterior;
-    /// Row of the propagation seed in the selected transient immersion.
-    int infinitySeedRow = ToSDefaultInfinityRow;
-    /// Column of the propagation seed in the selected transient immersion.
-    int infinitySeedCol = ToSDefaultInfinityCol;
-};
-
-/**
- * @brief Compatibility encoding of construction levels in source gray units.
- */
-struct ToSQuantizedUInt8AltitudeEncoding {
-    /// Scalar type stored by the resulting weighted hierarchy.
-    using value_type = std::uint8_t;
-
-    /**
-     * @brief Converts one transient construction level to source gray-level units.
-     *
-     * @param constructionLevel Altitude or level represented by `constructionLevel`.
-     * @param interpolation Tree-of-Shapes interpolation policy.
-     * @return The converted one transient construction level to source gray-level units.
-     */
-    static value_type encode(ToSGrayLevel constructionLevel, ToSInterpolation interpolation) noexcept {
-        const ToSGrayLevel divisor =
-            interpolation == ToSInterpolation::SelfDual ? static_cast<ToSGrayLevel>(ToSInterpolationScale) : static_cast<ToSGrayLevel>(1);
-        return static_cast<value_type>(constructionLevel / divisor);
-    }
-};
 
 /**
  * @brief Exact encoding in doubled source-level units.
@@ -90,21 +43,16 @@ struct ToSExactDoubledAltitudeEncoding {
     /**
      * @brief Converts one transient construction level to exact doubled units.
      *
-     * @param constructionLevel Altitude or level represented by `constructionLevel`.
-     * @param interpolation Tree-of-Shapes interpolation policy.
+     * @param constructionLevel Altitude or level.
+     * @param immersionMode Active topographic immersion mode.
      * @return The converted one transient construction level to exact doubled units.
      */
-    static value_type encode(ToSGrayLevel constructionLevel, ToSInterpolation interpolation) noexcept {
-        if (interpolation == ToSInterpolation::SelfDual) {
+    static value_type encode(ToSGrayLevel constructionLevel, detail::TopographicImmersionMode immersionMode) noexcept {
+        if (immersionMode == detail::TopographicImmersionMode::SelfDualSpan) {
             return constructionLevel;
         }
-        return static_cast<value_type>(ToSInterpolationScale * static_cast<unsigned int>(constructionLevel));
+        return static_cast<value_type>(TopographicInterpolationScale * static_cast<unsigned int>(constructionLevel));
     }
-};
-
-template <class Policy>
-concept ToSAltitudeEncodingPolicy = AltitudeValue<typename Policy::value_type> && requires(ToSGrayLevel level, ToSInterpolation interpolation) {
-    { Policy::encode(level, interpolation) } -> std::same_as<typename Policy::value_type>;
 };
 
 /**
@@ -112,21 +60,22 @@ concept ToSAltitudeEncodingPolicy = AltitudeValue<typename Policy::value_type> &
  *
  * Unlike a pixel-parent image, this representation can preserve a virtual root
  * (or another branching projected node) whose direct proper part is empty.
- * The altitude type is selected by the producer encoding policy.
+ * Node altitudes use exact doubled gray-level units. Source levels are even;
+ * odd values preserve self-dual half levels.
  */
-template <AltitudeValue T> struct TreeOfShapesBuildResultT {
+struct TreeOfShapesBuildResult {
     /// Parent id for every produced internal node.
-    std::vector<NodeId> nodeParent;
+    std::vector<NodeId> parent;
     /// Direct owning node for every original-domain proper part.
-    std::vector<NodeId> properPartOwner;
+    std::vector<NodeId> smallestNodeMap;
     /// Encoded altitude for every produced internal node.
-    std::vector<T> altitude;
+    std::vector<ToSGrayLevel> nodeAltitudes;
     /// Root node id in the produced internal-node domain.
     NodeId root = InvalidNode;
-    /// Number of rows in the original proper-part domain.
+    /// Number of rows in the original pixel domain.
     int numRows = 0;
-    /// Number of columns in the original proper-part domain.
-    int numCols = 0;
+    /// Number of columns in the original pixel domain.
+    int numColumns = 0;
     /// Move-only proof that the producer established the topology invariants.
     detail::NativeTopologyProof topologyProof;
 
@@ -137,14 +86,11 @@ template <AltitudeValue T> struct TreeOfShapesBuildResultT {
      * @param semantics Hierarchy semantics validated by the operation.
      * @return The transferred producer-owned buffers together with their generic topology proof.
      */
-    [[nodiscard]] detail::ValidatedNativeHierarchy<T> takeValidatedHierarchy(HierarchySemantics semantics) && {
-        return detail::makeValidatedNativeHierarchy<T>(std::move(nodeParent), std::move(properPartOwner), std::move(altitude), root,
-                                                       GridDomain2D{numRows, numCols}, std::move(semantics), std::move(topologyProof));
+    [[nodiscard]] detail::ValidatedNativeHierarchy<ToSGrayLevel> takeValidatedHierarchy(MorphologicalTreeSemantics semantics) && {
+        return detail::makeValidatedNativeHierarchy<ToSGrayLevel>(std::move(parent), std::move(smallestNodeMap), std::move(nodeAltitudes), root,
+                                                                  GridDomain2D{numRows, numColumns}, std::move(semantics), std::move(topologyProof));
     }
 };
-
-using TreeOfShapesBuildResult = TreeOfShapesBuildResultT<std::uint8_t>;
-using ExactTreeOfShapesBuildResult = TreeOfShapesBuildResultT<ToSGrayLevel>;
 
 /************************ Tree of Shapes support ************************/
 
@@ -158,7 +104,7 @@ namespace detail {
  * emulate the required 4/8-connectivity behaviour during the union-find pass.
  * Each pixel may carry four diagonal flags: SW, NE, SE, and NW.
  */
-enum class DiagonalConnection : uint8_t { None = 0, SW = 1 << 0, NE = 1 << 1, SE = 1 << 2, NW = 1 << 3 };
+enum class DiagonalConnection : uint8_t { None = 0, Sw = 1 << 0, Ne = 1 << 1, Se = 1 << 2, Nw = 1 << 3 };
 
 // Helper operators for diagonal-connection flags.
 /**
@@ -198,33 +144,33 @@ inline bool operator&(DiagonalConnection a, DiagonalConnection b) { return stati
  */
 class AdjacencyUC {
   private:
-    /** @brief Stores the number of rows in the image domain. */
+    /** @brief Number of rows in the image domain. */
     int numRows;
-    /** @brief Stores the number of columns in the image domain. */
-    int numCols;
-    /** @brief Stores the enabled diagonal-connection flags for each pixel. */
+    /** @brief Number of columns in the image domain. */
+    int numColumns;
+    /** @brief Enabled diagonal-connection flags for each pixel buffer. */
     std::vector<uint8_t> dconnFlags; // 4-connect.  +  diag. connect.
                                      //  N, W, S, E,   SW, NE, SE, NW
     /** @brief Stores row offsets for cardinal and diagonal neighbours. */
     const std::vector<int> offsetRows = {-1, 0, 1, 0, 1, -1, 1, -1};
     /** @brief Stores column offsets for cardinal and diagonal neighbours. */
-    const std::vector<int> offsetCols = {0, -1, 0, 1, -1, 1, 1, -1};
+    const std::vector<int> offsetColumns = {0, -1, 0, 1, -1, 1, 1, -1};
     /** @brief Indicates whether diagonal connections may be traversed. */
     bool enableDiagonalConnection;
     /** @brief Maps each diagonal offset to its required connection flag. */
-    const std::vector<DiagonalConnection> requiredDiagonal = {DiagonalConnection::SW, DiagonalConnection::NE, DiagonalConnection::SE, DiagonalConnection::NW};
+    const std::vector<DiagonalConnection> requiredDiagonal = {DiagonalConnection::Sw, DiagonalConnection::Ne, DiagonalConnection::Se, DiagonalConnection::Nw};
 
   public:
     /**
      * @brief Constructs `AdjacencyUC` from the supplied inputs.
      *
      * @param rows Number of rows in the domain.
-     * @param cols Number of columns in the domain.
+     * @param columns Number of columns in the domain.
      * @param enableDiagonalConnection Flag controlling enable diagonal connection.
      */
-    AdjacencyUC(int rows, int cols, bool enableDiagonalConnection) : numRows(rows), numCols(cols), enableDiagonalConnection(enableDiagonalConnection) {
+    AdjacencyUC(int rows, int columns, bool enableDiagonalConnection) : numRows(rows), numColumns(columns), enableDiagonalConnection(enableDiagonalConnection) {
         if (enableDiagonalConnection)
-            dconnFlags.resize(rows * cols, 0);
+            dconnFlags.resize(rows * columns, 0);
     }
 
     /**
@@ -236,37 +182,37 @@ class AdjacencyUC {
      * @brief Sets diagonal connection.
      *
      * @param row Zero-based row coordinate.
-     * @param col Zero-based column coordinate.
+     * @param column Zero-based column coordinate.
      * @param conn Diagonal-connection flag.
      */
-    void setDiagonalConnection(int row, int col, DiagonalConnection conn) { dconnFlags[ImageUtils::to1D(row, col, numCols)] |= static_cast<uint8_t>(conn); }
+    void setDiagonalConnection(int row, int column, DiagonalConnection conn) { dconnFlags[ImageUtils::to1D(row, column, numColumns)] |= static_cast<uint8_t>(conn); }
 
     /**
      * @brief Sets diagonal connection.
      *
-     * @param idx Zero-based index used by the operation.
+     * @param pixel Row-major pixel index whose diagonal connection is updated.
      * @param conn Diagonal-connection flag.
      */
-    void setDiagonalConnection(int idx, DiagonalConnection conn) { dconnFlags[idx] |= static_cast<uint8_t>(conn); }
+    void setDiagonalConnection(PixelId pixel, DiagonalConnection conn) { dconnFlags[pixel] |= static_cast<uint8_t>(conn); }
 
     /**
      * @brief Tests whether connection holds.
      *
      * @param row Zero-based row coordinate.
-     * @param col Zero-based column coordinate.
+     * @param column Zero-based column coordinate.
      * @param conn Diagonal-connection flag.
      * @return True when connection; otherwise false.
      */
-    bool hasConnection(int row, int col, DiagonalConnection conn) const { return dconnFlags[ImageUtils::to1D(row, col, numCols)] & static_cast<uint8_t>(conn); }
+    bool hasConnection(int row, int column, DiagonalConnection conn) const { return dconnFlags[ImageUtils::to1D(row, column, numColumns)] & static_cast<uint8_t>(conn); }
 
     /**
      * @brief Returns connections.
      *
      * @param row Zero-based row coordinate.
-     * @param col Zero-based column coordinate.
+     * @param column Zero-based column coordinate.
      * @return Connections.
      */
-    uint8_t getConnections(int row, int col) const { return dconnFlags[ImageUtils::to1D(row, col, numCols)]; }
+    uint8_t getConnections(int row, int column) const { return dconnFlags[ImageUtils::to1D(row, column, numColumns)]; }
 
     /**
      * @brief Iterator over valid neighbours including enabled diagonal links.
@@ -275,11 +221,11 @@ class AdjacencyUC {
       private:
         /** @brief References the adaptive adjacency being traversed. */
         AdjacencyUC& instance;
-        /** @brief Stores the source pixel row. */
+        /** @brief Source pixel row. */
         int row;
-        /** @brief Stores the source pixel column. */
-        int col;
-        /** @brief Stores the current neighbour-offset index. */
+        /** @brief Source pixel column. */
+        int column;
+        /** @brief Current neighbour-offset index. */
         std::size_t id;
 
         /**
@@ -288,9 +234,9 @@ class AdjacencyUC {
         void advanceToValid() {
             while (id < instance.offsetRows.size()) {
                 int r = row + instance.offsetRows[id];
-                int c = col + instance.offsetCols[id];
-                if (r >= 0 && c >= 0 && r < instance.numRows && c < instance.numCols) {
-                    if (id < 4 || (instance.enableDiagonalConnection && instance.dconnFlags[ImageUtils::to1D(row, col, instance.numCols)] &
+                int c = column + instance.offsetColumns[id];
+                if (r >= 0 && c >= 0 && r < instance.numRows && c < instance.numColumns) {
+                    if (id < 4 || (instance.enableDiagonalConnection && instance.dconnFlags[ImageUtils::to1D(row, column, instance.numColumns)] &
                                                                             static_cast<uint8_t>(instance.requiredDiagonal[id - 4]))) {
                         return;
                     }
@@ -305,20 +251,20 @@ class AdjacencyUC {
          *
          * @param adj Adjacency relation used to traverse the image domain.
          * @param row Zero-based row coordinate.
-         * @param col Zero-based column coordinate.
-         * @param id Identifier used by the operation.
+         * @param column Zero-based column coordinate.
+         * @param id Identifier.
          */
-        NeighborIterator(AdjacencyUC& adj, int row, int col, int id) : instance(adj), row(row), col(col), id(id) { advanceToValid(); }
+        NeighborIterator(AdjacencyUC& adj, int row, int column, int id) : instance(adj), row(row), column(column), id(id) { advanceToValid(); }
 
         /**
          * @brief Returns the value at the current iterator position.
          *
          * @return The value at the current iterator position.
          */
-        int operator*() const {
+        PixelId operator*() const {
             int dr = instance.offsetRows[id];
-            int dc = instance.offsetCols[id];
-            return ImageUtils::to1D(row + dr, col + dc, instance.numCols);
+            int dc = instance.offsetColumns[id];
+            return ImageUtils::to1D(row + dr, column + dc, instance.numColumns);
         }
 
         /**
@@ -356,10 +302,10 @@ class AdjacencyUC {
       private:
         /** @brief References the adaptive adjacency represented by the range. */
         AdjacencyUC& instance;
-        /** @brief Stores the source pixel row. */
+        /** @brief Source pixel row. */
         int row;
-        /** @brief Stores the source pixel column. */
-        int col;
+        /** @brief Source pixel column. */
+        int column;
 
       public:
         /**
@@ -367,43 +313,43 @@ class AdjacencyUC {
          *
          * @param instance Producer instance whose priority state is queried.
          * @param row Zero-based row coordinate.
-         * @param col Zero-based column coordinate.
+         * @param column Zero-based column coordinate.
          */
-        NeighborRange(AdjacencyUC& instance, int row, int col) : instance(instance), row(row), col(col) {}
+        NeighborRange(AdjacencyUC& instance, int row, int column) : instance(instance), row(row), column(column) {}
 
         /**
          * @brief Returns an iterator positioned at the beginning.
          *
          * @return An iterator positioned at the beginning.
          */
-        NeighborIterator begin() { return NeighborIterator(instance, row, col, 0); }
+        NeighborIterator begin() { return NeighborIterator(instance, row, column, 0); }
         /**
          * @brief Returns the exclusive-end iterator.
          *
          * @return The exclusive-end iterator.
          */
-        NeighborIterator end() { return NeighborIterator(instance, row, col, 8); }
+        NeighborIterator end() { return NeighborIterator(instance, row, column, 8); }
     };
 
     /**
      * @brief Returns neighbor indices.
      *
-     * @param p Row-major pixel index to transform or inspect.
+     * @param pixel Row-major pixel index to transform or inspect.
      * @return Neighbor indices.
      */
-    NeighborRange getNeighborIndices(int p) {
-        auto [row, col] = ImageUtils::to2D(p, numCols);
-        return NeighborRange(*this, row, col);
+    NeighborRange getNeighborIndices(PixelId pixel) {
+        auto [row, column] = ImageUtils::to2D(pixel, numColumns);
+        return NeighborRange(*this, row, column);
     }
 
     /**
      * @brief Returns neighbor indices.
      *
      * @param row Zero-based row coordinate.
-     * @param col Zero-based column coordinate.
+     * @param column Zero-based column coordinate.
      * @return Neighbor indices.
      */
-    NeighborRange getNeighborIndices(int row, int col) { return NeighborRange(*this, row, col); }
+    NeighborRange getNeighborIndices(int row, int column) { return NeighborRange(*this, row, column); }
 };
 
 /**
@@ -412,12 +358,12 @@ class AdjacencyUC {
 class PriorityQueueToS {
   private:
     /** @brief Stores queued pixels grouped by discrete priority. */
-    std::vector<std::deque<int>> buckets;
-    /** @brief Stores the priority of the next non-empty bucket. */
+    std::vector<std::deque<PixelId>> buckets;
+    /** @brief Priority of the next non-empty bucket. */
     int currentPriority;
-    /** @brief Stores the total number of queued elements. */
+    /** @brief Total number of queued elements. */
     int numElements;
-    /** @brief Stores the number of allocated priority levels. */
+    /** @brief Number of allocated priority levels. */
     int maxPriorityLevels;
 
   public:
@@ -436,7 +382,7 @@ class PriorityQueueToS {
      * @param element Element handled by the container.
      * @param priority Priority associated with the element.
      */
-    void initial(int element, int priority) {
+    void initial(PixelId element, int priority) {
         currentPriority = priority;
         buckets[priority].push_back(element);
         numElements++;
@@ -461,7 +407,7 @@ class PriorityQueueToS {
      * @param lower Lower admissible priority.
      * @param upper Upper admissible priority.
      */
-    void priorityPush(int element, int lower, int upper) {
+    void priorityPush(PixelId element, int lower, int upper) {
         int priority;
         if (lower > currentPriority) {
             priority = lower;
@@ -479,7 +425,7 @@ class PriorityQueueToS {
      *
      * @return Identifier of the removed element.
      */
-    int priorityPop() {
+    PixelId priorityPop() {
         if (buckets[currentPriority].empty()) {
             int nextPriority = -1;
             for (int distance = 1; distance < maxPriorityLevels; ++distance) {
@@ -502,7 +448,7 @@ class PriorityQueueToS {
             currentPriority = nextPriority;
         }
 
-        int element = buckets[currentPriority].front();
+        const PixelId element = buckets[currentPriority].front();
         buckets[currentPriority].pop_front();
 
         numElements--;
@@ -517,7 +463,8 @@ class PriorityQueueToS {
 /**
  * @brief Builds trees of shapes (ToS) using a union-find construction.
  *
- * The builder interpolates the input image according to `ToSInterpolation`,
+ * The builder interpolates the input image according to the retained
+ * `TopographicConvention`,
  * constructs a max-tree on the interpolated domain, and projects the resulting
  * hierarchy back to the original image domain.
  */
@@ -530,54 +477,73 @@ class TreeOfShapesProducer {
     /** @brief Defines the `PriorityQueueToS` alias used by the component. */
     using PriorityQueueToS = detail::PriorityQueueToS;
 
-    /** @brief Stores the intermediate topology produced by the tree-of-shapes flood. */
+    /** @brief Intermediate topology produced by the tree-of-shapes flood. */
     struct FloodResult {
-        /** @brief Stores the tree level. */
+        /** @brief Tree level buffer. */
         std::vector<ToSFloodDepth> treeLevel;
-        /** @brief Stores the gray level. */
+        /** @brief Gray level buffer. */
         std::vector<ToSGrayLevel> grayLevel;
-        /** @brief Stores the order. */
-        std::vector<int> order;
-        /** @brief Stores the adjacency. */
+        /** @brief Pixel identifier of the order. */
+        std::vector<PixelId> order;
+        /** @brief Adjacency. */
         AdjacencyUC adjacency;
     };
 
-    /** @brief Stores the canonical flood-tree topology and interpolation metadata. */
+    /** @brief Canonical flood-tree topology and interpolation metadata. */
     struct CanonicalFloodTree {
-        /** @brief Stores the tree level. */
+        /** @brief Tree level buffer. */
         std::vector<ToSFloodDepth> treeLevel;
-        /** @brief Stores the gray level. */
+        /** @brief Gray level buffer. */
         std::vector<ToSGrayLevel> grayLevel;
-        /** @brief Stores the order. */
-        std::vector<int> order;
-        /** @brief Stores the parent. */
-        std::vector<int> parent;
+        /** @brief Pixel identifier of the order. */
+        std::vector<PixelId> order;
+        /** @brief Pixel identifier of the parent. */
+        std::vector<PixelId> parent;
     };
 
-    /** @brief Stores the options. */
-    TreeOfShapesProducerOptions options_;
+    /** @brief Complete topographic convention. */
+    TopographicConvention convention_;
+    /** @brief Validated internal immersion dispatch. */
+    detail::TopographicImmersionMode immersionMode_ = detail::TopographicImmersionMode::SelfDualSpan;
 
     /**
-     * @brief Validates options.
+     * @brief Validates and classifies a topographic convention.
      *
-     * @param options Options controlling the operation.
+     * @param convention Convention controlling the operation.
+     * @return Internal immersion mode corresponding to the convention.
      */
-    static void validateOptions(const TreeOfShapesProducerOptions& options) {
-        switch (options.interpolation) {
-        case ToSInterpolation::SelfDual:
-        case ToSInterpolation::Min4cMax8c:
-        case ToSInterpolation::Min8cMax4c:
-            break;
-        default:
-            throw std::invalid_argument("Unsupported tree-of-shapes interpolation policy.");
+    static detail::TopographicImmersionMode validateConvention(const TopographicConvention& convention) {
+        if (convention.infinityPixel < 0) {
+            throw std::invalid_argument("Tree-of-shapes infinity pixel must be non-negative.");
         }
-        switch (options.padding) {
-        case ToSPaddingPolicy::Exterior:
-        case ToSPaddingPolicy::NoPadding:
-            break;
-        default:
-            throw std::invalid_argument("Unsupported tree-of-shapes padding policy.");
+        if (std::holds_alternative<SelfDualSpanImmersion>(convention.immersion)) {
+            return detail::TopographicImmersionMode::SelfDualSpan;
         }
+        const auto& adjacencies = std::get<ComplementaryGridImmersion>(convention.immersion).complementaryAdjacencies;
+        if (adjacencies.minAdjacency.is4connectivity() && adjacencies.maxAdjacency.is8connectivity()) {
+            return detail::TopographicImmersionMode::Min4Max8;
+        }
+        if (adjacencies.minAdjacency.is8connectivity() && adjacencies.maxAdjacency.is4connectivity()) {
+            return detail::TopographicImmersionMode::Min8Max4;
+        }
+        throw std::invalid_argument("Complementary-grid immersion requires minimum/maximum adjacencies in the canonical 4/8 or 8/4 pairing.");
+    }
+
+    /** @brief Validates convention data whose domain is known only when an image is supplied. @param image Source image defining the domain. */
+    void validateConventionForImage(const ImageUInt8Ptr& image) const {
+        if (!image) {
+            throw std::invalid_argument("TreeOfShapesProducer requires a non-null image.");
+        }
+        if (const auto* immersion = std::get_if<ComplementaryGridImmersion>(&convention_.immersion)) {
+            const auto& adjacencies = immersion->complementaryAdjacencies;
+            const int rows = image->getNumRows();
+            const int columns = image->getNumColumns();
+            if (adjacencies.minAdjacency.getNumRows() != rows || adjacencies.minAdjacency.getNumColumns() != columns ||
+                adjacencies.maxAdjacency.getNumRows() != rows || adjacencies.maxAdjacency.getNumColumns() != columns) {
+                throw std::invalid_argument("Tree-of-shapes complementary adjacencies must match the source image domain.");
+            }
+        }
+        static_cast<void>(validatedInfinityPixel(interpolatedNumRows(image->getNumRows()), interpolatedNumColumns(image->getNumColumns())));
     }
 
     /**
@@ -586,7 +552,7 @@ class TreeOfShapesProducer {
      * @return True when connectivity map; otherwise false.
      */
     inline bool usesConnectivityMap() const noexcept {
-        return options_.interpolation == ToSInterpolation::Min4cMax8c || options_.interpolation == ToSInterpolation::Min8cMax4c;
+        return immersionMode_ != detail::TopographicImmersionMode::SelfDualSpan;
     }
 
     /**
@@ -594,21 +560,21 @@ class TreeOfShapesProducer {
      *
      * @return True when high diagonal at saddle; otherwise false.
      */
-    inline bool usesHighDiagonalAtSaddle() const noexcept { return options_.interpolation == ToSInterpolation::Min4cMax8c; }
+    inline bool usesHighDiagonalAtSaddle() const noexcept { return immersionMode_ == detail::TopographicImmersionMode::Min4Max8; }
 
     /**
      * @brief Tests whether exterior padding holds.
      *
      * @return True when exterior padding; otherwise false.
      */
-    inline bool usesExteriorPadding() const noexcept { return options_.padding == ToSPaddingPolicy::Exterior; }
+    inline bool usesExteriorPadding() const noexcept { return convention_.domainExtension == TopographicDomainExtension::ExteriorRing; }
 
     /**
      * @brief Returns the padding offset applied to the interpolated domain.
      *
      * @return Padding offset in interpolated-domain coordinates.
      */
-    inline int interpolationOffset() const noexcept { return usesExteriorPadding() ? ToSInterpolationPadding : 0; }
+    inline int interpolationOffset() const noexcept { return usesExteriorPadding() ? TopographicInterpolationPadding : 0; }
 
     /**
      * @brief Checks and converts interpolated extent.
@@ -620,7 +586,7 @@ class TreeOfShapesProducer {
         if (extent <= 0) {
             throw std::invalid_argument("TreeOfShapesProducer requires positive image dimensions.");
         }
-        const std::int64_t interpolated = ToSInterpolationScale * static_cast<std::int64_t>(extent) + (usesExteriorPadding() ? 1 : -1);
+        const std::int64_t interpolated = TopographicInterpolationScale * static_cast<std::int64_t>(extent) + (usesExteriorPadding() ? 1 : -1);
         if (interpolated <= 0 || interpolated > std::numeric_limits<int>::max()) {
             throw std::overflow_error("Tree-of-shapes interpolated dimension exceeds int range.");
         }
@@ -638,23 +604,23 @@ class TreeOfShapesProducer {
     /**
      * @brief Computes the number of columns in the interpolated domain.
      *
-     * @param numCols Number of columns in the domain.
+     * @param numColumns Number of columns in the domain.
      * @return Validated extent of the interpolated dimension.
      */
-    inline int interpolatedNumCols(int numCols) const { return checkedInterpolatedExtent(numCols); }
+    inline int interpolatedNumColumns(int numColumns) const { return checkedInterpolatedExtent(numColumns); }
 
     /**
      * @brief Checks and converts domain size.
      *
      * @param numRows Number of rows in the domain.
-     * @param numCols Number of columns in the domain.
+     * @param numColumns Number of columns in the domain.
      * @return Validated number of pixels in the original domain.
      */
-    inline int checkedDomainSize(int numRows, int numCols) const {
-        if (numRows <= 0 || numCols <= 0 || numRows > std::numeric_limits<int>::max() / numCols) {
+    inline int checkedDomainSize(int numRows, int numColumns) const {
+        if (numRows <= 0 || numColumns <= 0 || numRows > std::numeric_limits<int>::max() / numColumns) {
             throw std::overflow_error("Tree-of-shapes domain size exceeds int range.");
         }
-        return numRows * numCols;
+        return numRows * numColumns;
     }
 
     /**
@@ -663,37 +629,39 @@ class TreeOfShapesProducer {
      * @param row Zero-based row coordinate.
      * @return Mapped point row.
      */
-    inline int originalPointRow(int row) const noexcept { return ToSInterpolationScale * row + interpolationOffset(); }
+    inline int originalPointRow(int row) const noexcept { return TopographicInterpolationScale * row + interpolationOffset(); }
 
     /**
-     * @brief Maps point col.
+     * @brief Maps point column.
      *
-     * @param col Zero-based column coordinate.
-     * @return Mapped point col.
+     * @param column Zero-based column coordinate.
+     * @return Mapped point column.
      */
-    inline int originalPointCol(int col) const noexcept { return ToSInterpolationScale * col + interpolationOffset(); }
+    inline int originalPointColumn(int column) const noexcept { return TopographicInterpolationScale * column + interpolationOffset(); }
 
     /**
      * @brief Scales original level.
      *
-     * @param value Value used by the operation.
+     * @param value Value.
      * @return Original gray level expressed in the interpolation scale.
      */
-    inline ToSGrayLevel scaledOriginalLevel(uint8_t value) const noexcept { return static_cast<ToSGrayLevel>(ToSInterpolationScale * static_cast<int>(value)); }
+    inline ToSGrayLevel scaledOriginalLevel(uint8_t value) const noexcept {
+        return static_cast<ToSGrayLevel>(TopographicInterpolationScale * static_cast<int>(value));
+    }
 
     /**
-     * @brief Computes the configured infinity-seed index in the interpolated domain.
+     * @brief Validates and returns the configured infinity pixel in the interpolated domain.
      *
      * @param interpNumRows Number of rows in the interpolated domain.
-     * @param interpNumCols Number of columns in the interpolated domain.
-     * @return Row-major index of the configured infinity seed.
+     * @param interpNumColumns Number of columns in the interpolated domain.
+     * @return Validated row-major infinity pixel.
      */
-    inline int infinitySeedIndex(int interpNumRows, int interpNumCols) const {
-        if (options_.infinitySeedRow < 0 || options_.infinitySeedCol < 0 || options_.infinitySeedRow >= interpNumRows ||
-            options_.infinitySeedCol >= interpNumCols) {
-            throw std::invalid_argument("Tree-of-shapes infinity seed must be inside the interpolated domain.");
+    inline PixelId validatedInfinityPixel(int interpNumRows, int interpNumColumns) const {
+        const std::int64_t activeSize = static_cast<std::int64_t>(interpNumRows) * static_cast<std::int64_t>(interpNumColumns);
+        if (convention_.infinityPixel < 0 || static_cast<std::int64_t>(convention_.infinityPixel) >= activeSize) {
+            throw std::invalid_argument("Tree-of-shapes infinity pixel must belong to the active topographic domain.");
         }
-        return ImageUtils::to1D(options_.infinitySeedRow, options_.infinitySeedCol, interpNumCols);
+        return convention_.infinityPixel;
     }
 
     /**
@@ -701,18 +669,18 @@ class TreeOfShapesProducer {
      *
      * @param adj Adjacency relation used to traverse the image domain.
      * @param row Zero-based row coordinate.
-     * @param col Zero-based column coordinate.
+     * @param column Zero-based column coordinate.
      */
-    inline void setDiagonal0Connection(AdjacencyUC& adj, int row, int col) const {
-        adj.setDiagonalConnection(row, col - 1, DiagonalConnection::SE);
-        adj.setDiagonalConnection(row + 1, col, DiagonalConnection::NW);
+    inline void setDiagonal0Connection(AdjacencyUC& adj, int row, int column) const {
+        adj.setDiagonalConnection(row, column - 1, DiagonalConnection::Se);
+        adj.setDiagonalConnection(row + 1, column, DiagonalConnection::Nw);
 
-        adj.setDiagonalConnection(row - 1, col - 1, DiagonalConnection::SE);
-        adj.setDiagonalConnection(row, col, DiagonalConnection::SE | DiagonalConnection::NW);
-        adj.setDiagonalConnection(row + 1, col + 1, DiagonalConnection::NW);
+        adj.setDiagonalConnection(row - 1, column - 1, DiagonalConnection::Se);
+        adj.setDiagonalConnection(row, column, DiagonalConnection::Se | DiagonalConnection::Nw);
+        adj.setDiagonalConnection(row + 1, column + 1, DiagonalConnection::Nw);
 
-        adj.setDiagonalConnection(row - 1, col, DiagonalConnection::SE);
-        adj.setDiagonalConnection(row, col + 1, DiagonalConnection::NW);
+        adj.setDiagonalConnection(row - 1, column, DiagonalConnection::Se);
+        adj.setDiagonalConnection(row, column + 1, DiagonalConnection::Nw);
     }
 
     /**
@@ -720,18 +688,18 @@ class TreeOfShapesProducer {
      *
      * @param adj Adjacency relation used to traverse the image domain.
      * @param row Zero-based row coordinate.
-     * @param col Zero-based column coordinate.
+     * @param column Zero-based column coordinate.
      */
-    inline void setDiagonal1Connection(AdjacencyUC& adj, int row, int col) const {
-        adj.setDiagonalConnection(row, col - 1, DiagonalConnection::NE);
-        adj.setDiagonalConnection(row - 1, col, DiagonalConnection::SW);
+    inline void setDiagonal1Connection(AdjacencyUC& adj, int row, int column) const {
+        adj.setDiagonalConnection(row, column - 1, DiagonalConnection::Ne);
+        adj.setDiagonalConnection(row - 1, column, DiagonalConnection::Sw);
 
-        adj.setDiagonalConnection(row - 1, col + 1, DiagonalConnection::SW);
-        adj.setDiagonalConnection(row, col, DiagonalConnection::SW | DiagonalConnection::NE);
-        adj.setDiagonalConnection(row + 1, col - 1, DiagonalConnection::NE);
+        adj.setDiagonalConnection(row - 1, column + 1, DiagonalConnection::Sw);
+        adj.setDiagonalConnection(row, column, DiagonalConnection::Sw | DiagonalConnection::Ne);
+        adj.setDiagonalConnection(row + 1, column - 1, DiagonalConnection::Ne);
 
-        adj.setDiagonalConnection(row + 1, col, DiagonalConnection::NE);
-        adj.setDiagonalConnection(row, col + 1, DiagonalConnection::SW);
+        adj.setDiagonalConnection(row + 1, column, DiagonalConnection::Ne);
+        adj.setDiagonalConnection(row, column + 1, DiagonalConnection::Sw);
     }
 
     std::tuple<std::vector<ToSGrayLevel>, std::vector<ToSGrayLevel>, AdjacencyUC>
@@ -742,30 +710,30 @@ class TreeOfShapesProducer {
      * @param paddedMax Maximum values in the padded interpolation domain.
      * @param paddedAdjacency Adjacency relation defined on the padded domain.
      * @param paddedRows Number of rows in the padded domain.
-     * @param paddedCols Number of columns in the padded domain.
+     * @param paddedColumns Number of columns in the padded domain.
      * @param adaptiveDiagonal Whether diagonal connections are chosen adaptively.
      * @return Values produced by the operation.
      */
     cropExteriorInterpolation(std::vector<ToSGrayLevel> paddedMin, std::vector<ToSGrayLevel> paddedMax, AdjacencyUC paddedAdjacency, int paddedRows,
-                              int paddedCols, bool adaptiveDiagonal) const {
-        if (paddedRows < 3 || paddedCols < 3) {
+                              int paddedColumns, bool adaptiveDiagonal) const {
+        if (paddedRows < 3 || paddedColumns < 3) {
             throw std::logic_error("Tree-of-shapes padded immersion cannot be cropped.");
         }
         const int rows = paddedRows - 2;
-        const int cols = paddedCols - 2;
-        const int size = checkedDomainSize(rows, cols);
+        const int columns = paddedColumns - 2;
+        const int size = checkedDomainSize(rows, columns);
         std::vector<ToSGrayLevel> croppedMin(static_cast<std::size_t>(size));
         std::vector<ToSGrayLevel> croppedMax(static_cast<std::size_t>(size));
-        AdjacencyUC croppedAdjacency(rows, cols, adaptiveDiagonal);
+        AdjacencyUC croppedAdjacency(rows, columns, adaptiveDiagonal);
 
         for (int row = 0; row < rows; ++row) {
-            for (int col = 0; col < cols; ++col) {
-                const int source = ImageUtils::to1D(row + 1, col + 1, paddedCols);
-                const int target = ImageUtils::to1D(row, col, cols);
+            for (int column = 0; column < columns; ++column) {
+                const PixelId source = ImageUtils::to1D(row + 1, column + 1, paddedColumns);
+                const PixelId target = ImageUtils::to1D(row, column, columns);
                 croppedMin[static_cast<std::size_t>(target)] = paddedMin[static_cast<std::size_t>(source)];
                 croppedMax[static_cast<std::size_t>(target)] = paddedMax[static_cast<std::size_t>(source)];
                 if (adaptiveDiagonal) {
-                    const std::uint8_t connections = paddedAdjacency.getConnections(row + 1, col + 1);
+                    const std::uint8_t connections = paddedAdjacency.getConnections(row + 1, column + 1);
                     if (connections != 0) {
                         croppedAdjacency.setDiagonalConnection(target, static_cast<DiagonalConnection>(connections));
                     }
@@ -779,28 +747,17 @@ class TreeOfShapesProducer {
     /**
      * @brief Creates a tree-of-shapes builder.
      *
-     * @param interpolation Interpolation/connectivity convention.
-     * @param infinitySeedRow Row of the propagation seed in the interpolated domain.
-     * @param infinitySeedCol Column of the propagation seed in the interpolated domain.
+     * @param convention Complete topographic convention.
      */
-    explicit TreeOfShapesProducer(ToSInterpolation interpolation, int infinitySeedRow = ToSDefaultInfinityRow, int infinitySeedCol = ToSDefaultInfinityCol)
-        : options_{interpolation, ToSPaddingPolicy::Exterior, infinitySeedRow, infinitySeedCol} {
-        validateOptions(options_);
-    }
+    explicit TreeOfShapesProducer(TopographicConvention convention = {})
+        : convention_(std::move(convention)), immersionMode_(validateConvention(convention_)) {}
 
     /**
-     * @brief Creates a producer from the complete runtime policy set.
+     * @brief Returns the immutable topographic convention selected for this producer.
      *
-     * @param options Policy options controlling the operation.
+     * @return The immutable topographic convention selected for this producer.
      */
-    explicit TreeOfShapesProducer(TreeOfShapesProducerOptions options = {}) : options_(options) { validateOptions(options_); }
-
-    /**
-     * @brief Returns the immutable policies selected for this producer.
-     *
-     * @return The immutable policies selected for this producer.
-     */
-    [[nodiscard]] const TreeOfShapesProducerOptions& options() const noexcept { return options_; }
+    [[nodiscard]] const TopographicConvention& convention() const noexcept { return convention_; }
 
     /**
      * @brief Destroys `TreeOfShapesProducer`.
@@ -811,7 +768,7 @@ class TreeOfShapesProducer {
     /**
      * @brief Interpolates image.
      *
-     * @param imgPtr Image data represented by `imgPtr`.
+     * @param imgPtr Image data.
      * @return Values produced by the operation.
      */
     std::tuple<std::vector<ToSGrayLevel>, std::vector<ToSGrayLevel>, AdjacencyUC> interpolateImage(const ImageUInt8Ptr& imgPtr) const {
@@ -823,69 +780,70 @@ class TreeOfShapesProducer {
             throw std::invalid_argument("TreeOfShapesProducer requires a non-null image.");
         }
         if (!usesExteriorPadding()) {
-            TreeOfShapesProducerOptions paddedOptions = options_;
-            paddedOptions.padding = ToSPaddingPolicy::Exterior;
-            TreeOfShapesProducer paddedProducer(paddedOptions);
+            TopographicConvention paddedConvention = convention_;
+            paddedConvention.domainExtension = TopographicDomainExtension::ExteriorRing;
+            paddedConvention.infinityPixel = 0;
+            TreeOfShapesProducer paddedProducer(std::move(paddedConvention));
             auto [paddedMin, paddedMax, paddedAdjacency] = paddedProducer.interpolateImage(imgPtr);
             const int paddedRows = paddedProducer.interpolatedNumRows(imgPtr->getNumRows());
-            const int paddedCols = paddedProducer.interpolatedNumCols(imgPtr->getNumCols());
-            return cropExteriorInterpolation(std::move(paddedMin), std::move(paddedMax), std::move(paddedAdjacency), paddedRows, paddedCols, false);
+            const int paddedColumns = paddedProducer.interpolatedNumColumns(imgPtr->getNumColumns());
+            return cropExteriorInterpolation(std::move(paddedMin), std::move(paddedMax), std::move(paddedAdjacency), paddedRows, paddedColumns, false);
         }
         auto img = imgPtr->rawData();
         int numRows = imgPtr->getNumRows();
-        int numCols = imgPtr->getNumCols();
-        if (numRows <= 0 || numCols <= 0) {
+        int numColumns = imgPtr->getNumColumns();
+        if (numRows <= 0 || numColumns <= 0) {
             throw std::invalid_argument("TreeOfShapesProducer requires a non-empty image.");
         }
-        if (numRows == 1 && numCols == 1) {
+        if (numRows == 1 && numColumns == 1) {
             const int interpNumRows = interpolatedNumRows(numRows);
-            const int interpNumCols = interpolatedNumCols(numCols);
-            const int interpSize = checkedDomainSize(interpNumRows, interpNumCols);
+            const int interpNumColumns = interpolatedNumColumns(numColumns);
+            const int interpSize = checkedDomainSize(interpNumRows, interpNumColumns);
             std::vector<ToSGrayLevel> interpolationMin(static_cast<std::size_t>(interpSize), scaledOriginalLevel(img[0]));
             std::vector<ToSGrayLevel> interpolationMax(static_cast<std::size_t>(interpSize), scaledOriginalLevel(img[0]));
-            AdjacencyUC adj(interpNumRows, interpNumCols, false);
+            AdjacencyUC adj(interpNumRows, interpNumColumns, false);
             return std::make_tuple(std::move(interpolationMin), std::move(interpolationMax), std::move(adj));
         }
 
-        constexpr int adjCircleCol[] = {-1, +1, -1, +1};
+        constexpr int adjCircleColumn[] = {-1, +1, -1, +1};
         constexpr int adjCircleRow[] = {-1, -1, +1, +1};
 
-        constexpr int adjRetHorCol[] = {0, 0};
+        constexpr int adjRetHorColumn[] = {0, 0};
         constexpr int adjRetHorRow[] = {-1, +1};
 
-        constexpr int adjRetVerCol[] = {+1, -1};
+        constexpr int adjRetVerColumn[] = {+1, -1};
         constexpr int adjRetVerRow[] = {0, 0};
 
-        int interpNumCols = interpolatedNumCols(numCols);
+        int interpNumColumns = interpolatedNumColumns(numColumns);
         int interpNumRows = interpolatedNumRows(numRows);
-        int size = checkedDomainSize(interpNumRows, interpNumCols);
+        int size = checkedDomainSize(interpNumRows, interpNumColumns);
 
         // Allocate interpolation result buffers for minimum and maximum levels.
         std::vector<ToSGrayLevel> interpolationMin(size);
         std::vector<ToSGrayLevel> interpolationMax(size);
 
         // Collect each boundary pixel exactly once. The closed-form perimeter
-        // size 2 * (rows + cols) - 4 is valid only when both dimensions are at
+        // size 2 * (rows + columns) - 4 is valid only when both dimensions are at
         // least two and previously left zero-filled entries for thin images.
         std::array<int, 256> boundaryHistogram{};
         int numBoundary = 0;
 
-        int pT;
+        PixelId pT;
 
-        for (int p = 0; p < numCols * numRows; p++) {
-            auto [row, col] = ImageUtils::to2D(p, numCols);
+        for (PixelId pixel = 0; pixel < numColumns * numRows; ++pixel) {
+            auto [row, column] = ImageUtils::to2D(pixel, numColumns);
 
             // Check whether the pixel lies on the image border.
-            if (row == 0 || row == numRows - 1 || col == 0 || col == numCols - 1) {
-                ++boundaryHistogram[static_cast<std::size_t>(img[p])];
+            if (row == 0 || row == numRows - 1 || column == 0 || column == numColumns - 1) {
+                ++boundaryHistogram[static_cast<std::size_t>(img[pixel])];
                 ++numBoundary;
             }
 
             // Compute the interpolated-image index.
-            pT = ImageUtils::to1D(originalPointRow(row), originalPointCol(col), interpNumCols);
+            pT = ImageUtils::to1D(originalPointRow(row), originalPointColumn(column), interpNumColumns);
 
             // Assign interpolation values.
-            interpolationMin[pT] = interpolationMax[pT] = scaledOriginalLevel(img[p]);
+            interpolationMin[pT] = interpolationMax[pT] = scaledOriginalLevel(img[pixel]);
         }
 
         auto boundaryValueAtRank = [&](int rank) {
@@ -902,35 +860,36 @@ class TreeOfShapesProducer {
         if (numBoundary % 2 == 0) {
             median = boundaryValueAtRank(numBoundary / 2 - 1) + boundaryValueAtRank(numBoundary / 2);
         } else {
-            median = ToSInterpolationScale * boundaryValueAtRank(numBoundary / 2);
+            median = TopographicInterpolationScale * boundaryValueAtRank(numBoundary / 2);
         }
         // std::cout << "Interpolation (Median): " << median << std::endl;
 
-        int qT, qCol, qRow, min, max;
-        const int* adjCol = nullptr;
+        PixelId qT;
+        int qColumn, qRow, min, max;
+        const int* adjColumn = nullptr;
         const int* adjRow = nullptr;
         int adjSize;
-        AdjacencyUC adj(interpNumRows, interpNumCols, false);
+        AdjacencyUC adj(interpNumRows, interpNumColumns, false);
 
         for (int row = 0; row < interpNumRows; row++) {
-            for (int col = 0; col < interpNumCols; col++) {
-                if (col % 2 == 1 && row % 2 == 1)
+            for (int column = 0; column < interpNumColumns; column++) {
+                if (column % 2 == 1 && row % 2 == 1)
                     continue;
-                pT = ImageUtils::to1D(row, col, interpNumCols);
-                if (col == 0 || col == interpNumCols - 1 || row == 0 || row == interpNumRows - 1) {
+                pT = ImageUtils::to1D(row, column, interpNumColumns);
+                if (column == 0 || column == interpNumColumns - 1 || row == 0 || row == interpNumRows - 1) {
                     max = median;
                     min = median;
                 } else {
-                    if (col % 2 == 0 && row % 2 == 0) {
-                        adjCol = adjCircleCol;
+                    if (column % 2 == 0 && row % 2 == 0) {
+                        adjColumn = adjCircleColumn;
                         adjRow = adjCircleRow;
                         adjSize = 4;
-                    } else if (col % 2 == 0 && row % 2 == 1) {
-                        adjCol = adjRetVerCol;
+                    } else if (column % 2 == 0 && row % 2 == 1) {
+                        adjColumn = adjRetVerColumn;
                         adjRow = adjRetVerRow;
                         adjSize = 2;
-                    } else if (col % 2 == 1 && row % 2 == 0) {
-                        adjCol = adjRetHorCol;
+                    } else if (column % 2 == 1 && row % 2 == 0) {
+                        adjColumn = adjRetHorColumn;
                         adjRow = adjRetHorRow;
                         adjSize = 2;
                     }
@@ -939,10 +898,10 @@ class TreeOfShapesProducer {
                     max = std::numeric_limits<int>::min();
                     for (int i = 0; i < adjSize; i++) {
                         qRow = row + adjRow[i];
-                        qCol = col + adjCol[i];
+                        qColumn = column + adjColumn[i];
 
-                        if (qRow >= 0 && qCol >= 0 && qRow < interpNumRows && qCol < interpNumCols) {
-                            qT = ImageUtils::to1D(qRow, qCol, interpNumCols);
+                        if (qRow >= 0 && qColumn >= 0 && qRow < interpNumRows && qColumn < interpNumColumns) {
+                            qT = ImageUtils::to1D(qRow, qColumn, interpNumColumns);
 
                             if (interpolationMax[qT] > max) {
                                 max = interpolationMax[qT];
@@ -970,7 +929,7 @@ class TreeOfShapesProducer {
     /**
      * @brief Interpolates image4c8c.
      *
-     * @param imgPtr Image data represented by `imgPtr`.
+     * @param imgPtr Image data.
      * @return Values produced by the operation.
      */
     std::tuple<std::vector<ToSGrayLevel>, std::vector<ToSGrayLevel>, AdjacencyUC> interpolateImage4c8c(const ImageUInt8Ptr& imgPtr) const {
@@ -981,141 +940,142 @@ class TreeOfShapesProducer {
             throw std::invalid_argument("TreeOfShapesProducer requires a non-null image.");
         }
         if (!usesExteriorPadding()) {
-            TreeOfShapesProducerOptions paddedOptions = options_;
-            paddedOptions.padding = ToSPaddingPolicy::Exterior;
-            TreeOfShapesProducer paddedProducer(paddedOptions);
+            TopographicConvention paddedConvention = convention_;
+            paddedConvention.domainExtension = TopographicDomainExtension::ExteriorRing;
+            paddedConvention.infinityPixel = 0;
+            TreeOfShapesProducer paddedProducer(std::move(paddedConvention));
             auto [paddedMin, paddedMax, paddedAdjacency] = paddedProducer.interpolateImage4c8c(imgPtr);
             const int paddedRows = paddedProducer.interpolatedNumRows(imgPtr->getNumRows());
-            const int paddedCols = paddedProducer.interpolatedNumCols(imgPtr->getNumCols());
-            return cropExteriorInterpolation(std::move(paddedMin), std::move(paddedMax), std::move(paddedAdjacency), paddedRows, paddedCols, true);
+            const int paddedColumns = paddedProducer.interpolatedNumColumns(imgPtr->getNumColumns());
+            return cropExteriorInterpolation(std::move(paddedMin), std::move(paddedMax), std::move(paddedAdjacency), paddedRows, paddedColumns, true);
         }
         auto img = imgPtr->rawData();
         int numRows = imgPtr->getNumRows();
-        int numCols = imgPtr->getNumCols();
-        if (numRows <= 0 || numCols <= 0) {
+        int numColumns = imgPtr->getNumColumns();
+        if (numRows <= 0 || numColumns <= 0) {
             throw std::invalid_argument("TreeOfShapesProducer requires a non-empty image.");
         }
 
-        int interpNumCols = interpolatedNumCols(numCols);
+        int interpNumColumns = interpolatedNumColumns(numColumns);
         int interpNumRows = interpolatedNumRows(numRows);
-        int size = checkedDomainSize(interpNumRows, interpNumCols);
-        AdjacencyUC adj(interpNumRows, interpNumCols, true);
+        int size = checkedDomainSize(interpNumRows, interpNumColumns);
+        AdjacencyUC adj(interpNumRows, interpNumColumns, true);
 
         // Allocate interpolation result buffers for minimum and maximum levels.
         std::vector<ToSGrayLevel> interpolationMin(size);
         std::vector<ToSGrayLevel> interpolationMax(size);
 
-        int pT;
+        PixelId pT;
         // Compute interval from 2-faces.
-        for (int p = 0; p < numCols * numRows; p++) {
-            auto [row, col] = ImageUtils::to2D(p, numCols);
+        for (PixelId pixel = 0; pixel < numColumns * numRows; ++pixel) {
+            auto [row, column] = ImageUtils::to2D(pixel, numColumns);
 
             // Compute the interpolated-image index.
-            pT = ImageUtils::to1D(originalPointRow(row), originalPointCol(col), interpNumCols);
+            pT = ImageUtils::to1D(originalPointRow(row), originalPointColumn(column), interpNumColumns);
 
             // Assign interpolation values.
-            interpolationMin[pT] = interpolationMax[pT] = img[p];
+            interpolationMin[pT] = interpolationMax[pT] = img[pixel];
         }
 
-        auto getValue = [&](int row, int col) -> int {
+        auto getValue = [&](int row, int column) -> int {
             int origRow = (row - 1) / 2;
-            int origCol = (col - 1) / 2;
-            return img[ImageUtils::to1D(origRow, origCol, numCols)];
+            int originalColumn = (column - 1) / 2;
+            return img[ImageUtils::to1D(origRow, originalColumn, numColumns)];
         };
 
         // Borders.
         for (int row = 0; row < interpNumRows; row++) {
-            int col;
+            int column;
             if (row % 2 == 1) { // horizontal e vertical
-                col = 0;
-                int v1 = getValue(row, col + 1);
-                interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = v1;
-                interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = v1;
+                column = 0;
+                int v1 = getValue(row, column + 1);
+                interpolationMin[ImageUtils::to1D(row, column, interpNumColumns)] = v1;
+                interpolationMax[ImageUtils::to1D(row, column, interpNumColumns)] = v1;
 
-                col = interpNumCols - 1;
-                v1 = getValue(row, col - 1);
-                interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = v1;
-                interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = v1;
+                column = interpNumColumns - 1;
+                v1 = getValue(row, column - 1);
+                interpolationMin[ImageUtils::to1D(row, column, interpNumColumns)] = v1;
+                interpolationMax[ImageUtils::to1D(row, column, interpNumColumns)] = v1;
             } else { // circulos
                 if (row == 0) {
-                    col = 0;
-                    int v1 = getValue(row + 1, col + 1);
-                    interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = v1;
-                    interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = v1;
+                    column = 0;
+                    int v1 = getValue(row + 1, column + 1);
+                    interpolationMin[ImageUtils::to1D(row, column, interpNumColumns)] = v1;
+                    interpolationMax[ImageUtils::to1D(row, column, interpNumColumns)] = v1;
 
-                    col = interpNumCols - 1;
-                    v1 = getValue(row + 1, col - 1);
-                    interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = v1;
-                    interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = v1;
+                    column = interpNumColumns - 1;
+                    v1 = getValue(row + 1, column - 1);
+                    interpolationMin[ImageUtils::to1D(row, column, interpNumColumns)] = v1;
+                    interpolationMax[ImageUtils::to1D(row, column, interpNumColumns)] = v1;
 
                 } else if (row == interpNumRows - 1) {
-                    col = 0;
+                    column = 0;
                     int v1 = getValue(row - 1, 1);
-                    interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = v1;
-                    interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = v1;
+                    interpolationMin[ImageUtils::to1D(row, column, interpNumColumns)] = v1;
+                    interpolationMax[ImageUtils::to1D(row, column, interpNumColumns)] = v1;
 
-                    col = interpNumCols - 1;
-                    v1 = getValue(row - 1, col - 1);
-                    interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = v1;
-                    interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = v1;
+                    column = interpNumColumns - 1;
+                    v1 = getValue(row - 1, column - 1);
+                    interpolationMin[ImageUtils::to1D(row, column, interpNumColumns)] = v1;
+                    interpolationMax[ImageUtils::to1D(row, column, interpNumColumns)] = v1;
                 } else {
-                    col = 0;
-                    int v1 = getValue(row - 1, col + 1);
-                    int v2 = getValue(row + 1, col + 1);
-                    interpolationMin[ImageUtils::to1D(row, 0, interpNumCols)] = std::min(v1, v2);
-                    interpolationMax[ImageUtils::to1D(row, 0, interpNumCols)] = std::max(v1, v2);
+                    column = 0;
+                    int v1 = getValue(row - 1, column + 1);
+                    int v2 = getValue(row + 1, column + 1);
+                    interpolationMin[ImageUtils::to1D(row, 0, interpNumColumns)] = std::min(v1, v2);
+                    interpolationMax[ImageUtils::to1D(row, 0, interpNumColumns)] = std::max(v1, v2);
 
-                    col = interpNumCols - 1;
-                    v1 = getValue(row - 1, col - 1);
-                    v2 = getValue(row + 1, col - 1);
-                    interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = std::min(v1, v2);
-                    interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = std::max(v1, v2);
+                    column = interpNumColumns - 1;
+                    v1 = getValue(row - 1, column - 1);
+                    v2 = getValue(row + 1, column - 1);
+                    interpolationMin[ImageUtils::to1D(row, column, interpNumColumns)] = std::min(v1, v2);
+                    interpolationMax[ImageUtils::to1D(row, column, interpNumColumns)] = std::max(v1, v2);
                 }
             }
         }
 
-        for (int col = 1; col < interpNumCols - 1; col++) {
+        for (int column = 1; column < interpNumColumns - 1; column++) {
             int row;
-            if (col % 2 == 1) { // horizontal e vertical
+            if (column % 2 == 1) { // horizontal e vertical
                 row = 0;
-                int v1 = getValue(row + 1, col);
-                interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = v1;
-                interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = v1;
+                int v1 = getValue(row + 1, column);
+                interpolationMin[ImageUtils::to1D(row, column, interpNumColumns)] = v1;
+                interpolationMax[ImageUtils::to1D(row, column, interpNumColumns)] = v1;
 
                 row = interpNumRows - 1;
-                v1 = getValue(row - 1, col);
-                interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = v1;
-                interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = v1;
+                v1 = getValue(row - 1, column);
+                interpolationMin[ImageUtils::to1D(row, column, interpNumColumns)] = v1;
+                interpolationMax[ImageUtils::to1D(row, column, interpNumColumns)] = v1;
             } else { // circulos
                 row = 0;
-                int v1 = getValue(row + 1, col - 1);
-                int v2 = getValue(row + 1, col + 1);
-                interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = std::min(v1, v2);
-                interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = std::max(v1, v2);
+                int v1 = getValue(row + 1, column - 1);
+                int v2 = getValue(row + 1, column + 1);
+                interpolationMin[ImageUtils::to1D(row, column, interpNumColumns)] = std::min(v1, v2);
+                interpolationMax[ImageUtils::to1D(row, column, interpNumColumns)] = std::max(v1, v2);
 
                 row = interpNumRows - 1;
-                v1 = getValue(row - 1, col - 1);
-                v2 = getValue(row - 1, col + 1);
-                interpolationMin[ImageUtils::to1D(row, col, interpNumCols)] = std::min(v1, v2);
-                interpolationMax[ImageUtils::to1D(row, col, interpNumCols)] = std::max(v1, v2);
+                v1 = getValue(row - 1, column - 1);
+                v2 = getValue(row - 1, column + 1);
+                interpolationMin[ImageUtils::to1D(row, column, interpNumColumns)] = std::min(v1, v2);
+                interpolationMax[ImageUtils::to1D(row, column, interpNumColumns)] = std::max(v1, v2);
             }
         }
 
         // Compute interval from 1-faces
         for (int row = 1; row < interpNumRows - 1; row++) {
-            for (int col = 1; col < interpNumCols - 1; col++) {
-                if (row % 2 == 1 && col % 2 == 1)
+            for (int column = 1; column < interpNumColumns - 1; column++) {
+                if (row % 2 == 1 && column % 2 == 1)
                     continue; // Already defined.
 
-                pT = ImageUtils::to1D(row, col, interpNumCols);
-                if (col % 2 == 0 && row % 2 == 1) {
-                    int v1 = getValue(row, col + 1);
-                    int v2 = getValue(row, col - 1);
+                pT = ImageUtils::to1D(row, column, interpNumColumns);
+                if (column % 2 == 0 && row % 2 == 1) {
+                    int v1 = getValue(row, column + 1);
+                    int v2 = getValue(row, column - 1);
                     interpolationMin[pT] = std::min(v1, v2);
                     interpolationMax[pT] = std::max(v1, v2);
-                } else if (col % 2 == 1 && row % 2 == 0) {
-                    int v1 = getValue(row + 1, col);
-                    int v2 = getValue(row - 1, col);
+                } else if (column % 2 == 1 && row % 2 == 0) {
+                    int v1 = getValue(row + 1, column);
+                    int v2 = getValue(row - 1, column);
                     interpolationMin[pT] = std::min(v1, v2);
                     interpolationMax[pT] = std::max(v1, v2);
                 }
@@ -1123,17 +1083,17 @@ class TreeOfShapesProducer {
         }
         // Compute interval from 0-faces
         for (int row = 1; row < interpNumRows - 1; row++) {
-            for (int col = 1; col < interpNumCols - 1; col++) {
-                if (row % 2 == 1 && col % 2 == 1)
+            for (int column = 1; column < interpNumColumns - 1; column++) {
+                if (row % 2 == 1 && column % 2 == 1)
                     continue; // Already defined.
-                pT = ImageUtils::to1D(row, col, interpNumCols);
-                if (row % 2 == 0 && col % 2 == 0) {
+                pT = ImageUtils::to1D(row, column, interpNumColumns);
+                if (row % 2 == 0 && column % 2 == 0) {
                     // | v0 | v1 |
                     // | v2 | v3 |
-                    int v0 = getValue(row - 1, col - 1);
-                    int v1 = getValue(row + 1, col - 1);
-                    int v2 = getValue(row - 1, col + 1);
-                    int v3 = getValue(row + 1, col + 1);
+                    int v0 = getValue(row - 1, column - 1);
+                    int v1 = getValue(row + 1, column - 1);
+                    int v2 = getValue(row - 1, column + 1);
+                    int v3 = getValue(row + 1, column + 1);
 
                     const int min_v0v3 = std::min(v0, v3);
                     const int max_v0v3 = std::max(v0, v3);
@@ -1145,11 +1105,11 @@ class TreeOfShapesProducer {
                     if (diagonal0IsHigh || diagonal1IsHigh) {
                         const bool chooseDiagonal0 = usesHighDiagonalAtSaddle() ? diagonal0IsHigh : !diagonal0IsHigh;
                         if (chooseDiagonal0) {
-                            setDiagonal0Connection(adj, row, col);
+                            setDiagonal0Connection(adj, row, column);
                             interpolationMin[pT] = min_v0v3;
                             interpolationMax[pT] = max_v0v3;
                         } else {
-                            setDiagonal1Connection(adj, row, col);
+                            setDiagonal1Connection(adj, row, column);
                             interpolationMin[pT] = min_v1v2;
                             interpolationMax[pT] = max_v1v2;
                         }
@@ -1168,7 +1128,7 @@ class TreeOfShapesProducer {
     /**
      * @brief Floods image.
      *
-     * @param imgPtr Image data represented by `imgPtr`.
+     * @param imgPtr Image data.
      * @return Number of rows in the interpolated domain.
      */
     FloodResult floodImage(const ImageUInt8Ptr& imgPtr) const {
@@ -1177,21 +1137,21 @@ class TreeOfShapesProducer {
         }
 
         int numRows = imgPtr->getNumRows();
-        int numCols = imgPtr->getNumCols();
+        int numColumns = imgPtr->getNumColumns();
 
-        int interpNumCols = interpolatedNumCols(numCols);
+        int interpNumColumns = interpolatedNumColumns(numColumns);
         int interpNumRows = interpolatedNumRows(numRows);
-        int size = checkedDomainSize(interpNumRows, interpNumCols);
+        int size = checkedDomainSize(interpNumRows, interpNumColumns);
         const bool connectivityMap = usesConnectivityMap();
         auto [interpolationMin, interpolationMax, adj] = connectivityMap ? interpolateImage4c8c(imgPtr) : interpolateImage(imgPtr);
 
         std::vector<uint8_t> dejavu(size, 0);
-        std::vector<int> imgR(size);               // Ordered pixels.
+        std::vector<PixelId> imgR(size);           // Ordered pixels.
         std::vector<ToSFloodDepth> imgU(size);     // Monotone max-tree levels.
         std::vector<ToSGrayLevel> grayLevel(size); // Actual propagation levels.
 
         PriorityQueueToS queue(connectivityMap ? ToSUInt8Depth : ToSSelfDualDepth); // Priority queue.
-        int infinityPixel = infinitySeedIndex(interpNumRows, interpNumCols);
+        const PixelId infinityPixel = validatedInfinityPixel(interpNumRows, interpNumColumns);
         int priorityQueueOld = interpolationMin[infinityPixel];
         queue.initial(infinityPixel, priorityQueueOld);
         dejavu[infinityPixel] = true;
@@ -1199,25 +1159,25 @@ class TreeOfShapesProducer {
         int order = 0;
         ToSFloodDepth depth = 0;
         while (!queue.isEmpty()) {
-            int h = queue.priorityPop();                    // Pop the element with highest priority.
+            const PixelId pixel = queue.priorityPop();      // Pop the element with highest priority.
             int priorityQueue = queue.getCurrentPriority(); // Current priority.
             if (connectivityMap) {
                 if (priorityQueue != priorityQueueOld)
                     depth++;
-                imgU[h] = depth;
+                imgU[pixel] = depth;
             } else {
-                imgU[h] = static_cast<ToSFloodDepth>(priorityQueue);
+                imgU[pixel] = static_cast<ToSFloodDepth>(priorityQueue);
             }
-            grayLevel[h] = static_cast<ToSGrayLevel>(priorityQueue);
+            grayLevel[pixel] = static_cast<ToSGrayLevel>(priorityQueue);
 
             // Store h in the correct output order.
-            imgR[order++] = h;
+            imgR[order++] = pixel;
 
             // Adjacencies.
-            for (int n : adj.getNeighborIndices(h)) {
-                if (!dejavu[n]) {
-                    queue.priorityPush(n, interpolationMin[n], interpolationMax[n]);
-                    dejavu[n] = true; // Mark as processed.
+            for (PixelId neighbor : adj.getNeighborIndices(pixel)) {
+                if (!dejavu[neighbor]) {
+                    queue.priorityPush(neighbor, interpolationMin[neighbor], interpolationMax[neighbor]);
+                    dejavu[neighbor] = true; // Mark as processed.
                 }
             }
             priorityQueueOld = priorityQueue;
@@ -1231,16 +1191,16 @@ class TreeOfShapesProducer {
     /**
      * @brief Builds canonical flood tree.
      *
-     * @param imgPtr Image data represented by `imgPtr`.
+     * @param imgPtr Image data.
      * @return Resulting canonical flood tree.
      */
     CanonicalFloodTree buildCanonicalFloodTree(const ImageUInt8Ptr& imgPtr) const {
         FloodResult flood = floodImage(imgPtr);
         const int numPixelsInterp = static_cast<int>(flood.treeLevel.size());
 
-        std::vector<int> zPar(static_cast<size_t>(numPixelsInterp), InvalidNode);
-        std::vector<int> parentInterpolate(static_cast<size_t>(numPixelsInterp), InvalidNode);
-        auto findRoot = [&](int pStar) {
+        std::vector<PixelId> zPar(static_cast<size_t>(numPixelsInterp), InvalidPixel);
+        std::vector<PixelId> parentInterpolate(static_cast<size_t>(numPixelsInterp), InvalidPixel);
+        auto findRoot = [&](PixelId pStar) {
             while (zPar[pStar] != pStar) {
                 zPar[pStar] = zPar[zPar[pStar]];
                 pStar = zPar[pStar];
@@ -1249,12 +1209,12 @@ class TreeOfShapesProducer {
         };
 
         for (int i = numPixelsInterp - 1; i >= 0; --i) {
-            const int pStar = flood.order[static_cast<size_t>(i)];
+            const PixelId pStar = flood.order[static_cast<size_t>(i)];
             parentInterpolate[pStar] = pStar;
             zPar[pStar] = pStar;
-            for (int qStar : flood.adjacency.getNeighborIndices(pStar)) {
-                if (zPar[qStar] != InvalidNode) {
-                    const int rStar = findRoot(qStar);
+            for (PixelId qStar : flood.adjacency.getNeighborIndices(pStar)) {
+                if (zPar[qStar] != InvalidPixel) {
+                    const PixelId rStar = findRoot(qStar);
                     if (pStar != rStar) {
                         parentInterpolate[rStar] = pStar;
                         zPar[rStar] = pStar;
@@ -1263,9 +1223,9 @@ class TreeOfShapesProducer {
             }
         }
 
-        auto sameLevel = [&](int aStar, int bStar) { return flood.treeLevel[aStar] == flood.treeLevel[bStar]; };
-        for (int pStar : flood.order) {
-            const int qStar = parentInterpolate[pStar];
+        auto sameLevel = [&](PixelId aStar, PixelId bStar) { return flood.treeLevel[aStar] == flood.treeLevel[bStar]; };
+        for (PixelId pStar : flood.order) {
+            const PixelId qStar = parentInterpolate[pStar];
             if (sameLevel(parentInterpolate[qStar], qStar)) {
                 parentInterpolate[pStar] = parentInterpolate[qStar];
             }
@@ -1278,10 +1238,10 @@ class TreeOfShapesProducer {
     /**
      * @brief Sorts the interpolated domain for tree-of-shapes flooding.
      *
-     * @param imgPtr Image data represented by `imgPtr`.
+     * @param imgPtr Image data.
      * @return Values produced by the operation.
      */
-    std::tuple<std::vector<ToSFloodDepth>, std::vector<int>, AdjacencyUC> sort(const ImageUInt8Ptr& imgPtr) const {
+    std::tuple<std::vector<ToSFloodDepth>, std::vector<PixelId>, AdjacencyUC> sort(const ImageUInt8Ptr& imgPtr) const {
         FloodResult flood = floodImage(imgPtr);
         return std::make_tuple(std::move(flood.treeLevel), std::move(flood.order), std::move(flood.adjacency));
     }
@@ -1290,15 +1250,15 @@ class TreeOfShapesProducer {
     /**
      * @brief Checks whether an interpolated pixel belongs to the original image grid.
      *
-     * @param p Row-major pixel index to transform or inspect.
-     * @param interpNumCols Number of columns in the interpolated domain.
+     * @param pixel Row-major pixel index to transform or inspect.
+     * @param interpNumColumns Number of columns in the interpolated domain.
      * @return True when the interpolated index represents an original image pixel.
      */
-    inline bool isOriginal1D(int p, int interpNumCols) const {
-        const int row = p / interpNumCols;
-        const int col = p - row * interpNumCols;
+    inline bool isOriginal1D(PixelId pixel, int interpNumColumns) const {
+        const int row = pixel / interpNumColumns;
+        const int column = pixel - row * interpNumColumns;
         const int offset = interpolationOffset();
-        return (row & 1) == offset && (col & 1) == offset;
+        return (row & 1) == offset && (column & 1) == offset;
     }
 
     // Maps an interpolated pixel to the original image domain.
@@ -1306,18 +1266,19 @@ class TreeOfShapesProducer {
      * @brief Maps an interpolated-domain pixel index to the original image domain.
      *
      * @param pStar Pixel index in the interpolated domain.
-     * @param interNumCols Number of columns in the interpolated domain.
-     * @param numCols Number of columns in the domain.
+     * @param interNumColumns Number of columns in the interpolated domain.
+     * @param numColumns Number of columns in the domain.
      * @return Padding offset in interpolated-domain coordinates.
      */
-    inline int toOriginal1D(int pStar, int interNumCols, int numCols) const {
-        int r = pStar / interNumCols;
-        int c = pStar - r * interNumCols; // Avoid the modulo operator.
+    inline PixelId toOriginal1D(PixelId pStar, int interNumColumns, int numColumns) const {
+        int r = pStar / interNumColumns;
+        int c = pStar - r * interNumColumns; // Avoid the modulo operator.
         const int offset = interpolationOffset();
-        return ((r - offset) >> 1) * numCols + ((c - offset) >> 1);
+        return ((r - offset) >> 1) * numColumns + ((c - offset) >> 1);
     }
     /// @endcond
 
+  private:
     /**
      * @brief Builds a native Tree-of-Shapes topology.
      *
@@ -1327,34 +1288,32 @@ class TreeOfShapesProducer {
      * unary empty plateaus are contracted while a virtual branching root is
      * represented faithfully with an empty direct proper part.
      *
-     * @param imgPtr Image used by the operation.
+     * @param imgPtr Image.
      * @return The resulting native Tree-of-Shapes topology.
      */
-    template <ToSAltitudeEncodingPolicy EncodingPolicy>
-    [[nodiscard]] TreeOfShapesBuildResultT<typename EncodingPolicy::value_type> buildWithAltitudeEncoding(const ImageUInt8Ptr& imgPtr,
-                                                                                                          EncodingPolicy = {}) const {
+    [[nodiscard]] TreeOfShapesBuildResult buildTreeOfShapes(const ImageUInt8Ptr& imgPtr) const {
         if (!imgPtr) {
             throw std::invalid_argument("TreeOfShapesProducer requires a non-null image.");
         }
         const int numRows = imgPtr->getNumRows();
-        const int numCols = imgPtr->getNumCols();
-        const int numPixels = checkedDomainSize(numRows, numCols);
-        const int interpNumCols = interpolatedNumCols(numCols);
+        const int numColumns = imgPtr->getNumColumns();
+        const int numPixels = checkedDomainSize(numRows, numColumns);
+        const int interpNumColumns = interpolatedNumColumns(numColumns);
 
         CanonicalFloodTree canonical = buildCanonicalFloodTree(imgPtr);
         const int numPixelsInterp = static_cast<int>(canonical.parent.size());
-        auto sameLevel = [&](int aStar, int bStar) {
+        auto sameLevel = [&](PixelId aStar, PixelId bStar) {
             return canonical.treeLevel[static_cast<size_t>(aStar)] == canonical.treeLevel[static_cast<size_t>(bStar)];
         };
-        auto repOf = [&](int pStar) {
-            const int parentStar = canonical.parent[static_cast<size_t>(pStar)];
+        auto repOf = [&](PixelId pStar) {
+            const PixelId parentStar = canonical.parent[static_cast<size_t>(pStar)];
             return (parentStar == pStar || sameLevel(parentStar, pStar)) ? parentStar : pStar;
         };
 
-        std::vector<int> canonicalReps;
+        std::vector<PixelId> canonicalReps;
         canonicalReps.reserve(static_cast<size_t>(numPixels));
-        for (int pStar : canonical.order) {
-            const int parentStar = canonical.parent[static_cast<size_t>(pStar)];
+        for (PixelId pStar : canonical.order) {
+            const PixelId parentStar = canonical.parent[static_cast<size_t>(pStar)];
             if (parentStar == pStar || !sameLevel(parentStar, pStar)) {
                 canonicalReps.push_back(pStar);
             }
@@ -1363,17 +1322,17 @@ class TreeOfShapesProducer {
             throw std::runtime_error("Tree-of-shapes construction produced no canonical interpolated node.");
         }
 
-        const int rawRoot = canonicalReps.front();
-        std::vector<int> rawParent(static_cast<size_t>(numPixelsInterp), InvalidNode);
-        std::vector<int> firstRawChild(static_cast<size_t>(numPixelsInterp), InvalidNode);
-        std::vector<int> nextRawSibling(static_cast<size_t>(numPixelsInterp), InvalidNode);
-        for (int repStar : canonicalReps) {
+        const PixelId rawRoot = canonicalReps.front();
+        std::vector<PixelId> rawParent(static_cast<size_t>(numPixelsInterp), InvalidPixel);
+        std::vector<PixelId> firstRawChild(static_cast<size_t>(numPixelsInterp), InvalidPixel);
+        std::vector<PixelId> nextRawSibling(static_cast<size_t>(numPixelsInterp), InvalidPixel);
+        for (PixelId repStar : canonicalReps) {
             if (repStar == rawRoot) {
                 rawParent[static_cast<size_t>(repStar)] = repStar;
                 continue;
             }
-            const int parentRep = repOf(canonical.parent[static_cast<size_t>(repStar)]);
-            if (parentRep < 0 || parentRep >= numPixelsInterp || rawParent[static_cast<size_t>(parentRep)] == InvalidNode) {
+            const PixelId parentRep = repOf(canonical.parent[static_cast<size_t>(repStar)]);
+            if (parentRep < 0 || parentRep >= numPixelsInterp || rawParent[static_cast<size_t>(parentRep)] == InvalidPixel) {
                 throw std::runtime_error("Tree-of-shapes canonical node has no canonical parent.");
             }
             rawParent[static_cast<size_t>(repStar)] = parentRep;
@@ -1382,41 +1341,41 @@ class TreeOfShapesProducer {
         }
 
         std::vector<int> directCount(static_cast<size_t>(numPixelsInterp), 0);
-        std::vector<int> ownerRepByElement(static_cast<size_t>(numPixels), InvalidNode);
-        for (int pStar = 0; pStar < numPixelsInterp; ++pStar) {
-            if (!isOriginal1D(pStar, interpNumCols)) {
+        std::vector<PixelId> representativePixelByElement(static_cast<size_t>(numPixels), InvalidPixel);
+        for (PixelId pStar = 0; pStar < numPixelsInterp; ++pStar) {
+            if (!isOriginal1D(pStar, interpNumColumns)) {
                 continue;
             }
-            const int elementId = toOriginal1D(pStar, interpNumCols, numCols);
+            const PixelId elementId = toOriginal1D(pStar, interpNumColumns, numColumns);
             if (elementId < 0 || elementId >= numPixels) {
                 throw std::runtime_error("Tree-of-shapes projection produced an element outside the source domain.");
             }
-            const int ownerRep = repOf(pStar);
-            ownerRepByElement[static_cast<size_t>(elementId)] = ownerRep;
-            ++directCount[static_cast<size_t>(ownerRep)];
+            const PixelId representativePixel = repOf(pStar);
+            representativePixelByElement[static_cast<size_t>(elementId)] = representativePixel;
+            ++directCount[static_cast<size_t>(representativePixel)];
         }
-        if (std::find(ownerRepByElement.begin(), ownerRepByElement.end(), InvalidNode) != ownerRepByElement.end()) {
+        if (std::find(representativePixelByElement.begin(), representativePixelByElement.end(), InvalidPixel) != representativePixelByElement.end()) {
             throw std::runtime_error("Tree-of-shapes projection did not assign every source-domain element.");
         }
 
         // The canonical depth, parent, and full interpolated order are no
-        // longer needed after the raw hierarchy and source-domain owners have
+        // longer needed after the raw hierarchy and source-domain smallest nodes have
         // been extracted. Release them before allocating the projection buffer.
         std::vector<ToSFloodDepth>().swap(canonical.treeLevel);
-        std::vector<int>().swap(canonical.parent);
-        std::vector<int>().swap(canonical.order);
+        std::vector<PixelId>().swap(canonical.parent);
+        std::vector<PixelId>().swap(canonical.order);
 
         // Bottom-up support projection. projectedRep[r] is the canonical
         // representative of the distinct projected support rooted at r.
-        std::vector<int> projectedRep(static_cast<size_t>(numPixelsInterp), InvalidNode);
+        std::vector<PixelId> projectedRep(static_cast<size_t>(numPixelsInterp), InvalidPixel);
         for (auto it = canonicalReps.rbegin(); it != canonicalReps.rend(); ++it) {
-            const int repStar = *it;
+            const PixelId repStar = *it;
             int numProjectedChildren = 0;
-            int onlyProjectedChild = InvalidNode;
-            for (int childStar = firstRawChild[static_cast<size_t>(repStar)]; childStar != InvalidNode;
+            PixelId onlyProjectedChild = InvalidPixel;
+            for (PixelId childStar = firstRawChild[static_cast<size_t>(repStar)]; childStar != InvalidPixel;
                  childStar = nextRawSibling[static_cast<size_t>(childStar)]) {
-                const int childProjection = projectedRep[static_cast<size_t>(childStar)];
-                if (childProjection != InvalidNode) {
+                const PixelId childProjection = projectedRep[static_cast<size_t>(childStar)];
+                if (childProjection != InvalidPixel) {
                     ++numProjectedChildren;
                     onlyProjectedChild = childProjection;
                 }
@@ -1429,98 +1388,94 @@ class TreeOfShapesProducer {
             }
         }
 
-        const int projectedRootRep = projectedRep[static_cast<size_t>(rawRoot)];
-        if (projectedRootRep == InvalidNode || projectedRep[static_cast<size_t>(projectedRootRep)] != projectedRootRep) {
+        const PixelId projectedRootRep = projectedRep[static_cast<size_t>(rawRoot)];
+        if (projectedRootRep == InvalidPixel || projectedRep[static_cast<size_t>(projectedRootRep)] != projectedRootRep) {
             throw std::runtime_error("Tree-of-shapes projection produced an empty hierarchy.");
         }
 
-        std::vector<int>().swap(firstRawChild);
-        std::vector<int>().swap(nextRawSibling);
+        std::vector<PixelId>().swap(firstRawChild);
+        std::vector<PixelId>().swap(nextRawSibling);
         std::vector<int>().swap(directCount);
 
         std::vector<NodeId> nodeIdByRep(static_cast<size_t>(numPixelsInterp), InvalidNode);
-        NodeId numNodes = 0;
-        for (int repStar : canonicalReps) {
+        int numNodes = 0;
+        for (PixelId repStar : canonicalReps) {
             if (projectedRep[static_cast<size_t>(repStar)] == repStar) {
                 nodeIdByRep[static_cast<size_t>(repStar)] = numNodes++;
             }
         }
 
-        using OutputLevel = typename EncodingPolicy::value_type;
-        TreeOfShapesBuildResultT<OutputLevel> result;
-        result.nodeParent.assign(static_cast<size_t>(numNodes), InvalidNode);
-        result.properPartOwner.assign(static_cast<size_t>(numPixels), InvalidNode);
-        result.altitude.assign(static_cast<size_t>(numNodes), OutputLevel{});
+        TreeOfShapesBuildResult result;
+        result.parent.assign(static_cast<size_t>(numNodes), InvalidNode);
+        result.smallestNodeMap.assign(static_cast<size_t>(numPixels), InvalidNode);
+        result.nodeAltitudes.assign(static_cast<size_t>(numNodes), ToSGrayLevel{});
         result.root = nodeIdByRep[static_cast<size_t>(projectedRootRep)];
         result.numRows = numRows;
-        result.numCols = numCols;
+        result.numColumns = numColumns;
         detail::TopologicalNativeHierarchyRecorder proofRecorder(static_cast<std::size_t>(numNodes), static_cast<std::size_t>(numPixels), result.root);
 
-        for (int repStar : canonicalReps) {
+        for (PixelId repStar : canonicalReps) {
             const NodeId nodeId = nodeIdByRep[static_cast<size_t>(repStar)];
             if (nodeId == InvalidNode) {
                 continue;
             }
 
             if (repStar == projectedRootRep) {
-                result.nodeParent[static_cast<size_t>(nodeId)] = nodeId;
+                result.parent[static_cast<size_t>(nodeId)] = nodeId;
             } else {
-                int ancestorRep = rawParent[static_cast<size_t>(repStar)];
-                while (ancestorRep != InvalidNode && nodeIdByRep[static_cast<size_t>(ancestorRep)] == InvalidNode) {
+                PixelId ancestorRep = rawParent[static_cast<size_t>(repStar)];
+                while (ancestorRep != InvalidPixel && nodeIdByRep[static_cast<size_t>(ancestorRep)] == InvalidNode) {
                     if (ancestorRep == rawParent[static_cast<size_t>(ancestorRep)]) {
-                        ancestorRep = InvalidNode;
+                        ancestorRep = InvalidPixel;
                         break;
                     }
                     ancestorRep = rawParent[static_cast<size_t>(ancestorRep)];
                 }
-                if (ancestorRep == InvalidNode) {
+                if (ancestorRep == InvalidPixel) {
                     throw std::runtime_error("Tree-of-shapes retained node has no retained parent.");
                 }
-                result.nodeParent[static_cast<size_t>(nodeId)] = nodeIdByRep[static_cast<size_t>(ancestorRep)];
+                result.parent[static_cast<size_t>(nodeId)] = nodeIdByRep[static_cast<size_t>(ancestorRep)];
             }
-            proofRecorder.recordSupportedNode(nodeId, result.nodeParent[static_cast<std::size_t>(nodeId)]);
+            proofRecorder.recordSupportedNode(nodeId, result.parent[static_cast<std::size_t>(nodeId)]);
 
-            result.altitude[static_cast<size_t>(nodeId)] = EncodingPolicy::encode(canonical.grayLevel[static_cast<size_t>(repStar)], options_.interpolation);
+            result.nodeAltitudes[static_cast<size_t>(nodeId)] =
+                ToSExactDoubledAltitudeEncoding::encode(canonical.grayLevel[static_cast<size_t>(repStar)], immersionMode_);
         }
 
-        for (int elementId = 0; elementId < numPixels; ++elementId) {
-            const int ownerRep = ownerRepByElement[static_cast<size_t>(elementId)];
-            const NodeId ownerNode = nodeIdByRep[static_cast<size_t>(ownerRep)];
-            if (ownerNode == InvalidNode) {
+        for (PixelId elementId = 0; elementId < numPixels; ++elementId) {
+            const PixelId representativePixel = representativePixelByElement[static_cast<size_t>(elementId)];
+            const NodeId smallestNodeId = nodeIdByRep[static_cast<size_t>(representativePixel)];
+            if (smallestNodeId == InvalidNode) {
                 throw std::runtime_error("Tree-of-shapes proper part belongs to a contracted node.");
             }
-            result.properPartOwner[static_cast<size_t>(elementId)] = ownerNode;
-            proofRecorder.recordProperPart(elementId, ownerNode);
+            result.smallestNodeMap[static_cast<size_t>(elementId)] = smallestNodeId;
+            proofRecorder.recordProperPart(elementId, smallestNodeId);
+        }
+        for (NodeId nodeId = 0; nodeId < numNodes; ++nodeId) {
+            const NodeId parentNodeId = result.parent[static_cast<std::size_t>(nodeId)];
+            if (nodeId != result.root &&
+                result.nodeAltitudes[static_cast<std::size_t>(nodeId)] == result.nodeAltitudes[static_cast<std::size_t>(parentNodeId)]) {
+                throw std::runtime_error("Tree-of-shapes construction produced an equal-altitude parent-child edge.");
+            }
         }
         result.topologyProof = std::move(proofRecorder).finish();
         return result;
     }
 
-    /**
-     * @brief Builds the quantized hierarchy in source uint8 gray units.
-     *
-     * Half-level structural nodes are quantized downward. Reconstruction is
-     * exact because those virtual projected nodes own no source-domain
-     * element.
-     *
-     * @param imgPtr Image used by the operation.
-     * @return The resulting quantized hierarchy in source uint8 gray units.
-     */
-    [[nodiscard]] TreeOfShapesBuildResult build(const ImageUInt8Ptr& imgPtr) const {
-        return buildWithAltitudeEncoding(imgPtr, ToSQuantizedUInt8AltitudeEncoding{});
-    }
-
+  public:
     /**
      * @brief Builds the hierarchy with exact doubled source-level altitudes.
      *
      * Even values represent source gray levels and odd values represent the
-     * half levels introduced by self-dual interpolation.
+     * half levels introduced by self-dual interpolation. No parent-child
+     * altitude distinction is lost to quantization.
      *
-     * @param imgPtr Image used by the operation.
+     * @param imgPtr Image.
      * @return The resulting hierarchy with exact doubled source-level altitudes.
      */
-    [[nodiscard]] ExactTreeOfShapesBuildResult buildExact(const ImageUInt8Ptr& imgPtr) const {
-        return buildWithAltitudeEncoding(imgPtr, ToSExactDoubledAltitudeEncoding{});
+    [[nodiscard]] TreeOfShapesBuildResult build(const ImageUInt8Ptr& imgPtr) const {
+        validateConventionForImage(imgPtr);
+        return buildTreeOfShapes(imgPtr);
     }
 };
 

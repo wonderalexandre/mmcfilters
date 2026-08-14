@@ -13,43 +13,43 @@ using namespace mmcfilters::unit_tests;
 
 namespace {
 
-std::vector<int> pixelsOfConnectedComponent(const MorphologicalTree& tree, NodeId nodeId) {
-    std::vector<int> pixels;
-    for (NodeId subtreeNodeId : tree.getNodeSubtree(nodeId)) {
-        for (int properPart : tree.getProperParts(subtreeNodeId)) {
-            pixels.push_back(properPart);
+std::vector<PixelId> pixelsOfConnectedComponent(const MorphologicalTree& tree, NodeId nodeId) {
+    std::vector<PixelId> pixels;
+    for (NodeId subtreeNodeId : tree.subtreeNodes(nodeId)) {
+        for (PixelId pixel : tree.properPart(subtreeNodeId)) {
+            pixels.push_back(pixel);
         }
     }
     return pixels;
 }
 
-std::vector<int> contourVector(const ContoursComputedIncrementally::IncrementalContours& contours, NodeId nodeId) {
-    std::vector<int> values;
-    for (int pixel : contours.getContour(nodeId)) {
+std::vector<PixelId> contourVector(const ContoursComputedIncrementally::IncrementalContours& contours, NodeId nodeId) {
+    std::vector<PixelId> values;
+    for (PixelId pixel : contours.getContour(nodeId)) {
         values.push_back(pixel);
     }
     return values;
 }
 
 void appendContourFromDeltas(const MorphologicalTree& tree, const ContoursComputedIncrementally::LocalContourDeltas& deltas, NodeId nodeId,
-                             std::vector<int>& values, std::vector<uint8_t>& pixelMark) {
-    for (NodeId child : tree.getChildren(nodeId)) {
+                             std::vector<PixelId>& values, std::vector<uint8_t>& pixelMark) {
+    for (NodeId child : tree.children(nodeId)) {
         appendContourFromDeltas(tree, deltas, child, values, pixelMark);
     }
 
-    for (int pixel : deltas.additions(nodeId)) {
+    for (PixelId pixel : deltas.additions(nodeId)) {
         if (!pixelMark[static_cast<std::size_t>(pixel)]) {
             pixelMark[static_cast<std::size_t>(pixel)] = 1;
             values.push_back(pixel);
         }
     }
 
-    for (int pixel : deltas.removals(nodeId)) {
+    for (PixelId pixel : deltas.removals(nodeId)) {
         pixelMark[static_cast<std::size_t>(pixel)] = 0;
     }
 
     std::size_t writeIndex = 0;
-    for (int pixel : values) {
+    for (PixelId pixel : values) {
         if (pixelMark[static_cast<std::size_t>(pixel)]) {
             values[writeIndex++] = pixel;
         }
@@ -57,28 +57,28 @@ void appendContourFromDeltas(const MorphologicalTree& tree, const ContoursComput
     values.resize(writeIndex);
 }
 
-std::vector<int> contourVectorFromDeltas(const MorphologicalTree& tree, const ContoursComputedIncrementally::LocalContourDeltas& deltas, NodeId nodeId) {
-    std::vector<int> values;
-    std::vector<uint8_t> pixelMark(static_cast<std::size_t>(tree.getNumRowsOfGridDomain2D() * tree.getNumColsOfGridDomain2D()), 0);
+std::vector<PixelId> contourVectorFromDeltas(const MorphologicalTree& tree, const ContoursComputedIncrementally::LocalContourDeltas& deltas, NodeId nodeId) {
+    std::vector<PixelId> values;
+    std::vector<uint8_t> pixelMark(static_cast<std::size_t>(tree.numRows() * tree.numColumns()), 0);
     appendContourFromDeltas(tree, deltas, nodeId, values, pixelMark);
     return values;
 }
 
-std::vector<int> expectedContourForNode(const MorphologicalTree& tree, NodeId nodeId) {
-    RegularGridAdjacency2D adj4(tree.getNumRowsOfGridDomain2D(), tree.getNumColsOfGridDomain2D(), ContoursComputedIncrementally::ContourSideAdjacencyRadius);
-    std::vector<uint8_t> mask(static_cast<std::size_t>(tree.getNumRowsOfGridDomain2D() * tree.getNumColsOfGridDomain2D()), 0);
-    std::vector<int> ccPixels = pixelsOfConnectedComponent(tree, nodeId);
-    for (int pixel : ccPixels) {
+std::vector<PixelId> expectedContourForNode(const MorphologicalTree& tree, NodeId nodeId) {
+    RegularGridAdjacency2D adj4(tree.numRows(), tree.numColumns(), ContoursComputedIncrementally::ContourSideAdjacencyRadius);
+    std::vector<uint8_t> mask(static_cast<std::size_t>(tree.numRows() * tree.numColumns()), 0);
+    std::vector<PixelId> ccPixels = pixelsOfConnectedComponent(tree, nodeId);
+    for (PixelId pixel : ccPixels) {
         mask[static_cast<std::size_t>(pixel)] = 1;
     }
 
-    std::vector<int> expectedContour;
-    for (int pixel : ccPixels) {
-        auto [row, col] = ImageUtils::to2D(pixel, tree.getNumColsOfGridDomain2D());
-        bool isContour = row == 0 || col == 0 || row == tree.getNumRowsOfGridDomain2D() - 1 || col == tree.getNumColsOfGridDomain2D() - 1;
+    std::vector<PixelId> expectedContour;
+    for (PixelId pixel : ccPixels) {
+        auto [row, column] = ImageUtils::to2D(pixel, tree.numColumns());
+        bool isContour = row == 0 || column == 0 || row == tree.numRows() - 1 || column == tree.numColumns() - 1;
         if (!isContour) {
-            for (int q : adj4.getAdjacentIndices(pixel)) {
-                if (!mask[static_cast<std::size_t>(q)]) {
+            for (PixelId neighbor : adj4.getAdjacentIndices(pixel)) {
+                if (!mask[static_cast<std::size_t>(neighbor)]) {
                     isContour = true;
                     break;
                 }
@@ -98,11 +98,11 @@ void verifyContoursAgainstSupportMasks(const MorphologicalTree& tree, const std:
     auto deltas = ContoursComputedIncrementally::extractContourDeltas(tree);
     require(!contours.isMaterialized(), label + " contours must start without global materialization");
 
-    for (NodeId nodeId : tree.getAliveNodeIds()) {
-        std::vector<int> expectedContour = expectedContourForNode(tree, nodeId);
-        std::vector<int> actualContour = contourVector(contours, nodeId);
-        std::vector<int> rangeContour = contourVector(contours, nodeId);
-        std::vector<int> deltaContour = contourVectorFromDeltas(tree, deltas, nodeId);
+    for (NodeId nodeId : tree.aliveNodeIds()) {
+        std::vector<PixelId> expectedContour = expectedContourForNode(tree, nodeId);
+        std::vector<PixelId> actualContour = contourVector(contours, nodeId);
+        std::vector<PixelId> rangeContour = contourVector(contours, nodeId);
+        std::vector<PixelId> deltaContour = contourVectorFromDeltas(tree, deltas, nodeId);
         std::sort(actualContour.begin(), actualContour.end());
         std::sort(rangeContour.begin(), rangeContour.end());
         std::sort(deltaContour.begin(), deltaContour.end());
@@ -117,9 +117,9 @@ MorphologicalTree makeTwoBranchInteriorTreeOfShapes() {
         9, 11, 10, 9, 9, 10, 11, 11, 10, 11, 11, 11,
     };
     std::vector<std::uint8_t> altitude(parent.size(), std::uint8_t{});
-    auto weighted = MorphologicalTreeFactory::createFromHigraParent(std::span<const NodeId>(parent), std::span<const std::uint8_t>(altitude), 3, 3,
-                                                                    MorphologicalTreeKind::TREE_OF_SHAPES);
-    return weighted.topology().clone();
+    auto valuedTree = MorphologicalTreeFactory::createFromHigraParent(std::span<const NodeId>(parent), std::span<const std::uint8_t>(altitude), 3, 3,
+                                                                    MorphologicalTreeKind::TreeOfShapes);
+    return valuedTree.topology().clone();
 }
 
 } // namespace
@@ -136,31 +136,31 @@ int main() {
             tree->mergeNodeIntoParent(4);
             requireThrows<std::logic_error>([&]() { static_cast<void>(staleContours.isMaterialized()); },
                                             "contours must reject materialization status after topology mutation");
-            requireThrows<std::logic_error>([&]() { static_cast<void>(staleContours.getContour(tree->getRoot())); },
+            requireThrows<std::logic_error>([&]() { static_cast<void>(staleContours.getContour(tree->root())); },
                                             "contours must reject contour access after topology mutation");
             requireThrows<std::logic_error>([&]() { staleContours.materializeAll(); }, "contours must reject materializeAll after topology mutation");
         }
 
-        auto weighted = makeWeightedComponentTree(image, isMaxtree);
+        auto valuedTree = makeValuedComponentTree(image, isMaxtree);
         std::vector<std::int16_t> int16Altitude;
-        int16Altitude.reserve(weighted->getAltitudeBuffer().size());
-        for (std::uint8_t level : weighted->getAltitudeBuffer()) {
+        int16Altitude.reserve(valuedTree->nodeAltitudes().size());
+        for (std::uint8_t level : valuedTree->nodeAltitudes()) {
             int16Altitude.push_back(static_cast<std::int16_t>(level));
         }
-        const WeightedTreeView<std::int16_t> int16View(weighted->topology(), std::span<const std::int16_t>(int16Altitude.data(), int16Altitude.size()));
-        auto topologyContours = ContoursComputedIncrementally::extractCompactContours(weighted->topology());
-        auto viewContours = ContoursComputedIncrementally::extractCompactContours(weighted->asView());
+        const ValuedMorphologicalTreeView<std::int16_t> int16View(valuedTree->topology(), std::span<const std::int16_t>(int16Altitude.data(), int16Altitude.size()));
+        auto topologyContours = ContoursComputedIncrementally::extractCompactContours(valuedTree->topology());
+        auto viewContours = ContoursComputedIncrementally::extractCompactContours(valuedTree->asView());
         auto int16ViewContours = ContoursComputedIncrementally::extractCompactContours(int16View);
         if (isMaxtree && contract::validationsEnabled) {
-            auto staleWeighted = makeWeightedComponentTree(image, true);
-            const auto staleView = staleWeighted->asView();
-            staleWeighted->mergeNodeIntoParent(4);
+            auto staleValuedTree = makeValuedComponentTree(image, true);
+            const auto staleView = staleValuedTree->asView();
+            staleValuedTree->mergeNodeIntoParent(4);
             requireThrows<std::logic_error>([&]() { static_cast<void>(ContoursComputedIncrementally::extractCompactContours(staleView)); },
-                                            "contour extraction must reject stale WeightedTreeView");
+                                            "contour extraction must reject stale ValuedMorphologicalTreeView");
             requireThrows<std::logic_error>([&]() { static_cast<void>(ContoursComputedIncrementally::extractContourDeltas(staleView)); },
-                                            "contour delta extraction must reject stale WeightedTreeView");
+                                            "contour delta extraction must reject stale ValuedMorphologicalTreeView");
         }
-        for (NodeId nodeId : weighted->topology().getAliveNodeIds()) {
+        for (NodeId nodeId : valuedTree->topology().aliveNodeIds()) {
             auto topologyContour = contourVector(topologyContours, nodeId);
             auto viewContour = contourVector(viewContours, nodeId);
             auto int16ViewContour = contourVector(int16ViewContours, nodeId);
@@ -173,7 +173,7 @@ int main() {
     }
 
     {
-        auto tree = makeTreeOfShapes(image, ToSInterpolation::SelfDual);
+        auto tree = makeTreeOfShapes(image, TestTopographicImmersion::SelfDualSpan);
         verifyContoursAgainstSupportMasks(*tree, "tree of shapes");
     }
 
@@ -187,11 +187,11 @@ int main() {
         tree->mergeNodeIntoParent(4);
 
         auto contours = ContoursComputedIncrementally::extractCompactContours(*tree);
-        requireVectorEqual(collectNodeIds(tree->getAliveNodeIds()), {0, 1, 2, 3, 5}, "alive node ids after contour middle-slot merge");
+        requireVectorEqual(collectNodeIds(tree->aliveNodeIds()), {0, 1, 2, 3, 5}, "alive node ids after contour middle-slot merge");
         require(!contours.isMaterialized(), "contours must not materialize during extraction");
         std::vector<int> leafContourFromIncrementalRead = contourVector(contours, 5);
         require(contours.isContourMaterialized(5), "contour iteration must cache the requested leaf");
-        require(!contours.isContourMaterialized(tree->getRoot()), "leaf contour iteration must not materialize the root");
+        require(!contours.isContourMaterialized(tree->root()), "leaf contour iteration must not materialize the root");
         require(!contours.isMaterialized(), "contour iteration must not materialize all contours");
 
         auto contoursByNode = contours.contoursByNode();
@@ -201,7 +201,7 @@ int main() {
         for (auto&& [nodeId, contour] : contoursByNode) {
             contourNodes.push_back(nodeId);
             std::vector<int> values;
-            for (int pixel : contour) {
+            for (PixelId pixel : contour) {
                 values.push_back(pixel);
             }
             std::vector<int> eagerValues = contourVector(contours, nodeId);

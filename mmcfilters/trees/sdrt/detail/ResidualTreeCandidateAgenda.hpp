@@ -6,7 +6,7 @@
  */
 
 #include "ResidualTreeCandidateTypes.hpp"
-#include "../ResidualTreePolicies.hpp"
+#include "../ResidualEvolution.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -19,51 +19,31 @@ namespace mmcfilters::sdrt::detail {
 
 /** @brief Candidate, ordering, and agenda types shared by all residual altitude types. */
 struct ResidualTreeAgendaTypes {
-    /** @brief Enumerates the supported component-tree polarities. */
-    enum class Polarity : std::uint8_t { Max, Min };
+    /** @brief Public polarity vocabulary used by the synchronized evolution. */
+    using Polarity = sdrt::Polarity;
 
     /** @brief Candidate entry stored in deterministic agenda order. */
     struct Candidate {
-        int area = 0;                                  ///< Current flat-zone area.
-        NodeId stableSpatialKey = InvalidNode;         ///< Stable spatial tie-breaking key.
-        Polarity polarity = Polarity::Max;             ///< Component-tree polarity.
-        NodeId nodeId = InvalidNode;                   ///< Current component-tree node.
+        SelfDualResidualKey residualKey;                 ///< Canonical support-only scheduling key.
+        Polarity polarity = Polarity::Maximum;           ///< Component-tree polarity, excluded from ordering.
+        NodeId nodeId = InvalidNode;                     ///< Current component-tree node, excluded from ordering.
     };
 
     /** @brief Neutral candidate metadata supplied by the flat-zone partition. */
     using CandidateDescriptor = ResidualTreeCandidateDescriptor;
 
-    /** @brief Orders candidates according to the configured deterministic tie policy. */
+    /** @brief Orders candidates only by the canonical self-dual residual key. */
     struct CandidateLess {
-        SdrtTiePolicy policy = SdrtTiePolicy::ContrastInvariantSpatial; ///< Configured tie policy.
+        SelfDualResidualOrder residualOrder; ///< Canonical contrast-invariant key order.
 
         /**
-         * @brief Maps a polarity to its deterministic secondary ordering rank.
-         * @param polarity Polarity to rank.
-         * @return Zero for max-tree candidates and one for min-tree candidates.
-         */
-        [[nodiscard]] static int polarityRank(Polarity polarity) noexcept { return polarity == Polarity::Max ? 0 : 1; }
-
-        /**
-         * @brief Compares two candidates according to the configured tie policy.
+         * @brief Compares two candidates without consulting polarity, altitude, or node id.
          * @param lhs Left candidate.
          * @param rhs Right candidate.
          * @return `true` when `lhs` precedes `rhs` in agenda order.
          */
-        [[nodiscard]] bool operator()(const Candidate& lhs, const Candidate& rhs) const noexcept {
-            if (lhs.area != rhs.area) {
-                return lhs.area < rhs.area;
-            }
-            if (policy == SdrtTiePolicy::MaxBeforeMinThenSpatial && lhs.polarity != rhs.polarity) {
-                return polarityRank(lhs.polarity) < polarityRank(rhs.polarity);
-            }
-            if (lhs.stableSpatialKey != rhs.stableSpatialKey) {
-                return lhs.stableSpatialKey < rhs.stableSpatialKey;
-            }
-            if (lhs.polarity != rhs.polarity) {
-                return polarityRank(lhs.polarity) < polarityRank(rhs.polarity);
-            }
-            return lhs.nodeId < rhs.nodeId;
+        [[nodiscard]] bool operator()(const Candidate& lhs, const Candidate& rhs) const {
+            return residualOrder.compareResidualCandidates(lhs.residualKey, rhs.residualKey);
         }
     };
 
@@ -76,8 +56,8 @@ struct ResidualTreeAgendaTypes {
     /** @brief Maintains deterministic ordering and membership of current extrema. */
     class CandidateAgenda {
       private:
-        SdrtTiePolicy policy_;                           ///< Configured deterministic tie policy.
-        bool excludeExteriorSeed_ = true;               ///< Whether exterior-containing candidates are excluded.
+        SelfDualResidualSchedule schedule_;              ///< Unique canonical residual schedule.
+        bool excludeInfinityPixel_ = true;               ///< Whether infinity-pixel candidates are excluded.
         std::set<Candidate, CandidateLess> candidates_; ///< Ordered active candidates.
         std::vector<AgendaSlot> maxSlots_;               ///< Candidate slots for the max-tree.
         std::vector<AgendaSlot> minSlots_;               ///< Candidate slots for the min-tree.
@@ -87,7 +67,9 @@ struct ResidualTreeAgendaTypes {
          * @param polarity Component-tree polarity.
          * @return Mutable slot array associated with `polarity`.
          */
-        [[nodiscard]] std::vector<AgendaSlot>& slots(Polarity polarity) { return polarity == Polarity::Max ? maxSlots_ : minSlots_; }
+        [[nodiscard]] std::vector<AgendaSlot>& slots(Polarity polarity) {
+            return polarity == Polarity::Maximum ? maxSlots_ : minSlots_;
+        }
 
         /**
          * @brief Selects the immutable slot array for one polarity.
@@ -95,7 +77,7 @@ struct ResidualTreeAgendaTypes {
          * @return Immutable slot array associated with `polarity`.
          */
         [[nodiscard]] const std::vector<AgendaSlot>& slots(Polarity polarity) const {
-            return polarity == Polarity::Max ? maxSlots_ : minSlots_;
+            return polarity == Polarity::Maximum ? maxSlots_ : minSlots_;
         }
 
         /**
@@ -131,11 +113,12 @@ struct ResidualTreeAgendaTypes {
       public:
         /**
          * @brief Creates an empty agenda.
-         * @param policy Deterministic equal-area ordering policy.
-         * @param excludeExteriorSeed Whether exterior-containing candidates must be excluded.
+         * @param spatialOrder Total order defining the spatial-minimum key coordinate.
+         * @param excludeInfinityPixel Whether candidates containing the infinity pixel must be excluded.
          */
-        CandidateAgenda(SdrtTiePolicy policy, bool excludeExteriorSeed)
-            : policy_(policy), excludeExteriorSeed_(excludeExteriorSeed), candidates_(CandidateLess{policy}) {}
+        CandidateAgenda(SpatialOrder spatialOrder, bool excludeInfinityPixel)
+            : schedule_(std::move(spatialOrder)), excludeInfinityPixel_(excludeInfinityPixel),
+              candidates_(CandidateLess{schedule_.residualOrder()}) {}
 
         /**
          * @brief Resets ordered entries and sizes the per-polarity node slots.
@@ -143,7 +126,7 @@ struct ResidualTreeAgendaTypes {
          * @param minNodeSlots Number of min-tree node slots.
          */
         void reset(std::size_t maxNodeSlots, std::size_t minNodeSlots) {
-            candidates_ = std::set<Candidate, CandidateLess>(CandidateLess{policy_});
+            candidates_ = std::set<Candidate, CandidateLess>(CandidateLess{schedule_.residualOrder()});
             maxSlots_.assign(maxNodeSlots, AgendaSlot{});
             minSlots_.assign(minNodeSlots, AgendaSlot{});
         }
@@ -160,14 +143,14 @@ struct ResidualTreeAgendaTypes {
                 throw std::out_of_range("Min/max residual candidate lies outside its agenda slot domain.");
             }
             remove(polarity, nodeId);
-            if (descriptor.area <= 0 || descriptor.stableSpatialKey == InvalidNode) {
+            if (descriptor.supportCardinality == 0 || descriptor.spatialMinimum == InvalidPixel) {
                 throw std::runtime_error("Min/max residual agenda received invalid flat-zone metadata.");
             }
-            if (excludeExteriorSeed_ && descriptor.containsExteriorSeed) {
+            if (excludeInfinityPixel_ && descriptor.containsInfinityPixel) {
                 return;
             }
 
-            const Candidate candidate{descriptor.area, descriptor.stableSpatialKey, polarity, nodeId};
+            const Candidate candidate{SelfDualResidualKey{descriptor.supportCardinality, descriptor.spatialMinimum}, polarity, nodeId};
             const auto [_, inserted] = candidates_.insert(candidate);
             if (!inserted) {
                 throw std::runtime_error("Min/max residual agenda received a duplicate candidate.");

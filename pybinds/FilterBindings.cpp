@@ -1,15 +1,22 @@
 #include "ModuleBindings.hpp"
 
 #include "AttributeFiltersPybind.hpp"
+#include "AttributeReconstructionFiltersPybind.hpp"
 #include "DepthStableRegionComputerPybind.hpp"
 #include "ExtinctionValuesPybind.hpp"
 #include "UltimateAttributeOpeningPybind.hpp"
+#include "../mmcfilters/filters/NodePreservationStability.hpp"
 
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <concepts>
+#include <cstdint>
 #include <memory>
+#include <span>
+#include <stdexcept>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -20,18 +27,57 @@ using namespace pybind11::literals;
 
 namespace {
 
+template <std::floating_point Real>
+NodePreservationMask computeNodePreservationMaskPyTyped(py::array nodeAttributes, double threshold) {
+    const py::buffer_info info = nodeAttributes.request();
+    if (info.ndim != 1) {
+        throw std::invalid_argument("node_attributes must be a 1D array.");
+    }
+    if (info.strides[0] != static_cast<py::ssize_t>(sizeof(Real))) {
+        throw std::invalid_argument("node_attributes must be C-contiguous.");
+    }
+    const auto* values = static_cast<const Real*>(info.ptr);
+    return computeNodePreservationMask(std::span<const Real>(values, static_cast<std::size_t>(info.shape[0])), static_cast<Real>(threshold));
+}
+
+NodePreservationMask computeNodePreservationMaskPy(py::array nodeAttributes, double threshold) {
+    if (pybind_utils::parseFloatingArrayDType(nodeAttributes, "node_attributes") == pybind_utils::FloatingDType::Float64) {
+        return computeNodePreservationMaskPyTyped<double>(std::move(nodeAttributes), threshold);
+    }
+    return computeNodePreservationMaskPyTyped<float>(std::move(nodeAttributes), threshold);
+}
+
+NodePreservationMask adjustNodePreservationMaskByAltitudeStabilityPy(
+    std::shared_ptr<PythonValuedMorphologicalTree> valuedTree, const NodePreservationMask& nodePreservationMask,
+    std::int64_t altitudeWindowRadius, IncompleteStabilityWindowPolicy incompleteWindowPolicy) {
+    auto owner = requireReconstructionFilterOwner(std::move(valuedTree), "adjust_node_preservation_mask_by_altitude_stability");
+    return owner->visit([&](const auto& native) {
+        using Tree = typename std::remove_cvref_t<decltype(native)>::element_type;
+        using Altitude = typename Tree::AltitudeType;
+        return adjustNodePreservationMaskByAltitudeStability(
+            *native, nodePreservationMask, static_cast<AltitudeDifference<Altitude>>(altitudeWindowRadius), incompleteWindowPolicy);
+    });
+}
+
+NodePreservationMask adjustNodePreservationMaskByDepthStabilityPy(
+    std::shared_ptr<PythonValuedMorphologicalTree> valuedTree, const NodePreservationMask& nodePreservationMask,
+    int depthWindowRadius, IncompleteStabilityWindowPolicy incompleteWindowPolicy) {
+    auto owner = requireReconstructionFilterOwner(std::move(valuedTree), "adjust_node_preservation_mask_by_depth_stability");
+    return adjustNodePreservationMaskByDepthStability(owner->topology(), nodePreservationMask, depthWindowRadius, incompleteWindowPolicy);
+}
+
 void initExtinctionPolicyTypes(py::module_& m) {
     py::class_<ExtinctionSelectionPolicyPybind>(m, "ExtinctionSelectionPolicy", py::module_local(false),
                                                 R"doc(Selection policy shared by extinction filtering and contour maps.)doc")
-        .def_static("byTopK", &ExtinctionSelectionPolicyPybind::byTopK, "extremaToKeep"_a, "Select the strongest extrema by decreasing extinction ranking.")
-        .def_static("byThreshold", &ExtinctionSelectionPolicyPybind::byThreshold, "threshold"_a,
+        .def_static("by_top_k", &ExtinctionSelectionPolicyPybind::byTopK, "extrema_to_keep"_a, "Select the strongest extrema by decreasing extinction ranking.")
+        .def_static("by_threshold", &ExtinctionSelectionPolicyPybind::byThreshold, "threshold"_a,
                     "Select every extremum whose extinction value is greater than or equal to threshold.")
-        .def_readonly("extremaToKeep", &ExtinctionSelectionPolicyPybind::extremaToKeep)
+        .def_readonly("extrema_to_keep", &ExtinctionSelectionPolicyPybind::extremaToKeep)
         .def_readonly("threshold", &ExtinctionSelectionPolicyPybind::threshold);
 
     py::enum_<ExtinctionContourScorePolicy>(m, "ExtinctionContourScorePolicy", py::module_local(false))
-        .value("RankScore", ExtinctionContourScorePolicy::RankScore)
-        .value("ExtinctionValue", ExtinctionContourScorePolicy::ExtinctionValue)
+        .value("RANK_SCORE", ExtinctionContourScorePolicy::RankScore)
+        .value("EXTINCTION_VALUE", ExtinctionContourScorePolicy::ExtinctionValue)
         .export_values();
 }
 
@@ -45,51 +91,103 @@ void initExtinctionPolicyTypes(py::module_& m) {
 void initAttributeFilters(py::module_& m) {
     initExtinctionPolicyTypes(m);
 
+    py::class_<NodePreservationMask>(m, "NodePreservationMask", py::module_local(false),
+                                     "Dense Boolean node decisions where true means preserve the node.")
+        .def(py::init<std::vector<bool>>(), "decisions"_a)
+        .def("__len__", &NodePreservationMask::size)
+        .def("__getitem__", [](const NodePreservationMask& mask, std::size_t index) {
+            if (index >= mask.size()) {
+                throw py::index_error();
+            }
+            return mask[index];
+        })
+        .def("to_list", [](const NodePreservationMask& mask) { return mask.decisions(); });
+
+    py::class_<NodePruningMask>(m, "NodePruningMask", py::module_local(false),
+                                "Dense Boolean node decisions where true means prune the node.")
+        .def(py::init<std::vector<bool>>(), "decisions"_a)
+        .def("__len__", &NodePruningMask::size)
+        .def("__getitem__", [](const NodePruningMask& mask, std::size_t index) {
+            if (index >= mask.size()) {
+                throw py::index_error();
+            }
+            return mask[index];
+        })
+        .def("to_list", [](const NodePruningMask& mask) { return mask.decisions(); });
+
+    m.def("to_node_pruning_mask", &toNodePruningMask, "node_preservation_mask"_a,
+          "Explicitly complement preservation decisions into pruning decisions.");
+    m.def("to_node_preservation_mask", &toNodePreservationMask, "node_pruning_mask"_a,
+          "Explicitly complement pruning decisions into preservation decisions.");
+
+    py::enum_<IncompleteStabilityWindowPolicy>(m, "IncompleteStabilityWindowPolicy", py::module_local(false))
+        .value("PRESERVE_INPUT_DECISION", IncompleteStabilityWindowPolicy::PreserveInputDecision)
+        .export_values();
+
+    m.def("compute_node_preservation_mask", &computeNodePreservationMaskPy, "node_attributes"_a, "threshold"_a,
+          "Threshold scalar node attributes with the inclusive >= preservation rule.");
+    m.def("adjust_node_preservation_mask_by_altitude_stability", &adjustNodePreservationMaskByAltitudeStabilityPy,
+          "tree"_a, "node_preservation_mask"_a, "altitude_window_radius"_a,
+          "incomplete_window_policy"_a = IncompleteStabilityWindowPolicy::PreserveInputDecision,
+          "Relocate input rejections using a monotone altitude-distance stability window.");
+    m.def("adjust_node_preservation_mask_by_depth_stability", &adjustNodePreservationMaskByDepthStabilityPy,
+          "tree"_a, "node_preservation_mask"_a, "depth_window_radius"_a,
+          "incomplete_window_policy"_a = IncompleteStabilityWindowPolicy::PreserveInputDecision,
+          "Relocate input rejections using a topology-only edge-count stability window.");
+
+    py::class_<DirectReconstruction>(m, "DirectReconstruction", py::module_local(false)).def(py::init<>());
+    py::class_<SubtractiveResidueModulation>(m, "SubtractiveResidueModulation", py::module_local(false)).def(py::init<>());
+
+    py::class_<DirectAttributeFilterPybind>(m, "DirectAttributeFilter", py::module_local(false))
+        .def(py::init<std::shared_ptr<PythonValuedMorphologicalTree>>(), "tree"_a)
+        .def("apply_direct_attribute_filter", &DirectAttributeFilterPybind::applyDirectAttributeFilter, "node_preservation_mask"_a,
+             "Apply direct reconstruction; the root must be preserved.");
+
+    py::class_<HardSubtractiveAttributeFilterPybind>(m, "HardSubtractiveAttributeFilter", py::module_local(false))
+        .def(py::init<std::shared_ptr<PythonValuedMorphologicalTree>>(), "tree"_a)
+        .def("apply_hard_subtractive_attribute_filter", &HardSubtractiveAttributeFilterPybind::applyHardSubtractiveAttributeFilter,
+             "node_preservation_mask"_a, "Gate every zero-baseline node residue with a Boolean preservation mask.");
+
+    py::class_<SoftSubtractiveAttributeFilterPybind>(m, "SoftSubtractiveAttributeFilter", py::module_local(false))
+        .def(py::init<std::shared_ptr<PythonValuedMorphologicalTree>>(), "tree"_a)
+        .def("apply_soft_subtractive_attribute_filter", &SoftSubtractiveAttributeFilterPybind::applySoftSubtractiveAttributeFilter,
+             "node_preservation_scores"_a, "Gate every zero-baseline node residue with finite scores in [0, 1].");
+
     py::class_<AttributeFiltersPybind>(m, "AttributeFilters", py::module_local(false),
-                                       R"doc(Attribute-based filtering operators over a weighted morphological tree.
+                                       R"doc(Attribute-based filtering operators over a valued morphological tree.
 
 Attribute arrays are 1D `np.float32` or `np.float64` buffers indexed by dense
-internal `NodeId`, C-contiguous, and with length `tree.numInternalNodeSlots`.
+internal `NodeId`, C-contiguous, and with length `tree.num_internal_node_slots`.
 Returned images are 2D NumPy arrays on the original image domain.)doc")
-        .def(py::init<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>>(), "tree"_a, "Create filtering operators over a `WeightedMorphologicalTree`.")
-        .def("filteringByPruningMin", py::overload_cast<std::vector<bool>&>(&AttributeFiltersPybind::filteringByPruningMin), "criterion"_a,
-             "Apply pruning-min filtering from a dense boolean keep/remove criterion.")
+        .def(py::init<std::shared_ptr<PythonValuedMorphologicalTree>>(), "tree"_a, "Create filtering operators over a `ValuedMorphologicalTree`.")
+        .def("filtering_by_pruning_min", py::overload_cast<const NodePreservationMask&>(&AttributeFiltersPybind::filteringByPruningMin),
+             "node_preservation_mask"_a, "Apply pruning-min filtering from explicit node-preservation decisions.")
         .def(
-            "filteringByPruningMin",
+            "filtering_by_pruning_min",
             [](AttributeFiltersPybind& self, py::array attr, double threshold) { return self.filteringByPruningMin(std::move(attr), threshold); }, "attr"_a,
             "threshold"_a, "Apply pruning-min filtering from a node-indexed floating-point attribute buffer.")
-        .def("filteringByPruningMax", py::overload_cast<std::vector<bool>&>(&AttributeFiltersPybind::filteringByPruningMax), "criterion"_a,
-             "Apply pruning-max filtering from a dense boolean keep/remove criterion.")
-        .def("filteringDirectRule", py::overload_cast<std::vector<bool>&>(&AttributeFiltersPybind::filteringByDirectRule), "criterion"_a,
-             "Apply the direct filtering rule from a dense boolean criterion.")
-        .def("filteringSubtractiveRule", py::overload_cast<std::vector<bool>&>(&AttributeFiltersPybind::filteringBySubtractiveRule), "criterion"_a,
-             "Apply the subtractive filtering rule from a dense boolean criterion.")
-        .def("filteringSubtractiveScoreRule", py::overload_cast<std::vector<float>&>(&AttributeFiltersPybind::filteringBySubtractiveScoreRule), "scores"_a,
-             "Apply subtractive-score filtering from dense per-node float scores.")
+        .def("filtering_by_pruning_max", py::overload_cast<const NodePreservationMask&>(&AttributeFiltersPybind::filteringByPruningMax),
+             "node_preservation_mask"_a, "Apply pruning-max filtering from explicit node-preservation decisions.")
         .def(
-            "filteringByPruningMax",
+            "filtering_by_pruning_max",
             [](AttributeFiltersPybind& self, py::array attr, double threshold) { return self.filteringByPruningMax(std::move(attr), threshold); }, "attr"_a,
             "threshold"_a, "Apply pruning-max filtering from a node-indexed floating-point attribute buffer.")
         .def(
-            "filteringByViterbiRule",
+            "filtering_by_viterbi_rule",
             [](AttributeFiltersPybind& self, py::array attr, double threshold) { return self.filteringByViterbiRule(std::move(attr), threshold); }, "attr"_a,
             "threshold"_a, "Apply connected Viterbi filtering from a node-indexed floating-point attribute buffer.")
         .def(
-            "filteringByExtinction",
+            "filtering_by_extinction",
             [](AttributeFiltersPybind& self, py::array attr, const ExtinctionSelectionPolicyPybind& selection) {
                 return self.filteringByExtinctionValue(std::move(attr), selection);
             },
             "attr"_a, "selection"_a, "Filter by extinction using an explicit selection policy.")
         .def(
-            "contourMapByExtinction",
+            "contour_map_by_extinction",
             [](AttributeFiltersPybind& self, py::array attr, const ExtinctionSelectionPolicyPybind& selection, ExtinctionContourScorePolicy scorePolicy) {
                 return self.contourMapByExtinctionValue(std::move(attr), selection, scorePolicy);
             },
-            "attr"_a, "selection"_a, "scorePolicy"_a, "Build a contour-valued image from extinction values.")
-        .def("getAdaptiveCriterion", &AttributeFiltersPybind::getAdaptiveCriterion, "criterion"_a, "delta"_a,
-             "Expand a dense boolean criterion by an altitude ancestor/descendant delta.")
-        .def("getAdaptiveCriterionByDepth", &AttributeFiltersPybind::getAdaptiveCriterionByDepth, "criterion"_a, "depthDelta"_a,
-             "Expand a dense boolean criterion by a topological depth stability window.");
+            "attr"_a, "selection"_a, "score_policy"_a, "Build a contour-valued image from extinction values.");
 }
 
 /**
@@ -99,29 +197,29 @@ Returned images are 2D NumPy arrays on the original image domain.)doc")
  */
 void initDepthStableRegionComputer(py::module_& m) {
     py::class_<DepthStableRegionComputerPybind>(m, "DepthStableRegionComputer", py::module_local(false),
-                                                R"doc(Topological depth-stability helper over a weighted morphological tree.
+                                                R"doc(Topological depth-stability helper over a valued morphological tree.
 
 The optional attribute array must be 1D `np.float32` or `np.float64`,
 C-contiguous, and indexed by dense internal `NodeId`. Without an explicit
 attribute, the helper computes topology-only AREA internally. The reported
 numeric score is variation; lower finite values are more stable. Result getters
-require a successful computeByDepth call.)doc")
-        .def(py::init<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>>(), "tree"_a, "Create a depth-stability helper using topology-only AREA.")
-        .def(py::init<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, py::array>(), "tree"_a, "attribute"_a,
+require a successful `compute_by_depth` call.)doc")
+        .def(py::init<std::shared_ptr<PythonValuedMorphologicalTree>>(), "tree"_a, "Create a depth-stability helper using topology-only AREA.")
+        .def(py::init<std::shared_ptr<PythonValuedMorphologicalTree>, py::array>(), "tree"_a, "attribute"_a,
              "Create a depth-stability helper from a node-indexed increasing attribute buffer.")
-        .def("computeByDepth", &DepthStableRegionComputerPybind::computeByDepth, "depthDelta"_a, "Return a dense uint8 mask of strict local variation minima.")
-        .def("getVariation", &DepthStableRegionComputerPybind::getVariation, "nodeId"_a, "Return the variation score for one node after computeByDepth.")
-        .def("getVariations", &DepthStableRegionComputerPybind::getVariations, "Return the dense variation array after computeByDepth.")
-        .def("nodeWithMinimumVariationInWindow", &DepthStableRegionComputerPybind::nodeWithMinimumVariationInWindow, "nodeId"_a,
+        .def("compute_by_depth", &DepthStableRegionComputerPybind::computeByDepth, "depth_window_radius"_a, "Return a dense uint8 mask of strict local variation minima.")
+        .def("get_variation", &DepthStableRegionComputerPybind::getVariation, "node_id"_a, "Return the variation score for one node after `compute_by_depth`.")
+        .def("get_variations", &DepthStableRegionComputerPybind::getVariations, "Return the dense variation array after `compute_by_depth`.")
+        .def("node_with_minimum_variation_in_window", &DepthStableRegionComputerPybind::nodeWithMinimumVariationInWindow, "node_id"_a,
              "Return the node with minimum finite variation in the current depth window.")
-        .def("ascendantInStabilityWindow", &DepthStableRegionComputerPybind::ascendantInStabilityWindow, "nodeId"_a,
-             "Return the ascendant used in the current depth window.")
-        .def("descendantInStabilityWindow", &DepthStableRegionComputerPybind::descendantInStabilityWindow, "nodeId"_a,
+        .def("ancestor_in_stability_window", &DepthStableRegionComputerPybind::ancestorInStabilityWindow, "node_id"_a,
+             "Return the ancestor used in the current depth window.")
+        .def("descendant_in_stability_window", &DepthStableRegionComputerPybind::descendantInStabilityWindow, "node_id"_a,
              "Return the descendant used in the current depth window.")
-        .def("getNumNodes", &DepthStableRegionComputerPybind::getNumNodes, "Return the number of nodes selected by the last computeByDepth call.")
-        .def("setMaxVariation", &DepthStableRegionComputerPybind::setMaxVariation, "value"_a, "Set the maximum accepted variation value.")
-        .def("setMinAttribute", &DepthStableRegionComputerPybind::setMinAttribute, "value"_a, "Set the lower accepted attribute bound.")
-        .def("setMaxAttribute", &DepthStableRegionComputerPybind::setMaxAttribute, "value"_a, "Set the upper accepted attribute bound.");
+        .def("num_nodes", &DepthStableRegionComputerPybind::numNodes, "Return the number of nodes selected by the last `compute_by_depth` call.")
+        .def("set_max_variation", &DepthStableRegionComputerPybind::setMaxVariation, "value"_a, "Set the maximum accepted variation value.")
+        .def("set_min_attribute", &DepthStableRegionComputerPybind::setMinAttribute, "value"_a, "Set the lower accepted attribute bound.")
+        .def("set_max_attribute", &DepthStableRegionComputerPybind::setMaxAttribute, "value"_a, "Set the upper accepted attribute bound.");
 }
 
 /**
@@ -131,15 +229,15 @@ require a successful computeByDepth call.)doc")
  */
 void initExtinctionValues(py::module_& m) {
     py::class_<ExtinctionValuesPybind>(m, "ExtinctionValues", py::module_local(false),
-                                       R"doc(Extinction value utilities over a weighted morphological tree.
+                                       R"doc(Extinction value utilities over a valued morphological tree.
 
 This class requires a globally monotone altitude-order capability, which the
 standard max-tree and min-tree producers provide. The constructor attribute
 array must be 1D `np.float32` or `np.float64`, C-contiguous, and indexed by
 dense internal `NodeId`. The dominant extremum is reported with
-`numpy.finfo(dtype).max`/`std::numeric_limits<Real>::max()`. The `contourMap`
+`numpy.finfo(dtype).max`/`std::numeric_limits<Real>::max()`. The `contour_map`
 method returns an image-domain contour visualization; use
-`computeFormalSaliencyEdgeMap` for the persistence-based hierarchical-watershed
+`compute_formal_saliency_edge_map` for the persistence-based hierarchical-watershed
 QFZ saliency projection.
 
 Primary extinction reference: Alexandre Gonçalves Silva and Roberto de Alencar
@@ -150,34 +248,34 @@ projection follows Section 8.1 of Jean Cousty, Laurent Najman, Yukiko Kenmochi,
 and Silvio Guimarães, "Hierarchical segmentations with graphs: quasi-flat zones,
 minimum spanning trees, and saliency maps," Journal of Mathematical Imaging and
 Vision 60(4):479-502, 2018, https://doi.org/10.1007/s10851-017-0768-7.)doc")
-        .def(py::init<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, py::array>(), "tree"_a, "attribute"_a,
+        .def(py::init<std::shared_ptr<PythonValuedMorphologicalTree>, py::array>(), "tree"_a, "attribute"_a,
              "Compute extinction values from a node-indexed attribute buffer.")
         .def("filtering", &ExtinctionValuesPybind::filtering, "selection"_a, "Reconstruct an image by applying an extinction selection policy.")
-        .def("contourMap", &ExtinctionValuesPybind::contourMap, "selection"_a, "scorePolicy"_a,
+        .def("contour_map", &ExtinctionValuesPybind::contourMap, "selection"_a, "score_policy"_a,
              "Return a 2D contour visualization from an extinction selection policy.")
-        .def("getExtinctionValueAttribute", &ExtinctionValuesPybind::getExtinctionValueAttribute,
+        .def("get_extinction_value_attribute", &ExtinctionValuesPybind::getExtinctionValueAttribute,
              R"doc(Return the dense node extinction attribute induced by extinction records.
 
 Each regional-extremum leaf receives its raw extinction value and every non-leaf
 node receives the maximum extinction value among the extrema contained in its
 subtree. The result is compatible with
-`HierarchySaliencyMap.computeSaliencyEdgeMap`.)doc")
-        .def("computeRankedExtinctionValueAttribute", &ExtinctionValuesPybind::computeRankedExtinctionValueAttribute,
+`HierarchySaliencyMap.compute_saliency_edge_map`.)doc")
+        .def("compute_ranked_extinction_value_attribute", &ExtinctionValuesPybind::computeRankedExtinctionValueAttribute,
              "Return dense non-negative integer ranks for the extinction-value attribute.")
-        .def("computeFormalSaliencyEdgeMap", &ExtinctionValuesPybind::computeFormalSaliencyEdgeMap, "radius"_a = py::none(), "ranked"_a = false,
+        .def("compute_formal_saliency_edge_map", &ExtinctionValuesPybind::computeFormalSaliencyEdgeMap, "radius"_a = py::none(), "ranked"_a = false,
              R"doc(Return the edge-indexed hierarchical-watershed saliency map induced by extinction.
 
 This method follows the Cousty persistence construction: it builds an
 altitude-ordered MST/BPTAO, assigns each binary merge the minimum of its two
 max-descendant extinction values, and returns the full-graph QFZ saliency map.
 Set `ranked=True` for the canonical dense edge scale.)doc")
-        .def("computeMonotoneExtinctionProjection", &ExtinctionValuesPybind::computeMonotoneExtinctionProjection, "radius"_a = py::none(), "ranked"_a = false,
+        .def("compute_monotone_extinction_projection", &ExtinctionValuesPybind::computeMonotoneExtinctionProjection, "radius"_a = py::none(), "ranked"_a = false,
              R"doc(Project the max-propagated extinction node attribute directly by LCA.
 
-This method preserves the former `computeFormalSaliencyEdgeMap` behavior for
+This method preserves the former `compute_formal_saliency_edge_map` behavior for
 experiments that intentionally use the monotone node valuation. It is not the
 Cousty hierarchical-watershed persistence construction.)doc")
-        .def("getRegionalExtrema", &ExtinctionValuesPybind::getRegionalExtremaPy, "Return extinction tuples as (leafNodeId, cutoffNodeId, value).");
+        .def("get_regional_extrema", &ExtinctionValuesPybind::getRegionalExtremaPy, "Return extinction tuples as (leaf_node_id, cutoff_node_id, value).");
 }
 
 /**
@@ -187,21 +285,21 @@ Cousty hierarchical-watershed persistence construction.)doc")
  */
 void initUltimateAttributeOpening(py::module_& m) {
     py::class_<UltimateAttributeOpeningPybind>(m, "UltimateAttributeOpening", py::module_local(false),
-                                               R"doc(Ultimate Attribute Opening over a weighted morphological tree.
+                                               R"doc(Ultimate Attribute Opening over a valued morphological tree.
 
 The constructor attribute array must be 1D `np.float32` or `np.float64`,
 C-contiguous, and indexed by dense internal `NodeId`. Call `execute` before
 reading output images.)doc")
-        .def(py::init<std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>>, py::array>(), "tree"_a, "attr"_a,
-             "Create a UAO computation from a weighted tree and increasing attribute buffer.")
-        .def("execute", &UltimateAttributeOpeningPybind::execute, "maxCriterion"_a, "Run UAO using all nodes as selectable candidates.")
-        .def("executeWithMSER", &UltimateAttributeOpeningPybind::executeWithMSER, "maxCriterion"_a, "deltaMSER"_a,
+        .def(py::init<std::shared_ptr<PythonValuedMorphologicalTree>, py::array>(), "tree"_a, "attr"_a,
+             "Create a UAO computation from a valued tree and increasing attribute buffer.")
+        .def("execute", &UltimateAttributeOpeningPybind::execute, "maximum_attribute_threshold"_a, "Run UAO using all nodes as selectable candidates.")
+        .def("execute_with_mser", &UltimateAttributeOpeningPybind::executeWithMSER, "maximum_attribute_threshold"_a, "altitude_window_radius"_a,
              "Run UAO using an MSER-derived node-selection mask.")
-        .def("executeWithDepthStability", &UltimateAttributeOpeningPybind::executeWithDepthStability, "maxCriterion"_a, "depthDelta"_a,
+        .def("execute_with_depth_stability", &UltimateAttributeOpeningPybind::executeWithDepthStability, "maximum_attribute_threshold"_a, "depth_window_radius"_a,
              "Run UAO using a depth-stability node-selection mask.")
-        .def("getMaxContrastImage", &UltimateAttributeOpeningPybind::getMaxContrastImage, "Return the 2D uint8 maximum-contrast image.")
-        .def("getAssociatedImage", &UltimateAttributeOpeningPybind::getAssociatedImage, "Return the 2D int32 associated attribute-index image.")
-        .def("getAssociatedColoredImage", &UltimateAttributeOpeningPybind::getAssociatedColorImage,
+        .def("get_max_contrast_image", &UltimateAttributeOpeningPybind::getMaxContrastImage, "Return the 2D uint8 maximum-contrast image.")
+        .def("get_associated_image", &UltimateAttributeOpeningPybind::getAssociatedImage, "Return the 2D int32 associated attribute-index image.")
+        .def("get_associated_colored_image", &UltimateAttributeOpeningPybind::getAssociatedColorImage,
              "Return a uint8 color rendering of the associated-index image.");
 }
 

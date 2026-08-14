@@ -16,42 +16,42 @@ namespace mmcfilters::sdrt::detail {
 
 /** @brief Owns reusable candidate preparation data shared by both residual-tree modes. */
 struct ResidualTreeCandidateContext {
-    /** @brief Stores the boundary pixel marks. */
+    /** @brief Boundary pixel marks. */
     GenerationStampSet boundaryPixelMarks;
-    /** @brief Stores the boundary owner marks. */
-    GenerationStampSet boundaryOwnerMarks;
-    /** @brief Stores the support owner marks. */
-    GenerationStampSet supportOwnerMarks;
-    /** @brief Stores the boundary owners. */
-    std::vector<NodeId> boundaryOwners;
-    /** @brief Stores the boundary pixels. */
-    std::vector<NodeId> boundaryPixels;
-    /** @brief Stores the support pixels. */
-    std::span<const NodeId> supportPixels;
-    /** @brief Stores the support owners. */
-    std::vector<NodeId> supportOwners;
-    /** @brief Stores the flat-zone representative marks. */
+    /** @brief Boundary smallest node marks. */
+    GenerationStampSet boundarySmallestNodeMarks;
+    /** @brief Support smallest node marks. */
+    GenerationStampSet supportSmallestNodeMarks;
+    /** @brief Dense node identifier of the boundary smallest nodes. */
+    std::vector<NodeId> boundarySmallestNodes;
+    /** @brief Pixel identifier of the boundary pixels. */
+    std::vector<PixelId> boundaryPixels;
+    /** @brief Pixel identifier of the support pixels. */
+    std::span<const PixelId> supportPixels;
+    /** @brief Dense node identifier of the support smallest nodes. */
+    std::vector<NodeId> supportSmallestNodes;
+    /** @brief Flat-zone representative marks. */
     GenerationStampSet flatZoneRepresentativeMarks;
-    /** @brief Stores the flat-zone representatives selected for merging. */
-    std::vector<NodeId> flatZoneMergeRepresentatives;
-    /** @brief Stores the selected flat-zone representative. */
-    NodeId flatZoneRepresentative = InvalidNode;
-    /** @brief Stores the dual extremal owner. */
-    NodeId dualExtremalOwner = InvalidNode;
-    /** @brief Stores the whole support owner. */
-    NodeId wholeSupportOwner = InvalidNode;
+    /** @brief Pixel identifier of the flat-zone representatives selected for merging. */
+    std::vector<PixelId> flatZoneMergeRepresentatives;
+    /** @brief Pixel identifier of the selected flat-zone representative. */
+    PixelId flatZoneRepresentative = InvalidPixel;
+    /** @brief Dense identifier of the dual extremal smallest node. */
+    NodeId dualExtremalSmallestNode = InvalidNode;
+    /** @brief Dense identifier of the whole support smallest node. */
+    NodeId wholeSupportSmallestNode = InvalidNode;
 
     /**
      * @brief Constructs a `ResidualTreeCandidateContext` instance.
      *
-     * @param numPixels Num pixels used by the operation.
-     * @param maxNodeSlots Max node slots used by the operation.
+     * @param numPixels Num pixels.
+     * @param maxNodeSlots Max node slots.
      */
     ResidualTreeCandidateContext(std::size_t numPixels, std::size_t maxNodeSlots)
-        : boundaryPixelMarks(numPixels), boundaryOwnerMarks(maxNodeSlots), supportOwnerMarks(maxNodeSlots), flatZoneRepresentativeMarks(numPixels) {
-        boundaryOwners.reserve(32);
+        : boundaryPixelMarks(numPixels), boundarySmallestNodeMarks(maxNodeSlots), supportSmallestNodeMarks(maxNodeSlots), flatZoneRepresentativeMarks(numPixels) {
+        boundarySmallestNodes.reserve(32);
         boundaryPixels.reserve(64);
-        supportOwners.reserve(8);
+        supportSmallestNodes.reserve(8);
         flatZoneMergeRepresentatives.reserve(8);
     }
 };

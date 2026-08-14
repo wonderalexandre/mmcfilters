@@ -25,9 +25,9 @@ struct ContourTraceDeltaStore {
      * @brief Offset and length of one node slice in a flat value vector.
      */
     struct Span {
-        /** @brief Stores the offset. */
+        /** @brief Offset. */
         uint32_t offset = 0;
-        /** @brief Stores the size. */
+        /** @brief Size. */
         uint32_t size = 0;
     };
 
@@ -50,7 +50,7 @@ struct ContourTraceDeltaStore {
     /**
      * @brief Returns read-only local boundary-edge additions for node.
      *
-     * @param node Node identifier used by the operation.
+     * @param node Node identifier.
      * @return Read-only local boundary-edge additions for `node`.
      *
      */
@@ -65,7 +65,7 @@ struct ContourTraceDeltaStore {
     /**
      * @brief Returns read-only local boundary-edge removals for node.
      *
-     * @param node Node identifier used by the operation.
+     * @param node Node identifier.
      * @return Read-only local boundary-edge removals for `node`.
      *
      */
@@ -82,7 +82,7 @@ struct ContourTraceDeltaStore {
      *
      * @param additions Values added to the local representation.
      * @param removals Values removed from the local representation.
-     * @param numPackedEdges Number represented by `numPackedEdges`.
+     * @param numPackedEdges Number.
      * @return The resulting persistent compact store from transient edge lists.
      */
     static ContourTraceDeltaStore fromPendingEdgeLists(const PendingPixelLists& additions, const PendingPixelLists& removals, int numPackedEdges) {
@@ -105,7 +105,7 @@ struct ContourTraceDeltaStore {
      * @brief Appends one node contribution to the compact delta storage.
      *
      * @param lists Per-node lists that store the accumulated delta entries.
-     * @param node Node identifier used by the operation.
+     * @param node Node identifier.
      * @param values Values read or written by the operation.
      * @param span Per-node span metadata written for the compact storage.
      * @param edgeMark Generation-mark buffer used to avoid revisiting edges.
@@ -136,7 +136,7 @@ struct ContourTraceDeltaStore {
     /**
      * @brief Checks and converts u32.
      *
-     * @param value Value used by the operation.
+     * @param value Value.
      * @param context Operation name used in diagnostics.
      * @return Value converted to `uint32_t` after range validation.
      */

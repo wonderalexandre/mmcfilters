@@ -26,12 +26,12 @@ namespace mmcfilters::detail {
  * convention. Dependency reuse is only valid in the internal node-id space.
  */
 template <std::floating_point Real = float> struct ComputedAttributeViewT {
-    /** @brief Stores the first. */
+    /** @brief First. */
     const AttributeNames* first = nullptr;
-    /** @brief Stores the second. */
+    /** @brief Second. */
     const Real* second = nullptr;
-    /** @brief Stores the node identifier space. */
-    NodeIdSpace nodeIdSpace = NodeIdSpace::MORPHOLOGICAL_TREE;
+    /** @brief Dense node identifier of the node identifier space. */
+    NodeIdSpace nodeIdSpace = NodeIdSpace::MorphologicalTree;
 
     /**
      * @brief Returns whether the view points to a valid layout/buffer pair.
@@ -67,7 +67,7 @@ template <std::floating_point Real = float> struct ComputedAttributeViewT {
  *
  * The cache is a detail-only mechanism used to share intermediate buffers
  * materialized by `AttributePipeline` and the topology backend. Stored values
- * must remain in `NodeIdSpace::MORPHOLOGICAL_TREE` to be reusable as internal
+ * must remain in `NodeIdSpace::MorphologicalTree` to be reusable as internal
  * dependencies.
  */
 template <std::floating_point Real> using DependencyMapT = std::unordered_map<Attribute, ComputedAttributeViewT<Real>>;
@@ -108,7 +108,7 @@ inline bool attributeSetContainsAll(const AttributeNames* names, const std::vect
  * @return True if a cached result can be reused as an internal dependency; otherwise false.
  */
 template <std::floating_point Real> inline bool isReusableDependencyData(const ComputedAttributeViewT<Real>& computed, const std::vector<Attribute>& attrs) {
-    return computed.nodeIdSpace == NodeIdSpace::MORPHOLOGICAL_TREE && computed.isValid() && attributeSetContainsAll(computed.first, attrs);
+    return computed.nodeIdSpace == NodeIdSpace::MorphologicalTree && computed.isValid() && attributeSetContainsAll(computed.first, attrs);
 }
 
 /**
@@ -127,7 +127,7 @@ template <std::floating_point Real> inline void registerComputedAttributes(Depen
 /**
  * @brief Moves one owned result into the local arena and registers its views.
  *
- * @param ownedResults Destination represented by `ownedResults`.
+ * @param ownedResults Destination.
  * @param available Available computed-attribute views.
  * @param computed Flag controlling computed.
  */
@@ -141,11 +141,11 @@ inline void stashComputedAttributes(OwnedComputedResultsT<Real>& ownedResults, D
  * @brief Copies scalar attributes from one computed result into another
  * layout/buffer.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param source Source object or value.
  * @param attrs Attributes requested by the operation.
- * @param targetNames Destination represented by `targetNames`.
- * @param targetBuffer Destination represented by `targetBuffer`.
+ * @param targetNames Destination.
+ * @param targetBuffer Destination.
  */
 template <std::floating_point Real>
 inline void copyAttributesIntoBuffer(const MorphologicalTree& tree, const ComputedAttributeViewT<Real>& source, const std::vector<Attribute>& attrs,
@@ -154,7 +154,7 @@ inline void copyAttributesIntoBuffer(const MorphologicalTree& tree, const Comput
         throw std::runtime_error("Attribute dependency buffer is not available in MorphologicalTree node-id space.");
     }
 
-    const int numNodes = tree.getNumInternalNodeSlots();
+    const int numNodes = tree.numInternalNodeSlots();
     for (int nodeIndex = 0; nodeIndex < numNodes; ++nodeIndex) {
         for (const Attribute attr : attrs) {
             targetBuffer[targetNames.linearIndex(nodeIndex, attr)] = source.second[source.first->linearIndex(nodeIndex, attr)];

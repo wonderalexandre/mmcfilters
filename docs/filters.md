@@ -10,10 +10,10 @@ MSER denotes maximally stable extremal regions.
 
 | Need | Operator |
 | --- | --- |
-| reconstruct from a keep/reject criterion | `AttributeFilters` direct or subtractive rule |
+| reconstruct from explicit keep/reject decisions | `NodePreservationMask` with a direct or subtractive filter |
 | remove complete branches by an attribute threshold | pruning-min or pruning-max rule |
-| adapt a criterion with altitude stability | MSER-assisted filtering |
-| adapt a criterion by a number of tree edges | depth stability |
+| adjust preservation decisions with altitude stability | altitude-stability adjustment |
+| adjust preservation decisions by a number of tree edges | depth-stability adjustment |
 | rank and select component-tree extrema | `ExtinctionValues` |
 | obtain the strongest response over an attribute scale | `UltimateAttributeOpening` |
 
@@ -22,7 +22,7 @@ MSER denotes maximally stable extremal regions.
 The filtering layer reconstructs images from dense internal-node data:
 
 - buffers use internal `NodeId` indexing;
-- their length is `tree.getNumInternalNodeSlots()`;
+- their length is `tree.numInternalNodeSlots()`;
 - dead slots remain present, while algorithms traverse live nodes;
 - image outputs use the tree's regular 2D domain;
 - helper objects capture the topology mutation version and reject use after a
@@ -34,7 +34,7 @@ Expected C++ buffers are:
 | Input | Element type | Shape |
 | --- | --- | --- |
 | attribute | floating point | one value per internal node slot |
-| criterion | `bool` | one value per internal node slot |
+| node-preservation mask | `bool` | one decision per internal node slot; `true` preserves |
 | score | `float` | one value per internal node slot |
 | Ultimate Attribute Opening (UAO) selection | byte/boolean | one value per internal node slot |
 
@@ -43,15 +43,15 @@ Python attributes must be one-dimensional C-contiguous `np.float32` or
 matrix is usually not contiguous; copy it or compute the scalar attribute
 directly.
 
-Use the owning `WeightedMorphologicalTree<T>` when an operator needs topology
+Use the owning `ValuedMorphologicalTree<T>` when an operator needs topology
 and altitude state, including Python bindings, image reconstruction, MSER, or
 `executeWithMSER`. Read-only C++ filtering rules can also use
-`WeightedTreeView<T>` when the caller owns the altitude buffer.
+`ValuedMorphologicalTreeView<T>` when the caller owns the altitude buffer.
 
 ## Attribute filters
 
-`AttributeFilters<T>` groups criterion- and threshold-based reconstruction
-rules:
+`AttributeFilters<T>` groups pruning reconstruction from either an explicit
+`NodePreservationMask` or a node-attribute threshold:
 
 ```cpp
 #include <mmcfilters/attributes/Attributes.hpp>
@@ -59,16 +59,16 @@ rules:
 
 using namespace mmcfilters;
 
-auto boxHeight = AttributeComputation::computeSingleAttribute(
-    weightedTree,
-    BOX_HEIGHT);
+auto boundingBoxHeight = AttributeComputation::computeSingleAttribute(
+    valuedTree,
+    BoundingBoxHeight);
 
-AttributeFilters<std::uint8_t> filters(weightedTree);
+AttributeFilters<std::uint8_t> filters(valuedTree);
 auto prunedMin = filters.filteringByPruningMin(
-    boxHeight.values().data(),
+    boundingBoxHeight.values().data(),
     2.0f);
 auto prunedMax = filters.filteringByPruningMax(
-    boxHeight.values().data(),
+    boundingBoxHeight.values().data(),
     2.0f);
 ```
 
@@ -78,54 +78,55 @@ before passing it to a filter.
 
 ### Reconstruction rules
 
-- **Direct:** accepted nodes use their altitude; rejected nodes inherit the
-  filtered parent level.
-- **Subtractive:** accepted nodes add their altitude residue to the propagated
-  parent level; rejected nodes inherit the parent level.
-- **Subtractive score:** each residue is multiplied by a dense score; the output
-  is a float image.
+- **Direct:** `DirectAttributeFilter` accepts a `NodePreservationMask`; preserved
+  nodes use their altitude and rejected nodes inherit the reconstructed parent
+  altitude. The root must be preserved.
+- **Hard subtractive:** `HardSubtractiveAttributeFilter` independently gates
+  every zero-baseline node residue, including the root residue, with a
+  `NodePreservationMask`. Integral-altitude trees produce a signed image.
+- **Soft subtractive:** `SoftSubtractiveAttributeFilter` multiplies every
+  zero-baseline node residue by a finite dense score in `[0, 1]`; the output has
+  the score dtype.
 - **Pruning-min:** accepted branches remain traversable and rejected subtrees
   follow the pruning-min reconstruction convention.
 - **Pruning-max:** rejected subtrees are detected bottom-up and follow the
   pruning-max reconstruction convention.
 
-Criterion overloads receive a keep/reject mask. Threshold overloads derive that
-mask from one node attribute and a scalar threshold.
+`NodePreservationMask` uses `true` for preservation. `NodePruningMask` uses
+`true` for pruning; convert between them only with `toNodePruningMask(...)` or
+`toNodePreservationMask(...)`.
 
-Static overloads write into caller-owned output images and are useful when an
-application wants to reuse storage:
+Direct reconstruction is separate from subtractive residue modulation:
 
 ```cpp
-std::vector<bool> keep(tree.getNumInternalNodeSlots(), true);
-auto output = ImageUInt8::create(
-    tree.getNumRowsOfGridDomain2D(),
-    tree.getNumColsOfGridDomain2D());
+NodePreservationMask keep(
+    valuedTree.topology().numInternalNodeSlots(),
+    true);
 
-AttributeFilters<std::uint8_t>::filteringByDirectRule(
-    weightedTree,
-    keep,
-    output);
+auto direct = DirectAttributeFilter<std::uint8_t>(valuedTree)
+                  .applyDirectAttributeFilter(keep);
+auto subtractive = HardSubtractiveAttributeFilter<std::uint8_t>(valuedTree)
+                       .applyHardSubtractiveAttributeFilter(keep);
 ```
 
 ## Stability
 
 ### Altitude-based MSER stability
 
-`getAdaptiveCriterion(...)` adjusts a criterion using an MSER-style altitude
-window. It requires a `WeightedMorphologicalTree<T>` with a globally monotone
-altitude order. Standard max-tree and min-tree factories provide this
-capability.
+`adjustNodePreservationMaskByAltitudeStability(...)` relocates the rejections
+in a `NodePreservationMask` using an MSER-style altitude window. It requires a
+`ValuedMorphologicalTree<T>` with a globally monotone altitude order. Standard
+max-tree and min-tree factories provide this capability.
 
 ```cpp
-AttributeFilters<std::uint8_t> filters(weightedTree);
-std::vector<bool> keep = /* one value per internal node slot */;
+std::vector<float> area = /* one value per internal node slot */;
+NodePreservationMask keep = computeNodePreservationMask<float>(area, 4.0f);
 
-std::vector<bool> adaptive = filters.getAdaptiveCriterion(
-    keep,
-    AltitudeDiff<std::uint8_t>{2});
+NodePreservationMask adjusted = adjustNodePreservationMaskByAltitudeStability(
+    valuedTree, keep, AltitudeDifference<std::uint8_t>{2});
 ```
 
-`MSERComputer<T, Real>` pairs each node with altitude-delta ancestor and
+`MSERComputer<T, Real>` pairs each node with altitude-window ancestor and
 descendant samples, computes variation from an increasing attribute, and
 selects strict local minima within configured bounds. If no attribute is
 provided, it computes `AREA`. Missing windows produce `NaN` and are not
@@ -134,12 +135,12 @@ selected.
 The variation is
 
 ```text
-variation(x) = (attr(asc_delta(x)) - attr(desc_delta(x))) / attr(x)
+variation(x) = (attr(ancestor(x)) - attr(descendant(x))) / attr(x)
 ```
 
-Result getters require a successful computation. A `WeightedTreeView<T>` can
+Result getters require a successful computation. A `ValuedMorphologicalTreeView<T>` can
 run ordinary reconstruction rules but cannot run the MSER path that requires an
-owning `WeightedMorphologicalTree<T>`.
+owning `ValuedMorphologicalTree<T>`.
 
 ### Depth stability
 
@@ -147,15 +148,20 @@ Use depth stability on hierarchies without a global altitude direction or when
 the window should represent a number of parent/child edges:
 
 ```cpp
-std::vector<bool> adaptive = filters.getAdaptiveCriterionByDepth(
-    keep,
-    2);
+NodePreservationMask adjusted = adjustNodePreservationMaskByDepthStability(
+    valuedTree, keep, 2);
 ```
 
-`DepthStableRegionComputer<Real>` climbs exactly `depthDelta` parent links and
+`DepthStableRegionComputer<Real>` climbs exactly `depthWindowRadius` parent links and
 selects a descendant at the same depth. When several descendants qualify, it
 uses the largest `AREA`, then the smallest `NodeId`. This is a topological
 stability operator, not altitude-based MSER stability.
+
+When either window is incomplete, the default
+`IncompleteStabilityWindowPolicy::PreserveInputDecision` retains the received
+decision at that node. This does not necessarily preserve the node: an input
+rejection remains a rejection. Attribute thresholding is intentionally a
+separate operation from stability adjustment.
 
 ## Extinction values
 
@@ -166,8 +172,8 @@ attribute. It requires a globally monotone altitude order. `Real` defaults to
 ```cpp
 #include <mmcfilters/filters/ExtinctionValues.hpp>
 
-auto area = AttributeComputation::computeSingleAttribute(weightedTree, AREA);
-ExtinctionValues<std::uint8_t> extinction(weightedTree, area.values());
+auto area = AttributeComputation::computeSingleAttribute(valuedTree, AREA);
+ExtinctionValues<std::uint8_t> extinction(valuedTree, area.values());
 
 auto strongest = ExtinctionSelectionPolicy<float>::byTopK(8);
 auto aboveThreshold =
@@ -211,23 +217,24 @@ produces:
 ```cpp
 #include <mmcfilters/filters/UltimateAttributeOpening.hpp>
 
-auto boxHeight = AttributeComputation::computeSingleAttribute(
-    weightedTree,
-    BOX_HEIGHT);
+auto boundingBoxHeight = AttributeComputation::computeSingleAttribute(
+    valuedTree,
+    BoundingBoxHeight);
 
 UltimateAttributeOpening<std::uint8_t> uao(
-    weightedTree,
-    boxHeight.values());
-uao.execute(maxCriterion);
+    valuedTree,
+    boundingBoxHeight.values());
+uao.execute(maximumAttributeThreshold);
 
 auto contrast = uao.getMaxContrastImage();
 auto associated = uao.getAssociatedImage();
 ```
 
-`execute(maxCriterion)` considers all live nodes.
-`execute(maxCriterion, selectedForFiltering)` accepts an explicit dense mask.
+`execute(maximumAttributeThreshold)` considers all live nodes.
+`execute(maximumAttributeThreshold, selectedForFiltering)` accepts an explicit
+dense UAO primitive-selection mask; it is not a preservation/pruning mask.
 `executeWithMSER(...)` builds that mask with altitude-based MSER stability and
-requires `WeightedMorphologicalTree<T>`.
+requires `ValuedMorphologicalTree<T>`.
 `executeWithDepthStability(...)` uses topological depth stability.
 
 Contrasts use the altitude type `T`. Choose a wider or floating-point altitude
@@ -238,26 +245,28 @@ type in C++ when the contrast range requires it.
 Python uses the same dense-buffer contracts:
 
 ```python
-area = mmcfilters.Attribute.computeSingleTopologyAttribute(
+area = mmcfilters.Attribute.compute_single_topology_attribute(
     tree,
     mmcfilters.Attribute.AREA,
 )
-box_height = mmcfilters.Attribute.computeSingleTopologyAttribute(
+box_height = mmcfilters.Attribute.compute_single_topology_attribute(
     tree,
-    mmcfilters.Attribute.BOX_HEIGHT,
+    mmcfilters.Attribute.BOUNDING_BOX_HEIGHT,
 )
 
 filters = mmcfilters.AttributeFilters(tree)
-keep = (area >= 4.0).tolist()
-direct = filters.filteringDirectRule(keep)
-pruned = filters.filteringByPruningMin(box_height, 2.0)
+decisions = (area >= 4.0).tolist()
+decisions[tree.root] = True
+keep = mmcfilters.NodePreservationMask(decisions)
+direct = mmcfilters.DirectAttributeFilter(tree).apply_direct_attribute_filter(keep)
+pruned = filters.filtering_by_pruning_min(box_height, 2.0)
 
 extinction = mmcfilters.ExtinctionValues(tree, area)
-strongest = mmcfilters.ExtinctionSelectionPolicy.byTopK(8)
+strongest = mmcfilters.ExtinctionSelectionPolicy.by_top_k(8)
 filtered = extinction.filtering(strongest)
 
 uao = mmcfilters.UltimateAttributeOpening(tree, box_height)
-uao.execute(maxCriterion=image.shape[0])
+uao.execute(maximum_attribute_threshold=image.shape[0])
 ```
 
 See [Python API](python-api.md) for array and dtype requirements.
@@ -271,7 +280,7 @@ public reads explicitly.
 
 ## Related guides
 
-- [Morphological trees](trees.md): ownership, `NodeId`, altitude, and mutation.
+- [Morphological trees](trees.md): smallest-node mapping, `NodeId`, altitude, and mutation.
 - [Attributes](attributes.md): dense node-indexed input buffers.
 - [Saliency maps](saliency.md): edge-indexed hierarchy operators.
 - [Editing API](editing-api.md): mutation and derived-state lifetime.

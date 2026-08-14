@@ -75,7 +75,7 @@ inline FloatingDType parseFloatingArrayDType(const py::array& array, std::string
 /**
  * @brief Validates adjacency radius.
  *
- * @param radius Neighbourhood radius used by the operation.
+ * @param radius Neighbourhood radius.
  * @param context Operation name used in diagnostics.
  * @return Validated finite adjacency radius.
  */
@@ -97,15 +97,15 @@ inline double requireAdjacencyRadius(double radius, std::string_view context) {
  * @brief Creates a two-dimensional regular-grid adjacency.
  *
  * @param rows Number of rows in the domain.
- * @param cols Number of columns in the domain.
- * @param radius Neighbourhood radius used by the operation.
+ * @param columns Number of columns in the domain.
+ * @param radius Neighbourhood radius.
  * @param context Operation name used in diagnostics.
  * @return Validated two-dimensional regular-grid adjacency.
  */
-inline RegularGridAdjacency2D makeRegularGridAdjacency2D(int rows, int cols, double radius, std::string_view context) {
+inline RegularGridAdjacency2D makeRegularGridAdjacency2D(int rows, int columns, double radius, std::string_view context) {
     const double validatedRadius = requireAdjacencyRadius(radius, context);
     try {
-        return RegularGridAdjacency2D(rows, cols, validatedRadius);
+        return RegularGridAdjacency2D(rows, columns, validatedRadius);
     } catch (const std::invalid_argument& error) {
         throw std::invalid_argument(std::string(context) + ": " + error.what());
     }
@@ -114,7 +114,7 @@ inline RegularGridAdjacency2D makeRegularGridAdjacency2D(int rows, int cols, dou
 /**
  * @brief Validates the shape and contiguity of a one-dimensional array.
  *
- * @param bufferInfo Value buffer represented by `bufferInfo`.
+ * @param bufferInfo Value buffer.
  * @param expectedSize Expected number of values.
  * @param argumentName Argument name included in validation error messages.
  */
@@ -135,14 +135,14 @@ inline void require1DArray(const py::buffer_info& bufferInfo, py::ssize_t expect
  * @brief Validates node attribute array.
  *
  * @param attr Attribute requested by the operation.
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param argumentName Argument name included in validation error messages.
  * @return Image or array produced by the operation.
  */
 template <class Real>
 inline py::array_t<Real, py::array::c_style> requireNodeAttributeArray(py::array attr, const MorphologicalTree& tree, std::string_view argumentName = "attr") {
     const py::buffer_info info = attr.request();
-    require1DArray(info, tree.getNumInternalNodeSlots(), argumentName);
+    require1DArray(info, tree.numInternalNodeSlots(), argumentName);
     if (info.strides[0] != static_cast<py::ssize_t>(sizeof(Real))) {
         throw std::invalid_argument(std::string(argumentName) + " must be C-contiguous.");
     }
@@ -167,11 +167,11 @@ template <class T> inline void requireVectorSize(const std::vector<T>& values, s
 /**
  * @brief Converts to numpy.
  *
- * @param image Image used by the operation.
+ * @param image Image.
  * @return Converted to numpy.
  */
 template <typename PixelType> inline py::array_t<PixelType> toNumpy(ImagePtr<PixelType> image) {
-    int numCols = image->getNumCols();
+    int numColumns = image->getNumColumns();
     int numRows = image->getNumRows();
 
     std::shared_ptr<PixelType[]> buffer = image->rawDataPtr();
@@ -179,10 +179,10 @@ template <typename PixelType> inline py::array_t<PixelType> toNumpy(ImagePtr<Pix
 
     py::capsule free_when_done(new std::shared_ptr<PixelType[]>(bufferCopy), [](void* ptr) { delete reinterpret_cast<std::shared_ptr<PixelType[]>*>(ptr); });
 
-    // 2D shape: (numRows, numCols), row-major strides
+    // 2D shape: (numRows, numColumns), row-major strides
     const py::ssize_t itemsize = sizeof(PixelType);
-    const std::array<py::ssize_t, 2> shape = {static_cast<py::ssize_t>(numRows), static_cast<py::ssize_t>(numCols)};
-    const std::array<py::ssize_t, 2> strides = {static_cast<py::ssize_t>(numCols) * itemsize, itemsize};
+    const std::array<py::ssize_t, 2> shape = {static_cast<py::ssize_t>(numRows), static_cast<py::ssize_t>(numColumns)};
+    const std::array<py::ssize_t, 2> strides = {static_cast<py::ssize_t>(numColumns) * itemsize, itemsize};
 
     py::array_t<PixelType> numpy(shape, strides, buffer.get(), free_when_done);
 
@@ -208,28 +208,15 @@ template <typename Real> inline py::array_t<Real> toNumpyOwned(std::vector<Real>
  *
  * @param buffer Buffer read or written by the operation.
  * @param rows Number of rows in the domain.
- * @param cols Number of columns in the domain.
+ * @param columns Number of columns in the domain.
  * @return NumPy array that owns the transferred two-dimensional buffer.
  */
-template <typename Real> inline py::array_t<Real> toNumpyOwned2D(std::vector<Real>&& buffer, int rows, int cols) {
+template <typename Real> inline py::array_t<Real> toNumpyOwned2D(std::vector<Real>&& buffer, int rows, int columns) {
     auto* owned = new std::vector<Real>(std::move(buffer));
     py::capsule free_when_done(owned, [](void* ptr) { delete reinterpret_cast<std::vector<Real>*>(ptr); });
 
-    return py::array_t<Real>({rows, cols}, {static_cast<py::ssize_t>(sizeof(Real) * cols), static_cast<py::ssize_t>(sizeof(Real))}, owned->data(),
+    return py::array_t<Real>({rows, columns}, {static_cast<py::ssize_t>(sizeof(Real) * columns), static_cast<py::ssize_t>(sizeof(Real))}, owned->data(),
                              free_when_done);
-}
-
-/**
- * @brief Copies a NumPy array into shared C++ storage.
- *
- * @param arr NumPy array to validate and convert.
- * @return Shared storage containing a copy of the array values.
- */
-template <typename Scalar, typename Array> inline std::shared_ptr<Scalar[]> toSharedPtr(const Array& arr) {
-    // Capture the Python object in the deleter so the buffer stays alive.
-    return std::shared_ptr<Scalar[]>(static_cast<Scalar*>(arr.request().ptr), [obj = py::object(arr)](Scalar*) mutable {
-        // Keep the py::object alive until the shared_ptr is destroyed.
-    });
 }
 
 } // namespace mmcfilters::pybind_utils

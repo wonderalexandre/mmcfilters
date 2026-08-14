@@ -2,6 +2,7 @@
 
 #include "../AttributeRegistry.hpp"
 #include "../../trees/MorphologicalTree.hpp"
+#include "../../trees/detail/MorphologicalTreeConstructionContextQueries.hpp"
 
 #include <span>
 #include <stdexcept>
@@ -10,23 +11,22 @@
 namespace mmcfilters::detail {
 
 /**
- * @brief Tests whether unequal directional adjacency needs altitude selection.
+ * @brief Tests whether bitquad projection needs non-root shape polarity.
  *
- * @param tree Tree topology used by the operation.
- * @return True if unequal directional adjacency needs altitude selection; otherwise false.
+ * @param tree Tree topology.
+ * @return True if lower- and upper-shape connectivity differ; otherwise false.
  */
-inline bool directionalAdjacencyNeedsAltitude(const MorphologicalTree& tree) noexcept {
-    const RegularGridAdjacency2D* decreasing = tree.getDecreasingGridAdjacency2D();
-    const RegularGridAdjacency2D* increasing = tree.getIncreasingGridAdjacency2D();
-    return decreasing != nullptr && increasing != nullptr && decreasing->is4connectivity() != increasing->is4connectivity();
+inline bool bitquadProjectionNeedsShapePolarity(const MorphologicalTree& tree) {
+    const auto adjacencies = currentBitquadProjectionAdjacencies(tree);
+    return adjacencies && adjacencies->minAdjacency.is4connectivity() != adjacencies->maxAdjacency.is4connectivity();
 }
 
 /**
  * @brief Validates expanded scalar-attribute requirements before scheduling.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param attributes Attributes requested by the operation.
- * @param altitudeAvailable Altitude or level represented by `altitudeAvailable`.
+ * @param altitudeAvailable Altitude or level.
  * @param context Operation context or diagnostic label.
  */
 inline void validateAttributeCapabilities(const MorphologicalTree& tree, std::span<const Attribute> attributes, bool altitudeAvailable, const char* context) {
@@ -38,30 +38,29 @@ inline void validateAttributeCapabilities(const MorphologicalTree& tree, std::sp
             throw std::invalid_argument(prefix + "a dense node-altitude buffer is required.");
         }
         if (requirements.gridDomain2D && !tree.hasGridDomain2D()) {
-            throw std::invalid_argument(prefix + "a regular 2D proper-part domain is required.");
+            throw std::invalid_argument(prefix + "a regular 2D pixel domain is required.");
         }
-        if (requirements.monotoneAltitudeOrder && tree.getAltitudeOrder() == AltitudeOrder::UNCONSTRAINED) {
+        if (requirements.monotoneAltitudeOrder && tree.nodeAltitudeOrder() == NodeAltitudeOrder::Unconstrained) {
             throw std::invalid_argument(prefix + "a globally monotone altitude order is required.");
         }
-        if (requirements.adjacency == attributes::registry::AttributeAdjacencyRequirement::UNIFORM && !tree.hasUniformGridAdjacency2D()) {
-            throw std::invalid_argument(prefix + "uniform adjacency is required.");
+        const RegularGridAdjacency2D* constructionAdjacency = ::mmcfilters::detail::constructionAdjacency(tree);
+        const auto projectionAdjacencies = currentBitquadProjectionAdjacencies(tree);
+        if (requirements.adjacency == attributes::registry::AttributeAdjacencyRequirement::Uniform && constructionAdjacency == nullptr) {
+            throw std::invalid_argument(prefix + "a shared or saturated construction adjacency is required.");
         }
-        if (requirements.adjacency == attributes::registry::AttributeAdjacencyRequirement::UNIFORM_OR_DIRECTIONAL && !tree.hasUniformGridAdjacency2D() &&
-            !tree.hasDirectionalGridAdjacency2D()) {
-            throw std::invalid_argument(prefix + "uniform or directional adjacency is required.");
+        if (requirements.adjacency == attributes::registry::AttributeAdjacencyRequirement::UniformOrDirectional && constructionAdjacency == nullptr &&
+            !projectionAdjacencies) {
+            throw std::invalid_argument(prefix + "a construction adjacency or topographic convention is required.");
         }
-        if (requirements.altitudeForDirectionalAdjacency && tree.hasDirectionalGridAdjacency2D() && directionalAdjacencyNeedsAltitude(tree) &&
-            !altitudeAvailable) {
-            throw std::invalid_argument(prefix + "altitude is required to select between unequal directional adjacencies.");
+        if (requirements.altitudeForDirectionalAdjacency && bitquadProjectionNeedsShapePolarity(tree) && !altitudeAvailable) {
+            throw std::invalid_argument(prefix + "node altitudes are required to derive lower/upper shape polarity for bitquad connectivity selection.");
         }
         if (requirements.canonical4Or8Adjacency) {
-            const RegularGridAdjacency2D* uniform = tree.getUniformGridAdjacency2D();
-            const RegularGridAdjacency2D* decreasing = tree.getDecreasingGridAdjacency2D();
-            const RegularGridAdjacency2D* increasing = tree.getIncreasingGridAdjacency2D();
-            if ((uniform != nullptr && !uniform->isCanonical4Or8Connectivity()) || (decreasing != nullptr && !decreasing->isCanonical4Or8Connectivity()) ||
-                (increasing != nullptr && !increasing->isCanonical4Or8Connectivity())) {
+            if ((constructionAdjacency != nullptr && !constructionAdjacency->isCanonical4Or8Connectivity()) ||
+                (projectionAdjacencies && (!projectionAdjacencies->minAdjacency.isCanonical4Or8Connectivity() ||
+                                           !projectionAdjacencies->maxAdjacency.isCanonical4Or8Connectivity()))) {
                 throw std::invalid_argument(
-                    prefix + "canonical 4- or 8-connectivity is required; the stored structuring-element adjacency is unsupported by BitQuad formulas.");
+                    prefix + "canonical 4- or 8-connectivity is required; the retained adjacency is unsupported by bitquad formulas.");
             }
         }
     }

@@ -23,16 +23,16 @@ namespace mmcfilters::detail {
 struct PendingPixelLists {
     /** @brief Stores one pending-pixel list entry. */
     struct Entry {
-        /** @brief Stores the value. */
-        int value;
-        /** @brief Stores the next. */
+        /** @brief Pixel identifier of the value. */
+        PixelId value;
+        /** @brief Next. */
         int next;
     };
 
     /**
      * @brief Builds a store for `numNodes` lists with an optional capacity hint.
      *
-     * @param numNodes Number represented by `numNodes`.
+     * @param numNodes Number.
      * @param capacityHint Initial storage reservation hint.
      */
     explicit PendingPixelLists(int numNodes, int capacityHint = 0) : head_(numNodes, -1) {
@@ -44,10 +44,10 @@ struct PendingPixelLists {
     /**
      * @brief Inserts `value` into the list owned by `node`.
      *
-     * @param node Node identifier used by the operation.
-     * @param value Value used by the operation.
+     * @param node Node identifier.
+     * @param value Value.
      */
-    void add(NodeId node, int value) {
+    void add(NodeId node, PixelId value) {
         const int slot = allocate();
         entries_[slot] = Entry{value, head_[node]};
         head_[node] = slot;
@@ -56,10 +56,10 @@ struct PendingPixelLists {
     /**
      * @brief Moves every element of `node` into `out` while recycling the used slots.
      *
-     * @param node Node identifier used by the operation.
+     * @param node Node identifier.
      * @param out Destination receiving the result.
      */
-    void consumeInto(NodeId node, std::vector<int>& out) {
+    void consumeInto(NodeId node, std::vector<PixelId>& out) {
         int idx = head_[node];
         while (idx != -1) {
             const int next = entries_[idx].next;
@@ -77,14 +77,14 @@ struct PendingPixelLists {
      * identifies the current logical set and avoids sorting or allocating a
      * per-node temporary set.
      *
-     * @param node Node identifier used by the operation.
+     * @param node Node identifier.
      * @param out Destination receiving the result.
      * @param pixelMark Generation marks used to deduplicate pixels.
      * @param markGeneration Active pixel-mark generation.
      */
-    void appendUniqueValues(NodeId node, std::vector<int>& out, std::vector<uint16_t>& pixelMark, uint16_t markGeneration) const {
+    void appendUniqueValues(NodeId node, std::vector<PixelId>& out, std::vector<uint16_t>& pixelMark, uint16_t markGeneration) const {
         for (int idx = head_[node]; idx != -1; idx = entries_[idx].next) {
-            const int value = entries_[idx].value;
+            const PixelId value = entries_[idx].value;
             assert(value >= 0 && value < static_cast<int>(pixelMark.size()));
             if (pixelMark[static_cast<std::size_t>(value)] != markGeneration) {
                 pixelMark[static_cast<std::size_t>(value)] = markGeneration;
@@ -126,18 +126,18 @@ struct PendingPixelLists {
     /**
      * @brief Returns an index to the free list.
      *
-     * @param idx Zero-based index used by the operation.
+     * @param idx Zero-based index.
      */
     void recycle(int idx) {
         entries_[idx].next = freeHead_;
         freeHead_ = idx;
     }
 
-    /** @brief Stores the entries. */
+    /** @brief Entries buffer. */
     std::vector<Entry> entries_;
-    /** @brief Stores the head. */
+    /** @brief Head buffer. */
     std::vector<int> head_;
-    /** @brief Stores the free head. */
+    /** @brief Free head. */
     int freeHead_ = -1;
 };
 

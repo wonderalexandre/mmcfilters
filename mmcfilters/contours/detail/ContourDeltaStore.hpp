@@ -19,16 +19,16 @@ struct ContourDeltaStore {
      * @brief Offset and length of one node slice in a flat value vector.
      */
     struct Span {
-        /** @brief Stores the offset. */
+        /** @brief Offset. */
         uint32_t offset = 0;
-        /** @brief Stores the size. */
+        /** @brief Size. */
         uint32_t size = 0;
     };
 
     /// Concatenated compacted local contour additions.
-    std::vector<int> addValues;
+    std::vector<PixelId> addValues;
     /// Concatenated compacted local contour removals.
-    std::vector<int> removeValues;
+    std::vector<PixelId> removeValues;
     /// Per-node spans into `addValues`.
     std::vector<Span> addSpans;
     /// Per-node spans into `removeValues`.
@@ -44,31 +44,31 @@ struct ContourDeltaStore {
     /**
      * @brief Returns read-only local contour additions for node.
      *
-     * @param node Node identifier used by the operation.
+     * @param node Node identifier.
      * @return Read-only local contour additions for `node`.
      *
      */
-    std::span<const int> additions(NodeId node) const {
+    std::span<const PixelId> additions(NodeId node) const {
         const Span& span = addSpans[static_cast<std::size_t>(node)];
         if (span.size == 0) {
             return {};
         }
-        return std::span<const int>(addValues.data() + span.offset, static_cast<std::size_t>(span.size));
+        return std::span<const PixelId>(addValues.data() + span.offset, static_cast<std::size_t>(span.size));
     }
 
     /**
      * @brief Returns read-only local contour removals for node.
      *
-     * @param node Node identifier used by the operation.
+     * @param node Node identifier.
      * @return Read-only local contour removals for `node`.
      *
      */
-    std::span<const int> removals(NodeId node) const {
+    std::span<const PixelId> removals(NodeId node) const {
         const Span& span = removeSpans[static_cast<std::size_t>(node)];
         if (span.size == 0) {
             return {};
         }
-        return std::span<const int>(removeValues.data() + span.offset, static_cast<std::size_t>(span.size));
+        return std::span<const PixelId>(removeValues.data() + span.offset, static_cast<std::size_t>(span.size));
     }
 
     /**
@@ -76,9 +76,9 @@ struct ContourDeltaStore {
      *
      * Each node list is appended once and deduplicated with generation marks.
      *
-     * @param contours Contour data used by the operation.
+     * @param contours Contour data.
      * @param removals Values removed from the local representation.
-     * @param numPixels Number represented by `numPixels`.
+     * @param numPixels Number.
      * @return The resulting persistent compact store from transient extraction lists.
      */
     static ContourDeltaStore fromPendingPixelLists(const PendingPixelLists& contours, const PendingPixelLists& removals, int numPixels) {
@@ -101,13 +101,13 @@ struct ContourDeltaStore {
      * @brief Appends one node contribution to the compact delta storage.
      *
      * @param lists Per-node lists that store the accumulated delta entries.
-     * @param node Node identifier used by the operation.
+     * @param node Node identifier.
      * @param values Values read or written by the operation.
      * @param span Per-node span metadata written for the compact storage.
      * @param pixelMark Generation-mark buffer used to avoid revisiting pixels.
      * @param markGeneration Active mark generation.
      */
-    static void appendCompacted(const PendingPixelLists& lists, NodeId node, std::vector<int>& values, Span& span, std::vector<uint16_t>& pixelMark,
+    static void appendCompacted(const PendingPixelLists& lists, NodeId node, std::vector<PixelId>& values, Span& span, std::vector<uint16_t>& pixelMark,
                                 uint16_t& markGeneration) {
         nextMarkGeneration(pixelMark, markGeneration);
         span.offset = checkedU32(values.size(), "contour delta offset");
@@ -132,7 +132,7 @@ struct ContourDeltaStore {
     /**
      * @brief Checks and converts u32.
      *
-     * @param value Value used by the operation.
+     * @param value Value.
      * @param context Operation name used in diagnostics.
      * @return Value converted to `uint32_t` after range validation.
      */

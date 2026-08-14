@@ -30,12 +30,12 @@ struct ContourSideRequest {
      * @return Contour-side selection mask.
      */
     [[nodiscard]] static ContourSideRequest from(std::span<const Attribute> requestedAttributes) {
-        return {.contourPixels = requestsAttribute(requestedAttributes, CONTOUR_PIXELS),
-                .perimeter = requestsAttribute(requestedAttributes, CONTOUR_PERIMETER),
-                .north = requestsAttribute(requestedAttributes, CONTOUR_SIDE_NORTH),
-                .west = requestsAttribute(requestedAttributes, CONTOUR_SIDE_WEST),
-                .east = requestsAttribute(requestedAttributes, CONTOUR_SIDE_EAST),
-                .south = requestsAttribute(requestedAttributes, CONTOUR_SIDE_SOUTH)};
+        return {.contourPixels = requestsAttribute(requestedAttributes, ContourPixels),
+                .perimeter = requestsAttribute(requestedAttributes, ContourPerimeter),
+                .north = requestsAttribute(requestedAttributes, ContourSideNorth),
+                .west = requestsAttribute(requestedAttributes, ContourSideWest),
+                .east = requestsAttribute(requestedAttributes, ContourSideEast),
+                .south = requestsAttribute(requestedAttributes, ContourSideSouth)};
     }
 };
 
@@ -56,16 +56,16 @@ inline void materializeContourSideAttributes(const AttributeComputeContext<Real>
 
     const int stride = context.attrNames.NUM_ATTRIBUTES;
     const auto offsetOf = [&](Attribute attribute) { return context.attrNames.indexMap.find(attribute)->second; };
-    const int contourPixelsOffset = request.contourPixels ? offsetOf(CONTOUR_PIXELS) : 0;
-    const int perimeterOffset = request.perimeter ? offsetOf(CONTOUR_PERIMETER) : 0;
-    const int northOffset = request.north ? offsetOf(CONTOUR_SIDE_NORTH) : 0;
-    const int westOffset = request.west ? offsetOf(CONTOUR_SIDE_WEST) : 0;
-    const int eastOffset = request.east ? offsetOf(CONTOUR_SIDE_EAST) : 0;
-    const int southOffset = request.south ? offsetOf(CONTOUR_SIDE_SOUTH) : 0;
+    const int contourPixelsOffset = request.contourPixels ? offsetOf(ContourPixels) : 0;
+    const int perimeterOffset = request.perimeter ? offsetOf(ContourPerimeter) : 0;
+    const int northOffset = request.north ? offsetOf(ContourSideNorth) : 0;
+    const int westOffset = request.west ? offsetOf(ContourSideWest) : 0;
+    const int eastOffset = request.east ? offsetOf(ContourSideEast) : 0;
+    const int southOffset = request.south ? offsetOf(ContourSideSouth) : 0;
     const auto outputIndex = [&](NodeId node, int offset) { return static_cast<std::size_t>(node * stride + offset); };
 
     ::mmcfilters::detail::kernel::traversePostOrder(
-        context.tree, context.tree.getRoot(), [](NodeId) {}, [](NodeId, NodeId) {},
+        context.tree, context.tree.root(), [](NodeId) {}, [](NodeId, NodeId) {},
         [&](NodeId node) {
             const ContourSideCounts& counts = sideCounts[static_cast<std::size_t>(node)];
             if (request.contourPixels)
@@ -89,7 +89,7 @@ inline void materializeContourSideAttributes(const AttributeComputeContext<Real>
  * @brief Internal scalar projection for precomputed contour-side buckets.
  *
  * @details
- * `ContourSideCounts` is a local-event storage bucket. This helper is the only
+ * `ContourSideCounts` is a finite-window storage bucket. This helper is the only
  * layer that knows how to translate that bucket into public `CONTOUR_*`
  * scalar attributes, keeping the public computer API expressed in terms of
  * requested attributes and output buffers.
@@ -104,7 +104,7 @@ class ContourSideAttributeMaterialization {
      * tests: callers can compute `ContourSideCounts` once, then write any
      * subset of scalar projections from the same dense node-slot buffer.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @param sideCounts Contour-side counters.
      * @param buffer Buffer read or written by the operation.
      * @param attrNames Layout that maps attributes to buffer columns.
@@ -117,7 +117,7 @@ class ContourSideAttributeMaterialization {
     template <std::floating_point Real>
     static void materializeAttributesFromContourSideCounts(const MorphologicalTree& tree, std::span<const ContourSideCounts> sideCounts, std::span<Real> buffer,
                                                            const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes) {
-        const std::size_t numNodeSlots = static_cast<std::size_t>(tree.getNumInternalNodeSlots());
+        const std::size_t numNodeSlots = static_cast<std::size_t>(tree.numInternalNodeSlots());
         if (sideCounts.size() < numNodeSlots) {
             throw std::invalid_argument("Local-event contour side counts do not cover all tree node slots.");
         }
@@ -133,23 +133,23 @@ class ContourSideAttributeMaterialization {
      * A one-pixel unit support contributes one contour pixel and four exposed
      * sides, one in each cardinal direction.
      *
-     * @param tree Tree topology used by the operation.
-     * @param unitProperParts Proper-part data represented by `unitProperParts`.
+     * @param tree Tree topology.
+     * @param unitPixels Proper-part data.
      * @param buffer Buffer read or written by the operation.
      * @param attrNames Layout that maps attributes to buffer columns.
      * @param requestedAttributes Attributes requested for materialization.
      */
     template <std::floating_point Real>
-    static void materializeUnitContourSideAttributes(const MorphologicalTree& tree, std::span<const NodeId> unitProperParts, std::span<Real> buffer,
+    static void materializeUnitContourSideAttributes(const MorphologicalTree& tree, std::span<const PixelId> unitPixels, std::span<Real> buffer,
                                                      const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes) {
-        requireUnitAttributeBufferShape(tree, unitProperParts, buffer, attrNames);
+        requireUnitAttributeBufferShape(tree, unitPixels, buffer, attrNames);
 
-        const bool computeContourPixels = requestsAttribute(requestedAttributes, CONTOUR_PIXELS);
-        const bool computeContourPerimeter = requestsAttribute(requestedAttributes, CONTOUR_PERIMETER);
-        const bool computeNorth = requestsAttribute(requestedAttributes, CONTOUR_SIDE_NORTH);
-        const bool computeWest = requestsAttribute(requestedAttributes, CONTOUR_SIDE_WEST);
-        const bool computeEast = requestsAttribute(requestedAttributes, CONTOUR_SIDE_EAST);
-        const bool computeSouth = requestsAttribute(requestedAttributes, CONTOUR_SIDE_SOUTH);
+        const bool computeContourPixels = requestsAttribute(requestedAttributes, ContourPixels);
+        const bool computeContourPerimeter = requestsAttribute(requestedAttributes, ContourPerimeter);
+        const bool computeNorth = requestsAttribute(requestedAttributes, ContourSideNorth);
+        const bool computeWest = requestsAttribute(requestedAttributes, ContourSideWest);
+        const bool computeEast = requestsAttribute(requestedAttributes, ContourSideEast);
+        const bool computeSouth = requestsAttribute(requestedAttributes, ContourSideSouth);
 
         const ContourSideCounts singleton{
             .contourPixels = 1,
@@ -160,7 +160,7 @@ class ContourSideAttributeMaterialization {
             .south = 1,
         };
 
-        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitProperParts.size()); ++leafIndex) {
+        for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(unitPixels.size()); ++leafIndex) {
             materializeNode(leafIndex, singleton, buffer, attrNames, computeContourPixels, computeContourPerimeter, computeNorth, computeWest, computeEast,
                             computeSouth);
         }
@@ -170,8 +170,8 @@ class ContourSideAttributeMaterialization {
     /**
      * @brief Writes the selected scalar projections for one output row.
      *
-     * @param outputIndex Index represented by `outputIndex`.
-     * @param counts Counters used by the operation.
+     * @param outputIndex Index.
+     * @param counts Counters.
      * @param buffer Buffer read or written by the operation.
      * @param attrNames Layout that maps attributes to buffer columns.
      * @param computeContourPixels Flag controlling compute contour pixels.
@@ -186,22 +186,22 @@ class ContourSideAttributeMaterialization {
                                 bool computeContourPixels, bool computeContourPerimeter, bool computeNorth, bool computeWest, bool computeEast,
                                 bool computeSouth) {
         if (computeContourPixels) {
-            buffer[attrNames.linearIndex(outputIndex, CONTOUR_PIXELS)] = static_cast<Real>(counts.contourPixels);
+            buffer[attrNames.linearIndex(outputIndex, ContourPixels)] = static_cast<Real>(counts.contourPixels);
         }
         if (computeContourPerimeter) {
-            buffer[attrNames.linearIndex(outputIndex, CONTOUR_PERIMETER)] = static_cast<Real>(counts.exposedSides);
+            buffer[attrNames.linearIndex(outputIndex, ContourPerimeter)] = static_cast<Real>(counts.exposedSides);
         }
         if (computeNorth) {
-            buffer[attrNames.linearIndex(outputIndex, CONTOUR_SIDE_NORTH)] = static_cast<Real>(counts.north);
+            buffer[attrNames.linearIndex(outputIndex, ContourSideNorth)] = static_cast<Real>(counts.north);
         }
         if (computeWest) {
-            buffer[attrNames.linearIndex(outputIndex, CONTOUR_SIDE_WEST)] = static_cast<Real>(counts.west);
+            buffer[attrNames.linearIndex(outputIndex, ContourSideWest)] = static_cast<Real>(counts.west);
         }
         if (computeEast) {
-            buffer[attrNames.linearIndex(outputIndex, CONTOUR_SIDE_EAST)] = static_cast<Real>(counts.east);
+            buffer[attrNames.linearIndex(outputIndex, ContourSideEast)] = static_cast<Real>(counts.east);
         }
         if (computeSouth) {
-            buffer[attrNames.linearIndex(outputIndex, CONTOUR_SIDE_SOUTH)] = static_cast<Real>(counts.south);
+            buffer[attrNames.linearIndex(outputIndex, ContourSideSouth)] = static_cast<Real>(counts.south);
         }
     }
 };

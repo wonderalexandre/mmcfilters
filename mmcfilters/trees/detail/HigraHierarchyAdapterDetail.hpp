@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../HierarchySemantics.hpp"
+#include "../MorphologicalTreeSemantics.hpp"
 #include "HigraImportLayoutDetail.hpp"
 #include "NativeHierarchyValidationDetail.hpp"
 
@@ -23,9 +23,9 @@ namespace mmcfilters::detail {
  * not morphological-tree semantics.
  */
 template <AltitudeValue T> struct HigraHierarchyImport {
-    /** @brief Stores the hierarchy. */
+    /** @brief Hierarchy. */
     ValidatedNativeHierarchy<T> hierarchy;
-    /** @brief Stores the internal node offset. */
+    /** @brief Dense node identifier of the internal node offset. */
     NodeId internalNodeOffset = InvalidNode;
 };
 
@@ -33,37 +33,45 @@ template <AltitudeValue T> struct HigraHierarchyImport {
  * @brief Converts Higra parent/altitude arrays into the generic native format.
  *
  * The adapter owns all leaf-first id policy. `MorphologicalTree` subsequently
- * materializes only independent node-parent and proper-part-owner domains.
+ * materializes only independent node-parent and smallest-node-map domains.
  *
- * @param parent Parent node used by the operation.
- * @param higraAltitude Altitude or level represented by `higraAltitude`.
+ * @param parent Parent node.
+ * @param higraAltitude Altitude or level.
  * @param rows Number of rows in the domain.
- * @param cols Number of columns in the domain.
+ * @param columns Number of columns in the domain.
  * @param kind Morphological-tree family.
- * @param adjacency Adjacency relation used by the operation.
+ * @param adjacency Adjacency relation.
  * @return The converted Higra parent/altitude arrays into the generic native format.
  */
 template <AltitudeValue T>
-[[nodiscard]] HigraHierarchyImport<T> adaptHigraHierarchy(std::span<const NodeId> parent, std::span<const T> higraAltitude, int rows, int cols,
+[[nodiscard]] HigraHierarchyImport<T> adaptHigraHierarchy(std::span<const NodeId> parent, std::span<const T> higraAltitude, int rows, int columns,
                                                           MorphologicalTreeKind kind, std::optional<RegularGridAdjacency2D> adjacency) {
-    if (kind == MorphologicalTreeKind::SELF_DUAL_RESIDUAL_TREE) {
+    if (kind == MorphologicalTreeKind::UnrestrictedResidualTree || kind == MorphologicalTreeKind::SaturatedResidualTree) {
         throw std::invalid_argument(
-            "Higra import does not accept SELF_DUAL_RESIDUAL_TREE because residual-tree proper parts are not represented by the Higra leaf layout.");
+            "Higra import does not accept residual-tree kinds because residual-tree proper parts are not represented by the Higra leaf layout.");
     }
-    if (!adjacency && kind != MorphologicalTreeKind::TREE_OF_SHAPES) {
+    if (!adjacency && (kind == MorphologicalTreeKind::MaxTree || kind == MorphologicalTreeKind::MinTree)) {
         throw std::invalid_argument("Higra import of max/min trees requires an explicit adjacency relation.");
     }
+    if (adjacency && kind == MorphologicalTreeKind::TreeOfShapes) {
+        throw std::invalid_argument(
+            "Higra tree-of-shapes import cannot derive a complete TopographicConvention from one adjacency relation; omit it to record NoConstructionContext.");
+    }
 
-    const GridDomain2D gridDomain{rows, cols};
-    HierarchySemantics semantics = makeHierarchySemantics(kind, std::move(adjacency));
-    const NodeId numProperParts = static_cast<NodeId>(gridDomain.size("Higra import 2D proper-part domain"));
-    if (const auto* uniformAdjacency = std::get_if<UniformGridAdjacency2D>(&semantics.adjacency)) {
-        if (uniformAdjacency->relation.getNumRows() * uniformAdjacency->relation.getNumCols() != numProperParts) {
+    const GridDomain2D gridDomain{rows, columns};
+    MorphologicalTreeConstructionContext constructionContext = NoConstructionContext{};
+    if (adjacency) {
+        constructionContext = SharedAdjacencyContext{std::move(*adjacency)};
+    }
+    MorphologicalTreeSemantics semantics = makeMorphologicalTreeSemantics(kind, std::move(constructionContext));
+    const int numPixels = static_cast<int>(gridDomain.size("Higra import 2D pixel domain"));
+    if (const auto* sharedContext = std::get_if<SharedAdjacencyContext>(&semantics.constructionContext)) {
+        if (sharedContext->adjacency.getNumRows() * sharedContext->adjacency.getNumColumns() != numPixels) {
             throw std::invalid_argument("Higra leaf count must match image domain size.");
         }
     }
 
-    const HigraImportLayout layout(numProperParts, parent.size());
+    const HigraImportLayout layout(numPixels, parent.size());
     if (higraAltitude.size() != static_cast<std::size_t>(layout.numVertices())) {
         throw std::invalid_argument("Higra altitude buffer size must match the preserved imported Higra hierarchy.");
     }
@@ -72,21 +80,21 @@ template <AltitudeValue T>
             const long double level = static_cast<long double>(higraAltitude[static_cast<std::size_t>(externalNode)]);
             if (!std::isfinite(level)) {
                 std::ostringstream message;
-                message << "WeightedMorphologicalTree Higra altitude input requires finite floating-point altitudes; value at index " << externalNode << " is "
+                message << "ValuedMorphologicalTree Higra altitude input requires finite floating-point altitudes; value at index " << externalNode << " is "
                         << level << ".";
                 throw std::invalid_argument(message.str());
             }
         }
     };
 
-    std::vector<NodeId> properPartOwner(static_cast<std::size_t>(numProperParts), InvalidNode);
-    for (NodeId properPart = 0; properPart < numProperParts; ++properPart) {
-        validateFiniteAltitude(properPart);
-        properPartOwner[static_cast<std::size_t>(properPart)] =
-            layout.internalNodeId(parent[static_cast<std::size_t>(properPart)], "Each Higra leaf must point to an internal node.");
+    std::vector<NodeId> smallestNodeMap(static_cast<std::size_t>(numPixels), InvalidNode);
+    for (PixelId pixel = 0; pixel < numPixels; ++pixel) {
+        validateFiniteAltitude(pixel);
+        smallestNodeMap[static_cast<std::size_t>(pixel)] =
+            layout.internalNodeId(parent[static_cast<std::size_t>(pixel)], "Each Higra leaf must point to an internal node.");
     }
 
-    const NodeId numNodes = layout.numInternalNodes();
+    const int numNodes = layout.numInternalNodes();
     std::vector<NodeId> nodeParent(static_cast<std::size_t>(numNodes), InvalidNode);
     std::vector<T> altitude(static_cast<std::size_t>(numNodes));
     NodeId root = InvalidNode;
@@ -112,9 +120,9 @@ template <AltitudeValue T>
         throw std::invalid_argument("A Higra hierarchy must encode exactly one root.");
     }
 
-    const NativeHierarchyView<T> view{nodeParent, properPartOwner, altitude, root, gridDomain, semantics};
+    const NativeHierarchyView<T> view{nodeParent, smallestNodeMap, altitude, root, gridDomain, semantics};
     NativeTopologyProof proof = NativeHierarchyValidation::validateComplete(view);
-    return {makeValidatedNativeHierarchy<T>(std::move(nodeParent), std::move(properPartOwner), std::move(altitude), root, gridDomain, std::move(semantics),
+    return {makeValidatedNativeHierarchy<T>(std::move(nodeParent), std::move(smallestNodeMap), std::move(altitude), root, gridDomain, std::move(semantics),
                                             std::move(proof)),
             layout.numLeaves()};
 }

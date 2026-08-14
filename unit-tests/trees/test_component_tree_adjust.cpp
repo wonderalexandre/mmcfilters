@@ -32,33 +32,33 @@ template <class T> ImagePtr<T> makeTypedCasfFixture(std::initializer_list<T> val
     return image;
 }
 
-template <class T> void requireValidWeightedTree(const WeightedMorphologicalTree<T>& tree, const std::string& label) {
+template <class T> void requireValidValuedTree(const ValuedMorphologicalTree<T>& tree, const std::string& label) {
     tree.topology().validateConnectedRootedTree();
-    tree.validateMonotoneAltitude();
-    require(tree.topology().getRoot() != InvalidNode, label + " must keep a valid root");
+    tree.validateMonotoneNodeAltitudes();
+    require(tree.topology().root() != InvalidNode, label + " must keep a valid root");
 }
 
 void test_empty_and_zero_threshold_preserve_image() {
     const auto image = makeCasfFixture();
-    CasfComponentTrees<std::uint8_t> casf(image, CasfComponentTreesAttribute::AREA);
+    CasfComponentTrees<std::uint8_t> casf(image, CasfComponentTreesAttribute::Area);
 
     const auto filteredEmpty = casf.filter({});
     requireVectorEqual(collectImageValues(filteredEmpty), collectImageValues(image), "empty threshold CASF image");
 
     const auto filteredZero = casf.filter({0.0});
     requireVectorEqual(collectImageValues(filteredZero), collectImageValues(image), "zero threshold CASF image");
-    requireValidWeightedTree(casf.minTree(), "CASF min-tree after zero threshold");
-    requireValidWeightedTree(casf.maxTree(), "CASF max-tree after zero threshold");
+    requireValidValuedTree(casf.minTree(), "CASF min-tree after zero threshold");
+    requireValidValuedTree(casf.maxTree(), "CASF max-tree after zero threshold");
 }
 
 void test_positive_threshold_keeps_exportable_trees() {
     const auto image = makeCasfFixture();
-    CasfComponentTrees<std::uint8_t> casf(image, CasfComponentTreesAttribute::AREA);
+    CasfComponentTrees<std::uint8_t> casf(image, CasfComponentTreesAttribute::Area);
 
     const auto filtered = casf.filter({2.0});
     requireImageShape(filtered, 6, 6);
-    requireValidWeightedTree(casf.minTree(), "CASF min-tree after positive threshold");
-    requireValidWeightedTree(casf.maxTree(), "CASF max-tree after positive threshold");
+    requireValidValuedTree(casf.minTree(), "CASF min-tree after positive threshold");
+    requireValidValuedTree(casf.maxTree(), "CASF max-tree after positive threshold");
 
     const auto& minValidation = casf.minTree().topology().getEditValidationStatistics();
     const auto& maxValidation = casf.maxTree().topology().getEditValidationStatistics();
@@ -78,12 +78,12 @@ void test_positive_threshold_keeps_exportable_trees() {
 
 void test_bounding_box_attribute_path_executes() {
     const auto image = makeCasfFixture();
-    CasfComponentTrees<std::uint8_t> casf(image, CasfComponentTreesAttribute::BOUNDING_BOX_DIAGONAL);
+    CasfComponentTrees<std::uint8_t> casf(image, CasfComponentTreesAttribute::BoundingBoxDiagonal);
 
     const auto filtered = casf.filter({2.0});
     requireImageShape(filtered, 6, 6);
-    requireValidWeightedTree(casf.minTree(), "CASF bbox min-tree after positive threshold");
-    requireValidWeightedTree(casf.maxTree(), "CASF bbox max-tree after positive threshold");
+    requireValidValuedTree(casf.minTree(), "CASF bbox min-tree after positive threshold");
+    requireValidValuedTree(casf.maxTree(), "CASF bbox max-tree after positive threshold");
     static_cast<void>(casf.exportMinTree());
     static_cast<void>(casf.exportMaxTree());
 }
@@ -93,15 +93,15 @@ void test_int32_casf_keeps_typed_altitude_state() {
         -20, -20, -20, -20, 400, 400, -20, 120, 120, -20, 300, 400, -20, 120, 900, -20, 300, 400,
         -20, 120, 120, -20, 300, 400, 300, 300, 300, 300, 300, 400, -10, -10, -10, 400, 400, 400,
     });
-    CasfComponentTrees<std::int32_t> casf(image, CasfComponentTreesAttribute::AREA);
+    CasfComponentTrees<std::int32_t> casf(image, CasfComponentTreesAttribute::Area);
 
     const auto filteredEmpty = casf.filter({});
     requireVectorEqual(collectImageValues(filteredEmpty), collectImageValues(image), "empty int32 CASF image");
 
     const auto filtered = casf.filter({2.0});
     requireImageShape(filtered, 6, 6);
-    requireValidWeightedTree(casf.minTree(), "typed int32 CASF min-tree after positive threshold");
-    requireValidWeightedTree(casf.maxTree(), "typed int32 CASF max-tree after positive threshold");
+    requireValidValuedTree(casf.minTree(), "typed int32 CASF min-tree after positive threshold");
+    requireValidValuedTree(casf.maxTree(), "typed int32 CASF max-tree after positive threshold");
 
     const auto [minParent, minAltitude] = casf.exportMinTree();
     const auto [maxParent, maxAltitude] = casf.exportMaxTree();
@@ -118,14 +118,14 @@ void test_float_casf_uses_sparse_altitude_backend() {
     });
     static_assert(!DualMinMaxTreeIncrementalFilter<float>::usesDenseLevelBackend());
 
-    CasfComponentTrees<float> casf(image, CasfComponentTreesAttribute::BOUNDING_BOX_DIAGONAL);
+    CasfComponentTrees<float> casf(image, CasfComponentTreesAttribute::BoundingBoxDiagonal);
     const auto filteredEmpty = casf.filter({});
     requireVectorEqual(collectImageValues(filteredEmpty), collectImageValues(image), "empty float CASF image");
 
     const auto filtered = casf.filter({2.5});
     requireImageShape(filtered, 6, 6);
-    requireValidWeightedTree(casf.minTree(), "typed float CASF min-tree after positive threshold");
-    requireValidWeightedTree(casf.maxTree(), "typed float CASF max-tree after positive threshold");
+    requireValidValuedTree(casf.minTree(), "typed float CASF min-tree after positive threshold");
+    requireValidValuedTree(casf.maxTree(), "typed float CASF max-tree after positive threshold");
 
     const auto [minParent, minAltitude] = casf.exportMinTree();
     const auto [maxParent, maxAltitude] = casf.exportMaxTree();

@@ -4,7 +4,7 @@
 #include "../../utils/Common.hpp"
 #include "../../utils/RegularGridAdjacency2D.hpp"
 #include "../MorphologicalTree.hpp"
-#include "../WeightedMorphologicalTree.hpp"
+#include "../ValuedMorphologicalTree.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -31,24 +31,24 @@ namespace detail {
  * editor deliberately exposes a temporary forest between those boundaries and
  * because projection must never traverse inconsistent parent-child storage.
  *
- * @param tree Tree topology used by the operation.
+ * @param tree Tree topology.
  * @param context Operation context or diagnostic label.
  */
 inline void requireCommittedRootedHierarchy(const MorphologicalTree& tree, const char* context) {
     if (tree.isEditing()) {
         throw std::invalid_argument(std::string(context) + " requires a committed tree; an edit session is still open.");
     }
-    if (tree.getRoot() == InvalidNode || !tree.isAlive(tree.getRoot())) {
+    if (tree.root() == InvalidNode || !tree.isAlive(tree.root())) {
         throw std::invalid_argument(std::string(context) + " requires a non-empty connected rooted tree.");
     }
-    if (tree.getNodeParent(tree.getRoot()) != tree.getRoot()) {
+    if (tree.parent(tree.root()) != tree.root()) {
         throw std::invalid_argument(std::string(context) + " requires the root to point to itself.");
     }
 
-    const std::size_t slotCount = static_cast<std::size_t>(tree.getNumInternalNodeSlots());
+    const std::size_t slotCount = static_cast<std::size_t>(tree.numInternalNodeSlots());
     std::vector<std::uint8_t> visited(slotCount, 0);
-    std::vector<NodeId> stack{tree.getRoot()};
-    visited[static_cast<std::size_t>(tree.getRoot())] = 1;
+    std::vector<NodeId> stack{tree.root()};
+    visited[static_cast<std::size_t>(tree.root())] = 1;
     std::size_t visitedCount = 0;
     std::size_t traversedEdges = 0;
 
@@ -57,9 +57,9 @@ inline void requireCommittedRootedHierarchy(const MorphologicalTree& tree, const
         stack.pop_back();
         ++visitedCount;
 
-        for (NodeId childId : tree.getChildren(nodeId)) {
+        for (NodeId childId : tree.children(nodeId)) {
             ++traversedEdges;
-            if (traversedEdges >= slotCount || !tree.isAlive(childId) || tree.getNodeParent(childId) != nodeId) {
+            if (traversedEdges >= slotCount || !tree.isAlive(childId) || tree.parent(childId) != nodeId) {
                 throw std::invalid_argument(std::string(context) + " requires consistent parent-child relations.");
             }
             const std::size_t childIndex = static_cast<std::size_t>(childId);
@@ -72,7 +72,7 @@ inline void requireCommittedRootedHierarchy(const MorphologicalTree& tree, const
     }
 
     std::size_t aliveCount = 0;
-    for (NodeId nodeId : tree.getAliveNodeIds()) {
+    for (NodeId nodeId : tree.aliveNodeIds()) {
         ++aliveCount;
         if (visited[static_cast<std::size_t>(nodeId)] == 0) {
             throw std::invalid_argument(std::string(context) + " requires every live node to be connected to the root.");
@@ -95,7 +95,7 @@ inline void requireCommittedRootedHierarchy(const MorphologicalTree& tree, const
  *     valuation(parent) >= valuation(child)
  *
  * Under this condition, projecting the valuation to adjacency edges through the
- * LCA of the endpoint owners implements the edge-indexed saliency map of the
+ * LCA of the endpoint smallest nodes implements the edge-indexed saliency map of the
  * hierarchy. Equal parent/child values are allowed by `AllowLevelCollapse`; they
  * merge those explicit tree levels in the induced QFZ hierarchy. Use
  * `RequireStrictHierarchy` when the saliency map must preserve every explicit
@@ -152,8 +152,8 @@ class HierarchySaliencyMapValidation {
     /**
      * @brief Validates valuation value.
      *
-     * @param value Value used by the operation.
-     * @param nodeId Identifier of the node used by the operation.
+     * @param value Value.
+     * @param nodeId Dense internal node identifier.
      * @param context Operation name used in diagnostics.
      * @param rangePolicy Policy applied to saliency values outside the accepted range.
      */
@@ -177,14 +177,14 @@ class HierarchySaliencyMapValidation {
     /**
      * @brief Validates that every hierarchy support is connected in `adjacency`.
      *
-     * Each image-domain edge is assigned to the LCA of its endpoint owners.
+     * Each image-domain edge is assigned to the LCA of its endpoint smallest nodes.
      * Nodes are then processed in post-order. At a node, all edges assigned to
      * it are inserted into one disjoint-set forest; the node is connected if its
      * direct proper parts and already-connected child supports have one common
      * representative. This simultaneously validates the completed hierarchy in
      * which every direct proper-part region is a finest graph region.
      *
-     * @param tree Hierarchy topology and proper-part ownership.
+     * @param tree Hierarchy topology and smallest-node mapping.
      * @param adjacency Graph defining connectedness.
      * @param context Operation name used in diagnostics.
      * @throws std::invalid_argument If the graph domain differs from the tree or
@@ -193,11 +193,11 @@ class HierarchySaliencyMapValidation {
     static void validateHierarchyConnectivity(const MorphologicalTree& tree, const RegularGridAdjacency2D& adjacency,
                                               const char* context = "HierarchySaliencyMapValidation::validateHierarchyConnectivity") {
         detail::requireCommittedRootedHierarchy(tree, context);
-        const int rows = tree.getNumRowsOfGridDomain2D();
-        const int cols = tree.getNumColsOfGridDomain2D();
-        const int numProperParts = tree.getNumTotalProperParts();
-        if (rows <= 0 || cols <= 0 || numProperParts <= 0 || adjacency.getNumRows() != rows || adjacency.getNumCols() != cols ||
-            static_cast<std::size_t>(numProperParts) != static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols)) {
+        const int rows = tree.numRows();
+        const int columns = tree.numColumns();
+        const int numPixels = tree.numPixels();
+        if (rows <= 0 || columns <= 0 || numPixels <= 0 || adjacency.getNumRows() != rows || adjacency.getNumColumns() != columns ||
+            static_cast<std::size_t>(numPixels) != static_cast<std::size_t>(rows) * static_cast<std::size_t>(columns)) {
             throw std::invalid_argument(std::string(context) + " requires one graph vertex per 2D proper part and matching adjacency dimensions.");
         }
 
@@ -239,19 +239,19 @@ class HierarchySaliencyMapValidation {
         };
 
         using DomainEdge = std::pair<NodeId, NodeId>;
-        std::vector<std::vector<DomainEdge>> edgesByLca(static_cast<std::size_t>(tree.getNumInternalNodeSlots()));
-        for (NodeId source = 0; source < numProperParts; ++source) {
-            const NodeId sourceOwner = tree.getProperPartOwner(source);
-            if (!tree.isAlive(sourceOwner)) {
-                throw std::invalid_argument(std::string(context) + " found a proper part without a live owner.");
+        std::vector<std::vector<DomainEdge>> edgesByLca(static_cast<std::size_t>(tree.numInternalNodeSlots()));
+        for (NodeId source = 0; source < numPixels; ++source) {
+            const NodeId sourceSmallestNode = tree.smallestNode(source);
+            if (!tree.isAlive(sourceSmallestNode)) {
+                throw std::invalid_argument(std::string(context) + " found a pixel without a live smallest node.");
             }
             for (int targetValue : adjacency.getForwardNeighborIndices(source)) {
                 const NodeId target = static_cast<NodeId>(targetValue);
-                const NodeId targetOwner = tree.getProperPartOwner(target);
-                if (!tree.isAlive(targetOwner)) {
-                    throw std::invalid_argument(std::string(context) + " found a neighbour proper part without a live owner.");
+                const NodeId targetSmallestNode = tree.smallestNode(target);
+                if (!tree.isAlive(targetSmallestNode)) {
+                    throw std::invalid_argument(std::string(context) + " found a neighbour pixel without a live smallest node.");
                 }
-                const NodeId lca = sourceOwner == targetOwner ? sourceOwner : tree.getLowestCommonAncestor(sourceOwner, targetOwner);
+                const NodeId lca = sourceSmallestNode == targetSmallestNode ? sourceSmallestNode : tree.lowestCommonAncestor(sourceSmallestNode, targetSmallestNode);
                 if (lca == InvalidNode || !tree.isAlive(lca)) {
                     throw std::invalid_argument(std::string(context) + " could not assign an adjacency edge to a live hierarchy node.");
                 }
@@ -259,9 +259,9 @@ class HierarchySaliencyMapValidation {
             }
         }
 
-        DomainDisjointSet components(numProperParts);
-        std::vector<NodeId> supportRepresentative(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), InvalidNode);
-        for (NodeId nodeId : tree.getPostOrderNodes()) {
+        DomainDisjointSet components(numPixels);
+        std::vector<NodeId> supportRepresentative(static_cast<std::size_t>(tree.numInternalNodeSlots()), InvalidNode);
+        for (NodeId nodeId : tree.postOrder()) {
             for (const DomainEdge& edge : edgesByLca[static_cast<std::size_t>(nodeId)]) {
                 components.unite(edge.first, edge.second);
             }
@@ -280,10 +280,10 @@ class HierarchySaliencyMapValidation {
                 }
             };
 
-            for (NodeId properPart : tree.getProperParts(nodeId)) {
-                acceptRepresentative(properPart);
+            for (PixelId pixel : tree.properPart(nodeId)) {
+                acceptRepresentative(pixel);
             }
-            for (NodeId childId : tree.getChildren(nodeId)) {
+            for (NodeId childId : tree.children(nodeId)) {
                 const NodeId childRepresentative = supportRepresentative[static_cast<std::size_t>(childId)];
                 if (childRepresentative == InvalidNode) {
                     throw std::invalid_argument(std::string(context) + " found a live child without proper-part support.");
@@ -312,8 +312,8 @@ class HierarchySaliencyMapValidation {
      * `valuation(parent) > valuation(child)` and should be used when the edge map
      * must recover every explicit level of the current tree.
      *
-     * @param tree Tree topology used by the operation.
-     * @param valuation Node valuation used by the operation.
+     * @param tree Tree topology.
+     * @param valuation Node valuation.
      * @param policy Policy controlling the operation.
      * @param rangePolicy Policy for values outside the supported range.
      * @param context Operation context or diagnostic label.
@@ -324,20 +324,20 @@ class HierarchySaliencyMapValidation {
                                            HierarchyValuationRangePolicy rangePolicy = HierarchyValuationRangePolicy::AllowAnyFinite,
                                            const char* context = "HierarchySaliencyMapValidation::validateHierarchyValuation") {
         detail::requireCommittedRootedHierarchy(tree, context);
-        if (valuation.size() != static_cast<std::size_t>(tree.getNumInternalNodeSlots())) {
+        if (valuation.size() != static_cast<std::size_t>(tree.numInternalNodeSlots())) {
             std::ostringstream oss;
-            oss << context << " requires one valuation value per dense internal node slot; expected " << tree.getNumInternalNodeSlots() << " values but got "
+            oss << context << " requires one valuation value per dense internal node slot; expected " << tree.numInternalNodeSlots() << " values but got "
                 << valuation.size() << ".";
             throw std::invalid_argument(oss.str());
         }
 
-        for (NodeId nodeId : tree.getAliveNodeIds()) {
+        for (NodeId nodeId : tree.aliveNodeIds()) {
             validateValuationValue(valuation[static_cast<std::size_t>(nodeId)], nodeId, context, rangePolicy);
         }
 
-        for (NodeId parentId : tree.getAliveNodeIds()) {
+        for (NodeId parentId : tree.aliveNodeIds()) {
             const Value& parentValue = valuation[static_cast<std::size_t>(parentId)];
-            for (NodeId childId : tree.getChildren(parentId)) {
+            for (NodeId childId : tree.children(parentId)) {
                 const Value& childValue = valuation[static_cast<std::size_t>(childId)];
                 const bool validOrder = policy == HierarchyValuationPolicy::RequireStrictHierarchy ? childValue < parentValue : !(parentValue < childValue);
                 if (!validOrder) {
@@ -362,8 +362,8 @@ class HierarchySaliencyMapValidation {
      * ranking; floating-point values must be finite and the selected hierarchy
      * monotonicity policy is enforced.
      *
-     * @param tree Tree topology used by the operation.
-     * @param valuation Node valuation used by the operation.
+     * @param tree Tree topology.
+     * @param valuation Node valuation.
      * @param policy Policy controlling the operation.
      * @return The converted compatible valuation to dense non-negative integer levels.
      */
@@ -374,16 +374,16 @@ class HierarchySaliencyMapValidation {
                                    "HierarchySaliencyMapValidation::rankHierarchyValuation");
 
         std::vector<Value> uniqueValues;
-        uniqueValues.reserve(static_cast<std::size_t>(tree.getNumInternalNodeSlots()));
-        for (NodeId nodeId : tree.getAliveNodeIds()) {
+        uniqueValues.reserve(static_cast<std::size_t>(tree.numInternalNodeSlots()));
+        for (NodeId nodeId : tree.aliveNodeIds()) {
             uniqueValues.push_back(valuation[static_cast<std::size_t>(nodeId)]);
         }
 
         std::sort(uniqueValues.begin(), uniqueValues.end());
         uniqueValues.erase(std::unique(uniqueValues.begin(), uniqueValues.end()), uniqueValues.end());
 
-        std::vector<int> ranks(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0);
-        for (NodeId nodeId : tree.getAliveNodeIds()) {
+        std::vector<int> ranks(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0);
+        for (NodeId nodeId : tree.aliveNodeIds()) {
             const Value& value = valuation[static_cast<std::size_t>(nodeId)];
             const auto it = std::lower_bound(uniqueValues.begin(), uniqueValues.end(), value);
             ranks[static_cast<std::size_t>(nodeId)] = static_cast<int>(std::distance(uniqueValues.begin(), it));
@@ -407,8 +407,8 @@ class HierarchySaliencyMapValidation {
      * floating-point extrema span both signs, and clamps round-off at the output
      * boundaries so every returned live-node score remains in `[0, 1]`.
      *
-     * @param tree Tree topology used by the operation.
-     * @param valuation Node valuation used by the operation.
+     * @param tree Tree topology.
+     * @param valuation Node valuation.
      * @param policy Policy controlling the operation.
      * @param rangePolicy Policy for values outside the supported range.
      * @return Values produced by the operation.
@@ -426,7 +426,7 @@ class HierarchySaliencyMapValidation {
         bool initialized = false;
         BareValue minValue{};
         BareValue maxValue{};
-        for (NodeId nodeId : tree.getAliveNodeIds()) {
+        for (NodeId nodeId : tree.aliveNodeIds()) {
             const BareValue value = valuation[static_cast<std::size_t>(nodeId)];
             if (!initialized) {
                 minValue = value;
@@ -438,12 +438,12 @@ class HierarchySaliencyMapValidation {
             }
         }
 
-        std::vector<double> scores(static_cast<std::size_t>(tree.getNumInternalNodeSlots()), 0.0);
+        std::vector<double> scores(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0.0);
         if (maxValue == minValue) {
             return scores;
         }
 
-        for (NodeId nodeId : tree.getAliveNodeIds()) {
+        for (NodeId nodeId : tree.aliveNodeIds()) {
             const BareValue value = valuation[static_cast<std::size_t>(nodeId)];
             long double normalized = 0.0L;
 
@@ -481,24 +481,24 @@ class HierarchySaliencyMapValidation {
      * normalizes that valuation. Trees without a single component-tree polarity are
      * rejected.
      *
-     * @param tree Tree topology used by the operation.
+     * @param tree Tree topology.
      * @return The computed dense normalized altitude score buffer in [0, 1].
      */
-    template <AltitudeValue T> [[nodiscard]] static std::vector<double> computeNormalizedScores(const WeightedMorphologicalTree<T>& tree) {
+    template <AltitudeValue T> [[nodiscard]] static std::vector<double> computeNormalizedScores(const ValuedMorphologicalTree<T>& tree) {
         const MorphologicalTree& topology = tree.topology();
         detail::requireCommittedRootedHierarchy(topology, "HierarchySaliencyMapValidation::computeNormalizedScores");
-        const AltitudeOrder altitudeOrder = topology.getAltitudeOrder();
-        if (altitudeOrder == AltitudeOrder::UNCONSTRAINED) {
+        const NodeAltitudeOrder nodeAltitudeOrder = topology.nodeAltitudeOrder();
+        if (nodeAltitudeOrder == NodeAltitudeOrder::Unconstrained) {
             throw std::invalid_argument("HierarchySaliencyMapValidation::computeNormalizedScores requires a globally monotone altitude order.");
         }
         // Use at least double precision while retaining long double when it is
         // the input type. An unconditional cast to double can collapse distinct
         // long-double hierarchy levels and change the induced hierarchy.
         using OrientedAltitude = std::common_type_t<T, double>;
-        std::vector<OrientedAltitude> orientedAltitude(static_cast<std::size_t>(topology.getNumInternalNodeSlots()), OrientedAltitude{});
-        for (NodeId nodeId : topology.getAliveNodeIds()) {
-            const OrientedAltitude altitude = static_cast<OrientedAltitude>(tree.getAltitude(nodeId));
-            orientedAltitude[static_cast<std::size_t>(nodeId)] = altitudeOrder == AltitudeOrder::INCREASING_FROM_ROOT ? -altitude : altitude;
+        std::vector<OrientedAltitude> orientedAltitude(static_cast<std::size_t>(topology.numInternalNodeSlots()), OrientedAltitude{});
+        for (NodeId nodeId : topology.aliveNodeIds()) {
+            const OrientedAltitude altitude = static_cast<OrientedAltitude>(tree.nodeAltitude(nodeId));
+            orientedAltitude[static_cast<std::size_t>(nodeId)] = nodeAltitudeOrder == NodeAltitudeOrder::Increasing ? -altitude : altitude;
         }
         return computeNormalizedScores(topology, std::span<const OrientedAltitude>(orientedAltitude), HierarchyValuationPolicy::AllowLevelCollapse);
     }

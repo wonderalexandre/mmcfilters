@@ -27,18 +27,18 @@ namespace {
 #define MMCFILTERS_TEST_DATA_DIR "dat"
 #endif
 
-ImageUInt8Ptr makeConstantImage(int rows, int cols, std::uint8_t value) { return ImageUInt8::create(rows, cols, value); }
+ImageUInt8Ptr makeConstantImage(int rows, int columns, std::uint8_t value) { return ImageUInt8::create(rows, columns, value); }
 
 ImageUInt8Ptr makeConcentricImage(bool brightCenter) {
     constexpr int rows = 8;
-    constexpr int cols = 8;
-    auto image = ImageUInt8::create(rows, cols);
+    constexpr int columns = 8;
+    auto image = ImageUInt8::create(rows, columns);
 
     for (int row = 0; row < rows; ++row) {
-        for (int col = 0; col < cols; ++col) {
-            const int ring = std::min({row, col, rows - 1 - row, cols - 1 - col});
+        for (int column = 0; column < columns; ++column) {
+            const int ring = std::min({row, column, rows - 1 - row, columns - 1 - column});
             const int value = brightCenter ? ring * 32 : (3 - ring) * 32;
-            (*image)[ImageUtils::to1D(row, col, cols)] = static_cast<std::uint8_t>(value);
+            (*image)[ImageUtils::to1D(row, column, columns)] = static_cast<std::uint8_t>(value);
         }
     }
 
@@ -47,20 +47,20 @@ ImageUInt8Ptr makeConcentricImage(bool brightCenter) {
 
 ImageUInt8Ptr makeLineImage(bool horizontal, bool brightLine) {
     constexpr int rows = 9;
-    constexpr int cols = 9;
+    constexpr int columns = 9;
     const std::uint8_t foreground = brightLine ? 200 : 0;
     const std::uint8_t background = brightLine ? 0 : 200;
-    auto image = ImageUInt8::create(rows, cols, background);
+    auto image = ImageUInt8::create(rows, columns, background);
 
     if (horizontal) {
         const int row = rows / 2;
-        for (int col = 1; col + 1 < cols; ++col) {
-            (*image)[ImageUtils::to1D(row, col, cols)] = foreground;
+        for (int column = 1; column + 1 < columns; ++column) {
+            (*image)[ImageUtils::to1D(row, column, columns)] = foreground;
         }
     } else {
-        const int col = cols / 2;
+        const int column = columns / 2;
         for (int row = 1; row + 1 < rows; ++row) {
-            (*image)[ImageUtils::to1D(row, col, cols)] = foreground;
+            (*image)[ImageUtils::to1D(row, column, columns)] = foreground;
         }
     }
 
@@ -69,23 +69,23 @@ ImageUInt8Ptr makeLineImage(bool horizontal, bool brightLine) {
 
 ImageUInt8Ptr makeDiagonalImage() {
     constexpr int rows = 9;
-    constexpr int cols = 9;
-    auto image = ImageUInt8::create(rows, cols, static_cast<std::uint8_t>(0));
+    constexpr int columns = 9;
+    auto image = ImageUInt8::create(rows, columns, static_cast<std::uint8_t>(0));
     for (int i = 1; i + 1 < rows; ++i) {
-        (*image)[ImageUtils::to1D(i, i, cols)] = 200;
+        (*image)[ImageUtils::to1D(i, i, columns)] = 200;
     }
     return image;
 }
 
 ImageUInt8Ptr makeTwoPlateauImage(bool brightPeaks) {
     constexpr int rows = 11;
-    constexpr int cols = 11;
-    auto image = ImageUInt8::create(rows, cols, static_cast<std::uint8_t>(brightPeaks ? 0 : 96));
+    constexpr int columns = 11;
+    auto image = ImageUInt8::create(rows, columns, static_cast<std::uint8_t>(brightPeaks ? 0 : 96));
 
-    auto fillBox = [&](int rowBegin, int rowEnd, int colBegin, int colEnd, std::uint8_t value) {
+    auto fillBox = [&](int rowBegin, int rowEnd, int columnBegin, int columnEnd, std::uint8_t value) {
         for (int row = rowBegin; row <= rowEnd; ++row) {
-            for (int col = colBegin; col <= colEnd; ++col) {
-                (*image)[ImageUtils::to1D(row, col, cols)] = value;
+            for (int column = columnBegin; column <= columnEnd; ++column) {
+                (*image)[ImageUtils::to1D(row, column, columns)] = value;
             }
         }
     };
@@ -103,15 +103,15 @@ ImageUInt8Ptr makeTwoPlateauImage(bool brightPeaks) {
 
 ImageUInt8Ptr makeRingImage(bool brightRing) {
     constexpr int rows = 9;
-    constexpr int cols = 9;
-    auto image = ImageUInt8::create(rows, cols, static_cast<std::uint8_t>(brightRing ? 0 : 160));
+    constexpr int columns = 9;
+    auto image = ImageUInt8::create(rows, columns, static_cast<std::uint8_t>(brightRing ? 0 : 160));
     const std::uint8_t ringValue = brightRing ? 160 : 0;
 
     for (int i = 1; i + 1 < rows; ++i) {
-        (*image)[ImageUtils::to1D(1, i, cols)] = ringValue;
-        (*image)[ImageUtils::to1D(rows - 2, i, cols)] = ringValue;
-        (*image)[ImageUtils::to1D(i, 1, cols)] = ringValue;
-        (*image)[ImageUtils::to1D(i, cols - 2, cols)] = ringValue;
+        (*image)[ImageUtils::to1D(1, i, columns)] = ringValue;
+        (*image)[ImageUtils::to1D(rows - 2, i, columns)] = ringValue;
+        (*image)[ImageUtils::to1D(i, 1, columns)] = ringValue;
+        (*image)[ImageUtils::to1D(i, columns - 2, columns)] = ringValue;
     }
 
     return image;
@@ -119,11 +119,11 @@ ImageUInt8Ptr makeRingImage(bool brightRing) {
 
 ImageUInt8Ptr makeCheckerboardImage() {
     constexpr int rows = 8;
-    constexpr int cols = 8;
-    auto image = ImageUInt8::create(rows, cols);
+    constexpr int columns = 8;
+    auto image = ImageUInt8::create(rows, columns);
     for (int row = 0; row < rows; ++row) {
-        for (int col = 0; col < cols; ++col) {
-            (*image)[ImageUtils::to1D(row, col, cols)] = ((row + col) % 2 == 0) ? static_cast<std::uint8_t>(220) : static_cast<std::uint8_t>(20);
+        for (int column = 0; column < columns; ++column) {
+            (*image)[ImageUtils::to1D(row, column, columns)] = ((row + column) % 2 == 0) ? static_cast<std::uint8_t>(220) : static_cast<std::uint8_t>(20);
         }
     }
     return image;
@@ -161,21 +161,21 @@ std::string readPgmToken(std::istream& input) {
     return token;
 }
 
-ImageUInt8Ptr loadPgmAsSampledUInt8(const std::filesystem::path& path, int targetRows, int targetCols) {
+ImageUInt8Ptr loadPgmAsSampledUInt8(const std::filesystem::path& path, int targetRows, int targetColumns) {
     std::ifstream input(path, std::ios::binary);
     if (!input) {
         throw std::runtime_error("Failed to open PGM file: " + path.string());
     }
 
     const std::string magic = readPgmToken(input);
-    const int cols = std::stoi(readPgmToken(input));
+    const int columns = std::stoi(readPgmToken(input));
     const int rows = std::stoi(readPgmToken(input));
     const int maxValue = std::stoi(readPgmToken(input));
-    require(cols > 0 && rows > 0 && maxValue > 0, "PGM dimensions and max value must be positive");
+    require(columns > 0 && rows > 0 && maxValue > 0, "PGM dimensions and max value must be positive");
 
-    std::vector<int> source(static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols), 0);
+    std::vector<int> source(static_cast<std::size_t>(rows) * static_cast<std::size_t>(columns), 0);
     if (magic == "P5") {
-        for (int index = 0; index < rows * cols; ++index) {
+        for (int index = 0; index < rows * columns; ++index) {
             if (maxValue < 256) {
                 char value = '\0';
                 input.get(value);
@@ -192,7 +192,7 @@ ImageUInt8Ptr loadPgmAsSampledUInt8(const std::filesystem::path& path, int targe
             }
         }
     } else if (magic == "P2") {
-        for (int index = 0; index < rows * cols; ++index) {
+        for (int index = 0; index < rows * columns; ++index) {
             source[static_cast<std::size_t>(index)] = std::stoi(readPgmToken(input));
         }
     } else {
@@ -200,15 +200,15 @@ ImageUInt8Ptr loadPgmAsSampledUInt8(const std::filesystem::path& path, int targe
     }
 
     const int outRows = std::min(rows, targetRows);
-    const int outCols = std::min(cols, targetCols);
-    auto output = ImageUInt8::create(outRows, outCols);
+    const int outputColumns = std::min(columns, targetColumns);
+    auto output = ImageUInt8::create(outRows, outputColumns);
     for (int row = 0; row < outRows; ++row) {
         const int sourceRow = row * rows / outRows;
-        for (int col = 0; col < outCols; ++col) {
-            const int sourceCol = col * cols / outCols;
-            const int raw = source[static_cast<std::size_t>(ImageUtils::to1D(sourceRow, sourceCol, cols))];
+        for (int column = 0; column < outputColumns; ++column) {
+            const int sourceColumn = column * columns / outputColumns;
+            const int raw = source[static_cast<std::size_t>(ImageUtils::to1D(sourceRow, sourceColumn, columns))];
             const int scaled = (raw * 255 + (maxValue / 2)) / maxValue;
-            (*output)[ImageUtils::to1D(row, col, outCols)] = static_cast<std::uint8_t>(std::clamp(scaled, 0, 255));
+            (*output)[ImageUtils::to1D(row, column, outputColumns)] = static_cast<std::uint8_t>(std::clamp(scaled, 0, 255));
         }
     }
     return output;
@@ -221,8 +221,8 @@ struct NumericFixture {
     double adjacencyRadius;
 };
 
-std::shared_ptr<WeightedMorphologicalTree<std::uint8_t>> makeWeightedTree(const NumericFixture& fixture) {
-    return makeWeightedComponentTree(fixture.image, fixture.isMaxTree, fixture.adjacencyRadius);
+std::shared_ptr<ValuedMorphologicalTree<std::uint8_t>> makeValuedTree(const NumericFixture& fixture) {
+    return makeValuedComponentTree(fixture.image, fixture.isMaxTree, fixture.adjacencyRadius);
 }
 
 std::string treeKindLabel(bool isMaxTree) { return isMaxTree ? "max-tree" : "min-tree"; }
@@ -230,7 +230,7 @@ std::string treeKindLabel(bool isMaxTree) { return isMaxTree ? "max-tree" : "min
 template <std::floating_point Real>
 void requireAllAttributesAreFinite(const NumericFixture& fixture, const AttributeNames& names, std::span<const Real> values, int numRows,
                                    const std::string& outputSpaceLabel, std::unordered_map<Attribute, bool>& observedFiniteValues) {
-    const std::vector<Attribute>& allAttributes = ATTRIBUTE_GROUPS.at(AttributeGroup::ALL);
+    const std::vector<Attribute>& allAttributes = ATTRIBUTE_GROUPS.at(AttributeGroup::All);
 
     requireEqual(names.NUM_ATTRIBUTES, static_cast<int>(allAttributes.size()), fixture.label + " " + outputSpaceLabel + " ALL group stride");
     requireEqual(values.size(), static_cast<std::size_t>(numRows) * allAttributes.size(), fixture.label + " " + outputSpaceLabel + " ALL group buffer size");
@@ -257,15 +257,15 @@ void requireAllAttributesAreFinite(const NumericFixture& fixture, const Attribut
 
 template <std::floating_point Real>
 void requireAllAttributesAreFiniteOnInternalNodes(const NumericFixture& fixture, std::unordered_map<Attribute, bool>& observedFiniteValues) {
-    const auto weighted = makeWeightedTree(fixture);
-    const MorphologicalTree& tree = weighted->topology();
-    const std::vector<Attribute>& allAttributes = ATTRIBUTE_GROUPS.at(AttributeGroup::ALL);
+    const auto valuedTree = makeValuedTree(fixture);
+    const MorphologicalTree& tree = valuedTree->topology();
+    const std::vector<Attribute>& allAttributes = ATTRIBUTE_GROUPS.at(AttributeGroup::All);
 
-    const auto computed = AttributeComputation::computeAttributes<Real>(*weighted, {AttributeGroup::ALL});
+    const auto computed = AttributeComputation::computeAttributes<Real>(*valuedTree, {AttributeGroup::All});
     const AttributeNames& names = computed.attributeNames();
     const std::vector<Real>& values = computed.values();
 
-    for (NodeId nodeId : tree.getAliveNodeIds()) {
+    for (NodeId nodeId : tree.aliveNodeIds()) {
         for (Attribute attribute : allAttributes) {
             const Real value = values[names.linearIndex(nodeId, attribute)];
             if (std::isfinite(value)) {
@@ -283,15 +283,15 @@ void requireAllAttributesAreFiniteOnInternalNodes(const NumericFixture& fixture,
 
 template <std::floating_point Real>
 void requireAllAttributesAreFiniteInExportedHigraSpace(const NumericFixture& fixture, std::unordered_map<Attribute, bool>& observedFiniteValues) {
-    const auto weighted = makeWeightedTree(fixture);
-    const auto [parent, altitude] = weighted->exportHigraHierarchy();
+    const auto valuedTree = makeValuedTree(fixture);
+    const auto [parent, altitude] = valuedTree->exportHigraHierarchy();
     auto imported = MorphologicalTreeFactory::createFromHigraParent(
-        std::span<const NodeId>(parent), std::span<const std::uint8_t>(altitude), weighted->topology().getNumRowsOfGridDomain2D(),
-        weighted->topology().getNumColsOfGridDomain2D(), fixture.isMaxTree ? MorphologicalTreeKind::MAX_TREE : MorphologicalTreeKind::MIN_TREE,
-        RegularGridAdjacency2D(weighted->topology().getNumRowsOfGridDomain2D(), weighted->topology().getNumColsOfGridDomain2D(), fixture.adjacencyRadius));
+        std::span<const NodeId>(parent), std::span<const std::uint8_t>(altitude), valuedTree->topology().numRows(),
+        valuedTree->topology().numColumns(), fixture.isMaxTree ? MorphologicalTreeKind::MaxTree : MorphologicalTreeKind::MinTree,
+        RegularGridAdjacency2D(valuedTree->topology().numRows(), valuedTree->topology().numColumns(), fixture.adjacencyRadius));
 
-    const auto computed = AttributeComputation::computeAttributes<Real>(imported, {AttributeGroup::ALL}, NodeIdSpace::HIGRA);
-    requireAllAttributesAreFinite<Real>(fixture, computed.attributeNames(), computed.values(), imported.topology().getNodeIdSpaceSize(NodeIdSpace::HIGRA),
+    const auto computed = AttributeComputation::computeAttributes<Real>(imported, {AttributeGroup::All}, NodeIdSpace::Higra);
+    requireAllAttributesAreFinite<Real>(fixture, computed.attributeNames(), computed.values(), imported.topology().getNodeIdSpaceSize(NodeIdSpace::Higra),
                                         "exported-higra", observedFiniteValues);
 }
 
@@ -305,7 +305,7 @@ void addTreeCases(std::vector<NumericFixture>& fixtures, const std::string& labe
 } // namespace
 
 int main() {
-    const std::vector<Attribute>& allAttributes = ATTRIBUTE_GROUPS.at(AttributeGroup::ALL);
+    const std::vector<Attribute>& allAttributes = ATTRIBUTE_GROUPS.at(AttributeGroup::All);
     std::unordered_map<Attribute, bool> observedFiniteValues;
     for (Attribute attribute : allAttributes) {
         observedFiniteValues[attribute] = false;

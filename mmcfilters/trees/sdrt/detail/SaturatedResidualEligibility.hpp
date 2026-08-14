@@ -9,7 +9,7 @@
 #include "SaturatedDynamicLca.hpp"
 #include "../ResidualTreeBuildStatistics.hpp"
 #include "../ResidualTreePolicies.hpp"
-#include "../../WeightedMorphologicalTree.hpp"
+#include "../../ValuedMorphologicalTree.hpp"
 #include "../../../utils/GenerationStampSet.hpp"
 #include "../../../utils/RegularGridAdjacency2D.hpp"
 
@@ -29,26 +29,26 @@ namespace mmcfilters::sdrt::detail {
  * The evaluator owns both the fast dual-tree LCA certificate and the exact
  * complement traversal used when that certificate is inconclusive.
  */
-template <AltitudeValue T> class SaturatedEligibilityEvaluator {
+template <AltitudeValue T> class SaturatedResidualEligibility {
   public:
-    using tree_t = WeightedMorphologicalTree<T>;                       ///< Mutable component-tree type.
+    using Tree = ValuedMorphologicalTree<T>;                         ///< Mutable component-tree type.
     using DynamicLcaIndex = typename SaturatedLcaTypes<T>::DynamicLcaIndex; ///< Policy-selected LCA index.
 
     /**
      * @brief Creates and binds all saturated-only certification state.
      * @param numPixels Size of the common pixel domain.
      * @param adjacency Established symmetric pixel adjacency.
-     * @param exteriorSeed Exterior seed excluded from candidate supports.
+     * @param infinityPixel Declared infinity pixel excluded from candidate supports.
      * @param lcaPolicy Dynamic LCA strategy.
      * @param fallbackPolicy Exact complement traversal strategy.
      * @param minTree Current min-tree.
      * @param maxTree Current max-tree.
      */
-    SaturatedEligibilityEvaluator(std::size_t numPixels, const RegularGridAdjacency2D& adjacency, NodeId exteriorSeed,
-                                  SaturatedMinMaxLcaPolicy lcaPolicy, SaturatedMinMaxFallbackPolicy fallbackPolicy,
-                                  const tree_t& minTree, const tree_t& maxTree)
+    SaturatedResidualEligibility(std::size_t numPixels, const RegularGridAdjacency2D& adjacency, PixelId infinityPixel,
+                                 SaturatedMinMaxLcaPolicy lcaPolicy, SaturatedMinMaxFallbackPolicy fallbackPolicy,
+                                 const Tree& minTree, const Tree& maxTree)
         : supportMarks_(numPixels), visitedMarks_(numPixels), complementLabelByPixel_(numPixels, -1), adjacency_(&adjacency),
-          exteriorSeed_(exteriorSeed), fallbackPolicy_(fallbackPolicy) {
+          infinityPixel_(infinityPixel), fallbackPolicy_(fallbackPolicy) {
         frontier_.reserve(numPixels);
         minLca_.bind(minTree, lcaPolicy);
         maxLca_.bind(maxTree, lcaPolicy);
@@ -60,28 +60,28 @@ template <AltitudeValue T> class SaturatedEligibilityEvaluator {
      * @param dual Opposite-polarity component tree.
      * @param candidateNode Current primal-tree leaf.
      * @param primalIsMaxTree Whether `primal` is the max-tree.
-     * @param containsExteriorSeed Whether the candidate support owns the exterior seed.
+     * @param containsInfinityPixel Whether the candidate support contains the infinity pixel.
      * @param context Prepared common support and boundary data.
      * @param statistics Build diagnostics updated by exact fallback traversals.
      * @return `true` when the candidate support has connected complement.
      */
-    [[nodiscard]] bool isEligible(const tree_t& primal, const tree_t& dual, NodeId candidateNode, bool primalIsMaxTree, bool containsExteriorSeed,
+    [[nodiscard]] bool isEligible(const Tree& primal, const Tree& dual, NodeId candidateNode, bool primalIsMaxTree, bool containsInfinityPixel,
                                   const ResidualTreeCandidateContext& context, ResidualTreeBuildStatistics& statistics) {
-        if (containsExteriorSeed) {
+        if (containsInfinityPixel) {
             return false;
         }
-        if (context.boundaryOwners.empty()) {
-            throw std::logic_error("Saturated residual eligibility requires prepared boundary owners.");
+        if (context.boundarySmallestNodes.empty()) {
+            throw std::logic_error("Saturated residual eligibility requires prepared boundary smallest nodes.");
         }
 
-        NodeId common = context.boundaryOwners.front();
+        NodeId common = context.boundarySmallestNodes.front();
         DynamicLcaIndex& dualLca = primalIsMaxTree ? minLca_ : maxLca_;
-        for (std::size_t index = 1; index < context.boundaryOwners.size(); ++index) {
-            common = lowestCommonAncestor(dual, dualLca, common, context.boundaryOwners[index]);
+        for (std::size_t index = 1; index < context.boundarySmallestNodes.size(); ++index) {
+            common = lowestCommonAncestor(dual, dualLca, common, context.boundarySmallestNodes[index]);
         }
 
-        const T sourceLevel = primal.getAltitude(candidateNode);
-        const T connectingLevel = dual.getAltitude(common);
+        const T sourceLevel = primal.nodeAltitude(candidateNode);
+        const T connectingLevel = dual.nodeAltitude(common);
         const bool certifiedByDualTree = primalIsMaxTree ? connectingLevel < sourceLevel : connectingLevel > sourceLevel;
         if (certifiedByDualTree) {
             return true;
@@ -89,14 +89,14 @@ template <AltitudeValue T> class SaturatedEligibilityEvaluator {
 
         const MorphologicalTree& dualTopology = dual.topology();
         bool commonContainsSupport = false;
-        for (NodeId owner : context.supportOwners) {
-            NodeId cursor = owner;
+        for (NodeId smallestNodeId : context.supportSmallestNodes) {
+            NodeId cursor = smallestNodeId;
             while (true) {
                 if (cursor == common) {
                     commonContainsSupport = true;
                     break;
                 }
-                const NodeId parent = dualTopology.getNodeParent(cursor);
+                const NodeId parent = dualTopology.parent(cursor);
                 if (parent == cursor) {
                     break;
                 }
@@ -112,7 +112,7 @@ template <AltitudeValue T> class SaturatedEligibilityEvaluator {
 
         ++statistics.complementTraversalCertificates;
         supportMarks_.resetAll();
-        for (NodeId pixel : context.supportPixels) {
+        for (PixelId pixel : context.supportPixels) {
             supportMarks_.mark(static_cast<std::size_t>(pixel));
         }
         return exactComplementTraversal(context);
@@ -133,12 +133,12 @@ template <AltitudeValue T> class SaturatedEligibilityEvaluator {
     DynamicLcaIndex minLca_;                         ///< Dynamic index for the mutable min-tree.
     GenerationStampSet supportMarks_;                ///< Candidate-support pixel marks.
     GenerationStampSet visitedMarks_;                ///< Complement traversal marks.
-    std::vector<NodeId> frontier_;                   ///< DFS stack or multi-source traversal queue.
+    std::vector<PixelId> frontier_;                  ///< DFS stack or multi-source traversal queue.
     std::vector<int> complementLabelByPixel_;        ///< Multi-source complement label by pixel.
     std::vector<int> complementLabelParent_;         ///< Union-find parent by complement label.
     std::vector<std::uint8_t> complementLabelRank_;  ///< Union-find rank by complement label.
     const RegularGridAdjacency2D* adjacency_;         ///< Non-owning adjacency used by exact traversal.
-    NodeId exteriorSeed_;                            ///< Exterior seed pixel.
+    PixelId infinityPixel_;                         ///< Declared infinity pixel.
     SaturatedMinMaxFallbackPolicy fallbackPolicy_;   ///< Selected exact traversal strategy.
 
     /**
@@ -148,14 +148,14 @@ template <AltitudeValue T> class SaturatedEligibilityEvaluator {
      * @param second Second node identifier.
      * @return Lowest common ancestor of `first` and `second` in the current tree.
      */
-    [[nodiscard]] static NodeId parentClimbLowestCommonAncestor(const tree_t& tree, NodeId first, NodeId second) {
+    [[nodiscard]] static NodeId parentClimbLowestCommonAncestor(const Tree& tree, NodeId first, NodeId second) {
         const MorphologicalTree& topology = tree.topology();
-        const bool minTree = topology.getDescriptiveKind() == MorphologicalTreeKind::MIN_TREE;
+        const bool minTree = topology.kind() == MorphologicalTreeKind::MinTree;
         NodeId lhs = first;
         NodeId rhs = second;
         while (lhs != rhs) {
-            const T lhsAltitude = tree.getAltitude(lhs);
-            const T rhsAltitude = tree.getAltitude(rhs);
+            const T lhsAltitude = tree.nodeAltitude(lhs);
+            const T rhsAltitude = tree.nodeAltitude(rhs);
             bool climbLhs = false;
             bool climbRhs = false;
             if (lhsAltitude == rhsAltitude) {
@@ -167,14 +167,14 @@ template <AltitudeValue T> class SaturatedEligibilityEvaluator {
                 climbRhs = true;
             }
             if (climbLhs) {
-                const NodeId parent = topology.getNodeParent(lhs);
+                const NodeId parent = topology.parent(lhs);
                 if (parent == lhs) {
                     throw std::runtime_error("Min/max residual altitude-aligned LCA reached one root before convergence.");
                 }
                 lhs = parent;
             }
             if (climbRhs) {
-                const NodeId parent = topology.getNodeParent(rhs);
+                const NodeId parent = topology.parent(rhs);
                 if (parent == rhs) {
                     throw std::runtime_error("Min/max residual altitude-aligned LCA reached one root before convergence.");
                 }
@@ -195,7 +195,7 @@ template <AltitudeValue T> class SaturatedEligibilityEvaluator {
      * @param second Second node identifier.
      * @return Lowest common ancestor of `first` and `second`.
      */
-    [[nodiscard]] static NodeId lowestCommonAncestor(const tree_t& tree, DynamicLcaIndex& index, NodeId first, NodeId second) {
+    [[nodiscard]] static NodeId lowestCommonAncestor(const Tree& tree, DynamicLcaIndex& index, NodeId first, NodeId second) {
         const auto indexed = index.findLowestCommonAncestor(first, second);
         return indexed.has_value() ? *indexed : parentClimbLowestCommonAncestor(tree, first, second);
     }
@@ -208,20 +208,20 @@ template <AltitudeValue T> class SaturatedEligibilityEvaluator {
     [[nodiscard]] bool exactSingleSourceComplementTraversal(const ResidualTreeCandidateContext& context) {
         visitedMarks_.resetAll();
         frontier_.clear();
-        if (supportMarks_.isMarked(static_cast<std::size_t>(exteriorSeed_))) {
+        if (supportMarks_.isMarked(static_cast<std::size_t>(infinityPixel_))) {
             return false;
         }
         if (context.boundaryPixels.empty()) {
             throw std::runtime_error("Min/max residual complement traversal requires a non-empty external boundary.");
         }
-        const NodeId seed = context.boundaryPixels.front();
+        const PixelId seed = context.boundaryPixels.front();
         frontier_.push_back(seed);
         visitedMarks_.mark(static_cast<std::size_t>(seed));
         std::size_t reachedBoundaryPixels = 1;
         while (!frontier_.empty() && reachedBoundaryPixels < context.boundaryPixels.size()) {
-            const NodeId pixel = frontier_.back();
+            const PixelId pixel = frontier_.back();
             frontier_.pop_back();
-            for (NodeId neighbor : adjacency_->getNeighborIndices(pixel)) {
+            for (PixelId neighbor : adjacency_->getNeighborIndices(pixel)) {
                 const std::size_t index = static_cast<std::size_t>(neighbor);
                 if (supportMarks_.isMarked(index) || visitedMarks_.isMarked(index)) {
                     continue;
@@ -244,7 +244,7 @@ template <AltitudeValue T> class SaturatedEligibilityEvaluator {
     [[nodiscard]] bool exactMultiSourceComplementTraversal(const ResidualTreeCandidateContext& context) {
         visitedMarks_.resetAll();
         frontier_.clear();
-        if (supportMarks_.isMarked(static_cast<std::size_t>(exteriorSeed_))) {
+        if (supportMarks_.isMarked(static_cast<std::size_t>(infinityPixel_))) {
             return false;
         }
         if (context.boundaryPixels.empty()) {
@@ -256,7 +256,7 @@ template <AltitudeValue T> class SaturatedEligibilityEvaluator {
         std::iota(complementLabelParent_.begin(), complementLabelParent_.end(), 0);
         complementLabelRank_.assign(numLabels, std::uint8_t{0});
         for (std::size_t label = 0; label < numLabels; ++label) {
-            const NodeId pixel = context.boundaryPixels[label];
+            const PixelId pixel = context.boundaryPixels[label];
             const std::size_t pixelIndex = static_cast<std::size_t>(pixel);
             visitedMarks_.mark(pixelIndex);
             complementLabelByPixel_[pixelIndex] = static_cast<int>(label);
@@ -294,9 +294,9 @@ template <AltitudeValue T> class SaturatedEligibilityEvaluator {
 
         std::size_t head = 0;
         while (head < frontier_.size() && activeLabels > 1) {
-            const NodeId pixel = frontier_[head++];
+            const PixelId pixel = frontier_[head++];
             const int pixelLabel = complementLabelByPixel_[static_cast<std::size_t>(pixel)];
-            for (NodeId neighbor : adjacency_->getNeighborIndices(pixel)) {
+            for (PixelId neighbor : adjacency_->getNeighborIndices(pixel)) {
                 const std::size_t neighborIndex = static_cast<std::size_t>(neighbor);
                 if (supportMarks_.isMarked(neighborIndex)) {
                     continue;

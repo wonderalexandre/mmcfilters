@@ -1,15 +1,15 @@
 /**
- * Demonstrate the public editing boundary for topology-only and weighted
+ * Demonstrate the public editing boundary for topology-only and valuedTree
  * morphological trees.
  *
  * Build with `-DMMCFILTERS_BUILD_EXAMPLES=ON` and run:
  * `./build/examples/mmcfilters_example_editing_api`.
  *
  * The example covers safe public mutators, staged `TreeEditor` commits,
- * weighted altitude insertion, and rejection of a non-monotone weighted edit.
+ * valuedTree altitude insertion, and rejection of a non-monotone valuedTree edit.
  */
 #include "../mmcfilters/trees/TreeEditor.hpp"
-#include "../mmcfilters/trees/WeightedMorphologicalTree.hpp"
+#include "../mmcfilters/trees/ValuedMorphologicalTree.hpp"
 #include "../mmcfilters/trees/MorphologicalTreeFactory.hpp"
 
 #include <algorithm>
@@ -39,7 +39,7 @@ void require(bool condition, const char* message) {
 }
 
 mmcfilters::NodeId firstNonRootLeaf(const mmcfilters::MorphologicalTree& tree) {
-    for (mmcfilters::NodeId nodeId : tree.getLeaves()) {
+    for (mmcfilters::NodeId nodeId : tree.leaves()) {
         if (!tree.isRoot(nodeId)) {
             return nodeId;
         }
@@ -50,16 +50,16 @@ mmcfilters::NodeId firstNonRootLeaf(const mmcfilters::MorphologicalTree& tree) {
 void safeMutatorExample() {
     auto topologySource = mmcfilters::MorphologicalTreeFactory::createMaxTree(makeFixtureImage());
     auto tree = topologySource.topology().clone();
-    const int nodesBeforePrune = tree.getNumNodes();
+    const int nodesBeforePrune = tree.numNodes();
 
     tree.pruneNode(firstNonRootLeaf(tree));
-    require(tree.getNumNodes() < nodesBeforePrune, "pruneNode should remove a live subtree");
+    require(tree.numNodes() < nodesBeforePrune, "pruneNode should remove a live subtree");
 
-    auto weighted = mmcfilters::MorphologicalTreeFactory::createMaxTree(makeFixtureImage());
-    const int nodesBeforeMerge = weighted.topology().getNumNodes();
+    auto valuedTree = mmcfilters::MorphologicalTreeFactory::createMaxTree(makeFixtureImage());
+    const int nodesBeforeMerge = valuedTree.topology().numNodes();
 
-    weighted.mergeNodeIntoParent(firstNonRootLeaf(weighted.topology()));
-    require(weighted.topology().getNumNodes() < nodesBeforeMerge, "weighted merge should update the owned topology");
+    valuedTree.mergeNodeIntoParent(firstNonRootLeaf(valuedTree.topology()));
+    require(valuedTree.topology().numNodes() < nodesBeforeMerge, "valuedTree merge should update the owned topology");
 }
 
 void treeEditorExample() {
@@ -73,14 +73,14 @@ void treeEditorExample() {
     editor.attach(2, insertedNode);
     editor.commit();
 
-    require(tree.getNodeParent(insertedNode) == 2, "TreeEditor should validate and commit the staged topology");
+    require(tree.parent(insertedNode) == 2, "TreeEditor should validate and commit the staged topology");
 }
 
-void weightedTreeEditorExample() {
-    auto weighted = mmcfilters::MorphologicalTreeFactory::createMinTree(makeFixtureImage());
-    auto editor = weighted.edit();
+void valuedTreeEditorExample() {
+    auto valuedTree = mmcfilters::MorphologicalTreeFactory::createMinTree(makeFixtureImage());
+    auto editor = valuedTree.edit();
 
-    const std::uint8_t insertedAltitude = std::min(weighted.getAltitude(2), std::max(weighted.getAltitude(3), weighted.getAltitude(4)));
+    const std::uint8_t insertedAltitude = std::min(valuedTree.nodeAltitude(2), std::max(valuedTree.nodeAltitude(3), valuedTree.nodeAltitude(4)));
     const mmcfilters::NodeId insertedNode = editor.createDetachedNode(insertedAltitude);
 
     editor.reparent(3, insertedNode);
@@ -88,21 +88,21 @@ void weightedTreeEditorExample() {
     editor.attach(2, insertedNode);
     editor.commit();
 
-    require(weighted.getAltitude(insertedNode) == insertedAltitude, "WeightedTreeEditor<std::uint8_t> should preserve inserted altitude");
+    require(valuedTree.nodeAltitude(insertedNode) == insertedAltitude, "ValuedMorphologicalTreeEditor<std::uint8_t> should preserve inserted altitude");
 }
 
-void rejectedWeightedCommitExample() {
-    auto weighted = mmcfilters::MorphologicalTreeFactory::createMinTree(makeFixtureImage());
-    auto editor = weighted.edit();
+void rejectedValuedTreeCommitExample() {
+    auto valuedTree = mmcfilters::MorphologicalTreeFactory::createMinTree(makeFixtureImage());
+    auto editor = valuedTree.edit();
 
-    const mmcfilters::NodeId root = weighted.topology().getRoot();
-    const auto invalidAltitude = static_cast<std::uint8_t>(weighted.getAltitude(root) + 1);
+    const mmcfilters::NodeId root = valuedTree.topology().root();
+    const auto invalidAltitude = static_cast<std::uint8_t>(valuedTree.nodeAltitude(root) + 1);
     const mmcfilters::NodeId insertedNode = editor.createDetachedNode(invalidAltitude);
     editor.attach(root, insertedNode);
 
     const auto result = editor.validateAndCommit();
-    require(!result.ok, "WeightedTreeEditor<std::uint8_t>::validateAndCommit should reject non-monotone altitude");
-    require(weighted.topology().isEditing(), "failed validateAndCommit should keep the edit session open");
+    require(!result.ok, "ValuedMorphologicalTreeEditor<std::uint8_t>::validateAndCommit should reject non-monotone altitude");
+    require(valuedTree.topology().isEditing(), "failed validateAndCommit should keep the edit session open");
 }
 
 } // namespace
@@ -110,8 +110,8 @@ void rejectedWeightedCommitExample() {
 int main() {
     safeMutatorExample();
     treeEditorExample();
-    weightedTreeEditorExample();
-    rejectedWeightedCommitExample();
+    valuedTreeEditorExample();
+    rejectedValuedTreeCommitExample();
 
     std::cout << "Editing API example completed.\n";
     return 0;

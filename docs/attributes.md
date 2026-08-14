@@ -36,7 +36,8 @@ Main entry points:
 - `AttributeComputation`: public facade for computing one attribute,
   one group, or a heterogeneous request.
 - `AttributeNames`: describes column layout in flat attribute buffers.
-- `ComputedAttributeData<Real>` and `ComputedAttributeDataWithDelta<Real>`:
+- `NodeAttributeSampleLayout`: describes signed sample-offset columns.
+- `ComputedAttributeData<Real>` and `SampledNodeAttributeData<Real>`:
   owning result types returned by the facade.
 
 Use `AttributeComputation` for normal application code. Concrete computers are
@@ -51,13 +52,13 @@ node-indexed attribute buffers, see
 ## Tree contracts
 
 Topology/support requests may run on `MorphologicalTree`. Requests that read
-altitude must use `WeightedMorphologicalTree<T>` or `WeightedTreeView<T>`.
+altitude must use `ValuedMorphologicalTree<T>` or `ValuedMorphologicalTreeView<T>`.
 
 The attribute layer relies on the tree contracts documented in
 [Morphological trees](trees.md):
 
-- `WeightedMorphologicalTree<T>` owns topology plus a dense altitude buffer.
-- `WeightedTreeView<T>` borrows topology plus an external altitude span.
+- `ValuedMorphologicalTree<T>` owns topology plus a dense altitude buffer.
+- `ValuedMorphologicalTreeView<T>` borrows topology plus an external altitude span.
 - public computation checks that the tree is not inside an editing session;
 - altitude buffers must match the number of internal node slots;
 - attributes requiring adjacency must check that adjacency metadata is present.
@@ -70,7 +71,7 @@ monotone altitude order. Its descriptive tree kind is irrelevant.
 
 Choose the public entry point from the input contract:
 
-- use weighted computation when any requested attribute may read altitude;
+- use valued-tree computation when any requested attribute may read node altitude;
 - use topology/support computation only when the request does not read altitude;
 - choose non-default output spaces only at API boundaries.
 
@@ -78,16 +79,16 @@ Single altitude-aware attribute:
 
 ```cpp
 auto [names, values] =
-    AttributeComputation::computeSingleAttribute(weightedTree, LEVEL);
+    AttributeComputation::computeSingleAttribute(valuedTree, GrayLevelHeight);
 ```
 
 Attribute value buffers default to `float`, but the public facade can also
 materialize `double` buffers by selecting the `Real` template argument:
 
 ```cpp
-auto single32 = AttributeComputation::computeSingleAttribute(weightedTree, LEVEL);
-auto single64 = AttributeComputation::computeSingleAttribute<double>(weightedTree, LEVEL);
-auto mapped64 = AttributeComputation::computeAttributeMapping<double>(weightedTree, LEVEL);
+auto single32 = AttributeComputation::computeSingleAttribute(valuedTree, GrayLevelHeight);
+auto single64 = AttributeComputation::computeSingleAttribute<double>(valuedTree, GrayLevelHeight);
+auto mapped64 = AttributeComputation::computeAttributeMapping<double>(valuedTree, GrayLevelHeight);
 ```
 
 The `Real` argument selects the public result storage. The typed attribute
@@ -99,11 +100,11 @@ Several scalar attributes or groups in one coordinated request:
 
 ```cpp
 auto [names, values] = AttributeComputation::computeAttributes(
-    weightedTree,
-    std::vector<AttributeOrGroup>{AREA, LEVEL, AttributeGroup::GRAY_LEVEL});
+    valuedTree,
+    std::vector<AttributeOrGroup>{Area, GrayLevelHeight, AttributeGroup::GrayLevel});
 ```
 
-Topology/support attributes without requiring an altitude-bearing weighted tree:
+Topology/support attributes without requiring an altitude-bearing valued tree:
 
 ```cpp
 auto [names, values] = AttributeComputation::computeTopologyAttributes(
@@ -117,31 +118,45 @@ Returning values in a preserved public node ID space, for a tree created by
 ```cpp
 auto [names, values] = AttributeComputation::computeAttributes(
     importedTree,
-    std::vector<AttributeOrGroup>{AREA, LEVEL},
-    NodeIdSpace::HIGRA);
+    std::vector<AttributeOrGroup>{AREA, GrayLevelHeight},
+    NodeIdSpace::Higra);
 ```
 
-Delta-augmented sampling around one scalar attribute:
+Altitude-based sampling around one scalar node attribute:
 
 ```cpp
 auto [names, values] =
-    AttributeComputation::computeSingleAttributeWithDelta(
-        weightedTree,
-        LEVEL,
-        AltitudeDiff<std::uint8_t>{1},
+    AttributeComputation::computeSampledNodeAttribute(
+        valuedTree,
+        MeanGrayLevel,
+        AltitudeDifference<std::uint8_t>{1},
         2);
 ```
+
+The altitude step must be positive. Offset `0` is the current node, negative
+offsets are ancestor samples, and positive offsets are representative-
+descendant samples. The default `LargestSupportDescendant` policy selects the
+candidate with greatest node-support cardinality and breaks ties by the
+smallest row-major pixel in the candidate support. Missing positions use one of
+the typed `MissingNodeAttributeSamplePolicy` values: `RepeatNearest` (default),
+`NotANumber`, or `Zero`.
+
+When a radius contains multiple altitude distances, the implementation computes
+support cardinalities and smallest-pixel tie-break keys once, then reuses those
+metadata and the dense neighbourhood buffers for every distance. This changes
+only storage lifetime: each distance still performs the same ancestor search
+and `LargestSupportDescendant` selection.
 
 Projecting node attributes to pixels or to an exported Higra layout:
 
 ```cpp
-auto mapped = AttributeComputation::computeAttributeMapping(weightedTree, AREA);
+auto mapped = AttributeComputation::computeAttributeMapping(valuedTree, AREA);
 
 auto internal = AttributeComputation::computeAttributes(
-    weightedTree,
-    std::vector<AttributeOrGroup>{AREA, LEVEL});
+    valuedTree,
+    std::vector<AttributeOrGroup>{AREA, GrayLevelHeight});
 auto exported = AttributeComputation::projectNodeValuesToExportedHigra(
-    weightedTree,
+    valuedTree,
     internal.attributeNames(),
     internal.values());
 ```
@@ -151,32 +166,32 @@ auto exported = AttributeComputation::projectNodeValuesToExportedHigra(
 Python keeps a smaller public surface than C++:
 
 - image factories currently expose the canonical `np.uint8`
-  `WeightedMorphologicalTree` path;
-- `Attribute.computeSingleAttribute(...)` and
-  `Attribute.computeAttributes(...)` are the weighted attribute entry points;
-- `Attribute.computeSingleTopologyAttribute(...)` and
-  `Attribute.computeTopologyAttributes(...)` are the explicit
+  `ValuedMorphologicalTree` path;
+- `Attribute.compute_single_attribute(...)` and
+  `Attribute.compute_attributes(...)` are the valued-tree attribute entry points;
+- `Attribute.compute_single_topology_attribute(...)` and
+  `Attribute.compute_topology_attributes(...)` are the explicit
   topology/support entry points;
 - `NodeIdSpace` can be passed to the Python attribute methods when a preserved
   output node ID space is needed;
 - attribute methods accept `dtype=np.float32` or `dtype=np.float64`; the default
   remains `np.float32`;
-- `AttributePipeline`, concrete C++ computers, and local-event storage are not
+- `AttributePipeline`, concrete C++ computers, and finite-window intermediate storage are not
   part of the Python API.
 
-Typical Python calls use the same weighted versus topology/support split:
+Typical Python calls use the same valued-tree versus topology/support split:
 
 ```python
-level_by_node = mmcfilters.Attribute.computeSingleAttribute(
-    weighted_tree,
-    mmcfilters.Attribute.LEVEL,
+gray_level_height_by_node = mmcfilters.Attribute.compute_single_attribute(
+    valued_tree,
+    mmcfilters.Attribute.GRAY_LEVEL_HEIGHT,
 )
-names, values = mmcfilters.Attribute.computeAttributes(
-    weighted_tree,
+names, values = mmcfilters.Attribute.compute_attributes(
+    valued_tree,
     [mmcfilters.Attribute.AREA, mmcfilters.Attribute.Group.GRAY_LEVEL],
 )
-topology_names, topology_values = mmcfilters.Attribute.computeTopologyAttributes(
-    weighted_tree,
+topology_names, topology_values = mmcfilters.Attribute.compute_topology_attributes(
+    valued_tree,
     [mmcfilters.Attribute.AREA, mmcfilters.Attribute.Group.BOUNDARY],
 )
 ```
@@ -198,17 +213,17 @@ values[node_id * num_attributes + attribute_column]
 
 where `node_id` is an internal dense `MorphologicalTree` node slot. Dead
 internal slots keep the default buffer value; consumers that reason about tree
-nodes should iterate `tree.getAliveNodeIds()`.
+nodes should iterate `tree.aliveNodeIds()`.
 
-`ComputedAttributeData<Real>` and `ComputedAttributeDataWithDelta<Real>` also
+`ComputedAttributeData<Real>` and `SampledNodeAttributeData<Real>` also
 store the `NodeIdSpace` of the returned buffer. The default public computation
 type is `ComputedAttributeData<float>` or
-`ComputedAttributeDataWithDelta<float>`; selecting `Real=double` returns the
+`SampledNodeAttributeData<float>`; selecting `Real=double` returns the
 corresponding `double` specialization. Public computation methods can request a
 different public node ID space, but projection always happens after the
-internal pipeline has computed the result in `NodeIdSpace::MORPHOLOGICAL_TREE`.
+internal pipeline has computed the result in `NodeIdSpace::MorphologicalTree`.
 
-`NodeIdSpace::HIGRA` means the preserved imported Higra node ID domain. It is
+`NodeIdSpace::Higra` means the preserved imported Higra node ID domain. It is
 available only for trees imported from Higra whose original node ID space has
 not been invalidated by edits. Direct projection to this space copies live
 internal-node rows and fills proper-part rows with unit-component values for
@@ -218,8 +233,8 @@ For a compact Higra layout exported from the current tree, use
 `AttributeComputation::projectNodeValuesToExportedHigra(...)`. That
 helper emits the `[proper parts | live internal nodes]` layout produced by
 hierarchy export and fills unit proper-part rows through the responsible
-attribute computers. `computeAttributeMapping(...)` is the image-domain helper:
-each proper part receives the value stored at its proper-part owner.
+attribute computers. `compute_attribute_mapping(...)` is the image-domain helper:
+each proper part receives the value stored at its smallest node.
 
 For the distinction between preserved imported Higra node IDs and exported
 compact Higra snapshots, see [Higra interoperability](higra-interoperability.md).
@@ -235,15 +250,15 @@ The finite fallbacks are part of the public attribute contract:
 
 | Attribute family | Degenerate condition | Returned value |
 | --- | --- | --- |
-| `BITQUADS_CIRCULARITY` | `BITQUADS_PERIMETER_CONTINUOUS <= eps` | `0` |
-| `BITQUADS_PERIMETER_AVERAGE` | estimated Euler component count `<= 0` | `0` |
-| `BITQUADS_LENGTH_AVERAGE` | estimated Euler component count `<= 0` | `0` |
-| `BITQUADS_WIDTH_AVERAGE` | continuous perimeter `<= eps` | `0` |
+| `BITQUAD_CIRCULARITY` | `BITQUAD_PERIMETER_CONTINUOUS <= eps` | `0` |
+| `BITQUAD_PERIMETER_AVERAGE` | estimated Euler component count `<= 0` | `0` |
+| `BITQUAD_LENGTH_AVERAGE` | estimated Euler component count `<= 0` | `0` |
+| `BITQUAD_WIDTH_AVERAGE` | continuous perimeter `<= eps` | `0` |
 | `ECCENTRICITY` | both inertia eigenvalues are numerically zero | `1` |
 | `ECCENTRICITY` | smallest inertia eigenvalue `<= eps` or ratio overflows the practical range | `1e6` |
 
-`BITQUADS_WIDTH_AVERAGE` is computed with the algebraically equivalent finite
-formula `2 * BITQUADS_AREA / BITQUADS_PERIMETER_CONTINUOUS` when the continuous
+`BITQUAD_WIDTH_AVERAGE` is computed with the algebraically equivalent finite
+formula `2 * BITQUAD_AREA / BITQUAD_PERIMETER_CONTINUOUS` when the continuous
 perimeter is positive. This avoids the `inf / inf` pattern that appears if the
 formula is evaluated through average area and average perimeter separately.
 
@@ -251,11 +266,11 @@ The finite-scalar contract does not mean every buffer cell is finite in every
 API mode:
 
 - dead internal node slots are addressable and may retain sentinel `NaN` values;
-- `computeSingleAttributeWithDelta(..., "nan-padding")` and
-  `"null-padding"` deliberately keep `NaN` for missing ancestor or descendant
-  samples;
+- `computeSampledNodeAttribute(...,
+  MissingNodeAttributeSamplePolicy::NotANumber)` deliberately keeps `NaN` for
+  missing ancestor or descendant samples;
 - callers that provide non-finite floating-point altitudes are rejected by
-  weighted-tree and altitude-validation code before attributes are computed.
+  valued-tree and altitude-validation code before attributes are computed.
 
 ## Related guides
 
@@ -263,3 +278,5 @@ API mode:
   and input contracts.
 - [Attribute computer architecture](attribute-computer-architecture.md):
   contributor guide for adding or changing attribute computers.
+- [Finite-window local attributes](finite-window-local-attributes.md):
+  observation windows, anchored entries, visibility states, and additive local rules.

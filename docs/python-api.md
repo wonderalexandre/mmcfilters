@@ -6,13 +6,17 @@ attribute, filter, contour, saliency, and interoperability semantics.
 
 ## Input contract
 
-Python construction stores 8-bit altitudes in `WeightedMorphologicalTree`:
+Python exposes one `ValuedMorphologicalTree` abstraction while retaining the
+native altitude representation required by each hierarchy:
 
 - image inputs are two-dimensional C-contiguous `np.uint8` arrays;
-- altitude arrays are one-dimensional C-contiguous `np.uint8` arrays or integer
-  sequences in `[0, 255]`;
-- factories return `WeightedMorphologicalTree`;
-- a separate unweighted `MorphologicalTree` Python type is not exposed.
+- component-tree and residual-tree altitude arrays are one-dimensional
+  C-contiguous `np.uint8` arrays or integer sequences in `[0, 255]`;
+- tree-of-shapes node altitudes are exact doubled gray units stored as
+  `np.uint16`; an original gray level `g` is represented by `2*g`, while odd
+  values represent exact half levels;
+- factories return `ValuedMorphologicalTree`;
+- a separate topology-only `MorphologicalTree` Python type is not exposed.
 
 Normalize an image at the application boundary:
 
@@ -40,125 +44,140 @@ On a 2D square grid, `radius=1.0` selects 4-connectivity and `radius=1.5`
 selects 8-connectivity:
 
 ```python
-max_tree = mmcfilters.MorphologicalTreeFactory.createMaxTree(
+max_tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(
     image,
     radius=1.5,
 )
-min_tree = mmcfilters.MorphologicalTreeFactory.createMinTree(
+min_tree = mmcfilters.MorphologicalTreeFactory.create_min_tree(
     image,
     radius=1.5,
 )
-residual_tree = mmcfilters.MorphologicalTreeFactory.createSelfDualResidualTree(
+residual_tree = mmcfilters.MorphologicalTreeFactory.create_unrestricted_residual_tree(
     image,
     radius=1.5,
 )
 saturated_residual_tree = (
-    mmcfilters.MorphologicalTreeFactory.createSaturatedSelfDualResidualTree(
+    mmcfilters.MorphologicalTreeFactory.create_saturated_residual_tree(
         image,
-        infinityPixel=0,
+        infinity_pixel=0,
         radius=1.5,
     )
 )
-tree_of_shapes = mmcfilters.MorphologicalTreeFactory.createTreeOfShapes(image)
+tree_of_shapes = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(image)
+assert tree_of_shapes.node_altitudes.dtype == np.uint16
+assert np.array_equal(
+    tree_of_shapes.reconstruct_from_node_altitudes(),
+    2 * image.astype(np.uint16),
+)
 ```
 
-Max-trees declare `AltitudeOrder.INCREASING_FROM_ROOT`; min-trees declare
-`DECREASING_FROM_ROOT`. Trees of shapes and self-dual residual trees
-declare `UNCONSTRAINED` because their altitudes do not have one global polarity.
+Max-trees declare `NodeAltitudeOrder.INCREASING`; min-trees declare
+`NodeAltitudeOrder.DECREASING`. Trees of shapes and self-dual residual trees
+declare `NodeAltitudeOrder.UNCONSTRAINED` because their altitudes do not have one global polarity.
 
-The residual-tree factories use a shared symmetric adjacency.
-`SdrtTiePolicy.CONTRAST_INVARIANT_SPATIAL` is their default deterministic tie
-policy.
+The residual-tree factories use a shared symmetric adjacency and one canonical
+`SelfDualResidualSchedule`. Candidate keys are
+`SelfDualResidualKey(support_cardinality, spatial_minimum)`, with
+`RowMajorSpatialOrder` by default. A custom `SpatialOrder` may be supplied; no
+polarity-first tie policy is exposed.
 
 ### Native hierarchies
 
-A hierarchy over an abstract finite proper-part set does not require `rows` or
-`cols`:
+A hierarchy over an abstract finite pixel set does not require `rows` or
+`columns`:
 
 ```python
-semantics = mmcfilters.HierarchySemantics()
-abstract_tree = mmcfilters.MorphologicalTreeFactory.createFromNativeTopology(
-    [0, 0, 0],
-    [1, 2],
-    np.array([10, 3, 20], dtype=np.uint8),
-    0,
+semantics = mmcfilters.MorphologicalTreeSemantics()
+abstract_tree = mmcfilters.MorphologicalTreeFactory.create_from_native_topology(
+    parent=[0, 0, 0],
+    smallest_node_map=[1, 2],
+    node_altitudes=np.array([10, 3, 20], dtype=np.uint8),
+    root=0,
     semantics=semantics,
 )
-assert not abstract_tree.hasGridDomain2D
+assert not abstract_tree.has_grid_domain_2d
 ```
 
-Pass `rows`, `cols`, and `semantics` to attach a regular 2D layout. Geometry does
-not change the topology or proper-part ownership.
+Pass `rows`, `columns`, and `semantics` to attach a regular 2D layout. Geometry does
+not change the topology or smallest-node mapping.
 
-Directional semantics use
-`DirectionalGridAdjacency2D(decreasing, increasing)`. Attribute requirements
-can be inspected before computation:
+Tree-of-shapes semantics retain a `TopographicConvention`. A complementary
+immersion carries `ComplementaryAdjacencies(min_adjacency, max_adjacency)`;
+self-dual span immersion is represented explicitly by `SelfDualSpanImmersion`.
+Attribute requirements can be inspected before computation:
 
 ```python
 requirements = mmcfilters.Attribute.requirements(
     mmcfilters.Attribute.MAX_DIST
 )
-assert requirements["gridDomain2D"]
+assert requirements["grid_domain_2d"]
 assert requirements["adjacency"] == "uniform"
-assert requirements["monotoneAltitudeOrder"]
+assert requirements["monotone_altitude_order"]
 ```
 
 ## Node IDs and queries
 
 Tree queries, attributes, altitude buffers, predicates, and mutations use the
 dense internal `NodeId` domain. Edits may leave dead slots, so dense results keep
-`max_tree.numInternalNodeSlots` rows. Iterate live IDs when appropriate:
+`max_tree.num_internal_node_slots` rows. Iterate live IDs when appropriate:
 
 ```python
-root = max_tree.getRoot()
+root = max_tree.root
 
-for node_id in max_tree.getAliveNodeIds():
-    children = max_tree.getChildren(node_id)
-    direct_pixels = max_tree.getProperParts(node_id)
-    subtree = max_tree.getNodeSubtree(node_id)
+for node_id in max_tree.alive_node_ids:
+    children = max_tree.children(node_id)
+    direct_pixels = max_tree.proper_part(node_id)
+    subtree = max_tree.subtree_nodes(node_id)
+    entry_index = max_tree.dfs_entry_index(node_id)
+    exit_index = max_tree.dfs_exit_index(node_id)
 ```
 
-Pixels are row-major proper parts:
+The DFS entry and exit indices belong to one interleaved event sequence. They
+characterize the node interval, so
+`num_descendants(node_id) == (exit_index - entry_index - 1) // 2`.
+
+Pixels use row-major indices. The canonical structural queries are:
 
 ```python
 pixel_id = 10
-owner = max_tree.getProperPartOwner(pixel_id)
-component_pixels = list(max_tree.getConnectedComponent(owner))
-component_mask = max_tree.reconstructNode(owner)
+smallest = max_tree.smallest_node(pixel_id)
+support_pixels = list(max_tree.node_support(smallest))
+component_mask = max_tree.reconstruct_node(smallest)
 ```
 
 Python exposes safe local mutations and checked altitude setters:
 
 ```python
-max_tree.pruneNode(node_id)
-max_tree.mergeNodeIntoParent(node_id)
-max_tree.setAltitude(node_id, value)
-max_tree.setAltitudeBuffer(altitude)
+max_tree.prune_node(node_id)
+max_tree.merge_node_into_parent(node_id)
+max_tree.set_node_altitude(node_id, value)
+max_tree.node_altitudes = altitude
 ```
 
-`TreeEditor`, `WeightedTreeEditor`, unchecked setters, and a mutable topology
+`TreeEditor`, `ValuedMorphologicalTreeEditor`, unchecked setters, and a mutable topology
 handle are not exposed in Python. See [Editing API](editing-api.md) for mutation
 and derived-state lifetime.
 
 ## Attributes
 
-Use weighted entry points when an attribute may read altitude and
+Use valued-tree entry points when an attribute may read node altitude and
 topology/support entry points otherwise. Single-attribute methods return a 1D
 array; multi-attribute methods return `(layout, values)`, where `layout` maps
 names to columns. `dtype` accepts `np.float32` or `np.float64` and defaults to
 `np.float32`.
 
 ```python
-area = mmcfilters.Attribute.computeSingleTopologyAttribute(
+area = mmcfilters.Attribute.compute_single_topology_attribute(
     max_tree,
     mmcfilters.Attribute.AREA,
 )
-level = mmcfilters.Attribute.computeSingleAttribute(
+altitude = max_tree.node_altitude(node_id)
+gray_level_height = mmcfilters.Attribute.compute_single_attribute(
     max_tree,
-    mmcfilters.Attribute.LEVEL,
+    mmcfilters.Attribute.GRAY_LEVEL_HEIGHT,
 )
 
-layout, values = mmcfilters.Attribute.computeAttributes(
+layout, values = mmcfilters.Attribute.compute_attributes(
     max_tree,
     [
         mmcfilters.Attribute.AREA,
@@ -177,28 +196,34 @@ Groups expand to stable scalar sets:
 
 ```python
 boundary_layout, boundary_values = (
-    mmcfilters.Attribute.computeTopologyAttributes(
+    mmcfilters.Attribute.compute_topology_attributes(
         max_tree,
         [mmcfilters.Attribute.Group.BOUNDARY],
     )
 )
 ```
 
-Delta sampling returns center, ancestor, and descendant columns. Missing values
-use the selected padding policy:
+Altitude-based node-attribute sampling returns current-node, ancestor, and
+representative-descendant columns. Missing values use a typed policy:
 
 ```python
-delta_layout, delta_values = (
-    mmcfilters.Attribute.computeSingleAttributeWithDelta(
+sample_layout, sampled_values = (
+    mmcfilters.Attribute.compute_sampled_node_attribute(
         max_tree,
         mmcfilters.Attribute.AREA,
         1,
-        "null-padding",
+        1,
+        missing_sample_policy=(
+            mmcfilters.MissingNodeAttributeSamplePolicy.NOT_A_NUMBER
+        ),
     )
 )
 ```
 
-Use `computeAttributeMapping` to project a node attribute to the image domain.
+The two integer arguments are `altitude_step` and `sampling_radius`.
+Serialized layout labels use `_ANCESTOR_n` and `_DESCENDANT_n`.
+
+Use `compute_attribute_mapping` to project a node attribute to the image domain.
 The complete attribute and layout contracts are in [Attributes](attributes.md)
 and the [Attribute catalog](attribute-catalog.md).
 
@@ -211,20 +236,29 @@ topology mutation.
 ```python
 filters = mmcfilters.AttributeFilters(max_tree)
 
-box_height = mmcfilters.Attribute.computeSingleTopologyAttribute(
+box_height = mmcfilters.Attribute.compute_single_topology_attribute(
     max_tree,
-    mmcfilters.Attribute.BOX_HEIGHT,
+    mmcfilters.Attribute.BOUNDING_BOX_HEIGHT,
 )
-keep_large = (area >= 4.0).tolist()
+keep_large = mmcfilters.compute_node_preservation_mask(area, 4.0)
 
-direct = filters.filteringDirectRule(keep_large)
-subtractive = filters.filteringSubtractiveRule(keep_large)
-pruned_min = filters.filteringByPruningMin(box_height, 2.0)
-pruned_max = filters.filteringByPruningMax(box_height, 2.0)
-adaptive = filters.getAdaptiveCriterion(keep_large, delta=2)
-depth_adaptive = filters.getAdaptiveCriterionByDepth(
+direct = mmcfilters.DirectAttributeFilter(max_tree).apply_direct_attribute_filter(
     keep_large,
-    depthDelta=2,
+)
+subtractive = mmcfilters.HardSubtractiveAttributeFilter(
+    max_tree,
+).apply_hard_subtractive_attribute_filter(keep_large)
+pruned_min = filters.filtering_by_pruning_min(box_height, 2.0)
+pruned_max = filters.filtering_by_pruning_max(box_height, 2.0)
+altitude_adjusted = mmcfilters.adjust_node_preservation_mask_by_altitude_stability(
+    max_tree,
+    keep_large,
+    altitude_window_radius=2,
+)
+depth_adjusted = mmcfilters.adjust_node_preservation_mask_by_depth_stability(
+    max_tree,
+    keep_large,
+    depth_window_radius=2,
 )
 ```
 
@@ -233,24 +267,24 @@ needed directly:
 
 ```python
 depth = mmcfilters.DepthStableRegionComputer(max_tree)
-depth_mask = depth.computeByDepth(depthDelta=2)
-depth_variation = depth.getVariations()
+depth_mask = depth.compute_by_depth(depth_window_radius=2)
+depth_variation = depth.get_variations()
 ```
 
-Its result getters raise `RuntimeError` until `computeByDepth` succeeds.
+Its result getters raise `RuntimeError` until `compute_by_depth` succeeds.
 
 Extinction selection and Ultimate Attribute Opening (UAO) use the same dense
 attribute-buffer convention:
 
 ```python
 extinction = mmcfilters.ExtinctionValues(max_tree, area)
-strongest = mmcfilters.ExtinctionSelectionPolicy.byTopK(8)
+strongest = mmcfilters.ExtinctionSelectionPolicy.by_top_k(8)
 filtered = extinction.filtering(strongest)
 
 uao = mmcfilters.UltimateAttributeOpening(max_tree, box_height)
-uao.execute(maxCriterion=image.shape[0])
-max_contrast = uao.getMaxContrastImage()
-associated = uao.getAssociatedImage()
+uao.execute(maximum_attribute_threshold=image.shape[0])
+max_contrast = uao.get_max_contrast_image()
+associated = uao.get_associated_image()
 ```
 
 See [Filters](filters.md) for rule selection, extinction contracts, stability,
@@ -263,23 +297,23 @@ The Python surface exposes three distinct operations:
 | Need | API |
 | --- | --- |
 | project a monotone hierarchy valuation | `HierarchySaliencyMap` |
-| compute a persistence hierarchy from extinction values | `ExtinctionValues.computeFormalSaliencyEdgeMap` |
+| compute a persistence hierarchy from extinction values | `ExtinctionValues.compute_formal_saliency_edge_map` |
 | compute extinction in tree-node shape space | `ShapeSpaceSaliency` |
 
 ```python
-edge_map = mmcfilters.HierarchySaliencyMap.computeNormalizedAltitudeEdgeMap(
+edge_map = mmcfilters.HierarchySaliencyMap.compute_normalized_altitude_edge_map(
     max_tree,
 )
 
 shape_space = mmcfilters.ShapeSpaceSaliency.compute(
     max_tree,
     area,
-    mmcfilters.ShapeSpaceExtremaPolarity.Minima,
+    mmcfilters.ShapeSpaceExtremaPolarity.MINIMA,
 )
 ```
 
-Edge-map dictionaries contain `sources`, `targets`, `values`, `numRows`,
-`numCols`, and `adjacencyRadius`. Cuts and display projections are provided by
+Edge-map dictionaries contain `sources`, `targets`, `values`, `num_rows`,
+`num_columns`, and `adjacency_radius`. Cuts and display projections are provided by
 `HierarchySaliencyMapProjection`. See [Saliency maps](saliency.md) for operator
 definitions and preconditions.
 
@@ -289,9 +323,9 @@ Pixel contours are materialized lazily:
 
 ```python
 contours = mmcfilters.ContourComputation.extraction(max_tree)
-root_contour = list(contours.getContour(max_tree.getRoot()))
+root_contour = list(contours.get_contour(max_tree.root))
 
-for node_id, contour in contours.contoursByNode():
+for node_id, contour in contours.contours_by_node():
     pixels = list(contour)
 ```
 
@@ -299,22 +333,22 @@ Use contour traces for oriented sides and ordered external/internal loops:
 
 ```python
 traces = mmcfilters.ContourTraceComputation.extraction(max_tree)
-root_edges = traces.getEdges(max_tree.getRoot())
-root_loops = traces.getLoops(max_tree.getRoot())
+root_edges = traces.get_edges(max_tree.root)
+root_loops = traces.get_loops(max_tree.root)
 
 for loop in root_loops:
-    edges = traces.getLoopEdges(loop)
+    edges = traces.get_loop_edges(loop)
 ```
 
 See [Pixel contours](contours.md) and [Contour traces](contour-traces.md).
 
 ## Higra interoperability
 
-`exportHigraHierarchy()` returns a compact `(parent, altitude)` snapshot of the
+`export_higra_hierarchy()` returns a compact `(parent, altitude)` snapshot of the
 live tree. Its node domain differs from internal `NodeId` values:
 
 ```python
-parent, altitude = max_tree.exportHigraHierarchy()
+parent, altitude = max_tree.export_higra_hierarchy()
 area_exported = max_tree.project_node_values_to_exported_higra(
     area,
     mmcfilters.Attribute.AREA,
@@ -324,15 +358,15 @@ area_exported = max_tree.project_node_values_to_exported_higra(
 Import preserves the supplied Higra domain until the topology is edited:
 
 ```python
-roundtrip = mmcfilters.MorphologicalTreeFactory.createFromHigraParent(
+roundtrip = mmcfilters.MorphologicalTreeFactory.create_from_higra_parent(
     parent,
     altitude,
-    max_tree.numRows,
-    max_tree.numCols,
+    max_tree.num_rows,
+    max_tree.num_columns,
     mmcfilters.MorphologicalTreeKind.MAX_TREE,
     radius=1.5,
 )
-area_in_higra_space = mmcfilters.Attribute.computeSingleAttribute(
+area_in_higra_space = mmcfilters.Attribute.compute_single_attribute(
     roundtrip,
     mmcfilters.Attribute.AREA,
     mmcfilters.NodeIdSpace.HIGRA,
@@ -355,23 +389,23 @@ casf = mmcfilters.CasfComponentTrees(
     radius=1.5,
 )
 casf_result = casf.filter([2.0, 4.0])
-min_parent, min_altitude = casf.exportMinTree()
-max_parent, max_altitude = casf.exportMaxTree()
+min_parent, min_altitude = casf.export_min_tree()
+max_parent, max_altitude = casf.export_max_tree()
 ```
 
-Paired adjustment requires `WeightedMorphologicalTree` instances for a min-tree
+Paired adjustment requires `ValuedMorphologicalTree` instances for a min-tree
 and max-tree over the same image domain:
 
 ```python
 adjust = mmcfilters.DualMinMaxTreeIncrementalFilter(min_tree, max_tree)
 candidate = next(
     node_id
-    for node_id in max_tree.getAliveNodeIds()
-    if node_id != max_tree.getRoot()
+    for node_id in max_tree.alive_node_ids
+    if node_id != max_tree.root
 )
-adjust.pruneMaxTreeAndUpdateMinTree([candidate])
-updated_min_tree = adjust.minTree
-updated_max_tree = adjust.maxTree
+adjust.prune_max_tree_and_update_min_tree([candidate])
+updated_min_tree = adjust.min_tree
+updated_max_tree = adjust.max_tree
 ```
 
 ## Failure modes

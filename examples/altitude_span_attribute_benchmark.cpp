@@ -1,6 +1,6 @@
 /**
- * Benchmark canonical weighted-tree attribute computation against
- * `WeightedTreeView<T>` altitude-span computation for equivalent altitude
+ * Benchmark canonical valued-tree attribute computation against
+ * `ValuedMorphologicalTreeView<T>` altitude-span computation for equivalent altitude
  * buffers.
  *
  * Build with `-DMMCFILTERS_BUILD_EXAMPLES=ON` and run:
@@ -12,8 +12,8 @@
  */
 #include "mmcfilters/attributes/Attributes.hpp"
 #include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
-#include "mmcfilters/trees/WeightedMorphologicalTree.hpp"
-#include "mmcfilters/trees/WeightedTreeView.hpp"
+#include "mmcfilters/trees/ValuedMorphologicalTree.hpp"
+#include "mmcfilters/trees/ValuedMorphologicalTreeView.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -53,13 +53,13 @@ struct Measurement {
     std::uint64_t checksum = 0;
 };
 
-ImageUInt8Ptr makeBenchmarkImage(int rows, int cols) {
-    auto image = ImageUInt8::create(rows, cols);
+ImageUInt8Ptr makeBenchmarkImage(int rows, int columns) {
+    auto image = ImageUInt8::create(rows, columns);
     for (int row = 0; row < rows; ++row) {
-        for (int col = 0; col < cols; ++col) {
-            const int idx = row * cols + col;
-            const int radial = (row - rows / 2) * (row - rows / 2) + (col - cols / 2) * (col - cols / 2);
-            const int waves = (row * 17) ^ (col * 31) ^ ((row + col) * 7);
+        for (int column = 0; column < columns; ++column) {
+            const int idx = row * columns + column;
+            const int radial = (row - rows / 2) * (row - rows / 2) + (column - columns / 2) * (column - columns / 2);
+            const int waves = (row * 17) ^ (column * 31) ^ ((row + column) * 7);
             (*image)[idx] = static_cast<uint8_t>((radial / 113 + waves) & 0xff);
         }
     }
@@ -74,7 +74,7 @@ std::string formatBytes(std::size_t bytes) {
 
 std::uint64_t checksumComputed(const MorphologicalTree& tree, const ComputedAttributeData<float>& data, const std::vector<Attribute>& attributes) {
     std::uint64_t checksum = 1469598103934665603ull;
-    for (NodeId nodeId : tree.getAliveNodeIds()) {
+    for (NodeId nodeId : tree.aliveNodeIds()) {
         for (Attribute attribute : attributes) {
             const float value = data.second[data.first.linearIndex(nodeId, attribute)];
             std::uint64_t encodedValue = 0;
@@ -110,10 +110,10 @@ template <class Fn> Measurement measure(int repeats, Fn&& fn) {
     return {static_cast<double>(micros) / static_cast<double>(repeats) / 1000.0, checksum};
 }
 
-template <class T> std::vector<T> makeEquivalentAltitude(const WeightedMorphologicalTree<std::uint8_t>& weighted) {
-    std::vector<T> altitude(static_cast<std::size_t>(weighted.topology().getNumInternalNodeSlots()), T{});
-    for (NodeId nodeId : weighted.topology().getAliveNodeIds()) {
-        altitude[static_cast<std::size_t>(nodeId)] = static_cast<T>(weighted.getAltitude(nodeId));
+template <class T> std::vector<T> makeEquivalentAltitude(const ValuedMorphologicalTree<std::uint8_t>& valuedTree) {
+    std::vector<T> altitude(static_cast<std::size_t>(valuedTree.topology().numInternalNodeSlots()), T{});
+    for (NodeId nodeId : valuedTree.topology().aliveNodeIds()) {
+        altitude[static_cast<std::size_t>(nodeId)] = static_cast<T>(valuedTree.nodeAltitude(nodeId));
     }
     return altitude;
 }
@@ -133,10 +133,10 @@ template <class T> const char* typeName() {
 }
 
 template <class T>
-void runAltitudeSpanType(const WeightedMorphologicalTree<std::uint8_t>& weighted, const RequestCase& requestCase, std::uint64_t baselineChecksum, int repeats) {
-    const MorphologicalTree& tree = weighted.topology();
-    const std::vector<T> altitude = makeEquivalentAltitude<T>(weighted);
-    const WeightedTreeView<T> view(tree, std::span<const T>(altitude));
+void runAltitudeSpanType(const ValuedMorphologicalTree<std::uint8_t>& valuedTree, const RequestCase& requestCase, std::uint64_t baselineChecksum, int repeats) {
+    const MorphologicalTree& tree = valuedTree.topology();
+    const std::vector<T> altitude = makeEquivalentAltitude<T>(valuedTree);
+    const ValuedMorphologicalTreeView<T> view(tree, std::span<const T>(altitude));
     const std::size_t altitudeBytes = altitude.size() * sizeof(T);
     const Measurement measurement = measure(repeats, [&]() {
         const auto data = AttributeComputation::computeAttributesFromAltitudeSpan(view, requestCase.request);
@@ -235,32 +235,32 @@ RequestCase makeRequestCase(std::string name, std::vector<AttributeOrGroup> requ
 std::vector<RequestCase> coreRequestCases() {
     return {
         {
-            "level_gray",
-            {LEVEL, GRAY_HEIGHT},
-            expandChecksumAttributes({LEVEL, GRAY_HEIGHT}),
+            "gray_level_statistics",
+            {MeanGrayLevel, GrayLevelHeight},
+            expandChecksumAttributes({MeanGrayLevel, GrayLevelHeight}),
         },
         {
             "volume_relative",
-            {VOLUME, RELATIVE_VOLUME},
-            expandChecksumAttributes({VOLUME, RELATIVE_VOLUME}),
+            {Volume, RelativeVolume},
+            expandChecksumAttributes({Volume, RelativeVolume}),
         },
         {
-            "level_volume_maxdist",
-            {LEVEL, VOLUME, MAX_DIST},
-            expandChecksumAttributes({LEVEL, VOLUME, MAX_DIST}),
+            "mean_gray_level_volume_maxdist",
+            {MeanGrayLevel, Volume, MaxDist},
+            expandChecksumAttributes({MeanGrayLevel, Volume, MaxDist}),
         },
     };
 }
 
 std::vector<RequestCase> topologyOnlyRequestCases() {
     return {
-        makeRequestCase("gray_level", {AttributeGroup::GRAY_LEVEL}),
-        makeRequestCase("shape", {AttributeGroup::SHAPE}),
-        makeRequestCase("moments", {AttributeGroup::MOMENTS}),
-        makeRequestCase("boundary", {AttributeGroup::BOUNDARY}),
-        makeRequestCase("tree_topology", {AttributeGroup::TREE_TOPOLOGY}),
-        makeRequestCase("all", {AttributeGroup::ALL}),
-        makeRequestCase("mixed_level_shape_boundary", {LEVEL, AttributeGroup::MOMENTS, AttributeGroup::BOUNDARY}),
+        makeRequestCase("gray_level", {AttributeGroup::GrayLevel}),
+        makeRequestCase("shape", {AttributeGroup::Shape}),
+        makeRequestCase("moments", {AttributeGroup::Moments}),
+        makeRequestCase("boundary", {AttributeGroup::Boundary}),
+        makeRequestCase("tree_topology", {AttributeGroup::TreeTopology}),
+        makeRequestCase("all", {AttributeGroup::All}),
+        makeRequestCase("mixed_gray_level_shape_boundary", {MeanGrayLevel, AttributeGroup::Moments, AttributeGroup::Boundary}),
     };
 }
 
@@ -277,17 +277,17 @@ std::vector<RequestCase> requestCases(const std::string& suite) {
     return cases;
 }
 
-void runCase(int rows, int cols, bool isMaxTree, const Options& options) {
-    auto image = makeBenchmarkImage(rows, cols);
+void runCase(int rows, int columns, bool isMaxTree, const Options& options) {
+    auto image = makeBenchmarkImage(rows, columns);
     const auto buildStart = std::chrono::steady_clock::now();
-    auto weighted = isMaxTree ? MorphologicalTreeFactory::createMaxTree(image, options.radius) : MorphologicalTreeFactory::createMinTree(image, options.radius);
+    auto valuedTree = isMaxTree ? MorphologicalTreeFactory::createMaxTree(image, options.radius) : MorphologicalTreeFactory::createMinTree(image, options.radius);
     const auto buildEnd = std::chrono::steady_clock::now();
     const auto buildMicros = std::chrono::duration_cast<std::chrono::microseconds>(buildEnd - buildStart).count();
 
-    const MorphologicalTree& tree = weighted.topology();
-    const std::size_t slots = static_cast<std::size_t>(tree.getNumInternalNodeSlots());
+    const MorphologicalTree& tree = valuedTree.topology();
+    const std::size_t slots = static_cast<std::size_t>(tree.numInternalNodeSlots());
     std::cout << "\n"
-              << rows << "x" << cols << " " << (isMaxTree ? "max" : "min") << " nodes=" << tree.getNumNodes() << " slots=" << slots
+              << rows << "x" << columns << " " << (isMaxTree ? "max" : "min") << " nodes=" << tree.numNodes() << " slots=" << slots
               << " build_ms=" << std::fixed << std::setprecision(3) << (static_cast<double>(buildMicros) / 1000.0) << '\n';
 
     for (const RequestCase& requestCase : requestCases(options.suite)) {
@@ -296,7 +296,7 @@ void runCase(int rows, int cols, bool isMaxTree, const Options& options) {
                   << '\n';
 
         const Measurement baseline = measure(options.repeats, [&]() {
-            const auto data = AttributeComputation::computeAttributes(weighted, requestCase.request);
+            const auto data = AttributeComputation::computeAttributes(valuedTree, requestCase.request);
             return checksumComputed(tree, data, requestCase.checksumAttributes);
         });
 
@@ -305,10 +305,10 @@ void runCase(int rows, int cols, bool isMaxTree, const Options& options) {
                   << "  altitude=" << std::setw(10) << formatBytes(slots * sizeof(std::uint8_t)) << "  ms/run=" << std::setw(9) << std::fixed
                   << std::setprecision(3) << baseline.msPerRun << "  checksum=" << baseline.checksum << "  match=yes" << '\n';
 
-        runAltitudeSpanType<std::uint8_t>(weighted, requestCase, baseline.checksum, options.repeats);
-        runAltitudeSpanType<std::int32_t>(weighted, requestCase, baseline.checksum, options.repeats);
-        runAltitudeSpanType<float>(weighted, requestCase, baseline.checksum, options.repeats);
-        runAltitudeSpanType<double>(weighted, requestCase, baseline.checksum, options.repeats);
+        runAltitudeSpanType<std::uint8_t>(valuedTree, requestCase, baseline.checksum, options.repeats);
+        runAltitudeSpanType<std::int32_t>(valuedTree, requestCase, baseline.checksum, options.repeats);
+        runAltitudeSpanType<float>(valuedTree, requestCase, baseline.checksum, options.repeats);
+        runAltitudeSpanType<double>(valuedTree, requestCase, baseline.checksum, options.repeats);
     }
 }
 

@@ -37,7 +37,7 @@ not alter the measured operation.
 | `publication` | 512 x 512 | 15 | Broad experiment for a reported result |
 
 The `structured`, `noise`, `ramp`, `geometric`, and `flat` deterministic inputs
-can be selected independently. `--rows`, `--cols`, and `--repetitions` override
+can be selected independently. `--rows`, `--columns`, and `--repetitions` override
 the profile defaults. `--input-file` accepts a real image, converts it to one
 grayscale channel, and verifies the declared dimensions without implicit
 resampling.
@@ -56,17 +56,17 @@ suites, CASF quantiles, input checksum, and scientific attribute bundles.
 ```
 
 Real-image paths are resolved relative to the manifest. File workloads must
-declare `rows` and `cols`; a mismatch aborts instead of resizing the data. The
+declare `rows` and `columns`; a mismatch aborts instead of resizing the data. The
 reported `input_checksum` is platform-independent FNV-1a over the ASCII
-`<rows>x<cols>:` header and grayscale bytes. An `input_checksum` field in the
+`<rows>x<columns>:` header and grayscale bytes. An `input_checksum` field in the
 manifest pins those bytes, so changing dimensions or image contents fails
 before any timed scenario.
 
 Bundle fields use scalar names and explicit group references:
 
 ```text
-attribute_bundle.radiometric_size=AREA,LEVEL,VOLUME,GRAY_HEIGHT
-attribute_bundle.shape_boundary=group:BOUNDARY,AREA,BOX_WIDTH,BOX_HEIGHT,MAX_DIST
+attribute_bundle.radiometric_size=AREA,MEAN_GRAY_LEVEL,VOLUME,GRAY_LEVEL_HEIGHT
+attribute_bundle.shape_boundary=group:BOUNDARY,AREA,BOX_WIDTH,BOUNDING_BOX_HEIGHT,MAX_DIST
 ```
 
 Every bundle is compared with its deduplicated sequence of scalar API calls.
@@ -85,12 +85,12 @@ describe algorithms rather than asserting undocumented article provenance.
 | Suite | Representative paths |
 | --- | --- |
 | `construction` | max-tree, min-tree, Tree of Shapes, residual trees, and additional altitude types |
-| `attributes` | scalar attributes, heterogeneous requests, delta attributes, public groups, and manifest-defined bundles |
-| `filters` | direct, subtractive, pruning, Viterbi, adaptive criteria, UAO, extinction, MSER, and depth stability |
+| `attributes` | scalar attributes, heterogeneous requests, altitude-based node-attribute samples, public groups, and manifest-defined bundles |
+| `filters` | direct, subtractive, pruning, Viterbi, preservation-mask adjustment, UAO, extinction, MSER, and depth stability |
 | `interoperability` | reconstruction, Higra import/export and attribute projection, saliency maps |
 | `editing` | safe single edits, staged editor commits, and editing sequences |
 | `casf` | paired-tree construction, incremental sequences, a step after an established prefix, bounding-box attributes, and typed C++ paths |
-| `pipelines` | tree construction, attribute computation, criterion construction, and filtering in one timed scientific workflow |
+| `pipelines` | tree construction, attribute computation, preservation-mask construction, and filtering in one timed scientific workflow |
 
 ### Attribute groups
 

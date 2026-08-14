@@ -102,7 +102,7 @@ These rows have identical final checksums and threshold sequences. Their differe
 | --- | --- | --- | --- |
 | attribute_groups.established_input.moments | 16.246 | 17.862 | +9.95% |
 | attributes.established_input.scalar_bitquads_length_average | 50.775 | 53.824 | +6.01% |
-| filters.established_input.direct_criterion | 2.110 | 2.233 | +5.85% |
+| filters.established_input.direct_preservation_mask | 2.110 | 2.233 | +5.85% |
 | attributes.established_input.scalar_bitquads_width_average | 51.125 | 53.864 | +5.36% |
 | attributes.established_input.scalar_bitquads_perimeter_average | 50.867 | 53.564 | +5.30% |
 | attributes.established_input.scalar_bitquads_perimeter | 50.679 | 53.328 | +5.23% |

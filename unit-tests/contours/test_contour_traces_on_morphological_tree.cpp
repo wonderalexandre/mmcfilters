@@ -23,11 +23,11 @@ using IncrementalContourTraces = ContourTraceComputation::IncrementalContourTrac
 
 static_assert(std::is_same_v<decltype(std::declval<const IncrementalContourTraces&>().getLoops(NodeId{})), std::vector<ContourTraceLoop>>);
 
-std::vector<int> pixelsOfConnectedComponent(const MorphologicalTree& tree, NodeId nodeId) {
-    std::vector<int> pixels;
-    for (NodeId subtreeNodeId : tree.getNodeSubtree(nodeId)) {
-        for (int properPart : tree.getProperParts(subtreeNodeId)) {
-            pixels.push_back(properPart);
+std::vector<PixelId> pixelsOfConnectedComponent(const MorphologicalTree& tree, NodeId nodeId) {
+    std::vector<PixelId> pixels;
+    for (NodeId subtreeNodeId : tree.subtreeNodes(nodeId)) {
+        for (PixelId pixel : tree.properPart(subtreeNodeId)) {
+            pixels.push_back(pixel);
         }
     }
     return pixels;
@@ -37,39 +37,39 @@ int sideIndex(ContourTraceSide side) { return static_cast<int>(side); }
 
 int packEdge(const ContourTraceEdge& edge) { return ContourTraceComputation::packEdge(edge.pixel, edge.side); }
 
-int neighborPixel(const MorphologicalTree& tree, int pixel, ContourTraceSide side) {
-    const int rows = tree.getNumRowsOfGridDomain2D();
-    const int cols = tree.getNumColsOfGridDomain2D();
-    const auto [row, col] = ImageUtils::to2D(pixel, cols);
+PixelId neighborPixel(const MorphologicalTree& tree, PixelId pixel, ContourTraceSide side) {
+    const int rows = tree.numRows();
+    const int columns = tree.numColumns();
+    const auto [row, column] = ImageUtils::to2D(pixel, columns);
     switch (side) {
     case ContourTraceSide::North:
-        return row == 0 ? -1 : ImageUtils::to1D(row - 1, col, cols);
+        return row == 0 ? InvalidPixel : ImageUtils::to1D(row - 1, column, columns);
     case ContourTraceSide::West:
-        return col == 0 ? -1 : ImageUtils::to1D(row, col - 1, cols);
+        return column == 0 ? InvalidPixel : ImageUtils::to1D(row, column - 1, columns);
     case ContourTraceSide::East:
-        return col == cols - 1 ? -1 : ImageUtils::to1D(row, col + 1, cols);
+        return column == columns - 1 ? InvalidPixel : ImageUtils::to1D(row, column + 1, columns);
     case ContourTraceSide::South:
-        return row == rows - 1 ? -1 : ImageUtils::to1D(row + 1, col, cols);
+        return row == rows - 1 ? InvalidPixel : ImageUtils::to1D(row + 1, column, columns);
     }
-    return -1;
+    return InvalidPixel;
 }
 
 std::vector<int> expectedEdgesForNode(const MorphologicalTree& tree, NodeId nodeId) {
     static constexpr std::array<ContourTraceSide, 4> sides{ContourTraceSide::North, ContourTraceSide::West, ContourTraceSide::East, ContourTraceSide::South};
 
-    std::vector<uint8_t> mask(static_cast<std::size_t>(tree.getNumTotalProperParts()), 0);
-    for (int pixel : pixelsOfConnectedComponent(tree, nodeId)) {
+    std::vector<uint8_t> mask(static_cast<std::size_t>(tree.numPixels()), 0);
+    for (PixelId pixel : pixelsOfConnectedComponent(tree, nodeId)) {
         mask[static_cast<std::size_t>(pixel)] = 1;
     }
 
     std::vector<int> expected;
-    for (int pixel = 0; pixel < tree.getNumTotalProperParts(); ++pixel) {
+    for (PixelId pixel = 0; pixel < tree.numPixels(); ++pixel) {
         if (!mask[static_cast<std::size_t>(pixel)]) {
             continue;
         }
         for (ContourTraceSide side : sides) {
-            const int neighbor = neighborPixel(tree, pixel, side);
-            if (neighbor < 0 || !mask[static_cast<std::size_t>(neighbor)]) {
+            const PixelId neighbor = neighborPixel(tree, pixel, side);
+            if (neighbor == InvalidPixel || !mask[static_cast<std::size_t>(neighbor)]) {
                 expected.push_back(ContourTraceComputation::packEdge(pixel, side));
             }
         }
@@ -87,8 +87,8 @@ std::vector<int> edgeVector(const ContourTraceComputation::IncrementalContourTra
     return values;
 }
 
-std::vector<int> contourPixelProjection(std::span<const int> packedEdges) {
-    std::vector<int> pixels;
+std::vector<PixelId> contourPixelProjection(std::span<const int> packedEdges) {
+    std::vector<PixelId> pixels;
     pixels.reserve(packedEdges.size());
     for (int packedEdge : packedEdges) {
         pixels.push_back(ContourTraceComputation::unpackEdge(packedEdge).pixel);
@@ -98,9 +98,9 @@ std::vector<int> contourPixelProjection(std::span<const int> packedEdges) {
     return pixels;
 }
 
-std::vector<int> contourVector(const ContoursComputedIncrementally::IncrementalContours& contours, NodeId nodeId) {
-    std::vector<int> values;
-    for (int pixel : contours.getContour(nodeId)) {
+std::vector<PixelId> contourVector(const ContoursComputedIncrementally::IncrementalContours& contours, NodeId nodeId) {
+    std::vector<PixelId> values;
+    for (PixelId pixel : contours.getContour(nodeId)) {
         values.push_back(pixel);
     }
     std::sort(values.begin(), values.end());
@@ -135,9 +135,9 @@ std::array<int, 4> directionalCounts(std::span<const int> packedEdges) {
 }
 
 NodeId findNodeByArea(const MorphologicalTree& tree, int area) {
-    auto [names, values] = AttributeComputation::computeSingleTopologyAttribute(tree, AREA);
-    for (NodeId nodeId : tree.getAliveNodeIds()) {
-        if (static_cast<int>(values[static_cast<std::size_t>(names.linearIndex(nodeId, AREA))]) == area) {
+    auto [names, values] = AttributeComputation::computeSingleTopologyAttribute(tree, Area);
+    for (NodeId nodeId : tree.aliveNodeIds()) {
+        if (static_cast<int>(values[static_cast<std::size_t>(names.linearIndex(nodeId, Area))]) == area) {
             return nodeId;
         }
     }
@@ -147,29 +147,29 @@ NodeId findNodeByArea(const MorphologicalTree& tree, int area) {
 void verifyTraceEdgesAgainstSupportMasks(const MorphologicalTree& tree, const std::string& label) {
     auto traces = ContourTraceComputation::extract(tree);
     auto contours = ContoursComputedIncrementally::extractCompactContours(tree);
-    std::vector<AttributeOrGroup> requests{CONTOUR_PERIMETER, CONTOUR_SIDE_NORTH, CONTOUR_SIDE_WEST, CONTOUR_SIDE_EAST, CONTOUR_SIDE_SOUTH};
+    std::vector<AttributeOrGroup> requests{ContourPerimeter, ContourSideNorth, ContourSideWest, ContourSideEast, ContourSideSouth};
     auto attributeResult = AttributeComputation::computeTopologyAttributes(tree, requests);
 
-    for (NodeId nodeId : tree.getAliveNodeIds()) {
+    for (NodeId nodeId : tree.aliveNodeIds()) {
         std::vector<int> actualEdges = edgeVector(traces, nodeId);
         std::vector<int> expectedEdges = expectedEdgesForNode(tree, nodeId);
         requireVectorEqual(actualEdges, expectedEdges, label + " trace edge regression node " + std::to_string(nodeId));
 
-        std::vector<int> projectedPixels = contourPixelProjection(std::span<const int>(actualEdges));
+        std::vector<PixelId> projectedPixels = contourPixelProjection(std::span<const int>(actualEdges));
         requireVectorEqual(projectedPixels, contourVector(contours, nodeId), label + " trace projection node " + std::to_string(nodeId));
 
         const std::array<int, 4> counts = directionalCounts(std::span<const int>(actualEdges));
         const auto& names = attributeResult.attributeNames();
         const auto& values = attributeResult.values();
-        requireEqual(static_cast<int>(values[static_cast<std::size_t>(names.linearIndex(nodeId, CONTOUR_PERIMETER))]), static_cast<int>(actualEdges.size()),
+        requireEqual(static_cast<int>(values[static_cast<std::size_t>(names.linearIndex(nodeId, ContourPerimeter))]), static_cast<int>(actualEdges.size()),
                      label + " perimeter from traced edges node " + std::to_string(nodeId));
-        requireEqual(static_cast<int>(values[static_cast<std::size_t>(names.linearIndex(nodeId, CONTOUR_SIDE_NORTH))]),
+        requireEqual(static_cast<int>(values[static_cast<std::size_t>(names.linearIndex(nodeId, ContourSideNorth))]),
                      counts[static_cast<std::size_t>(sideIndex(ContourTraceSide::North))], label + " north side count node " + std::to_string(nodeId));
-        requireEqual(static_cast<int>(values[static_cast<std::size_t>(names.linearIndex(nodeId, CONTOUR_SIDE_WEST))]),
+        requireEqual(static_cast<int>(values[static_cast<std::size_t>(names.linearIndex(nodeId, ContourSideWest))]),
                      counts[static_cast<std::size_t>(sideIndex(ContourTraceSide::West))], label + " west side count node " + std::to_string(nodeId));
-        requireEqual(static_cast<int>(values[static_cast<std::size_t>(names.linearIndex(nodeId, CONTOUR_SIDE_EAST))]),
+        requireEqual(static_cast<int>(values[static_cast<std::size_t>(names.linearIndex(nodeId, ContourSideEast))]),
                      counts[static_cast<std::size_t>(sideIndex(ContourTraceSide::East))], label + " east side count node " + std::to_string(nodeId));
-        requireEqual(static_cast<int>(values[static_cast<std::size_t>(names.linearIndex(nodeId, CONTOUR_SIDE_SOUTH))]),
+        requireEqual(static_cast<int>(values[static_cast<std::size_t>(names.linearIndex(nodeId, ContourSideSouth))]),
                      counts[static_cast<std::size_t>(sideIndex(ContourTraceSide::South))], label + " south side count node " + std::to_string(nodeId));
     }
 }
@@ -330,14 +330,14 @@ void verifyLoopAccessOrderIndependence() {
         baseline.materializeAll();
 
         auto lazy = ContourTraceComputation::extract(*tree);
-        std::vector<NodeId> reverseOrder = collectNodeIds(tree->getAliveNodeIds());
+        std::vector<NodeId> reverseOrder = collectNodeIds(tree->aliveNodeIds());
         std::reverse(reverseOrder.begin(), reverseOrder.end());
         for (NodeId nodeId : reverseOrder) {
             static_cast<void>(lazy.getLoops(nodeId));
         }
 
         const std::string label = isMaxtree ? "max-tree" : "min-tree";
-        for (NodeId nodeId : tree->getAliveNodeIds()) {
+        for (NodeId nodeId : tree->aliveNodeIds()) {
             requireVectorEqual(loopSignature(lazy, nodeId), loopSignature(baseline, nodeId),
                                label + " trace loop access-order independence node " + std::to_string(nodeId));
         }
@@ -348,7 +348,7 @@ void verifyLoopResultsOwnTheirStorage() {
     auto image = makeComponentTreeFixture();
     auto tree = makeComponentTree(image, true);
     auto traces = ContourTraceComputation::extract(*tree);
-    std::vector<NodeId> nodes = collectNodeIds(tree->getAliveNodeIds());
+    std::vector<NodeId> nodes = collectNodeIds(tree->aliveNodeIds());
     require(nodes.size() > 1, "owned-loop fixture must have multiple nodes");
 
     auto heldLoops = traces.getLoops(nodes.front());
@@ -373,14 +373,14 @@ void verifyGetLoopsMaterializesOnlyRequestedNode() {
     for (bool isMaxtree : {true, false}) {
         auto tree = makeComponentTree(image, isMaxtree);
         auto traces = ContourTraceComputation::extract(*tree);
-        const NodeId root = tree->getRoot();
+        const NodeId root = tree->root();
 
         static_cast<void>(traces.getLoops(root));
         require(traces.isNodeTraced(root), "getLoops(root) must trace root");
 
         int tracedNodes = 0;
         int liveNodes = 0;
-        for (NodeId nodeId : tree->getAliveNodeIds()) {
+        for (NodeId nodeId : tree->aliveNodeIds()) {
             ++liveNodes;
             if (traces.isNodeTraced(nodeId)) {
                 ++tracedNodes;
@@ -403,15 +403,15 @@ void verifyScratchReleaseAfterGlobalEdgeMaterialization() {
     require(extractedStats.addDeltaValues > 0, "trace fixture must have addition deltas before materialization");
     require(extractedStats.removeDeltaValues > 0, "trace fixture must have removal deltas before materialization");
 
-    static_cast<void>(traces.getEdges(tree->getRoot()));
+    static_cast<void>(traces.getEdges(tree->root()));
     auto edgeStats = traces.storageStats();
-    requireEqual(edgeStats.cachedEdgeReadyNodes, static_cast<std::size_t>(tree->getNumNodes()), "root edge materialization must prepare every live edge cache");
+    requireEqual(edgeStats.cachedEdgeReadyNodes, static_cast<std::size_t>(tree->numNodes()), "root edge materialization must prepare every live edge cache");
     requireEqual(edgeStats.addDeltaValues, std::size_t{0}, "edge deltas must be released after all edges are ready");
     requireEqual(edgeStats.removeDeltaValues, std::size_t{0}, "removal deltas must be released after all edges are ready");
 
     traces.materializeAll();
     require(traces.isMaterialized(), "scratch release must preserve full loop materialization");
-    for (NodeId nodeId : tree->getAliveNodeIds()) {
+    for (NodeId nodeId : tree->aliveNodeIds()) {
         static_cast<void>(traces.getLoops(nodeId));
     }
 }
@@ -420,14 +420,14 @@ void verifyNodeLocalLoopTracingUsesSparseAdjacency() {
     auto image = ImageUInt8::create(64, 64, std::uint8_t{0});
     (*image)[ImageUtils::to1D(32, 32, 64)] = std::uint8_t{1};
     auto tree = makeComponentTree(image, true);
-    require(tree->getNumNodes() > 1, "sparse trace fixture must have more than one node");
+    require(tree->numNodes() > 1, "sparse trace fixture must have more than one node");
 
     auto traces = ContourTraceComputation::extract(*tree);
-    static_cast<void>(traces.getLoops(tree->getRoot()));
+    static_cast<void>(traces.getLoops(tree->root()));
     const auto rootLoopStats = traces.storageStats();
     requireEqual(rootLoopStats.traceDenseOutgoingSlots, std::size_t{0}, "node-local root loop tracing must not allocate dense outgoing heads");
     require(rootLoopStats.traceSparseOutgoingSlots > 0, "node-local root loop tracing must allocate sparse outgoing heads");
-    require(traces.isNodeTraced(tree->getRoot()), "sparse node-local trace must mark root traced");
+    require(traces.isNodeTraced(tree->root()), "sparse node-local trace must mark root traced");
     require(!traces.isMaterialized(), "sparse node-local trace must not trace every node");
 
     traces.materializeAll();
@@ -440,11 +440,11 @@ void verifyRepeatedNodeLocalLoopTracingSwitchesToDenseAdjacency() {
     auto image = ImageUInt8::create(64, 64, std::uint8_t{0});
     for (int i = 0; i < 12; ++i) {
         const int row = 4 + (i / 4) * 16;
-        const int col = 4 + (i % 4) * 16;
-        (*image)[ImageUtils::to1D(row, col, 64)] = static_cast<std::uint8_t>(i + 1);
+        const int column = 4 + (i % 4) * 16;
+        (*image)[ImageUtils::to1D(row, column, 64)] = static_cast<std::uint8_t>(i + 1);
     }
     auto tree = makeComponentTree(image, true);
-    std::vector<NodeId> nodes = collectNodeIds(tree->getAliveNodeIds());
+    std::vector<NodeId> nodes = collectNodeIds(tree->aliveNodeIds());
     require(nodes.size() > 10, "sparse-to-dense fixture must expose enough nodes");
 
     auto traces = ContourTraceComputation::extract(*tree);
@@ -475,30 +475,30 @@ int main() {
             tree->mergeNodeIntoParent(4);
             requireThrows<std::logic_error>([&]() { static_cast<void>(staleTraces.isMaterialized()); },
                                             "trace materialization status must reject topology mutation");
-            requireThrows<std::logic_error>([&]() { static_cast<void>(staleTraces.getEdges(tree->getRoot())); },
+            requireThrows<std::logic_error>([&]() { static_cast<void>(staleTraces.getEdges(tree->root())); },
                                             "trace edge access must reject topology mutation");
             requireThrows<std::logic_error>([&]() { staleTraces.materializeAll(); }, "trace materializeAll must reject topology mutation");
         }
 
-        auto weighted = makeWeightedComponentTree(image, isMaxtree);
-        auto topologyTraces = ContourTraceComputation::extract(weighted->topology());
-        auto viewTraces = ContourTraceComputation::extract(weighted->asView());
-        for (NodeId nodeId : weighted->topology().getAliveNodeIds()) {
+        auto valuedTree = makeValuedComponentTree(image, isMaxtree);
+        auto topologyTraces = ContourTraceComputation::extract(valuedTree->topology());
+        auto viewTraces = ContourTraceComputation::extract(valuedTree->asView());
+        for (NodeId nodeId : valuedTree->topology().aliveNodeIds()) {
             requireVectorEqual(edgeVector(viewTraces, nodeId), edgeVector(topologyTraces, nodeId),
                                isMaxtree ? "max-tree traces via view" : "min-tree traces via view");
         }
 
         if (isMaxtree && contract::validationsEnabled) {
-            auto staleWeighted = makeWeightedComponentTree(image, true);
-            const auto staleView = staleWeighted->asView();
-            staleWeighted->mergeNodeIntoParent(4);
+            auto staleValuedTree = makeValuedComponentTree(image, true);
+            const auto staleView = staleValuedTree->asView();
+            staleValuedTree->mergeNodeIntoParent(4);
             requireThrows<std::logic_error>([&]() { static_cast<void>(ContourTraceComputation::extract(staleView)); },
-                                            "trace extraction must reject stale WeightedTreeView");
+                                            "trace extraction must reject stale ValuedMorphologicalTreeView");
         }
     }
 
     {
-        auto tree = makeTreeOfShapes(image, ToSInterpolation::SelfDual);
+        auto tree = makeTreeOfShapes(image, TestTopographicImmersion::SelfDualSpan);
         verifyTraceEdgesAgainstSupportMasks(*tree, "tree of shapes");
     }
 

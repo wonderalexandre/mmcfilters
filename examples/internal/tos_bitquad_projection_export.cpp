@@ -9,9 +9,9 @@
  * `detail/` headers and is not public API.
  */
 #include "mmcfilters/attributes/computers/detail/BitquadAttributeData.hpp"
-#include "mmcfilters/attributes/computers/detail/BitquadLocalEventComputation.hpp"
+#include "mmcfilters/attributes/computers/detail/BitquadFiniteWindowComputation.hpp"
 #include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
-#include "mmcfilters/trees/WeightedMorphologicalTree.hpp"
+#include "mmcfilters/trees/ValuedMorphologicalTree.hpp"
 #include "mmcfilters/utils/Image.hpp"
 #include "stb_image.h"
 
@@ -29,47 +29,60 @@ using namespace mmcfilters::attributes::computers::detail;
 
 namespace {
 
+using FamilyIncrement = mmcfilters::attributes::computers::detail::BitquadFamilyIncrement;
 using FamilyCounts = mmcfilters::attributes::computers::detail::BitquadFamilyCounts;
-using StateHistogram = BitquadLocalEventComputation::BitquadStateHistogram;
+using StateIncrement = BitquadFiniteWindowComputation::NonemptyBitquadStateHistogramIncrement;
+using StateHistogram = BitquadFiniteWindowComputation::BitquadStateHistogram;
+
+enum class ExampleImmersion { SelfDualSpan, Min4Max8, Min8Max4 };
+
+TopographicConvention makeConvention(ExampleImmersion immersion, int rows, int columns) {
+    if (immersion == ExampleImmersion::SelfDualSpan) {
+        return TopographicConvention{};
+    }
+    const bool minIs4 = immersion == ExampleImmersion::Min4Max8;
+    return TopographicConvention{ComplementaryGridImmersion{
+        ComplementaryAdjacencies{RegularGridAdjacency2D(rows, columns, minIs4 ? 1.0 : 1.5), RegularGridAdjacency2D(rows, columns, minIs4 ? 1.5 : 1.0)}}};
+}
 
 struct Options {
     std::filesystem::path imagePath;
     std::filesystem::path outDir = "tos-bitquad-projections";
     std::string synthetic = "fixture";
-    ToSInterpolation interpolation = ToSInterpolation::SelfDual;
+    ExampleImmersion immersion = ExampleImmersion::SelfDualSpan;
     int rows = 8;
-    int cols = 8;
+    int columns = 8;
 };
 
-std::string toString(ToSInterpolation interpolation) {
-    switch (interpolation) {
-    case ToSInterpolation::SelfDual:
+std::string toString(ExampleImmersion immersion) {
+    switch (immersion) {
+    case ExampleImmersion::SelfDualSpan:
         return "SelfDual";
-    case ToSInterpolation::Min4cMax8c:
+    case ExampleImmersion::Min4Max8:
         return "Min4cMax8c";
-    case ToSInterpolation::Min8cMax4c:
+    case ExampleImmersion::Min8Max4:
         return "Min8cMax4c";
     }
     throw std::invalid_argument("Unsupported Tree-of-Shapes interpolation.");
 }
 
-ToSInterpolation parseInterpolation(const std::string& value) {
+ExampleImmersion parseImmersion(const std::string& value) {
     if (value == "SelfDual") {
-        return ToSInterpolation::SelfDual;
+        return ExampleImmersion::SelfDualSpan;
     }
     if (value == "Min4cMax8c") {
-        return ToSInterpolation::Min4cMax8c;
+        return ExampleImmersion::Min4Max8;
     }
     if (value == "Min8cMax4c") {
-        return ToSInterpolation::Min8cMax4c;
+        return ExampleImmersion::Min8Max4;
     }
     throw std::invalid_argument("Expected SelfDual, Min4cMax8c, or Min8cMax4c for --interpolation.");
 }
 
 void printUsage(const char* program) {
     std::cerr << "Usage: " << program << " [--image path] [--out-dir dir]\n"
-              << "       [--interpolation SelfDual|Min4cMax8c|Min8cMax4c]\n"
-              << "       [--synthetic fixture|ramp|checker] [--rows n] [--cols n]\n";
+              << "       [--immersion SelfDual|Min4cMax8c|Min8cMax4c]\n"
+              << "       [--synthetic fixture|ramp|checker] [--rows n] [--columns n]\n";
 }
 
 Options parseOptions(int argc, char** argv) {
@@ -87,14 +100,14 @@ Options parseOptions(int argc, char** argv) {
             options.imagePath = requireValue("--image");
         } else if (arg == "--out-dir") {
             options.outDir = requireValue("--out-dir");
-        } else if (arg == "--interpolation") {
-            options.interpolation = parseInterpolation(requireValue("--interpolation"));
+        } else if (arg == "--immersion") {
+            options.immersion = parseImmersion(requireValue("--immersion"));
         } else if (arg == "--synthetic") {
             options.synthetic = requireValue("--synthetic");
         } else if (arg == "--rows") {
             options.rows = std::stoi(requireValue("--rows"));
-        } else if (arg == "--cols") {
-            options.cols = std::stoi(requireValue("--cols"));
+        } else if (arg == "--columns") {
+            options.columns = std::stoi(requireValue("--columns"));
         } else if (arg == "--help" || arg == "-h") {
             printUsage(argv[0]);
             std::exit(0);
@@ -117,22 +130,22 @@ ImageUInt8Ptr makeSyntheticImage(const Options& options) {
         return image;
     }
 
-    if (options.rows <= 0 || options.cols <= 0) {
+    if (options.rows <= 0 || options.columns <= 0) {
         throw std::invalid_argument("Synthetic image dimensions must be positive.");
     }
 
-    auto image = ImageUInt8::create(options.rows, options.cols);
+    auto image = ImageUInt8::create(options.rows, options.columns);
     for (int row = 0; row < options.rows; ++row) {
-        for (int col = 0; col < options.cols; ++col) {
+        for (int column = 0; column < options.columns; ++column) {
             std::uint8_t value = 0;
             if (options.synthetic == "ramp") {
-                value = static_cast<std::uint8_t>((row * 17 + col * 29) & 0xff);
+                value = static_cast<std::uint8_t>((row * 17 + column * 29) & 0xff);
             } else if (options.synthetic == "checker") {
-                value = ((row + col) % 2 == 0) ? std::uint8_t{220} : std::uint8_t{35};
+                value = ((row + column) % 2 == 0) ? std::uint8_t{220} : std::uint8_t{35};
             } else {
                 throw std::invalid_argument("Unknown synthetic image. Expected fixture, ramp, or checker.");
             }
-            (*image)[row * options.cols + col] = value;
+            (*image)[row * options.columns + column] = value;
         }
     }
     return image;
@@ -172,100 +185,105 @@ std::ofstream openCsv(const std::filesystem::path& path) {
 }
 
 void writeFamilyHeader(std::ostream& out, const std::string& prefix) {
-    out << ',' << prefix << "empty" << ',' << prefix << "q1" << ',' << prefix << "q2" << ',' << prefix << "qd" << ',' << prefix << "q3" << ',' << prefix
-        << "q4";
+    out << ',' << prefix << "q1" << ',' << prefix << "q2" << ',' << prefix << "qd" << ',' << prefix << "q3" << ',' << prefix << "q4";
 }
 
-void writeFamily(std::ostream& out, const FamilyCounts& counts) {
-    out << ',' << counts.empty << ',' << counts.q1 << ',' << counts.q2 << ',' << counts.qd << ',' << counts.q3 << ',' << counts.q4;
+template <class FamilyValue> void writeFamily(std::ostream& out, const FamilyValue& value) {
+    out << ',' << value.q1 << ',' << value.q2 << ',' << value.qd << ',' << value.q3 << ',' << value.q4;
 }
 
-void writeStateHeader(std::ostream& out, const std::string& prefix) {
-    for (std::size_t state = 0; state < 16; ++state) {
+void writeStateHeader(std::ostream& out, const std::string& prefix, std::size_t firstState) {
+    for (std::size_t state = firstState; state < 16; ++state) {
         out << ',' << prefix << "s" << state;
     }
 }
 
 void writeState(std::ostream& out, const StateHistogram& histogram) {
-    for (int value : histogram) {
+    for (int value : histogram.values()) {
         out << ',' << value;
     }
 }
 
-void writeNodeCsv(const WeightedMorphologicalTree<std::uint8_t>& weighted, const std::filesystem::path& path, const std::vector<FamilyCounts>& familyDeltas,
-                  const std::vector<FamilyCounts>& familyCounts) {
-    const MorphologicalTree& tree = weighted.topology();
+void writeState(std::ostream& out, const StateIncrement& increment) {
+    for (int value : increment.bins) {
+        out << ',' << value;
+    }
+}
+
+void writeNodeCsv(const ValuedMorphologicalTree<ToSGrayLevel>& valuedTree, const std::filesystem::path& path,
+                  const std::vector<FamilyIncrement>& familyIncrements, const std::vector<FamilyCounts>& familyCounts) {
+    const MorphologicalTree& tree = valuedTree.topology();
     auto out = openCsv(path);
     out << "node,parent,altitude,direct_proper_parts";
-    writeFamilyHeader(out, "delta_");
+    writeFamilyHeader(out, "increment_");
     writeFamilyHeader(out, "count_");
     out << '\n';
 
-    for (NodeId nodeId : tree.getAliveNodeIds()) {
-        out << nodeId << ',' << tree.getNodeParent(nodeId) << ',' << static_cast<int>(weighted.getAltitude(nodeId)) << ',' << tree.getNumProperParts(nodeId);
-        writeFamily(out, familyDeltas[static_cast<std::size_t>(nodeId)]);
+    for (NodeId nodeId : tree.aliveNodeIds()) {
+        out << nodeId << ',' << tree.parent(nodeId) << ',' << static_cast<int>(valuedTree.nodeAltitude(nodeId)) << ',' << tree.properPartCardinality(nodeId);
+        writeFamily(out, familyIncrements[static_cast<std::size_t>(nodeId)]);
         writeFamily(out, familyCounts[static_cast<std::size_t>(nodeId)]);
         out << '\n';
     }
 }
 
-void writeStateCsv(const MorphologicalTree& tree, const std::filesystem::path& path, const std::vector<StateHistogram>& stateDeltas,
+void writeStateCsv(const MorphologicalTree& tree, const std::filesystem::path& path, const std::vector<StateIncrement>& stateIncrements,
                    const std::vector<StateHistogram>& stateCounts) {
     auto out = openCsv(path);
     out << "node,parent";
-    writeStateHeader(out, "delta_");
-    writeStateHeader(out, "count_");
+    writeStateHeader(out, "increment_", 1);
+    writeStateHeader(out, "count_", 0);
     out << '\n';
 
-    for (NodeId nodeId : tree.getAliveNodeIds()) {
-        out << nodeId << ',' << tree.getNodeParent(nodeId);
-        writeState(out, stateDeltas[static_cast<std::size_t>(nodeId)]);
+    for (NodeId nodeId : tree.aliveNodeIds()) {
+        out << nodeId << ',' << tree.parent(nodeId);
+        writeState(out, stateIncrements[static_cast<std::size_t>(nodeId)]);
         writeState(out, stateCounts[static_cast<std::size_t>(nodeId)]);
         out << '\n';
     }
 }
 
-void writeProperPartCsv(const WeightedMorphologicalTree<std::uint8_t>& weighted, const std::filesystem::path& path,
-                        const std::vector<FamilyCounts>& projectedDeltas, const std::vector<FamilyCounts>& projectedCounts) {
-    const MorphologicalTree& tree = weighted.topology();
+void writeProperPartCsv(const ValuedMorphologicalTree<ToSGrayLevel>& valuedTree, const std::filesystem::path& path,
+                        const std::vector<FamilyIncrement>& projectedIncrements, const std::vector<FamilyCounts>& projectedCounts) {
+    const MorphologicalTree& tree = valuedTree.topology();
     auto out = openCsv(path);
-    out << "proper_part,row,col,owner,owner_altitude";
-    writeFamilyHeader(out, "owner_delta_");
-    writeFamilyHeader(out, "owner_count_");
+    out << "pixel,row,column,smallest_node_id,smallest_node_altitude";
+    writeFamilyHeader(out, "smallest_node_increment_");
+    writeFamilyHeader(out, "smallest_node_count_");
     out << '\n';
 
-    for (NodeId properPart = 0; properPart < tree.getNumTotalProperParts(); ++properPart) {
-        const auto [row, col] = ImageUtils::to2D(properPart, tree.getNumColsOfGridDomain2D());
-        const NodeId owner = tree.getProperPartOwner(properPart);
-        out << properPart << ',' << row << ',' << col << ',' << owner << ',' << static_cast<int>(weighted.getAltitude(owner));
-        writeFamily(out, projectedDeltas[static_cast<std::size_t>(properPart)]);
-        writeFamily(out, projectedCounts[static_cast<std::size_t>(properPart)]);
+    for (PixelId pixel = 0; pixel < tree.numPixels(); ++pixel) {
+        const auto [row, column] = ImageUtils::to2D(pixel, tree.numColumns());
+        const NodeId smallestNodeId = tree.smallestNode(pixel);
+        out << pixel << ',' << row << ',' << column << ',' << smallestNodeId << ',' << static_cast<int>(valuedTree.nodeAltitude(smallestNodeId));
+        writeFamily(out, projectedIncrements[static_cast<std::size_t>(pixel)]);
+        writeFamily(out, projectedCounts[static_cast<std::size_t>(pixel)]);
         out << '\n';
     }
 }
 
 void writeNodeSupportCsv(const MorphologicalTree& tree, const std::filesystem::path& path) {
     auto out = openCsv(path);
-    out << "node,proper_part,row,col,direct_owner\n";
-    for (NodeId nodeId : tree.getAliveNodeIds()) {
-        for (NodeId properPart : tree.getConnectedComponent(nodeId)) {
-            const auto [row, col] = ImageUtils::to2D(properPart, tree.getNumColsOfGridDomain2D());
-            out << nodeId << ',' << properPart << ',' << row << ',' << col << ',' << tree.getProperPartOwner(properPart) << '\n';
+    out << "node,pixel,row,column,smallest_node_id\n";
+    for (NodeId nodeId : tree.aliveNodeIds()) {
+        for (PixelId pixel : tree.nodeSupport(nodeId)) {
+            const auto [row, column] = ImageUtils::to2D(pixel, tree.numColumns());
+            out << nodeId << ',' << pixel << ',' << row << ',' << column << ',' << tree.smallestNode(pixel) << '\n';
         }
     }
 }
 
-void writeMetadata(const WeightedMorphologicalTree<std::uint8_t>& weighted, const Options& options, const std::filesystem::path& path) {
-    const MorphologicalTree& tree = weighted.topology();
+void writeMetadata(const ValuedMorphologicalTree<ToSGrayLevel>& valuedTree, const Options& options, const std::filesystem::path& path) {
+    const MorphologicalTree& tree = valuedTree.topology();
     auto out = openCsv(path);
     out << "key,value\n";
-    out << "rows," << tree.getNumRowsOfGridDomain2D() << '\n';
-    out << "cols," << tree.getNumColsOfGridDomain2D() << '\n';
-    out << "num_proper_parts," << tree.getNumTotalProperParts() << '\n';
-    out << "num_internal_node_slots," << tree.getNumInternalNodeSlots() << '\n';
-    out << "num_alive_nodes," << tree.getNumNodes() << '\n';
-    out << "root," << tree.getRoot() << '\n';
-    out << "interpolation," << toString(options.interpolation) << '\n';
+    out << "rows," << tree.numRows() << '\n';
+    out << "columns," << tree.numColumns() << '\n';
+    out << "num_proper_parts," << tree.numPixels() << '\n';
+    out << "num_internal_node_slots," << tree.numInternalNodeSlots() << '\n';
+    out << "num_alive_nodes," << tree.numNodes() << '\n';
+    out << "root," << tree.root() << '\n';
+    out << "immersion," << toString(options.immersion) << '\n';
     out << "input," << (options.imagePath.empty() ? options.synthetic : options.imagePath.string()) << '\n';
 }
 
@@ -275,21 +293,22 @@ int main(int argc, char** argv) {
     try {
         const Options options = parseOptions(argc, argv);
         const ImageUInt8Ptr image = makeInputImage(options);
-        auto weighted = MorphologicalTreeFactory::createTreeOfShapes(image, options.interpolation);
-        const MorphologicalTree& tree = weighted.topology();
+        auto valuedTree = MorphologicalTreeFactory::createTreeOfShapes(image, makeConvention(options.immersion, image->getNumRows(), image->getNumColumns()));
+        const MorphologicalTree& tree = valuedTree.topology();
 
-        const auto stateDeltas = BitquadLocalEventComputation::computeBitquadStateHistogramDeltas(tree);
-        const auto stateCounts = BitquadLocalEventComputation::aggregateBitquadStateHistogramDeltas(tree, stateDeltas);
-        const auto familyDeltas = BitquadLocalEventComputation::computeBitquadFamilyDeltas(tree);
-        const auto familyCounts = BitquadLocalEventComputation::aggregateBitquadFamilyDeltas(tree, familyDeltas);
-        const auto projectedDeltas = BitquadLocalEventComputation::projectBitquadFamilyCountsToProperParts(tree, familyDeltas);
-        const auto projectedCounts = BitquadLocalEventComputation::projectBitquadFamilyCountsToProperParts(tree, familyCounts);
+        const auto stateIncrements = BitquadFiniteWindowComputation::computeNonemptyBitquadStateHistogramIncrements(tree);
+        const auto nonemptyStateCounts = BitquadFiniteWindowComputation::aggregateNonemptyBitquadStateHistogramIncrements(tree, stateIncrements);
+        const auto stateCounts = BitquadFiniteWindowComputation::materializeEmptyBitquadCount(tree, nonemptyStateCounts);
+        const auto familyIncrements = BitquadFiniteWindowComputation::computeBitquadFamilyIncrements(tree);
+        const auto familyCounts = BitquadFiniteWindowComputation::aggregateBitquadFamilyIncrements(tree, familyIncrements);
+        const auto projectedIncrements = BitquadFiniteWindowComputation::projectBitquadFamilyIncrementsToProperParts(tree, familyIncrements);
+        const auto projectedCounts = BitquadFiniteWindowComputation::projectBitquadFamilyCountsToProperParts(tree, familyCounts);
 
         std::filesystem::create_directories(options.outDir);
-        writeMetadata(weighted, options, options.outDir / "metadata.csv");
-        writeNodeCsv(weighted, options.outDir / "node_bitquad_families.csv", familyDeltas, familyCounts);
-        writeStateCsv(tree, options.outDir / "node_bitquad_states.csv", stateDeltas, stateCounts);
-        writeProperPartCsv(weighted, options.outDir / "proper_part_bitquad_projection.csv", projectedDeltas, projectedCounts);
+        writeMetadata(valuedTree, options, options.outDir / "metadata.csv");
+        writeNodeCsv(valuedTree, options.outDir / "node_bitquad_families.csv", familyIncrements, familyCounts);
+        writeStateCsv(tree, options.outDir / "node_bitquad_states.csv", stateIncrements, stateCounts);
+        writeProperPartCsv(valuedTree, options.outDir / "proper_part_bitquad_projection.csv", projectedIncrements, projectedCounts);
         writeNodeSupportCsv(tree, options.outDir / "node_support.csv");
 
         std::cout << "Wrote Tree-of-Shapes bitquad projection CSV files to " << options.outDir << '\n';

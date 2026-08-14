@@ -39,11 +39,11 @@ access.
 ```python
 traces = mmcfilters.ContourTraceComputation.extraction(tree)
 
-edges = traces.getEdges(node_id)
-loops = traces.getLoops(node_id)
+edges = traces.get_edges(node_id)
+loops = traces.get_loops(node_id)
 
 for loop in loops:
-    loop_edges = traces.getLoopEdges(loop)
+    loop_edges = traces.get_loop_edges(loop)
 ```
 
 Python node-local queries return lists. The returned `ContourTraces` object keeps
@@ -75,7 +75,7 @@ For a node `v`, let `B_v` be its number of traced boundary sides.
 - Projecting edges to unique pixel IDs equals the pixel set returned by
   `ContoursComputedIncrementally::getContour(v)`.
 
-`BITQUADS_NUMBER_HOLES` can provide a consistency check for simple connected
+`BITQUAD_NUMBER_HOLES` can provide a consistency check for simple connected
 supports, but its digital-connectivity convention is separate from loop
 classification.
 
@@ -117,5 +117,5 @@ Cached edge and loop storage is proportional to the materialized output.
 
 - [Pixel contours](contours.md): compact unordered boundary pixels.
 - [Attribute catalog](attribute-catalog.md): contour-side attributes.
-- [Morphological trees](trees.md): support and proper-part ownership.
+- [Morphological trees](trees.md): support and smallest-node mapping.
 - [Editing API](editing-api.md): derived-state lifetime.

@@ -6,7 +6,7 @@
  */
 
 #include "../ResidualTreePolicies.hpp"
-#include "../../WeightedMorphologicalTree.hpp"
+#include "../../ValuedMorphologicalTree.hpp"
 #include "../../../utils/GenerationStampSet.hpp"
 
 #include <algorithm>
@@ -23,8 +23,8 @@ namespace mmcfilters::sdrt::detail {
 
 /** @brief Dynamic lowest-common-ancestor strategies for one saturated residual altitude type. */
 template <AltitudeValue T> struct SaturatedLcaTypes {
-    /** @brief Weighted component-tree type indexed by the LCA strategies. */
-    using tree_t = WeightedMorphologicalTree<T>;
+    /** @brief Valued component-tree type indexed by the LCA strategies. */
+    using Tree = ValuedMorphologicalTree<T>;
 
 
     /**
@@ -41,53 +41,53 @@ template <AltitudeValue T> struct SaturatedLcaTypes {
       private:
         /** @brief Stores one frame of an iterative tree traversal. */
         struct TraversalFrame {
-            /** @brief Stores the node identifier. */
+            /** @brief Dense node identifier of the node identifier. */
             NodeId nodeId = InvalidNode;
-            /** @brief Stores the next child. */
+            /** @brief Dense node identifier of the next child. */
             NodeId nextChild = InvalidNode;
-            /** @brief Stores the depth. */
+            /** @brief Depth. */
             int depth = 0;
         };
 
         /** @brief References the tree used by the component. */
-        const tree_t* tree_ = nullptr;
+        const Tree* tree_ = nullptr;
         /** @brief Indicates whether the blocked snapshot index is enabled. */
         bool enabled_ = false;
         /** @brief Indicates whether the blocked snapshot requires a rebuild. */
         bool rebuildPending_ = true;
-        /** @brief Stores the mutations since rebuild. */
+        /** @brief Mutations since rebuild. */
         std::size_t mutationsSinceRebuild_ = 0;
-        /** @brief Stores the block size. */
+        /** @brief Block size. */
         std::size_t blockSize_ = 1;
-        /** @brief Stores the snapshot alive nodes. */
+        /** @brief Snapshot alive nodes. */
         std::size_t snapshotAliveNodes_ = 0;
-        /** @brief Stores the euler. */
+        /** @brief Dense node identifier of the euler. */
         std::vector<NodeId> euler_;
-        /** @brief Stores the euler depth. */
+        /** @brief Euler depth buffer. */
         std::vector<int> eulerDepth_;
-        /** @brief Stores the first occurrence. */
+        /** @brief First occurrence buffer. */
         std::vector<int> firstOccurrence_;
-        /** @brief Stores the preorder entry. */
+        /** @brief Preorder entry buffer. */
         std::vector<int> preorderEntry_;
-        /** @brief Stores the preorder exit. */
+        /** @brief Preorder exit buffer. */
         std::vector<int> preorderExit_;
-        /** @brief Stores the rmq log2. */
+        /** @brief Rmq log2 buffer. */
         std::vector<int> rmqLog2_;
-        /** @brief Stores the rmq sparse table. */
+        /** @brief Rmq sparse table buffer. */
         std::vector<int> rmqSparseTable_;
-        /** @brief Stores the rmq stride. */
+        /** @brief Rmq stride. */
         std::size_t rmqStride_ = 0;
-        /** @brief Stores the rmq levels. */
+        /** @brief Rmq levels. */
         int rmqLevels_ = 0;
-        /** @brief Stores the dirty preorder. */
+        /** @brief Dirty preorder buffer. */
         std::vector<std::uint8_t> dirtyPreorder_;
-        /** @brief Stores the next unmarked. */
+        /** @brief Next unmarked buffer. */
         std::vector<int> nextUnmarked_;
-        /** @brief Stores the dirty root marks. */
+        /** @brief Dirty root marks. */
         GenerationStampSet dirtyRootMarks_;
-        /** @brief Stores the mirrored parent. */
+        /** @brief Dense node identifier of the mirrored parent. */
         std::vector<NodeId> mirroredParent_;
-        /** @brief Stores the mirrored alive. */
+        /** @brief Mirrored alive buffer. */
         std::vector<std::uint8_t> mirroredAlive_;
 
         /**
@@ -196,17 +196,17 @@ template <AltitudeValue T> struct SaturatedLcaTypes {
                 return;
             }
             const MorphologicalTree& topology = tree_->topology();
-            const std::size_t numSlots = static_cast<std::size_t>(topology.getNumInternalNodeSlots());
+            const std::size_t numSlots = static_cast<std::size_t>(topology.numInternalNodeSlots());
             firstOccurrence_.assign(numSlots, -1);
             preorderEntry_.assign(numSlots, -1);
             preorderExit_.assign(numSlots, -1);
             euler_.clear();
             eulerDepth_.clear();
-            euler_.reserve(static_cast<std::size_t>(std::max(1, 2 * topology.getNumNodes() - 1)));
+            euler_.reserve(static_cast<std::size_t>(std::max(1, 2 * topology.numNodes() - 1)));
             eulerDepth_.reserve(euler_.capacity());
 
             std::vector<TraversalFrame> stack;
-            stack.reserve(static_cast<std::size_t>(std::max(1, topology.getNumNodes())));
+            stack.reserve(static_cast<std::size_t>(std::max(1, topology.numNodes())));
             int preorder = 0;
             const auto pushNode = [&](NodeId nodeId, int depth) {
                 const std::size_t index = static_cast<std::size_t>(nodeId);
@@ -215,7 +215,7 @@ template <AltitudeValue T> struct SaturatedLcaTypes {
                 appendEuler(nodeId, depth);
                 stack.push_back(TraversalFrame{nodeId, topology.getFirstChild(nodeId), depth});
             };
-            pushNode(topology.getRoot(), 0);
+            pushNode(topology.root(), 0);
             while (!stack.empty()) {
                 TraversalFrame& frame = stack.back();
                 if (frame.nextChild != InvalidNode) {
@@ -252,7 +252,7 @@ template <AltitudeValue T> struct SaturatedLcaTypes {
                 }
             }
 
-            snapshotAliveNodes_ = static_cast<std::size_t>(topology.getNumNodes());
+            snapshotAliveNodes_ = static_cast<std::size_t>(topology.numNodes());
             blockSize_ = std::clamp<std::size_t>(
                 (static_cast<std::size_t>(std::ceil(std::sqrt(static_cast<double>(std::max<std::size_t>(snapshotAliveNodes_, 1))))) + 1) / 2, 8, 256);
             dirtyPreorder_.assign(snapshotAliveNodes_, std::uint8_t{0});
@@ -270,7 +270,7 @@ template <AltitudeValue T> struct SaturatedLcaTypes {
          * @param tree Tree processed by the operation.
          * @param policy Policy controlling the operation.
          */
-        void bind(const tree_t& tree, SaturatedMinMaxLcaPolicy policy) {
+        void bind(const Tree& tree, SaturatedMinMaxLcaPolicy policy) {
             tree_ = &tree;
             enabled_ = policy == SaturatedMinMaxLcaPolicy::BlockedSnapshot;
             rebuildPending_ = enabled_;
@@ -292,13 +292,13 @@ template <AltitudeValue T> struct SaturatedLcaTypes {
             mirroredAlive_.clear();
             if (enabled_) {
                 const MorphologicalTree& topology = tree.topology();
-                const std::size_t numSlots = static_cast<std::size_t>(topology.getNumInternalNodeSlots());
+                const std::size_t numSlots = static_cast<std::size_t>(topology.numInternalNodeSlots());
                 mirroredParent_.assign(numSlots, InvalidNode);
                 mirroredAlive_.assign(numSlots, std::uint8_t{0});
-                for (NodeId nodeId : topology.getAliveNodeIds()) {
+                for (NodeId nodeId : topology.aliveNodeIds()) {
                     const std::size_t index = static_cast<std::size_t>(nodeId);
                     mirroredAlive_[index] = 1;
-                    const NodeId parent = topology.getNodeParent(nodeId);
+                    const NodeId parent = topology.parent(nodeId);
                     if (parent != nodeId) {
                         mirroredParent_[index] = parent;
                     }
@@ -364,7 +364,7 @@ template <AltitudeValue T> struct SaturatedLcaTypes {
                 const bool currentAlive = topology.isAlive(nodeId);
                 NodeId currentParent = InvalidNode;
                 if (currentAlive) {
-                    const NodeId parent = topology.getNodeParent(nodeId);
+                    const NodeId parent = topology.parent(nodeId);
                     if (parent != nodeId) {
                         currentParent = parent;
                     }
@@ -410,25 +410,25 @@ template <AltitudeValue T> struct SaturatedLcaTypes {
       private:
         /** @brief Stores one node of the auxiliary link-cut forest. */
         struct LinkCutNode {
-            /** @brief Stores the left. */
+            /** @brief Dense node identifier of the left. */
             NodeId left = InvalidNode;
-            /** @brief Stores the right. */
+            /** @brief Dense node identifier of the right. */
             NodeId right = InvalidNode;
-            /** @brief Stores the auxiliary parent. */
+            /** @brief Dense node identifier of the auxiliary parent. */
             NodeId auxiliaryParent = InvalidNode;
         };
 
         /** @brief References the tree used by the component. */
-        const tree_t* tree_ = nullptr;
+        const Tree* tree_ = nullptr;
         /** @brief Indicates whether the link-cut index is enabled. */
         bool enabled_ = false;
-        /** @brief Stores the nodes. */
+        /** @brief Nodes buffer. */
         std::vector<LinkCutNode> nodes_;
-        /** @brief Stores the represented parent. */
+        /** @brief Dense node identifier of the represented parent. */
         std::vector<NodeId> representedParent_;
-        /** @brief Stores the represented alive. */
+        /** @brief Represented alive buffer. */
         std::vector<std::uint8_t> representedAlive_;
-        /** @brief Stores the changed scratch. */
+        /** @brief Dense node identifier of the changed scratch. */
         std::vector<NodeId> changedScratch_;
 
         /**
@@ -558,7 +558,7 @@ template <AltitudeValue T> struct SaturatedLcaTypes {
          * @param tree Tree processed by the operation.
          * @param policy Policy controlling the operation.
          */
-        void bind(const tree_t& tree, SaturatedMinMaxLcaPolicy policy) {
+        void bind(const Tree& tree, SaturatedMinMaxLcaPolicy policy) {
             tree_ = &tree;
             enabled_ = policy == SaturatedMinMaxLcaPolicy::LinkCut;
             nodes_.clear();
@@ -569,14 +569,14 @@ template <AltitudeValue T> struct SaturatedLcaTypes {
                 return;
             }
             const MorphologicalTree& topology = tree.topology();
-            const std::size_t numSlots = static_cast<std::size_t>(topology.getNumInternalNodeSlots());
+            const std::size_t numSlots = static_cast<std::size_t>(topology.numInternalNodeSlots());
             nodes_.assign(numSlots, LinkCutNode{});
             representedParent_.assign(numSlots, InvalidNode);
             representedAlive_.assign(numSlots, std::uint8_t{0});
-            for (NodeId nodeId : topology.getAliveNodeIds()) {
+            for (NodeId nodeId : topology.aliveNodeIds()) {
                 const std::size_t index = static_cast<std::size_t>(nodeId);
                 representedAlive_[index] = 1;
-                const NodeId parent = topology.getNodeParent(nodeId);
+                const NodeId parent = topology.parent(nodeId);
                 if (parent != nodeId) {
                     representedParent_[index] = parent;
                     nodes_[index].auxiliaryParent = parent;
@@ -626,7 +626,7 @@ template <AltitudeValue T> struct SaturatedLcaTypes {
                 const bool currentAlive = topology.isAlive(nodeId);
                 NodeId currentParent = InvalidNode;
                 if (currentAlive) {
-                    const NodeId parent = topology.getNodeParent(nodeId);
+                    const NodeId parent = topology.parent(nodeId);
                     if (parent != nodeId) {
                         currentParent = parent;
                     }
@@ -647,7 +647,7 @@ template <AltitudeValue T> struct SaturatedLcaTypes {
                 const bool currentAlive = topology.isAlive(nodeId);
                 NodeId currentParent = InvalidNode;
                 if (currentAlive) {
-                    const NodeId parent = topology.getNodeParent(nodeId);
+                    const NodeId parent = topology.parent(nodeId);
                     if (parent != nodeId) {
                         currentParent = parent;
                         linkRepresentedParent(nodeId, currentParent);
@@ -662,11 +662,11 @@ template <AltitudeValue T> struct SaturatedLcaTypes {
     /** @brief Dispatches the configured exact LCA backend. */
     class DynamicLcaIndex {
       private:
-        /** @brief Stores the policy. */
+        /** @brief Policy. */
         SaturatedMinMaxLcaPolicy policy_ = SaturatedMinMaxLcaPolicy::ParentClimb;
-        /** @brief Stores the blocked. */
+        /** @brief Blocked. */
         BlockedDynamicLcaIndex blocked_;
-        /** @brief Stores the link cut. */
+        /** @brief Link cut. */
         LinkCutDynamicLcaIndex linkCut_;
 
       public:
@@ -676,7 +676,7 @@ template <AltitudeValue T> struct SaturatedLcaTypes {
          * @param tree Tree processed by the operation.
          * @param policy Policy controlling the operation.
          */
-        void bind(const tree_t& tree, SaturatedMinMaxLcaPolicy policy) {
+        void bind(const Tree& tree, SaturatedMinMaxLcaPolicy policy) {
             policy_ = policy;
             blocked_.bind(tree, policy);
             linkCut_.bind(tree, policy);

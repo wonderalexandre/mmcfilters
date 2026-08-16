@@ -36,6 +36,8 @@ def main() -> int:
     names = SMOKE_NOTEBOOKS if arguments.profile == "smoke" else EXPECTED_NOTEBOOKS
     arguments.output_dir.mkdir(parents=True, exist_ok=True)
 
+    failures: list[str] = []
+
     for name in names:
         source_path = NOTEBOOK_DIRECTORY / name
         output_path = arguments.output_dir / name
@@ -51,10 +53,18 @@ def main() -> int:
         )
         try:
             client.execute()
-        except Exception as error:  # noqa: BLE001 - show failing notebook in CI
+        except Exception as error:  # noqa: BLE001 - show every failing notebook in CI
             print(f"{name} failed: {error}", file=sys.stderr)
-            return 1
+            failures.append(name)
+            continue
         nbformat.write(notebook, output_path)
+
+    if failures:
+        print(
+            f"{len(failures)} of {len(names)} notebooks failed: {', '.join(failures)}",
+            file=sys.stderr,
+        )
+        return 1
 
     print(f"Executed {len(names)} notebooks into {arguments.output_dir}.")
     return 0

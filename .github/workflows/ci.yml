@@ -273,7 +273,7 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
   notebooks:
-    name: Notebooks (${{ github.event_name == 'schedule' && 'full' || inputs.notebook_profile || 'smoke' }})
+    name: Notebooks (${{ github.event_name == 'workflow_dispatch' && inputs.notebook_profile || 'full' }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -299,9 +299,9 @@ jobs:
         run: python scripts/validate_notebooks.py
 
       - name: Execute smoke notebooks
-        if: github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.notebook_profile == 'smoke')
+        if: github.event_name == 'workflow_dispatch' && inputs.notebook_profile == 'smoke'
         run: python scripts/execute_notebooks.py --profile smoke
 
       - name: Execute full notebook suite
-        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.notebook_profile == 'full')
+        if: github.event_name != 'workflow_dispatch' || inputs.notebook_profile == 'full'
         run: python scripts/execute_notebooks.py --profile full

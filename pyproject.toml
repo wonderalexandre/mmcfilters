@@ -36,10 +36,10 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/wonderalexandre/MorphologicalAttributeFilters"
-Documentation = "https://wonderalexandre.github.io/MorphologicalAttributeFilters/"
-Repository = "https://github.com/wonderalexandre/MorphologicalAttributeFilters"
-Issues = "https://github.com/wonderalexandre/MorphologicalAttributeFilters/issues"
+Homepage = "https://github.com/wonderalexandre/mmcfilters"
+Documentation = "https://wonderalexandre.github.io/mmcfilters/"
+Repository = "https://github.com/wonderalexandre/mmcfilters"
+Issues = "https://github.com/wonderalexandre/mmcfilters/issues"
 
 [tool.setuptools_scm]
 # Write the tag-derived version into the Python package during builds.

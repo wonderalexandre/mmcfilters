@@ -1,6 +1,6 @@
 # Scientific benchmark builds
 
-MorphologicalAttributeFilters selects caller-contract validation at compile
+mmcfilters selects caller-contract validation at compile
 time without changing the public C++ API. Normal builds use `CHECKED`.
 Controlled scientific benchmarks may use `UNCHECKED` when the experiment has
 already established every input domain.
@@ -50,9 +50,9 @@ cmake --build build-unchecked \
 
 The complete API benchmark suite and its reproducible execution protocol are
 documented in the
-[Scientific API benchmark suite](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/benchmarks/README.md).
+[Scientific API benchmark suite](https://github.com/wonderalexandre/mmcfilters/blob/main/benchmarks/README.md).
 Named, checksum-pinned workloads are provided in the
-[`scientific-api.ini` manifest](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/benchmarks/workloads/scientific-api.ini).
+[`scientific-api.ini` manifest](https://github.com/wonderalexandre/mmcfilters/blob/main/benchmarks/workloads/scientific-api.ini).
 
 ## Validation boundaries
 

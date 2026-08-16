@@ -1,4 +1,4 @@
-"""Python bindings for MorphologicalAttributeFilters.
+"""Python bindings for mmcfilters.
 
 Preferred usage is the NodeId-based tree query API:
 - `root`

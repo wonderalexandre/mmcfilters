@@ -1,4 +1,4 @@
-PROJECT_NAME           = "MorphologicalAttributeFilters"
+PROJECT_NAME           = "mmcfilters"
 PROJECT_BRIEF          = "Public API documentation"
 OUTPUT_DIRECTORY       = "@MMCFILTERS_DOCS_PUBLIC_DIR@"
 

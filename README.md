@@ -1,10 +1,10 @@
-# MorphologicalAttributeFilters
+# mmcfilters
 
 [![PyPI](https://img.shields.io/pypi/v/mmcfilters.svg)](https://pypi.org/project/mmcfilters/)
 [![Python](https://img.shields.io/pypi/pyversions/mmcfilters.svg)](https://pypi.org/project/mmcfilters/)
-[![CI](https://github.com/wonderalexandre/MorphologicalAttributeFilters/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/wonderalexandre/MorphologicalAttributeFilters/actions/workflows/ci.yml)
-[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://wonderalexandre.github.io/MorphologicalAttributeFilters/)
-[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg)](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/LICENSE)
+[![CI](https://github.com/wonderalexandre/mmcfilters/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/wonderalexandre/mmcfilters/actions/workflows/ci.yml)
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://wonderalexandre.github.io/mmcfilters/)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg)](https://github.com/wonderalexandre/mmcfilters/blob/main/LICENSE)
 
 `mmcfilters` is an alpha research library for constructing and editing
 morphological hierarchies, computing node attributes, and applying connected
@@ -114,26 +114,26 @@ reconstructed_image = tree.reconstruct_from_node_altitudes()
 
 | Goal | Guide |
 | --- | --- |
-| Understand the tree model and construct hierarchies | [Morphological trees](https://wonderalexandre.github.io/MorphologicalAttributeFilters/md_docs_2trees.html) |
-| Use the Python interface | [Python API](https://wonderalexandre.github.io/MorphologicalAttributeFilters/md_docs_2python-api.html) |
-| Compute attributes | [Attributes](https://wonderalexandre.github.io/MorphologicalAttributeFilters/md_docs_2attributes.html) |
-| Apply filtering and hierarchy operators | [Filters](https://wonderalexandre.github.io/MorphologicalAttributeFilters/md_docs_2filters.html) |
-| Compute hierarchy and shape-space saliency | [Saliency maps](https://wonderalexandre.github.io/MorphologicalAttributeFilters/md_docs_2saliency.html) |
-| Edit a tree safely | [Editing API](https://wonderalexandre.github.io/MorphologicalAttributeFilters/md_docs_2editing-api.html) |
-| Extract pixel contours or geometric traces | [Pixel contours](https://wonderalexandre.github.io/MorphologicalAttributeFilters/md_docs_2contours.html) and [contour traces](https://wonderalexandre.github.io/MorphologicalAttributeFilters/md_docs_2contour-traces.html) |
-| Import from or export to Higra | [Higra interoperability](https://wonderalexandre.github.io/MorphologicalAttributeFilters/md_docs_2higra-interoperability.html) |
+| Understand the tree model and construct hierarchies | [Morphological trees](https://wonderalexandre.github.io/mmcfilters/md_docs_2trees.html) |
+| Use the Python interface | [Python API](https://wonderalexandre.github.io/mmcfilters/md_docs_2python-api.html) |
+| Compute attributes | [Attributes](https://wonderalexandre.github.io/mmcfilters/md_docs_2attributes.html) |
+| Apply filtering and hierarchy operators | [Filters](https://wonderalexandre.github.io/mmcfilters/md_docs_2filters.html) |
+| Compute hierarchy and shape-space saliency | [Saliency maps](https://wonderalexandre.github.io/mmcfilters/md_docs_2saliency.html) |
+| Edit a tree safely | [Editing API](https://wonderalexandre.github.io/mmcfilters/md_docs_2editing-api.html) |
+| Extract pixel contours or geometric traces | [Pixel contours](https://wonderalexandre.github.io/mmcfilters/md_docs_2contours.html) and [contour traces](https://wonderalexandre.github.io/mmcfilters/md_docs_2contour-traces.html) |
+| Import from or export to Higra | [Higra interoperability](https://wonderalexandre.github.io/mmcfilters/md_docs_2higra-interoperability.html) |
 
 ### References
 
-- [Attribute catalog](https://wonderalexandre.github.io/MorphologicalAttributeFilters/md_docs_2attribute-catalog.html)
-- [Generated C++ API](https://wonderalexandre.github.io/MorphologicalAttributeFilters/annotated.html)
+- [Attribute catalog](https://wonderalexandre.github.io/mmcfilters/md_docs_2attribute-catalog.html)
+- [Generated C++ API](https://wonderalexandre.github.io/mmcfilters/annotated.html)
 
 ### Contributor guides
 
-- [Attribute computer architecture](https://wonderalexandre.github.io/MorphologicalAttributeFilters/md_docs_2attribute-computer-architecture.html)
-- [Scientific benchmark builds](https://wonderalexandre.github.io/MorphologicalAttributeFilters/md_docs_2scientific-benchmark-builds.html)
+- [Attribute computer architecture](https://wonderalexandre.github.io/mmcfilters/md_docs_2attribute-computer-architecture.html)
+- [Scientific benchmark builds](https://wonderalexandre.github.io/mmcfilters/md_docs_2scientific-benchmark-builds.html)
 
 ## License
 
-MorphologicalAttributeFilters is distributed under the
-[GNU General Public License v3.0](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/LICENSE).
+mmcfilters is distributed under the
+[GNU General Public License v3.0](https://github.com/wonderalexandre/mmcfilters/blob/main/LICENSE).

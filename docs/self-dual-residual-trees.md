@@ -10,13 +10,13 @@ executable demonstration.
 
 | Resource | Location | Purpose |
 | --- | --- | --- |
-| Executable companion | [`notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb) | Recreates Figure 1, checks the structural properties, and reproduces the Figure 2 hydrant experiment. |
-| Figure 2 input | [`dat/hydrant.png`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/dat/hydrant.png) | Original 363x352-pixel grayscale image used by the reproducible notebook experiment. |
-| Public C++ factories | [`mmcfilters/trees/MorphologicalTreeFactory.hpp`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/mmcfilters/trees/MorphologicalTreeFactory.hpp) | Recommended C++ entry points for unrestricted and saturated residual trees. |
-| Python bindings | [`pybinds/TreeBindings.cpp`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/pybinds/TreeBindings.cpp) | Exposes the two factories, the spatial order, the self-dual schedule, and the valued-tree query API. |
+| Executable companion | [`notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb`](https://github.com/wonderalexandre/mmcfilters/blob/main/notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb) | Recreates Figure 1, checks the structural properties, and reproduces the Figure 2 hydrant experiment. |
+| Figure 2 input | [`dat/hydrant.png`](https://github.com/wonderalexandre/mmcfilters/blob/main/dat/hydrant.png) | Original 363x352-pixel grayscale image used by the reproducible notebook experiment. |
+| Public C++ factories | [`mmcfilters/trees/MorphologicalTreeFactory.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/MorphologicalTreeFactory.hpp) | Recommended C++ entry points for unrestricted and saturated residual trees. |
+| Python bindings | [`pybinds/TreeBindings.cpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/pybinds/TreeBindings.cpp) | Exposes the two factories, the spatial order, the self-dual schedule, and the valued-tree query API. |
 | User-facing API notes | [`docs/trees.md`](trees.md) and [`docs/python-api.md`](python-api.md) | Documents input contracts, adjacency choices, tree semantics, attributes, and reconstruction. |
-| Main regression test | [`unit-tests/trees/sdrt/test_min_max_residual_tree_factory.cpp`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/unit-tests/trees/sdrt/test_min_max_residual_tree_factory.cpp) | Tests reconstruction, self-duality, construction policies, altitude types, edge cases, and custom adjacencies. |
-| Construction benchmark | [`benchmarks/min_max_residual_tree_benchmark.cpp`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/benchmarks/min_max_residual_tree_benchmark.cpp) | Measures unrestricted and saturated construction on an input image. |
+| Main regression test | [`unit-tests/trees/sdrt/test_min_max_residual_tree_factory.cpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/unit-tests/trees/sdrt/test_min_max_residual_tree_factory.cpp) | Tests reconstruction, self-duality, construction policies, altitude types, edge cases, and custom adjacencies. |
+| Construction benchmark | [`benchmarks/min_max_residual_tree_benchmark.cpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/benchmarks/min_max_residual_tree_benchmark.cpp) | Measures unrestricted and saturated construction on an input image. |
 
 ## Public construction API
 
@@ -110,16 +110,16 @@ tested separately.
 
 | Paper operation | Implementation |
 | --- | --- |
-| Construct the initial synchronized `T_max(I^0)` and `T_min(I^0)` | [`MorphologicalTreeFactory.hpp`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/mmcfilters/trees/MorphologicalTreeFactory.hpp) |
-| Select the construction mode | [`UnrestrictedResidualTreeBuilder.hpp`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/mmcfilters/trees/sdrt/UnrestrictedResidualTreeBuilder.hpp) and [`SaturatedResidualTreeBuilder.hpp`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/mmcfilters/trees/sdrt/SaturatedResidualTreeBuilder.hpp) |
-| Maintain the current flat zones of `I^k` | [`detail/FlatZonePartition.hpp`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/mmcfilters/trees/sdrt/detail/FlatZonePartition.hpp) |
-| Define `SpatialOrder`, `SelfDualResidualKey`, candidates, and immutable events | [`ResidualEvolution.hpp`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/mmcfilters/trees/sdrt/ResidualEvolution.hpp) |
-| Maintain `M(I^k)` and apply the canonical key `K_prec` | [`detail/ResidualTreeCandidateAgenda.hpp`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/mmcfilters/trees/sdrt/detail/ResidualTreeCandidateAgenda.hpp) |
-| Gather `X_k`, its boundary, and the corresponding primal/dual smallest nodes | [`detail/ResidualTreeCandidatePreparation.hpp`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/mmcfilters/trees/sdrt/detail/ResidualTreeCandidatePreparation.hpp) |
-| Evaluate saturated eligibility `chi_sat(X_k)` | [`detail/SaturatedResidualEligibility.hpp`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/mmcfilters/trees/sdrt/detail/SaturatedResidualEligibility.hpp), assisted by [`detail/SaturatedDynamicLca.hpp`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/mmcfilters/trees/sdrt/detail/SaturatedDynamicLca.hpp) |
-| Move the selected extremum to its first merging level and update both component trees | [`detail/SynchronizedResidualTreeEvolution.hpp`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/mmcfilters/trees/sdrt/detail/SynchronizedResidualTreeEvolution.hpp) and [`adjust/DualMinMaxTreeIncrementalFilterLeaf.hpp`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/mmcfilters/trees/adjust/DualMinMaxTreeIncrementalFilterLeaf.hpp) |
-| Record the selected supports and build the inclusion hierarchy | [`detail/ResidualTreeEventAssembler.hpp`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/mmcfilters/trees/sdrt/detail/ResidualTreeEventAssembler.hpp) |
-| Validate smallest-node mapping and exact reconstruction, then materialize the valued tree | [`detail/ResidualTreeMaterialization.hpp`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/mmcfilters/trees/sdrt/detail/ResidualTreeMaterialization.hpp) |
+| Construct the initial synchronized `T_max(I^0)` and `T_min(I^0)` | [`MorphologicalTreeFactory.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/MorphologicalTreeFactory.hpp) |
+| Select the construction mode | [`UnrestrictedResidualTreeBuilder.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/UnrestrictedResidualTreeBuilder.hpp) and [`SaturatedResidualTreeBuilder.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/SaturatedResidualTreeBuilder.hpp) |
+| Maintain the current flat zones of `I^k` | [`detail/FlatZonePartition.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/detail/FlatZonePartition.hpp) |
+| Define `SpatialOrder`, `SelfDualResidualKey`, candidates, and immutable events | [`ResidualEvolution.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/ResidualEvolution.hpp) |
+| Maintain `M(I^k)` and apply the canonical key `K_prec` | [`detail/ResidualTreeCandidateAgenda.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/detail/ResidualTreeCandidateAgenda.hpp) |
+| Gather `X_k`, its boundary, and the corresponding primal/dual smallest nodes | [`detail/ResidualTreeCandidatePreparation.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/detail/ResidualTreeCandidatePreparation.hpp) |
+| Evaluate saturated eligibility `chi_sat(X_k)` | [`detail/SaturatedResidualEligibility.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/detail/SaturatedResidualEligibility.hpp), assisted by [`detail/SaturatedDynamicLca.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/detail/SaturatedDynamicLca.hpp) |
+| Move the selected extremum to its first merging level and update both component trees | [`detail/SynchronizedResidualTreeEvolution.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/detail/SynchronizedResidualTreeEvolution.hpp) and [`adjust/DualMinMaxTreeIncrementalFilterLeaf.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/adjust/DualMinMaxTreeIncrementalFilterLeaf.hpp) |
+| Record the selected supports and build the inclusion hierarchy | [`detail/ResidualTreeEventAssembler.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/detail/ResidualTreeEventAssembler.hpp) |
+| Validate smallest-node mapping and exact reconstruction, then materialize the valued tree | [`detail/ResidualTreeMaterialization.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/detail/ResidualTreeMaterialization.hpp) |
 
 The common process is `SynchronizedResidualTreeEvolution<T, mode>`. For each
 eligible `ResidualCandidate`, it records an immutable `ResidualEvent` from the
@@ -141,7 +141,7 @@ notebook uses it only for comparison.
 
 ## Demonstration notebook
 
-[`Self_Dual_Residual_Trees_Tutorial.ipynb`](https://github.com/wonderalexandre/MorphologicalAttributeFilters/blob/main/notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb)
+[`Self_Dual_Residual_Trees_Tutorial.ipynb`](https://github.com/wonderalexandre/mmcfilters/blob/main/notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb)
 is an executable companion rather than a second presentation of the theory. It:
 
 1. recreates the exact 17x17 six-flat-zone image from Figure 1;

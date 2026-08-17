@@ -73,10 +73,7 @@ assert np.array_equal(tree_of_shapes.reconstruct_from_node_altitudes(), image)
 self_dual_tree_of_shapes = (
     mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(
         image,
-        mmcfilters.TopographicConvention(
-            immersion=mmcfilters.SelfDualSpanImmersion(),
-            altitude_encoding=mmcfilters.TopographicAltitudeEncoding.EXACT_DOUBLED,
-        ),
+        mmcfilters.self_dual_span_convention(),
     )
 )
 assert self_dual_tree_of_shapes.node_altitudes.dtype == np.uint16
@@ -93,20 +90,23 @@ altitudes are exact rather than quantized.
 The self-dual span immersion admits `UINT8` only without an exterior ring. Its
 boundary reference level is the single source of half levels, and
 `TopographicDomainExtension.NONE` crops that level away before any interior cell
-reads it:
+reads it. The convention fields may be passed straight to the factory:
 
 ```python
 unpadded_self_dual = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(
     image,
-    mmcfilters.TopographicConvention(
-        immersion=mmcfilters.SelfDualSpanImmersion(),
-        domain_extension=mmcfilters.TopographicDomainExtension.NONE,
-        altitude_encoding=mmcfilters.TopographicAltitudeEncoding.UINT8,
-    ),
+    immersion=mmcfilters.SelfDualSpanImmersion(),
+    domain_extension=mmcfilters.TopographicDomainExtension.NONE,
+    altitude_encoding=mmcfilters.TopographicAltitudeEncoding.UINT8,
 )
 assert unpadded_self_dual.node_altitudes.dtype == np.uint8
 assert np.array_equal(unpadded_self_dual.reconstruct_from_node_altitudes(), image)
 ```
+
+`mmcfilters.self_dual_span_convention(...)` builds the same convention as a
+value when one has to be stored or reused. Passing both a complete convention
+and individual fields to the factory is rejected, so a call always has one
+source of truth.
 
 Combining the self-dual span with `EXTERIOR_RING` and `UINT8` is rejected.
 
@@ -205,6 +205,22 @@ array; multi-attribute methods return `(layout, values)`, where `layout` maps
 names to columns. `dtype` accepts `np.float32` or `np.float64` and defaults to
 `np.float32`.
 
+Every method that accepts an `Attribute` or `Attribute.Group` also accepts its
+stable symbolic name as a string. The accepted names are exactly the ones that
+`layout` already uses as keys, so the request and the result share one
+vocabulary:
+
+```python
+area = mmcfilters.Attribute.compute_single_attribute(max_tree, "AREA")
+layout, values = mmcfilters.Attribute.compute_attributes(
+    max_tree,
+    ["AREA", "VOLUME", "BOUNDARY"],
+)
+```
+
+Matching is exact and case-sensitive. An unknown name raises `ValueError` and
+reports the closest known names.
+
 ```python
 area = mmcfilters.Attribute.compute_single_topology_attribute(
     max_tree,
@@ -284,9 +300,9 @@ keep_large = mmcfilters.compute_node_preservation_mask(area, 4.0)
 direct = mmcfilters.DirectAttributeFilter(max_tree).apply_direct_attribute_filter(
     keep_large,
 )
-subtractive = mmcfilters.HardSubtractiveAttributeFilter(
+subtractive = mmcfilters.SubtractiveAttributeFilter(
     max_tree,
-).apply_hard_subtractive_attribute_filter(keep_large)
+).apply_subtractive_attribute_filter(keep_large)
 pruned_min = filters.filtering_by_pruning_min(box_height, 2.0)
 pruned_max = filters.filtering_by_pruning_max(box_height, 2.0)
 altitude_adjusted = mmcfilters.adjust_node_preservation_mask_by_altitude_stability(

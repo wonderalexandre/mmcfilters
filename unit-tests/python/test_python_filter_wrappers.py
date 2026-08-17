@@ -126,7 +126,7 @@ def main() -> int:
     keep_all = [True] * valued_tree.num_internal_node_slots
     keep_all_mask = mmcfilters.NodePreservationMask(keep_all)
     direct_filter = mmcfilters.DirectAttributeFilter(valued_tree)
-    hard_subtractive_filter = mmcfilters.HardSubtractiveAttributeFilter(valued_tree)
+    subtractive_filter = mmcfilters.SubtractiveAttributeFilter(valued_tree)
     soft_subtractive_filter = mmcfilters.SoftSubtractiveAttributeFilter(valued_tree)
     valued_tree_filters = mmcfilters.AttributeFilters(valued_tree)
     require(
@@ -135,10 +135,10 @@ def main() -> int:
     )
     require(
         np.array_equal(
-            hard_subtractive_filter.apply_hard_subtractive_attribute_filter(keep_all_mask),
+            subtractive_filter.apply_subtractive_attribute_filter(keep_all_mask),
             valued_tree_reconstruction.astype(np.int64),
         ),
-        "valued_tree HardSubtractiveAttributeFilter keep-all",
+        "valued_tree SubtractiveAttributeFilter keep-all",
     )
     require(
         np.array_equal(
@@ -152,10 +152,10 @@ def main() -> int:
     reject_all_mask = mmcfilters.NodePreservationMask([False] * valued_tree.num_internal_node_slots)
     require(
         np.array_equal(
-            hard_subtractive_filter.apply_hard_subtractive_attribute_filter(reject_all_mask),
+            subtractive_filter.apply_subtractive_attribute_filter(reject_all_mask),
             np.zeros_like(valued_tree_reconstruction, dtype=np.int64),
         ),
-        "all-false hard subtractive mask must produce zero",
+        "all-false subtractive mask must produce zero",
     )
     zero_scores = np.zeros(valued_tree.num_internal_node_slots, dtype=np.float64)
     require(
@@ -538,6 +538,94 @@ def main() -> int:
     adjust.prune_min_tree_and_update_max_tree(min_candidates[:1])
     require(adjust.min_tree.reconstruct_from_node_altitudes().shape == image.shape, "adjust min_tree property after min prune")
     require(adjust.max_tree.reconstruct_from_node_altitudes().shape == image.shape, "adjust max_tree property after min prune")
+
+    # Concise filter call forms. Passing the attribute itself must reproduce the
+    # buffer the caller would have computed, including the valued versus
+    # topology entry point implied by the attribute.
+    concise_tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image, radius=1.5)
+    concise_filters = mmcfilters.AttributeFilters(concise_tree)
+    topology_area = mmcfilters.Attribute.compute_single_topology_attribute(concise_tree, "AREA", dtype=np.float64)
+    valued_volume = mmcfilters.Attribute.compute_single_attribute(concise_tree, "VOLUME", dtype=np.float64)
+
+    for name, buffer in (("AREA", topology_area), ("VOLUME", valued_volume)):
+        require(
+            np.array_equal(
+                concise_filters.filtering_by_pruning_min(name, 2.0),
+                concise_filters.filtering_by_pruning_min(buffer, 2.0),
+            ),
+            f"pruning-min by attribute name must match the buffer form for {name}",
+        )
+    require(
+        np.array_equal(
+            concise_filters.filtering_by_pruning_min(mmcfilters.Attribute.AREA, 2.0),
+            concise_filters.filtering_by_pruning_min(topology_area, 2.0),
+        ),
+        "pruning-min by Attribute value must match the buffer form",
+    )
+    require(
+        np.array_equal(
+            concise_filters.filtering_by_pruning_max("AREA", 2.0),
+            concise_filters.filtering_by_pruning_max(topology_area, 2.0),
+        ),
+        "pruning-max by attribute name must match the buffer form",
+    )
+    require(
+        np.array_equal(
+            concise_filters.filtering_by_viterbi_rule("AREA", 2.0),
+            concise_filters.filtering_by_viterbi_rule(topology_area, 2.0),
+        ),
+        "viterbi filtering by attribute name must match the buffer form",
+    )
+    selection = mmcfilters.ExtinctionSelectionPolicy.by_top_k(2)
+    require(
+        np.array_equal(
+            concise_filters.filtering_by_extinction("AREA", selection),
+            concise_filters.filtering_by_extinction(topology_area, selection),
+        ),
+        "extinction filtering by attribute name must match the buffer form",
+    )
+
+    # The buffer and mask forms must keep working unchanged.
+    require(
+        concise_filters.filtering_by_pruning_min(
+            mmcfilters.Attribute.compute_single_topology_attribute(concise_tree, "AREA", dtype=np.float32), 2.0
+        ).shape
+        == image.shape,
+        "float32 attribute buffers must still be accepted",
+    )
+    require(
+        concise_filters.filtering_by_pruning_min(mmcfilters.compute_node_preservation_mask(topology_area, 2.0)).shape == image.shape,
+        "explicit preservation masks must still be accepted",
+    )
+
+    # Constructors accept the attribute as well.
+    named_extinction = mmcfilters.ExtinctionValues(concise_tree, "AREA")
+    buffered_extinction = mmcfilters.ExtinctionValues(concise_tree, topology_area)
+    require(
+        np.array_equal(named_extinction.get_extinction_value_attribute(), buffered_extinction.get_extinction_value_attribute()),
+        "ExtinctionValues by attribute name must match the buffer form",
+    )
+    named_uao = mmcfilters.UltimateAttributeOpening(concise_tree, "AREA")
+    buffered_uao = mmcfilters.UltimateAttributeOpening(concise_tree, topology_area)
+    named_uao.execute(3.0)
+    buffered_uao.execute(3.0)
+    require(
+        np.array_equal(named_uao.get_max_contrast_image(), buffered_uao.get_max_contrast_image()),
+        "UltimateAttributeOpening by attribute name must match the buffer form",
+    )
+
+    # The reconstruction filters expose a short apply alias.
+    preservation = mmcfilters.compute_node_preservation_mask(topology_area, 2.0)
+    for filter_type, explicit in (
+        (mmcfilters.DirectAttributeFilter, "apply_direct_attribute_filter"),
+        (mmcfilters.SubtractiveAttributeFilter, "apply_subtractive_attribute_filter"),
+    ):
+        instance = filter_type(concise_tree)
+        require(
+            np.array_equal(instance.apply(preservation), getattr(instance, explicit)(preservation)),
+            f"{filter_type.__name__}.apply must match {explicit}",
+        )
+    require(not hasattr(mmcfilters, "HardSubtractiveAttributeFilter"), "the renamed filter must not keep its former name")
 
     print("python filter wrappers ok")
     return 0

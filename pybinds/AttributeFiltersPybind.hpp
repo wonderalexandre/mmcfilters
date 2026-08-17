@@ -61,6 +61,7 @@ class AttributeFiltersPybind {
      */
     const MorphologicalTree& topology() const noexcept { return valuedTreeOwner_->topology(); }
 
+
     /**
      * @brief Applies by pruning min typed.
      *
@@ -153,6 +154,9 @@ class AttributeFiltersPybind {
     }
 
   public:
+    /** @brief Returns the retained valued-tree owner. @return Shared owner of the filtered tree. */
+    [[nodiscard]] std::shared_ptr<pybindings::PythonValuedMorphologicalTree> treeOwner() const noexcept { return valuedTreeOwner_; }
+
     /**
      * @brief Constructs `AttributeFiltersPybind` from the supplied inputs.
      *

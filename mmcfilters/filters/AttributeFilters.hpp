@@ -27,7 +27,7 @@ namespace mmcfilters {
  *
  * `AttributeFilters` groups pruning, Viterbi, and extinction-related
  * operations. Direct and subtractive reconstruction are exposed separately by
- * `DirectAttributeFilter`, `HardSubtractiveAttributeFilter`, and
+ * `DirectAttributeFilter`, `SubtractiveAttributeFilter`, and
  * `SoftSubtractiveAttributeFilter`. The operators consume preservation masks or
  * attribute buffers defined on dense node ids and reconstruct proper-part
  * images as their output.

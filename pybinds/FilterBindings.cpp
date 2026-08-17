@@ -1,5 +1,6 @@
 #include "ModuleBindings.hpp"
 
+#include "AttributeComputationBindings.hpp"
 #include "AttributeFiltersPybind.hpp"
 #include "AttributeReconstructionFiltersPybind.hpp"
 #include "DepthStableRegionComputerPybind.hpp"
@@ -141,17 +142,23 @@ void initAttributeFilters(py::module_& m) {
     py::class_<DirectAttributeFilterPybind>(m, "DirectAttributeFilter", py::module_local(false))
         .def(py::init<std::shared_ptr<PythonValuedMorphologicalTree>>(), "tree"_a)
         .def("apply_direct_attribute_filter", &DirectAttributeFilterPybind::applyDirectAttributeFilter, "node_preservation_mask"_a,
-             "Apply direct reconstruction; the root must be preserved.");
+             "Apply direct reconstruction; the root must be preserved.")
+        .def("apply", &DirectAttributeFilterPybind::applyDirectAttributeFilter, "node_preservation_mask"_a,
+             "Short alias of `apply_direct_attribute_filter`.");
 
-    py::class_<HardSubtractiveAttributeFilterPybind>(m, "HardSubtractiveAttributeFilter", py::module_local(false))
+    py::class_<SubtractiveAttributeFilterPybind>(m, "SubtractiveAttributeFilter", py::module_local(false))
         .def(py::init<std::shared_ptr<PythonValuedMorphologicalTree>>(), "tree"_a)
-        .def("apply_hard_subtractive_attribute_filter", &HardSubtractiveAttributeFilterPybind::applyHardSubtractiveAttributeFilter,
-             "node_preservation_mask"_a, "Gate every zero-baseline node residue with a Boolean preservation mask.");
+        .def("apply_subtractive_attribute_filter", &SubtractiveAttributeFilterPybind::applySubtractiveAttributeFilter,
+             "node_preservation_mask"_a, "Gate every zero-baseline node residue with a Boolean preservation mask.")
+        .def("apply", &SubtractiveAttributeFilterPybind::applySubtractiveAttributeFilter, "node_preservation_mask"_a,
+             "Short alias of `apply_subtractive_attribute_filter`.");
 
     py::class_<SoftSubtractiveAttributeFilterPybind>(m, "SoftSubtractiveAttributeFilter", py::module_local(false))
         .def(py::init<std::shared_ptr<PythonValuedMorphologicalTree>>(), "tree"_a)
         .def("apply_soft_subtractive_attribute_filter", &SoftSubtractiveAttributeFilterPybind::applySoftSubtractiveAttributeFilter,
-             "node_preservation_scores"_a, "Gate every zero-baseline node residue with finite scores in [0, 1].");
+             "node_preservation_scores"_a, "Gate every zero-baseline node residue with finite scores in [0, 1].")
+        .def("apply", &SoftSubtractiveAttributeFilterPybind::applySoftSubtractiveAttributeFilter, "node_preservation_scores"_a,
+             "Short alias of `apply_soft_subtractive_attribute_filter`.");
 
     py::class_<AttributeFiltersPybind>(m, "AttributeFilters", py::module_local(false),
                                        R"doc(Attribute-based filtering operators over a valued morphological tree.
@@ -166,6 +173,12 @@ Returned images are 2D NumPy arrays on the original image domain.)doc")
             "filtering_by_pruning_min",
             [](AttributeFiltersPybind& self, py::array attr, double threshold) { return self.filteringByPruningMin(std::move(attr), threshold); }, "attr"_a,
             "threshold"_a, "Apply pruning-min filtering from a node-indexed floating-point attribute buffer.")
+        .def(
+            "filtering_by_pruning_min",
+            [](AttributeFiltersPybind& self, const py::object& attr, double threshold) {
+                return self.filteringByPruningMin(attribute_computation::attributeBufferFor(self.treeOwner(), attr), threshold);
+            },
+            "attr"_a, "threshold"_a, "Accepts an `Attribute` value or its symbolic name and computes the buffer internally.")
         .def("filtering_by_pruning_max", py::overload_cast<const NodePreservationMask&>(&AttributeFiltersPybind::filteringByPruningMax),
              "node_preservation_mask"_a, "Apply pruning-max filtering from explicit node-preservation decisions.")
         .def(
@@ -173,15 +186,33 @@ Returned images are 2D NumPy arrays on the original image domain.)doc")
             [](AttributeFiltersPybind& self, py::array attr, double threshold) { return self.filteringByPruningMax(std::move(attr), threshold); }, "attr"_a,
             "threshold"_a, "Apply pruning-max filtering from a node-indexed floating-point attribute buffer.")
         .def(
+            "filtering_by_pruning_max",
+            [](AttributeFiltersPybind& self, const py::object& attr, double threshold) {
+                return self.filteringByPruningMax(attribute_computation::attributeBufferFor(self.treeOwner(), attr), threshold);
+            },
+            "attr"_a, "threshold"_a, "Accepts an `Attribute` value or its symbolic name and computes the buffer internally.")
+        .def(
             "filtering_by_viterbi_rule",
             [](AttributeFiltersPybind& self, py::array attr, double threshold) { return self.filteringByViterbiRule(std::move(attr), threshold); }, "attr"_a,
             "threshold"_a, "Apply connected Viterbi filtering from a node-indexed floating-point attribute buffer.")
+        .def(
+            "filtering_by_viterbi_rule",
+            [](AttributeFiltersPybind& self, const py::object& attr, double threshold) {
+                return self.filteringByViterbiRule(attribute_computation::attributeBufferFor(self.treeOwner(), attr), threshold);
+            },
+            "attr"_a, "threshold"_a, "Accepts an `Attribute` value or its symbolic name and computes the buffer internally.")
         .def(
             "filtering_by_extinction",
             [](AttributeFiltersPybind& self, py::array attr, const ExtinctionSelectionPolicyPybind& selection) {
                 return self.filteringByExtinctionValue(std::move(attr), selection);
             },
             "attr"_a, "selection"_a, "Filter by extinction using an explicit selection policy.")
+        .def(
+            "filtering_by_extinction",
+            [](AttributeFiltersPybind& self, const py::object& attr, const ExtinctionSelectionPolicyPybind& selection) {
+                return self.filteringByExtinctionValue(attribute_computation::attributeBufferFor(self.treeOwner(), attr), selection);
+            },
+            "attr"_a, "selection"_a, "Accepts an `Attribute` value or its symbolic name and computes the buffer internally.")
         .def(
             "contour_map_by_extinction",
             [](AttributeFiltersPybind& self, py::array attr, const ExtinctionSelectionPolicyPybind& selection, ExtinctionContourScorePolicy scorePolicy) {
@@ -204,9 +235,21 @@ C-contiguous, and indexed by dense internal `NodeId`. Without an explicit
 attribute, the helper computes topology-only AREA internally. The reported
 numeric score is variation; lower finite values are more stable. Result getters
 require a successful `compute_by_depth` call.)doc")
+        .def(
+            "contour_map_by_extinction",
+            [](AttributeFiltersPybind& self, const py::object& attr, const ExtinctionSelectionPolicyPybind& selection,
+               ExtinctionContourScorePolicy scorePolicy) {
+                return self.contourMapByExtinctionValue(attribute_computation::attributeBufferFor(self.treeOwner(), attr), selection, scorePolicy);
+            },
+            "attr"_a, "selection"_a, "score_policy"_a, "Accepts an `Attribute` value or its symbolic name and computes the buffer internally.")
         .def(py::init<std::shared_ptr<PythonValuedMorphologicalTree>>(), "tree"_a, "Create a depth-stability helper using topology-only AREA.")
         .def(py::init<std::shared_ptr<PythonValuedMorphologicalTree>, py::array>(), "tree"_a, "attribute"_a,
              "Create a depth-stability helper from a node-indexed increasing attribute buffer.")
+        .def(py::init([](std::shared_ptr<PythonValuedMorphologicalTree> tree, const py::object& attribute) {
+                 py::array buffer = attribute_computation::attributeBufferFor(tree, attribute);
+                 return std::make_unique<DepthStableRegionComputerPybind>(std::move(tree), std::move(buffer));
+             }),
+             "tree"_a, "attribute"_a, "Accepts an `Attribute` value or its symbolic name and computes the buffer internally.")
         .def("compute_by_depth", &DepthStableRegionComputerPybind::computeByDepth, "depth_window_radius"_a, "Return a dense uint8 mask of strict local variation minima.")
         .def("get_variation", &DepthStableRegionComputerPybind::getVariation, "node_id"_a, "Return the variation score for one node after `compute_by_depth`.")
         .def("get_variations", &DepthStableRegionComputerPybind::getVariations, "Return the dense variation array after `compute_by_depth`.")
@@ -250,6 +293,11 @@ minimum spanning trees, and saliency maps," Journal of Mathematical Imaging and
 Vision 60(4):479-502, 2018, https://doi.org/10.1007/s10851-017-0768-7.)doc")
         .def(py::init<std::shared_ptr<PythonValuedMorphologicalTree>, py::array>(), "tree"_a, "attribute"_a,
              "Compute extinction values from a node-indexed attribute buffer.")
+        .def(py::init([](std::shared_ptr<PythonValuedMorphologicalTree> tree, const py::object& attribute) {
+                 py::array buffer = attribute_computation::attributeBufferFor(tree, attribute);
+                 return std::make_unique<ExtinctionValuesPybind>(std::move(tree), std::move(buffer));
+             }),
+             "tree"_a, "attribute"_a, "Accepts an `Attribute` value or its symbolic name and computes the buffer internally.")
         .def("filtering", &ExtinctionValuesPybind::filtering, "selection"_a, "Reconstruct an image by applying an extinction selection policy.")
         .def("contour_map", &ExtinctionValuesPybind::contourMap, "selection"_a, "score_policy"_a,
              "Return a 2D contour visualization from an extinction selection policy.")
@@ -292,6 +340,11 @@ C-contiguous, and indexed by dense internal `NodeId`. Call `execute` before
 reading output images.)doc")
         .def(py::init<std::shared_ptr<PythonValuedMorphologicalTree>, py::array>(), "tree"_a, "attr"_a,
              "Create a UAO computation from a valued tree and increasing attribute buffer.")
+        .def(py::init([](std::shared_ptr<PythonValuedMorphologicalTree> tree, const py::object& attr) {
+                 py::array buffer = attribute_computation::attributeBufferFor(tree, attr);
+                 return std::make_unique<UltimateAttributeOpeningPybind>(std::move(tree), std::move(buffer));
+             }),
+             "tree"_a, "attr"_a, "Accepts an `Attribute` value or its symbolic name and computes the buffer internally.")
         .def("execute", &UltimateAttributeOpeningPybind::execute, "maximum_attribute_threshold"_a, "Run UAO using all nodes as selectable candidates.")
         .def("execute_with_mser", &UltimateAttributeOpeningPybind::executeWithMSER, "maximum_attribute_threshold"_a, "altitude_window_radius"_a,
              "Run UAO using an MSER-derived node-selection mask.")

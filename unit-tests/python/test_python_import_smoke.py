@@ -53,7 +53,7 @@ def main() -> int:
         "DirectReconstruction",
         "SubtractiveResidueModulation",
         "DirectAttributeFilter",
-        "HardSubtractiveAttributeFilter",
+        "SubtractiveAttributeFilter",
         "SoftSubtractiveAttributeFilter",
         "IncompleteStabilityWindowPolicy",
         "compute_node_preservation_mask",

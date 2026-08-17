@@ -42,7 +42,7 @@ Valued-tree helpers live on `ValuedMorphologicalTree`:
 
 Direct and subtractive reconstruction are separate filter families:
 - `DirectAttributeFilter(tree).apply_direct_attribute_filter(NodePreservationMask(...))`
-- `HardSubtractiveAttributeFilter(tree).apply_hard_subtractive_attribute_filter(NodePreservationMask(...))`
+- `SubtractiveAttributeFilter(tree).apply_subtractive_attribute_filter(NodePreservationMask(...))`
 - `SoftSubtractiveAttributeFilter(tree).apply_soft_subtractive_attribute_filter(node_preservation_scores)`
 
 Hierarchy edge saliency maps live on `HierarchySaliencyMap`:
@@ -153,6 +153,7 @@ ComplementaryGridImmersion = _native.ComplementaryGridImmersion
 TopographicDomainExtension = _native.TopographicDomainExtension
 TopographicAltitudeEncoding = _native.TopographicAltitudeEncoding
 TopographicConvention = _native.TopographicConvention
+self_dual_span_convention = _native.self_dual_span_convention
 RegularGridAdjacency2D = _native.RegularGridAdjacency2D
 RegularGridAdjacencyShape = _native.RegularGridAdjacencyShape
 AttributeFilters = _native.AttributeFilters
@@ -167,7 +168,7 @@ adjust_node_preservation_mask_by_depth_stability = _native.adjust_node_preservat
 DirectReconstruction = _native.DirectReconstruction
 SubtractiveResidueModulation = _native.SubtractiveResidueModulation
 DirectAttributeFilter = _native.DirectAttributeFilter
-HardSubtractiveAttributeFilter = _native.HardSubtractiveAttributeFilter
+SubtractiveAttributeFilter = _native.SubtractiveAttributeFilter
 SoftSubtractiveAttributeFilter = _native.SoftSubtractiveAttributeFilter
 DepthStableRegionComputer = _native.DepthStableRegionComputer
 UltimateAttributeOpening = _native.UltimateAttributeOpening
@@ -225,6 +226,7 @@ __all__ = [
     "TopographicDomainExtension",
     "TopographicAltitudeEncoding",
     "TopographicConvention",
+    "self_dual_span_convention",
     "RegularGridAdjacency2D",
     "RegularGridAdjacencyShape",
     "AttributeFilters",
@@ -239,7 +241,7 @@ __all__ = [
     "DirectReconstruction",
     "SubtractiveResidueModulation",
     "DirectAttributeFilter",
-    "HardSubtractiveAttributeFilter",
+    "SubtractiveAttributeFilter",
     "SoftSubtractiveAttributeFilter",
     "DepthStableRegionComputer",
     "Attribute",

@@ -12,9 +12,12 @@ native altitude representation required by each hierarchy:
 - image inputs are two-dimensional C-contiguous `np.uint8` arrays;
 - component-tree and residual-tree altitude arrays are one-dimensional
   C-contiguous `np.uint8` arrays or integer sequences in `[0, 255]`;
-- tree-of-shapes node altitudes are exact doubled gray units stored as
-  `np.uint16`; an original gray level `g` is represented by `2*g`, while odd
-  values represent exact half levels;
+- tree-of-shapes node altitudes follow the `altitude_encoding` declared by the
+  topographic convention. The default `TopographicAltitudeEncoding.UINT8`
+  publishes unchanged source gray levels as `np.uint8`;
+  `TopographicAltitudeEncoding.EXACT_DOUBLED` publishes exact doubled gray units
+  as `np.uint16`, where an original gray level `g` is represented by `2*g` and
+  odd values represent exact half levels;
 - factories return `ValuedMorphologicalTree`;
 - a separate topology-only `MorphologicalTree` Python type is not exposed.
 
@@ -64,12 +67,48 @@ saturated_residual_tree = (
     )
 )
 tree_of_shapes = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(image)
-assert tree_of_shapes.node_altitudes.dtype == np.uint16
+assert tree_of_shapes.node_altitudes.dtype == np.uint8
+assert np.array_equal(tree_of_shapes.reconstruct_from_node_altitudes(), image)
+
+self_dual_tree_of_shapes = (
+    mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(
+        image,
+        mmcfilters.TopographicConvention(
+            immersion=mmcfilters.SelfDualSpanImmersion(),
+            altitude_encoding=mmcfilters.TopographicAltitudeEncoding.EXACT_DOUBLED,
+        ),
+    )
+)
+assert self_dual_tree_of_shapes.node_altitudes.dtype == np.uint16
 assert np.array_equal(
-    tree_of_shapes.reconstruct_from_node_altitudes(),
+    self_dual_tree_of_shapes.reconstruct_from_node_altitudes(),
     2 * image.astype(np.uint16),
 )
 ```
+
+The default convention selects the canonical 4/8 complementary-grid immersion,
+whose construction levels never leave the source level set, so the 8-bit
+altitudes are exact rather than quantized.
+
+The self-dual span immersion admits `UINT8` only without an exterior ring. Its
+boundary reference level is the single source of half levels, and
+`TopographicDomainExtension.NONE` crops that level away before any interior cell
+reads it:
+
+```python
+unpadded_self_dual = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(
+    image,
+    mmcfilters.TopographicConvention(
+        immersion=mmcfilters.SelfDualSpanImmersion(),
+        domain_extension=mmcfilters.TopographicDomainExtension.NONE,
+        altitude_encoding=mmcfilters.TopographicAltitudeEncoding.UINT8,
+    ),
+)
+assert unpadded_self_dual.node_altitudes.dtype == np.uint8
+assert np.array_equal(unpadded_self_dual.reconstruct_from_node_altitudes(), image)
+```
+
+Combining the self-dual span with `EXTERIOR_RING` and `UINT8` is rejected.
 
 Max-trees declare `NodeAltitudeOrder.INCREASING`; min-trees declare
 `NodeAltitudeOrder.DECREASING`. Trees of shapes and self-dual residual trees

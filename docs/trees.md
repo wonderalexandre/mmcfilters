@@ -188,18 +188,29 @@ mode-specific C++ option objects.
 
 `TopographicConvention` records and controls:
 
-- `SelfDualSpanImmersion` or a `ComplementaryGridImmersion` carrying its
-  minimum/maximum adjacencies;
+- `CanonicalComplementaryGridImmersion` carrying only its `ComplementaryPairing`,
+  a `ComplementaryGridImmersion` carrying explicit minimum/maximum adjacencies,
+  or `SelfDualSpanImmersion`;
 - `TopographicDomainExtension::ExteriorRing` or `None`;
-- the row-major `infinityPixel` in the active topographic domain.
+- the row-major `infinityPixel` in the active topographic domain;
+- the published altitude scale, `TopographicAltitudeEncoding::UInt8` or
+  `ExactDoubled`.
+
+The default convention selects the canonical 4/8 complementary-grid immersion
+and publishes unchanged 8-bit source levels:
 
 ```cpp
-auto selfDual = MorphologicalTreeFactory::createTreeOfShapes(image);
+ValuedMorphologicalTree<std::uint8_t> treeOfShapes =
+    MorphologicalTreeFactory::createTreeOfShapes(image);
+```
 
+A canonical immersion declares only the ordered pairing, so it needs no domain.
+It is resolved against the source domain during construction, and the retained
+convention always exposes the concrete adjacencies:
+
+```cpp
 TopographicConvention convention{
-    ComplementaryGridImmersion{ComplementaryAdjacencies{
-        RegularGridAdjacency2D(rows, columns, 1.0),
-        RegularGridAdjacency2D(rows, columns, 1.5)}},
+    CanonicalComplementaryGridImmersion{ComplementaryPairing::Min8Max4},
     TopographicDomainExtension::None,
     PixelId{0}};
 auto unpadded = MorphologicalTreeFactory::createTreeOfShapes(image, convention);
@@ -209,17 +220,54 @@ Both padding policies publish the original source pixels as the tree domain and
 attach the original `GridDomain2D`. The immersion grid is not exposed as the
 pixel domain.
 
-Tree-of-shapes construction uses exact doubled gray units:
+### Tree-of-shapes altitude encodings
+
+A complementary-grid immersion floods the interpolated domain over the source
+level set itself, so every construction level is already a source gray level.
+`TopographicAltitudeEncoding::UInt8` publishes those levels unchanged and
+`reconstructFromNodeAltitudes()` returns the source image. The encoding is exact,
+not a quantization: the published hierarchy is the doubled hierarchy with every
+altitude halved, so no parent-child altitude distinction is lost.
+
+A self-dual span immersion propagates from a boundary reference level that, on
+an even boundary, is the mean of the two central boundary values and may
+therefore fall between two source levels. That reference level lives on the
+exterior ring and is the only source of half levels, so the admissible encodings
+depend on the domain extension:
+
+| Immersion | `TopographicDomainExtension` | Admissible encodings |
+| --- | --- | --- |
+| Complementary grid | either | `UInt8`, `ExactDoubled` |
+| Self-dual span | `None` | `UInt8`, `ExactDoubled` |
+| Self-dual span | `ExteriorRing` | `ExactDoubled` only |
+
+Without the exterior ring the reference level is cropped away and no interior
+cell reads it, so every construction level stays on the source lattice and the
+8-bit encoding is exact:
 
 ```cpp
-ValuedMorphologicalTree<ToSGrayLevel> treeOfShapes =
-    MorphologicalTreeFactory::createTreeOfShapes(image, convention);
+ValuedMorphologicalTree<std::uint8_t> unpaddedSelfDual =
+    MorphologicalTreeFactory::createTreeOfShapes(
+        image,
+        TopographicConvention{SelfDualSpanImmersion{},
+                              TopographicDomainExtension::None,
+                              PixelId{0},
+                              TopographicAltitudeEncoding::UInt8});
+
+ValuedMorphologicalTree<ToSGrayLevel> selfDual =
+    MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(
+        image, selfDualSpanConvention());
 ```
 
-A source value `v` is represented by `2 * v`; odd values represent half levels.
-`reconstructFromNodeAltitudes()` therefore also returns doubled values. The
-constructor never quantizes half levels into `std::uint8_t`, because doing so
-can create equal-altitude parent-child edges and destroy shape polarity.
+Under `ExactDoubled` a source value `v` is represented by `2 * v`; odd values
+represent half levels, and `reconstructFromNodeAltitudes()` also returns doubled
+values. Half levels are never quantized into `std::uint8_t`, because doing so can
+create equal-altitude parent-child edges and destroy shape polarity.
+
+The published altitude type is a compile-time choice in C++ and must match the
+encoding declared by the convention; `createTreeOfShapes` throws
+`std::invalid_argument` when they disagree. Python selects the instantiation from
+the `altitude_encoding` field at run time.
 
 Every non-root tree-of-shapes node has a polarity derived from these exact
 altitudes:

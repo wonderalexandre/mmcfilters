@@ -64,7 +64,7 @@ class DirectAttributeFilterPybind {
 };
 
 /** @brief Type-erased Python wrapper for hard subtractive attribute reconstruction. */
-class HardSubtractiveAttributeFilterPybind {
+class SubtractiveAttributeFilterPybind {
   private:
     std::shared_ptr<PythonValuedMorphologicalTree> valuedTree_; ///< Python owner retained for the wrapper lifetime.
     std::size_t topologyMutationVersion_;                      ///< Topology version captured during construction.
@@ -74,8 +74,8 @@ class HardSubtractiveAttributeFilterPybind {
      * @brief Creates a hard subtractive reconstruction wrapper.
      * @param valuedTree Python-owned valued tree used by subsequent reconstructions.
      */
-    explicit HardSubtractiveAttributeFilterPybind(std::shared_ptr<PythonValuedMorphologicalTree> valuedTree)
-        : valuedTree_(requireReconstructionFilterOwner(std::move(valuedTree), "HardSubtractiveAttributeFilter")),
+    explicit SubtractiveAttributeFilterPybind(std::shared_ptr<PythonValuedMorphologicalTree> valuedTree)
+        : valuedTree_(requireReconstructionFilterOwner(std::move(valuedTree), "SubtractiveAttributeFilter")),
           topologyMutationVersion_(valuedTree_->topology().getMutationVersion()) {}
 
     /**
@@ -83,20 +83,20 @@ class HardSubtractiveAttributeFilterPybind {
      * @param nodePreservationMask Dense node-preservation decisions.
      * @return Newly allocated NumPy reconstruction in the signed altitude-difference type.
      */
-    [[nodiscard]] py::array applyHardSubtractiveAttributeFilter(const NodePreservationMask& nodePreservationMask) const {
+    [[nodiscard]] py::array applySubtractiveAttributeFilter(const NodePreservationMask& nodePreservationMask) const {
         valuedTree_->topology().requireMutationVersion(topologyMutationVersion_,
-                                                       "HardSubtractiveAttributeFilter.apply_hard_subtractive_attribute_filter");
+                                                       "SubtractiveAttributeFilter.apply_subtractive_attribute_filter");
         return valuedTree_->visit([&](const auto& native) -> py::array {
             using Tree = typename std::remove_cvref_t<decltype(native)>::element_type;
             using Altitude = typename Tree::AltitudeType;
             using OutputValue = AltitudeDifference<Altitude>;
             const auto valuedTreeView = native->asView();
-            valuedTreeView.requireTopologyUnchanged("HardSubtractiveAttributeFilter.apply_hard_subtractive_attribute_filter");
+            valuedTreeView.requireTopologyUnchanged("SubtractiveAttributeFilter.apply_subtractive_attribute_filter");
             const std::vector<OutputValue> nodeContributions =
                 detail::attribute_filtering::computeHardNodeContributions(valuedTreeView, nodePreservationMask);
             std::vector<OutputValue> pixels = detail::tree_altitude::reconstructNodeContributionValues(
                 native->topology(), std::span<const OutputValue>(nodeContributions),
-                "HardSubtractiveAttributeFilter.apply_hard_subtractive_attribute_filter");
+                "SubtractiveAttributeFilter.apply_subtractive_attribute_filter");
             return pybind_utils::toNumpyOwned2D(std::move(pixels), native->topology().numRows(), native->topology().numColumns());
         });
     }

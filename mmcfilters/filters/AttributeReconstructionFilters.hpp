@@ -90,7 +90,7 @@ template <AltitudeValue T>
 [[nodiscard]] inline std::vector<AltitudeDifference<T>> computeHardNodeContributions(
     ValuedMorphologicalTreeView<T> valuedTree, const NodePreservationMask& nodePreservationMask) {
     const MorphologicalTree& tree = valuedTree.topology();
-    requireNodePreservationMaskShape(tree, nodePreservationMask, "HardSubtractiveAttributeFilter::applyHardSubtractiveAttributeFilter");
+    requireNodePreservationMaskShape(tree, nodePreservationMask, "SubtractiveAttributeFilter::applySubtractiveAttributeFilter");
     std::vector<AltitudeDifference<T>> nodeContributions(static_cast<std::size_t>(tree.numInternalNodeSlots()), AltitudeDifference<T>{});
     for (NodeId nodeId : tree.aliveNodeIds()) {
         if (nodePreservationMask[static_cast<std::size_t>(nodeId)]) {
@@ -152,10 +152,10 @@ template <AltitudeValue T> class DirectAttributeFilter {
 };
 
 /**
- * @brief Hard subtractive filter using independently gated zero-baseline residues.
+ * @brief Subtractive filter using independently gated zero-baseline residues.
  * @tparam T Node-altitude value type.
  */
-template <AltitudeValue T> class HardSubtractiveAttributeFilter {
+template <AltitudeValue T> class SubtractiveAttributeFilter {
   private:
     ValuedMorphologicalTreeView<T> valuedTree_; ///< Validated non-owning valued-tree view.
 
@@ -170,25 +170,25 @@ template <AltitudeValue T> class HardSubtractiveAttributeFilter {
      * @brief Creates a hard subtractive filter over a valued-tree view.
      * @param valuedTree Valued tree whose residues drive reconstruction.
      */
-    explicit HardSubtractiveAttributeFilter(ValuedMorphologicalTreeView<T> valuedTree) : valuedTree_(valuedTree) {}
+    explicit SubtractiveAttributeFilter(ValuedMorphologicalTreeView<T> valuedTree) : valuedTree_(valuedTree) {}
 
     /**
      * @brief Creates a hard subtractive filter over an owning valued tree.
      * @param valuedTree Valued tree whose residues drive reconstruction.
      */
-    explicit HardSubtractiveAttributeFilter(const ValuedMorphologicalTree<T>& valuedTree) : valuedTree_(valuedTree.asView()) {}
+    explicit SubtractiveAttributeFilter(const ValuedMorphologicalTree<T>& valuedTree) : valuedTree_(valuedTree.asView()) {}
 
     /**
      * @brief Reconstructs from residues selected by preservation decisions.
      * @param nodePreservationMask Dense mask where `true` retains the node residue.
      * @return Zero-baseline subtractive reconstruction in the signed difference type.
      */
-    [[nodiscard]] ImagePtr<OutputValue> applyHardSubtractiveAttributeFilter(const NodePreservationMask& nodePreservationMask) const {
-        valuedTree_.requireTopologyUnchanged("HardSubtractiveAttributeFilter::applyHardSubtractiveAttributeFilter");
+    [[nodiscard]] ImagePtr<OutputValue> applySubtractiveAttributeFilter(const NodePreservationMask& nodePreservationMask) const {
+        valuedTree_.requireTopologyUnchanged("SubtractiveAttributeFilter::applySubtractiveAttributeFilter");
         const std::vector<OutputValue> nodeContributions = detail::attribute_filtering::computeHardNodeContributions(valuedTree_, nodePreservationMask);
         return TreeAltitudeAlgorithms::reconstructFromNodeContributions(
             valuedTree_.topology(), std::span<const OutputValue>(nodeContributions),
-            "HardSubtractiveAttributeFilter::applyHardSubtractiveAttributeFilter");
+            "SubtractiveAttributeFilter::applySubtractiveAttributeFilter");
     }
 };
 
@@ -244,15 +244,15 @@ template <AltitudeValue T>
 }
 
 template <AltitudeValue T>
-[[nodiscard]] inline ImagePtr<AltitudeDifference<T>> applyHardSubtractiveAttributeFilter(
+[[nodiscard]] inline ImagePtr<AltitudeDifference<T>> applySubtractiveAttributeFilter(
     ValuedMorphologicalTreeView<T> valuedTree, const NodePreservationMask& nodePreservationMask) {
-    return HardSubtractiveAttributeFilter<T>(valuedTree).applyHardSubtractiveAttributeFilter(nodePreservationMask);
+    return SubtractiveAttributeFilter<T>(valuedTree).applySubtractiveAttributeFilter(nodePreservationMask);
 }
 
 template <AltitudeValue T>
-[[nodiscard]] inline ImagePtr<AltitudeDifference<T>> applyHardSubtractiveAttributeFilter(
+[[nodiscard]] inline ImagePtr<AltitudeDifference<T>> applySubtractiveAttributeFilter(
     const ValuedMorphologicalTree<T>& valuedTree, const NodePreservationMask& nodePreservationMask) {
-    return HardSubtractiveAttributeFilter<T>(valuedTree).applyHardSubtractiveAttributeFilter(nodePreservationMask);
+    return SubtractiveAttributeFilter<T>(valuedTree).applySubtractiveAttributeFilter(nodePreservationMask);
 }
 
 template <AltitudeValue T, std::floating_point Real>

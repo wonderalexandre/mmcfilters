@@ -300,9 +300,9 @@ keep_large = mmcfilters.compute_node_preservation_mask(area, 4.0)
 direct = mmcfilters.DirectAttributeFilter(max_tree).apply_direct_attribute_filter(
     keep_large,
 )
-subtractive = mmcfilters.HardSubtractiveAttributeFilter(
+subtractive = mmcfilters.SubtractiveAttributeFilter(
     max_tree,
-).apply_hard_subtractive_attribute_filter(keep_large)
+).apply_subtractive_attribute_filter(keep_large)
 pruned_min = filters.filtering_by_pruning_min(box_height, 2.0)
 pruned_max = filters.filtering_by_pruning_max(box_height, 2.0)
 altitude_adjusted = mmcfilters.adjust_node_preservation_mask_by_altitude_stability(

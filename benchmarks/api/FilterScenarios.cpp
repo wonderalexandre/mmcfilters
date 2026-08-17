@@ -74,8 +74,8 @@ void addFilterScenarios(Context& context, std::vector<ScenarioResult>& results) 
     results.push_back(benchmarkScenario(
         "filters", "subtractive_preservation_mask", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,
         [&] {
-            HardSubtractiveAttributeFilter<std::uint8_t> filter(context.maxTree);
-            return filter.applyHardSubtractiveAttributeFilter(NodePreservationMask(context.nodePreservationDecisions));
+            SubtractiveAttributeFilter<std::uint8_t> filter(context.maxTree);
+            return filter.applySubtractiveAttributeFilter(NodePreservationMask(context.nodePreservationDecisions));
         },
         [](const auto& result) { return imageChecksum(result); }));
 

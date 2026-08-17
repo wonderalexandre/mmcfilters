@@ -506,4 +506,26 @@ inline std::pair<py::dict, py::array> computeTopologyAttributesFromList(std::sha
     return tree->visit([&](const auto& concreteTree) { return computeTopologyAttributesFromListImpl(concreteTree, attributes, outputSpace, dtype); });
 }
 
+/**
+ * @brief Materializes the node-indexed buffer of an attribute requested by value or name.
+ *
+ * Filtering operators consume a dense attribute buffer. Accepting the attribute
+ * itself removes the separate computation step from short call sites without
+ * hiding a choice: the declared capability requirements state whether the
+ * attribute reads node altitude, which selects the valued or the topology entry
+ * point deterministically.
+ *
+ * @param tree Valued tree owning the nodes.
+ * @param attributeRequest `Attribute` value or its symbolic name.
+ * @return Dense `np.float64` attribute buffer indexed by internal node slot.
+ */
+[[nodiscard]] inline py::array attributeBufferFor(std::shared_ptr<PythonValuedMorphologicalTree> tree, const py::object& attributeRequest) {
+    const Attribute attribute = resolveAttribute(attributeRequest);
+    const py::object doubleDtype = py::dtype::of<double>();
+    if (attributes::registry::capabilityRequirements(attribute).altitude) {
+        return computeSingleAttribute(std::move(tree), attribute, NodeIdSpace::MorphologicalTree, doubleDtype);
+    }
+    return computeSingleTopologyAttribute(std::move(tree), attribute, NodeIdSpace::MorphologicalTree, doubleDtype);
+}
+
 } // namespace mmcfilters::pybindings::attribute_computation

@@ -81,7 +81,7 @@ before passing it to a filter.
 - **Direct:** `DirectAttributeFilter` accepts a `NodePreservationMask`; preserved
   nodes use their altitude and rejected nodes inherit the reconstructed parent
   altitude. The root must be preserved.
-- **Hard subtractive:** `HardSubtractiveAttributeFilter` independently gates
+- **Hard subtractive:** `SubtractiveAttributeFilter` independently gates
   every zero-baseline node residue, including the root residue, with a
   `NodePreservationMask`. Integral-altitude trees produce a signed image.
 - **Soft subtractive:** `SoftSubtractiveAttributeFilter` multiplies every
@@ -105,8 +105,8 @@ NodePreservationMask keep(
 
 auto direct = DirectAttributeFilter<std::uint8_t>(valuedTree)
                   .applyDirectAttributeFilter(keep);
-auto subtractive = HardSubtractiveAttributeFilter<std::uint8_t>(valuedTree)
-                       .applyHardSubtractiveAttributeFilter(keep);
+auto subtractive = SubtractiveAttributeFilter<std::uint8_t>(valuedTree)
+                       .applySubtractiveAttributeFilter(keep);
 ```
 
 ## Stability
@@ -255,10 +255,10 @@ box_height = mmcfilters.Attribute.compute_single_topology_attribute(
 )
 
 filters = mmcfilters.AttributeFilters(tree)
-decisions = (area >= 4.0).tolist()
+decisions = area >= 4.0
 decisions[tree.root] = True
 keep = mmcfilters.NodePreservationMask(decisions)
-direct = mmcfilters.DirectAttributeFilter(tree).apply_direct_attribute_filter(keep)
+direct = mmcfilters.DirectAttributeFilter(tree).apply(keep)
 pruned = filters.filtering_by_pruning_min(box_height, 2.0)
 
 extinction = mmcfilters.ExtinctionValues(tree, area)
@@ -268,6 +268,26 @@ filtered = extinction.filtering(strongest)
 uao = mmcfilters.UltimateAttributeOpening(tree, box_height)
 uao.execute(maximum_attribute_threshold=image.shape[0])
 ```
+
+`mmcfilters.compute_node_preservation_mask(area, 4.0)` builds the same mask from
+the inclusive `>=` rule when no per-node adjustment is needed.
+
+An operator may also receive the attribute itself, as an `Attribute` value or its
+symbolic name, and compute the buffer internally. The declared capability
+requirements select the valued or the topology entry point, so the result matches
+the buffer the caller would have computed:
+
+```python
+pruned = filters.filtering_by_pruning_min("BOUNDING_BOX_HEIGHT", 2.0)
+extinction = mmcfilters.ExtinctionValues(tree, "AREA")
+uao = mmcfilters.UltimateAttributeOpening(tree, "BOUNDING_BOX_HEIGHT")
+```
+
+Pass the buffer instead when it is reused across several thresholds, which avoids
+recomputing it per call.
+
+The three reconstruction filters expose `apply(...)` as a short alias of their
+explicit method name.
 
 See [Python API](python-api.md) for array and dtype requirements.
 

@@ -98,12 +98,13 @@ struct Measurement {
 [[nodiscard]] Tree buildTree(Algorithm algorithm, const ImageUInt8Ptr& image, const RegularGridAdjacency2D& adjacency8c) {
     switch (algorithm) {
     case Algorithm::TreeOfShapesMax4cMin8c:
-        return MorphologicalTreeFactory::createTreeOfShapes(
+        return MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(
             image, TopographicConvention{ComplementaryGridImmersion{ComplementaryAdjacencies{
-                       RegularGridAdjacency2D(image->getNumRows(), image->getNumColumns(), 1.5),
-                       RegularGridAdjacency2D(image->getNumRows(), image->getNumColumns(), 1.0)}}});
+                                             RegularGridAdjacency2D(image->getNumRows(), image->getNumColumns(), 1.5),
+                                             RegularGridAdjacency2D(image->getNumRows(), image->getNumColumns(), 1.0)}},
+                                         TopographicDomainExtension::ExteriorRing, PixelId{0}, TopographicAltitudeEncoding::ExactDoubled});
     case Algorithm::TreeOfShapesSelfDual:
-        return MorphologicalTreeFactory::createTreeOfShapes(image);
+        return MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(image, selfDualSpanConvention());
     case Algorithm::MaxTree8c:
         return MorphologicalTreeFactory::createMaxTree(image, adjacency8c);
     case Algorithm::MinTree8c:

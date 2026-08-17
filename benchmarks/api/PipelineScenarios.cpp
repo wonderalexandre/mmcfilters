@@ -113,13 +113,13 @@ void addPipelineScenarios(Context& context, std::vector<ScenarioResult>& results
         return;
     }
 
-    auto treeOfShapesBaseline = MorphologicalTreeFactory::createTreeOfShapes(context.imageUInt8);
+    auto treeOfShapesBaseline = MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(context.imageUInt8, selfDualSpanConvention());
     WorkloadMetrics treeOfShapesMetrics = metricsOf(treeOfShapesBaseline);
     treeOfShapesMetrics.edges = context.maxTreeMetrics.edges;
     results.push_back(benchmarkScenario(
         "pipelines", "tree_of_shapes_boundary_group_direct_area", TimingScope::EndToEnd, context.options.repetitions, treeOfShapesMetrics,
         [&] {
-            return directPipeline([&] { return MorphologicalTreeFactory::createTreeOfShapes(context.imageUInt8); },
+            return directPipeline([&] { return MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(context.imageUInt8, selfDualSpanConvention()); },
                                   {AttributeOrGroup{Area}, AttributeOrGroup{AttributeGroup::Boundary}}, Area, 1.0 / 16.0);
         },
         [](const PipelineResult<ToSGrayLevel>& result) { return pipelineChecksum(result); }));

@@ -86,11 +86,17 @@ def main() -> int:
             ),
             extension,
             infinity_pixel,
+            mmcfilters.TopographicAltitudeEncoding.EXACT_DOUBLED,
         )
 
     def self_dual_convention(domain_extension=None, infinity_pixel=0):
         extension = domain_extension or mmcfilters.TopographicDomainExtension.EXTERIOR_RING
-        return mmcfilters.TopographicConvention(mmcfilters.SelfDualSpanImmersion(), extension, infinity_pixel)
+        return mmcfilters.TopographicConvention(
+            mmcfilters.SelfDualSpanImmersion(),
+            extension,
+            infinity_pixel,
+            mmcfilters.TopographicAltitudeEncoding.EXACT_DOUBLED,
+        )
     require(hasattr(mmcfilters, "__version__"), "package import must expose __version__")
     require(hasattr(mmcfilters, "ValuedMorphologicalTree"), "package import must expose ValuedMorphologicalTree")
     require(hasattr(mmcfilters, "MorphologicalTreeKind"), "package import must expose MorphologicalTreeKind")
@@ -1087,6 +1093,53 @@ def main() -> int:
     require(valued_tree_of_shapes.reconstruct_from_node_altitudes().shape == (3, 3), "valued_tree ToS reconstructFromNodeAltitudes shape")
     require(valued_tree_of_shapes.node_altitudes.dtype == np.uint16, "valued_tree ToS exact altitude dtype")
     require(valued_tree_of_shapes.reconstruct_from_node_altitudes().dtype == np.uint16, "valued_tree ToS reconstruction dtype")
+
+    # The default convention publishes unchanged 8-bit source levels over the
+    # canonical 4/8 complementary-grid immersion.
+    tos_source = np.array([[1, 2, 1], [2, 3, 2], [1, 2, 1]], dtype=np.uint8)
+    default_tos = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(tos_source)
+    require(default_tos.node_altitudes.dtype == np.uint8, "default ToS must publish uint8 altitudes")
+    require(
+        default_tos.topographic_convention.altitude_encoding == mmcfilters.TopographicAltitudeEncoding.UINT8,
+        "default ToS must declare the 8-bit altitude encoding",
+    )
+    require(
+        default_tos.reconstruct_from_node_altitudes().tolist() == tos_source.tolist(),
+        "default ToS reconstruction must reproduce the source image",
+    )
+    # The canonical immersion is resolved, so the retained convention exposes
+    # explicit adjacencies bound to the source domain.
+    default_adjacencies = default_tos.topographic_convention.immersion.complementary_adjacencies
+    require(default_adjacencies.min_adjacency.size == 5, "resolved default minimum adjacency must be 4-connected")
+    require(default_adjacencies.max_adjacency.size == 9, "resolved default maximum adjacency must be 8-connected")
+
+    # The 8-bit encoding is exact: it is the doubled hierarchy halved.
+    doubled_tos = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(
+        tos_source, complementary_convention(3, 3, 1.0, 1.5)
+    )
+    require(default_tos.num_nodes == doubled_tos.num_nodes, "8-bit ToS node count must match the doubled hierarchy")
+    require(
+        (2 * default_tos.node_altitudes.astype(np.uint16)).tolist() == doubled_tos.node_altitudes.tolist(),
+        "8-bit ToS altitudes must be the doubled altitudes halved",
+    )
+
+    # A self-dual span immersion may place its exterior median on a half level.
+    require_raises(
+        lambda: mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(
+            tos_source, mmcfilters.TopographicConvention(mmcfilters.SelfDualSpanImmersion())
+        ),
+        "self-dual span immersion must reject the 8-bit altitude encoding",
+    )
+
+    inverse_pairing_tos = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(
+        tos_source,
+        mmcfilters.TopographicConvention(
+            mmcfilters.CanonicalComplementaryGridImmersion(mmcfilters.ComplementaryPairing.MIN8_MAX4)
+        ),
+    )
+    inverse_pairing_adjacencies = inverse_pairing_tos.topographic_convention.immersion.complementary_adjacencies
+    require(inverse_pairing_adjacencies.min_adjacency.size == 9, "resolved MIN8_MAX4 minimum adjacency must be 8-connected")
+    require(inverse_pairing_adjacencies.max_adjacency.size == 5, "resolved MIN8_MAX4 maximum adjacency must be 4-connected")
     tos_boundary_names, tos_boundary_attrs = mmcfilters.Attribute.compute_attributes(
         valued_tree_of_shapes, [mmcfilters.Attribute.Group.BOUNDARY]
     )
@@ -1361,7 +1414,9 @@ def main() -> int:
     single_valued_tree_of_shapes = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(np.array([[5]], dtype=np.uint8))
     require(single_tos.num_rows == 1 and single_tos.num_columns == 1, "single-pixel default ToS dimensions")
     require(single_tos.root != -1, "single-pixel default ToS root")
-    require(single_valued_tree_of_shapes.reconstruct_from_node_altitudes().tolist() == [[10]], "single-pixel default valued_tree ToS reconstruction")
+    # The default convention publishes unchanged source levels, so the
+    # reconstruction is the source pixel itself rather than its doubled unit.
+    require(single_valued_tree_of_shapes.reconstruct_from_node_altitudes().tolist() == [[5]], "single-pixel default valued_tree ToS reconstruction")
 
     empty = np.empty((0, 0), dtype=np.uint8)
     require_raises(lambda: mmcfilters.MorphologicalTreeFactory.create_max_tree(empty), "empty max-tree must throw")

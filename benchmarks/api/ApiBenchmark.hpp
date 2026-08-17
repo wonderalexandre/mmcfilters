@@ -28,8 +28,9 @@ enum class OutputFormat { KeyValue, JsonLines };
 
 [[nodiscard]] inline TopographicConvention complementaryTopographicConvention(int rows, int columns, bool minimumIs4Connected) {
     return TopographicConvention{ComplementaryGridImmersion{ComplementaryAdjacencies{
-        RegularGridAdjacency2D(rows, columns, minimumIs4Connected ? 1.0 : 1.5),
-        RegularGridAdjacency2D(rows, columns, minimumIs4Connected ? 1.5 : 1.0)}}};
+                                     RegularGridAdjacency2D(rows, columns, minimumIs4Connected ? 1.0 : 1.5),
+                                     RegularGridAdjacency2D(rows, columns, minimumIs4Connected ? 1.5 : 1.0)}},
+                                 TopographicDomainExtension::ExteriorRing, PixelId{0}, TopographicAltitudeEncoding::ExactDoubled};
 }
 
 /** @brief Named sequence of scalar attributes and groups measured together. */

@@ -1138,6 +1138,16 @@ void initMorphologicalTree(py::module_& m) {
     py::class_<SelfDualSpanImmersion>(m, "SelfDualSpanImmersion", py::module_local(false), "Self-dual span-valued immersion.")
         .def(py::init<>());
 
+    py::enum_<ComplementaryPairing>(m, "ComplementaryPairing", py::module_local(false))
+        .value("MIN4_MAX8", ComplementaryPairing::Min4Max8)
+        .value("MIN8_MAX4", ComplementaryPairing::Min8Max4)
+        .export_values();
+
+    py::class_<CanonicalComplementaryGridImmersion>(m, "CanonicalComplementaryGridImmersion", py::module_local(false),
+                                                    "Canonical complementary-grid immersion resolved against the source domain.")
+        .def(py::init<ComplementaryPairing>(), "pairing"_a = ComplementaryPairing::Min4Max8)
+        .def_readonly("pairing", &CanonicalComplementaryGridImmersion::pairing);
+
     py::class_<ComplementaryGridImmersion>(m, "ComplementaryGridImmersion", py::module_local(false), "Complementary-grid immersion.")
         .def(py::init<ComplementaryAdjacencies>(), "complementary_adjacencies"_a)
         .def_readonly("complementary_adjacencies", &ComplementaryGridImmersion::complementaryAdjacencies);
@@ -1147,13 +1157,20 @@ void initMorphologicalTree(py::module_& m) {
         .value("NONE", TopographicDomainExtension::None)
         .export_values();
 
+    py::enum_<TopographicAltitudeEncoding>(m, "TopographicAltitudeEncoding", py::module_local(false))
+        .value("UINT8", TopographicAltitudeEncoding::UInt8)
+        .value("EXACT_DOUBLED", TopographicAltitudeEncoding::ExactDoubled)
+        .export_values();
+
     py::class_<TopographicConvention>(m, "TopographicConvention", py::module_local(false),
                                       "Complete discrete convention retained by a tree of shapes.")
-        .def(py::init<TreeOfShapesImmersion, TopographicDomainExtension, PixelId>(), "immersion"_a = SelfDualSpanImmersion{},
-             "domain_extension"_a = TopographicDomainExtension::ExteriorRing, "infinity_pixel"_a = PixelId{0})
+        .def(py::init<TreeOfShapesImmersion, TopographicDomainExtension, PixelId, TopographicAltitudeEncoding>(),
+             "immersion"_a = CanonicalComplementaryGridImmersion{}, "domain_extension"_a = TopographicDomainExtension::ExteriorRing,
+             "infinity_pixel"_a = PixelId{0}, "altitude_encoding"_a = TopographicAltitudeEncoding::UInt8)
         .def_readonly("immersion", &TopographicConvention::immersion)
         .def_readonly("domain_extension", &TopographicConvention::domainExtension)
-        .def_readonly("infinity_pixel", &TopographicConvention::infinityPixel);
+        .def_readonly("infinity_pixel", &TopographicConvention::infinityPixel)
+        .def_readonly("altitude_encoding", &TopographicConvention::altitudeEncoding);
 
     py::class_<MorphologicalTreeSemantics>(m, "MorphologicalTreeSemantics", py::module_local(false),
                                    "Immutable scientific semantics attached to a morphological tree.")
@@ -1259,10 +1276,19 @@ void initMorphologicalTree(py::module_& m) {
         .def_static(
             "create_tree_of_shapes",
             [](UInt8InputArray input, TopographicConvention convention) {
-                return wrapPythonValuedTree(MorphologicalTreeFactory::createTreeOfShapes(imageFromArray(input), std::move(convention)));
+                if (convention.altitudeEncoding == TopographicAltitudeEncoding::UInt8) {
+                    return wrapPythonValuedTree(MorphologicalTreeFactory::createTreeOfShapes<std::uint8_t>(imageFromArray(input), std::move(convention)));
+                }
+                return wrapPythonValuedTree(MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(imageFromArray(input), std::move(convention)));
             },
             "input"_a, "convention"_a = TopographicConvention{},
-            "Create a tree of shapes using a complete topographic convention retained by the result.")
+            R"doc(Create a tree of shapes using a complete topographic convention retained by the result.
+
+The default convention selects the canonical 4/8 complementary-grid immersion
+and publishes unchanged 8-bit source levels, so `node_altitudes` has dtype
+`np.uint8`. Declaring `TopographicAltitudeEncoding.EXACT_DOUBLED` publishes
+doubled units as `np.uint16` instead, which is the only encoding the self-dual
+span immersion admits.)doc")
         .def_static(
             "create_from_native_topology",
             [](const std::vector<NodeId>& parent, const std::vector<NodeId>& smallestNodeMap, py::object nodeAltitudesInput, NodeId root,

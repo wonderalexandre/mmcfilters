@@ -101,7 +101,7 @@ int main() {
     requireImageShape(singleReconstruction, 1, 1);
     requireVectorEqual(collectImageValues(singleReconstruction), std::vector<ToSGrayLevel>{10}, "single-pixel exact ToS reconstruction");
     for (TestTopographicImmersion interpolation : {TestTopographicImmersion::SelfDualSpan, TestTopographicImmersion::Min4Max8, TestTopographicImmersion::Min8Max4}) {
-        auto unpaddedSingle = MorphologicalTreeFactory::createTreeOfShapes(
+        auto unpaddedSingle = MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(
             singlePixel, makeTopographicConvention(singlePixel, interpolation, TopographicDomainExtension::None));
         requireEqual(unpaddedSingle.topology().numNodes(), 1, "single-pixel unpadded ToS node count");
         requireVectorEqual(collectImageValues(unpaddedSingle.reconstructFromNodeAltitudes()), std::vector<ToSGrayLevel>{10},
@@ -171,7 +171,7 @@ int main() {
         for (TestTopographicImmersion interpolation : {TestTopographicImmersion::SelfDualSpan, TestTopographicImmersion::Min4Max8, TestTopographicImmersion::Min8Max4}) {
             const TopographicConvention convention =
                 makeTopographicConvention(unpaddedImage, interpolation, TopographicDomainExtension::None);
-            auto unpadded = MorphologicalTreeFactory::createTreeOfShapes(unpaddedImage, convention);
+            auto unpadded = MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(unpaddedImage, convention);
             requireEqual(unpadded.topology().numRows(), 2, "unpadded ToS published rows");
             requireEqual(unpadded.topology().numColumns(), 3, "unpadded ToS published columns");
             requireEqual(unpadded.topology().numPixels(), 6, "unpadded ToS pixel domain size");
@@ -179,7 +179,7 @@ int main() {
                                "exact unpadded ToS reconstruction");
 
             TreeOfShapesProducer producer(convention);
-            const TreeOfShapesBuildResult result = producer.build(unpaddedImage);
+            const TreeOfShapesBuildResult<ToSGrayLevel> result = producer.build<ToSGrayLevel>(unpaddedImage);
             requireEqual(result.smallestNodeMap.size(), std::size_t{6}, "unpadded producer publishes only source-domain smallest nodes");
             requireEqual(result.numRows, 2, "unpadded producer source rows");
             requireEqual(result.numColumns, 3, "unpadded producer source columns");
@@ -216,8 +216,91 @@ int main() {
         }
     }
 
+    // The default convention publishes unchanged 8-bit source levels over the
+    // canonical 4/8 complementary-grid immersion.
+    {
+        auto defaultTree = MorphologicalTreeFactory::createTreeOfShapes(image);
+        static_assert(std::is_same_v<decltype(defaultTree), ValuedMorphologicalTree<std::uint8_t>>, "default tree of shapes must publish uint8 altitudes");
+
+        const TopographicConvention* defaultConvention = defaultTree.topology().topographicConvention();
+        require(defaultConvention != nullptr, "default tree of shapes must retain its topographic convention");
+        require(defaultConvention->altitudeEncoding == TopographicAltitudeEncoding::UInt8, "default tree of shapes must declare the 8-bit encoding");
+
+        // The canonical immersion is resolved, so the retained convention always
+        // exposes explicit adjacencies bound to the source domain.
+        const auto* defaultComplementary = std::get_if<ComplementaryGridImmersion>(&defaultConvention->immersion);
+        require(defaultComplementary != nullptr, "default convention must retain a resolved complementary-grid immersion");
+        require(defaultComplementary->complementaryAdjacencies.minAdjacency.is4connectivity(), "default resolved minimum adjacency must be 4-connected");
+        require(defaultComplementary->complementaryAdjacencies.maxAdjacency.is8connectivity(), "default resolved maximum adjacency must be 8-connected");
+        requireEqual(defaultComplementary->complementaryAdjacencies.minAdjacency.getNumRows(), image->getNumRows(), "resolved adjacency rows");
+        requireEqual(defaultComplementary->complementaryAdjacencies.maxAdjacency.getNumColumns(), image->getNumColumns(), "resolved adjacency columns");
+    }
+
+    // The 8-bit encoding is exact: it is the doubled hierarchy with every
+    // altitude halved, so no topology and no altitude distinction is lost.
+    for (ComplementaryPairing pairing : {ComplementaryPairing::Min4Max8, ComplementaryPairing::Min8Max4}) {
+        const TestTopographicImmersion immersion =
+            pairing == ComplementaryPairing::Min4Max8 ? TestTopographicImmersion::Min4Max8 : TestTopographicImmersion::Min8Max4;
+        const std::string label = pairing == ComplementaryPairing::Min4Max8 ? "min4/max8" : "min8/max4";
+
+        auto eightBit = makeValuedTreeOfShapesUInt8(image, pairing);
+        auto doubled = makeValuedTreeOfShapes(image, immersion);
+
+        requireEqual(eightBit->topology().numNodes(), doubled->topology().numNodes(), label + " 8-bit node count matches the doubled hierarchy");
+        requireEqual(eightBit->topology().root(), doubled->topology().root(), label + " 8-bit root matches the doubled hierarchy");
+        for (NodeId nodeId : eightBit->topology().aliveNodeIds()) {
+            requireEqual(eightBit->topology().parent(nodeId), doubled->topology().parent(nodeId), label + " 8-bit parent matches the doubled hierarchy");
+            requireEqual(TopographicInterpolationScale * static_cast<int>(eightBit->nodeAltitude(nodeId)), static_cast<int>(doubled->nodeAltitude(nodeId)),
+                         label + " 8-bit altitude is the doubled altitude halved");
+        }
+
+        // Reconstruction now returns the source image itself instead of 2 * image.
+        requireVectorEqual(collectImageValues(eightBit->reconstructFromNodeAltitudes()), collectImageValues(image),
+                           label + " 8-bit reconstruction reproduces the source image");
+    }
+
+    // Without an exterior ring the self-dual span never reaches a half level,
+    // because the boundary reference level is cropped away and no interior cell
+    // reads it. The 8-bit encoding is then exact there too.
+    {
+        TopographicConvention unpaddedUInt8{SelfDualSpanImmersion{}, TopographicDomainExtension::None, PixelId{0}, TopographicAltitudeEncoding::UInt8};
+        auto eightBitSelfDual = MorphologicalTreeFactory::createTreeOfShapes<std::uint8_t>(image, unpaddedUInt8);
+        auto doubledSelfDual = MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(
+            image, makeTopographicConvention(image, TestTopographicImmersion::SelfDualSpan, TopographicDomainExtension::None));
+
+        requireEqual(eightBitSelfDual.topology().numNodes(), doubledSelfDual.topology().numNodes(),
+                     "unpadded 8-bit self-dual node count matches the doubled hierarchy");
+        requireEqual(eightBitSelfDual.topology().root(), doubledSelfDual.topology().root(),
+                     "unpadded 8-bit self-dual root matches the doubled hierarchy");
+        for (NodeId nodeId : eightBitSelfDual.topology().aliveNodeIds()) {
+            requireEqual(eightBitSelfDual.topology().parent(nodeId), doubledSelfDual.topology().parent(nodeId),
+                         "unpadded 8-bit self-dual parent matches the doubled hierarchy");
+            requireEqual(TopographicInterpolationScale * static_cast<int>(eightBitSelfDual.nodeAltitude(nodeId)),
+                         static_cast<int>(doubledSelfDual.nodeAltitude(nodeId)), "unpadded 8-bit self-dual altitude is the doubled altitude halved");
+        }
+        requireVectorEqual(collectImageValues(eightBitSelfDual.reconstructFromNodeAltitudes()), collectImageValues(image),
+                           "unpadded 8-bit self-dual reconstruction reproduces the source image");
+    }
+
     if constexpr (contract::validationsEnabled) {
         requireThrows<std::invalid_argument>([&]() { static_cast<void>(ImageUInt8::create(0, 0)); }, "empty image creation must throw");
+
+        // The exterior ring carries the boundary reference level, which may fall
+        // on a half level, so it admits no 8-bit encoding under a self-dual span.
+        requireThrows<std::invalid_argument>(
+            [&]() {
+                TopographicConvention rejected{SelfDualSpanImmersion{}, TopographicDomainExtension::ExteriorRing, PixelId{0},
+                                               TopographicAltitudeEncoding::UInt8};
+                static_cast<void>(MorphologicalTreeFactory::createTreeOfShapes(image, std::move(rejected)));
+            },
+            "self-dual span immersion over an exterior ring must reject the 8-bit altitude encoding");
+
+        // The published altitude type and the declared encoding must agree.
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(image)); },
+                                             "doubled altitudes must be rejected under an 8-bit declaration");
+        requireThrows<std::invalid_argument>(
+            [&]() { static_cast<void>(MorphologicalTreeFactory::createTreeOfShapes<std::uint8_t>(image, selfDualSpanConvention())); },
+            "8-bit altitudes must be rejected under a doubled declaration");
     }
 
     return 0;

@@ -83,11 +83,13 @@ enum class ExampleImmersion { SelfDualSpan, Min4Max8, Min8Max4 };
 
 maf::TopographicConvention makeConvention(ExampleImmersion immersion, int rows, int columns) {
     if (immersion == ExampleImmersion::SelfDualSpan) {
-        return {};
+        return maf::selfDualSpanConvention();
     }
     const bool minIs4 = immersion == ExampleImmersion::Min4Max8;
-    return maf::TopographicConvention{maf::ComplementaryGridImmersion{maf::ComplementaryAdjacencies{
-        maf::RegularGridAdjacency2D(rows, columns, minIs4 ? 1.0 : 1.5), maf::RegularGridAdjacency2D(rows, columns, minIs4 ? 1.5 : 1.0)}}};
+    return maf::TopographicConvention{
+        maf::ComplementaryGridImmersion{maf::ComplementaryAdjacencies{maf::RegularGridAdjacency2D(rows, columns, minIs4 ? 1.0 : 1.5),
+                                                                     maf::RegularGridAdjacency2D(rows, columns, minIs4 ? 1.5 : 1.0)}},
+        maf::TopographicDomainExtension::ExteriorRing, maf::PixelId{0}, maf::TopographicAltitudeEncoding::ExactDoubled};
 }
 
 const char* immersionName(ExampleImmersion immersion) {
@@ -273,7 +275,7 @@ void printSummary(const char* name, const FamilySummary& summary) {
 }
 
 bool compareOne(const std::filesystem::path& imagePath, int rows, int columns, std::span<const std::uint8_t> pixels, ExampleImmersion immersion) {
-    auto valuedTree = maf::MorphologicalTreeFactory::createTreeOfShapes(makeImage(rows, columns, pixels), makeConvention(immersion, rows, columns));
+    auto valuedTree = maf::MorphologicalTreeFactory::createTreeOfShapes<maf::ToSGrayLevel>(makeImage(rows, columns, pixels), makeConvention(immersion, rows, columns));
     const maf::MorphologicalTree& tree = valuedTree.topology();
 
     const auto naiveHistograms = naiveSupportBitquadHistograms(tree);

@@ -134,7 +134,10 @@ def main() -> int:
                     mmcfilters.RegularGridAdjacency2D(rows, columns, min_radius),
                     mmcfilters.RegularGridAdjacency2D(rows, columns, max_radius),
                 )
-            )
+            ),
+            mmcfilters.TopographicDomainExtension.EXTERIOR_RING,
+            0,
+            mmcfilters.TopographicAltitudeEncoding.EXACT_DOUBLED,
         )
     require(
         not hasattr(mmcfilters.HierarchySaliencyMap, "computeAltitudeEdgeMap"),
@@ -412,7 +415,12 @@ def main() -> int:
     )
     self_dual_tos = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(
         tos_image,
-        mmcfilters.TopographicConvention(mmcfilters.SelfDualSpanImmersion()),
+        mmcfilters.TopographicConvention(
+            mmcfilters.SelfDualSpanImmersion(),
+            mmcfilters.TopographicDomainExtension.EXTERIOR_RING,
+            0,
+            mmcfilters.TopographicAltitudeEncoding.EXACT_DOUBLED,
+        ),
     )
     self_dual_stored_map = mmcfilters.HierarchySaliencyMap.compute_topological_level_edge_map(
         self_dual_tos

@@ -288,7 +288,7 @@ int main(int argc, char** argv) {
     auto [componentTree, componentBuildMs] = timed([&]() { return MorphologicalTreeFactory::createMaxTree(image, 1.5); });
     runCase("component-tree max-tree radius=1.5", componentTree.topology(), componentBuildMs, repeats);
 
-    auto [tosTree, tosBuildMs] = timed([&]() { return MorphologicalTreeFactory::createTreeOfShapes(image); });
+    auto [tosTree, tosBuildMs] = timed([&]() { return MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(image, selfDualSpanConvention()); });
     runCase("tree-of-shapes SelfDual", tosTree.topology(), tosBuildMs, repeats);
 
     return 0;

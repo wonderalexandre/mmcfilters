@@ -147,8 +147,11 @@ SharedAdjacencyContext = _native.SharedAdjacencyContext
 SaturatedResidualContext = _native.SaturatedResidualContext
 ComplementaryAdjacencies = _native.ComplementaryAdjacencies
 SelfDualSpanImmersion = _native.SelfDualSpanImmersion
+ComplementaryPairing = _native.ComplementaryPairing
+CanonicalComplementaryGridImmersion = _native.CanonicalComplementaryGridImmersion
 ComplementaryGridImmersion = _native.ComplementaryGridImmersion
 TopographicDomainExtension = _native.TopographicDomainExtension
+TopographicAltitudeEncoding = _native.TopographicAltitudeEncoding
 TopographicConvention = _native.TopographicConvention
 RegularGridAdjacency2D = _native.RegularGridAdjacency2D
 RegularGridAdjacencyShape = _native.RegularGridAdjacencyShape
@@ -216,8 +219,11 @@ __all__ = [
     "SaturatedResidualContext",
     "ComplementaryAdjacencies",
     "SelfDualSpanImmersion",
+    "ComplementaryPairing",
+    "CanonicalComplementaryGridImmersion",
     "ComplementaryGridImmersion",
     "TopographicDomainExtension",
+    "TopographicAltitudeEncoding",
     "TopographicConvention",
     "RegularGridAdjacency2D",
     "RegularGridAdjacencyShape",

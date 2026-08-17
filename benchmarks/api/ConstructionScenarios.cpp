@@ -25,10 +25,10 @@ void addConstructionScenarios(Context& context, std::vector<ScenarioResult>& res
     }
 
     addTreeConstruction<ToSGrayLevel>(context, results, "tree_of_shapes_self_dual",
-                                     [&] { return MorphologicalTreeFactory::createTreeOfShapes(context.imageUInt8); });
+                                     [&] { return MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(context.imageUInt8, selfDualSpanConvention()); });
     addTreeConstruction<ToSGrayLevel>(context, results, "tree_of_shapes_min4c_max8c",
                                      [&] {
-                                          return MorphologicalTreeFactory::createTreeOfShapes(
+                                          return MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(
                                               context.imageUInt8,
                                               complementaryTopographicConvention(context.options.rows, context.options.columns, true));
                                       });
@@ -51,12 +51,12 @@ void addConstructionScenarios(Context& context, std::vector<ScenarioResult>& res
 
     addTreeConstruction<ToSGrayLevel>(context, results, "tree_of_shapes_min8c_max4c",
                                       [&] {
-                                          return MorphologicalTreeFactory::createTreeOfShapes(
+                                          return MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(
                                               context.imageUInt8,
                                               complementaryTopographicConvention(context.options.rows, context.options.columns, false));
                                       });
     addTreeConstruction<ToSGrayLevel>(context, results, "tree_of_shapes_self_dual", [&] {
-        return MorphologicalTreeFactory::createTreeOfShapes(context.imageUInt8);
+        return MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(context.imageUInt8, selfDualSpanConvention());
     });
     addTreeConstruction<std::int32_t>(context, results, "min_tree_int32", [&] { return MorphologicalTreeFactory::createMinTree(context.imageInt32, 1.5); });
     addTreeConstruction<float>(context, results, "min_tree_float", [&] { return MorphologicalTreeFactory::createMinTree(context.imageFloat, 1.5); });

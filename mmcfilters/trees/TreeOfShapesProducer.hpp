@@ -56,20 +56,78 @@ struct ToSExactDoubledAltitudeEncoding {
 };
 
 /**
+ * @brief Exact encoding in 8-bit source-level units.
+ *
+ * A complementary-grid immersion floods the interpolated domain over the source
+ * level set itself, so its construction levels are already source gray levels.
+ * A self-dual span immersion floods in doubled units, so its construction
+ * levels are halved; they are guaranteed to be even only when no half level can
+ * enter the active domain, which the convention validation establishes before
+ * this encoding is selected.
+ */
+struct ToSUInt8AltitudeEncoding {
+    /// Scalar type storing source gray levels.
+    using value_type = std::uint8_t;
+
+    /**
+     * @brief Converts one transient construction level to 8-bit source units.
+     *
+     * @param constructionLevel Altitude or level.
+     * @param immersionMode Active topographic immersion mode.
+     * @return The converted one transient construction level to 8-bit source units.
+     */
+    static value_type encode(ToSGrayLevel constructionLevel, detail::TopographicImmersionMode immersionMode) {
+        unsigned int sourceLevel = constructionLevel;
+        if (immersionMode == detail::TopographicImmersionMode::SelfDualSpan) {
+            if (constructionLevel % TopographicInterpolationScale != 0) {
+                throw std::logic_error("Tree-of-shapes 8-bit altitudes cannot represent a self-dual half level.");
+            }
+            sourceLevel = constructionLevel / TopographicInterpolationScale;
+        }
+        if (sourceLevel > std::numeric_limits<value_type>::max()) {
+            throw std::logic_error("Tree-of-shapes construction level exceeds the 8-bit source level set.");
+        }
+        return static_cast<value_type>(sourceLevel);
+    }
+};
+
+/**
+ * @brief Selects the altitude encoding policy declared by a topographic convention.
+ *
+ * @tparam Altitude Published node-altitude type.
+ */
+template <class Altitude> struct ToSAltitudeEncodingFor;
+
+/** @brief Maps the 8-bit published type to its exact source-level encoding. */
+template <> struct ToSAltitudeEncodingFor<std::uint8_t> {
+    using type = ToSUInt8AltitudeEncoding; ///< Selected encoding policy.
+    static constexpr TopographicAltitudeEncoding declaration = TopographicAltitudeEncoding::UInt8; ///< Matching declaration.
+};
+
+/** @brief Maps the doubled published type to its exact doubled-unit encoding. */
+template <> struct ToSAltitudeEncodingFor<ToSGrayLevel> {
+    using type = ToSExactDoubledAltitudeEncoding; ///< Selected encoding policy.
+    static constexpr TopographicAltitudeEncoding declaration = TopographicAltitudeEncoding::ExactDoubled; ///< Matching declaration.
+};
+
+/**
  * @brief Native representation produced by a Tree-of-Shapes producer.
  *
  * Unlike a pixel-parent image, this representation can preserve a virtual root
  * (or another branching projected node) whose direct proper part is empty.
- * Node altitudes use exact doubled gray-level units. Source levels are even;
- * odd values preserve self-dual half levels.
+ * Node altitudes are published in the scale declared by the topographic
+ * convention: unchanged 8-bit source levels, or exact doubled gray-level units
+ * where source levels are even and odd values preserve self-dual half levels.
+ *
+ * @tparam Altitude Published node-altitude type.
  */
-struct TreeOfShapesBuildResult {
+template <class Altitude> struct TreeOfShapesBuildResult {
     /// Parent id for every produced internal node.
     std::vector<NodeId> parent;
     /// Direct owning node for every original-domain proper part.
     std::vector<NodeId> smallestNodeMap;
     /// Encoded altitude for every produced internal node.
-    std::vector<ToSGrayLevel> nodeAltitudes;
+    std::vector<Altitude> nodeAltitudes;
     /// Root node id in the produced internal-node domain.
     NodeId root = InvalidNode;
     /// Number of rows in the original pixel domain.
@@ -86,9 +144,9 @@ struct TreeOfShapesBuildResult {
      * @param semantics Hierarchy semantics validated by the operation.
      * @return The transferred producer-owned buffers together with their generic topology proof.
      */
-    [[nodiscard]] detail::ValidatedNativeHierarchy<ToSGrayLevel> takeValidatedHierarchy(MorphologicalTreeSemantics semantics) && {
-        return detail::makeValidatedNativeHierarchy<ToSGrayLevel>(std::move(parent), std::move(smallestNodeMap), std::move(nodeAltitudes), root,
-                                                                  GridDomain2D{numRows, numColumns}, std::move(semantics), std::move(topologyProof));
+    [[nodiscard]] detail::ValidatedNativeHierarchy<Altitude> takeValidatedHierarchy(MorphologicalTreeSemantics semantics) && {
+        return detail::makeValidatedNativeHierarchy<Altitude>(std::move(parent), std::move(smallestNodeMap), std::move(nodeAltitudes), root,
+                                                              GridDomain2D{numRows, numColumns}, std::move(semantics), std::move(topologyProof));
     }
 };
 
@@ -517,7 +575,22 @@ class TreeOfShapesProducer {
             throw std::invalid_argument("Tree-of-shapes infinity pixel must be non-negative.");
         }
         if (std::holds_alternative<SelfDualSpanImmersion>(convention.immersion)) {
+            // Only the exterior ring carries the boundary reference level, which
+            // is the mean of the two central boundary values on an even boundary
+            // and therefore the single source of half levels. Without that ring
+            // the reference level is cropped away and never read by an interior
+            // cell, so every construction level stays on the source lattice.
+            if (convention.altitudeEncoding == TopographicAltitudeEncoding::UInt8 &&
+                convention.domainExtension == TopographicDomainExtension::ExteriorRing) {
+                throw std::invalid_argument("Self-dual span immersion over an exterior ring cannot publish 8-bit altitudes because its boundary reference "
+                                            "level may fall on a half level; declare TopographicAltitudeEncoding::ExactDoubled or "
+                                            "TopographicDomainExtension::None.");
+            }
             return detail::TopographicImmersionMode::SelfDualSpan;
+        }
+        if (const auto* canonical = std::get_if<CanonicalComplementaryGridImmersion>(&convention.immersion)) {
+            return canonical->pairing == ComplementaryPairing::Min4Max8 ? detail::TopographicImmersionMode::Min4Max8
+                                                                       : detail::TopographicImmersionMode::Min8Max4;
         }
         const auto& adjacencies = std::get<ComplementaryGridImmersion>(convention.immersion).complementaryAdjacencies;
         if (adjacencies.minAdjacency.is4connectivity() && adjacencies.maxAdjacency.is8connectivity()) {
@@ -783,6 +856,10 @@ class TreeOfShapesProducer {
             TopographicConvention paddedConvention = convention_;
             paddedConvention.domainExtension = TopographicDomainExtension::ExteriorRing;
             paddedConvention.infinityPixel = 0;
+            // The padded producer only supplies interpolation buffers, which are
+            // altitude-encoding independent. Declaring the doubled encoding keeps
+            // it constructible for a convention whose own encoding is 8-bit.
+            paddedConvention.altitudeEncoding = TopographicAltitudeEncoding::ExactDoubled;
             TreeOfShapesProducer paddedProducer(std::move(paddedConvention));
             auto [paddedMin, paddedMax, paddedAdjacency] = paddedProducer.interpolateImage(imgPtr);
             const int paddedRows = paddedProducer.interpolatedNumRows(imgPtr->getNumRows());
@@ -943,6 +1020,10 @@ class TreeOfShapesProducer {
             TopographicConvention paddedConvention = convention_;
             paddedConvention.domainExtension = TopographicDomainExtension::ExteriorRing;
             paddedConvention.infinityPixel = 0;
+            // The padded producer only supplies interpolation buffers, which are
+            // altitude-encoding independent. Declaring the doubled encoding keeps
+            // it constructible for a convention whose own encoding is 8-bit.
+            paddedConvention.altitudeEncoding = TopographicAltitudeEncoding::ExactDoubled;
             TreeOfShapesProducer paddedProducer(std::move(paddedConvention));
             auto [paddedMin, paddedMax, paddedAdjacency] = paddedProducer.interpolateImage4c8c(imgPtr);
             const int paddedRows = paddedProducer.interpolatedNumRows(imgPtr->getNumRows());
@@ -1288,10 +1369,11 @@ class TreeOfShapesProducer {
      * unary empty plateaus are contracted while a virtual branching root is
      * represented faithfully with an empty direct proper part.
      *
+     * @tparam Altitude Published node-altitude type.
      * @param imgPtr Image.
      * @return The resulting native Tree-of-Shapes topology.
      */
-    [[nodiscard]] TreeOfShapesBuildResult buildTreeOfShapes(const ImageUInt8Ptr& imgPtr) const {
+    template <class Altitude> [[nodiscard]] TreeOfShapesBuildResult<Altitude> buildTreeOfShapes(const ImageUInt8Ptr& imgPtr) const {
         if (!imgPtr) {
             throw std::invalid_argument("TreeOfShapesProducer requires a non-null image.");
         }
@@ -1405,10 +1487,10 @@ class TreeOfShapesProducer {
             }
         }
 
-        TreeOfShapesBuildResult result;
+        TreeOfShapesBuildResult<Altitude> result;
         result.parent.assign(static_cast<size_t>(numNodes), InvalidNode);
         result.smallestNodeMap.assign(static_cast<size_t>(numPixels), InvalidNode);
-        result.nodeAltitudes.assign(static_cast<size_t>(numNodes), ToSGrayLevel{});
+        result.nodeAltitudes.assign(static_cast<size_t>(numNodes), Altitude{});
         result.root = nodeIdByRep[static_cast<size_t>(projectedRootRep)];
         result.numRows = numRows;
         result.numColumns = numColumns;
@@ -1439,7 +1521,7 @@ class TreeOfShapesProducer {
             proofRecorder.recordSupportedNode(nodeId, result.parent[static_cast<std::size_t>(nodeId)]);
 
             result.nodeAltitudes[static_cast<size_t>(nodeId)] =
-                ToSExactDoubledAltitudeEncoding::encode(canonical.grayLevel[static_cast<size_t>(repStar)], immersionMode_);
+                ToSAltitudeEncodingFor<Altitude>::type::encode(canonical.grayLevel[static_cast<size_t>(repStar)], immersionMode_);
         }
 
         for (PixelId elementId = 0; elementId < numPixels; ++elementId) {
@@ -1464,18 +1546,26 @@ class TreeOfShapesProducer {
 
   public:
     /**
-     * @brief Builds the hierarchy with exact doubled source-level altitudes.
+     * @brief Builds the hierarchy in the altitude scale declared by the convention.
      *
-     * Even values represent source gray levels and odd values represent the
-     * half levels introduced by self-dual interpolation. No parent-child
-     * altitude distinction is lost to quantization.
+     * Under `TopographicAltitudeEncoding::UInt8` the published altitudes are the
+     * unchanged source gray levels of a complementary-grid immersion. Under
+     * `TopographicAltitudeEncoding::ExactDoubled` even values represent source
+     * gray levels and odd values represent the half levels introduced by
+     * self-dual interpolation. Neither encoding loses a parent-child altitude
+     * distinction to quantization.
      *
+     * @tparam Altitude Published node-altitude type, which must match the
+     * altitude encoding declared by the convention.
      * @param imgPtr Image.
-     * @return The resulting hierarchy with exact doubled source-level altitudes.
+     * @return The resulting hierarchy in the declared altitude scale.
      */
-    [[nodiscard]] TreeOfShapesBuildResult build(const ImageUInt8Ptr& imgPtr) const {
+    template <class Altitude = std::uint8_t> [[nodiscard]] TreeOfShapesBuildResult<Altitude> build(const ImageUInt8Ptr& imgPtr) const {
+        if (convention_.altitudeEncoding != ToSAltitudeEncodingFor<Altitude>::declaration) {
+            throw std::invalid_argument("Tree-of-shapes altitude type does not match the altitude encoding declared by the topographic convention.");
+        }
         validateConventionForImage(imgPtr);
-        return buildTreeOfShapes(imgPtr);
+        return buildTreeOfShapes<Altitude>(imgPtr);
     }
 };
 

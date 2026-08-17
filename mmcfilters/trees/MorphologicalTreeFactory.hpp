@@ -129,6 +129,31 @@ class MorphologicalTreeFactory {
     }
 
     /**
+     * @brief Resolves a domain-free canonical immersion against a source domain.
+     *
+     * A `CanonicalComplementaryGridImmersion` declares only the ordered
+     * minimum/maximum pairing. Binding it to the source domain yields the
+     * concrete `ComplementaryGridImmersion` that the result retains, so every
+     * consumer of a retained convention observes explicit adjacencies.
+     *
+     * @param convention Convention whose immersion is resolved in place.
+     * @param numRows Number of rows in the source domain.
+     * @param numColumns Number of columns in the source domain.
+     */
+    static void resolveTopographicImmersion(TopographicConvention& convention, int numRows, int numColumns) {
+        const auto* canonical = std::get_if<CanonicalComplementaryGridImmersion>(&convention.immersion);
+        if (canonical == nullptr) {
+            return;
+        }
+        constexpr double connectivity4Radius = 1.0;
+        constexpr double connectivity8Radius = 1.5;
+        const bool min4Max8 = canonical->pairing == ComplementaryPairing::Min4Max8;
+        convention.immersion = ComplementaryGridImmersion{ComplementaryAdjacencies{
+            RegularGridAdjacency2D(numRows, numColumns, min4Max8 ? connectivity4Radius : connectivity8Radius),
+            RegularGridAdjacency2D(numRows, numColumns, min4Max8 ? connectivity8Radius : connectivity4Radius)}};
+    }
+
+    /**
      * @brief Consumes a proven owning native hierarchy.
      *
      * @param hierarchy Hierarchy data.
@@ -327,22 +352,32 @@ class MorphologicalTreeFactory {
     /**
      * @brief Builds a valued tree of shapes from an 8-bit image.
      *
+     * The published altitude type must match the altitude encoding declared by
+     * the convention. The default convention selects the canonical 4/8
+     * complementary-grid immersion and publishes unchanged 8-bit source levels.
+     * `ToSGrayLevel` altitudes are available under
+     * `TopographicAltitudeEncoding::ExactDoubled`, which is the only encoding a
+     * self-dual span immersion admits.
+     *
+     * @tparam Altitude Published node-altitude type.
      * @param img Non-null, non-empty image.
      * @param convention Complete topographic convention retained by the result.
-     * @return A `ValuedMorphologicalTree<ToSGrayLevel>` whose topology is a tree
-     * of shapes and whose exact doubled-unit altitude buffer is indexed by
-     * internal `NodeId`.
+     * @return A `ValuedMorphologicalTree<Altitude>` whose topology is a tree of
+     * shapes and whose altitude buffer is indexed by internal `NodeId`.
      *
      * @throws std::invalid_argument if the image domain or ToS parameters are
-     * rejected by the underlying builder.
+     * rejected by the underlying builder, or if `Altitude` contradicts the
+     * declared altitude encoding.
      */
-    [[nodiscard]] static ValuedMorphologicalTree<ToSGrayLevel> createTreeOfShapes(ImageUInt8Ptr img, TopographicConvention convention = {}) {
+    template <class Altitude = std::uint8_t>
+    [[nodiscard]] static ValuedMorphologicalTree<Altitude> createTreeOfShapes(ImageUInt8Ptr img, TopographicConvention convention = {}) {
         validateTreeOfShapesImage(img);
+        resolveTopographicImmersion(convention, img->getNumRows(), img->getNumColumns());
 
         TreeOfShapesProducer producer(convention);
-        TreeOfShapesBuildResult result = producer.build(img);
+        TreeOfShapesBuildResult<Altitude> result = producer.build<Altitude>(img);
         MorphologicalTreeSemantics semantics = makeMorphologicalTreeSemantics(MorphologicalTreeKind::TreeOfShapes, std::move(convention));
-        return materializeNativeHierarchy<ToSGrayLevel>(std::move(result).takeValidatedHierarchy(std::move(semantics)));
+        return materializeNativeHierarchy<Altitude>(std::move(result).takeValidatedHierarchy(std::move(semantics)));
     }
 
     /**

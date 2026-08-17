@@ -44,11 +44,13 @@ enum class ExampleImmersion { SelfDualSpan, Min4Max8, Min8Max4 };
 
 TopographicConvention makeConvention(ExampleImmersion immersion, int rows, int columns) {
     if (immersion == ExampleImmersion::SelfDualSpan) {
-        return TopographicConvention{};
+        return selfDualSpanConvention();
     }
     const bool minIs4 = immersion == ExampleImmersion::Min4Max8;
-    return TopographicConvention{ComplementaryGridImmersion{
-        ComplementaryAdjacencies{RegularGridAdjacency2D(rows, columns, minIs4 ? 1.0 : 1.5), RegularGridAdjacency2D(rows, columns, minIs4 ? 1.5 : 1.0)}}};
+    return TopographicConvention{
+        ComplementaryGridImmersion{
+            ComplementaryAdjacencies{RegularGridAdjacency2D(rows, columns, minIs4 ? 1.0 : 1.5), RegularGridAdjacency2D(rows, columns, minIs4 ? 1.5 : 1.0)}},
+        TopographicDomainExtension::ExteriorRing, PixelId{0}, TopographicAltitudeEncoding::ExactDoubled};
 }
 
 struct Options {
@@ -367,7 +369,7 @@ void runComponentTreeCase(const std::string& label, const ImageUInt8Ptr& image, 
 
 void runTreeOfShapesCase(const std::string& label, const ImageUInt8Ptr& image, ExampleImmersion immersion, int repeats) {
     auto [valuedTree, buildMs] =
-        timed([&]() { return MorphologicalTreeFactory::createTreeOfShapes(image, makeConvention(immersion, image->getNumRows(), image->getNumColumns())); });
+        timed([&]() { return MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(image, makeConvention(immersion, image->getNumRows(), image->getNumColumns())); });
     const MorphologicalTree& tree = valuedTree.topology();
 
     std::cout << "\n  [" << label << "]\n";

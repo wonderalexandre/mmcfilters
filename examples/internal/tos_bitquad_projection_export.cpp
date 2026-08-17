@@ -38,11 +38,13 @@ enum class ExampleImmersion { SelfDualSpan, Min4Max8, Min8Max4 };
 
 TopographicConvention makeConvention(ExampleImmersion immersion, int rows, int columns) {
     if (immersion == ExampleImmersion::SelfDualSpan) {
-        return TopographicConvention{};
+        return selfDualSpanConvention();
     }
     const bool minIs4 = immersion == ExampleImmersion::Min4Max8;
-    return TopographicConvention{ComplementaryGridImmersion{
-        ComplementaryAdjacencies{RegularGridAdjacency2D(rows, columns, minIs4 ? 1.0 : 1.5), RegularGridAdjacency2D(rows, columns, minIs4 ? 1.5 : 1.0)}}};
+    return TopographicConvention{
+        ComplementaryGridImmersion{
+            ComplementaryAdjacencies{RegularGridAdjacency2D(rows, columns, minIs4 ? 1.0 : 1.5), RegularGridAdjacency2D(rows, columns, minIs4 ? 1.5 : 1.0)}},
+        TopographicDomainExtension::ExteriorRing, PixelId{0}, TopographicAltitudeEncoding::ExactDoubled};
 }
 
 struct Options {
@@ -293,7 +295,7 @@ int main(int argc, char** argv) {
     try {
         const Options options = parseOptions(argc, argv);
         const ImageUInt8Ptr image = makeInputImage(options);
-        auto valuedTree = MorphologicalTreeFactory::createTreeOfShapes(image, makeConvention(options.immersion, image->getNumRows(), image->getNumColumns()));
+        auto valuedTree = MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(image, makeConvention(options.immersion, image->getNumRows(), image->getNumColumns()));
         const MorphologicalTree& tree = valuedTree.topology();
 
         const auto stateIncrements = BitquadFiniteWindowComputation::computeNonemptyBitquadStateHistogramIncrements(tree);

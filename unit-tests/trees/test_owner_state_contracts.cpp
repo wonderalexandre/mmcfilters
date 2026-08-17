@@ -35,6 +35,8 @@ concept HasPublicTrustedNativeHierarchy = requires(NativeHierarchyView<std::uint
 static_assert(std::is_same_v<decltype(MorphologicalTreeFactory::createMaxTree(std::declval<ImageUInt8Ptr>(), 1.5)), ValuedMorphologicalTree<std::uint8_t>>);
 static_assert(std::is_same_v<decltype(MorphologicalTreeFactory::createMinTree(std::declval<ImageUInt8Ptr>(), 1.5)), ValuedMorphologicalTree<std::uint8_t>>);
 static_assert(std::is_same_v<decltype(MorphologicalTreeFactory::createTreeOfShapes(std::declval<ImageUInt8Ptr>(), TopographicConvention{})),
+                             ValuedMorphologicalTree<std::uint8_t>>);
+static_assert(std::is_same_v<decltype(MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(std::declval<ImageUInt8Ptr>(), TopographicConvention{})),
                              ValuedMorphologicalTree<ToSGrayLevel>>);
 static_assert(std::is_constructible_v<MSERComputer<std::uint8_t>, const ValuedMorphologicalTree<std::uint8_t>&>);
 static_assert(std::is_constructible_v<MSERComputer<std::int32_t>, const ValuedMorphologicalTree<std::int32_t>&>);

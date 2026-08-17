@@ -57,23 +57,64 @@ struct ComplementaryAdjacencies {
 /** @brief Selects the self-dual span-valued tree-of-shapes immersion. */
 struct SelfDualSpanImmersion {};
 
+/** @brief Canonical ordered pairing of complementary 4- and 8-connectivities. */
+enum class ComplementaryPairing { Min4Max8, Min8Max4 };
+
+/**
+ * @brief Selects a canonical complementary-grid immersion without binding a domain.
+ *
+ * The pairing is resolved into a `ComplementaryGridImmersion` carrying concrete
+ * adjacencies once the source domain is known. Only the resolved form is
+ * retained by a construction result.
+ */
+struct CanonicalComplementaryGridImmersion {
+    ComplementaryPairing pairing = ComplementaryPairing::Min4Max8; ///< Canonical minimum/maximum pairing.
+};
+
 /** @brief Selects the optimized complementary-grid immersion. */
 struct ComplementaryGridImmersion {
     ComplementaryAdjacencies complementaryAdjacencies; ///< Ordered minimum/maximum adjacency pair.
 };
 
 /** @brief Tagged tree-of-shapes immersion family. */
-using TreeOfShapesImmersion = std::variant<SelfDualSpanImmersion, ComplementaryGridImmersion>;
+using TreeOfShapesImmersion = std::variant<CanonicalComplementaryGridImmersion, ComplementaryGridImmersion, SelfDualSpanImmersion>;
 
 /** @brief Relation between the source pixel domain and active topographic domain. */
 enum class TopographicDomainExtension { ExteriorRing, None };
 
+/**
+ * @brief Scale in which tree-of-shapes node altitudes are published.
+ *
+ * `UInt8` publishes source gray levels unchanged and is available only for
+ * complementary-grid immersions, whose construction levels never leave the
+ * source level set. `ExactDoubled` publishes doubled units, where a source
+ * level `v` is represented by `2 * v` and odd values represent the half levels
+ * that a self-dual span immersion can introduce.
+ */
+enum class TopographicAltitudeEncoding { UInt8, ExactDoubled };
+
 /** @brief Complete discrete convention retained by a tree-of-shapes result. */
 struct TopographicConvention {
-    TreeOfShapesImmersion immersion = SelfDualSpanImmersion{}; ///< Selected topographic immersion.
+    TreeOfShapesImmersion immersion = CanonicalComplementaryGridImmersion{}; ///< Selected topographic immersion.
     TopographicDomainExtension domainExtension = TopographicDomainExtension::ExteriorRing; ///< Active-domain extension convention.
     PixelId infinityPixel = 0; ///< Declared infinity pixel in the active topographic domain.
+    TopographicAltitudeEncoding altitudeEncoding = TopographicAltitudeEncoding::UInt8; ///< Published node-altitude scale.
 };
+
+/**
+ * @brief Builds the conventional self-dual span convention.
+ *
+ * The self-dual span immersion admits only `TopographicAltitudeEncoding::ExactDoubled`,
+ * so this helper keeps the two coupled fields consistent at every call site.
+ *
+ * @param domainExtension Active-domain extension convention.
+ * @param infinityPixel Declared infinity pixel in the active topographic domain.
+ * @return A coherent self-dual span convention.
+ */
+inline TopographicConvention selfDualSpanConvention(TopographicDomainExtension domainExtension = TopographicDomainExtension::ExteriorRing,
+                                                    PixelId infinityPixel = 0) {
+    return TopographicConvention{SelfDualSpanImmersion{}, domainExtension, infinityPixel, TopographicAltitudeEncoding::ExactDoubled};
+}
 
 /** @brief Tagged construction context retained by morphological-tree semantics. */
 using MorphologicalTreeConstructionContext =

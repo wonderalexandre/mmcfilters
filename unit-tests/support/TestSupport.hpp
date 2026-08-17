@@ -144,10 +144,14 @@ inline std::shared_ptr<MorphologicalTree> makeComponentTree(ImageUInt8Ptr image,
 
 enum class TestTopographicImmersion { SelfDualSpan, Min4Max8, Min8Max4 };
 
+// Test conventions publish exact doubled units so that a single helper covers
+// every immersion, including the self-dual span. Helpers dedicated to the 8-bit
+// encoding are defined below.
 inline TopographicConvention makeTopographicConvention(int rows, int columns,
                                                         TestTopographicImmersion immersion = TestTopographicImmersion::SelfDualSpan,
                                                         TopographicDomainExtension domainExtension = TopographicDomainExtension::ExteriorRing,
-                                                        PixelId infinityPixel = 0) {
+                                                        PixelId infinityPixel = 0,
+                                                        TopographicAltitudeEncoding altitudeEncoding = TopographicAltitudeEncoding::ExactDoubled) {
     TreeOfShapesImmersion specification = SelfDualSpanImmersion{};
     if (immersion == TestTopographicImmersion::Min4Max8) {
         specification = ComplementaryGridImmersion{
@@ -156,19 +160,20 @@ inline TopographicConvention makeTopographicConvention(int rows, int columns,
         specification = ComplementaryGridImmersion{
             ComplementaryAdjacencies{RegularGridAdjacency2D(rows, columns, 1.5), RegularGridAdjacency2D(rows, columns, 1.0)}};
     }
-    return TopographicConvention{std::move(specification), domainExtension, infinityPixel};
+    return TopographicConvention{std::move(specification), domainExtension, infinityPixel, altitudeEncoding};
 }
 
 inline TopographicConvention makeTopographicConvention(const ImageUInt8Ptr& image,
                                                         TestTopographicImmersion immersion = TestTopographicImmersion::SelfDualSpan,
                                                         TopographicDomainExtension domainExtension = TopographicDomainExtension::ExteriorRing,
-                                                        PixelId infinityPixel = 0) {
-    return makeTopographicConvention(image->getNumRows(), image->getNumColumns(), immersion, domainExtension, infinityPixel);
+                                                        PixelId infinityPixel = 0,
+                                                        TopographicAltitudeEncoding altitudeEncoding = TopographicAltitudeEncoding::ExactDoubled) {
+    return makeTopographicConvention(image->getNumRows(), image->getNumColumns(), immersion, domainExtension, infinityPixel, altitudeEncoding);
 }
 
 inline std::shared_ptr<MorphologicalTree> makeTreeOfShapes(ImageUInt8Ptr image,
                                                            TestTopographicImmersion immersion = TestTopographicImmersion::SelfDualSpan) {
-    auto valuedTree = MorphologicalTreeFactory::createTreeOfShapes(image, makeTopographicConvention(image, immersion));
+    auto valuedTree = MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(image, makeTopographicConvention(image, immersion));
     return std::make_shared<MorphologicalTree>(valuedTree.topology().clone());
 }
 
@@ -235,7 +240,16 @@ inline std::shared_ptr<ValuedMorphologicalTree<std::uint8_t>> makeValuedComponen
 inline std::shared_ptr<ValuedMorphologicalTree<ToSGrayLevel>> makeValuedTreeOfShapes(ImageUInt8Ptr image,
                                                                                         TestTopographicImmersion immersion = TestTopographicImmersion::SelfDualSpan) {
     return std::make_shared<ValuedMorphologicalTree<ToSGrayLevel>>(
-        MorphologicalTreeFactory::createTreeOfShapes(image, makeTopographicConvention(image, immersion)));
+        MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(image, makeTopographicConvention(image, immersion)));
+}
+
+// Builds the 8-bit tree of shapes published by the default convention.
+inline std::shared_ptr<ValuedMorphologicalTree<std::uint8_t>>
+makeValuedTreeOfShapesUInt8(ImageUInt8Ptr image, ComplementaryPairing pairing = ComplementaryPairing::Min4Max8) {
+    TopographicConvention convention{CanonicalComplementaryGridImmersion{pairing}, TopographicDomainExtension::ExteriorRing, PixelId{0},
+                                     TopographicAltitudeEncoding::UInt8};
+    return std::make_shared<ValuedMorphologicalTree<std::uint8_t>>(
+        MorphologicalTreeFactory::createTreeOfShapes<std::uint8_t>(image, std::move(convention)));
 }
 
 inline std::vector<NodeId> collectNodeIds(auto range) {

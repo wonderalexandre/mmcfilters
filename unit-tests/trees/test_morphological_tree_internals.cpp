@@ -168,7 +168,7 @@ int main() {
             requireEqual(sortedInterpolatedOrder[static_cast<std::size_t>(pixelId)], pixelId, "TreeOfShapesProducer sorted order must be a permutation");
         }
 
-        auto result = tosBuilder.build(image);
+        auto result = tosBuilder.build<ToSGrayLevel>(image);
         requireEqual(static_cast<int>(result.parent.size()), 6, "TreeOfShapesProducer native node count");
         requireEqual(static_cast<int>(result.smallestNodeMap.size()), 9, "TreeOfShapesProducer native proper-part count");
         for (NodeId smallestNodeId : result.smallestNodeMap) {
@@ -281,7 +281,7 @@ int main() {
 
         for (TestTopographicImmersion interpolation : {TestTopographicImmersion::SelfDualSpan, TestTopographicImmersion::Min4Max8, TestTopographicImmersion::Min8Max4}) {
             TreeOfShapesProducer builder(makeTopographicConvention(plateau, interpolation));
-            auto result = builder.build(plateau);
+            auto result = builder.build<ToSGrayLevel>(plateau);
             int numRoots = 0;
             for (NodeId nodeId = 0; nodeId < static_cast<NodeId>(result.parent.size()); ++nodeId) {
                 const NodeId parent = result.parent[static_cast<std::size_t>(nodeId)];

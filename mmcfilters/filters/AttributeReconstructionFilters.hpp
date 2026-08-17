@@ -87,7 +87,7 @@ inline void applyDirectReconstruction(ValuedMorphologicalTreeView<T> valuedTree,
 }
 
 template <AltitudeValue T>
-[[nodiscard]] inline std::vector<AltitudeDifference<T>> computeHardNodeContributions(
+[[nodiscard]] inline std::vector<AltitudeDifference<T>> computeGatedNodeContributions(
     ValuedMorphologicalTreeView<T> valuedTree, const NodePreservationMask& nodePreservationMask) {
     const MorphologicalTree& tree = valuedTree.topology();
     requireNodePreservationMaskShape(tree, nodePreservationMask, "SubtractiveAttributeFilter::applySubtractiveAttributeFilter");
@@ -167,13 +167,13 @@ template <AltitudeValue T> class SubtractiveAttributeFilter {
     using OutputValue = AltitudeDifference<T>;
 
     /**
-     * @brief Creates a hard subtractive filter over a valued-tree view.
+     * @brief Creates a subtractive filter over a valued-tree view.
      * @param valuedTree Valued tree whose residues drive reconstruction.
      */
     explicit SubtractiveAttributeFilter(ValuedMorphologicalTreeView<T> valuedTree) : valuedTree_(valuedTree) {}
 
     /**
-     * @brief Creates a hard subtractive filter over an owning valued tree.
+     * @brief Creates a subtractive filter over an owning valued tree.
      * @param valuedTree Valued tree whose residues drive reconstruction.
      */
     explicit SubtractiveAttributeFilter(const ValuedMorphologicalTree<T>& valuedTree) : valuedTree_(valuedTree.asView()) {}
@@ -185,7 +185,7 @@ template <AltitudeValue T> class SubtractiveAttributeFilter {
      */
     [[nodiscard]] ImagePtr<OutputValue> applySubtractiveAttributeFilter(const NodePreservationMask& nodePreservationMask) const {
         valuedTree_.requireTopologyUnchanged("SubtractiveAttributeFilter::applySubtractiveAttributeFilter");
-        const std::vector<OutputValue> nodeContributions = detail::attribute_filtering::computeHardNodeContributions(valuedTree_, nodePreservationMask);
+        const std::vector<OutputValue> nodeContributions = detail::attribute_filtering::computeGatedNodeContributions(valuedTree_, nodePreservationMask);
         return TreeAltitudeAlgorithms::reconstructFromNodeContributions(
             valuedTree_.topology(), std::span<const OutputValue>(nodeContributions),
             "SubtractiveAttributeFilter::applySubtractiveAttributeFilter");

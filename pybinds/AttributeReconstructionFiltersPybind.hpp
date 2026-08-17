@@ -63,7 +63,7 @@ class DirectAttributeFilterPybind {
     }
 };
 
-/** @brief Type-erased Python wrapper for hard subtractive attribute reconstruction. */
+/** @brief Type-erased Python wrapper for subtractive attribute reconstruction. */
 class SubtractiveAttributeFilterPybind {
   private:
     std::shared_ptr<PythonValuedMorphologicalTree> valuedTree_; ///< Python owner retained for the wrapper lifetime.
@@ -71,7 +71,7 @@ class SubtractiveAttributeFilterPybind {
 
   public:
     /**
-     * @brief Creates a hard subtractive reconstruction wrapper.
+     * @brief Creates a subtractive reconstruction wrapper.
      * @param valuedTree Python-owned valued tree used by subsequent reconstructions.
      */
     explicit SubtractiveAttributeFilterPybind(std::shared_ptr<PythonValuedMorphologicalTree> valuedTree)
@@ -79,7 +79,7 @@ class SubtractiveAttributeFilterPybind {
           topologyMutationVersion_(valuedTree_->topology().getMutationVersion()) {}
 
     /**
-     * @brief Applies hard subtractive reconstruction and returns a NumPy image.
+     * @brief Applies subtractive reconstruction and returns a NumPy image.
      * @param nodePreservationMask Dense node-preservation decisions.
      * @return Newly allocated NumPy reconstruction in the signed altitude-difference type.
      */
@@ -93,7 +93,7 @@ class SubtractiveAttributeFilterPybind {
             const auto valuedTreeView = native->asView();
             valuedTreeView.requireTopologyUnchanged("SubtractiveAttributeFilter.apply_subtractive_attribute_filter");
             const std::vector<OutputValue> nodeContributions =
-                detail::attribute_filtering::computeHardNodeContributions(valuedTreeView, nodePreservationMask);
+                detail::attribute_filtering::computeGatedNodeContributions(valuedTreeView, nodePreservationMask);
             std::vector<OutputValue> pixels = detail::tree_altitude::reconstructNodeContributionValues(
                 native->topology(), std::span<const OutputValue>(nodeContributions),
                 "SubtractiveAttributeFilter.apply_subtractive_attribute_filter");

@@ -126,7 +126,7 @@ def main() -> int:
     keep_all = [True] * valued_tree.num_internal_node_slots
     keep_all_mask = mmcfilters.NodePreservationMask(keep_all)
     direct_filter = mmcfilters.DirectAttributeFilter(valued_tree)
-    hard_subtractive_filter = mmcfilters.SubtractiveAttributeFilter(valued_tree)
+    subtractive_filter = mmcfilters.SubtractiveAttributeFilter(valued_tree)
     soft_subtractive_filter = mmcfilters.SoftSubtractiveAttributeFilter(valued_tree)
     valued_tree_filters = mmcfilters.AttributeFilters(valued_tree)
     require(
@@ -135,7 +135,7 @@ def main() -> int:
     )
     require(
         np.array_equal(
-            hard_subtractive_filter.apply_subtractive_attribute_filter(keep_all_mask),
+            subtractive_filter.apply_subtractive_attribute_filter(keep_all_mask),
             valued_tree_reconstruction.astype(np.int64),
         ),
         "valued_tree SubtractiveAttributeFilter keep-all",
@@ -152,10 +152,10 @@ def main() -> int:
     reject_all_mask = mmcfilters.NodePreservationMask([False] * valued_tree.num_internal_node_slots)
     require(
         np.array_equal(
-            hard_subtractive_filter.apply_subtractive_attribute_filter(reject_all_mask),
+            subtractive_filter.apply_subtractive_attribute_filter(reject_all_mask),
             np.zeros_like(valued_tree_reconstruction, dtype=np.int64),
         ),
-        "all-false hard subtractive mask must produce zero",
+        "all-false subtractive mask must produce zero",
     )
     zero_scores = np.zeros(valued_tree.num_internal_node_slots, dtype=np.float64)
     require(

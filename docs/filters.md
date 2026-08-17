@@ -81,12 +81,12 @@ before passing it to a filter.
 - **Direct:** `DirectAttributeFilter` accepts a `NodePreservationMask`; preserved
   nodes use their altitude and rejected nodes inherit the reconstructed parent
   altitude. The root must be preserved.
-- **Hard subtractive:** `SubtractiveAttributeFilter` independently gates
+- **Subtractive:** `SubtractiveAttributeFilter` independently gates
   every zero-baseline node residue, including the root residue, with a
   `NodePreservationMask`. Integral-altitude trees produce a signed image.
-- **Soft subtractive:** `SoftSubtractiveAttributeFilter` multiplies every
-  zero-baseline node residue by a finite dense score in `[0, 1]`; the output has
-  the score dtype.
+- **Soft subtractive:** `SoftSubtractiveAttributeFilter` is its continuous
+  counterpart: it multiplies every zero-baseline node residue by a finite dense
+  score in `[0, 1]`; the output has the score dtype.
 - **Pruning-min:** accepted branches remain traversable and rejected subtrees
   follow the pruning-min reconstruction convention.
 - **Pruning-max:** rejected subtrees are detected bottom-up and follow the

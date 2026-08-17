@@ -159,7 +159,7 @@ int main() {
         std::vector<bool> keepAll(valuedTree->topology().numInternalNodeSlots(), true);
         const NodePreservationMask keepAllMask(keepAll);
         DirectAttributeFilter<std::uint8_t> directFilter(*valuedTree);
-        SubtractiveAttributeFilter<std::uint8_t> hardSubtractiveFilter(*valuedTree);
+        SubtractiveAttributeFilter<std::uint8_t> subtractiveFilter(*valuedTree);
         SoftSubtractiveAttributeFilter<std::uint8_t, float> softSubtractiveFilter(*valuedTree);
 
         const NodePruningMask pruneNoneMask = toNodePruningMask(keepAllMask);
@@ -283,17 +283,17 @@ int main() {
         requireVectorEqual(collectImageValues(scoreViaInt16View), collectImageValues(scoreViaObject),
                            isMaxtree ? "valuedTree max-tree soft subtractive filter via int16 view" : "valuedTree min-tree soft subtractive filter via int16 view");
 
-        const auto hardKeepAll = hardSubtractiveFilter.applySubtractiveAttributeFilter(keepAllMask);
-        requireVectorEqual(collectImageValues(hardKeepAll), collectImageValuesAs<AltitudeDifference<std::uint8_t>>(reconstruction),
-                           isMaxtree ? "valuedTree max-tree hard subtractive filter keep-all"
-                                     : "valuedTree min-tree hard subtractive filter keep-all");
+        const auto subtractiveKeepAll = subtractiveFilter.applySubtractiveAttributeFilter(keepAllMask);
+        requireVectorEqual(collectImageValues(subtractiveKeepAll), collectImageValuesAs<AltitudeDifference<std::uint8_t>>(reconstruction),
+                           isMaxtree ? "valuedTree max-tree subtractive filter keep-all"
+                                     : "valuedTree min-tree subtractive filter keep-all");
 
         const NodePreservationMask rejectAllMask(keepAll.size(), false);
-        const auto hardRejectAll = hardSubtractiveFilter.applySubtractiveAttributeFilter(rejectAllMask);
-        requireVectorEqual(collectImageValues(hardRejectAll),
-                           std::vector<AltitudeDifference<std::uint8_t>>(static_cast<std::size_t>(hardRejectAll->getSize()), 0),
-                           isMaxtree ? "valuedTree max-tree all-false hard mask must produce zero"
-                                     : "valuedTree min-tree all-false hard mask must produce zero");
+        const auto subtractiveRejectAll = subtractiveFilter.applySubtractiveAttributeFilter(rejectAllMask);
+        requireVectorEqual(collectImageValues(subtractiveRejectAll),
+                           std::vector<AltitudeDifference<std::uint8_t>>(static_cast<std::size_t>(subtractiveRejectAll->getSize()), 0),
+                           isMaxtree ? "valuedTree max-tree all-false preservation mask must produce zero"
+                                     : "valuedTree min-tree all-false preservation mask must produce zero");
 
         const std::vector<float> zeroScores(keepAll.size(), 0.0f);
         const auto softRejectAll = softSubtractiveFilter.applySoftSubtractiveAttributeFilter(zeroScores);
@@ -306,7 +306,7 @@ int main() {
             allResidues[static_cast<std::size_t>(nodeId)] = valuedTree->nodeResidue(nodeId);
         }
         requireVectorEqual(collectImageValues(valuedTree->reconstructFromNodeContributions(std::span<const AltitudeDifference<std::uint8_t>>(allResidues))),
-                           collectImageValues(hardKeepAll),
+                           collectImageValues(subtractiveKeepAll),
                            isMaxtree ? "valuedTree max-tree general contribution reconstruction"
                                      : "valuedTree min-tree general contribution reconstruction");
 
@@ -322,8 +322,8 @@ int main() {
 
             requireVectorEqual(collectImageValues(applySubtractiveAttributeFilter(importedValuedTree, importedKeepAllMask)),
                                collectImageValuesAs<AltitudeDifference<std::uint8_t>>(importedReconstruction),
-                               isMaxtree ? "imported max-tree hard subtractive filter keep-all"
-                                         : "imported min-tree hard subtractive filter keep-all");
+                               isMaxtree ? "imported max-tree subtractive filter keep-all"
+                                         : "imported min-tree subtractive filter keep-all");
 
             std::vector<float> importedUnitScores(importedValuedTree.topology().numInternalNodeSlots(), 1.0f);
             requireVectorEqual(collectImageValues(applySoftSubtractiveAttributeFilter(importedValuedTree, std::span<const float>(importedUnitScores))),
@@ -345,20 +345,20 @@ int main() {
                                isMaxtree ? "imported max-tree direct filter mixed mask" : "imported min-tree direct filter mixed mask");
             requireVectorEqual(collectImageValues(applySubtractiveAttributeFilter(importedValuedTree, mixedMask)),
                                subtractiveReferenceImage(importedValuedTree, mixedPreservationDecisions),
-                               isMaxtree ? "imported max-tree hard subtractive filter mixed mask"
-                                         : "imported min-tree hard subtractive filter mixed mask");
+                               isMaxtree ? "imported max-tree subtractive filter mixed mask"
+                                         : "imported min-tree subtractive filter mixed mask");
         }
 
-        requireVectorEqual(collectImageValues(applySubtractiveAttributeFilter(valuedTreeView, keepAllMask)), collectImageValues(hardKeepAll),
-                           isMaxtree ? "valuedTree max-tree hard subtractive filter via view"
-                                     : "valuedTree min-tree hard subtractive filter via view");
-        requireVectorEqual(collectImageValues(applySubtractiveAttributeFilter(externalView, keepAllMask)), collectImageValues(hardKeepAll),
-                           isMaxtree ? "valuedTree max-tree hard subtractive filter via external view"
-                                     : "valuedTree min-tree hard subtractive filter via external view");
+        requireVectorEqual(collectImageValues(applySubtractiveAttributeFilter(valuedTreeView, keepAllMask)), collectImageValues(subtractiveKeepAll),
+                           isMaxtree ? "valuedTree max-tree subtractive filter via view"
+                                     : "valuedTree min-tree subtractive filter via view");
+        requireVectorEqual(collectImageValues(applySubtractiveAttributeFilter(externalView, keepAllMask)), collectImageValues(subtractiveKeepAll),
+                           isMaxtree ? "valuedTree max-tree subtractive filter via external view"
+                                     : "valuedTree min-tree subtractive filter via external view");
         requireVectorEqual(collectImageValues(applySubtractiveAttributeFilter(int16View, keepAllMask)),
-                           collectImageValuesAs<AltitudeDifference<std::int16_t>>(hardKeepAll),
-                           isMaxtree ? "valuedTree max-tree hard subtractive filter via int16 view"
-                                     : "valuedTree min-tree hard subtractive filter via int16 view");
+                           collectImageValuesAs<AltitudeDifference<std::int16_t>>(subtractiveKeepAll),
+                           isMaxtree ? "valuedTree max-tree subtractive filter via int16 view"
+                                     : "valuedTree min-tree subtractive filter via int16 view");
 
         auto pruningMin = ImageUInt8::create(valuedTree->topology().numRows(), valuedTree->topology().numColumns(), 0);
         AttributeFilters<std::uint8_t>::filteringByPruningMin(*valuedTree, keepAllMask, pruningMin);
@@ -643,8 +643,8 @@ int main() {
 
         auto subtractiveAfterMerge = applySubtractiveAttributeFilter(*valuedTree, keepAllAfterMergeMask);
         requireVectorEqual(collectImageValues(subtractiveAfterMerge), collectImageValuesAs<AltitudeDifference<std::uint8_t>>(expectedAfterMerge),
-                           isMaxtree ? "valuedTree max-tree hard subtractive filter keep-all after merge"
-                                     : "valuedTree min-tree hard subtractive filter keep-all after merge");
+                           isMaxtree ? "valuedTree max-tree subtractive filter keep-all after merge"
+                                     : "valuedTree min-tree subtractive filter keep-all after merge");
 
         auto [mergedAttrNames, mergedAttr] = AttributeComputation::computeSingleAttribute(*valuedTree, BoundingBoxHeight);
         (void)mergedAttrNames;

@@ -1424,6 +1424,92 @@ def main() -> int:
     require_raises(lambda: mmcfilters.MorphologicalTreeFactory.create_min_tree(empty), "empty min-tree must throw")
     require_raises(lambda: mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(empty), "empty valued tree of shapes must throw")
 
+    # Concise call forms. Symbolic attribute names are accepted wherever an
+    # Attribute value is, and resolve to exactly the same computation.
+    concise_tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image, radius=1.5)
+    require(
+        np.array_equal(
+            mmcfilters.Attribute.compute_single_attribute(concise_tree, "AREA"),
+            mmcfilters.Attribute.compute_single_attribute(concise_tree, mmcfilters.Attribute.AREA),
+        ),
+        "symbolic attribute name must match the enum value",
+    )
+    require(
+        np.array_equal(
+            mmcfilters.Attribute.compute_single_topology_attribute(concise_tree, "AREA"),
+            mmcfilters.Attribute.compute_single_topology_attribute(concise_tree, mmcfilters.Attribute.AREA),
+        ),
+        "symbolic name must match the enum value for topology attributes",
+    )
+    named_layout, named_values = mmcfilters.Attribute.compute_attributes(concise_tree, ["AREA", "VOLUME"])
+    typed_layout, typed_values = mmcfilters.Attribute.compute_attributes(
+        concise_tree, [mmcfilters.Attribute.AREA, mmcfilters.Attribute.VOLUME]
+    )
+    require(list(named_layout) == list(typed_layout), "symbolic attribute list must produce the same layout")
+    require(np.array_equal(named_values, typed_values), "symbolic attribute list must produce the same values")
+
+    # Group names and mixed sequences are accepted too.
+    group_layout, _ = mmcfilters.Attribute.compute_attributes(concise_tree, ["BOUNDARY"])
+    typed_group_layout, _ = mmcfilters.Attribute.compute_attributes(concise_tree, [mmcfilters.Attribute.Group.BOUNDARY])
+    require(list(group_layout) == list(typed_group_layout), "symbolic group name must match the enum group")
+    mixed_layout, _ = mmcfilters.Attribute.compute_attributes(concise_tree, [mmcfilters.Attribute.AREA, "VOLUME"])
+    require(list(mixed_layout) == ["AREA", "VOLUME"], "mixed enum and symbolic sequences must be accepted")
+
+    require(
+        mmcfilters.Attribute.describe("AREA") == mmcfilters.Attribute.describe(mmcfilters.Attribute.AREA),
+        "describe must accept a symbolic name",
+    )
+    require(
+        mmcfilters.Attribute.requirements("AREA") == mmcfilters.Attribute.requirements(mmcfilters.Attribute.AREA),
+        "requirements must accept a symbolic name",
+    )
+    require(
+        np.array_equal(
+            mmcfilters.Attribute.compute_attribute_mapping(concise_tree, "AREA"),
+            mmcfilters.Attribute.compute_attribute_mapping(concise_tree, mmcfilters.Attribute.AREA),
+        ),
+        "compute_attribute_mapping must accept a symbolic name",
+    )
+
+    # Matching is exact, and a rejected name reports the near matches.
+    require_raises(lambda: mmcfilters.Attribute.compute_single_attribute(concise_tree, "area"), "symbolic names must be case sensitive")
+    require_raises(lambda: mmcfilters.Attribute.compute_single_attribute(concise_tree, "NOT_AN_ATTRIBUTE"), "unknown names must be rejected")
+    require_raises(lambda: mmcfilters.Attribute.compute_attributes(concise_tree, "AREA"), "a bare str must not stand in for a sequence")
+
+    # The self-dual span convention is available as a single call.
+    require(
+        mmcfilters.self_dual_span_convention().altitude_encoding == mmcfilters.TopographicAltitudeEncoding.EXACT_DOUBLED,
+        "the self-dual span helper must default to doubled units",
+    )
+    unpadded_eight_bit = mmcfilters.self_dual_span_convention(
+        domain_extension=mmcfilters.TopographicDomainExtension.NONE,
+        altitude_encoding=mmcfilters.TopographicAltitudeEncoding.UINT8,
+    )
+    require(isinstance(unpadded_eight_bit.immersion, mmcfilters.SelfDualSpanImmersion), "the helper must select the span immersion")
+
+    # Convention fields may be passed directly to the factory.
+    field_tree = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(
+        tos_source,
+        immersion=mmcfilters.SelfDualSpanImmersion(),
+        domain_extension=mmcfilters.TopographicDomainExtension.NONE,
+        altitude_encoding=mmcfilters.TopographicAltitudeEncoding.UINT8,
+    )
+    convention_tree = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(tos_source, unpadded_eight_bit)
+    require(field_tree.num_nodes == convention_tree.num_nodes, "convention fields must build the same tree as the convention")
+    require(
+        np.array_equal(field_tree.node_altitudes, convention_tree.node_altitudes),
+        "convention fields must publish the same altitudes as the convention",
+    )
+    require(field_tree.node_altitudes.dtype == np.uint8, "unpadded self-dual span must publish uint8 altitudes")
+    require_raises(
+        lambda: mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(
+            tos_source,
+            mmcfilters.TopographicConvention(),
+            altitude_encoding=mmcfilters.TopographicAltitudeEncoding.UINT8,
+        ),
+        "a complete convention and individual fields must not be combined",
+    )
+
     print("python NodeId API ok")
     return 0
 

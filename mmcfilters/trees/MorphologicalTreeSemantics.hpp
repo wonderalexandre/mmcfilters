@@ -102,18 +102,22 @@ struct TopographicConvention {
 };
 
 /**
- * @brief Builds the conventional self-dual span convention.
+ * @brief Builds a self-dual span convention in one call.
  *
- * The self-dual span immersion admits only `TopographicAltitudeEncoding::ExactDoubled`,
- * so this helper keeps the two coupled fields consistent at every call site.
+ * The immersion, extension, and encoding of a self-dual span construction are
+ * coupled: the exterior ring carries the boundary reference level, which admits
+ * only `TopographicAltitudeEncoding::ExactDoubled`. Gathering them here keeps
+ * call sites short and the combination coherent.
  *
  * @param domainExtension Active-domain extension convention.
  * @param infinityPixel Declared infinity pixel in the active topographic domain.
- * @return A coherent self-dual span convention.
+ * @param altitudeEncoding Published node-altitude scale.
+ * @return A self-dual span convention carrying the requested fields.
  */
 inline TopographicConvention selfDualSpanConvention(TopographicDomainExtension domainExtension = TopographicDomainExtension::ExteriorRing,
-                                                    PixelId infinityPixel = 0) {
-    return TopographicConvention{SelfDualSpanImmersion{}, domainExtension, infinityPixel, TopographicAltitudeEncoding::ExactDoubled};
+                                                    PixelId infinityPixel = 0,
+                                                    TopographicAltitudeEncoding altitudeEncoding = TopographicAltitudeEncoding::ExactDoubled) {
+    return TopographicConvention{SelfDualSpanImmersion{}, domainExtension, infinityPixel, altitudeEncoding};
 }
 
 /** @brief Tagged construction context retained by morphological-tree semantics. */

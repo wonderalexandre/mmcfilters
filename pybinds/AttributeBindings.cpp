@@ -53,8 +53,10 @@ the selected `NodeIdSpace`. Methods returning several attributes return
 `np.float32`; it controls only the returned NumPy buffer dtype.)doc")
             .def_static(
                 "compute_attributes",
-                py::overload_cast<std::shared_ptr<PythonValuedMorphologicalTree>, const std::vector<AttributeOrGroup>&, NodeIdSpace, py::object>(
-                    &attribute_computation::computeAttributesFromList),
+                [](std::shared_ptr<PythonValuedMorphologicalTree> tree, const py::object& attributes, NodeIdSpace outputSpace, py::object dtype) {
+                    return attribute_computation::computeAttributesFromList(std::move(tree), attribute_computation::resolveAttributeOrGroupList(attributes),
+                                                                            outputSpace, std::move(dtype));
+                },
                 py::arg("tree"), py::arg("attributes"), py::arg("output_space") = NodeIdSpace::MorphologicalTree, py::kw_only(), py::arg("dtype") = py::none(),
                 R"doc(Compute one or more altitude-dependent attributes.
 
@@ -69,16 +71,20 @@ Returns:
     and `values.dtype` matches `dtype`.)doc")
             .def_static(
                 "compute_topology_attributes",
-                py::overload_cast<std::shared_ptr<PythonValuedMorphologicalTree>, const std::vector<AttributeOrGroup>&, NodeIdSpace, py::object>(
-                    &attribute_computation::computeTopologyAttributesFromList),
+                [](std::shared_ptr<PythonValuedMorphologicalTree> tree, const py::object& attributes, NodeIdSpace outputSpace, py::object dtype) {
+                    return attribute_computation::computeTopologyAttributesFromList(
+                        std::move(tree), attribute_computation::resolveAttributeOrGroupList(attributes), outputSpace, std::move(dtype));
+                },
                 py::arg("tree"), py::arg("attributes"), py::arg("output_space") = NodeIdSpace::MorphologicalTree, py::kw_only(), py::arg("dtype") = py::none(),
                 R"doc(Compute topology/support-only attributes from a valued tree.
 
 The valued tree is accepted for convenience, but altitude-dependent
 attributes must use `compute_attributes` or `compute_single_attribute`.)doc")
             .def_static("compute_single_attribute",
-                        py::overload_cast<std::shared_ptr<PythonValuedMorphologicalTree>, Attribute, NodeIdSpace, py::object>(
-                            &attribute_computation::computeSingleAttribute),
+                        [](std::shared_ptr<PythonValuedMorphologicalTree> tree, const py::object& attribute, NodeIdSpace outputSpace, py::object dtype) {
+                            return attribute_computation::computeSingleAttribute(std::move(tree), attribute_computation::resolveAttribute(attribute),
+                                                                                 outputSpace, std::move(dtype));
+                        },
                         py::arg("tree"), py::arg("attribute"), py::arg("output_space") = NodeIdSpace::MorphologicalTree, py::kw_only(),
                         py::arg("dtype") = py::none(),
                         R"doc(Compute one altitude-dependent attribute.
@@ -87,17 +93,23 @@ Returns a 1D array indexed by `output_space`. `dtype` controls the returned
 buffer dtype and accepts `np.float32` or `np.float64`; the default is
 `np.float32`.)doc")
             .def_static("compute_single_topology_attribute",
-                        py::overload_cast<std::shared_ptr<PythonValuedMorphologicalTree>, Attribute, NodeIdSpace, py::object>(
-                            &attribute_computation::computeSingleTopologyAttribute),
+                        [](std::shared_ptr<PythonValuedMorphologicalTree> tree, const py::object& attribute, NodeIdSpace outputSpace, py::object dtype) {
+                            return attribute_computation::computeSingleTopologyAttribute(std::move(tree), attribute_computation::resolveAttribute(attribute),
+                                                                                        outputSpace, std::move(dtype));
+                        },
                         py::arg("tree"), py::arg("attribute"), py::arg("output_space") = NodeIdSpace::MorphologicalTree, py::kw_only(),
                         py::arg("dtype") = py::none(),
                         R"doc(Compute one topology/support-only attribute from a valued tree.
 
 Returns a 1D floating-point array indexed by `output_space`.)doc")
             .def_static("compute_sampled_node_attribute",
-                        py::overload_cast<std::shared_ptr<PythonValuedMorphologicalTree>, Attribute, std::int64_t, int,
-                                          NodeAttributeSamplingPolicy, MissingNodeAttributeSamplePolicy, NodeIdSpace, py::object>(
-                            &attribute_computation::computeSampledNodeAttribute),
+                        [](std::shared_ptr<PythonValuedMorphologicalTree> tree, const py::object& attribute, std::int64_t altitudeStep, int samplingRadius,
+                           NodeAttributeSamplingPolicy samplingPolicy, MissingNodeAttributeSamplePolicy missingSamplePolicy, NodeIdSpace outputSpace,
+                           py::object dtype) {
+                            return attribute_computation::computeSampledNodeAttribute(std::move(tree), attribute_computation::resolveAttribute(attribute),
+                                                                                      altitudeStep, samplingRadius, samplingPolicy, missingSamplePolicy,
+                                                                                      outputSpace, std::move(dtype));
+                        },
                         py::arg("tree"), py::arg("attribute"), py::arg("altitude_step"), py::arg("sampling_radius"),
                         py::arg("sampling_policy") = NodeAttributeSamplingPolicy::LargestSupportDescendant,
                         py::arg("missing_sample_policy") = MissingNodeAttributeSamplePolicy::RepeatNearest,
@@ -115,10 +127,13 @@ Parameters:
 Returns:
     `(layout, values)` where layout keys include suffixes such as
     `_ANCESTOR_1` and `_DESCENDANT_1`.)doc")
-            .def_static("describe", &attribute_computation::describeAttribute, py::arg("attribute"), "Return the human-readable description of an attribute.")
+            .def_static(
+                "describe", [](const py::object& attribute) { return attribute_computation::describeAttribute(attribute_computation::resolveAttribute(attribute)); },
+                py::arg("attribute"), "Return the human-readable description of an attribute.")
             .def_static(
                 "requirements",
-                [](Attribute attribute) {
+                [](const py::object& attributeRequest) {
+                    const Attribute attribute = attribute_computation::resolveAttribute(attributeRequest);
                     const auto requirements = attributes::registry::capabilityRequirements(attribute);
                     const char* adjacency = "none";
                     switch (requirements.adjacency) {
@@ -144,8 +159,10 @@ Returns:
                 },
                 py::arg("attribute"), "Return the declared capability requirements of an attribute.")
             .def_static("compute_attribute_mapping",
-                        py::overload_cast<std::shared_ptr<PythonValuedMorphologicalTree>, Attribute, py::object>(
-                            &attribute_computation::computeAttributeMapping),
+                        [](std::shared_ptr<PythonValuedMorphologicalTree> tree, const py::object& attribute, py::object dtype) {
+                            return attribute_computation::computeAttributeMapping(std::move(tree), attribute_computation::resolveAttribute(attribute),
+                                                                                  std::move(dtype));
+                        },
                         py::arg("tree"), py::arg("attribute"), py::kw_only(), py::arg("dtype") = py::none(),
                         R"doc(Compute an attribute and project it back to the image domain.
 

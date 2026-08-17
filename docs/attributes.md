@@ -176,6 +176,8 @@ Python keeps a smaller public surface than C++:
   output node ID space is needed;
 - attribute methods accept `dtype=np.float32` or `dtype=np.float64`; the default
   remains `np.float32`;
+- every method taking an `Attribute` or `Attribute.Group` also takes its stable
+  symbolic name as a string, matched exactly and case-sensitively;
 - `AttributePipeline`, concrete C++ computers, and finite-window intermediate storage are not
   part of the Python API.
 
@@ -194,6 +196,17 @@ topology_names, topology_values = mmcfilters.Attribute.compute_topology_attribut
     valued_tree,
     [mmcfilters.Attribute.AREA, mmcfilters.Attribute.Group.BOUNDARY],
 )
+```
+
+The same calls accept the symbolic names, which are the keys the returned layout
+already uses. Enum values and names may be mixed in one request:
+
+```python
+gray_level_height_by_node = mmcfilters.Attribute.compute_single_attribute(
+    valued_tree,
+    "GRAY_LEVEL_HEIGHT",
+)
+names, values = mmcfilters.Attribute.compute_attributes(valued_tree, ["AREA", "GRAY_LEVEL"])
 ```
 
 The `dtype` keyword selects the returned NumPy storage. Both supported dtypes

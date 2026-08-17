@@ -1172,6 +1172,20 @@ void initMorphologicalTree(py::module_& m) {
         .def_readonly("infinity_pixel", &TopographicConvention::infinityPixel)
         .def_readonly("altitude_encoding", &TopographicConvention::altitudeEncoding);
 
+    m.def("self_dual_span_convention", &selfDualSpanConvention, "domain_extension"_a = TopographicDomainExtension::ExteriorRing, "infinity_pixel"_a = PixelId{0},
+          "altitude_encoding"_a = TopographicAltitudeEncoding::ExactDoubled,
+          R"doc(Build a self-dual span convention in one call.
+
+The immersion, extension, and encoding of a self-dual span construction are
+coupled: the exterior ring carries the boundary reference level, which admits
+only `TopographicAltitudeEncoding.EXACT_DOUBLED`. Without that ring the
+construction stays on the source lattice, so `UINT8` becomes available:
+
+    convention = mmcfilters.self_dual_span_convention(
+        domain_extension=mmcfilters.TopographicDomainExtension.NONE,
+        altitude_encoding=mmcfilters.TopographicAltitudeEncoding.UINT8,
+    ))doc");
+
     py::class_<MorphologicalTreeSemantics>(m, "MorphologicalTreeSemantics", py::module_local(false),
                                    "Immutable scientific semantics attached to a morphological tree.")
         .def(py::init([](MorphologicalTreeKind kind, NodeAltitudeOrder nodeAltitudeOrder,
@@ -1275,20 +1289,55 @@ void initMorphologicalTree(py::module_& m) {
             "Create the saturated residual tree with an explicit shared symmetric adjacency.")
         .def_static(
             "create_tree_of_shapes",
-            [](UInt8InputArray input, TopographicConvention convention) {
-                if (convention.altitudeEncoding == TopographicAltitudeEncoding::UInt8) {
-                    return wrapPythonValuedTree(MorphologicalTreeFactory::createTreeOfShapes<std::uint8_t>(imageFromArray(input), std::move(convention)));
+            [](UInt8InputArray input, std::optional<TopographicConvention> convention, std::optional<TreeOfShapesImmersion> immersion,
+               std::optional<TopographicDomainExtension> domainExtension, std::optional<PixelId> infinityPixel,
+               std::optional<TopographicAltitudeEncoding> altitudeEncoding) {
+                const bool hasFieldOverride =
+                    immersion.has_value() || domainExtension.has_value() || infinityPixel.has_value() || altitudeEncoding.has_value();
+                if (convention.has_value() && hasFieldOverride) {
+                    throw py::value_error("create_tree_of_shapes accepts either a complete convention or its individual fields, not both.");
                 }
-                return wrapPythonValuedTree(MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(imageFromArray(input), std::move(convention)));
+
+                TopographicConvention resolved = convention.value_or(TopographicConvention{});
+                if (immersion.has_value()) {
+                    resolved.immersion = std::move(*immersion);
+                }
+                if (domainExtension.has_value()) {
+                    resolved.domainExtension = *domainExtension;
+                }
+                if (infinityPixel.has_value()) {
+                    resolved.infinityPixel = *infinityPixel;
+                }
+                if (altitudeEncoding.has_value()) {
+                    resolved.altitudeEncoding = *altitudeEncoding;
+                }
+
+                if (resolved.altitudeEncoding == TopographicAltitudeEncoding::UInt8) {
+                    return wrapPythonValuedTree(MorphologicalTreeFactory::createTreeOfShapes<std::uint8_t>(imageFromArray(input), std::move(resolved)));
+                }
+                return wrapPythonValuedTree(MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(imageFromArray(input), std::move(resolved)));
             },
-            "input"_a, "convention"_a = TopographicConvention{},
+            "input"_a, "convention"_a = py::none(), py::kw_only(), "immersion"_a = py::none(), "domain_extension"_a = py::none(),
+            "infinity_pixel"_a = py::none(), "altitude_encoding"_a = py::none(),
             R"doc(Create a tree of shapes using a complete topographic convention retained by the result.
 
 The default convention selects the canonical 4/8 complementary-grid immersion
 and publishes unchanged 8-bit source levels, so `node_altitudes` has dtype
 `np.uint8`. Declaring `TopographicAltitudeEncoding.EXACT_DOUBLED` publishes
-doubled units as `np.uint16` instead, which is the only encoding the self-dual
-span immersion admits.)doc")
+doubled units as `np.uint16` instead.
+
+The convention fields may be passed directly instead of building a
+`TopographicConvention`, which keeps short call sites short:
+
+    tree = factory.create_tree_of_shapes(
+        image,
+        immersion=mmcfilters.SelfDualSpanImmersion(),
+        domain_extension=mmcfilters.TopographicDomainExtension.NONE,
+        altitude_encoding=mmcfilters.TopographicAltitudeEncoding.UINT8,
+    )
+
+Passing both a complete convention and individual fields is rejected, so a
+call always has one unambiguous source of truth.)doc")
         .def_static(
             "create_from_native_topology",
             [](const std::vector<NodeId>& parent, const std::vector<NodeId>& smallestNodeMap, py::object nodeAltitudesInput, NodeId root,

@@ -153,6 +153,7 @@ ComplementaryGridImmersion = _native.ComplementaryGridImmersion
 TopographicDomainExtension = _native.TopographicDomainExtension
 TopographicAltitudeEncoding = _native.TopographicAltitudeEncoding
 TopographicConvention = _native.TopographicConvention
+self_dual_span_convention = _native.self_dual_span_convention
 RegularGridAdjacency2D = _native.RegularGridAdjacency2D
 RegularGridAdjacencyShape = _native.RegularGridAdjacencyShape
 AttributeFilters = _native.AttributeFilters
@@ -225,6 +226,7 @@ __all__ = [
     "TopographicDomainExtension",
     "TopographicAltitudeEncoding",
     "TopographicConvention",
+    "self_dual_span_convention",
     "RegularGridAdjacency2D",
     "RegularGridAdjacencyShape",
     "AttributeFilters",

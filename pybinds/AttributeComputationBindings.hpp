@@ -2,6 +2,7 @@
 
 #include "PythonValuedMorphologicalTree.hpp"
 #include "../mmcfilters/attributes/AttributeComputation.hpp"
+#include "../mmcfilters/attributes/AttributeRegistry.hpp"
 #include "../mmcfilters/trees/ValuedMorphologicalTree.hpp"
 #include "PybindConversions.hpp"
 
@@ -9,11 +10,13 @@
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
 #include <algorithm>
+#include <cctype>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -22,6 +25,131 @@
 namespace mmcfilters::pybindings::attribute_computation {
 
 namespace py = pybind11;
+
+/// @cond INTERNAL
+namespace detail {
+
+/** @brief Stable symbolic name of every public attribute group. @return Ordered name/group pairs. */
+inline const std::vector<std::pair<std::string, AttributeGroup>>& attributeGroupNames() {
+    static const std::vector<std::pair<std::string, AttributeGroup>> names = {
+        {"ALL", AttributeGroup::All},           {"GRAY_LEVEL", AttributeGroup::GrayLevel},
+        {"SHAPE", AttributeGroup::Shape},       {"MOMENTS", AttributeGroup::Moments},
+        {"BOUNDARY", AttributeGroup::Boundary}, {"TREE_TOPOLOGY", AttributeGroup::TreeTopology},
+    };
+    return names;
+}
+
+/** @brief Case-insensitive uppercase form used to suggest near matches. @param text Symbolic name. @return Uppercase form. */
+inline std::string upperCased(std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char character) { return static_cast<char>(std::toupper(character)); });
+    return text;
+}
+
+/**
+ * @brief Reports an unknown symbolic name together with the closest known names.
+ *
+ * @param name Rejected symbolic name.
+ * @param allowGroups Whether attribute-group names were also admissible.
+ */
+[[noreturn]] inline void reportUnknownAttributeName(const std::string& name, bool allowGroups) {
+    const std::string wanted = upperCased(name);
+    std::vector<std::string> suggestions;
+    for (const attributes::registry::AttributeMetadata& item : attributes::registry::ATTRIBUTE_METADATA) {
+        const std::string candidate(item.name);
+        if (upperCased(candidate) == wanted || candidate.find(wanted) != std::string::npos || wanted.find(candidate) != std::string::npos) {
+            suggestions.push_back(candidate);
+        }
+    }
+    if (allowGroups) {
+        for (const auto& [candidate, group] : attributeGroupNames()) {
+            static_cast<void>(group);
+            if (upperCased(candidate) == wanted) {
+                suggestions.push_back(candidate);
+            }
+        }
+    }
+
+    std::string message = "Unknown attribute name '" + name + "'.";
+    if (!suggestions.empty()) {
+        message += " Did you mean ";
+        for (std::size_t index = 0; index < suggestions.size() && index < 5; ++index) {
+            message += (index == 0 ? "'" : ", '") + suggestions[index] + "'";
+        }
+        message += "?";
+    } else {
+        message += " Names are the stable symbolic names, upper case, such as 'AREA' or 'BOUNDING_BOX_HEIGHT'.";
+    }
+    throw py::value_error(message);
+}
+
+} // namespace detail
+/// @endcond
+
+/**
+ * @brief Resolves one attribute given either an `Attribute` value or its symbolic name.
+ *
+ * Accepting the name keeps call sites short without introducing a second
+ * vocabulary: the accepted strings are exactly the stable symbolic names that
+ * the returned attribute layouts already use as keys.
+ *
+ * @param attribute `Attribute` value or `str`.
+ * @return The resolved attribute.
+ */
+[[nodiscard]] inline Attribute resolveAttribute(const py::object& attribute) {
+    if (py::isinstance<py::str>(attribute)) {
+        const auto name = attribute.cast<std::string>();
+        if (const std::optional<Attribute> parsed = attributes::registry::parse(name); parsed.has_value()) {
+            return *parsed;
+        }
+        detail::reportUnknownAttributeName(name, false);
+    }
+    try {
+        return attribute.cast<Attribute>();
+    } catch (const py::cast_error&) {
+        throw py::type_error("Expected an Attribute value or its symbolic name as str.");
+    }
+}
+
+/**
+ * @brief Resolves a sequence of attributes and groups given values or symbolic names.
+ *
+ * @param attributes Iterable of `Attribute`, `Attribute.Group`, or `str`.
+ * @return The resolved request sequence.
+ */
+[[nodiscard]] inline std::vector<AttributeOrGroup> resolveAttributeOrGroupList(const py::object& attributes) {
+    if (py::isinstance<py::str>(attributes)) {
+        throw py::type_error("Expected a sequence of attributes; pass a list such as ['AREA'] rather than a bare str.");
+    }
+    std::vector<AttributeOrGroup> resolved;
+    for (const py::handle item : attributes) {
+        const auto entry = py::reinterpret_borrow<py::object>(item);
+        if (py::isinstance<py::str>(entry)) {
+            const auto name = entry.cast<std::string>();
+            if (const std::optional<Attribute> parsed = attributes::registry::parse(name); parsed.has_value()) {
+                resolved.emplace_back(*parsed);
+                continue;
+            }
+            bool matchedGroup = false;
+            for (const auto& [candidate, group] : detail::attributeGroupNames()) {
+                if (candidate == name) {
+                    resolved.emplace_back(group);
+                    matchedGroup = true;
+                    break;
+                }
+            }
+            if (matchedGroup) {
+                continue;
+            }
+            detail::reportUnknownAttributeName(name, true);
+        }
+        try {
+            resolved.push_back(entry.cast<AttributeOrGroup>());
+        } catch (const py::cast_error&) {
+            throw py::type_error("Expected Attribute, Attribute.Group, or str entries in the attribute sequence.");
+        }
+    }
+    return resolved;
+}
 
 /**
  * @brief Conversion and dispatch functions used by the Python attribute API.

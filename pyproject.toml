@@ -2,7 +2,7 @@
 requires = [
   "scikit-build-core>=1.0",
   "setuptools-scm>=8",
-  "pybind11>=3.0.1",
+  "pybind11>=3.0.1,<4",
 ]
 build-backend = "scikit_build_core.build"
 
@@ -89,6 +89,7 @@ exclude = [
   "/build/**",
   "/dat/**",
   "/dist/**",
+  "/docs/refactoring/**",
   "/notebooks/**",
   "/python/mmcfilters/__pycache__/**",
   "/python/mmcfilters/**/*.py[cod]",

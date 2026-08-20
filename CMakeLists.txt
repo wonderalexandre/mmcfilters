@@ -20,6 +20,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(MMCFILTERS_BUILD_PYTHON "Build the pybind11 extension module" ON)
+option(MMCFILTERS_FETCH_PYBIND11 "Download a pinned pybind11 when no compatible local package is available" ON)
 option(MMCFILTERS_BUILD_TESTS "Build C++ test executables" OFF)
 option(MMCFILTERS_BUILD_EXAMPLES "Build example executables" OFF)
 option(MMCFILTERS_BUILD_BENCHMARKS "Build internal benchmark executables" OFF)

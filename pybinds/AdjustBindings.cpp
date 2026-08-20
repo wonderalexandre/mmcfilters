@@ -137,11 +137,15 @@ The input image must be a 2D C-contiguous `np.uint8` array. Thresholds passed to
             },
             "thresholds"_a, "Run the connected alternating sequential filter and return a 2D uint8 image.")
         .def_property_readonly(
-            "min_tree", [](adjust::CasfComponentTrees<std::uint8_t>& self) { return PythonValuedMorphologicalTree(self.minTree()); },
-            py::keep_alive<0, 1>(), "Internal min-tree maintained by the CASF.")
+            "min_tree",
+            py::cpp_function([](adjust::CasfComponentTrees<std::uint8_t>& self) { return PythonValuedMorphologicalTree(self.minTree()); },
+                             py::keep_alive<0, 1>()),
+            "Internal min-tree maintained by the CASF.")
         .def_property_readonly(
-            "max_tree", [](adjust::CasfComponentTrees<std::uint8_t>& self) { return PythonValuedMorphologicalTree(self.maxTree()); },
-            py::keep_alive<0, 1>(), "Internal max-tree maintained by the CASF.")
+            "max_tree",
+            py::cpp_function([](adjust::CasfComponentTrees<std::uint8_t>& self) { return PythonValuedMorphologicalTree(self.maxTree()); },
+                             py::keep_alive<0, 1>()),
+            "Internal max-tree maintained by the CASF.")
         .def_property_readonly("attribute", &adjust::CasfComponentTrees<std::uint8_t>::attribute, "CASF attribute used to evaluate thresholds.")
         .def("export_min_tree", &adjust::CasfComponentTrees<std::uint8_t>::exportMinTree,
              "Export the current min-tree as a compact Higra `(parent, altitude)` pair.")

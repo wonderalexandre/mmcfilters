@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import gc
 import importlib.util
 import pathlib
 import sys
@@ -514,6 +515,16 @@ def main() -> int:
     require(len(max_parent) == len(max_altitude), "CASF exported max-tree shape")
     require(casf.min_tree.reconstruct_from_node_altitudes().shape == image.shape, "CASF min_tree property")
     require(casf.max_tree.reconstruct_from_node_altitudes().shape == image.shape, "CASF max_tree property")
+
+    for property_name in ("min_tree", "max_tree"):
+        lifetime_owner = mmcfilters.CasfComponentTrees(image, mmcfilters.CasfComponentTreesAttribute.AREA)
+        borrowed_tree = getattr(lifetime_owner, property_name)
+        del lifetime_owner
+        gc.collect()
+        require(
+            borrowed_tree.reconstruct_from_node_altitudes().shape == image.shape,
+            f"CASF {property_name} property must keep its owner alive",
+        )
 
     bbox_casf = mmcfilters.CasfComponentTrees(image, mmcfilters.CasfComponentTreesAttribute.BOUNDING_BOX_DIAGONAL)
     require(bbox_casf.filter([2.0]).shape == image.shape, "CASF bounding-box path")

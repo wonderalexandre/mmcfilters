@@ -90,7 +90,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
      * @brief Decides whether altitude buckets can be represented by a dense array.
      *
      * MorphoTreeAdjust assumes an 8-bit non-negative altitude domain and uses one
-     * vector per possible level. In MAF, `std::uint8_t` can vary, so this helper
+     * vector per possible level. In mmcfilters, `std::uint8_t` can vary, so this helper
      * keeps that dense backend only for small integral domains and falls back to a
      * sparse map for wider or non-integral altitude types.
      *

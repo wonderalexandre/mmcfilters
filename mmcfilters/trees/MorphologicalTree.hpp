@@ -1349,7 +1349,7 @@ class MorphologicalTree {
     virtual ~MorphologicalTree() = default;
 
     /**
-     * @brief Tag-protected import from native MAF topology buffers.
+     * @brief Tag-protected import from native mmcfilters topology buffers.
      *
      * This path is used by builders that already materialize internal-node
      * parent links and a row-major smallest-node map. Nodes are not required to

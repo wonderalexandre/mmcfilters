@@ -1,3 +1,13 @@
+set(MMCFILTERS_STB_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb/stb_image.cpp)
+
+# stb is vendored third-party code. Keep platform deprecation diagnostics out
+# of project builds without weakening warnings for mmcfilters sources.
+if(MSVC)
+    set_source_files_properties(${MMCFILTERS_STB_SOURCE} PROPERTIES COMPILE_OPTIONS "/wd4996")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    set_source_files_properties(${MMCFILTERS_STB_SOURCE} PROPERTIES COMPILE_OPTIONS "-Wno-deprecated-declarations")
+endif()
+
 add_executable(mmcfilters_tree_validation_benchmark
     ${CMAKE_CURRENT_SOURCE_DIR}/tree_validation_benchmark.cpp
 )
@@ -8,12 +18,12 @@ add_executable(mmcfilters_adjacency_iteration_benchmark
 
 add_executable(mmcfilters_min_max_residual_tree_benchmark
     ${CMAKE_CURRENT_SOURCE_DIR}/min_max_residual_tree_benchmark.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb/stb_image.cpp
+    ${MMCFILTERS_STB_SOURCE}
 )
 
 add_executable(mmcfilters_tree_construction_comparison_benchmark
     ${CMAKE_CURRENT_SOURCE_DIR}/tree_construction_comparison_benchmark.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb/stb_image.cpp
+    ${MMCFILTERS_STB_SOURCE}
 )
 
 add_executable(mmcfilters_scientific_pipeline_benchmark
@@ -71,10 +81,10 @@ foreach(target IN ITEMS
 endforeach()
 
 target_include_directories(mmcfilters_min_max_residual_tree_benchmark
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb)
+    SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb)
 
 target_include_directories(mmcfilters_tree_construction_comparison_benchmark
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb)
+    SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb)
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/tree_validation_benchmark.cpp

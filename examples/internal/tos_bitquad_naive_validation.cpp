@@ -24,7 +24,6 @@
 #include <string>
 #include <vector>
 
-namespace maf = mmcfilters;
 namespace bitquad_detail = mmcfilters::attributes::computers::detail;
 
 namespace {
@@ -71,8 +70,8 @@ LoadedImage loadImage(const std::filesystem::path& path) {
     return image;
 }
 
-maf::ImageUInt8Ptr makeImage(int rows, int columns, std::span<const std::uint8_t> values) {
-    auto image = maf::ImageUInt8::create(rows, columns);
+mmcfilters::ImageUInt8Ptr makeImage(int rows, int columns, std::span<const std::uint8_t> values) {
+    auto image = mmcfilters::ImageUInt8::create(rows, columns);
     for (int i = 0; i < rows * columns; ++i) {
         (*image)[i] = values[static_cast<std::size_t>(i)];
     }
@@ -81,15 +80,17 @@ maf::ImageUInt8Ptr makeImage(int rows, int columns, std::span<const std::uint8_t
 
 enum class ExampleImmersion { SelfDualSpan, Min4Max8, Min8Max4 };
 
-maf::TopographicConvention makeConvention(ExampleImmersion immersion, int rows, int columns) {
+mmcfilters::TopographicConvention makeConvention(ExampleImmersion immersion, int rows, int columns) {
     if (immersion == ExampleImmersion::SelfDualSpan) {
-        return maf::selfDualSpanConvention();
+        return mmcfilters::selfDualSpanConvention();
     }
     const bool minIs4 = immersion == ExampleImmersion::Min4Max8;
-    return maf::TopographicConvention{
-        maf::ComplementaryGridImmersion{maf::ComplementaryAdjacencies{maf::RegularGridAdjacency2D(rows, columns, minIs4 ? 1.0 : 1.5),
-                                                                     maf::RegularGridAdjacency2D(rows, columns, minIs4 ? 1.5 : 1.0)}},
-        maf::TopographicDomainExtension::ExteriorRing, maf::PixelId{0}, maf::TopographicAltitudeEncoding::ExactDoubled};
+    return mmcfilters::TopographicConvention{
+        mmcfilters::ComplementaryGridImmersion{mmcfilters::ComplementaryAdjacencies{
+            mmcfilters::RegularGridAdjacency2D(rows, columns, minIs4 ? 1.0 : 1.5),
+            mmcfilters::RegularGridAdjacency2D(rows, columns, minIs4 ? 1.5 : 1.0)}},
+        mmcfilters::TopographicDomainExtension::ExteriorRing, mmcfilters::PixelId{0},
+        mmcfilters::TopographicAltitudeEncoding::ExactDoubled};
 }
 
 const char* immersionName(ExampleImmersion immersion) {
@@ -104,7 +105,7 @@ const char* immersionName(ExampleImmersion immersion) {
     return "unknown";
 }
 
-std::vector<Histogram> naiveSupportBitquadHistograms(const maf::MorphologicalTree& tree) {
+std::vector<Histogram> naiveSupportBitquadHistograms(const mmcfilters::MorphologicalTree& tree) {
     const int rows = tree.numRows();
     const int columns = tree.numColumns();
     const std::array<std::pair<int, int>, 4> offsets = {{
@@ -117,7 +118,7 @@ std::vector<Histogram> naiveSupportBitquadHistograms(const maf::MorphologicalTre
     std::vector<Histogram> histograms(static_cast<std::size_t>(tree.numInternalNodeSlots()));
 
     std::vector<std::uint8_t> stateByNode(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0);
-    std::vector<maf::NodeId> touchedNodes;
+    std::vector<mmcfilters::NodeId> touchedNodes;
     touchedNodes.reserve(128);
 
     for (int row = -1; row < rows; ++row) {
@@ -130,9 +131,9 @@ std::vector<Histogram> naiveSupportBitquadHistograms(const maf::MorphologicalTre
                     continue;
                 }
 
-                const int q = maf::ImageUtils::to1D(qRow, qColumn, columns);
-                for (maf::NodeId nodeId = tree.smallestNode(q); nodeId != maf::InvalidNode;
-                     nodeId = tree.isRoot(nodeId) ? maf::InvalidNode : tree.parent(nodeId)) {
+                const int q = mmcfilters::ImageUtils::to1D(qRow, qColumn, columns);
+                for (mmcfilters::NodeId nodeId = tree.smallestNode(q); nodeId != mmcfilters::InvalidNode;
+                     nodeId = tree.isRoot(nodeId) ? mmcfilters::InvalidNode : tree.parent(nodeId)) {
                     auto& state = stateByNode[static_cast<std::size_t>(nodeId)];
                     if (state == 0) {
                         touchedNodes.push_back(nodeId);
@@ -141,7 +142,7 @@ std::vector<Histogram> naiveSupportBitquadHistograms(const maf::MorphologicalTre
                 }
             }
 
-            for (maf::NodeId nodeId : touchedNodes) {
+            for (mmcfilters::NodeId nodeId : touchedNodes) {
                 auto& state = stateByNode[static_cast<std::size_t>(nodeId)];
                 histograms[static_cast<std::size_t>(nodeId)].count(state) += 1;
                 state = 0;
@@ -150,7 +151,7 @@ std::vector<Histogram> naiveSupportBitquadHistograms(const maf::MorphologicalTre
     }
 
     const int totalCells = (rows + 1) * (columns + 1);
-    for (maf::NodeId nodeId : tree.aliveNodeIds()) {
+    for (mmcfilters::NodeId nodeId : tree.aliveNodeIds()) {
         Histogram& histogram = histograms[static_cast<std::size_t>(nodeId)];
         int nonEmpty = 0;
         for (std::uint8_t state = 1; state < 16; ++state) {
@@ -162,10 +163,11 @@ std::vector<Histogram> naiveSupportBitquadHistograms(const maf::MorphologicalTre
     return histograms;
 }
 
-Summary compareHistograms(const maf::MorphologicalTree& tree, std::span<const Histogram> actual, std::span<const Histogram> expected, const char* label) {
+Summary compareHistograms(const mmcfilters::MorphologicalTree& tree, std::span<const Histogram> actual,
+                          std::span<const Histogram> expected, const char* label) {
     Summary summary;
     int printed = 0;
-    for (maf::NodeId nodeId : tree.aliveNodeIds()) {
+    for (mmcfilters::NodeId nodeId : tree.aliveNodeIds()) {
         bool nodeDiffers = false;
         for (std::size_t state = 0; state < 16; ++state) {
             const int diff = actual[static_cast<std::size_t>(nodeId)].count(static_cast<std::uint8_t>(state)) -
@@ -206,10 +208,11 @@ std::array<int, 5> familyValues(const Families& families) {
     }};
 }
 
-FamilySummary compareFamilies(const maf::MorphologicalTree& tree, std::span<const Families> actual, std::span<const Families> expected, const char* label) {
+FamilySummary compareFamilies(const mmcfilters::MorphologicalTree& tree, std::span<const Families> actual,
+                              std::span<const Families> expected, const char* label) {
     FamilySummary summary;
     int printed = 0;
-    for (maf::NodeId nodeId : tree.aliveNodeIds()) {
+    for (mmcfilters::NodeId nodeId : tree.aliveNodeIds()) {
         const auto a = familyValues(actual[static_cast<std::size_t>(nodeId)]);
         const auto e = familyValues(expected[static_cast<std::size_t>(nodeId)]);
         bool nodeDiffers = false;
@@ -235,12 +238,12 @@ FamilySummary compareFamilies(const maf::MorphologicalTree& tree, std::span<cons
     return summary;
 }
 
-FamilySummary compareProjectedFamilies(const maf::MorphologicalTree& tree, std::span<const Families> projected, std::span<const Families> nodeExpected,
-                                       const char* label) {
+FamilySummary compareProjectedFamilies(const mmcfilters::MorphologicalTree& tree, std::span<const Families> projected,
+                                       std::span<const Families> nodeExpected, const char* label) {
     FamilySummary summary;
     int printed = 0;
-    for (maf::PixelId pixel = 0; pixel < tree.numPixels(); ++pixel) {
-        const maf::NodeId smallestNodeId = tree.smallestNode(pixel);
+    for (mmcfilters::PixelId pixel = 0; pixel < tree.numPixels(); ++pixel) {
+        const mmcfilters::NodeId smallestNodeId = tree.smallestNode(pixel);
         const auto a = familyValues(projected[static_cast<std::size_t>(pixel)]);
         const auto e = familyValues(nodeExpected[static_cast<std::size_t>(smallestNodeId)]);
         bool differs = false;
@@ -275,8 +278,9 @@ void printSummary(const char* name, const FamilySummary& summary) {
 }
 
 bool compareOne(const std::filesystem::path& imagePath, int rows, int columns, std::span<const std::uint8_t> pixels, ExampleImmersion immersion) {
-    auto valuedTree = maf::MorphologicalTreeFactory::createTreeOfShapes<maf::ToSGrayLevel>(makeImage(rows, columns, pixels), makeConvention(immersion, rows, columns));
-    const maf::MorphologicalTree& tree = valuedTree.topology();
+    auto valuedTree = mmcfilters::MorphologicalTreeFactory::createTreeOfShapes<mmcfilters::ToSGrayLevel>(
+        makeImage(rows, columns, pixels), makeConvention(immersion, rows, columns));
+    const mmcfilters::MorphologicalTree& tree = valuedTree.topology();
 
     const auto naiveHistograms = naiveSupportBitquadHistograms(tree);
     const auto naiveFamilies = bitquad_detail::BitquadFiniteWindowComputation::computeBitquadFamilyCounts(naiveHistograms);

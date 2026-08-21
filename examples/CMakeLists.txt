@@ -1,5 +1,14 @@
 set(MMCFILTERS_EXAMPLES_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
 set(MMCFILTERS_INTERNAL_EXAMPLES_ROOT ${MMCFILTERS_EXAMPLES_ROOT}/internal)
+set(MMCFILTERS_STB_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb/stb_image.cpp)
+
+# stb is vendored third-party code. Keep platform deprecation diagnostics out
+# of project builds without weakening warnings for mmcfilters sources.
+if(MSVC)
+    set_source_files_properties(${MMCFILTERS_STB_SOURCE} PROPERTIES COMPILE_OPTIONS "/wd4996")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    set_source_files_properties(${MMCFILTERS_STB_SOURCE} PROPERTIES COMPILE_OPTIONS "-Wno-deprecated-declarations")
+endif()
 
 function(mmcfilters_configure_example target)
     target_link_libraries(${target} PRIVATE mmcfilters::core)
@@ -9,14 +18,14 @@ endfunction()
 
 function(mmcfilters_configure_stb_example target)
     mmcfilters_configure_example(${target})
-    target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb)
+    target_include_directories(${target} SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb)
 endfunction()
 
 # Internal examples may include detail headers to exercise/debug implementation
 # kernels directly; public examples should stay on stable headers.
 add_executable(mmcfilters_internal_edt_dift
     ${MMCFILTERS_INTERNAL_EXAMPLES_ROOT}/edt_dift_example.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb/stb_image.cpp
+    ${MMCFILTERS_STB_SOURCE}
 )
 
 add_executable(mmcfilters_example_editing_api
@@ -25,32 +34,32 @@ add_executable(mmcfilters_example_editing_api
 
 add_executable(mmcfilters_contour_benchmark
     ${MMCFILTERS_EXAMPLES_ROOT}/contour_benchmark.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb/stb_image.cpp
+    ${MMCFILTERS_STB_SOURCE}
 )
 
 add_executable(mmcfilters_contour_trace_benchmark
     ${MMCFILTERS_EXAMPLES_ROOT}/contour_trace_benchmark.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb/stb_image.cpp
+    ${MMCFILTERS_STB_SOURCE}
 )
 
 add_executable(mmcfilters_contour_trace_profile
     ${MMCFILTERS_INTERNAL_EXAMPLES_ROOT}/contour_trace_profile.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb/stb_image.cpp
+    ${MMCFILTERS_STB_SOURCE}
 )
 
 add_executable(mmcfilters_finite_window_bitquad_benchmark
     ${MMCFILTERS_INTERNAL_EXAMPLES_ROOT}/finite_window_bitquad_benchmark.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb/stb_image.cpp
+    ${MMCFILTERS_STB_SOURCE}
 )
 
 add_executable(mmcfilters_tos_bitquad_projection_export
     ${MMCFILTERS_INTERNAL_EXAMPLES_ROOT}/tos_bitquad_projection_export.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb/stb_image.cpp
+    ${MMCFILTERS_STB_SOURCE}
 )
 
 add_executable(mmcfilters_tos_bitquad_naive_validation
     ${MMCFILTERS_INTERNAL_EXAMPLES_ROOT}/tos_bitquad_naive_validation.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb/stb_image.cpp
+    ${MMCFILTERS_STB_SOURCE}
 )
 
 add_executable(mmcfilters_maxdist_benchmark

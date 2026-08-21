@@ -118,7 +118,6 @@ reconstructed_image = tree.reconstruct_from_node_altitudes()
 | Use the Python interface | [Python API](https://wonderalexandre.github.io/mmcfilters/md_docs_2python-api.html) |
 | Compute attributes | [Attributes](https://wonderalexandre.github.io/mmcfilters/md_docs_2attributes.html) |
 | Apply filtering and hierarchy operators | [Filters](https://wonderalexandre.github.io/mmcfilters/md_docs_2filters.html) |
-| Compute hierarchy and shape-space saliency | [Saliency maps](https://wonderalexandre.github.io/mmcfilters/md_docs_2saliency.html) |
 | Edit a tree safely | [Editing API](https://wonderalexandre.github.io/mmcfilters/md_docs_2editing-api.html) |
 | Extract pixel contours or geometric traces | [Pixel contours](https://wonderalexandre.github.io/mmcfilters/md_docs_2contours.html) and [contour traces](https://wonderalexandre.github.io/mmcfilters/md_docs_2contour-traces.html) |
 | Import from or export to Higra | [Higra interoperability](https://wonderalexandre.github.io/mmcfilters/md_docs_2higra-interoperability.html) |

@@ -8,7 +8,7 @@ This directory documents the experiments for *Unifying Local Attribute Computati
 - experiment-code commit: `c587d870802355766abb825aa4a9948e0f24e110`;
 - MorphoTree reference commit: `da32cf7666a774c25d11dc0200a63ebb3f1fe574`.
 
-[`reference-results/`](../../../benchmarks/sibgrapi2026/reference-results/) contains the complete campaign used by the camera-ready paper: 5,400 timed measurements from 100 images, three resolutions, three hierarchies, two methods, and exactly three repetitions. Its manifest records `dirty: false`, base release `v4.3.0`, no exact tag at measurement time, all 13 compiled MorphoTree source hashes, and the runner hash.
+[`reference-results/`](../../benchmarks/sibgrapi2026/reference-results/) contains the complete campaign used by the camera-ready paper: 5,400 timed measurements from 100 images, three resolutions, three hierarchies, two methods, and exactly three repetitions. Its manifest records `dirty: false`, base release `v4.3.0`, no exact tag at measurement time, all 13 compiled MorphoTree source hashes, and the runner hash.
 
 ## Implementation map
 
@@ -16,15 +16,15 @@ The paper implementation is not confined to the benchmark directory. Its generic
 
 | Paper role | Implementation |
 |---|---|
-| Localization of a translated sample on an anchor branch through the inclusion join/LCA | [`ConnectedSubsetTreeLocalizer.hpp`](../../../mmcfilters/localAttributes/ConnectedSubsetTreeLocalizer.hpp) |
-| Finite observation windows, visibility states, event deltas, node-local increments, final node attributes, and the decision/algebra concepts | [`LocalEventModel.hpp`](../../../mmcfilters/localAttributes/LocalEventModel.hpp) |
-| Compilation of local state changes into hierarchy-attached event deltas and dense increments | [`FiniteWindowLocalEventCompiler.hpp`](../../../mmcfilters/localAttributes/FiniteWindowLocalEventCompiler.hpp) |
-| Generic bottom-up aggregation and the complete finite-window API shared by component trees and trees of shapes | [`FiniteWindowLocalAttributeComputer.hpp`](../../../mmcfilters/localAttributes/FiniteWindowLocalAttributeComputer.hpp) |
-| Canonical `2x2` bitquad windows, ownership rule, local decisions, event algebra, signed increments, and aggregated `Q1/Q2/QD/Q3/Q4` counts | [`BitquadFiniteWindowComputation.hpp`](../../../mmcfilters/attributes/computers/detail/BitquadFiniteWindowComputation.hpp) |
-| Canonical bitquad state/family types and lookup convention | [`BitquadAttributeData.hpp`](../../../mmcfilters/attributes/computers/detail/BitquadAttributeData.hpp) |
-| Connectivity and lower/upper shape policy used when converting family counts to scalar descriptors | [`BitquadConnectivityPolicy.hpp`](../../../mmcfilters/attributes/computers/detail/BitquadConnectivityPolicy.hpp) and [`BitquadAttributeProjection.hpp`](../../../mmcfilters/attributes/computers/detail/BitquadAttributeProjection.hpp) |
-| Adapter that exposes the implementation through the built-in `BITQUAD_*` attributes | [`BitquadAttributeComputer.hpp`](../../../mmcfilters/attributes/computers/BitquadAttributeComputer.hpp) |
-| Public attribute metadata and backend dispatch | [`AttributeRegistry.hpp`](../../../mmcfilters/attributes/AttributeRegistry.hpp) and [`TopologyAttributeBackend.hpp`](../../../mmcfilters/attributes/detail/TopologyAttributeBackend.hpp) |
+| Localization of a translated sample on an anchor branch through the inclusion join/LCA | [`ConnectedSubsetTreeLocalizer.hpp`](../../mmcfilters/localAttributes/ConnectedSubsetTreeLocalizer.hpp) |
+| Finite observation windows, visibility states, event deltas, node-local increments, final node attributes, and the decision/algebra concepts | [`LocalEventModel.hpp`](../../mmcfilters/localAttributes/LocalEventModel.hpp) |
+| Compilation of local state changes into hierarchy-attached event deltas and dense increments | [`FiniteWindowLocalEventCompiler.hpp`](../../mmcfilters/localAttributes/FiniteWindowLocalEventCompiler.hpp) |
+| Generic bottom-up aggregation and the complete finite-window API shared by component trees and trees of shapes | [`FiniteWindowLocalAttributeComputer.hpp`](../../mmcfilters/localAttributes/FiniteWindowLocalAttributeComputer.hpp) |
+| Canonical `2x2` bitquad windows, ownership rule, local decisions, event algebra, signed increments, and aggregated `Q1/Q2/QD/Q3/Q4` counts | [`BitquadFiniteWindowComputation.hpp`](../../mmcfilters/attributes/computers/detail/BitquadFiniteWindowComputation.hpp) |
+| Canonical bitquad state/family types and lookup convention | [`BitquadAttributeData.hpp`](../../mmcfilters/attributes/computers/detail/BitquadAttributeData.hpp) |
+| Connectivity and lower/upper shape policy used when converting family counts to scalar descriptors | [`BitquadConnectivityPolicy.hpp`](../../mmcfilters/attributes/computers/detail/BitquadConnectivityPolicy.hpp) and [`BitquadAttributeProjection.hpp`](../../mmcfilters/attributes/computers/detail/BitquadAttributeProjection.hpp) |
+| Adapter that exposes the implementation through the built-in `BITQUAD_*` attributes | [`BitquadAttributeComputer.hpp`](../../mmcfilters/attributes/computers/BitquadAttributeComputer.hpp) |
+| Public attribute metadata and backend dispatch | [`AttributeRegistry.hpp`](../../mmcfilters/attributes/AttributeRegistry.hpp) and [`TopologyAttributeBackend.hpp`](../../mmcfilters/attributes/detail/TopologyAttributeBackend.hpp) |
 
 The principal implementation path is therefore:
 
@@ -37,19 +37,19 @@ BitquadAttributeComputer
   -> BitquadAttributeProjection
 ```
 
-The detailed mathematical-to-C++ correspondence, data invariants, complexity, and extension example are documented in the [finite-window local-attribute guide](../../finite-window-local-attributes.md).
+The detailed mathematical-to-C++ correspondence, data invariants, complexity, and extension example are documented in the [finite-window local-attribute guide](../finite-window-local-attributes.md).
 
 ## Validation and experiment code
 
-The permanent library tests are in [`test_finite_window_local_attribute_computations.cpp`](../../../unit-tests/attributes/test_finite_window_local_attribute_computations.cpp). They cover the generic event pipeline, randomized comparison with a direct implementation, canonical bitquad states, component trees, and both complementary-connectivity conventions for trees of shapes.
+The permanent library tests are in [`test_finite_window_local_attribute_computations.cpp`](../../unit-tests/attributes/test_finite_window_local_attribute_computations.cpp). They cover the generic event pipeline, randomized comparison with a direct implementation, canonical bitquad states, component trees, and both complementary-connectivity conventions for trees of shapes.
 
-The paper-specific code is under [`benchmarks/sibgrapi2026/`](../../../benchmarks/sibgrapi2026/):
+The paper-specific code is under [`benchmarks/sibgrapi2026/`](../../benchmarks/sibgrapi2026/):
 
-- [`bitquad_exactness_validation.cpp`](../../../benchmarks/sibgrapi2026/bitquad_exactness_validation.cpp) validates the proposed computation against a direct exhaustive scan;
-- [`bitquad_benchmark.cpp`](../../../benchmarks/sibgrapi2026/bitquad_benchmark.cpp) measures the proposed method and the two paper baselines;
-- [`run_experiment.py`](../../../benchmarks/sibgrapi2026/run_experiment.py) validates inputs and provenance and executes the fixed protocol;
-- [`analyze_results.py`](../../../benchmarks/sibgrapi2026/analyze_results.py) validates the raw measurements and generates the camera-ready table;
-- [`benchmarks/CMakeLists.txt`](../../../benchmarks/CMakeLists.txt) defines the exactness target and the optional target that compiles the unmodified reference [5,6] snapshot.
+- [`bitquad_exactness_validation.cpp`](../../benchmarks/sibgrapi2026/bitquad_exactness_validation.cpp) validates the proposed computation against a direct exhaustive scan;
+- [`bitquad_benchmark.cpp`](../../benchmarks/sibgrapi2026/bitquad_benchmark.cpp) measures the proposed method and the two paper baselines;
+- [`run_experiment.py`](../../benchmarks/sibgrapi2026/run_experiment.py) validates inputs and provenance and executes the fixed protocol;
+- [`analyze_results.py`](../../benchmarks/sibgrapi2026/analyze_results.py) validates the raw measurements and generates the camera-ready table;
+- [`benchmarks/CMakeLists.txt`](../../benchmarks/CMakeLists.txt) defines the exactness target and the optional target that compiles the unmodified reference [5,6] snapshot.
 
 For max-trees and min-trees, the comparison baseline is the specialized component-tree bitquad algorithm of Silva et al. [6]. For the tree of shapes, it is the original public implementation of da Silva et al. [5].
 
@@ -135,7 +135,7 @@ The mmcfilters checkout must descend from `v4.3.0` and must be clean. The output
 
 ## Camera-ready benchmark results
 
-The camera-ready table comes from [`reference-results/table.tex`](../../../benchmarks/sibgrapi2026/reference-results/table.tex). The values below are mean warm attribute-API times over 100 images, in milliseconds. Each image mean contains exactly three timed repetitions. Tree construction, topology import, and decision-table loading are excluded.
+The camera-ready table comes from [`reference-results/table.tex`](../../benchmarks/sibgrapi2026/reference-results/table.tex). The values below are mean warm attribute-API times over 100 images, in milliseconds. Each image mean contains exactly three timed repetitions. Tree construction, topology import, and decision-table loading are excluded.
 
 | Tree | Method | `853 x 480` | `1280 x 720` | `1920 x 1080` |
 |---|---|---:|---:|---:|

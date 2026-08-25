@@ -18,28 +18,17 @@
  * The design focuses on memory reuse and locality during the post-order passes
  * used to extract and aggregate contour pixels.
  *
- * 1. PendingPixelLists
- *    A lightweight transient store keeps per-node pixel lists inside one
- *    contiguous buffer. It avoids repeated heap allocation while contour pixels
- *    are inserted, forwarded to ancestors, and removed.
+ * 1. Boundary-lifetime extraction
+ *    Every pixel contributes one contour-birth event at its smallest owner and,
+ *    when it becomes interior, one stop event at the LCA of the owners in its
+ *    four-neighbourhood. The same semantic event source is consumed by the
+ *    incremental contour and max-distance implementations.
  *
- * 2. recycle() and consumeInto()
- *    Removed contour pixels do not normally reappear during the same pass, yet
- *    other nodes still need fresh slots. Without recycling, every `add()` call
- *    would keep extending `entries` and memory usage would scale with the
- *    total number of list operations rather than with the simultaneous peak.
- *    `consumeInto()` drains a list, forwards the values to a temporary
- *    container, and returns the slots to the free list through `recycle()`.
+ * 2. Compact event storage
+ *    Birth/stop events are copied into a CSR-like delta store
+ *    (`ContourDeltaStore`) so materialization remains cache-friendly.
  *
- * 3. extractCompactContours()
- *    The incremental traversal first records local contour additions and
- *    removals in transient pixel lists. These lists are compacted into a CSR-like
- *    delta store (`ContourDeltaStore`) before the result is returned. A
- *    temporary list store, `pendingContourRemovals`, stores pixels that must be
- *    removed at some ancestor, typically the lowest common ancestor of two
- *    incomparable nodes.
- *
- * 4. Aggregation phase
+ * 3. Aggregation phase
  *    `ensureSubtreeMaterialized()` performs a second post-order pass on
  *    demand. It accumulates local contour pixels, applies deferred removals,
  *    and removes duplicates using generation-marked scratch storage.
@@ -53,16 +42,12 @@
  */
 
 #include "../utils/Common.hpp"
-#include "../localAttributes/FiniteWindowLocalAttributeComputer.hpp"
 #include "../trees/MorphologicalTree.hpp"
 #include "../trees/ValuedMorphologicalTreeView.hpp"
-#include "../trees/detail/CommittedTreeAccess.hpp"
 #include "../trees/detail/TreeTraversalDetail.hpp"
-#include "../utils/CommittedGridAccess.hpp"
 #include "../utils/Contract.hpp"
-#include "../utils/RegularGridAdjacency2D.hpp"
-#include "detail/PendingPixelLists.hpp"
 #include "detail/ContourDeltaStore.hpp"
+#include "detail/MorphologicalTreeBoundaryLifetimeIndex.hpp"
 
 namespace mmcfilters {
 
@@ -83,66 +68,10 @@ struct ExtractedContourDeltas {
  * @return Extracted deltas and capacity hint.
  */
 inline ExtractedContourDeltas extractContourDeltas(const MorphologicalTree& tree) {
-    const int numNodes = tree.numInternalNodeSlots();
-    const GridDomain2D& domain = CommittedTreeAccess::gridDomain2D(tree);
-    const int totalPixels = domain.rows * domain.columns;
+    const int totalPixels = tree.numPixels();
     const int capacityHint = std::max(totalPixels / 4, 1);
-
-    PendingPixelLists localContourPixels(numNodes, capacityHint);
-    PendingPixelLists localRemovalPixels(numNodes, capacityHint);
-    PendingPixelLists pendingContourRemovals(numNodes, capacityHint);
-    std::vector<int> neighborCount(static_cast<std::size_t>(totalPixels), 0);
-    std::vector<PixelId> removalBuffer;
-    removalBuffer.reserve(64);
-    RegularGridAdjacency2D adjacency = CommittedGridAccess::radiusAdjacency(domain.rows, domain.columns, ContourSideAdjacencyRadius);
-
-    traversePostOrder(
-        tree, tree.root(), [](NodeId) {}, [](NodeId, NodeId) {},
-        [&](NodeId node) {
-            removalBuffer.clear();
-            pendingContourRemovals.consumeInto(node, removalBuffer);
-            for (PixelId pixel : removalBuffer) {
-                bool removePixel = true;
-                for (PixelId neighbor : CommittedGridAccess::neighbors(adjacency, pixel)) {
-                    const NodeId entry = local_attributes::detail::kernel::anchoredEntry(tree, pixel, neighbor);
-                    if (entry != node && CommittedTreeAccess::isAncestor(tree, entry, node)) {
-                        pendingContourRemovals.add(entry, pixel);
-                        removePixel = false;
-                    }
-                }
-                if (!CommittedGridAccess::isBoundary(adjacency, pixel) && removePixel) {
-                    localRemovalPixels.add(node, pixel);
-                }
-            }
-
-            for (PixelId pixel : CommittedTreeAccess::properParts(tree, node)) {
-                if (CommittedGridAccess::isBoundary(adjacency, pixel)) {
-                    ++neighborCount[static_cast<std::size_t>(pixel)];
-                }
-
-                for (PixelId neighbor : CommittedGridAccess::neighbors(adjacency, pixel)) {
-                    const NodeId neighborOwner = CommittedTreeAccess::smallestNodeMap(tree, neighbor);
-                    const NodeId entry = local_attributes::detail::kernel::anchoredEntry(tree, pixel, neighbor);
-                    if (entry != node) {
-                        ++neighborCount[static_cast<std::size_t>(pixel)];
-                        if (entry != neighborOwner) {
-                            pendingContourRemovals.add(entry, pixel);
-                        }
-                    } else if (node != neighborOwner && CommittedTreeAccess::isAncestor(tree, node, neighborOwner)) {
-                        --neighborCount[static_cast<std::size_t>(neighbor)];
-                        if (neighborCount[static_cast<std::size_t>(neighbor)] == 0) {
-                            localRemovalPixels.add(node, neighbor);
-                        }
-                    }
-                }
-
-                if (neighborCount[static_cast<std::size_t>(pixel)] > 0) {
-                    localContourPixels.add(node, pixel);
-                }
-            }
-        });
-
-    return {ContourDeltaStore::fromPendingPixelLists(localContourPixels, localRemovalPixels, totalPixels), capacityHint};
+    const contours::detail::MorphologicalTreeBoundaryLifetimeIndex events(tree);
+    return {ContourDeltaStore::fromEventSource(tree, events), capacityHint};
 }
 
 /**
@@ -169,8 +98,6 @@ class ContoursComputedIncrementally {
     using LocalContourDeltas = detail::ContourDeltaStore;
 
   private:
-    /** @brief Defines the `PendingPixelLists` alias used by the component. */
-    using PendingPixelLists = detail::PendingPixelLists;
     /** @brief Defines the `ContourDeltaStore` alias used by the component. */
     using ContourDeltaStore = LocalContourDeltas;
 

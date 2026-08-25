@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PendingPixelLists.hpp"
+#include "../../trees/MorphologicalTree.hpp"
 
 namespace mmcfilters::detail {
 
@@ -96,7 +97,42 @@ struct ContourDeltaStore {
         return store;
     }
 
+    /**
+     * @brief Copies one semantic contour-event source into compact persistent storage.
+     *
+     * The event source must expose `numAdditions()`, `numRemovals()`,
+     * `additions(node)`, and `removals(node)`. This keeps contour
+     * materialization independent from the algorithm used to derive boundary
+     * lifetimes.
+     *
+     * @param tree Tree whose live nodes index the event source.
+     * @param events Semantic contour birth/stop events.
+     * @return Compact per-node additions and removals.
+     */
+    template <typename EventSource>
+    static ContourDeltaStore fromEventSource(const MorphologicalTree& tree, const EventSource& events) {
+        ContourDeltaStore store(tree.numInternalNodeSlots());
+        store.addValues.reserve(events.numAdditions());
+        store.removeValues.reserve(events.numRemovals());
+
+        for (NodeId node = 0; node < tree.numInternalNodeSlots(); ++node) {
+            if (!tree.isAlive(node)) {
+                continue;
+            }
+            store.appendSpan(events.additions(node), store.addValues, store.addSpans[static_cast<std::size_t>(node)]);
+            store.appendSpan(events.removals(node), store.removeValues, store.removeSpans[static_cast<std::size_t>(node)]);
+        }
+        return store;
+    }
+
   private:
+    /** @brief Appends one already-compacted event span. */
+    static void appendSpan(std::span<const PixelId> source, std::vector<PixelId>& values, Span& span) {
+        span.offset = checkedU32(values.size(), "contour event offset");
+        values.insert(values.end(), source.begin(), source.end());
+        span.size = checkedU32(source.size(), "contour event size");
+    }
+
     /**
      * @brief Appends one node contribution to the compact delta storage.
      *

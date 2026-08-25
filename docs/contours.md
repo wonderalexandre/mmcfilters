@@ -89,9 +89,11 @@ Let:
 - `C(S)` be the number of contour-pixel values committed while materializing
   `S`.
 
-With valid tree-query caches, extraction is `O(N + P)`. A cold tree may first
-pay linear ancestry preprocessing and, when queries for the lowest common
-ancestor (LCA) are required, `O(N log N)` preprocessing.
+Lifetime extraction performs an iterative offline LCA pass in
+`O((P + N) alpha(N))` time and `O(P + N)` memory, where `alpha` is the inverse
+Ackermann function. It deliberately does not build the tree's persistent
+`O(N log N)` Euler/RMQ LCA cache. Copying lifetime events into the compact
+contour store is `O(P + N)` and does not change this bound.
 
 The public upper bound for first materialization of `S` is
 `O(M(S) + C(S) + P)`. The tighter output-sensitive form replaces `P` with the

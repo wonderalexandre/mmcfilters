@@ -92,6 +92,7 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/contours/ContourTraceComputation.hpp
     ${MMCFILTERS_ROOT}/contours/ContoursComputedIncrementally.hpp
     ${MMCFILTERS_ROOT}/contours/detail/ContourDeltaStore.hpp
+    ${MMCFILTERS_ROOT}/contours/detail/MorphologicalTreeBoundaryLifetimeIndex.hpp
     ${MMCFILTERS_ROOT}/contours/detail/ContourTraceDeltaStore.hpp
     ${MMCFILTERS_ROOT}/contours/detail/PendingPixelLists.hpp
     ${MMCFILTERS_ROOT}/dataStructure/FastQueue.hpp

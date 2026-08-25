@@ -122,6 +122,10 @@ reconstructed_image = tree.reconstruct_from_node_altitudes()
 | Extract pixel contours or geometric traces | [Pixel contours](https://wonderalexandre.github.io/mmcfilters/md_docs_2contours.html) and [contour traces](https://wonderalexandre.github.io/mmcfilters/md_docs_2contour-traces.html) |
 | Import from or export to Higra | [Higra interoperability](https://wonderalexandre.github.io/mmcfilters/md_docs_2higra-interoperability.html) |
 
+### Reproducibility
+
+- [SIBGRAPI 2026 — Unifying Local Attribute Computation on Component Trees and the Tree of Shapes](docs/reproducibility/SIBGRAPI2026/README.md)
+
 ### References
 
 - [Attribute catalog](https://wonderalexandre.github.io/mmcfilters/md_docs_2attribute-catalog.html)

@@ -1,0 +1,3 @@
+# Python's csv module emits RFC-compatible CRLF records. Treat the carriage
+# return as part of the line terminator for archived SIBGRAPI CSV artifacts.
+benchmarks/sibgrapi2026/reference-results/*.csv whitespace=trailing-space,space-before-tab,cr-at-eol

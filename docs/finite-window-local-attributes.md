@@ -34,7 +34,7 @@ anchored entry is the first node on that branch whose support contains \(q\).
 With \(A=P(p)\) and \(S=P(q)\), all three cases have the uniform expression
 
 \f[
-E^p(q)=A\vee S=\operatorname{LCA}(A,S).
+E^p(q)=A\vee S=\mathrm{LCA}(A,S).
 \f]
 
 The LCA case is part of the generic connected-subset-tree formulation. In the
@@ -215,3 +215,7 @@ The generic finite-window layer is currently a C++ extension API. Python users
 consume its built-in attribute results through `Attribute`; generic
 finite-window decisions, event deltas, increments, and node attributes are not
 exposed as Python objects.
+
+The paper implementation map, exactness validation, fixed timing protocol, and
+archived camera-ready campaign are documented in the
+[SIBGRAPI 2026 reproducibility artifact](reproducibility/SIBGRAPI2026/README.md).

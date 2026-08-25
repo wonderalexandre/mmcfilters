@@ -1,0 +1,23 @@
+\begin{table}[t]
+\caption{Mean warm attribute-API time (ms) over 100 images. Tree construction, topology import, and decision-table loading are excluded.}
+\label{tab:bitquad-runtime}
+\centering
+\setlength{\tabcolsep}{3.2pt}
+\renewcommand{\arraystretch}{1.05}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}llrrr@{}}
+\toprule
+Tree & Method & $853{\times}480$ & $1280{\times}720$ & $1920{\times}1080$ \\
+\midrule
+Max-tree & Ours & 43.33 & 95.60 & 226.53 \\
+ & Silva et al.~\cite{silva2020incremental} & \textbf{41.60} & \textbf{87.09} & \textbf{215.13} \\
+\addlinespace
+Min-tree & Ours & 43.24 & 94.82 & 223.69 \\
+ & Silva et al.~\cite{silva2020incremental} & \textbf{41.02} & \textbf{85.74} & \textbf{211.36} \\
+\addlinespace
+ToS & Ours & \textbf{49.62} & \textbf{103.62} & \textbf{266.53} \\
+ & da Silva et al.~\cite{dasilva2019incremental} (original) & 603.59 & 1338.33 & 3077.76 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}

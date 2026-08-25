@@ -1,0 +1,10 @@
+resolution,hierarchy,baseline,ratio_of_means_baseline_over_proposed,mean_per_image_ratio,sd_per_image_ratio,proposed_time_difference_percent
+480p,max_tree,ref6,0.960177,0.962101,0.049761,4.147509
+480p,min_tree,ref6,0.948686,0.951032,0.053203,5.408971
+480p,tree_of_shapes,ref5_original,12.163077,12.333248,1.245964,-91.778396
+720p,max_tree,ref6,0.911003,0.913967,0.057932,9.769093
+720p,min_tree,ref6,0.904229,0.906662,0.050595,10.591508
+720p,tree_of_shapes,ref5_original,12.915430,13.089872,1.338701,-92.257323
+1080p,max_tree,ref6,0.949655,0.954138,0.072378,5.301447
+1080p,min_tree,ref6,0.944864,0.948024,0.051058,5.835306
+1080p,tree_of_shapes,ref5_original,11.547380,12.034755,1.763247,-91.340027

@@ -34,7 +34,7 @@ anchored entry is the first node on that branch whose support contains \(q\).
 With \(A=P(p)\) and \(S=P(q)\), all three cases have the uniform expression
 
 \f[
-E^p(q)=A\vee S=\operatorname{LCA}(A,S).
+E^p(q)=A\vee S=\mathrm{LCA}(A,S).
 \f]
 
 The LCA case is part of the generic connected-subset-tree formulation. In the

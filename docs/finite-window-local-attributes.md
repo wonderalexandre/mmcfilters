@@ -215,3 +215,7 @@ The generic finite-window layer is currently a C++ extension API. Python users
 consume its built-in attribute results through `Attribute`; generic
 finite-window decisions, event deltas, increments, and node attributes are not
 exposed as Python objects.
+
+The paper implementation map, exactness validation, fixed timing protocol, and
+archived camera-ready campaign are documented in the
+[SIBGRAPI 2026 reproducibility artifact](reproducibility/SIBGRAPI2026/README.md).

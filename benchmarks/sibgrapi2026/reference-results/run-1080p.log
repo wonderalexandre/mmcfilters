@@ -1,0 +1,202 @@
+command=<RUNNER> --image-dir <DATASET_1080P> --resolution 1080p --output raw-1080p.csv --dt-max-8c <MORPHOTREE>/resource/quads/dt-max-tree-8c.dat --dt-min-8c <MORPHOTREE>/resource/quads/dt-min-tree-8c.dat --start 0 --count 100
+begin resolution=1080p image=val_000.png size=1920x1080
+done resolution=1080p image=val_000.png
+begin resolution=1080p image=val_001.png size=1920x1080
+done resolution=1080p image=val_001.png
+begin resolution=1080p image=val_002.png size=1920x1080
+done resolution=1080p image=val_002.png
+begin resolution=1080p image=val_003.png size=1920x1080
+done resolution=1080p image=val_003.png
+begin resolution=1080p image=val_004.png size=1920x1080
+done resolution=1080p image=val_004.png
+begin resolution=1080p image=val_005.png size=1920x1080
+done resolution=1080p image=val_005.png
+begin resolution=1080p image=val_006.png size=1920x1080
+done resolution=1080p image=val_006.png
+begin resolution=1080p image=val_007.png size=1920x1080
+done resolution=1080p image=val_007.png
+begin resolution=1080p image=val_008.png size=1920x1080
+done resolution=1080p image=val_008.png
+begin resolution=1080p image=val_009.png size=1920x1080
+done resolution=1080p image=val_009.png
+begin resolution=1080p image=val_010.png size=1920x1080
+done resolution=1080p image=val_010.png
+begin resolution=1080p image=val_011.png size=1920x1080
+done resolution=1080p image=val_011.png
+begin resolution=1080p image=val_012.png size=1920x1080
+done resolution=1080p image=val_012.png
+begin resolution=1080p image=val_013.png size=1920x1080
+done resolution=1080p image=val_013.png
+begin resolution=1080p image=val_014.png size=1920x1080
+done resolution=1080p image=val_014.png
+begin resolution=1080p image=val_015.png size=1920x1080
+done resolution=1080p image=val_015.png
+begin resolution=1080p image=val_016.png size=1920x1080
+done resolution=1080p image=val_016.png
+begin resolution=1080p image=val_017.png size=1920x1080
+done resolution=1080p image=val_017.png
+begin resolution=1080p image=val_018.png size=1920x1080
+done resolution=1080p image=val_018.png
+begin resolution=1080p image=val_019.png size=1920x1080
+done resolution=1080p image=val_019.png
+begin resolution=1080p image=val_020.png size=1920x1080
+done resolution=1080p image=val_020.png
+begin resolution=1080p image=val_021.png size=1920x1080
+done resolution=1080p image=val_021.png
+begin resolution=1080p image=val_022.png size=1920x1080
+done resolution=1080p image=val_022.png
+begin resolution=1080p image=val_023.png size=1920x1080
+done resolution=1080p image=val_023.png
+begin resolution=1080p image=val_024.png size=1920x1080
+done resolution=1080p image=val_024.png
+begin resolution=1080p image=val_025.png size=1920x1080
+done resolution=1080p image=val_025.png
+begin resolution=1080p image=val_026.png size=1920x1080
+done resolution=1080p image=val_026.png
+begin resolution=1080p image=val_027.png size=1920x1080
+done resolution=1080p image=val_027.png
+begin resolution=1080p image=val_028.png size=1920x1080
+done resolution=1080p image=val_028.png
+begin resolution=1080p image=val_029.png size=1920x1080
+done resolution=1080p image=val_029.png
+begin resolution=1080p image=val_030.png size=1920x1080
+done resolution=1080p image=val_030.png
+begin resolution=1080p image=val_031.png size=1920x1080
+done resolution=1080p image=val_031.png
+begin resolution=1080p image=val_032.png size=1920x1080
+done resolution=1080p image=val_032.png
+begin resolution=1080p image=val_033.png size=1920x1080
+done resolution=1080p image=val_033.png
+begin resolution=1080p image=val_034.png size=1920x1080
+done resolution=1080p image=val_034.png
+begin resolution=1080p image=val_035.png size=1920x1080
+done resolution=1080p image=val_035.png
+begin resolution=1080p image=val_036.png size=1920x1080
+done resolution=1080p image=val_036.png
+begin resolution=1080p image=val_037.png size=1920x1080
+done resolution=1080p image=val_037.png
+begin resolution=1080p image=val_038.png size=1920x1080
+done resolution=1080p image=val_038.png
+begin resolution=1080p image=val_039.png size=1920x1080
+done resolution=1080p image=val_039.png
+begin resolution=1080p image=val_040.png size=1920x1080
+done resolution=1080p image=val_040.png
+begin resolution=1080p image=val_041.png size=1920x1080
+done resolution=1080p image=val_041.png
+begin resolution=1080p image=val_042.png size=1920x1080
+done resolution=1080p image=val_042.png
+begin resolution=1080p image=val_043.png size=1920x1080
+done resolution=1080p image=val_043.png
+begin resolution=1080p image=val_044.png size=1920x1080
+done resolution=1080p image=val_044.png
+begin resolution=1080p image=val_045.png size=1920x1080
+done resolution=1080p image=val_045.png
+begin resolution=1080p image=val_046.png size=1920x1080
+done resolution=1080p image=val_046.png
+begin resolution=1080p image=val_047.png size=1920x1080
+done resolution=1080p image=val_047.png
+begin resolution=1080p image=val_048.png size=1920x1080
+done resolution=1080p image=val_048.png
+begin resolution=1080p image=val_049.png size=1920x1080
+done resolution=1080p image=val_049.png
+begin resolution=1080p image=val_050.png size=1920x1080
+done resolution=1080p image=val_050.png
+begin resolution=1080p image=val_051.png size=1920x1080
+done resolution=1080p image=val_051.png
+begin resolution=1080p image=val_052.png size=1920x1080
+done resolution=1080p image=val_052.png
+begin resolution=1080p image=val_053.png size=1920x1080
+done resolution=1080p image=val_053.png
+begin resolution=1080p image=val_054.png size=1920x1080
+done resolution=1080p image=val_054.png
+begin resolution=1080p image=val_055.png size=1920x1080
+done resolution=1080p image=val_055.png
+begin resolution=1080p image=val_056.png size=1920x1080
+done resolution=1080p image=val_056.png
+begin resolution=1080p image=val_057.png size=1920x1080
+done resolution=1080p image=val_057.png
+begin resolution=1080p image=val_058.png size=1920x1080
+done resolution=1080p image=val_058.png
+begin resolution=1080p image=val_059.png size=1920x1080
+done resolution=1080p image=val_059.png
+begin resolution=1080p image=val_060.png size=1920x1080
+done resolution=1080p image=val_060.png
+begin resolution=1080p image=val_061.png size=1920x1080
+done resolution=1080p image=val_061.png
+begin resolution=1080p image=val_062.png size=1920x1080
+done resolution=1080p image=val_062.png
+begin resolution=1080p image=val_063.png size=1920x1080
+done resolution=1080p image=val_063.png
+begin resolution=1080p image=val_064.png size=1920x1080
+done resolution=1080p image=val_064.png
+begin resolution=1080p image=val_065.png size=1920x1080
+done resolution=1080p image=val_065.png
+begin resolution=1080p image=val_066.png size=1920x1080
+done resolution=1080p image=val_066.png
+begin resolution=1080p image=val_067.png size=1920x1080
+done resolution=1080p image=val_067.png
+begin resolution=1080p image=val_068.png size=1920x1080
+done resolution=1080p image=val_068.png
+begin resolution=1080p image=val_069.png size=1920x1080
+done resolution=1080p image=val_069.png
+begin resolution=1080p image=val_070.png size=1920x1080
+done resolution=1080p image=val_070.png
+begin resolution=1080p image=val_071.png size=1920x1080
+done resolution=1080p image=val_071.png
+begin resolution=1080p image=val_072.png size=1920x1080
+done resolution=1080p image=val_072.png
+begin resolution=1080p image=val_073.png size=1920x1080
+done resolution=1080p image=val_073.png
+begin resolution=1080p image=val_074.png size=1920x1080
+done resolution=1080p image=val_074.png
+begin resolution=1080p image=val_075.png size=1920x1080
+done resolution=1080p image=val_075.png
+begin resolution=1080p image=val_076.png size=1920x1080
+done resolution=1080p image=val_076.png
+begin resolution=1080p image=val_077.png size=1920x1080
+done resolution=1080p image=val_077.png
+begin resolution=1080p image=val_078.png size=1920x1080
+done resolution=1080p image=val_078.png
+begin resolution=1080p image=val_079.png size=1920x1080
+done resolution=1080p image=val_079.png
+begin resolution=1080p image=val_080.png size=1920x1080
+done resolution=1080p image=val_080.png
+begin resolution=1080p image=val_081.png size=1920x1080
+done resolution=1080p image=val_081.png
+begin resolution=1080p image=val_082.png size=1920x1080
+done resolution=1080p image=val_082.png
+begin resolution=1080p image=val_083.png size=1920x1080
+done resolution=1080p image=val_083.png
+begin resolution=1080p image=val_084.png size=1920x1080
+done resolution=1080p image=val_084.png
+begin resolution=1080p image=val_085.png size=1920x1080
+done resolution=1080p image=val_085.png
+begin resolution=1080p image=val_086.png size=1920x1080
+done resolution=1080p image=val_086.png
+begin resolution=1080p image=val_087.png size=1920x1080
+done resolution=1080p image=val_087.png
+begin resolution=1080p image=val_088.png size=1920x1080
+done resolution=1080p image=val_088.png
+begin resolution=1080p image=val_089.png size=1920x1080
+done resolution=1080p image=val_089.png
+begin resolution=1080p image=val_090.png size=1920x1080
+done resolution=1080p image=val_090.png
+begin resolution=1080p image=val_091.png size=1920x1080
+done resolution=1080p image=val_091.png
+begin resolution=1080p image=val_092.png size=1920x1080
+done resolution=1080p image=val_092.png
+begin resolution=1080p image=val_093.png size=1920x1080
+done resolution=1080p image=val_093.png
+begin resolution=1080p image=val_094.png size=1920x1080
+done resolution=1080p image=val_094.png
+begin resolution=1080p image=val_095.png size=1920x1080
+done resolution=1080p image=val_095.png
+begin resolution=1080p image=val_096.png size=1920x1080
+done resolution=1080p image=val_096.png
+begin resolution=1080p image=val_097.png size=1920x1080
+done resolution=1080p image=val_097.png
+begin resolution=1080p image=val_098.png size=1920x1080
+done resolution=1080p image=val_098.png
+begin resolution=1080p image=val_099.png size=1920x1080
+done resolution=1080p image=val_099.png
+repetitions=3 sink=0

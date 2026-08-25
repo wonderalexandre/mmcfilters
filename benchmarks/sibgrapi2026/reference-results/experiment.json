@@ -1,0 +1,104 @@
+{
+  "schema": "mmcfilters.sibgrapi2026.experiment.v2",
+  "created_utc": "2026-08-25T11:03:35.948617+00:00",
+  "paper": "Unifying Local Attribute Computation on Component Trees and the Tree of Shapes",
+  "protocol": {
+    "images": 100,
+    "first_image_index": 0,
+    "untimed_warmups_per_method_and_image": 1,
+    "timed_repetitions_per_method_and_image": 3,
+    "paired_order": "deterministic alternating order",
+    "timed_scope": "attribute API only",
+    "resampling": "none"
+  },
+  "mmcfilters": {
+    "commit": "c587d870802355766abb825aa4a9948e0f24e110",
+    "dirty": false,
+    "base_release": "v4.3.0",
+    "exact_tag": null
+  },
+  "morphotree_reference": {
+    "repository": "https://github.com/dennisjosesilva/morphotree",
+    "commit": "da32cf7666a774c25d11dc0200a63ebb3f1fe574",
+    "paper_references": [
+      "5",
+      "6"
+    ],
+    "source_policy": "compiled from the unmodified source files",
+    "source_files_sha256": {
+      "include/morphotree/adjacency/adjacency8c.hpp": "572d20aa9e489909a8e6bf2994d2d474784867a520540422baf965815fdd32c6",
+      "include/morphotree/attributes/bitquads/quadCountComputer.hpp": "4c49c5d64be35c014e51df00e0b91dea9e6e6fe819fd595293a2548d87afcda4",
+      "include/morphotree/attributes/bitquads/quadCountTreeOfShapesComputer.hpp": "9c8e4fab70da2595461f4bb41fcd1f4535e46c521af1b8e82fc44f6ae418068c",
+      "include/morphotree/tree/treeOfShapes/kgrid.hpp": "0c0d36826a9d094fac04b2969f670880d9693a30f78173336d5c78dac85d7021",
+      "include/morphotree/tree/treeOfShapes/order_image.hpp": "058c616410c45bc7019c1c83c39463a53b70b57d49fe50f3e5ce29c19fe592fa",
+      "include/morphotree/tree/treeOfShapes/tos.hpp": "2bf82e7d9fab8c980da45320b53ad47174d926f0a551c8f673d6b1a1038fb453",
+      "src/adjacency/adjacency8c.cpp": "bc889fd2c6fb2c2e0630d2482c3b9c5d242c7def3796fbcdd65c4873ec3d236b",
+      "src/adjacency/adjacencyuc.cpp": "7714cfcd08c0dbdb2cd30d619cd9de00d63df0d687867c695938a7912f0f013c",
+      "src/attributes/bitquads/quads.cpp": "cc5f37194e0bfa0895e71e68a074d97df4b6833a9327627b4a21bc1c2d1b01ea",
+      "src/attributes/bitquads/quadCountTreeOfShapesComputer.cpp": "f97aa6cbd8dbaeac01e89ae4dcb66c211df129f6124a177ae0750f126f3020f0",
+      "src/core/box.cpp": "e41928ef7ef30614691e3a3aa2bc6ebcda65bb4010faf4c741805c883837b08d",
+      "resource/quads/dt-max-tree-8c.dat": "ef98a5f4fc9e8a8a240d85c2acef7e83d458bfce2841340e81b7be2a8e6fb627",
+      "resource/quads/dt-min-tree-8c.dat": "2bcdb09bd6ff5f036059e4c1b2f2da8118a0602aa3437050b11cfe7c6cd7cf53"
+    }
+  },
+  "runner_sha256": "bf84d2ae2aa27c2e05dce2e24db0d7851919be777ac795ca0e60a89625b8ac04",
+  "environment": {
+    "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "processor": "arm",
+    "python": "3.13.3"
+  },
+  "commands": [
+    [
+      "<RUNNER>",
+      "--image-dir",
+      "<DATASET_480P>",
+      "--resolution",
+      "480p",
+      "--output",
+      "raw-480p.csv",
+      "--dt-max-8c",
+      "<MORPHOTREE>/resource/quads/dt-max-tree-8c.dat",
+      "--dt-min-8c",
+      "<MORPHOTREE>/resource/quads/dt-min-tree-8c.dat",
+      "--start",
+      "0",
+      "--count",
+      "100"
+    ],
+    [
+      "<RUNNER>",
+      "--image-dir",
+      "<DATASET_720P>",
+      "--resolution",
+      "720p",
+      "--output",
+      "raw-720p.csv",
+      "--dt-max-8c",
+      "<MORPHOTREE>/resource/quads/dt-max-tree-8c.dat",
+      "--dt-min-8c",
+      "<MORPHOTREE>/resource/quads/dt-min-tree-8c.dat",
+      "--start",
+      "0",
+      "--count",
+      "100"
+    ],
+    [
+      "<RUNNER>",
+      "--image-dir",
+      "<DATASET_1080P>",
+      "--resolution",
+      "1080p",
+      "--output",
+      "raw-1080p.csv",
+      "--dt-max-8c",
+      "<MORPHOTREE>/resource/quads/dt-max-tree-8c.dat",
+      "--dt-min-8c",
+      "<MORPHOTREE>/resource/quads/dt-min-tree-8c.dat",
+      "--start",
+      "0",
+      "--count",
+      "100"
+    ]
+  ]
+}

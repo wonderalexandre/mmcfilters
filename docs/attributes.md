@@ -291,5 +291,6 @@ API mode:
   and input contracts.
 - [Attribute computer architecture](attribute-computer-architecture.md):
   contributor guide for adding or changing attribute computers.
-- [Finite-window local attributes](finite-window-local-attributes.md):
-  observation windows, anchored entries, visibility states, and additive local rules.
+- [Finite-window local-attribute C++ extension](finite-window-local-attributes.md):
+  C++ extension contract for observation windows, anchored entries, visibility
+  states, local decisions, and event algebras.

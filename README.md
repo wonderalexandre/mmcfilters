@@ -130,6 +130,7 @@ reconstructed_image = tree.reconstruct_from_node_altitudes()
 ### Contributor guides
 
 - [Attribute computer architecture](https://wonderalexandre.github.io/mmcfilters/md_docs_2attribute-computer-architecture.html)
+- [Finite-window local-attribute C++ extension](https://wonderalexandre.github.io/mmcfilters/md_docs_2finite-window-local-attributes.html)
 - [Scientific benchmark builds](https://wonderalexandre.github.io/mmcfilters/md_docs_2scientific-benchmark-builds.html)
 
 ## License

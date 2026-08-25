@@ -1,6 +1,6 @@
-# Finite-window local attributes
+# Finite-window local-attribute C++ extension
 
-This document defines the public structural contract implemented by
+This contributor guide defines the public C++ extension contract implemented by
 `FiniteWindowLocalAttributeComputer`. The computation applies to a
 `MorphologicalTree` over a finite two-dimensional image domain. It is shared by
 component trees and trees of shapes; the public algorithm does not select a
@@ -91,7 +91,7 @@ The public generic C++ pipeline separates three roles:
 1. `computeEventDeltas(tree, anchorPixel, window, decision, algebra)` returns one
    `EventDelta<Value>` for each distinct anchored entry of that anchor. Its
    fields identify the `anchorPixel`, the `anchoredEntry`, and the signed
-   local-rule difference `value`. The first difference is measured from the
+   decision difference `value`. The first difference is measured from the
    additive identity; later differences compare consecutive visibility states.
 2. `computeLocalAttributeIncrements(tree, window, decision, algebra)` sums the event deltas
    from every anchor into one `LocalAttributeIncrement<Value>` per dense node
@@ -108,12 +108,12 @@ dense node increments. It reuses fixed-capacity scratch storage bounded by the
 ordered-entry sequences, or event-delta vectors per pixel. The internal dense
 buffer stores only additive values while the computation is running; node
 identifiers are materialized only in public normative result records. Concrete
-multi-anchor rules, including bitquad rules, accumulate every anchor position
-directly into one dense buffer instead of constructing and combining one full
-temporary buffer per position. The four canonical bitquad windows and the
-canonical contour-side window are immutable internal objects constructed once
-and reused by subsequent computations. The explicit
-`computeEventDeltas` operation still materializes and returns the normative
+computations with multiple anchor positions, including bitquad computations,
+accumulate every anchor position directly into one dense buffer instead of
+constructing and combining one full temporary buffer per position. The four
+canonical bitquad windows and the canonical contour-side window are immutable
+internal objects constructed once and reused by subsequent computations. The
+explicit `computeEventDeltas` operation still materializes and returns the normative
 records when a caller requests that stage. Concrete bitquad and contour-side
 storage remains an attribute-computer detail.
 
@@ -212,6 +212,6 @@ int rootValue = nodeAttributes[tree.root()].value;
 ```
 
 The generic finite-window layer is currently a C++ extension API. Python users
-consume its built-in attribute results through `Attribute`; generic local-rule,
-event-delta, increment, and node-attribute records are not exposed as Python
-objects.
+consume its built-in attribute results through `Attribute`; generic
+finite-window decisions, event deltas, increments, and node attributes are not
+exposed as Python objects.

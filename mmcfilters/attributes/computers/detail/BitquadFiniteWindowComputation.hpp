@@ -21,6 +21,7 @@ namespace kernel {
 
 /** @brief Pure local decision for signed bitquad-family contributions. */
 struct BitquadFamilyLocalDecision {
+    /** @brief Signed contribution type produced by the local decision. */
     using Value = BitquadFamilyIncrement;
 
     std::size_t anchorPosition = 0; ///< Row-major position that owns the current framed cell.
@@ -60,6 +61,7 @@ struct BitquadFamilyLocalDecision {
     }
 
   private:
+    /** @brief Tests whether this anchor position owns a canonical state. @param code Canonical four-bit state. @return True when this rule owns the state. */
     [[nodiscard]] bool ownsState(BitquadCode code) const {
         const std::uint32_t anchorMask = std::uint32_t{1} << anchorPosition;
         return (code & anchorMask) != 0 && (code & (anchorMask - std::uint32_t{1})) == 0;
@@ -68,10 +70,13 @@ struct BitquadFamilyLocalDecision {
 
 /** @brief Additive algebra for signed bitquad-family events. */
 struct BitquadFamilyEventAlgebra {
+    /** @brief Signed bitquad-family value combined by the algebra. */
     using Value = BitquadFamilyIncrement;
 
+    /** @brief Returns the neutral additive value. @return Zero-initialized family increment. */
     [[nodiscard]] Value additiveIdentity() const { return {}; }
 
+    /** @brief Adds one family increment. @param target Value to update. @param source Value to add. */
     void addAssign(Value& target, const Value& source) const {
         target.q1 += source.q1;
         target.q2 += source.q2;
@@ -93,6 +98,7 @@ struct BitquadFamilyEventAlgebra {
 
 /** @brief Pure local decision for signed nonempty-state histogram contributions. */
 struct NonemptyBitquadStateHistogramLocalDecision {
+    /** @brief Signed histogram contribution produced by the local decision. */
     using Value = NonemptyBitquadStateHistogramIncrement;
 
     std::size_t anchorPosition = 0; ///< Row-major position that owns the current framed cell.
@@ -111,6 +117,7 @@ struct NonemptyBitquadStateHistogramLocalDecision {
     }
 
   private:
+    /** @brief Tests whether this anchor position owns a canonical state. @param code Canonical four-bit state. @return True when this rule owns the state. */
     [[nodiscard]] bool ownsState(BitquadCode code) const {
         const std::uint32_t anchorMask = std::uint32_t{1} << anchorPosition;
         return (code & anchorMask) != 0 && (code & (anchorMask - std::uint32_t{1})) == 0;
@@ -119,10 +126,13 @@ struct NonemptyBitquadStateHistogramLocalDecision {
 
 /** @brief Additive algebra for signed nonempty-state histogram events. */
 struct NonemptyBitquadStateHistogramEventAlgebra {
+    /** @brief Signed histogram value combined by the algebra. */
     using Value = NonemptyBitquadStateHistogramIncrement;
 
+    /** @brief Returns the neutral additive value. @return Zero-initialized histogram increment. */
     [[nodiscard]] Value additiveIdentity() const { return {}; }
 
+    /** @brief Adds one histogram increment. @param target Value to update. @param source Value to add. */
     void addAssign(Value& target, const Value& source) const {
         for (std::size_t index = 0; index < target.bins.size(); ++index) {
             target.bins[index] += source.bins[index];

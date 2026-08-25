@@ -38,8 +38,10 @@ struct ContourSideLocalDecision {
 
 /** @brief Additive algebra for directional contour-side events. */
 struct ContourSideEventAlgebra {
+    /** @brief Directional contour-side value combined by the algebra. */
     using Value = ContourSideCounts;
 
+    /** @brief Returns the neutral additive value. @return Zero-initialized contour-side counts. */
     [[nodiscard]] Value additiveIdentity() const { return {}; }
 
     /** @brief Adds one group value. @param target Value to update. @param source Value to add. */

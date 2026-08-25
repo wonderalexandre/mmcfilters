@@ -126,7 +126,12 @@ struct ContourDeltaStore {
     }
 
   private:
-    /** @brief Appends one already-compacted event span. */
+    /**
+     * @brief Appends one already-compacted event span.
+     * @param source Pixel identifiers to append.
+     * @param values Compact destination storage.
+     * @param span Span metadata written for the appended range.
+     */
     static void appendSpan(std::span<const PixelId> source, std::vector<PixelId>& values, Span& span) {
         span.offset = checkedU32(values.size(), "contour event offset");
         values.insert(values.end(), source.begin(), source.end());

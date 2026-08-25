@@ -55,6 +55,7 @@ class ObservationWindow {
     [[nodiscard]] auto end() const noexcept { return offsets_.end(); }
 
   private:
+    /** @brief Verifies the finite-window size, uniqueness, and anchor invariants. */
     void validate() const {
         if (offsets_.empty()) {
             throw std::invalid_argument("ObservationWindow requires at least one offset.");
@@ -79,7 +80,7 @@ class ObservationWindow {
         }
     }
 
-    std::vector<WindowOffset> offsets_;
+    std::vector<WindowOffset> offsets_; ///< Ordered coordinates of the observation window.
 };
 
 /** @brief Binary sample-visibility vector encoded in observation-window order. */
@@ -130,13 +131,19 @@ class BinaryVisibilityState {
     friend bool operator==(const BinaryVisibilityState& lhs, const BinaryVisibilityState& rhs) = default;
 
   private:
+    /** @brief Tag that restricts unchecked construction to trusted internal access. */
     struct UncheckedConstructionTag {};
 
+    /**
+     * @brief Builds a state after its invariants have been established internally.
+     * @param bits Visible-coordinate bit mask.
+     * @param coordinateCount Number of valid low-order coordinates.
+     */
     BinaryVisibilityState(UncheckedConstructionTag, std::uint32_t bits, std::size_t coordinateCount) noexcept
         : bits_(bits), coordinateCount_(coordinateCount) {}
 
-    std::uint32_t bits_ = 0;
-    std::size_t coordinateCount_ = 0;
+    std::uint32_t bits_ = 0;             ///< Visible-coordinate bit mask.
+    std::size_t coordinateCount_ = 0;    ///< Number of meaningful low-order bits.
 
     friend struct detail::BinaryVisibilityStateAccess;
 };
@@ -166,8 +173,8 @@ class AnchoredEntryMap {
     [[nodiscard]] std::span<const std::optional<NodeId>> entries() const noexcept { return entries_; }
 
   private:
-    PixelId anchorPixel_ = InvalidPixel;
-    std::vector<std::optional<NodeId>> entries_;
+    PixelId anchorPixel_ = InvalidPixel;                 ///< Row-major anchor identifier.
+    std::vector<std::optional<NodeId>> entries_;         ///< Anchored entry for each observation coordinate.
 };
 
 using AnchorBranch = std::vector<NodeId>;

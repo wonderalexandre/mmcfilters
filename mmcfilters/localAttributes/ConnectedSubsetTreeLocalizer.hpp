@@ -131,10 +131,11 @@ class ConnectedSubsetTreeLocalizer {
     }
 
   private:
+    /** @brief Rejects queries after the captured tree has mutated. */
     void requireStableTree() const { tree_.requireMutationVersion(mutationVersion_, "ConnectedSubsetTreeLocalizer"); }
 
-    const MorphologicalTree& tree_;
-    std::size_t mutationVersion_ = 0;
+    const MorphologicalTree& tree_;       ///< Captured connected-subset tree.
+    std::size_t mutationVersion_ = 0;     ///< Mutation version captured at construction.
 };
 
 } // namespace mmcfilters::local_attributes

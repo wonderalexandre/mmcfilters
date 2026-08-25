@@ -22,10 +22,10 @@ namespace mmcfilters::contours::detail {
  * every support that contains it.
  */
 struct BoundaryLifetime {
-    NodeId owner = InvalidNode;
-    NodeId stopExclusive = InvalidNode;
+    NodeId owner = InvalidNode;         ///< Inclusion-smallest owner where the lifetime starts.
+    NodeId stopExclusive = InvalidNode; ///< First ancestor support where the pixel is no longer on the boundary.
 
-    /** @brief Tests whether the pixel is a contour site in at least one node. */
+    /** @brief Tests whether the pixel is a contour site in at least one node. @return True when the lifetime contains at least one node. */
     [[nodiscard]] bool active() const noexcept { return owner != stopExclusive; }
 };
 
@@ -45,7 +45,7 @@ class MorphologicalTreeBoundaryLifetimeIndex {
     MorphologicalTreeBoundaryLifetimeIndex(MorphologicalTreeBoundaryLifetimeIndex&&) = delete;
     MorphologicalTreeBoundaryLifetimeIndex& operator=(MorphologicalTreeBoundaryLifetimeIndex&&) = delete;
 
-    /** @brief Builds all lifetimes and compact start/stop event lists. */
+    /** @brief Builds all lifetimes and compact start/stop event lists. @param tree Stable tree with a two-dimensional grid domain. */
     explicit MorphologicalTreeBoundaryLifetimeIndex(const MorphologicalTree& tree)
         : tree_(tree), mutationVersion_(tree.getMutationVersion()), domain_(requireDomain(tree)), lifetimes_(static_cast<std::size_t>(tree.numPixels())),
           preOrderIndices_(static_cast<std::size_t>(tree.numInternalNodeSlots()), -1),
@@ -135,7 +135,7 @@ class MorphologicalTreeBoundaryLifetimeIndex {
         tree_.requireMutationVersion(mutationVersion_, "MorphologicalTreeBoundaryLifetimeIndex construction");
     }
 
-    /** @brief Returns the captured lifetime of a valid domain pixel. */
+    /** @brief Returns the captured lifetime of a valid domain pixel. @param pixel Valid row-major pixel identifier. @return Captured boundary lifetime. */
     [[nodiscard]] const BoundaryLifetime& lifetime(PixelId pixel) const {
         requireStableTree();
         if (!tree_.isPixel(pixel)) {
@@ -144,19 +144,19 @@ class MorphologicalTreeBoundaryLifetimeIndex {
         return lifetimes_[static_cast<std::size_t>(pixel)];
     }
 
-    /** @brief Returns pixels whose contour lifetime starts at one live node. */
+    /** @brief Returns pixels whose contour lifetime starts at one live node. @param node Live start-event node. @return Borrowed span of pixel identifiers. */
     [[nodiscard]] std::span<const PixelId> additions(NodeId node) const {
         requireLiveNode(node);
         return eventSpan(additionPixels_, additionOffsets_, node);
     }
 
-    /** @brief Returns pixels whose contour lifetime stops before one live node. */
+    /** @brief Returns pixels whose contour lifetime stops before one live node. @param node Live stop-event node. @return Borrowed span of pixel identifiers. */
     [[nodiscard]] std::span<const PixelId> removals(NodeId node) const {
         requireLiveNode(node);
         return eventSpan(removalPixels_, removalOffsets_, node);
     }
 
-    /** @brief Tests the exact contour predicate for one pixel and live node. */
+    /** @brief Tests the exact contour predicate for one pixel and live node. @param pixel Valid row-major pixel identifier. @param node Live support node. @return True when the pixel belongs to the node boundary. */
     [[nodiscard]] bool isBoundaryAt(PixelId pixel, NodeId node) const {
         requireLiveNode(node);
         const BoundaryLifetime& value = lifetime(pixel);
@@ -169,13 +169,13 @@ class MorphologicalTreeBoundaryLifetimeIndex {
         return value.stopExclusive != node && isAncestorInCapturedHierarchy(value.stopExclusive, node);
     }
 
-    /** @brief Returns the number of active-lifetime start events. */
+    /** @brief Returns the number of active-lifetime start events. @return Number of stored additions. */
     [[nodiscard]] std::size_t numAdditions() const {
         requireStableTree();
         return additionPixels_.size();
     }
 
-    /** @brief Returns the number of finite lifetime-stop events. */
+    /** @brief Returns the number of finite lifetime-stop events. @return Number of stored removals. */
     [[nodiscard]] std::size_t numRemovals() const {
         requireStableTree();
         return removalPixels_.size();
@@ -184,20 +184,22 @@ class MorphologicalTreeBoundaryLifetimeIndex {
   private:
     /** @brief One pairwise LCA request whose result completes a pixel lifetime. */
     struct OfflineLcaQuery {
-        NodeId first = InvalidNode;
-        NodeId second = InvalidNode;
-        PixelId pixel = InvalidPixel;
+        NodeId first = InvalidNode;    ///< First preorder-extreme owner.
+        NodeId second = InvalidNode;   ///< Second preorder-extreme owner.
+        PixelId pixel = InvalidPixel;  ///< Pixel whose stop node is being resolved.
     };
 
+    /** @brief Kind of action performed by one iterative Tarjan traversal event. */
     enum class OfflineTraversalEventKind : std::uint8_t { Enter, MergeChild, Exit };
 
     /** @brief Explicit event used by the iterative Tarjan traversal. */
     struct OfflineTraversalEvent {
-        OfflineTraversalEventKind kind = OfflineTraversalEventKind::Enter;
-        NodeId node = InvalidNode;
-        NodeId child = InvalidNode;
+        OfflineTraversalEventKind kind = OfflineTraversalEventKind::Enter; ///< Traversal action.
+        NodeId node = InvalidNode;                                          ///< Node processed by the action.
+        NodeId child = InvalidNode;                                         ///< Child merged by a merge action.
     };
 
+    /** @brief Validates the source tree and returns its grid domain. @param tree Source hierarchy. @return Validated two-dimensional domain. */
     [[nodiscard]] static GridDomain2D requireDomain(const MorphologicalTree& tree) {
         tree.requireNotEditing("MorphologicalTreeBoundaryLifetimeIndex");
         return tree.requireGridDomain2D("MorphologicalTreeBoundaryLifetimeIndex");
@@ -209,6 +211,9 @@ class MorphologicalTreeBoundaryLifetimeIndex {
      * For any non-empty node set, the LCA of the complete set equals the LCA of
      * its first and last nodes in depth-first preorder. This reduces each
      * five-owner contour query to one offline pairwise query.
+     * @param tree Stable hierarchy to traverse.
+     * @param entries Dense output array of preorder entry ranks.
+     * @param subtreeEnds Dense output array of exclusive subtree-end ranks.
      */
     static void buildPreOrderIntervals(const MorphologicalTree& tree, std::vector<int>& entries, std::vector<int>& subtreeEnds) {
         int nextIndex = 0;
@@ -240,14 +245,14 @@ class MorphologicalTreeBoundaryLifetimeIndex {
         }
     }
 
-    /** @brief Tests ancestry using the index-owned iterative DFS intervals. */
+    /** @brief Tests ancestry using the index-owned iterative DFS intervals. @param ancestor Candidate ancestor. @param descendant Candidate descendant. @return True when `ancestor` contains `descendant`. */
     [[nodiscard]] bool isAncestorInCapturedHierarchy(NodeId ancestor, NodeId descendant) const noexcept {
         const int ancestorEntry = preOrderIndices_[static_cast<std::size_t>(ancestor)];
         const int descendantEntry = preOrderIndices_[static_cast<std::size_t>(descendant)];
         return ancestorEntry <= descendantEntry && descendantEntry < subtreeEndIndices_[static_cast<std::size_t>(ancestor)];
     }
 
-    /** @brief Returns the representative of one initialized disjoint set. */
+    /** @brief Returns the representative of one initialized disjoint set. @param setParents Mutable disjoint-set parent array. @param node Set member. @return Representative after path compression. */
     [[nodiscard]] static NodeId findSet(std::vector<NodeId>& setParents, NodeId node) {
         NodeId root = node;
         while (setParents[static_cast<std::size_t>(root)] != root) {
@@ -261,7 +266,7 @@ class MorphologicalTreeBoundaryLifetimeIndex {
         return root;
     }
 
-    /** @brief Unites two initialized sets by rank and returns their representative. */
+    /** @brief Unites two initialized sets by rank and returns their representative. @param setParents Mutable disjoint-set parent array. @param setRanks Mutable disjoint-set rank array. @param lhs Member of the first set. @param rhs Member of the second set. @return Representative of the united set. */
     [[nodiscard]] static NodeId uniteSets(std::vector<NodeId>& setParents, std::vector<std::uint8_t>& setRanks, NodeId lhs, NodeId rhs) {
         NodeId lhsRoot = findSet(setParents, lhs);
         NodeId rhsRoot = findSet(setParents, rhs);
@@ -284,6 +289,9 @@ class MorphologicalTreeBoundaryLifetimeIndex {
      * Query references use CSR-like storage. The traversal never calls the
      * tree's lazy LCA service, so construction uses O(P + N) temporary memory,
      * performs no recursive descent, and leaves persistent tree caches untouched.
+     * @param tree Stable hierarchy to traverse.
+     * @param queries Pairwise LCA requests.
+     * @param lifetimes Pixel lifetimes whose stop nodes are updated.
      */
     static void resolveOfflineLcas(const MorphologicalTree& tree, std::span<const OfflineLcaQuery> queries, std::vector<BoundaryLifetime>& lifetimes) {
         if (queries.empty()) {
@@ -360,19 +368,23 @@ class MorphologicalTreeBoundaryLifetimeIndex {
         }
     }
 
+    /** @brief Converts per-slot counts to CSR offsets in place. @param offsets Count array with one sentinel slot. */
     static void prefixSum(std::vector<std::size_t>& offsets) {
         for (std::size_t index = 1; index < offsets.size(); ++index) {
             offsets[index] += offsets[index - 1];
         }
     }
 
+    /** @brief Returns one node's borrowed range from compact event storage. @param values Compact event values. @param offsets CSR offsets. @param node Dense node slot. @return Borrowed event span. */
     [[nodiscard]] static std::span<const PixelId> eventSpan(const std::vector<PixelId>& values, const std::vector<std::size_t>& offsets, NodeId node) {
         const std::size_t nodeIndex = static_cast<std::size_t>(node);
         return std::span<const PixelId>(values).subspan(offsets[nodeIndex], offsets[nodeIndex + 1] - offsets[nodeIndex]);
     }
 
+    /** @brief Rejects queries after the captured tree has mutated. */
     void requireStableTree() const { tree_.requireMutationVersion(mutationVersion_, "MorphologicalTreeBoundaryLifetimeIndex"); }
 
+    /** @brief Validates captured-tree stability and a node identifier. @param node Node that must still be live. */
     void requireLiveNode(NodeId node) const {
         requireStableTree();
         if (!tree_.isAlive(node)) {
@@ -380,16 +392,16 @@ class MorphologicalTreeBoundaryLifetimeIndex {
         }
     }
 
-    const MorphologicalTree& tree_;
-    std::size_t mutationVersion_ = 0;
-    GridDomain2D domain_{};
-    std::vector<BoundaryLifetime> lifetimes_;
-    std::vector<int> preOrderIndices_;
-    std::vector<int> subtreeEndIndices_;
-    std::vector<std::size_t> additionOffsets_;
-    std::vector<std::size_t> removalOffsets_;
-    std::vector<PixelId> additionPixels_;
-    std::vector<PixelId> removalPixels_;
+    const MorphologicalTree& tree_;                 ///< Captured source hierarchy.
+    std::size_t mutationVersion_ = 0;               ///< Mutation version captured at construction.
+    GridDomain2D domain_{};                         ///< Validated two-dimensional image domain.
+    std::vector<BoundaryLifetime> lifetimes_;       ///< Dense lifetime table indexed by pixel.
+    std::vector<int> preOrderIndices_;              ///< Dense preorder entry ranks indexed by node.
+    std::vector<int> subtreeEndIndices_;            ///< Dense exclusive subtree-end ranks indexed by node.
+    std::vector<std::size_t> additionOffsets_;      ///< CSR offsets for lifetime-start events.
+    std::vector<std::size_t> removalOffsets_;       ///< CSR offsets for lifetime-stop events.
+    std::vector<PixelId> additionPixels_;           ///< Compact lifetime-start pixel identifiers.
+    std::vector<PixelId> removalPixels_;            ///< Compact lifetime-stop pixel identifiers.
 };
 
 } // namespace mmcfilters::contours::detail

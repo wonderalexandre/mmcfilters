@@ -124,7 +124,7 @@ reconstructed_image = tree.reconstruct_from_node_altitudes()
 
 ### Reproducibility
 
-- [SIBGRAPI 2026 — Unifying Local Attribute Computation on Component Trees and the Tree of Shapes](docs/reproducibility/SIBGRAPI2026/README.md)
+- [SIBGRAPI 2026 — Unifying Local Attribute Computation on Component Trees and the Tree of Shapes](docs/sibgrapi2026/README.md)
 
 ### References
 

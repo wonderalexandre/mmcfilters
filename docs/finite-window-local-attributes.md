@@ -218,4 +218,4 @@ exposed as Python objects.
 
 The paper implementation map, exactness validation, fixed timing protocol, and
 archived camera-ready campaign are documented in the
-[SIBGRAPI 2026 reproducibility artifact](reproducibility/SIBGRAPI2026/README.md).
+[SIBGRAPI 2026 reproducibility artifact](sibgrapi2026/README.md).

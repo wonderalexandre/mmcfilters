@@ -109,7 +109,11 @@ that makes implementation or testing clearer.
 
 The generic finite-window extension API exposes role-typed `EventDelta`,
 `LocalAttributeIncrement`, and `NodeAttribute` records so its mathematical
-pipeline can be inspected and tested. Attribute-family storage such as
+pipeline can be inspected and tested. `ConnectedSubsetTreeLocalizer` owns the
+tree-dependent join `LCA(P(anchor), P(sample))`; `LocalDecision` owns only the
+state-to-value map; `EventAlgebra` owns identity, addition, and subtraction;
+and `FiniteWindowLocalEventCompiler` turns those policies into sparse node
+events. Attribute-family storage such as
 `detail::BitquadFamilyCounts` and `detail::ContourSideCounts` remains an
 implementation detail and is not part of the public attribute-computer
 contract.

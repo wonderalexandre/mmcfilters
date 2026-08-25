@@ -12,14 +12,14 @@ namespace mmcfilters::attributes::computers::detail {
 
 namespace kernel {
 
-/** @brief Additive local rule for directional contour-side contributions. */
-struct ContourSideLocalRule {
+/** @brief Pure local decision for directional contour-side contributions. */
+struct ContourSideLocalDecision {
     /** @brief Additive-group value produced by the rule. */
     using Value = ContourSideCounts;
 
     /** @brief Converts a local visibility state into side counts. @param visibilityState Five-sample visibility state. @return Counts represented by the state.
      */
-    [[nodiscard]] Value evaluateLocalRule(local_attributes::BinaryVisibilityState visibilityState) const {
+    [[nodiscard]] Value evaluateLocalDecision(local_attributes::BinaryVisibilityState visibilityState) const {
         Value counts;
         const uint32_t state = visibilityState.bits();
         if ((state & uint32_t{1}) == 0) {
@@ -34,7 +34,12 @@ struct ContourSideLocalRule {
         return counts;
     }
 
-    /** @brief Returns the additive identity. @return Zero side counts. */
+};
+
+/** @brief Additive algebra for directional contour-side events. */
+struct ContourSideEventAlgebra {
+    using Value = ContourSideCounts;
+
     [[nodiscard]] Value additiveIdentity() const { return {}; }
 
     /** @brief Adds one group value. @param target Value to update. @param source Value to add. */
@@ -68,7 +73,8 @@ inline const local_attributes::ObservationWindow contourObservationWindow{{{0, 0
  */
 inline std::vector<ContourSideCounts> computeContourSideCounts(const MorphologicalTree& tree) {
     const auto nodeAttributes =
-        local_attributes::detail::kernel::computeFiniteWindowLocalAttribute(tree, contourObservationWindow, ContourSideLocalRule{});
+        local_attributes::detail::kernel::computeFiniteWindowLocalAttribute(tree, contourObservationWindow, ContourSideLocalDecision{},
+                                                                             ContourSideEventAlgebra{});
     std::vector<ContourSideCounts> counts;
     counts.reserve(nodeAttributes.size());
     for (const auto& nodeAttribute : nodeAttributes) {

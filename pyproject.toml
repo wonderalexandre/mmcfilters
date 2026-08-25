@@ -46,6 +46,8 @@ Issues = "https://github.com/wonderalexandre/mmcfilters/issues"
 write_to = "python/mmcfilters/_version.py"
 version_scheme = "post-release"
 local_scheme = "no-local-version"
+# Research-artifact tags such as r1 must not define Python package versions.
+git_describe_command = "git describe --dirty --tags --long --match v[0-9]*"
 tag_regex = "^v?(?P<version>\\d+\\.\\d+\\.\\d+(?:[.-].*)?)$"
 
 [tool.scikit-build]

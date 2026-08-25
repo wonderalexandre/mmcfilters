@@ -133,12 +133,6 @@ python3 benchmarks/sibgrapi2026/run_experiment.py \
 
 The mmcfilters checkout must descend from `v4.3.0` and must be clean. The output directory must be absent or empty. These checks prevent untracked code changes and accidental mixing of campaigns. `--allow-dirty` exists only for explicitly marked development runs.
 
-## Interpretation of reference [5]
-
-The tree-of-shapes timing uses the original implementation of [5] without modification. Its handling of local patterns, in particular the `Q2/QD` decision, produces values that differ from the binary-pattern convention used by the proposed method; some `Q1` counts also differ. The benchmark records every family difference in the raw CSV and in `correctness.csv`. Consequently, [5] is a computational-time baseline only, not the correctness oracle for the proposed counts. The exactness claim is supported instead by the independent exhaustive binary-pattern validator described above.
-
-The component-tree reference [6] and the proposed method use the same family convention. Their node-wise counts must agree exactly; the benchmark and analyzer reject the campaign otherwise.
-
 ## Camera-ready benchmark results
 
 The camera-ready table comes from [`reference-results/table.tex`](../../../benchmarks/sibgrapi2026/reference-results/table.tex). The values below are mean warm attribute-API times over 100 images, in milliseconds. Each image mean contains exactly three timed repetitions. Tree construction, topology import, and decision-table loading are excluded.

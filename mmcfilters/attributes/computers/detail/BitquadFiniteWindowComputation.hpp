@@ -19,20 +19,18 @@ namespace mmcfilters::attributes::computers::detail {
 
 namespace kernel {
 
-/** @brief Additive local rule for signed bitquad-family increments. */
-struct BitquadFamilyLocalRule {
-    using Value = BitquadFamilyIncrement; ///< Additive-group value produced by the rule.
+/** @brief Pure local decision for signed bitquad-family contributions. */
+struct BitquadFamilyLocalDecision {
+    /** @brief Signed contribution type produced by the local decision. */
+    using Value = BitquadFamilyIncrement;
 
     std::size_t anchorPosition = 0; ///< Row-major position that owns the current framed cell.
 
     /** @brief Creates a rule for one row-major anchor position. @param position Position in `[0, 3]`. */
-    explicit BitquadFamilyLocalRule(std::size_t position) : anchorPosition(position) {}
-
-    /** @brief Returns the additive identity. @return Zero family increment. */
-    [[nodiscard]] Value additiveIdentity() const { return {}; }
+    explicit BitquadFamilyLocalDecision(std::size_t position) : anchorPosition(position) {}
 
     /** @brief Evaluates one owned canonical state. @param visibilityState Four-coordinate state. @return Unit family contribution or zero. */
-    [[nodiscard]] Value evaluateLocalRule(local_attributes::BinaryVisibilityState visibilityState) const {
+    [[nodiscard]] Value evaluateLocalDecision(local_attributes::BinaryVisibilityState visibilityState) const {
         Value value;
         const BitquadCode code = static_cast<BitquadCode>(visibilityState.bits() & std::uint32_t{0b1111});
         if (!ownsState(code)) {
@@ -62,6 +60,22 @@ struct BitquadFamilyLocalRule {
         return value;
     }
 
+  private:
+    /** @brief Tests whether this anchor position owns a canonical state. @param code Canonical four-bit state. @return True when this rule owns the state. */
+    [[nodiscard]] bool ownsState(BitquadCode code) const {
+        const std::uint32_t anchorMask = std::uint32_t{1} << anchorPosition;
+        return (code & anchorMask) != 0 && (code & (anchorMask - std::uint32_t{1})) == 0;
+    }
+};
+
+/** @brief Additive algebra for signed bitquad-family events. */
+struct BitquadFamilyEventAlgebra {
+    /** @brief Signed bitquad-family value combined by the algebra. */
+    using Value = BitquadFamilyIncrement;
+
+    /** @brief Returns the neutral additive value. @return Zero-initialized family increment. */
+    [[nodiscard]] Value additiveIdentity() const { return {}; }
+
     /** @brief Adds one family increment. @param target Value to update. @param source Value to add. */
     void addAssign(Value& target, const Value& source) const {
         target.q1 += source.q1;
@@ -80,28 +94,20 @@ struct BitquadFamilyLocalRule {
         target.q4 -= source.q4;
     }
 
-  private:
-    /** @brief Tests lowest-visible-position ownership. @param code Canonical nonempty state code. @return True when this position owns the state. */
-    [[nodiscard]] bool ownsState(BitquadCode code) const {
-        const std::uint32_t anchorMask = std::uint32_t{1} << anchorPosition;
-        return (code & anchorMask) != 0 && (code & (anchorMask - std::uint32_t{1})) == 0;
-    }
 };
 
-/** @brief Additive local rule for signed nonempty-state histogram increments. */
-struct NonemptyBitquadStateHistogramLocalRule {
-    using Value = NonemptyBitquadStateHistogramIncrement; ///< Additive-group value produced by the rule.
+/** @brief Pure local decision for signed nonempty-state histogram contributions. */
+struct NonemptyBitquadStateHistogramLocalDecision {
+    /** @brief Signed histogram contribution produced by the local decision. */
+    using Value = NonemptyBitquadStateHistogramIncrement;
 
     std::size_t anchorPosition = 0; ///< Row-major position that owns the current framed cell.
 
     /** @brief Creates a rule for one row-major anchor position. @param position Position in `[0, 3]`. */
-    explicit NonemptyBitquadStateHistogramLocalRule(std::size_t position) : anchorPosition(position) {}
-
-    /** @brief Returns the additive identity. @return Zero nonempty-state increment. */
-    [[nodiscard]] Value additiveIdentity() const { return {}; }
+    explicit NonemptyBitquadStateHistogramLocalDecision(std::size_t position) : anchorPosition(position) {}
 
     /** @brief Evaluates one owned canonical state. @param visibilityState Four-coordinate state. @return Unit state contribution or zero. */
-    [[nodiscard]] Value evaluateLocalRule(local_attributes::BinaryVisibilityState visibilityState) const {
+    [[nodiscard]] Value evaluateLocalDecision(local_attributes::BinaryVisibilityState visibilityState) const {
         Value value;
         const BitquadCode code = static_cast<BitquadCode>(visibilityState.bits() & std::uint32_t{0b1111});
         if (ownsState(code)) {
@@ -109,6 +115,22 @@ struct NonemptyBitquadStateHistogramLocalRule {
         }
         return value;
     }
+
+  private:
+    /** @brief Tests whether this anchor position owns a canonical state. @param code Canonical four-bit state. @return True when this rule owns the state. */
+    [[nodiscard]] bool ownsState(BitquadCode code) const {
+        const std::uint32_t anchorMask = std::uint32_t{1} << anchorPosition;
+        return (code & anchorMask) != 0 && (code & (anchorMask - std::uint32_t{1})) == 0;
+    }
+};
+
+/** @brief Additive algebra for signed nonempty-state histogram events. */
+struct NonemptyBitquadStateHistogramEventAlgebra {
+    /** @brief Signed histogram value combined by the algebra. */
+    using Value = NonemptyBitquadStateHistogramIncrement;
+
+    /** @brief Returns the neutral additive value. @return Zero-initialized histogram increment. */
+    [[nodiscard]] Value additiveIdentity() const { return {}; }
 
     /** @brief Adds one histogram increment. @param target Value to update. @param source Value to add. */
     void addAssign(Value& target, const Value& source) const {
@@ -124,12 +146,6 @@ struct NonemptyBitquadStateHistogramLocalRule {
         }
     }
 
-  private:
-    /** @brief Tests lowest-visible-position ownership. @param code Canonical nonempty state code. @return True when this position owns the state. */
-    [[nodiscard]] bool ownsState(BitquadCode code) const {
-        const std::uint32_t anchorMask = std::uint32_t{1} << anchorPosition;
-        return (code & anchorMask) != 0 && (code & (anchorMask - std::uint32_t{1})) == 0;
-    }
 };
 
 /** @brief Row-major positions p0=TL, p1=TR, p2=BL, p3=BR. */
@@ -161,7 +177,7 @@ inline std::vector<BitquadFamilyIncrement> computeBitquadFamilyIncrements(const 
     std::vector<BitquadFamilyIncrement> increments(static_cast<std::size_t>(tree.numInternalNodeSlots()));
     for (std::size_t anchorPosition = 0; anchorPosition < bitquadCellPositions.size(); ++anchorPosition) {
         local_attributes::detail::kernel::accumulateLocalAttributeIncrementValues(
-            tree, bitquadObservationWindow(anchorPosition), BitquadFamilyLocalRule{anchorPosition}, increments);
+            tree, bitquadObservationWindow(anchorPosition), BitquadFamilyLocalDecision{anchorPosition}, BitquadFamilyEventAlgebra{}, increments);
     }
     return increments;
 }
@@ -211,7 +227,8 @@ inline std::vector<NonemptyBitquadStateHistogramIncrement> computeNonemptyBitqua
     std::vector<NonemptyBitquadStateHistogramIncrement> increments(static_cast<std::size_t>(tree.numInternalNodeSlots()));
     for (std::size_t anchorPosition = 0; anchorPosition < bitquadCellPositions.size(); ++anchorPosition) {
         local_attributes::detail::kernel::accumulateLocalAttributeIncrementValues(
-            tree, bitquadObservationWindow(anchorPosition), NonemptyBitquadStateHistogramLocalRule{anchorPosition}, increments);
+            tree, bitquadObservationWindow(anchorPosition), NonemptyBitquadStateHistogramLocalDecision{anchorPosition},
+            NonemptyBitquadStateHistogramEventAlgebra{}, increments);
     }
     return increments;
 }

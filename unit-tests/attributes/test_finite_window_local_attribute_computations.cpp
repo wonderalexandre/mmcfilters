@@ -779,30 +779,31 @@ MorphologicalTree makeThreeNodeChain() {
     return valuedTree.topology().clone();
 }
 
-struct VisibleSampleCountLocalRule {
+struct VisibleSampleCountLocalDecision {
     using Value = int;
 
-    [[nodiscard]] Value additiveIdentity() const { return 0; }
-    [[nodiscard]] Value evaluateLocalRule(BinaryVisibilityState state) const { return static_cast<int>(std::popcount(state.bits())); }
-    void addAssign(Value& target, const Value& source) const { target += source; }
-    void subtractAssign(Value& target, const Value& source) const { target -= source; }
+    [[nodiscard]] Value evaluateLocalDecision(BinaryVisibilityState state) const { return static_cast<int>(std::popcount(state.bits())); }
 };
 
-static_assert(LocalRule<VisibleSampleCountLocalRule>);
+static_assert(LocalDecision<VisibleSampleCountLocalDecision>);
 
-struct SignedVisibilityLocalRule {
+struct SignedVisibilityLocalDecision {
     using Value = int;
 
-    [[nodiscard]] Value additiveIdentity() const { return 0; }
-    [[nodiscard]] Value evaluateLocalRule(BinaryVisibilityState state) const {
+    [[nodiscard]] Value evaluateLocalDecision(BinaryVisibilityState state) const {
         const int numVisibleSamples = static_cast<int>(std::popcount(state.bits()));
         return (numVisibleSamples % 2 == 0) ? -numVisibleSamples : 2 * numVisibleSamples + 1;
     }
-    void addAssign(Value& target, const Value& source) const { target += source; }
-    void subtractAssign(Value& target, const Value& source) const { target -= source; }
 };
 
-static_assert(LocalRule<SignedVisibilityLocalRule>);
+struct IntegerEventAlgebra {
+    [[nodiscard]] int additiveIdentity() const { return 0; }
+    void addAssign(int& target, const int& source) const { target += source; }
+    void subtractAssign(int& target, const int& source) const { target -= source; }
+};
+
+static_assert(LocalDecision<SignedVisibilityLocalDecision>);
+static_assert(EventAlgebra<IntegerEventAlgebra, int>);
 
 template <class Value> std::vector<Value> nodeAttributeValues(std::span<const NodeAttribute<Value>> nodeAttributes) {
     std::vector<Value> values;
@@ -849,8 +850,8 @@ MorphologicalTree makeRandomSmallTree(std::mt19937& generator) {
 }
 
 std::vector<int> directFiniteWindowAttribute(const MorphologicalTree& tree, const ObservationWindow& observationWindow,
-                                             const SignedVisibilityLocalRule& localRule) {
-    std::vector<int> expected(static_cast<std::size_t>(tree.numInternalNodeSlots()), localRule.additiveIdentity());
+                                             const SignedVisibilityLocalDecision& decision, const IntegerEventAlgebra& algebra) {
+    std::vector<int> expected(static_cast<std::size_t>(tree.numInternalNodeSlots()), algebra.additiveIdentity());
     for (NodeId node : tree.aliveNodeIds()) {
         const std::vector<uint8_t> mask = supportMask(tree, node);
         for (PixelId anchorPixel = 0; anchorPixel < tree.numPixels(); ++anchorPixel) {
@@ -873,7 +874,8 @@ std::vector<int> directFiniteWindowAttribute(const MorphologicalTree& tree, cons
                     bits |= std::uint32_t{1} << coordinate;
                 }
             }
-            expected[static_cast<std::size_t>(node)] += localRule.evaluateLocalRule(BinaryVisibilityState(bits, observationWindow.size()));
+            const int value = decision.evaluateLocalDecision(BinaryVisibilityState(bits, observationWindow.size()));
+            algebra.addAssign(expected[static_cast<std::size_t>(node)], value);
         }
     }
     return expected;
@@ -907,9 +909,10 @@ void verifyMaximumObservationWindowComputation() {
         offsets.push_back({0, column});
     }
     const ObservationWindow observationWindow(std::move(offsets));
-    const SignedVisibilityLocalRule localRule;
-    const std::vector<int> expected = directFiniteWindowAttribute(*tree, observationWindow, localRule);
-    requireVectorEqual(nodeAttributeValues<int>(FiniteWindowLocalAttributeComputer::compute(*tree, observationWindow, localRule)), expected,
+    const SignedVisibilityLocalDecision decision;
+    const IntegerEventAlgebra algebra;
+    const std::vector<int> expected = directFiniteWindowAttribute(*tree, observationWindow, decision, algebra);
+    requireVectorEqual(nodeAttributeValues<int>(FiniteWindowLocalAttributeComputer::compute(*tree, observationWindow, decision, algebra)), expected,
                        "maximum-width observation window equals direct definition");
 }
 
@@ -946,8 +949,13 @@ void verifyFiniteWindowStructuralContract() {
     requireEqual(Computer::binaryVisibilityState(chain, chainEntries, 2).bits(), std::uint32_t{0b0111}, "visibility state on root");
 
     const MorphologicalTree twoBranchTree = makeTwoBranchTreeOfShapes();
+    const ConnectedSubsetTreeLocalizer localizer(twoBranchTree);
+    requireEqual(localizer.smallestNode(0), twoBranchTree.smallestNode(0), "tree localizer exposes the anchor smallest node");
+    requireEqual(localizer.join(twoBranchTree.smallestNode(0), twoBranchTree.smallestNode(2)), twoBranchTree.root(),
+                 "tree localizer maps incomparable smallest nodes to their inclusion join");
     const auto incomparableEntry = Computer::anchoredEntry(twoBranchTree, 0, 2);
     require(incomparableEntry.has_value() && *incomparableEntry == twoBranchTree.root(), "incomparable sample enters at the LCA");
+    require(localizer.anchoredEntry(0, 2) == incomparableEntry, "standalone localizer and compatibility facade agree");
 
     const ObservationWindow groupedWindow{{0, 0}, {0, 1}, {1, 0}};
     const OrderedAnchoredEntries groupedEntries = Computer::orderedAnchoredEntries(twoBranchTree, 0, groupedWindow);
@@ -956,10 +964,11 @@ void verifyFiniteWindowStructuralContract() {
     require(groupedEntries[1] == AnchoredEntryMask{twoBranchTree.root(), std::uint32_t{0b100}}, "LCA entry follows anchor entry");
 }
 
-void verifyAdditiveLocalRuleComputation() {
+void verifyAdditiveLocalDecisionComputation() {
     const MorphologicalTree tree = makeThreeNodeChain();
     const ObservationWindow window{{0, 0}, {0, 1}};
-    const auto computedNodeAttributes = FiniteWindowLocalAttributeComputer::compute(tree, window, VisibleSampleCountLocalRule{});
+    const auto computedNodeAttributes =
+        FiniteWindowLocalAttributeComputer::compute(tree, window, VisibleSampleCountLocalDecision{}, IntegerEventAlgebra{});
     const std::vector<int> actual = nodeAttributeValues<int>(computedNodeAttributes);
 
     std::vector<int> expected(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0);
@@ -977,16 +986,17 @@ void verifyAdditiveLocalRuleComputation() {
             }
         }
     }
-    requireVectorEqual(actual, expected, "additive local rule equals direct finite-window definition");
+    requireVectorEqual(actual, expected, "additive local decision equals direct finite-window definition");
 }
 
 void verifyExplicitFiniteWindowPipeline() {
     using Computer = FiniteWindowLocalAttributeComputer;
     const MorphologicalTree tree = makeThreeNodeChain();
     const ObservationWindow window{{0, 0}, {0, 1}};
-    const SignedVisibilityLocalRule localRule;
+    const SignedVisibilityLocalDecision decision;
+    const IntegerEventAlgebra algebra;
 
-    const auto firstAnchorEventDeltas = Computer::computeEventDeltas(tree, 0, window, localRule);
+    const auto firstAnchorEventDeltas = Computer::computeEventDeltas(tree, 0, window, decision, algebra);
     requireEqual(firstAnchorEventDeltas.size(), std::size_t{2}, "first anchor event-delta count");
     requireEqual(firstAnchorEventDeltas[0].anchorPixel, 0, "first event-delta anchor");
     requireEqual(firstAnchorEventDeltas[0].anchoredEntry, NodeId{0}, "first event-delta entry");
@@ -994,25 +1004,24 @@ void verifyExplicitFiniteWindowPipeline() {
     requireEqual(firstAnchorEventDeltas[1].anchoredEntry, NodeId{1}, "second event-delta entry");
     requireEqual(firstAnchorEventDeltas[1].value, -5, "later event delta is a consecutive signed rule difference");
 
-    const auto localAttributeIncrements = Computer::computeLocalAttributeIncrements(tree, window, localRule);
+    const auto localAttributeIncrements = Computer::computeLocalAttributeIncrements(tree, window, decision, algebra);
     requireEqual(localAttributeIncrements.size(), static_cast<std::size_t>(tree.numInternalNodeSlots()), "local-attribute increments cover dense node slots");
     requireEqual(localAttributeIncrements[0].value, 3, "leaf local-attribute increment");
     requireEqual(localAttributeIncrements[1].value, -2, "middle signed local-attribute increment");
     requireEqual(localAttributeIncrements[2].value, -2, "root signed local-attribute increment");
 
-    const auto aggregated =
-        Computer::aggregateLocalAttributeIncrements(tree, std::span<const LocalAttributeIncrement<int>>(localAttributeIncrements), localRule);
+    const auto aggregated = Computer::aggregateEventIncrements(tree, std::span<const LocalAttributeIncrement<int>>(localAttributeIncrements), algebra);
     requireVectorEqual(nodeAttributeValues<int>(aggregated), std::vector<int>{3, 1, -1}, "bottom-up aggregation materializes final node attributes");
-    requireVectorEqual(nodeAttributeValues<int>(Computer::compute(tree, window, localRule)), nodeAttributeValues<int>(aggregated),
-                       "complete finite-window computation follows the explicit pipeline");
+    require(Computer::compute(tree, window, decision, algebra) == aggregated,
+            "complete finite-window computation follows the explicit pipeline");
 
-    requireThrows<std::invalid_argument>([&]() { static_cast<void>(Computer::computeEventDeltas(tree, -1, window, localRule)); },
+    requireThrows<std::invalid_argument>([&]() { static_cast<void>(Computer::computeEventDeltas(tree, -1, window, decision, algebra)); },
                                          "event-delta computation rejects an invalid anchor");
     auto malformedIncrements = localAttributeIncrements;
     malformedIncrements[0].node = 1;
     requireThrows<std::invalid_argument>(
         [&]() {
-            static_cast<void>(Computer::aggregateLocalAttributeIncrements(tree, std::span<const LocalAttributeIncrement<int>>(malformedIncrements), localRule));
+            static_cast<void>(Computer::aggregateEventIncrements(tree, std::span<const LocalAttributeIncrement<int>>(malformedIncrements), algebra));
         },
         "bottom-up aggregation rejects increments outside dense node order");
 }
@@ -1020,7 +1029,8 @@ void verifyExplicitFiniteWindowPipeline() {
 void verifyRandomizedFiniteWindowReference() {
     std::mt19937 generator(0x5a17u);
     const std::array<Offset, 8> candidateOffsets = {{{-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 1}, {1, -1}, {1, 0}, {1, 1}}};
-    const SignedVisibilityLocalRule localRule;
+    const SignedVisibilityLocalDecision decision;
+    const IntegerEventAlgebra algebra;
 
     for (int iteration = 0; iteration < 64; ++iteration) {
         const MorphologicalTree tree = makeRandomSmallTree(generator);
@@ -1031,10 +1041,12 @@ void verifyRandomizedFiniteWindowReference() {
         shuffledOffsets.insert(shuffledOffsets.begin() + static_cast<std::ptrdiff_t>(generator() % (numAdditionalOffsets + 1)), Offset{0, 0});
         const ObservationWindow observationWindow(std::move(shuffledOffsets));
 
-        const auto localAttributeIncrements = FiniteWindowLocalAttributeComputer::computeLocalAttributeIncrements(tree, observationWindow, localRule);
+        const auto localAttributeIncrements =
+            FiniteWindowLocalAttributeComputer::computeLocalAttributeIncrements(tree, observationWindow, decision, algebra);
         std::vector<int> independentlySummedIncrements(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0);
         for (PixelId anchorPixel = 0; anchorPixel < tree.numPixels(); ++anchorPixel) {
-            for (const EventDelta<int>& eventDelta : FiniteWindowLocalAttributeComputer::computeEventDeltas(tree, anchorPixel, observationWindow, localRule)) {
+            for (const EventDelta<int>& eventDelta :
+                 FiniteWindowLocalAttributeComputer::computeEventDeltas(tree, anchorPixel, observationWindow, decision, algebra)) {
                 independentlySummedIncrements[static_cast<std::size_t>(eventDelta.anchoredEntry)] += eventDelta.value;
             }
         }
@@ -1042,11 +1054,11 @@ void verifyRandomizedFiniteWindowReference() {
             requireEqual(localAttributeIncrements[node].value, independentlySummedIncrements[node], "randomized event deltas sum to local-attribute increment");
         }
 
-        const auto nodeAttributes = FiniteWindowLocalAttributeComputer::aggregateLocalAttributeIncrements(
-            tree, std::span<const LocalAttributeIncrement<int>>(localAttributeIncrements), localRule);
-        const std::vector<int> expected = directFiniteWindowAttribute(tree, observationWindow, localRule);
+        const auto nodeAttributes = FiniteWindowLocalAttributeComputer::aggregateEventIncrements(
+            tree, std::span<const LocalAttributeIncrement<int>>(localAttributeIncrements), algebra);
+        const std::vector<int> expected = directFiniteWindowAttribute(tree, observationWindow, decision, algebra);
         requireVectorEqual(nodeAttributeValues<int>(nodeAttributes), expected, "randomized explicit pipeline equals direct finite-window definition");
-        requireVectorEqual(nodeAttributeValues<int>(FiniteWindowLocalAttributeComputer::compute(tree, observationWindow, localRule)), expected,
+        requireVectorEqual(nodeAttributeValues<int>(FiniteWindowLocalAttributeComputer::compute(tree, observationWindow, decision, algebra)), expected,
                            "randomized complete compute equals direct finite-window definition");
     }
 }
@@ -1057,7 +1069,7 @@ int main() {
     verifyObservationWindowContract();
     verifyMaximumObservationWindowComputation();
     verifyFiniteWindowStructuralContract();
-    verifyAdditiveLocalRuleComputation();
+    verifyAdditiveLocalDecisionComputation();
     verifyExplicitFiniteWindowPipeline();
     verifyRandomizedFiniteWindowReference();
     verifyCanonicalBitquadContract();

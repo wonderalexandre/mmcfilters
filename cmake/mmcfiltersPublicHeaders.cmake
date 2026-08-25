@@ -18,7 +18,10 @@ set(MMCFILTERS_PUBLIC_HEADER_ENTRYPOINTS
     ${MMCFILTERS_ROOT}/filters/ExtinctionValues.hpp
     ${MMCFILTERS_ROOT}/filters/MSERComputer.hpp
     ${MMCFILTERS_ROOT}/filters/UltimateAttributeOpening.hpp
+    ${MMCFILTERS_ROOT}/localAttributes/ConnectedSubsetTreeLocalizer.hpp
+    ${MMCFILTERS_ROOT}/localAttributes/FiniteWindowLocalEventCompiler.hpp
     ${MMCFILTERS_ROOT}/localAttributes/FiniteWindowLocalAttributeComputer.hpp
+    ${MMCFILTERS_ROOT}/localAttributes/LocalEventModel.hpp
     ${MMCFILTERS_ROOT}/trees/MorphologicalTreeSemantics.hpp
     ${MMCFILTERS_ROOT}/trees/MorphologicalTree.hpp
     ${MMCFILTERS_ROOT}/trees/MorphologicalTreeFactory.hpp
@@ -92,6 +95,7 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/contours/ContourTraceComputation.hpp
     ${MMCFILTERS_ROOT}/contours/ContoursComputedIncrementally.hpp
     ${MMCFILTERS_ROOT}/contours/detail/ContourDeltaStore.hpp
+    ${MMCFILTERS_ROOT}/contours/detail/MorphologicalTreeBoundaryLifetimeIndex.hpp
     ${MMCFILTERS_ROOT}/contours/detail/ContourTraceDeltaStore.hpp
     ${MMCFILTERS_ROOT}/contours/detail/PendingPixelLists.hpp
     ${MMCFILTERS_ROOT}/dataStructure/FastQueue.hpp
@@ -105,7 +109,10 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/filters/UltimateAttributeOpening.hpp
     ${MMCFILTERS_ROOT}/filters/detail/VariationMeasure.hpp
     ${MMCFILTERS_ROOT}/filters/detail/ViterbiDecision.hpp
+    ${MMCFILTERS_ROOT}/localAttributes/ConnectedSubsetTreeLocalizer.hpp
+    ${MMCFILTERS_ROOT}/localAttributes/FiniteWindowLocalEventCompiler.hpp
     ${MMCFILTERS_ROOT}/localAttributes/FiniteWindowLocalAttributeComputer.hpp
+    ${MMCFILTERS_ROOT}/localAttributes/LocalEventModel.hpp
     ${MMCFILTERS_ROOT}/trees/MorphologicalTreeSemantics.hpp
     ${MMCFILTERS_ROOT}/trees/MorphologicalTree.hpp
     ${MMCFILTERS_ROOT}/trees/MorphologicalTreeFactory.hpp

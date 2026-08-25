@@ -1,6 +1,6 @@
-# Finite-window local attributes
+# Finite-window local-attribute C++ extension
 
-This document defines the public structural contract implemented by
+This contributor guide defines the public C++ extension contract implemented by
 `FiniteWindowLocalAttributeComputer`. The computation applies to a
 `MorphologicalTree` over a finite two-dimensional image domain. It is shared by
 component trees and trees of shapes; the public algorithm does not select a
@@ -31,15 +31,10 @@ to another live node.
 For anchor pixel \(p\), let \(P(p)\) be its smallest node. The anchor branch is
 the chain from \(P(p)\) to the root. For a valid translated sample \(q\), the
 anchored entry is the first node on that branch whose support contains \(q\).
-With \(A=P(p)\) and \(S=P(q)\), it is
+With \(A=P(p)\) and \(S=P(q)\), all three cases have the uniform expression
 
 \f[
-E^p(q)=
-\begin{cases}
-A,&S\subseteq A,\\
-S,&A\subset S,\\
-\operatorname{LCA}(A,S),&A\text{ and }S\text{ are incomparable}.
-\end{cases}
+E^p(q)=A\vee S=\operatorname{LCA}(A,S).
 \f]
 
 The LCA case is part of the generic connected-subset-tree formulation. In the
@@ -54,43 +49,54 @@ into `AnchoredEntryMask` records and orders them by increasing inclusion, from
 the anchor's smallest node toward the root. This branch order is distinct from
 bottom-up aggregation over the whole tree.
 
-## Visibility state and local rule
+`ConnectedSubsetTreeLocalizer` exposes this tree-dependent operation as
+`smallestNode`, `join`, and `anchoredEntry`. It contains no attribute-specific
+decision. The finite-window compiler uses the same primitive internally after
+validating the tree once.
+
+## Visibility state, decision, and event algebra
 
 For a node \(X\) on the anchor branch, coordinate \(j\) of the binary
 visibility state is one precisely when the anchored entry of \f$\delta_j\f$ is
 contained in \(X\). State bits only change from zero to one while moving toward
 the root, and all offsets sharing an anchored entry change simultaneously.
 
-A `LocalRule` evaluates one `BinaryVisibilityState` into a value in an additive
-Abelian group. Its C++ model provides:
+A `LocalDecision` contains only the theorem-facing map from a local state to a
+value:
 
 ```cpp
 using Value = ...;
+Value evaluateLocalDecision(BinaryVisibilityState state) const;
+```
 
+A separate `EventAlgebra<Algebra, Value>` supplies the implementation of the
+additive event domain:
+
+```cpp
 Value additiveIdentity() const;
-Value evaluateLocalRule(BinaryVisibilityState state) const;
 void addAssign(Value& target, const Value& source) const;
 void subtractAssign(Value& target, const Value& source) const;
 ```
 
-C++ verifies the presence and types of these operations. The rule author is
-responsible for their algebraic laws: identity, associative and commutative
-addition, and additive inverses. Arbitrary transition or merge policies are not
-part of the public theorem-facing API.
+C++ verifies the presence and types of these operations. The algebra author is
+responsible for identity, associative and commutative addition, and additive
+inverses. This separation lets one decision be compiled for different
+connected-subset trees and lets storage or aggregation change without changing
+the mathematical local predicate.
 
 ## Explicit computation stages
 
 The public generic C++ pipeline separates three roles:
 
-1. `computeEventDeltas(tree, anchorPixel, window, rule)` returns one
+1. `computeEventDeltas(tree, anchorPixel, window, decision, algebra)` returns one
    `EventDelta<Value>` for each distinct anchored entry of that anchor. Its
    fields identify the `anchorPixel`, the `anchoredEntry`, and the signed
-   local-rule difference `value`. The first difference is measured from the
+   decision difference `value`. The first difference is measured from the
    additive identity; later differences compare consecutive visibility states.
-2. `computeLocalAttributeIncrements(tree, window, rule)` sums the event deltas
+2. `computeLocalAttributeIncrements(tree, window, decision, algebra)` sums the event deltas
    from every anchor into one `LocalAttributeIncrement<Value>` per dense node
    slot. An increment may be signed and is not yet a node attribute.
-3. `aggregateLocalAttributeIncrements(tree, increments, rule)` adds fully
+3. `aggregateEventIncrements(tree, increments, algebra)` adds fully
    accumulated children into their parents and returns one
    `NodeAttribute<Value>` per dense node slot.
 
@@ -102,14 +108,35 @@ dense node increments. It reuses fixed-capacity scratch storage bounded by the
 ordered-entry sequences, or event-delta vectors per pixel. The internal dense
 buffer stores only additive values while the computation is running; node
 identifiers are materialized only in public normative result records. Concrete
-multi-anchor rules, including bitquad rules, accumulate every anchor position
-directly into one dense buffer instead of constructing and combining one full
-temporary buffer per position. The four canonical bitquad windows and the
-canonical contour-side window are immutable internal objects constructed once
-and reused by subsequent computations. The explicit
-`computeEventDeltas` operation still materializes and returns the normative
+computations with multiple anchor positions, including bitquad computations,
+accumulate every anchor position directly into one dense buffer instead of
+constructing and combining one full temporary buffer per position. The four
+canonical bitquad windows and the canonical contour-side window are immutable
+internal objects constructed once and reused by subsequent computations. The
+explicit `computeEventDeltas` operation still materializes and returns the normative
 records when a caller requests that stage. Concrete bitquad and contour-side
 storage remains an attribute-computer detail.
+
+The concrete bitquad-family and contour-side computations use this split API:
+their state-to-value decisions no longer contain addition or subtraction.
+Materialized pixel contours use a stateful boundary-lifetime consumer instead.
+These consumers share localization and event semantics, but are not forced
+into the finite-window additive model.
+
+## Complexity and runtime effect
+
+Let `P` be the number of pixels, `N` the number of live tree nodes, and `m` the
+window size (`m <= 32`). Event compilation takes `O(P m log m)` time for
+per-anchor entry ordering and `O(N)` time for bottom-up aggregation. Fixed
+scratch uses `O(m)` auxiliary storage, while dense increment and result buffers
+use `O(N)`. The tree's lazy ancestry cache costs `O(N)`; the first genuinely
+cross-branch join may additionally build its `O(N log N)` Euler/RMQ LCA cache.
+Later joins are constant time.
+
+Because `m` is bounded by 32, the main computation remains linear in `P + N`
+apart from one possible cold LCA-cache construction. Splitting decision from
+algebra adds no traversal, allocation, or asymptotic work. Both are template
+policies and the hot calls can be inlined.
 
 ## Canonical bitquad specialization
 
@@ -164,24 +191,27 @@ under a `BitquadConnectivityPolicy`.
 
 using namespace mmcfilters::local_attributes;
 
-struct VisibleSampleCountRule {
+struct VisibleSampleCountDecision {
     using Value = int;
 
-    Value additiveIdentity() const { return 0; }
-    Value evaluateLocalRule(BinaryVisibilityState state) const {
+    Value evaluateLocalDecision(BinaryVisibilityState state) const {
         return std::popcount(state.bits());
     }
-    void addAssign(Value& target, const Value& source) const { target += source; }
-    void subtractAssign(Value& target, const Value& source) const { target -= source; }
+};
+
+struct IntegerEventAlgebra {
+    int additiveIdentity() const { return 0; }
+    void addAssign(int& target, const int& source) const { target += source; }
+    void subtractAssign(int& target, const int& source) const { target -= source; }
 };
 
 ObservationWindow window{{0, 0}, {0, 1}};
 auto nodeAttributes = FiniteWindowLocalAttributeComputer::compute(
-    tree, window, VisibleSampleCountRule{});
+    tree, window, VisibleSampleCountDecision{}, IntegerEventAlgebra{});
 int rootValue = nodeAttributes[tree.root()].value;
 ```
 
 The generic finite-window layer is currently a C++ extension API. Python users
-consume its built-in attribute results through `Attribute`; generic local-rule,
-event-delta, increment, and node-attribute records are not exposed as Python
-objects.
+consume its built-in attribute results through `Attribute`; generic
+finite-window decisions, event deltas, increments, and node attributes are not
+exposed as Python objects.

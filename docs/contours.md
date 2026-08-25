@@ -24,6 +24,14 @@ Extraction requires:
 The result captures the tree mutation version and rejects reads after topology
 mutation.
 
+For hierarchy-wide consumers, each contour pixel also has a compact path
+lifetime. If `o(p)` is its inclusion-smallest owner, an interior-domain pixel
+stops being a contour site at the LCA of `o(p)` and the owners of its four
+side-neighbours. A global-boundary pixel remains active through the root. The
+internal `MorphologicalTreeBoundaryLifetimeIndex` materializes these start/stop
+events once. `ContoursComputedIncrementally` consumes this source rather than
+reimplementing the local boundary decision.
+
 ## C++ API
 
 ```cpp
@@ -89,9 +97,11 @@ Let:
 - `C(S)` be the number of contour-pixel values committed while materializing
   `S`.
 
-With valid tree-query caches, extraction is `O(N + P)`. A cold tree may first
-pay linear ancestry preprocessing and, when queries for the lowest common
-ancestor (LCA) are required, `O(N log N)` preprocessing.
+Lifetime extraction performs an iterative offline LCA pass in
+`O((P + N) alpha(N))` time and `O(P + N)` memory, where `alpha` is the inverse
+Ackermann function. It deliberately does not build the tree's persistent
+`O(N log N)` Euler/RMQ LCA cache. Copying lifetime events into the compact
+contour store is `O(P + N)` and does not change this bound.
 
 The public upper bound for first materialization of `S` is
 `O(M(S) + C(S) + P)`. The tighter output-sensitive form replaces `P` with the

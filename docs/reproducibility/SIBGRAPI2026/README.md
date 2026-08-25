@@ -109,7 +109,7 @@ cmake --build build-sibgrapi2026 \
 
 ## Dataset and fixed protocol
 
-The experiment uses the first 100 validation images, named `val_000.png` through `val_099.png`, from the Occluded RoadText Challenge at the following supplied resolutions:
+The experiment uses the first 100 validation images, named `val_000.png` through `val_099.png`, from the [Occluded RoadText Challenge](https://rrc.cvc.uab.es/?ch=29) at the following supplied resolutions:
 
 - `480p`: `853 x 480`;
 - `720p`: `1280 x 720`;

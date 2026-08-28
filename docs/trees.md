@@ -196,7 +196,8 @@ mode-specific C++ option objects.
 - the published altitude scale, `TopographicAltitudeEncoding::UInt8` or
   `ExactDoubled`.
 
-The default convention selects the canonical 4/8 complementary-grid immersion
+The default convention selects the canonical minimum-4/maximum-8
+complementary-grid immersion without domain padding, uses infinity pixel zero,
 and publishes unchanged 8-bit source levels:
 
 ```cpp

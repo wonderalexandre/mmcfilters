@@ -353,8 +353,9 @@ class MorphologicalTreeFactory {
      * @brief Builds a valued tree of shapes from an 8-bit image.
      *
      * The published altitude type must match the altitude encoding declared by
-     * the convention. The default convention selects the canonical 4/8
-     * complementary-grid immersion and publishes unchanged 8-bit source levels.
+     * the convention. The default convention selects the canonical
+     * minimum-4/maximum-8 complementary-grid immersion without domain padding,
+     * uses infinity pixel zero, and publishes unchanged 8-bit source levels.
      * `ToSGrayLevel` altitudes are available under
      * `TopographicAltitudeEncoding::ExactDoubled`, which is the only encoding a
      * self-dual span immersion admits.

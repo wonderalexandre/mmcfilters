@@ -83,9 +83,10 @@ assert np.array_equal(
 )
 ```
 
-The default convention selects the canonical 4/8 complementary-grid immersion,
-whose construction levels never leave the source level set, so the 8-bit
-altitudes are exact rather than quantized.
+The default convention selects the canonical minimum-4/maximum-8
+complementary-grid immersion without domain padding, uses infinity pixel zero,
+and publishes 8-bit altitudes. Its construction levels never leave the source
+level set, so those altitudes are exact rather than quantized.
 
 The self-dual span immersion admits `UINT8` only without an exterior ring. Its
 boundary reference level is the single source of half levels, and

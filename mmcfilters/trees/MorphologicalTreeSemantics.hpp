@@ -96,7 +96,7 @@ enum class TopographicAltitudeEncoding { UInt8, ExactDoubled };
 /** @brief Complete discrete convention retained by a tree-of-shapes result. */
 struct TopographicConvention {
     TreeOfShapesImmersion immersion = CanonicalComplementaryGridImmersion{}; ///< Selected topographic immersion.
-    TopographicDomainExtension domainExtension = TopographicDomainExtension::ExteriorRing; ///< Active-domain extension convention.
+    TopographicDomainExtension domainExtension = TopographicDomainExtension::None; ///< Active-domain extension convention.
     PixelId infinityPixel = 0; ///< Declared infinity pixel in the active topographic domain.
     TopographicAltitudeEncoding altitudeEncoding = TopographicAltitudeEncoding::UInt8; ///< Published node-altitude scale.
 };

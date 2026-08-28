@@ -1165,7 +1165,7 @@ void initMorphologicalTree(py::module_& m) {
     py::class_<TopographicConvention>(m, "TopographicConvention", py::module_local(false),
                                       "Complete discrete convention retained by a tree of shapes.")
         .def(py::init<TreeOfShapesImmersion, TopographicDomainExtension, PixelId, TopographicAltitudeEncoding>(),
-             "immersion"_a = CanonicalComplementaryGridImmersion{}, "domain_extension"_a = TopographicDomainExtension::ExteriorRing,
+             "immersion"_a = CanonicalComplementaryGridImmersion{}, "domain_extension"_a = TopographicDomainExtension::None,
              "infinity_pixel"_a = PixelId{0}, "altitude_encoding"_a = TopographicAltitudeEncoding::UInt8)
         .def_readonly("immersion", &TopographicConvention::immersion)
         .def_readonly("domain_extension", &TopographicConvention::domainExtension)
@@ -1321,7 +1321,8 @@ construction stays on the source lattice, so `UINT8` becomes available:
             "infinity_pixel"_a = py::none(), "altitude_encoding"_a = py::none(),
             R"doc(Create a tree of shapes using a complete topographic convention retained by the result.
 
-The default convention selects the canonical 4/8 complementary-grid immersion
+The default convention selects the canonical minimum-4/maximum-8
+complementary-grid immersion without domain padding, uses infinity pixel zero,
 and publishes unchanged 8-bit source levels, so `node_altitudes` has dtype
 `np.uint8`. Declaring `TopographicAltitudeEncoding.EXACT_DOUBLED` publishes
 doubled units as `np.uint16` instead.

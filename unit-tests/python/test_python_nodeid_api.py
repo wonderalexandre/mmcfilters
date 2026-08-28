@@ -1094,15 +1094,38 @@ def main() -> int:
     require(valued_tree_of_shapes.node_altitudes.dtype == np.uint16, "valued_tree ToS exact altitude dtype")
     require(valued_tree_of_shapes.reconstruct_from_node_altitudes().dtype == np.uint16, "valued_tree ToS reconstruction dtype")
 
-    # The default convention publishes unchanged 8-bit source levels over the
-    # canonical 4/8 complementary-grid immersion.
+    # The default convention uses the unpadded canonical min-4/max-8 immersion,
+    # infinity pixel zero, and unchanged 8-bit source levels.
     tos_source = np.array([[1, 2, 1], [2, 3, 2], [1, 2, 1]], dtype=np.uint8)
+    default_specification = mmcfilters.TopographicConvention()
+    require(
+        isinstance(default_specification.immersion, mmcfilters.CanonicalComplementaryGridImmersion),
+        "default convention must select the canonical complementary grid",
+    )
+    require(
+        default_specification.immersion.pairing == mmcfilters.ComplementaryPairing.MIN4_MAX8,
+        "default convention must select minimum-4/maximum-8 connectivity",
+    )
+    require(
+        default_specification.domain_extension == mmcfilters.TopographicDomainExtension.NONE,
+        "default convention must not pad the source domain",
+    )
+    require(default_specification.infinity_pixel == 0, "default convention infinity pixel must be zero")
+    require(
+        default_specification.altitude_encoding == mmcfilters.TopographicAltitudeEncoding.UINT8,
+        "default convention must publish uint8 altitudes",
+    )
     default_tos = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(tos_source)
     require(default_tos.node_altitudes.dtype == np.uint8, "default ToS must publish uint8 altitudes")
     require(
         default_tos.topographic_convention.altitude_encoding == mmcfilters.TopographicAltitudeEncoding.UINT8,
         "default ToS must declare the 8-bit altitude encoding",
     )
+    require(
+        default_tos.topographic_convention.domain_extension == mmcfilters.TopographicDomainExtension.NONE,
+        "default ToS must not pad the source domain",
+    )
+    require(default_tos.topographic_convention.infinity_pixel == 0, "default ToS infinity pixel must be zero")
     require(
         default_tos.reconstruct_from_node_altitudes().tolist() == tos_source.tolist(),
         "default ToS reconstruction must reproduce the source image",
@@ -1126,7 +1149,11 @@ def main() -> int:
     # A self-dual span immersion may place its exterior median on a half level.
     require_raises(
         lambda: mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(
-            tos_source, mmcfilters.TopographicConvention(mmcfilters.SelfDualSpanImmersion())
+            tos_source,
+            mmcfilters.TopographicConvention(
+                mmcfilters.SelfDualSpanImmersion(),
+                mmcfilters.TopographicDomainExtension.EXTERIOR_RING,
+            ),
         ),
         "self-dual span immersion must reject the 8-bit altitude encoding",
     )

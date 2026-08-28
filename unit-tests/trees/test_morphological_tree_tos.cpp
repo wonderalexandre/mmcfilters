@@ -216,14 +216,28 @@ int main() {
         }
     }
 
-    // The default convention publishes unchanged 8-bit source levels over the
-    // canonical 4/8 complementary-grid immersion.
+    // The default convention uses the unpadded canonical min-4/max-8 immersion,
+    // infinity pixel zero, and unchanged 8-bit source levels.
     {
+        const TopographicConvention defaultSpecification{};
+        const auto* canonicalSpecification = std::get_if<CanonicalComplementaryGridImmersion>(&defaultSpecification.immersion);
+        require(canonicalSpecification != nullptr, "default topographic convention must select the canonical complementary grid");
+        require(canonicalSpecification->pairing == ComplementaryPairing::Min4Max8,
+                "default topographic convention must select minimum-4/maximum-8 connectivity");
+        require(defaultSpecification.domainExtension == TopographicDomainExtension::None,
+                "default topographic convention must not pad the source domain");
+        requireEqual(defaultSpecification.infinityPixel, PixelId{0}, "default topographic convention infinity pixel");
+        require(defaultSpecification.altitudeEncoding == TopographicAltitudeEncoding::UInt8,
+                "default topographic convention must publish uint8 altitudes");
+
         auto defaultTree = MorphologicalTreeFactory::createTreeOfShapes(image);
         static_assert(std::is_same_v<decltype(defaultTree), ValuedMorphologicalTree<std::uint8_t>>, "default tree of shapes must publish uint8 altitudes");
 
         const TopographicConvention* defaultConvention = defaultTree.topology().topographicConvention();
         require(defaultConvention != nullptr, "default tree of shapes must retain its topographic convention");
+        require(defaultConvention->domainExtension == TopographicDomainExtension::None,
+                "default tree of shapes must not pad the source domain");
+        requireEqual(defaultConvention->infinityPixel, PixelId{0}, "default tree of shapes infinity pixel");
         require(defaultConvention->altitudeEncoding == TopographicAltitudeEncoding::UInt8, "default tree of shapes must declare the 8-bit encoding");
 
         // The canonical immersion is resolved, so the retained convention always

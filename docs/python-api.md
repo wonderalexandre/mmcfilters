@@ -148,11 +148,12 @@ Attribute requirements can be inspected before computation:
 
 ```python
 requirements = mmcfilters.Attribute.requirements(
-    mmcfilters.Attribute.MAX_DIST
+    mmcfilters.Attribute.MAX_DIST_EXACT
 )
 assert requirements["grid_domain_2d"]
-assert requirements["adjacency"] == "uniform"
-assert requirements["monotone_altitude_order"]
+assert not requirements["altitude"]
+assert requirements["adjacency"] == "none"
+assert not requirements["monotone_altitude_order"]
 ```
 
 ## Node IDs and queries
@@ -245,6 +246,33 @@ layout, values = mmcfilters.Attribute.compute_attributes(
 area_column = values[:, layout["AREA"]]
 ```
 
+Distance-transform summaries are topology/support attributes. Unsuffixed
+names select the adaptive-A8 DIFT approximation; exact descriptors end in
+`_EXACT`. Coordinated requests share one approximate DIFT traversal or one
+exact EDT sample stream:
+
+```python
+distance_layout, distance_values = (
+    mmcfilters.Attribute.compute_topology_attributes(
+        max_tree,
+        [
+            mmcfilters.Attribute.MAX_DIST,
+            mmcfilters.Attribute.MAX_SQUARED_DIST,
+            mmcfilters.Attribute.MAX_DIST_EXACT,
+            mmcfilters.Attribute.MAX_SQUARED_DIST_EXACT,
+            mmcfilters.Attribute.DIST_MEAN,
+            mmcfilters.Attribute.DIST_MEAN_EXACT,
+        ],
+        dtype=np.float64,
+    )
+)
+```
+
+`MAX_DIST*` is measured in pixels, while `MAX_SQUARED_DIST*` is measured
+in squared pixels. Both backends use the foreground A4 contour in the original
+image domain. Equal maxima select the smallest row-major support pixel; plateau
+centroids may be fractional.
+
 A sliced column is generally not C-contiguous. Copy it before passing it to a
 filter helper, or compute the scalar attribute directly as above.
 
@@ -258,6 +286,13 @@ boundary_layout, boundary_values = (
     )
 )
 ```
+
+`Attribute.Group.DIST_TRANSF` contains the 29 unsuffixed approximate
+descriptors, and `Attribute.Group.DIST_TRANSF_EXACT` contains their 29 exact
+counterparts. Request both groups explicitly for a paired 58-column study;
+multi-attribute layouts retain canonical scalar-ordinal order. The complete
+definitions and units are in the
+[distance-transform attribute contract](distance-transform.md).
 
 Altitude-based node-attribute sampling returns current-node, ancestor, and
 representative-descendant columns. Missing values use a typed policy:

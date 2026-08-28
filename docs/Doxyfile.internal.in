@@ -14,6 +14,12 @@ USE_MDFILE_AS_MAINPAGE = "@MMCFILTERS_DOCS_SOURCE_DIR@/README.md"
 RECURSIVE              = YES
 FILE_PATTERNS          = *.hpp *.tpp *.cpp *.md
 EXCLUDE                = "@MMCFILTERS_DOCS_SOURCE_DIR@/docs/refactoring"
+# Distance-transform kernels and test oracles are implementation machinery,
+# documented at subsystem level in docs/attribute-computer-architecture.md.
+# Keep them out of the member-by-member contributor API audit.
+EXCLUDE_PATTERNS       = */attributes/computers/detail/distance_transform/* \
+                         */attributes/computers/detail/distance_transform_approx/* \
+                         */unit-tests/attributes/support/maxdist/*
 
 # Keep extraction selective so WARN_IF_UNDOCUMENTED remains effective. Doxygen
 # disables undocumented-symbol warnings when EXTRACT_ALL is enabled.

@@ -44,9 +44,10 @@ Operations that read altitude require `ValuedMorphologicalTree<T>` or
 - `MorphologicalTreeKind` is a descriptive label, not an algorithm-dispatch
   contract.
 
-Algorithms validate the capabilities they use. For example, `MAX_DIST` requires
-an altitude buffer, a regular 2D domain, uniform adjacency, and a globally
-monotone altitude order. It does not require a particular descriptive kind.
+Algorithms validate the capabilities they use. For example, `MAX_DIST_EXACT`
+requires only a regular 2D domain: it is computed from each node support and
+its foreground 4-connected contour. It does not inspect altitude, construction
+adjacency, or the descriptive tree kind.
 
 | Operation | Required capabilities |
 | --- | --- |
@@ -56,7 +57,7 @@ monotone altitude order. It does not require a particular descriptive kind.
 | reconstruction and pixel mapping | regular 2D domain |
 | moments, bounding boxes, and contours | regular 2D domain |
 | bitquad attributes | regular 2D domain, canonical 4/8 projection connectivity, and exact node altitudes when lower/upper shape connectivity differs |
-| `MAX_DIST` | regular 2D domain, uniform adjacency, and monotone altitude order |
+| `MAX_DIST_EXACT`, `MAX_DIST`, `MAX_SQUARED_DIST_EXACT`, `MAX_SQUARED_DIST` | regular 2D domain |
 | hierarchy saliency projection | regular 2D domain and one compatible projection adjacency |
 
 ### Regular-grid adjacency

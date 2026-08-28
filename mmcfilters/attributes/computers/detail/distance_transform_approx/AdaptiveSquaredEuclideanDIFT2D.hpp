@@ -520,6 +520,24 @@ class EdtDIFT2D {
     template <class Consumer> void forEachNeighbour(PixelId pixel, bool propagationOnly, Consumer&& consumer) const {
         const int row = pixel / columns_;
         const int column = pixel % columns_;
+        if (rows_ == 1 || columns_ == 1) [[unlikely]] {
+            constexpr std::array<std::pair<int, int>, 4> axisOffsets{{{-1, 0}, {1, 0}, {0, -1}, {0, 1}}};
+            for (const auto [rowOffset, columnOffset] : axisOffsets) {
+                const int neighbourRow = row + rowOffset;
+                const int neighbourColumn = column + columnOffset;
+                const PixelId neighbour = index(neighbourRow, neighbourColumn);
+                if (neighbour == InvalidPixel) {
+                    continue;
+                }
+                if constexpr (CheckActiveEdges) {
+                    if ((activeEdges_[static_cast<std::size_t>(pixel)] & uncheckedDirectionBit(rowOffset, columnOffset)) == 0) {
+                        continue;
+                    }
+                }
+                consumer(neighbour, PropagationPolicy::initialStencil(neighbourRow, neighbourColumn, rows_, columns_), neighbourRow, neighbourColumn);
+            }
+            return;
+        }
         const std::uint8_t stencil = stencil_[static_cast<std::size_t>(pixel)];
         const std::uint8_t count = propagationOnly ? PropagationPolicy::propagationCounts[stencil] : PropagationPolicy::removalCounts[stencil];
         for (std::uint8_t indexValue = 0; indexValue < count; ++indexValue) {
@@ -538,6 +556,10 @@ class EdtDIFT2D {
 
     template <class Consumer> void forEachRemovalNeighbour(PixelId pixel, Consumer&& consumer) const {
         if constexpr (!UseLinearRemovalOffsets) {
+            forEachNeighbour(pixel, false, std::forward<Consumer>(consumer));
+            return;
+        }
+        if (rows_ == 1 || columns_ == 1) [[unlikely]] {
             forEachNeighbour(pixel, false, std::forward<Consumer>(consumer));
             return;
         }

@@ -934,6 +934,13 @@ void requireUniformBackendAndOracles() {
     requireProductionMatchesExactOracle(genericTree.topology(), "unconstrained generic tree without construction context");
     requireSingleNodeExactPathMatchesOracle(genericTree.topology(), genericTree.topology().root(), "unconstrained generic tree without construction context");
     requireApproximateSummariesMatchExactSmallGrid(genericTree.topology(), "unconstrained generic tree without construction context");
+    auto transposedGenericTree = MorphologicalTreeFactory::createFromNativeTopology(
+        std::span<const NodeId>(genericParent), std::span<const NodeId>(genericSmallestNode), std::span<const std::uint8_t>(genericAltitude), NodeId{0}, 4, 1,
+        MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Unconstrained, NoConstructionContext{}});
+    requireProductionMatchesExactOracle(transposedGenericTree.topology(), "single-column unconstrained generic tree");
+    requireSingleNodeExactPathMatchesOracle(transposedGenericTree.topology(), transposedGenericTree.topology().root(),
+                                            "single-column unconstrained generic tree");
+    requireApproximateSummariesMatchExactSmallGrid(transposedGenericTree.topology(), "single-column unconstrained generic tree");
     const std::vector<NodeId> nonzeroRootParent{2, 2, 2};
     const std::vector<NodeId> nonzeroRootSmallestNode{0, 0, 1, 1};
     const std::vector<std::uint8_t> nonzeroRootAltitude{4, 8, 0};

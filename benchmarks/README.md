@@ -233,6 +233,86 @@ Use the same Python interpreter ABI used to compile the extension. Python
 results should not be mixed with the C++ timings: they answer the distinct
 question of public binding and conversion overhead.
 
+## Distance-transform sensitivity
+
+`distance_transform_sensitivity.py` compares all aligned attribute pairs from
+`DIST_TRANSF` and `DIST_TRANSF_EXACT` on the same live nodes of established
+morphological trees. It reports node-level errors, per-image rank preservation,
+support-area strata, conditioning on whether the integer squared-distance field
+changed, and joint displacement for coordinate-valued descriptors.
+
+```text
+PYTHONPATH=build/python python3 benchmarks/distance_transform_sensitivity.py \
+  /path/to/icdar_resized \
+  benchmarks/results/distance-transform-sensitivity-icdar \
+  --count 10 \
+  --trees max,min,tos,residual_unrestricted,residual_saturated \
+  --radius 1.5 --infinity-pixel 0
+```
+
+Input files are selected in lexicographic order and recorded with SHA-256
+hashes. The output directory contains experiment metadata, per-image and
+aggregate CSV tables, and a generated `analysis.md`. Use the same Python ABI as
+the compiled extension and retain the complete output directory when reporting
+the experiment. `--infinity-pixel` affects only the saturated residual tree;
+the residual factories otherwise use their default row-major spatial order.
+The `tos` case uses the default canonical minimum-4/maximum-8 complementary
+grid without domain padding (`TopographicDomainExtension.NONE`), infinity pixel
+zero, and `uint8` altitude encoding. The radius applies only to component and
+residual trees.
+
+## Distance-transform execution time
+
+`distance_transform_timing.py` compares `DIST_TRANSF` with
+`DIST_TRANSF_EXACT`, using all 29 attributes in each family, and separately
+compares `MAX_DIST` with `MAX_DIST_EXACT`. Image resizing and tree construction
+are outside the attribute timer; construction time and node counts are recorded separately.
+
+```text
+PYTHONPATH=build/python python3 benchmarks/distance_transform_timing.py \
+  /path/to/icdar_resized \
+  benchmarks/results/distance-transform-timing-icdar \
+  --count 10 \
+  --trees max,min,tos,residual_unrestricted,residual_saturated \
+  --resolutions 480p,720p,1080p --repetitions 3
+```
+
+The standard shapes are 854x480, 1280x720, and 1920x1080. Input resizing uses
+Lanczos and is performed before each tree is built. Resolution, tree, and mode
+orders are deterministically balanced to reduce order and thermal bias. The
+individual images are the experimental units: exact/approximate ratios and
+their bootstrap confidence intervals are paired by image. `observations.csv`
+is checkpointed after every timed call; pass `--resume` with the same
+configuration to continue an interrupted campaign. The generated artifacts
+also report per-pixel and per-node timings, paired exact/approximate ratios, empirical
+resolution scaling, input hashes, and the native module build metadata. Every
+complete result matrix is hashed outside the timed region. Use
+`--expected-contract-mode CHECKED` or `--expected-contract-mode UNCHECKED` to
+prevent accidentally running a campaign with the wrong native module; resume
+also requires an identical module hash.
+
+The approximate DIFT uses one production PQueue32-style queue. Queue-layout
+A/B experiments were retired after selecting this backend; current timing
+campaigns therefore exercise the same non-configurable queue.
+
+For a focused CHECKED/UNCHECKED preflight of both distance-transform groups,
+build `mmcfilters_api_benchmark` in both contract modes and run:
+
+```text
+python3 benchmarks/compare_validation_modes.py \
+  --process-runs 5 --capture-samples \
+  --output-dir benchmarks/results/distance-transform-contract \
+  checked/benchmarks/mmcfilters_api_benchmark \
+  unchecked/benchmarks/mmcfilters_api_benchmark -- \
+  --manifest benchmarks/workloads/distance-transform-contract.ini \
+  --workload distance_transform_contract --format jsonl
+```
+
+The preflight hashes all 29 `double` result columns of each family, requires
+grouped and sequential-scalar computations to be semantically identical, alternates
+contract order by process run, and aborts on any cross-contract checksum or
+structural-invariant mismatch.
+
 ## Reporting rule
 
 For an article, retain the compiler and flags, CPU, operating system, contract

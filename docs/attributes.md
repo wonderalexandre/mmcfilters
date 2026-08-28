@@ -63,9 +63,15 @@ The attribute layer relies on the tree contracts documented in
 - altitude buffers must match the number of internal node slots;
 - attributes requiring adjacency must check that adjacency metadata is present.
 
-Individual attributes may add stricter checks. For example, `MAX_DIST` requires
-an altitude buffer, a regular 2D domain, uniform adjacency, and a globally
-monotone altitude order. Its descriptive tree kind is irrelevant.
+Individual attributes may add stricter checks. For example, all distance-field
+attributes require a regular 2D domain and use only node supports and their
+foreground 4-connected contours. They do not require altitude or
+construction-adjacency metadata, and their descriptive tree kind is irrelevant.
+
+Family-specific names, formulas, units, tie rules, and group membership are
+documented in the [Attribute catalog](attribute-catalog.md) and the relevant
+subsystem guide, such as
+[Distance-transform attributes](distance-transform.md).
 
 ## Common C++ usage patterns
 
@@ -109,7 +115,7 @@ Topology/support attributes without requiring an altitude-bearing valued tree:
 ```cpp
 auto [names, values] = AttributeComputation::computeTopologyAttributes(
     tree,
-    std::vector<AttributeOrGroup>{AREA, BOX_WIDTH, BALANCE_NODE});
+    std::vector<AttributeOrGroup>{Area, BoxWidth, BalanceNode});
 ```
 
 Returning values in a preserved public node ID space, for a tree created by
@@ -118,7 +124,7 @@ Returning values in a preserved public node ID space, for a tree created by
 ```cpp
 auto [names, values] = AttributeComputation::computeAttributes(
     importedTree,
-    std::vector<AttributeOrGroup>{AREA, GrayLevelHeight},
+    std::vector<AttributeOrGroup>{Area, GrayLevelHeight},
     NodeIdSpace::Higra);
 ```
 
@@ -150,11 +156,11 @@ and `LargestSupportDescendant` selection.
 Projecting node attributes to pixels or to an exported Higra layout:
 
 ```cpp
-auto mapped = AttributeComputation::computeAttributeMapping(valuedTree, AREA);
+auto mapped = AttributeComputation::computeAttributeMapping(valuedTree, Area);
 
 auto internal = AttributeComputation::computeAttributes(
     valuedTree,
-    std::vector<AttributeOrGroup>{AREA, GrayLevelHeight});
+    std::vector<AttributeOrGroup>{Area, GrayLevelHeight});
 auto exported = AttributeComputation::projectNodeValuesToExportedHigra(
     valuedTree,
     internal.attributeNames(),
@@ -289,6 +295,8 @@ API mode:
 
 - [Attribute catalog](attribute-catalog.md): public scalar attributes, groups,
   and input contracts.
+- [Distance-transform attributes](distance-transform.md): exact/approximate
+  scalar contracts and units.
 - [Attribute computer architecture](attribute-computer-architecture.md):
   contributor guide for adding or changing attribute computers.
 - [Finite-window local-attribute C++ extension](finite-window-local-attributes.md):

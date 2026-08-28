@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <limits>
 
-namespace mmcfilters::attributes::computers::detail::maxdist {
+namespace mmcfilters::unit_tests::maxdist_oracle::component_tree_dift {
 /**
  * @brief Bucket priority queue for non-negative integer costs.
  *
@@ -545,4 +545,4 @@ class PQueue // sPQueue
         return current;
     }
 };
-} // namespace mmcfilters::attributes::computers::detail::maxdist
+} // namespace mmcfilters::unit_tests::maxdist_oracle::component_tree_dift

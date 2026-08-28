@@ -187,6 +187,8 @@ under a `BitquadConnectivityPolicy`.
 ## C++ example
 
 ```cpp
+#include <bit>
+
 #include <mmcfilters/localAttributes/FiniteWindowLocalAttributeComputer.hpp>
 
 using namespace mmcfilters::local_attributes;

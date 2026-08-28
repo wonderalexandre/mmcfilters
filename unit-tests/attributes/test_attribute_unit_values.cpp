@@ -2,6 +2,8 @@
 
 #include "mmcfilters/attributes/computers/BoundingBoxComputer.hpp"
 #include "mmcfilters/attributes/computers/GrayLevelStatsComputer.hpp"
+#include "mmcfilters/attributes/computers/MaxDistExactComputer.hpp"
+#include "mmcfilters/attributes/computers/MaxDistComputer.hpp"
 #include "mmcfilters/attributes/computers/VolumeComputer.hpp"
 
 #include <array>
@@ -56,7 +58,13 @@ void requireUnitComputersUseProvidedLeafOrder() {
     auto valuedTree = makeValuedComponentTree(makeComponentTreeFixture(), true);
     const MorphologicalTree& topology = valuedTree->topology();
     const std::vector<PixelId> exportedProperParts{10, 0};
-    const std::vector<Attribute> attributes{MeanGrayLevel, Volume, BoxColumnMin, BoxRowMin};
+    const std::vector<Attribute> attributes{
+        MeanGrayLevel, Volume, BoxColumnMin, BoxRowMin, MaxDistCenterRowExact, MaxDistCenterColumnExact,
+        MaxDistCenterRow, MaxDistCenterColumn, MaxDistPlateauAreaExact, MaxDistPlateauCentroidRowExact,
+        MaxDistPlateauCentroidColumnExact, MaxDistPlateauArea, MaxDistPlateauCentroidRow,
+        MaxDistPlateauCentroidColumn, DistLevelCountExact, DistWeightedCentroidRowExact,
+        DistWeightedCentroidColumnExact, DistWeightedEccentricityExact, DistLevelCount,
+        DistWeightedCentroidRow, DistWeightedCentroidColumn, DistWeightedEccentricity};
     const AttributeNames unitNames = makeDenseAttributeNames(attributes);
     std::vector<float> unitValues(exportedProperParts.size() * static_cast<size_t>(unitNames.NUM_ATTRIBUTES), std::numeric_limits<float>::quiet_NaN());
 
@@ -75,6 +83,21 @@ void requireUnitComputersUseProvidedLeafOrder() {
     BoundingBoxComputer::computeUnitRows(UnitAttributeComputeContext<float>{
         topology, std::span<const PixelId>(exportedProperParts), std::span<float>(unitValues), unitNames, std::span<const Attribute>(boundingBoxRequest)});
 
+    const std::array<Attribute, 9> exactCenterRequest{MaxDistCenterRowExact, MaxDistCenterColumnExact, MaxDistPlateauAreaExact,
+                                                      MaxDistPlateauCentroidRowExact, MaxDistPlateauCentroidColumnExact,
+                                                      DistLevelCountExact, DistWeightedCentroidRowExact,
+                                                      DistWeightedCentroidColumnExact, DistWeightedEccentricityExact};
+    MaxDistExactComputer::computeUnitRows(UnitAttributeComputeContext<float>{
+        topology, std::span<const PixelId>(exportedProperParts), std::span<float>(unitValues), unitNames, std::span<const Attribute>(exactCenterRequest)});
+
+    const std::array<Attribute, 9> approximateCenterRequest{
+        MaxDistCenterRow, MaxDistCenterColumn, MaxDistPlateauArea, MaxDistPlateauCentroidRow,
+        MaxDistPlateauCentroidColumn, DistLevelCount, DistWeightedCentroidRow,
+        DistWeightedCentroidColumn, DistWeightedEccentricity};
+    MaxDistComputer::computeUnitRows(UnitAttributeComputeContext<float>{topology, std::span<const PixelId>(exportedProperParts),
+                                                                                     std::span<float>(unitValues), unitNames,
+                                                                                     std::span<const Attribute>(approximateCenterRequest)});
+
     for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(exportedProperParts.size()); ++leafIndex) {
         const PixelId pixel = exportedProperParts[static_cast<size_t>(leafIndex)];
         const NodeId smallestNodeId = topology.smallestNode(pixel);
@@ -87,6 +110,42 @@ void requireUnitComputersUseProvidedLeafOrder() {
                      "unit BOX_COLUMN_MIN must follow the exported leaf order");
         requireEqual(unitValues[unitNames.linearIndex(leafIndex, BoxRowMin)], static_cast<float>(row),
                      "unit BOX_ROW_MIN must follow the exported leaf order");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, MaxDistCenterRowExact)], static_cast<float>(row),
+                     "unit exact maximum-distance center row must follow the exported leaf order");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, MaxDistCenterColumnExact)], static_cast<float>(column),
+                     "unit exact maximum-distance center column must follow the exported leaf order");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, MaxDistCenterRow)], static_cast<float>(row),
+                     "unit approximate maximum-distance center row must follow the exported leaf order");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, MaxDistCenterColumn)], static_cast<float>(column),
+                     "unit approximate maximum-distance center column must follow the exported leaf order");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, MaxDistPlateauAreaExact)], 1.0f,
+                     "unit exact maximum-distance plateau area must be one");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, MaxDistPlateauCentroidRowExact)], static_cast<float>(row),
+                     "unit exact maximum-distance plateau centroid row must follow the exported leaf order");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, MaxDistPlateauCentroidColumnExact)], static_cast<float>(column),
+                     "unit exact maximum-distance plateau centroid column must follow the exported leaf order");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, MaxDistPlateauArea)], 1.0f,
+                     "unit approximate maximum-distance plateau area must be one");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, MaxDistPlateauCentroidRow)], static_cast<float>(row),
+                     "unit approximate maximum-distance plateau centroid row must follow the exported leaf order");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, MaxDistPlateauCentroidColumn)], static_cast<float>(column),
+                     "unit approximate maximum-distance plateau centroid column must follow the exported leaf order");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, DistLevelCountExact)], 1.0f,
+                     "unit exact distance field must contain the zero level");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, DistWeightedCentroidRowExact)], static_cast<float>(row),
+                     "zero-weight exact centroid must fall back to the support centroid");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, DistWeightedCentroidColumnExact)], static_cast<float>(column),
+                     "zero-weight exact centroid column must follow the exported leaf order");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, DistWeightedEccentricityExact)], 1.0f,
+                     "unit exact distance-weighted eccentricity must be isotropic");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, DistLevelCount)], 1.0f,
+                     "unit approximate distance field must contain the zero level");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, DistWeightedCentroidRow)], static_cast<float>(row),
+                     "zero-weight approximate centroid must fall back to the support centroid");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, DistWeightedCentroidColumn)], static_cast<float>(column),
+                     "zero-weight approximate centroid column must follow the exported leaf order");
+        requireEqual(unitValues[unitNames.linearIndex(leafIndex, DistWeightedEccentricity)], 1.0f,
+                     "unit approximate distance-weighted eccentricity must be isotropic");
     }
 }
 

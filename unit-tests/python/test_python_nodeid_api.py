@@ -76,7 +76,7 @@ def main() -> int:
     mmcfilters = load_native_module(build_dir)
 
     def complementary_convention(rows, columns, min_radius, max_radius, domain_extension=None, infinity_pixel=0):
-        extension = domain_extension or mmcfilters.TopographicDomainExtension.EXTERIOR_RING
+        extension = domain_extension if domain_extension is not None else mmcfilters.TopographicDomainExtension.NONE
         return mmcfilters.TopographicConvention(
             mmcfilters.ComplementaryGridImmersion(
                 mmcfilters.ComplementaryAdjacencies(
@@ -122,14 +122,21 @@ def main() -> int:
     require(
         max_dist_requirements
         == {
-            "altitude": True,
+            "altitude": False,
             "grid_domain_2d": True,
-            "adjacency": "uniform",
-            "monotone_altitude_order": True,
+            "adjacency": "none",
+            "monotone_altitude_order": False,
             "altitude_for_directional_adjacency": False,
             "canonical_4_or_8_adjacency": False,
         },
         "Python attribute requirements must expose the C++ capability contract",
+    )
+    max_dist_exact_requirements = mmcfilters.Attribute.requirements(
+        mmcfilters.Attribute.MAX_DIST_EXACT
+    )
+    require(
+        max_dist_exact_requirements == max_dist_requirements,
+        "Python MAX_DIST and MAX_DIST_EXACT must expose the same topology capability contract",
     )
     for api_module in (mmcfilters, mmcfilters._native):
         for removed_name in (
@@ -747,6 +754,25 @@ def main() -> int:
     require(exported_area.shape == (len(exported_parent),), "exported-Higra projection shape")
     require(np.array_equal(exported_area, roundtrip_exported_area, equal_nan=True), "exported-Higra projection must match import projection")
     valued_tree_max_dist_attribute = mmcfilters.Attribute.compute_single_attribute(valued_tree, mmcfilters.Attribute.MAX_DIST)
+    topology_max_dist_attribute = mmcfilters.Attribute.compute_single_topology_attribute(valued_tree, mmcfilters.Attribute.MAX_DIST)
+    require(
+        np.array_equal(valued_tree_max_dist_attribute, topology_max_dist_attribute, equal_nan=True),
+        "Python MAX_DIST must use the same topology-only computation through valued and topology entry points",
+    )
+    valued_tree_max_dist_exact = mmcfilters.Attribute.compute_single_attribute(
+        valued_tree, mmcfilters.Attribute.MAX_DIST_EXACT
+    )
+    topology_max_dist_exact = mmcfilters.Attribute.compute_single_topology_attribute(
+        valued_tree, mmcfilters.Attribute.MAX_DIST_EXACT
+    )
+    require(
+        np.array_equal(
+            valued_tree_max_dist_exact,
+            topology_max_dist_exact,
+            equal_nan=True,
+        ),
+        "Python MAX_DIST_EXACT must use the same topology-only computation through valued and topology entry points",
+    )
     exported_area_and_max_dist = valued_tree.project_node_values_to_exported_higra(
         np.stack([valued_tree_area_attribute, valued_tree_max_dist_attribute], axis=1),
         [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST],
@@ -1094,8 +1120,8 @@ def main() -> int:
     require(valued_tree_of_shapes.node_altitudes.dtype == np.uint16, "valued_tree ToS exact altitude dtype")
     require(valued_tree_of_shapes.reconstruct_from_node_altitudes().dtype == np.uint16, "valued_tree ToS reconstruction dtype")
 
-    # The default convention uses the unpadded canonical min-4/max-8 immersion,
-    # infinity pixel zero, and unchanged 8-bit source levels.
+    # The default convention publishes unchanged 8-bit source levels over the
+    # canonical 4/8 complementary-grid immersion.
     tos_source = np.array([[1, 2, 1], [2, 3, 2], [1, 2, 1]], dtype=np.uint8)
     default_specification = mmcfilters.TopographicConvention()
     require(

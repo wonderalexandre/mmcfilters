@@ -3,7 +3,7 @@
 #include <utility>
 #include <ostream>
 
-namespace mmcfilters::attributes::computers::detail::maxdist {
+namespace mmcfilters::unit_tests::maxdist_oracle::component_tree_dift {
 /**
  * @brief Integer point in image coordinates.
  *
@@ -332,4 +332,4 @@ class Box2D {
      */
     int height_;
 };
-} // namespace mmcfilters::attributes::computers::detail::maxdist
+} // namespace mmcfilters::unit_tests::maxdist_oracle::component_tree_dift

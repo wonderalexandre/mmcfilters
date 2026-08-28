@@ -29,8 +29,8 @@ lifetime. If `o(p)` is its inclusion-smallest owner, an interior-domain pixel
 stops being a contour site at the LCA of `o(p)` and the owners of its four
 side-neighbours. A global-boundary pixel remains active through the root. The
 internal `MorphologicalTreeBoundaryLifetimeIndex` materializes these start/stop
-events once. `ContoursComputedIncrementally` consumes this source rather than
-reimplementing the local boundary decision.
+events once. `ContoursComputedIncrementally` and other hierarchy-wide consumers
+reuse this source instead of reimplementing the local boundary decision.
 
 ## C++ API
 

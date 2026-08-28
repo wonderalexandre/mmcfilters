@@ -24,6 +24,22 @@ using namespace mmcfilters;
 using namespace mmcfilters::attributes::computers;
 using namespace mmcfilters::unit_tests;
 
+static_assert(static_cast<int>(MaxDist) == 55);
+static_assert(static_cast<int>(AvgChildHeightNode) == 56);
+static_assert(static_cast<int>(ContourPixels) == 57);
+static_assert(static_cast<int>(ContourSideSouth) == 62);
+static_assert(static_cast<int>(MaxDistExact) == 63);
+static_assert(static_cast<int>(MaxDistPlateauCentroidColumn) == 81);
+static_assert(static_cast<int>(DistSum) == 82);
+static_assert(static_cast<int>(DistWeightedEccentricity) == 99);
+static_assert(static_cast<int>(DistSumExact) == 100);
+static_assert(static_cast<int>(DistWeightedEccentricityExact) == 117);
+static_assert(static_cast<int>(MaxSquaredDist) == 118);
+static_assert(static_cast<int>(MaxSquaredDistExact) == 119);
+static_assert(static_cast<int>(AttributeGroup::TreeTopology) == 5);
+static_assert(static_cast<int>(AttributeGroup::DistTransf) == 6);
+static_assert(static_cast<int>(AttributeGroup::DistTransfExact) == 7);
+
 static_assert(AttributeComputer<AreaComputer>);
 static_assert(AttributeComputer<BoundingBoxComputer>);
 static_assert(AttributeComputer<TreeTopologyComputer>);
@@ -34,6 +50,7 @@ static_assert(AttributeComputer<BitquadAttributeComputer>);
 static_assert(AttributeComputer<ContourSideAttributeComputer>);
 static_assert(AttributeComputer<VolumeComputer>);
 static_assert(AttributeComputer<GrayLevelStatsComputer>);
+static_assert(AttributeComputer<MaxDistExactComputer>);
 static_assert(AttributeComputer<MaxDistComputer>);
 
 static_assert(TopologyAttributeComputer<AreaComputer>);
@@ -44,13 +61,14 @@ static_assert(TopologyAttributeComputer<HuMomentsComputer>);
 static_assert(TopologyAttributeComputer<MomentBasedAttributeComputer>);
 static_assert(TopologyAttributeComputer<BitquadAttributeComputer>);
 static_assert(TopologyAttributeComputer<ContourSideAttributeComputer>);
+static_assert(TopologyAttributeComputer<MaxDistExactComputer>);
+static_assert(TopologyAttributeComputer<MaxDistComputer>);
 
 static_assert(AltitudeAttributeComputer<VolumeComputer>);
 static_assert(AltitudeAttributeComputer<GrayLevelStatsComputer>);
-static_assert(AltitudeAttributeComputer<MaxDistComputer>);
-static_assert(std::tuple_size_v<TopologyAttributeComputers> == 8);
-static_assert(std::tuple_size_v<AltitudeAttributeComputers> == 3);
-static_assert(std::tuple_size_v<RegisteredAttributeComputers> == 11);
+static_assert(std::tuple_size_v<TopologyAttributeComputers> == 10);
+static_assert(std::tuple_size_v<AltitudeAttributeComputers> == 2);
+static_assert(std::tuple_size_v<RegisteredAttributeComputers> == 12);
 
 template <class Computer>
 void requireComputerContract(std::initializer_list<Attribute> producedAttributes, AttributeComputerDomain domain, AttributeComputerFamily family,
@@ -96,7 +114,8 @@ template <class Computer> void requireRegisteredComputerFamily(AttributeComputer
     }
 }
 
-template <class Computer> void countProducedAttributes(std::array<int, static_cast<std::size_t>(ContourSideSouth) + 1>& counts) {
+template <class Computer>
+void countProducedAttributes(std::array<int, static_cast<std::size_t>(MaxSquaredDistExact) + 1>& counts) {
     for (Attribute attribute : Computer::producedAttributes) {
         const auto index = static_cast<std::size_t>(attribute);
         require(index < counts.size(), "computer produced attribute must be in registry range");
@@ -105,7 +124,7 @@ template <class Computer> void countProducedAttributes(std::array<int, static_ca
 }
 
 void requireGlobalAttributeRegistryContracts() {
-    std::array<int, static_cast<std::size_t>(ContourSideSouth) + 1> producedCounts{};
+    std::array<int, static_cast<std::size_t>(MaxSquaredDistExact) + 1> producedCounts{};
     countProducedAttributes<AreaComputer>(producedCounts);
     countProducedAttributes<BoundingBoxComputer>(producedCounts);
     countProducedAttributes<TreeTopologyComputer>(producedCounts);
@@ -116,6 +135,7 @@ void requireGlobalAttributeRegistryContracts() {
     countProducedAttributes<ContourSideAttributeComputer>(producedCounts);
     countProducedAttributes<VolumeComputer>(producedCounts);
     countProducedAttributes<GrayLevelStatsComputer>(producedCounts);
+    countProducedAttributes<MaxDistExactComputer>(producedCounts);
     countProducedAttributes<MaxDistComputer>(producedCounts);
 
     const std::vector<Attribute>& allAttributes = ATTRIBUTE_GROUPS.at(AttributeGroup::All);
@@ -196,8 +216,13 @@ void requireCapabilityRegistryContracts() {
             "BITQUAD_AREA capability contract");
 
     const auto maxDist = capabilityRequirements(MaxDist);
-    require(maxDist.altitude && maxDist.gridDomain2D && maxDist.adjacency == AttributeAdjacencyRequirement::Uniform && maxDist.monotoneAltitudeOrder,
+    require(!maxDist.altitude && maxDist.gridDomain2D && maxDist.adjacency == AttributeAdjacencyRequirement::None && !maxDist.monotoneAltitudeOrder,
             "MAX_DIST capability contract");
+
+    const auto maxDistExact = capabilityRequirements(MaxDistExact);
+    require(!maxDistExact.altitude && maxDistExact.gridDomain2D && maxDistExact.adjacency == AttributeAdjacencyRequirement::None &&
+                !maxDistExact.monotoneAltitudeOrder,
+            "MAX_DIST_EXACT capability contract");
 
     for (Attribute attribute : ATTRIBUTE_GROUPS.at(AttributeGroup::All)) {
         const auto requirements = capabilityRequirements(attribute);
@@ -213,17 +238,17 @@ void requireCapabilityRegistryContracts() {
 
 int main() {
     {
-        auto names = AttributeNames::fromList({Area, Volume, MaxDist});
+        auto names = AttributeNames::fromList({Area, Volume, MaxDistExact});
         requireEqual(names.NUM_ATTRIBUTES, 3, "AttributeNames count");
         requireEqual(names.getIndex(Area), 0, "AREA index in AttributeNames");
         requireEqual(names.offset(Volume), 1, "VOLUME offset in AttributeNames");
         require(names.contains(Area), "AttributeNames::contains must find requested attribute");
         require(!names.contains(GrayLevelHeight), "AttributeNames::contains must reject absent attribute");
         requireEqual(names.getIndex(Volume), 1, "VOLUME index in AttributeNames");
-        requireEqual(names.getIndex(MaxDist), 2, "MAX_DIST index in AttributeNames");
-        requireEqual(names.linearIndex(2, MaxDist), 8, "MAX_DIST linear index");
+        requireEqual(names.getIndex(MaxDistExact), 2, "MAX_DIST_EXACT index in AttributeNames");
+        requireEqual(names.linearIndex(2, MaxDistExact), 8, "MAX_DIST_EXACT linear index");
         for (int nodeIndex = 0; nodeIndex < 6; ++nodeIndex) {
-            for (Attribute attribute : {Area, Volume, MaxDist}) {
+            for (Attribute attribute : {Area, Volume, MaxDistExact}) {
                 require(names.linearIndex(nodeIndex, attribute) < 6 * names.NUM_ATTRIBUTES, "AttributeNames dense linear index must stay within buffer bounds");
             }
         }
@@ -237,11 +262,12 @@ int main() {
         requireEqual(grayLevelNames.getIndex(GrayLevelVariance), 4, "GRAY_LEVEL GrayLevelVariance index");
         requireEqual(grayLevelNames.linearIndex(5, GrayLevelVariance), 29, "GRAY_LEVEL dense linear index");
         auto shapeNames = AttributeNames::fromGroup(AttributeGroup::Shape);
-        requireEqual(shapeNames.NUM_ATTRIBUTES, 47, "SHAPE AttributeNames count");
+        requireEqual(shapeNames.NUM_ATTRIBUTES, 48, "SHAPE AttributeNames count");
         requireEqual(shapeNames.getIndex(Area), 0, "SHAPE AREA index");
+        require(shapeNames.contains(MaxDistExact), "SHAPE AttributeNames must include MAX_DIST_EXACT");
         require(shapeNames.contains(MaxDist), "SHAPE AttributeNames must include MAX_DIST");
         require(shapeNames.contains(Circularity), "SHAPE AttributeNames must include CIRCULARITY");
-        requireEqual(shapeNames.getIndex(ContourSideSouth), 46, "SHAPE CONTOUR_SIDE_SOUTH index");
+        requireEqual(shapeNames.getIndex(ContourSideSouth), 47, "SHAPE CONTOUR_SIDE_SOUTH index");
         auto momentNames = AttributeNames::fromGroup(AttributeGroup::Moments);
         requireEqual(momentNames.NUM_ATTRIBUTES, 21, "MOMENTS AttributeNames count");
         requireEqual(momentNames.getIndex(CentralMoment20), 0, "MOMENTS CENTRAL_MOMENT_20 index");
@@ -250,8 +276,32 @@ int main() {
         requireEqual(boundaryNames.NUM_ATTRIBUTES, 15, "BOUNDARY AttributeNames count");
         requireEqual(boundaryNames.getIndex(BitquadArea), 0, "BOUNDARY BITQUAD_AREA index");
         requireEqual(boundaryNames.getIndex(ContourSideSouth), 14, "BOUNDARY CONTOUR_SIDE_SOUTH index");
+        auto distanceTransformNames = AttributeNames::fromGroup(AttributeGroup::DistTransf);
+        requireEqual(distanceTransformNames.NUM_ATTRIBUTES, 29, "DIST_TRANSF AttributeNames count");
+        require(!distanceTransformNames.contains(MaxDistExact), "DIST_TRANSF must exclude exact MAX_DIST_EXACT");
+        require(distanceTransformNames.contains(MaxDist), "DIST_TRANSF must include MAX_DIST");
+        require(!distanceTransformNames.contains(MaxSquaredDistExact), "DIST_TRANSF must exclude exact MAX_SQUARED_DIST_EXACT");
+        require(distanceTransformNames.contains(MaxSquaredDist), "DIST_TRANSF must include MAX_SQUARED_DIST");
+        require(distanceTransformNames.contains(MaxDistPlateauCentroidColumn),
+                "DIST_TRANSF must include the final approximate plateau descriptor");
+        require(distanceTransformNames.contains(DistWeightedEccentricity),
+                "DIST_TRANSF must include the final approximate distance descriptor");
+        const auto& distanceTransformAttributes = ATTRIBUTE_GROUPS.at(AttributeGroup::DistTransf);
+        for (Attribute attribute : distanceTransformAttributes) {
+            require(!AttributeNames::toString(attribute).ends_with("_EXACT"), "DIST_TRANSF attributes must be unsuffixed");
+        }
+        auto exactDistanceTransformNames = AttributeNames::fromGroup(AttributeGroup::DistTransfExact);
+        requireEqual(exactDistanceTransformNames.NUM_ATTRIBUTES, 29, "DIST_TRANSF_EXACT AttributeNames count");
+        require(exactDistanceTransformNames.contains(MaxDistExact), "DIST_TRANSF_EXACT must include MAX_DIST_EXACT");
+        require(exactDistanceTransformNames.contains(MaxSquaredDistExact), "DIST_TRANSF_EXACT must include MAX_SQUARED_DIST_EXACT");
+        require(exactDistanceTransformNames.contains(DistWeightedEccentricityExact),
+                "DIST_TRANSF_EXACT must include the final exact distance descriptor");
+        require(!exactDistanceTransformNames.contains(MaxDist), "DIST_TRANSF_EXACT must exclude MAX_DIST");
+        for (Attribute attribute : ATTRIBUTE_GROUPS.at(AttributeGroup::DistTransfExact)) {
+            require(AttributeNames::toString(attribute).ends_with("_EXACT"), "DIST_TRANSF_EXACT attributes must use the _EXACT suffix");
+        }
         auto allNames = AttributeNames::fromGroup(AttributeGroup::All);
-        requireEqual(allNames.NUM_ATTRIBUTES, static_cast<int>(ContourSideSouth) + 1, "ALL AttributeNames count");
+        requireEqual(allNames.NUM_ATTRIBUTES, static_cast<int>(MaxSquaredDistExact) + 1, "ALL AttributeNames count");
         requireEqual(allNames.getIndex(ContourPixels), static_cast<int>(ContourPixels), "ALL CONTOUR_PIXELS index");
         requireEqual(allNames.getIndex(ContourSideSouth), static_cast<int>(ContourSideSouth), "ALL CONTOUR_SIDE_SOUTH index");
         const std::vector<Attribute>& allAttributes = ATTRIBUTE_GROUPS.at(AttributeGroup::All);
@@ -262,7 +312,17 @@ int main() {
             require(parsed.has_value(), "ALL group attribute string must parse");
             requireEqual(static_cast<int>(*parsed), index, "ALL group parse round-trip");
         }
-        requireEqual(AttributeNames::toString(MaxDist), std::string("MAX_DIST"), "AttributeNames::toString");
+        requireEqual(AttributeNames::toString(MaxDistExact), std::string("MAX_DIST_EXACT"), "AttributeNames::toString");
+        requireEqual(AttributeNames::toString(MaxDist), std::string("MAX_DIST"),
+                     "AttributeNames::toString approximate max distance");
+        requireEqual(AttributeNames::toString(MaxSquaredDistExact), std::string("MAX_SQUARED_DIST_EXACT"),
+                     "AttributeNames::toString exact maximum squared distance");
+        requireEqual(AttributeNames::toString(MaxSquaredDist), std::string("MAX_SQUARED_DIST"),
+                     "AttributeNames::toString approximate maximum squared distance");
+        require(!AttributeNames::parse("MAX_DIST_SQUARED_APPROX").has_value(),
+                "approximate MAX_DIST must not expose an APPROX-suffixed alias");
+        require(!AttributeNames::parse("MAX_SQUARED_DIST_APPROX").has_value(),
+                "approximate MAX_SQUARED_DIST must not expose an APPROX-suffixed alias");
         require(AttributeNames::describe(Area).starts_with("Area:"), "AttributeNames::describe AREA");
 
         auto parsedArea = AttributeNames::parse("AREA");
@@ -316,7 +376,29 @@ int main() {
                                                 "VolumeComputer");
         requireComputerContract<GrayLevelStatsComputer>({MeanGrayLevel, GrayLevelVariance, GrayLevelHeight}, AttributeComputerDomain::Altitude,
                                                         AttributeComputerFamily::GrayLevelStats, "GrayLevelStatsComputer");
-        requireComputerContract<MaxDistComputer>({MaxDist}, AttributeComputerDomain::Altitude, AttributeComputerFamily::MaxDist, "MaxDistComputer");
+        requireComputerContract<MaxDistExactComputer>({MaxDistExact, MaxSquaredDistExact, DistSquaredSumExact, DistSquaredMeanExact, DistRmsExact, DistSquaredVarianceExact,
+                                                  MaxDistCenterRowExact, MaxDistCenterColumnExact, MaxDistPlateauAreaExact,
+                                                  MaxDistPlateauCentroidRowExact, MaxDistPlateauCentroidColumnExact,
+                                                  DistSumExact, DistMeanExact, DistVarianceExact, DistMedianExact, DistModeExact,
+                                                  DistQ25Exact, DistQ75Exact, DistQ90Exact, DistEntropyExact, DistPositiveAreaExact,
+                                                  DistLevelCountExact, DistWeightedCentroidRowExact, DistWeightedCentroidColumnExact,
+                                                  DistWeightedCentralMoment20Exact, DistWeightedCentralMoment02Exact,
+                                                  DistWeightedCentralMoment11Exact, DistWeightedAxisOrientationExact,
+                                                  DistWeightedEccentricityExact},
+                                                 AttributeComputerDomain::Topology, AttributeComputerFamily::MaxDistExact, "MaxDistExactComputer");
+        requireComputerContract<MaxDistComputer>({MaxDist, MaxSquaredDist, DistSquaredSum, DistSquaredMean, DistRms,
+                                                               DistSquaredVariance, MaxDistCenterRow, MaxDistCenterColumn,
+                                                               MaxDistPlateauArea, MaxDistPlateauCentroidRow,
+                                                               MaxDistPlateauCentroidColumn,
+                                                               DistSum, DistMean, DistVariance, DistMedian, DistMode,
+                                                               DistQ25, DistQ75, DistQ90, DistEntropy, DistPositiveArea,
+                                                               DistLevelCount, DistWeightedCentroidRow, DistWeightedCentroidColumn,
+                                                               DistWeightedCentralMoment20, DistWeightedCentralMoment02,
+                                                               DistWeightedCentralMoment11, DistWeightedAxisOrientation,
+                                                               DistWeightedEccentricity},
+                                                              AttributeComputerDomain::Topology,
+                                                              AttributeComputerFamily::MaxDist,
+                                                              "MaxDistComputer");
 
         requireRuntimeProducedAttributesMatchCanonical<AreaComputer>("AreaComputer");
         requireRuntimeProducedAttributesMatchCanonical<BoundingBoxComputer>("BoundingBoxComputer");
@@ -328,6 +410,7 @@ int main() {
         requireRuntimeProducedAttributesMatchCanonical<ContourSideAttributeComputer>("ContourSideAttributeComputer");
         requireRuntimeProducedAttributesMatchCanonical<VolumeComputer>("VolumeComputer");
         requireRuntimeProducedAttributesMatchCanonical<GrayLevelStatsComputer>("GrayLevelStatsComputer");
+        requireRuntimeProducedAttributesMatchCanonical<MaxDistExactComputer>("MaxDistExactComputer");
         requireRuntimeProducedAttributesMatchCanonical<MaxDistComputer>("MaxDistComputer");
 
         requireRegisteredComputerFamily<AreaComputer>(AttributeComputerFamily::Area, "AreaComputer");
@@ -340,7 +423,9 @@ int main() {
         requireRegisteredComputerFamily<ContourSideAttributeComputer>(AttributeComputerFamily::ContourSide, "ContourSideAttributeComputer");
         requireRegisteredComputerFamily<VolumeComputer>(AttributeComputerFamily::Volume, "VolumeComputer");
         requireRegisteredComputerFamily<GrayLevelStatsComputer>(AttributeComputerFamily::GrayLevelStats, "GrayLevelStatsComputer");
-        requireRegisteredComputerFamily<MaxDistComputer>(AttributeComputerFamily::MaxDist, "MaxDistComputer");
+        requireRegisteredComputerFamily<MaxDistExactComputer>(AttributeComputerFamily::MaxDistExact, "MaxDistExactComputer");
+        requireRegisteredComputerFamily<MaxDistComputer>(AttributeComputerFamily::MaxDist,
+                                                                      "MaxDistComputer");
 
         requireEqual(static_cast<int>(mmcfilters::detail::familyForAttribute(Rectangularity)), static_cast<int>(AttributeComputerFamily::BoundingBox),
                      "scheduler family lookup for bounding boxes");
@@ -358,6 +443,35 @@ int main() {
                      "scheduler family lookup for bitquads");
         requireEqual(static_cast<int>(mmcfilters::detail::familyForAttribute(ContourSideSouth)), static_cast<int>(AttributeComputerFamily::ContourSide),
                      "scheduler family lookup for contour sides");
+        requireEqual(static_cast<int>(mmcfilters::detail::familyForAttribute(DistSquaredVarianceExact)), static_cast<int>(AttributeComputerFamily::MaxDistExact),
+                     "scheduler family lookup for exact distance moments");
+        requireEqual(static_cast<int>(mmcfilters::detail::familyForAttribute(MaxSquaredDistExact)),
+                     static_cast<int>(AttributeComputerFamily::MaxDistExact),
+                     "scheduler family lookup for exact maximum squared distance");
+        requireEqual(static_cast<int>(mmcfilters::detail::familyForAttribute(MaxSquaredDist)),
+                     static_cast<int>(AttributeComputerFamily::MaxDist),
+                     "scheduler family lookup for approximate maximum squared distance");
+        requireEqual(static_cast<int>(mmcfilters::detail::familyForAttribute(DistSquaredVariance)),
+                     static_cast<int>(AttributeComputerFamily::MaxDist),
+                     "scheduler family lookup for approximate distance moments");
+        requireEqual(static_cast<int>(mmcfilters::detail::familyForAttribute(MaxDistCenterColumnExact)),
+                     static_cast<int>(AttributeComputerFamily::MaxDistExact),
+                     "scheduler family lookup for exact maximum-distance localization");
+        requireEqual(static_cast<int>(mmcfilters::detail::familyForAttribute(MaxDistCenterColumn)),
+                     static_cast<int>(AttributeComputerFamily::MaxDist),
+                     "scheduler family lookup for approximate maximum-distance localization");
+        requireEqual(static_cast<int>(mmcfilters::detail::familyForAttribute(MaxDistPlateauAreaExact)),
+                     static_cast<int>(AttributeComputerFamily::MaxDistExact),
+                     "scheduler family lookup for exact maximum-distance plateau");
+        requireEqual(static_cast<int>(mmcfilters::detail::familyForAttribute(MaxDistPlateauArea)),
+                     static_cast<int>(AttributeComputerFamily::MaxDist),
+                     "scheduler family lookup for approximate maximum-distance plateau");
+        requireEqual(static_cast<int>(mmcfilters::detail::familyForAttribute(DistEntropyExact)),
+                     static_cast<int>(AttributeComputerFamily::MaxDistExact),
+                     "scheduler family lookup for exact distance profile");
+        requireEqual(static_cast<int>(mmcfilters::detail::familyForAttribute(DistWeightedCentralMoment11)),
+                     static_cast<int>(AttributeComputerFamily::MaxDist),
+                     "scheduler family lookup for approximate distance-weighted moments");
 
         requireGlobalAttributeRegistryContracts();
     }

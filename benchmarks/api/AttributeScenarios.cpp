@@ -119,8 +119,9 @@ void addAttributeScenarios(Context& context, std::vector<ScenarioResult>& result
         addScalarAttribute(context, results, attribute);
     }
 
-    const std::array<AttributeGroup, 6> groups{AttributeGroup::GrayLevel, AttributeGroup::Shape,         AttributeGroup::Moments,
-                                                AttributeGroup::Boundary,   AttributeGroup::TreeTopology, AttributeGroup::All};
+    const std::array<AttributeGroup, 8> groups{AttributeGroup::GrayLevel, AttributeGroup::Shape, AttributeGroup::Moments,
+                                               AttributeGroup::Boundary, AttributeGroup::TreeTopology, AttributeGroup::DistTransf,
+                                               AttributeGroup::DistTransfExact, AttributeGroup::All};
     for (AttributeGroup group : groups) {
         if (!atLeast(context.options.profile, Profile::Core) && group != AttributeGroup::GrayLevel && group != AttributeGroup::TreeTopology) {
             continue;

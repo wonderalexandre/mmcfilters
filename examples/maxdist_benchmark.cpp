@@ -5,8 +5,11 @@
  * `./build/examples/mmcfilters_maxdist_benchmark --sizes 128,256,512
  * --repeats 3 --radius 1.5`.
  *
- * `MAX_DIST` requires component trees with adjacency metadata. The checksum
- * keeps benchmark runs observable without printing per-node buffers.
+ * `MAX_DIST` requires a regular two-dimensional pixel domain and does not read
+ * construction adjacency or node altitude. This focused example builds
+ * component trees, while the public attribute also supports other compatible
+ * hierarchy kinds. The checksum keeps benchmark runs observable without
+ * printing per-node buffers.
  */
 #include "mmcfilters/attributes/Attributes.hpp"
 #include "mmcfilters/trees/MorphologicalTreeFactory.hpp"

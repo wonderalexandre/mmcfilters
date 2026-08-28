@@ -68,6 +68,16 @@ if(MMCFILTERS_BUILD_TESTS)
             --emit-samples
     )
     set_tests_properties(benchmark_api_manifest_smoke PROPERTIES LABELS "benchmark;scientific")
+
+    add_test(
+        NAME benchmark_distance_transform_contract_smoke
+        COMMAND mmcfilters_api_benchmark
+            --manifest ${CMAKE_CURRENT_SOURCE_DIR}/workloads/distance-transform-contract.ini
+            --workload distance_transform_contract
+            --repetitions 1
+            --emit-samples
+    )
+    set_tests_properties(benchmark_distance_transform_contract_smoke PROPERTIES LABELS "benchmark;scientific;distance-transform")
 endif()
 
 foreach(target IN ITEMS

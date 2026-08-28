@@ -7,9 +7,11 @@ for the attribute table, see [Attribute catalog](attribute-catalog.md).
 The public API calls each scalar an attribute. In this guide, descriptor refers
 only to the mathematical quantity represented by a public scalar attribute.
 
-In this subsystem, incremental means bottom-up and finite-window-oriented
-computation over the current tree. It does not mean that every public attribute
-buffer stays live after arbitrary topology edits.
+This subsystem contains several computation strategies, including bottom-up
+accumulation, finite-window event compilation, and family-specific providers
+and reducers. Incremental describes how a particular computer derives its
+result over the current tree; it does not imply one universal strategy or that
+every public attribute buffer stays live after arbitrary topology edits.
 
 ## Public boundary
 
@@ -93,6 +95,14 @@ calls compute the base attribute first, then materialize ancestor/descendant
 sample offsets from a typed positive altitude step, sampling radius,
 representative-descendant policy, and missing-sample policy.
 
+## Subsystem architectures
+
+Concrete families may introduce providers, reducers, caches, or specialized
+traversals behind the common computer contract. Those mechanisms remain
+implementation details and must not create an alternate public orchestration
+path. See [Distance-transform architecture](distance-transform-architecture.md)
+for the exact and approximate distance-field backends.
+
 ## Contexts and concepts
 
 The context types in `AttributeKernelSupport.hpp` are the adapter boundary:
@@ -107,23 +117,12 @@ computer protocol. A new family should not add public family-specific method
 names. Private helpers and `detail` kernels may keep narrower signatures when
 that makes implementation or testing clearer.
 
-The generic finite-window extension API exposes role-typed `EventDelta`,
-`LocalAttributeIncrement`, and `NodeAttribute` records so its mathematical
-pipeline can be inspected and tested. `ConnectedSubsetTreeLocalizer` owns the
-tree-dependent join `LCA(P(anchor), P(sample))`; `LocalDecision` owns only the
-state-to-value map; `EventAlgebra` owns identity, addition, and subtraction;
-and `FiniteWindowLocalEventCompiler` turns those policies into sparse node
-events. Attribute-family storage such as
-`detail::BitquadFamilyCounts` and `detail::ContourSideCounts` remains an
-implementation detail and is not part of the public attribute-computer
-contract.
-
-Bitquad-family counting is hierarchy-independent. Connectivity-dependent scalar
-formulas are a later materialization step and receive an explicit
-`detail::BitquadConnectivityPolicy`. For a tree of shapes with unequal
-complementary connectivity, the policy consumes `ShapePolarity::Lower` or
-`ShapePolarity::Upper` derived from exact node-versus-parent altitudes. The root
-has no polarity and is handled by the policy's separate root entry.
+The generic finite-window C++ extension has its own role-typed event and
+aggregation contract. See
+[Finite-window local-attribute C++ extension](finite-window-local-attributes.md)
+for its localization semantics, decision/algebra split, bitquad specialization,
+and extension example. Family-specific storage remains an implementation detail
+and is not part of the common attribute-computer contract described here.
 
 ## Numeric policy
 
@@ -181,15 +180,14 @@ cmake --build build --target \
   unit_public_attribute_api \
   unit_attribute_plumbing \
   unit_attribute_unit_values \
-  unit_attributes_on_morphological_tree \
-  unit_finite_window_local_attribute_computations \
-  unit_maxdist_support
+  unit_attributes_on_morphological_tree
 
 ctest --test-dir build --output-on-failure -R \
-  "unit_(public_attribute_api|attribute_plumbing|attribute_unit_values|attributes_on_morphological_tree|finite_window_local_attribute_computations|maxdist_support|installed_consumer)"
+  "unit_(public_attribute_api|attribute_plumbing|attribute_unit_values|attributes_on_morphological_tree|installed_consumer)"
 ```
 
-Run Python tests when bindings or the Python facade change.
+Run Python tests when bindings or the Python facade change. Subsystem guides
+list any additional focused validation targets.
 
 ## Non-goals
 

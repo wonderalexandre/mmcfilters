@@ -44,9 +44,9 @@ Operations that read altitude require `ValuedMorphologicalTree<T>` or
 - `MorphologicalTreeKind` is a descriptive label, not an algorithm-dispatch
   contract.
 
-Algorithms validate the capabilities they use. For example, `MAX_DIST` requires
-an altitude buffer, a regular 2D domain, uniform adjacency, and a globally
-monotone altitude order. It does not require a particular descriptive kind.
+Algorithms validate the capabilities they use. A topology/support operation may
+require regular 2D geometry without requiring altitude, construction adjacency,
+or a particular descriptive tree kind.
 
 | Operation | Required capabilities |
 | --- | --- |
@@ -56,7 +56,7 @@ monotone altitude order. It does not require a particular descriptive kind.
 | reconstruction and pixel mapping | regular 2D domain |
 | moments, bounding boxes, and contours | regular 2D domain |
 | bitquad attributes | regular 2D domain, canonical 4/8 projection connectivity, and exact node altitudes when lower/upper shape connectivity differs |
-| `MAX_DIST` | regular 2D domain, uniform adjacency, and monotone altitude order |
+| distance-transform attributes (`DIST_TRANSF`, `DIST_TRANSF_EXACT`) | regular 2D domain |
 | hierarchy saliency projection | regular 2D domain and one compatible projection adjacency |
 
 ### Regular-grid adjacency
@@ -377,7 +377,7 @@ again when it exits after visiting every descendant. For a tree with
 of `[0, 2 * numNodes())`.
 
 The inclusive ancestor relation is characterized by interval containment:
-$u$ is an ancestor of $v$ exactly when
+\f$u\f$ is an ancestor of \f$v\f$ exactly when
 `dfsEntryIndex(u) <= dfsEntryIndex(v)` and
 `dfsExitIndex(u) >= dfsExitIndex(v)`. The number of strict descendants is
 `(dfsExitIndex(node) - dfsEntryIndex(node) - 1) / 2`. These values are event

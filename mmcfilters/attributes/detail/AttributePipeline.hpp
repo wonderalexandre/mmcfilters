@@ -11,7 +11,6 @@
 #include "../computers/AreaComputer.hpp"
 #include "../computers/GrayLevelStatsComputer.hpp"
 #include "../computers/VolumeComputer.hpp"
-#include "../computers/MaxDistComputer.hpp"
 #include "../../trees/MorphologicalTree.hpp"
 #include "../../trees/TreeAltitudeAlgorithms.hpp"
 #include "../../utils/Altitude.hpp"
@@ -96,7 +95,9 @@ inline bool containsAltitudeDependentAttribute(std::span<const Attribute> attrib
     return std::any_of(attributes.begin(), attributes.end(), [](Attribute attribute) { return requiresAltitudeForAttributePipeline(attribute); });
 }
 
-/** @brief Builds a scalar layout after request expansion established uniqueness. */
+/**
+ * @brief Builds a scalar layout after request expansion established uniqueness.
+ */
 inline AttributeNames makeAttributeNamesForExpandedRequest(std::span<const Attribute> attributes) {
     std::unordered_map<Attribute, int> offsets;
     offsets.reserve(attributes.size());
@@ -117,8 +118,8 @@ inline AttributeNames makeAttributeNamesForExpandedRequest(std::span<const Attri
  * `resultBuffer` according to `resultNames`.
  *
  * Execution order follows the scheduler closure: area first when needed,
- * volume before gray-level statistics, `MAX_DIST` with altitude, then
- * topology/support families through `TopologyAttributeBackend`.
+ * volume before gray-level statistics, then topology/support families
+ * (including `MAX_DIST_EXACT`) through `TopologyAttributeBackend`.
  *
  * @param tree Tree topology.
  * @param altitude Altitude data indexed by node identifier.
@@ -204,12 +205,6 @@ inline void executeAttributeComputationPlan(const MorphologicalTree& tree, std::
         const DependencySourceT<Real>* volumeDependency = needsGrayAggregateDependencies ? &grayDependencies[0] : nullptr;
         const DependencySourceT<Real>* grayAreaDependency = needsGrayAggregateDependencies ? &grayDependencies[1] : nullptr;
         ::mmcfilters::attributes::computers::detail::kernel::computeGrayLevelStats(grayContext, grayRequest, volumeDependency, grayAreaDependency);
-    }
-
-    const std::vector<Attribute> maxDistAttributes = plan.requestedForFamily(attributes::computers::AttributeComputerFamily::MaxDist);
-    if (!maxDistAttributes.empty()) {
-        ::mmcfilters::attributes::computers::detail::kernel::computeMaxDist(
-            AltitudeAttributeComputeContext<Real, T>{tree, altitude, resultBuffer, resultNames, std::span<const Attribute>(maxDistAttributes)});
     }
 
     DependencyMapT<Real> topologyOnlyDependencies;
@@ -298,10 +293,7 @@ inline ComputedAttributeData<Real> materializeAttributes(const MorphologicalTree
     const std::vector<Attribute> requestedAttributes = expandAttributePipelineAttributes(attributes);
     MMCFILTERS_CONTRACT_CHECKED_ONLY(tree.requireNotEditing("AttributeComputation::computeAttributesFromAltitudeSpan");
                                      TreeAltitudeAlgorithms::validateNodeAltitudeBufferShape(tree, altitude);
-                                     validateAttributeCapabilities(tree, std::span<const Attribute>(requestedAttributes), true, "AttributeComputation");
-                                     if (containsAttribute(std::span<const Attribute>(requestedAttributes), MaxDist)) {
-                                         ::mmcfilters::attributes::computers::detail::validateFiniteMaxDistAltitude(altitude);
-                                     });
+                                     validateAttributeCapabilities(tree, std::span<const Attribute>(requestedAttributes), true, "AttributeComputation"));
     return materializeAttributesForExpandedRequest<Real, T>(tree, altitude, requestedAttributes, outputSpace);
 }
 

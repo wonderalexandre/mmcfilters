@@ -80,6 +80,12 @@ namespace {
     if (name == "TREE_TOPOLOGY") {
         return AttributeGroup::TreeTopology;
     }
+    if (name == "DIST_TRANSF") {
+        return AttributeGroup::DistTransf;
+    }
+    if (name == "DIST_TRANSF_EXACT") {
+        return AttributeGroup::DistTransfExact;
+    }
     if (name == "ALL") {
         return AttributeGroup::All;
     }

@@ -357,8 +357,9 @@ class MorphologicalTreeFactory {
      * minimum-4/maximum-8 complementary-grid immersion without domain padding,
      * uses infinity pixel zero, and publishes unchanged 8-bit source levels.
      * `ToSGrayLevel` altitudes are available under
-     * `TopographicAltitudeEncoding::ExactDoubled`, which is the only encoding a
-     * self-dual span immersion admits.
+     * `TopographicAltitudeEncoding::ExactDoubled`. A self-dual span immersion
+     * requires that encoding when it retains an exterior ring; without the ring,
+     * `TopographicAltitudeEncoding::UInt8` is also exact and admissible.
      *
      * @tparam Altitude Published node-altitude type.
      * @param img Non-null, non-empty image.

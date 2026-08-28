@@ -180,8 +180,9 @@ the aggregation rule.
 ## Complexity
 
 Let \f$m=|\mathcal{V}|\f$ be the number of live nodes, \f$p=|E|\f$ the number of
-proper parts, \f$e=|\mathcal{A}|\f$ the number of graph edges, and \f$l\f$ the
-number of component-tree leaves.
+pixel-domain elements (equivalently, proper-part element references),
+\f$e=|\mathcal{A}|\f$ the number of graph edges, and \f$l\f$ the number of
+component-tree leaves.
 
 | Operation | Time | Auxiliary memory including output where noted |
 | --- | --- | --- |

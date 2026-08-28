@@ -219,8 +219,8 @@ jobs:
 
       - name: Run manifest smoke in both modes
         run: |
-          ctest --test-dir build-benchmark-checked -R '^benchmark_api_manifest_smoke$' --output-on-failure
-          ctest --test-dir build-benchmark-unchecked -R '^benchmark_api_manifest_smoke$' --output-on-failure
+          ctest --test-dir build-benchmark-checked -R '^benchmark_(api_manifest|distance_transform_contract)_smoke$' --output-on-failure
+          ctest --test-dir build-benchmark-unchecked -R '^benchmark_(api_manifest|distance_transform_contract)_smoke$' --output-on-failure
 
       - name: Verify deterministic cross-mode results
         run: >
@@ -234,6 +234,19 @@ jobs:
           --workload smoke_structured
           --repetitions 1
           --suite attributes,casf
+
+      - name: Verify distance-transform cross-mode results
+        run: >
+          python benchmarks/compare_validation_modes.py
+          --process-runs 2
+          --capture-samples
+          build-benchmark-checked/benchmarks/mmcfilters_api_benchmark
+          build-benchmark-unchecked/benchmarks/mmcfilters_api_benchmark
+          --
+          --manifest benchmarks/workloads/distance-transform-contract.ini
+          --workload distance_transform_contract
+          --repetitions 1
+          --suite attributes
 
   sanitizers:
     name: Sanitizers (ubuntu-latest)

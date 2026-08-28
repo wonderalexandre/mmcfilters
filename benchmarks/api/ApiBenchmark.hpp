@@ -266,6 +266,10 @@ struct Context {
         return "boundary";
     case AttributeGroup::TreeTopology:
         return "tree_topology";
+    case AttributeGroup::DistTransf:
+        return "dist_transf";
+    case AttributeGroup::DistTransfExact:
+        return "dist_transf_exact";
     case AttributeGroup::All:
         return "all";
     }

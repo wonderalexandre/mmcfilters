@@ -6,14 +6,14 @@
 #include <vector>
 #include <string>
 
-#include "../../../../utils/Image.hpp"
-#include "../../../../utils/CommittedGridAccess.hpp"
-#include "../../../../utils/CommittedImageAccess.hpp"
-#include "../../../../utils/RegularGridAdjacency2D.hpp"
+#include "mmcfilters/utils/Image.hpp"
+#include "mmcfilters/utils/CommittedGridAccess.hpp"
+#include "mmcfilters/utils/CommittedImageAccess.hpp"
+#include "mmcfilters/utils/RegularGridAdjacency2D.hpp"
 #include "PQueue.hpp"
 #include "Geometry.hpp"
 
-namespace mmcfilters::attributes::computers::detail::maxdist {
+namespace mmcfilters::unit_tests::maxdist_oracle::component_tree_dift {
 namespace detail {
 /**
  * @brief Squared integer distance helper.
@@ -744,4 +744,4 @@ class EdtDIFT {
      */
     std::vector<int> stack_;
 };
-} // namespace mmcfilters::attributes::computers::detail::maxdist
+} // namespace mmcfilters::unit_tests::maxdist_oracle::component_tree_dift

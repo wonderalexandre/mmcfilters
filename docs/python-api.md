@@ -148,11 +148,12 @@ Attribute requirements can be inspected before computation:
 
 ```python
 requirements = mmcfilters.Attribute.requirements(
-    mmcfilters.Attribute.MAX_DIST
+    mmcfilters.Attribute.CENTRAL_MOMENT_20
 )
 assert requirements["grid_domain_2d"]
-assert requirements["adjacency"] == "uniform"
-assert requirements["monotone_altitude_order"]
+assert not requirements["altitude"]
+assert requirements["adjacency"] == "none"
+assert not requirements["monotone_altitude_order"]
 ```
 
 ## Node IDs and queries
@@ -258,6 +259,9 @@ boundary_layout, boundary_values = (
     )
 )
 ```
+
+Stable scalar and group membership, input contracts, and family-specific guides
+are indexed by the [Attribute catalog](attribute-catalog.md).
 
 Altitude-based node-attribute sampling returns current-node, ancestor, and
 representative-descendant columns. Missing values use a typed policy:

@@ -24,6 +24,12 @@ template <class T, class U> void requireEqual(const T& actual, const U& expected
     }
 }
 
+template <class T, class U, class V> void requireNear(T actual, U expected, V tolerance, const std::string& message) {
+    if (std::abs(static_cast<double>(actual) - static_cast<double>(expected)) > static_cast<double>(tolerance)) {
+        throw std::runtime_error(message);
+    }
+}
+
 void requireHiddenDependenciesAreAbsent(const mmcfilters::AttributeNames& names, std::initializer_list<mmcfilters::Attribute> hiddenDependencies,
                                         const std::string& label) {
     for (mmcfilters::Attribute dependency : hiddenDependencies) {
@@ -48,7 +54,7 @@ int main() {
     auto image = ImageUInt8::fromExternal(pixels.data(), 4, 4);
     auto valuedTree = MorphologicalTreeFactory::createMaxTree(image, 1.5);
 
-    auto valuedTreeAttributes = AttributeComputation::computeAttributes(valuedTree, std::vector<AttributeOrGroup>{Area, GrayLevelHeight, MaxDist});
+    auto valuedTreeAttributes = AttributeComputation::computeAttributes(valuedTree, std::vector<AttributeOrGroup>{Area, GrayLevelHeight, MaxDistExact});
     requireEqual(valuedTreeAttributes.first.NUM_ATTRIBUTES, 3, "valuedTree public attribute stride");
     require(valuedTreeAttributes.second.size() ==
                 static_cast<std::size_t>(valuedTree.topology().numInternalNodeSlots()) * static_cast<std::size_t>(valuedTreeAttributes.first.NUM_ATTRIBUTES),
@@ -61,6 +67,73 @@ int main() {
     requireEqual(topologyAttributes.first.NUM_ATTRIBUTES, 3, "topology public attribute stride");
     requireEqual(topologyAttributes.second[topologyAttributes.first.linearIndex(valuedTree.topology().root(), Area)], 16.0f,
                  "root AREA through explicit topology facade");
+
+    auto topologyMaxDistExact = AttributeComputation::computeSingleTopologyAttribute(valuedTree.topology(), MaxDistExact);
+    auto valuedMaxDistExact = AttributeComputation::computeSingleAttribute(valuedTree, MaxDistExact);
+    require(topologyMaxDistExact.second == valuedMaxDistExact.second,
+            "MAX_DIST_EXACT must use the same topology-only computation through topology and valued facades");
+
+    auto topologyMaxDist = AttributeComputation::computeSingleTopologyAttribute(valuedTree.topology(), MaxDist);
+    auto valuedMaxDist = AttributeComputation::computeSingleAttribute(valuedTree, MaxDist);
+    require(topologyMaxDist.second == valuedMaxDist.second,
+            "MAX_DIST must use the same topology-only computation through topology and valued facades");
+    requireFiniteLiveNodeValues(valuedTree.topology(), topologyMaxDist.first, topologyMaxDist.second, MaxDist, "MAX_DIST request");
+
+    auto bothDistanceAttributes = AttributeComputation::computeTopologyAttributes(
+        valuedTree.topology(), std::vector<AttributeOrGroup>{MaxDistExact, MaxDist, MaxSquaredDistExact, MaxSquaredDist});
+    requireEqual(bothDistanceAttributes.first.NUM_ATTRIBUTES, 4, "linear and squared maximum-distance public stride");
+    require(bothDistanceAttributes.first.contains(MaxDistExact) && bothDistanceAttributes.first.contains(MaxDist) &&
+                bothDistanceAttributes.first.contains(MaxSquaredDistExact) && bothDistanceAttributes.first.contains(MaxSquaredDist),
+            "linear and squared exact/approximate maxima remain separate public attributes");
+    for (NodeId node : valuedTree.topology().aliveNodeIds()) {
+        const float approximate = bothDistanceAttributes.second[bothDistanceAttributes.first.linearIndex(node, MaxDist)];
+        const float approximateSquared = bothDistanceAttributes.second[bothDistanceAttributes.first.linearIndex(node, MaxSquaredDist)];
+        const float exact = bothDistanceAttributes.second[bothDistanceAttributes.first.linearIndex(node, MaxDistExact)];
+        const float exactSquared = bothDistanceAttributes.second[bothDistanceAttributes.first.linearIndex(node, MaxSquaredDistExact)];
+        requireNear(approximate * approximate, approximateSquared, 1.0e-5f, "approximate MAX_DIST squared contract");
+        requireNear(exact * exact, exactSquared, 1.0e-5f, "exact MAX_DIST_EXACT squared contract");
+    }
+
+    const std::vector<AttributeOrGroup> distanceSummaryRequest{
+        MaxDistExact, MaxSquaredDistExact, DistSquaredSumExact, DistSquaredMeanExact, DistRmsExact, DistSquaredVarianceExact,
+        MaxDistCenterRowExact, MaxDistCenterColumnExact, MaxDist, MaxSquaredDist, DistSquaredSum, DistSquaredMean, DistRms,
+        DistSquaredVariance, MaxDistCenterRow, MaxDistCenterColumn, MaxDistPlateauAreaExact,
+        MaxDistPlateauCentroidRowExact, MaxDistPlateauCentroidColumnExact, MaxDistPlateauArea, MaxDistPlateauCentroidRow,
+        MaxDistPlateauCentroidColumn,
+        DistSum, DistMean, DistVariance, DistMedian, DistMode, DistQ25, DistQ75, DistQ90, DistEntropy,
+        DistPositiveArea, DistLevelCount, DistWeightedCentroidRow, DistWeightedCentroidColumn,
+        DistWeightedCentralMoment20, DistWeightedCentralMoment02, DistWeightedCentralMoment11,
+        DistWeightedAxisOrientation, DistWeightedEccentricity,
+        DistSumExact, DistMeanExact, DistVarianceExact, DistMedianExact, DistModeExact, DistQ25Exact,
+        DistQ75Exact, DistQ90Exact, DistEntropyExact, DistPositiveAreaExact, DistLevelCountExact,
+        DistWeightedCentroidRowExact, DistWeightedCentroidColumnExact, DistWeightedCentralMoment20Exact,
+        DistWeightedCentralMoment02Exact, DistWeightedCentralMoment11Exact, DistWeightedAxisOrientationExact,
+        DistWeightedEccentricityExact};
+    auto distanceSummary = AttributeComputation::computeTopologyAttributes(valuedTree.topology(), distanceSummaryRequest);
+    requireEqual(distanceSummary.first.NUM_ATTRIBUTES, 58, "exact and approximate distance-summary/geometry public stride");
+    for (AttributeOrGroup item : distanceSummaryRequest) {
+        const Attribute attribute = std::get<Attribute>(item);
+        require(distanceSummary.first.contains(attribute), "distance-summary request exposes every requested scalar");
+        requireFiniteLiveNodeValues(valuedTree.topology(), distanceSummary.first, distanceSummary.second, attribute,
+                                    "distance-summary request");
+    }
+    auto approximateDistanceTransformGroup = AttributeComputation::computeTopologyAttributes(
+        valuedTree.topology(), std::vector<AttributeOrGroup>{AttributeGroup::DistTransf});
+    auto exactDistanceTransformGroup = AttributeComputation::computeTopologyAttributes(
+        valuedTree.topology(), std::vector<AttributeOrGroup>{AttributeGroup::DistTransfExact});
+    requireEqual(approximateDistanceTransformGroup.first.NUM_ATTRIBUTES, 29, "DIST_TRANSF public stride");
+    requireEqual(exactDistanceTransformGroup.first.NUM_ATTRIBUTES, 29, "DIST_TRANSF_EXACT public stride");
+    for (AttributeOrGroup item : distanceSummaryRequest) {
+        const Attribute attribute = std::get<Attribute>(item);
+        const bool exact = AttributeNames::toString(attribute).ends_with("_EXACT");
+        require((exact ? exactDistanceTransformGroup.first : approximateDistanceTransformGroup.first).contains(attribute),
+                exact ? "DIST_TRANSF_EXACT exposes every exact scalar" : "DIST_TRANSF exposes every approximate scalar");
+    }
+
+    auto valuedDistanceMean = AttributeComputation::computeSingleAttribute<double>(valuedTree, DistSquaredMeanExact);
+    auto topologyDistanceMean = AttributeComputation::computeSingleTopologyAttribute<double>(valuedTree.topology(), DistSquaredMeanExact);
+    require(valuedDistanceMean.second == topologyDistanceMean.second,
+            "DIST_SQUARED_MEAN_EXACT must use the same topology-only computation through topology and valued facades");
 
     auto sampledArea = AttributeComputation::computeSampledNodeAttribute(valuedTree, Area, AltitudeDifference<std::uint8_t>{1}, 1);
     requireEqual(sampledArea.first.NUM_ATTRIBUTES, 3, "sampled public attribute stride");

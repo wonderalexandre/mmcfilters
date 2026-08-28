@@ -101,8 +101,7 @@ inline constexpr std::array<AttributeMetadata, static_cast<std::size_t>(Attribut
       "of the image function over its support.",
       false, ALTITUDE_REQUIREMENTS},
      {RelativeVolume, "RELATIVE_VOLUME",
-      "Relative volume: Sum of differences between the node altitude and the gray levels of pixels in the component. Measures the amount of intensity required "
-      "to fill the component to its node altitude.",
+      "Relative volume: Recursive contrast volume R(n) = area(n) + sum_c [R(c) + area(c) * abs(altitude(c) - altitude(n))] over the direct children c.",
       false, ALTITUDE_REQUIREMENTS},
      {GrayLevelHeight, "GRAY_LEVEL_HEIGHT",
       "Gray-level height: Maximum absolute altitude difference between a node and any node in its subtree. This reduces to the traditional one-sided span on "
@@ -121,7 +120,7 @@ inline constexpr std::array<AttributeMetadata, static_cast<std::size_t>(Attribut
       "Rectangularity: Ratio between the connected component area and the area of its bounding box. Values closer to 1 indicate shapes that efficiently fill "
       "their bounding box.",
       true, GRID_DOMAIN_2D_REQUIREMENTS},
-     {RatioWh, "RATIO_WH", "Aspect ratio: Ratio of the bounding box width to its height. Describes the elongation of the component.", true,
+     {RatioWh, "RATIO_WH", "Aspect ratio: Maximum bounding-box extent divided by the minimum extent. Values are at least 1 and describe elongation independently of orientation.", true,
       GRID_DOMAIN_2D_REQUIREMENTS},
      {BoxColumnMin, "BOX_COLUMN_MIN", "Bounding box column min: Minimum column index covered by the connected component.", true, GRID_DOMAIN_2D_REQUIREMENTS},
      {BoxColumnMax, "BOX_COLUMN_MAX", "Bounding box column max: Maximum column index covered by the connected component.", true, GRID_DOMAIN_2D_REQUIREMENTS},
@@ -161,8 +160,7 @@ inline constexpr std::array<AttributeMetadata, static_cast<std::size_t>(Attribut
       GRID_DOMAIN_2D_REQUIREMENTS},
 
      {Inertia, "INERTIA",
-      "Inertia: Sum of normalized second-order central moments (mu20 + mu02). Measures the dispersion of mass around the centroid. Higher values indicate "
-      "objects with thin and elongated structures.",
+      "Inertia: Sum of normalized second-order central moments, mu20 / area^2 + mu02 / area^2. This is the same scalar expression as the first Hu moment.",
       true, GRID_DOMAIN_2D_REQUIREMENTS},
      {Compactness, "COMPACTNESS",
       "Compactness: Area normalized by the shape's dispersion (mu20 + mu02). Higher values indicate more compact and isotropic shapes.", true,
@@ -171,8 +169,10 @@ inline constexpr std::array<AttributeMetadata, static_cast<std::size_t>(Attribut
       "Eccentricity: Ratio of principal inertia eigenvalues (λ_1/λ_2). Measures elongation; values near 1 indicate circularity, higher values indicate "
       "elongation. Degenerate line-like supports saturate at a finite maximum.",
       true, GRID_DOMAIN_2D_REQUIREMENTS},
-     {LengthMajorAxis, "LENGTH_MAJOR_AXIS", "Major axis length: Length of the longest diameter of the shape.", true, GRID_DOMAIN_2D_REQUIREMENTS},
-     {LengthMinorAxis, "LENGTH_MINOR_AXIS", "Minor axis length: Length of the shortest diameter of the shape.", true, GRID_DOMAIN_2D_REQUIREMENTS},
+     {LengthMajorAxis, "LENGTH_MAJOR_AXIS", "Major-axis length proxy of the equivalent second-moment ellipse, derived from the largest inertia eigenvalue and support area.", true,
+      GRID_DOMAIN_2D_REQUIREMENTS},
+     {LengthMinorAxis, "LENGTH_MINOR_AXIS", "Minor-axis length proxy of the equivalent second-moment ellipse, derived from the smallest inertia eigenvalue and support area.", true,
+      GRID_DOMAIN_2D_REQUIREMENTS},
      {AxisOrientation, "AXIS_ORIENTATION",
       "Axis orientation: Angle of the principal inertia axis, computed from central moments. Indicates the dominant orientation of the shape.", true,
       GRID_DOMAIN_2D_REQUIREMENTS},
@@ -195,7 +195,7 @@ inline constexpr std::array<AttributeMetadata, static_cast<std::size_t>(Attribut
       "Bitquad perimeter: Discrete approximation of the shape's boundary length, calculated by summing edge-contributing patterns in the 2x2 pixel grid.",
       true, BITQUAD_REQUIREMENTS},
      {BitquadPerimeterContinuous, "BITQUAD_PERIMETER_CONTINUOUS",
-      "Bitquad continuous perimeter: Smoothed estimation of the boundary length, incorporating valuedTree transitions across pixel edges and diagonals.", true,
+      "Bitquad continuous perimeter: Smoothed boundary-length estimate derived from weighted transitions across local 2x2 bitquad configurations.", true,
       BITQUAD_REQUIREMENTS},
      {BitquadCircularity, "BITQUAD_CIRCULARITY",
       "Bitquad circularity: Compactness measure defined as (4π x areaDuda) / perimeter². Values close to 1 indicate circular shapes; lower values suggest "
@@ -229,7 +229,7 @@ inline constexpr std::array<AttributeMetadata, static_cast<std::size_t>(Attribut
      {NumLeafDescendantsNode, "NUM_LEAF_DESCENDANTS_NODE",
       "Number of leaf descendants: Number of leaf nodes in the subtree. Reflects the number of minimal patterns under this structure.", true, NO_REQUIREMENTS},
      {LeafRatioNode, "LEAF_RATIO_NODE",
-      "Leaf ratio: Ratio of leaf descendants to total descendants. Measures structural 'flatness' or terminal density of the subtree.", true, NO_REQUIREMENTS},
+      "Leaf ratio: Number of leaf descendants divided by subtree size, leaf_descendants / (descendants + 1). Leaves return 1.", true, NO_REQUIREMENTS},
      {BalanceNode, "BALANCE_NODE",
       "Balance: Difference between the maximum and minimum heights among the subtrees of the children. Indicates branching symmetry.", true, NO_REQUIREMENTS},
 

@@ -1548,12 +1548,13 @@ class TreeOfShapesProducer {
     /**
      * @brief Builds the hierarchy in the altitude scale declared by the convention.
      *
-     * Under `TopographicAltitudeEncoding::UInt8` the published altitudes are the
-     * unchanged source gray levels of a complementary-grid immersion. Under
-     * `TopographicAltitudeEncoding::ExactDoubled` even values represent source
-     * gray levels and odd values represent the half levels introduced by
-     * self-dual interpolation. Neither encoding loses a parent-child altitude
-     * distinction to quantization.
+     * Under `TopographicAltitudeEncoding::UInt8` the published altitudes are
+     * unchanged source gray levels. This encoding is exact for a
+     * complementary-grid immersion and for a self-dual span immersion without
+     * an exterior ring. Under `TopographicAltitudeEncoding::ExactDoubled`, even
+     * values represent source gray levels and odd values represent half levels
+     * introduced by self-dual interpolation. Neither encoding loses a
+     * parent-child altitude distinction to quantization.
      *
      * @tparam Altitude Published node-altitude type, which must match the
      * altitude encoding declared by the convention.

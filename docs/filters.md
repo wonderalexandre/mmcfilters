@@ -172,7 +172,7 @@ attribute. It requires a globally monotone altitude order. `Real` defaults to
 ```cpp
 #include <mmcfilters/filters/ExtinctionValues.hpp>
 
-auto area = AttributeComputation::computeSingleAttribute(valuedTree, AREA);
+auto area = AttributeComputation::computeSingleAttribute(valuedTree, Area);
 ExtinctionValues<std::uint8_t> extinction(valuedTree, area.values());
 
 auto strongest = ExtinctionSelectionPolicy<float>::byTopK(8);

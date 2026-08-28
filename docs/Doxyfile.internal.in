@@ -15,7 +15,7 @@ RECURSIVE              = YES
 FILE_PATTERNS          = *.hpp *.tpp *.cpp *.md
 EXCLUDE                = "@MMCFILTERS_DOCS_SOURCE_DIR@/docs/refactoring"
 # Distance-transform kernels and test oracles are implementation machinery,
-# documented at subsystem level in docs/attribute-computer-architecture.md.
+# documented at subsystem level in docs/distance-transform-architecture.md.
 # Keep them out of the member-by-member contributor API audit.
 EXCLUDE_PATTERNS       = */attributes/computers/detail/distance_transform/* \
                          */attributes/computers/detail/distance_transform_approx/* \

@@ -85,11 +85,12 @@ enum class TopographicDomainExtension { ExteriorRing, None };
 /**
  * @brief Scale in which tree-of-shapes node altitudes are published.
  *
- * `UInt8` publishes source gray levels unchanged and is available only for
- * complementary-grid immersions, whose construction levels never leave the
- * source level set. `ExactDoubled` publishes doubled units, where a source
- * level `v` is represented by `2 * v` and odd values represent the half levels
- * that a self-dual span immersion can introduce.
+ * `UInt8` publishes source gray levels unchanged. It is exact for
+ * complementary-grid immersions and for a self-dual span immersion without an
+ * exterior ring, because neither case exposes half levels in the active domain.
+ * `ExactDoubled` publishes doubled units, where a source level `v` is represented
+ * by `2 * v` and odd values represent half levels that a self-dual span
+ * immersion with an exterior ring can introduce.
  */
 enum class TopographicAltitudeEncoding { UInt8, ExactDoubled };
 

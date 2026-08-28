@@ -17,9 +17,13 @@ and `Attribute.Group.DIST_TRANSF` in Python contain the 29 approximate scalars.
 `AttributeGroup::DistTransfExact` and `Attribute.Group.DIST_TRANSF_EXACT` contain
 the 29 matching exact scalars. The exact group enumerator was appended, so the
 numeric ordinals of pre-existing groups remain unchanged. Request both groups
-explicitly for a paired 58-column study. As with every multi-attribute request,
+explicitly to obtain all 58 paired descriptors. As with every multi-attribute request,
 a computed result layout uses the API's canonical scalar-ordinal order rather
 than the registry's presentation order.
+
+`MAX_DIST` retains its pre-existing scalar-enum ordinal. New scalar enumerators,
+including `MAX_SQUARED_DIST` and the `_EXACT` family, are appended so the
+ordinals of pre-existing attributes remain unchanged.
 
 ## Mathematical contract
 
@@ -88,35 +92,11 @@ Every name above has an exact counterpart obtained by appending `_EXACT`.
 | orientation | degrees |
 | eccentricity | dimensionless |
 
-## Performance behavior
+## Related guides
 
-Maximum-only requests remain specialized. `MAX_SQUARED_DIST` exposes the
-internal maximum cost directly; `MAX_DIST` adds only one square root per live
-node. Both use the lightweight approximate maximum observer, and squared
-moments use the smaller dynamic-moment observer. Histogram and spatial state
-are independently selected at compile time: distributional requests enable the
-sparse histogram only when needed, and spatial-only requests do not allocate or
-update a histogram. Mixed scalar requests retain exactly the union of the
-required state. Exact bundles share one EDT sample stream, while approximate
-bundles share one DIFT traversal.
-
-The approximate DIFT has one production queue: the PQueue32-style `GFT_FAST`
-intrusive-node layout. It is not selected through CMake or the public API.
-After the DIFT establishes valid dense element and squared-cost domains, the
-queue does not repeat public boundary checks in `insert`, `update`, `erase`,
-`contains`, or `pop`; its constructor still rejects invalid allocation
-domains. FIFO ordering is preserved within each squared-distance bucket.
-
-Production first checks a topology-only condition: whether the
-inclusion-smallest owners of every A8 domain edge are comparable. When it
-holds, no sibling can propagate into another before their join, so all domain
-edges remain active and the hot kernel is the same unrestricted form used by
-Opt3. Otherwise, each edge is activated at the LCA of its endpoint owners.
-This dispatch depends on the hierarchy itself rather than max-tree, min-tree,
-tree-of-shapes, residual, or generic type labels. The production policy also
-compiles internal-operation validation out of the hot path; audited policies
-remain available to tests.
-
-See [Scientific benchmark builds](scientific-benchmark-builds.md) for the
-benchmark entry points that isolate maximum-only, distributional, and spatial
-scalar costs.
+- [Distance-transform architecture](distance-transform-architecture.md): exact
+  and approximate providers, scheduling, queue policy, oracles, and complexity.
+- [Attribute catalog](attribute-catalog.md): scalar names, groups, and concise
+  public descriptions.
+- [Benchmark guide](https://github.com/wonderalexandre/mmcfilters/blob/main/benchmarks/README.md):
+  sensitivity and timing protocols for this attribute family.

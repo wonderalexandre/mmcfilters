@@ -68,56 +68,9 @@ attributes require a regular 2D domain and use only node supports and their
 foreground 4-connected contours. They do not require altitude or
 construction-adjacency metadata, and their descriptive tree kind is irrelevant.
 
-The unsuffixed distance-transform family, including `MAX_DIST`, uses the
-adaptive-A8 DIFT backend and preserves the historical approximate contract.
-The new exact EDT family is identified consistently by the `_EXACT` suffix,
-including `MAX_DIST_EXACT`, `DIST_SQUARED_MEAN_EXACT`, and the exact center and
-plateau descriptors. Approximate and exact values may differ, and requesting
-one family never changes or replaces the other.
-
-`MAX_DIST` remains at its pre-existing enum ordinal. `MAX_SQUARED_DIST` and
-`MAX_SQUARED_DIST_EXACT` are appended at the end of the enum, preserving the
-numeric ordinals of every pre-existing attribute.
-
-For a node support `X`, let `c(x) = d(x, contour_A4(X))^2`. The exact family is:
-
-- `MAX_DIST_EXACT = sqrt(max c(x))`;
-- `MAX_SQUARED_DIST_EXACT = max c(x)`;
-- `DIST_SQUARED_SUM_EXACT = sum c(x)`;
-- `DIST_SQUARED_MEAN_EXACT = sum c(x) / |X|`;
-- `DIST_RMS_EXACT = sqrt(DIST_SQUARED_MEAN_EXACT)`;
-- `DIST_SQUARED_VARIANCE_EXACT = mean(c(x)^2) - mean(c(x))^2`.
-
-Let `x*` be the smallest row-major pixel among all maximizers of `c`. Then
-`MAX_DIST_CENTER_ROW_EXACT` and `MAX_DIST_CENTER_COLUMN_EXACT` are the zero-based image
-coordinates of `x*`. The unsuffixed `MAX_DIST_CENTER_ROW` and
-`MAX_DIST_CENTER_COLUMN` apply the same deterministic rule to the approximate
-adaptive-A8 DIFT maximum. A one-pixel exported unit row receives that pixel's
-coordinates.
-
-Let `P = {x in X : c(x) = MAX_SQUARED_DIST_EXACT}`. `MAX_DIST_PLATEAU_AREA_EXACT` is `|P|`, while
-`MAX_DIST_PLATEAU_CENTROID_ROW_EXACT` and `MAX_DIST_PLATEAU_CENTROID_COLUMN_EXACT` are the
-arithmetic means of the corresponding coordinates over `P`. The unsuffixed
-plateau attributes apply the same reductions to the adaptive-A8 DIFT maximum.
-Thus the canonical center remains a member of the plateau, while the plateau
-centroid may be fractional and need not be a support pixel. A one-pixel unit
-support has plateau area one and its pixel coordinate as the centroid.
-
-The unsuffixed approximate family applies the same reductions to the
-adaptive-A8 DIFT cost field. A coordinated request for several exact summaries shares one EDT
-sample stream. The approximate implementation updates additive component
-moments on DIFT cost-change and edge-activation events, without rescanning each
-node support. Maximum locations and plateau summaries are likewise maintained
-during the exact EDT sample stream or through compile-time-selected DIFT
-per-Bedt-root trackers. These projections are deliberately opt-in through
-`DIST_TRANSF` for the approximate family and `DIST_TRANSF_EXACT` for the exact
-family; both are also included by `ALL`. Only `MAX_DIST` and `MAX_DIST_EXACT` are members of `SHAPE`, so existing shape-group
-requests do not acquire the summary, localization, or plateau computation cost.
-
-Each distance-transform group contains 29 descriptors. Requesting both groups
-produces the complete paired 58-column study. Real-distance
-moments, quantiles, histogram-derived descriptors, and distance-weighted
-spatial moments are defined in
+Family-specific names, formulas, units, tie rules, and group membership are
+documented in the [Attribute catalog](attribute-catalog.md) and the relevant
+subsystem guide, such as
 [Distance-transform attributes](distance-transform.md).
 
 ## Common C++ usage patterns
@@ -125,8 +78,7 @@ spatial moments are defined in
 Choose the public entry point from the input contract:
 
 - use valued-tree computation when any requested attribute may read node altitude;
-- use topology/support computation only when the request does not read altitude
-  (this includes every exact and approximate distance-field attribute);
+- use topology/support computation only when the request does not read altitude;
 - choose non-default output spaces only at API boundaries.
 
 Single altitude-aware attribute:
@@ -163,7 +115,7 @@ Topology/support attributes without requiring an altitude-bearing valued tree:
 ```cpp
 auto [names, values] = AttributeComputation::computeTopologyAttributes(
     tree,
-    std::vector<AttributeOrGroup>{AREA, BOX_WIDTH, BALANCE_NODE});
+    std::vector<AttributeOrGroup>{Area, BoxWidth, BalanceNode});
 ```
 
 Returning values in a preserved public node ID space, for a tree created by
@@ -172,7 +124,7 @@ Returning values in a preserved public node ID space, for a tree created by
 ```cpp
 auto [names, values] = AttributeComputation::computeAttributes(
     importedTree,
-    std::vector<AttributeOrGroup>{AREA, GrayLevelHeight},
+    std::vector<AttributeOrGroup>{Area, GrayLevelHeight},
     NodeIdSpace::Higra);
 ```
 
@@ -204,11 +156,11 @@ and `LargestSupportDescendant` selection.
 Projecting node attributes to pixels or to an exported Higra layout:
 
 ```cpp
-auto mapped = AttributeComputation::computeAttributeMapping(valuedTree, AREA);
+auto mapped = AttributeComputation::computeAttributeMapping(valuedTree, Area);
 
 auto internal = AttributeComputation::computeAttributes(
     valuedTree,
-    std::vector<AttributeOrGroup>{AREA, GrayLevelHeight});
+    std::vector<AttributeOrGroup>{Area, GrayLevelHeight});
 auto exported = AttributeComputation::projectNodeValuesToExportedHigra(
     valuedTree,
     internal.attributeNames(),

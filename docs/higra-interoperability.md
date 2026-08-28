@@ -168,7 +168,7 @@ original imported node IDs:
 ```cpp
 auto computed = AttributeComputation::computeSingleAttribute(
     tree,
-    AREA,
+    Area,
     NodeIdSpace::Higra);
 
 const AttributeNames& names = computed.attributeNames();
@@ -223,7 +223,7 @@ attributes with `exportHigraHierarchy()`, project a dense internal-node buffer:
 ```cpp
 auto [names, values] = AttributeComputation::computeAttributes(
     tree,
-    std::vector<AttributeOrGroup>{AREA, MAX_DIST});
+    std::vector<AttributeOrGroup>{Area, MaxDist});
 
 std::vector<float> exportedValues =
     AttributeComputation::projectNodeValuesToExportedHigra(

@@ -68,6 +68,7 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/attributes/computers/BoundingBoxComputer.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/ContourSideAttributeComputer.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/GrayLevelStatsComputer.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/MaxDistExactComputer.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/MaxDistComputer.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/MomentBasedAttributeComputer.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/TreeTopologyComputer.hpp
@@ -79,9 +80,21 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/attributes/computers/detail/ContourSideAttributeData.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/detail/ContourSideAttributeMaterialization.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/detail/ContourSideFiniteWindowComputation.hpp
-    ${MMCFILTERS_ROOT}/attributes/computers/detail/maxdist/EdtDIFT.hpp
-    ${MMCFILTERS_ROOT}/attributes/computers/detail/maxdist/Geometry.hpp
-    ${MMCFILTERS_ROOT}/attributes/computers/detail/maxdist/PQueue.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform/DistanceFieldMoments.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform/DistanceFieldHistogram.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform/DistanceWeightedSpatialMoments.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform/ExactSquaredEuclideanDistanceTransform2D.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform/MorphologicalTreeContourScheduler.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform/MorphologicalTreeDistanceTransform.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform/MorphologicalTreeRegionIndex.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform/NodeDistanceFieldProvider.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform_approx/AdaptiveSquaredEuclideanDIFT2D.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform_approx/DynamicDistanceFieldMoments2D.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform_approx/DynamicDistanceFieldStatistics2D.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform_approx/SquaredDistanceBucketQueue.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform_approx/MorphologicalTreeApproximateDistanceTransform.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform_approx/MorphologicalTreePropagationEdgeIndex.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform_approx/MorphologicalTreeTopologicalLevelIndex.hpp
     ${MMCFILTERS_ROOT}/attributes/detail/AttributeCapabilityValidation.hpp
     ${MMCFILTERS_ROOT}/attributes/detail/NodeAttributeSampleMaterialization.hpp
     ${MMCFILTERS_ROOT}/attributes/detail/AttributeDependencyCache.hpp

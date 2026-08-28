@@ -8,6 +8,7 @@
 #include "ContourSideAttributeComputer.hpp"
 #include "GrayLevelStatsComputer.hpp"
 #include "MaxDistComputer.hpp"
+#include "MaxDistExactComputer.hpp"
 #include "MomentBasedAttributeComputer.hpp"
 #include "TreeTopologyComputer.hpp"
 #include "VolumeComputer.hpp"
@@ -117,18 +118,20 @@ template <AttributeComputer Computer> [[nodiscard]] std::vector<Attribute> runti
  * @brief Canonical list of topology/support families known to the backend.
  */
 using TopologyAttributeComputers = std::tuple<AreaComputer, BoundingBoxComputer, TreeTopologyComputer, CentralMomentsComputer, HuMomentsComputer,
-                                              MomentBasedAttributeComputer, BitquadAttributeComputer, ContourSideAttributeComputer>;
+                                              MomentBasedAttributeComputer, BitquadAttributeComputer, ContourSideAttributeComputer, MaxDistComputer,
+                                              MaxDistExactComputer>;
 
 /**
  * @brief Canonical list of altitude-aware families known to the pipeline.
  */
-using AltitudeAttributeComputers = std::tuple<VolumeComputer, GrayLevelStatsComputer, MaxDistComputer>;
+using AltitudeAttributeComputers = std::tuple<VolumeComputer, GrayLevelStatsComputer>;
 
 /**
  * @brief Canonical list used by contract tests to cover every public family.
  */
 using RegisteredAttributeComputers =
     std::tuple<AreaComputer, BoundingBoxComputer, TreeTopologyComputer, CentralMomentsComputer, HuMomentsComputer, MomentBasedAttributeComputer,
-               BitquadAttributeComputer, ContourSideAttributeComputer, VolumeComputer, GrayLevelStatsComputer, MaxDistComputer>;
+               BitquadAttributeComputer, ContourSideAttributeComputer, VolumeComputer, GrayLevelStatsComputer, MaxDistComputer,
+               MaxDistExactComputer>;
 
 } // namespace mmcfilters::attributes::computers

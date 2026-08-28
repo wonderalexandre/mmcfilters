@@ -176,6 +176,8 @@ inline void executeTopologyAttributeComputationPlan(const MorphologicalTree& tre
     const std::vector<Attribute> momentBasedAttributes = plan.requestedForFamily(attributes::computers::AttributeComputerFamily::MomentDerived);
     const std::vector<Attribute> bitquadAttributes = plan.requestedForFamily(attributes::computers::AttributeComputerFamily::Bitquad);
     const std::vector<Attribute> contourAttributes = plan.requestedForFamily(attributes::computers::AttributeComputerFamily::ContourSide);
+    const std::vector<Attribute> maxDistAttributes = plan.requestedForFamily(attributes::computers::AttributeComputerFamily::MaxDist);
+    const std::vector<Attribute> maxDistExactAttributes = plan.requestedForFamily(attributes::computers::AttributeComputerFamily::MaxDistExact);
     std::vector<AttributeOrGroup> topologyOnlyRequests;
 
     for (const Attribute attribute : plan.requestedAttributes) {
@@ -272,6 +274,24 @@ inline void executeTopologyAttributeComputationPlan(const MorphologicalTree& tre
         attributes::computers::detail::kernel::computeContourSideAttributes(context, request);
 
         for (const Attribute attribute : contourAttributes) {
+            available[attribute] = ComputedAttributeViewT<Real>{&resultNames, resultBuffer.data(), NodeIdSpace::MorphologicalTree};
+        }
+    }
+
+    if (!maxDistAttributes.empty()) {
+        const AttributeComputeContext<Real> context{tree, resultBuffer, resultNames, std::span<const Attribute>(maxDistAttributes)};
+        attributes::computers::MaxDistComputer::compute(context);
+
+        for (const Attribute attribute : maxDistAttributes) {
+            available[attribute] = ComputedAttributeViewT<Real>{&resultNames, resultBuffer.data(), NodeIdSpace::MorphologicalTree};
+        }
+    }
+
+    if (!maxDistExactAttributes.empty()) {
+        const AttributeComputeContext<Real> context{tree, resultBuffer, resultNames, std::span<const Attribute>(maxDistExactAttributes)};
+        attributes::computers::MaxDistExactComputer::compute(context);
+
+        for (const Attribute attribute : maxDistExactAttributes) {
             available[attribute] = ComputedAttributeViewT<Real>{&resultNames, resultBuffer.data(), NodeIdSpace::MorphologicalTree};
         }
     }

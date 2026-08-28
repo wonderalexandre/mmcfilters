@@ -15,6 +15,7 @@ enum class AttributeComputerFamily {
     Volume,
     GrayLevelStats,
     MaxDist,
+    MaxDistExact,
     BoundingBox,
     TreeTopology,
     CentralMoments,

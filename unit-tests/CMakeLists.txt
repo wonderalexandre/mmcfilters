@@ -181,6 +181,10 @@ mmcfilters_add_unit_test(unit_maxdist_support
     attributes/test_maxdist_support.cpp
 )
 
+mmcfilters_add_unit_test(unit_distance_transform_study
+    attributes/test_distance_transform_study.cpp
+)
+
 mmcfilters_add_unit_test(unit_secondary_attribute_consumers
     attributes/test_secondary_attribute_consumers.cpp
 )

@@ -246,7 +246,7 @@ inline std::shared_ptr<ValuedMorphologicalTree<ToSGrayLevel>> makeValuedTreeOfSh
 // Builds the 8-bit tree of shapes published by the default convention.
 inline std::shared_ptr<ValuedMorphologicalTree<std::uint8_t>>
 makeValuedTreeOfShapesUInt8(ImageUInt8Ptr image, ComplementaryPairing pairing = ComplementaryPairing::Min4Max8) {
-    TopographicConvention convention{CanonicalComplementaryGridImmersion{pairing}, TopographicDomainExtension::ExteriorRing, PixelId{0},
+    TopographicConvention convention{CanonicalComplementaryGridImmersion{pairing}, TopographicDomainExtension::None, PixelId{0},
                                      TopographicAltitudeEncoding::UInt8};
     return std::make_shared<ValuedMorphologicalTree<std::uint8_t>>(
         MorphologicalTreeFactory::createTreeOfShapes<std::uint8_t>(image, std::move(convention)));

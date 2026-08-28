@@ -74,10 +74,31 @@ def main() -> int:
     )
     require(hasattr(mmcfilters.Attribute, "CONTOUR_PIXELS"), "Attribute must expose CONTOUR_PIXELS")
     require(hasattr(mmcfilters.Attribute, "CONTOUR_SIDE_SOUTH"), "Attribute must expose CONTOUR_SIDE_SOUTH")
+    require(hasattr(mmcfilters.Attribute, "MAX_DIST_CENTER_ROW_EXACT"), "Attribute must expose MAX_DIST_CENTER_ROW_EXACT")
+    require(hasattr(mmcfilters.Attribute, "MAX_DIST_CENTER_COLUMN"), "Attribute must expose MAX_DIST_CENTER_COLUMN")
+    require(hasattr(mmcfilters.Attribute, "MAX_DIST_PLATEAU_AREA_EXACT"), "Attribute must expose MAX_DIST_PLATEAU_AREA_EXACT")
+    require(
+        hasattr(mmcfilters.Attribute, "MAX_DIST_PLATEAU_CENTROID_COLUMN"),
+        "Attribute must expose MAX_DIST_PLATEAU_CENTROID_COLUMN",
+    )
+    require(hasattr(mmcfilters.Attribute, "DIST_SUM"), "Attribute must expose approximate DIST_SUM")
+    require(hasattr(mmcfilters.Attribute, "DIST_SUM_EXACT"), "Attribute must expose exact DIST_SUM_EXACT")
+    require(hasattr(mmcfilters.Attribute, "DIST_Q90"), "Attribute must expose approximate DIST_Q90")
+    require(hasattr(mmcfilters.Attribute, "DIST_Q90_EXACT"), "Attribute must expose exact DIST_Q90_EXACT")
+    require(
+        hasattr(mmcfilters.Attribute, "DIST_WEIGHTED_ECCENTRICITY_EXACT"),
+        "Attribute must expose the final exact distance-transform descriptor",
+    )
+    require(
+        not hasattr(mmcfilters.Attribute, "MAX_DIST_SQUARED_APPROX"),
+        "approximate MAX_DIST must not expose an APPROX-suffixed alias",
+    )
     require(hasattr(mmcfilters.Attribute.Group, "GRAY_LEVEL"), "Attribute.Group must expose GRAY_LEVEL")
     require(hasattr(mmcfilters.Attribute.Group, "SHAPE"), "Attribute.Group must expose SHAPE")
     require(hasattr(mmcfilters.Attribute.Group, "MOMENTS"), "Attribute.Group must expose MOMENTS")
     require(hasattr(mmcfilters.Attribute.Group, "BOUNDARY"), "Attribute.Group must expose BOUNDARY")
+    require(hasattr(mmcfilters.Attribute.Group, "DIST_TRANSF"), "Attribute.Group must expose DIST_TRANSF")
+    require(hasattr(mmcfilters.Attribute.Group, "DIST_TRANSF_EXACT"), "Attribute.Group must expose DIST_TRANSF_EXACT")
     for legacy_group in (
         "GEOMETRIC",
         "BOUNDING_BOX",
@@ -132,15 +153,80 @@ def main() -> int:
         [mmcfilters.Attribute.Group.SHAPE],
     )
     require("AREA" in shape_names, "Attribute.Group.SHAPE must include AREA")
-    require("MAX_DIST" in shape_names, "Attribute.Group.SHAPE must include MAX_DIST")
+    require("MAX_DIST_EXACT" in shape_names, "Attribute.Group.SHAPE must include MAX_DIST_EXACT")
+    require(
+        "MAX_DIST" in shape_names,
+        "Attribute.Group.SHAPE must include MAX_DIST",
+    )
     require("CONTOUR_SIDE_SOUTH" in shape_names, "Attribute.Group.SHAPE must include CONTOUR_SIDE_SOUTH")
     require(
         shape_attrs.shape == (tree.num_internal_node_slots, len(shape_names)),
         "Attribute.Group.SHAPE smoke shape",
     )
 
+    distance_names, distance_attrs = mmcfilters.Attribute.compute_topology_attributes(
+        tree,
+        [mmcfilters.Attribute.Group.DIST_TRANSF],
+    )
+    ordered_distance_names = list(distance_names)
+    require(len(distance_names) == 29, "Attribute.Group.DIST_TRANSF must expose all approximate distance-transform descriptors")
+    require("MAX_DIST_EXACT" not in distance_names, "Attribute.Group.DIST_TRANSF must exclude MAX_DIST_EXACT")
+    require(
+        "MAX_DIST" in distance_names,
+        "Attribute.Group.DIST_TRANSF must include MAX_DIST",
+    )
+    require("MAX_SQUARED_DIST_EXACT" not in distance_names, "Attribute.Group.DIST_TRANSF must exclude MAX_SQUARED_DIST_EXACT")
+    require("MAX_SQUARED_DIST" in distance_names, "Attribute.Group.DIST_TRANSF must include MAX_SQUARED_DIST")
+    require(
+        all(not name.endswith("_EXACT") for name in ordered_distance_names),
+        "DIST_TRANSF must contain the 29 unsuffixed approximate descriptors",
+    )
+    require(
+        distance_attrs.shape == (tree.num_internal_node_slots, len(distance_names)),
+        "Attribute.Group.DIST_TRANSF topology smoke shape",
+    )
+    string_distance_names, string_distance_attrs = mmcfilters.Attribute.compute_topology_attributes(
+        tree,
+        ["DIST_TRANSF"],
+    )
+    require(string_distance_names == distance_names, "concise string DIST_TRANSF request must preserve the group layout")
+    require(
+        np.array_equal(string_distance_attrs, distance_attrs, equal_nan=True),
+        "concise string DIST_TRANSF request must preserve group values",
+    )
+    exact_distance_names, exact_distance_attrs = mmcfilters.Attribute.compute_topology_attributes(
+        tree,
+        [mmcfilters.Attribute.Group.DIST_TRANSF_EXACT],
+    )
+    require(len(exact_distance_names) == 29, "Attribute.Group.DIST_TRANSF_EXACT must expose all exact descriptors")
+    require(all(name.endswith("_EXACT") for name in exact_distance_names), "DIST_TRANSF_EXACT descriptors must use _EXACT")
+    require("MAX_DIST_EXACT" in exact_distance_names, "DIST_TRANSF_EXACT must include MAX_DIST_EXACT")
+    require("MAX_DIST" not in exact_distance_names, "DIST_TRANSF_EXACT must exclude MAX_DIST")
+    require(
+        exact_distance_attrs.shape == (tree.num_internal_node_slots, len(exact_distance_names)),
+        "Attribute.Group.DIST_TRANSF_EXACT topology smoke shape",
+    )
+    string_exact_names, string_exact_attrs = mmcfilters.Attribute.compute_topology_attributes(tree, ["DIST_TRANSF_EXACT"])
+    require(string_exact_names == exact_distance_names, "concise DIST_TRANSF_EXACT request must preserve layout")
+    require(np.array_equal(string_exact_attrs, exact_distance_attrs, equal_nan=True), "concise DIST_TRANSF_EXACT must preserve values")
+
     names, attrs = mmcfilters.Attribute.compute_attributes(tree, [mmcfilters.Attribute.ALL])
     require("AREA" in names, "Attribute.ALL must include AREA")
+    require("DIST_SQUARED_MEAN_EXACT" in names, "Attribute.ALL must include DIST_SQUARED_MEAN_EXACT")
+    require("DIST_SQUARED_MEAN" in names, "Attribute.ALL must include DIST_SQUARED_MEAN")
+    require("MAX_DIST_CENTER_ROW_EXACT" in names, "Attribute.ALL must include MAX_DIST_CENTER_ROW_EXACT")
+    require("MAX_DIST_CENTER_COLUMN" in names, "Attribute.ALL must include MAX_DIST_CENTER_COLUMN")
+    require("MAX_DIST_PLATEAU_AREA_EXACT" in names, "Attribute.ALL must include MAX_DIST_PLATEAU_AREA_EXACT")
+    require("DIST_ENTROPY" in names, "Attribute.ALL must include approximate DIST_ENTROPY")
+    require("DIST_ENTROPY_EXACT" in names, "Attribute.ALL must include exact DIST_ENTROPY_EXACT")
+    require(
+        "DIST_WEIGHTED_ECCENTRICITY_EXACT" in names,
+        "Attribute.ALL must include the final exact distance-transform descriptor",
+    )
+    require(
+        "MAX_DIST_PLATEAU_CENTROID_COLUMN" in names,
+        "Attribute.ALL must include MAX_DIST_PLATEAU_CENTROID_COLUMN",
+    )
     require("CONTOUR_PIXELS" in names, "Attribute.ALL must include CONTOUR_PIXELS")
     require("CONTOUR_SIDE_SOUTH" in names, "Attribute.ALL must include CONTOUR_SIDE_SOUTH")
     require(attrs.shape == (tree.num_internal_node_slots, len(names)), "Attribute.ALL smoke shape")

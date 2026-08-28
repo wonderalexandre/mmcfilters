@@ -3,304 +3,379 @@
 #include "AttributeComputerDomain.hpp"
 #include "AttributeComputerFamily.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
-#include "../../contours/ContoursComputedIncrementally.hpp"
+#include "detail/distance_transform_approx/MorphologicalTreeApproximateDistanceTransform.hpp"
 #include "../../trees/MorphologicalTree.hpp"
-#include "../../trees/TreeAltitudeAlgorithms.hpp"
-#include "../../trees/detail/CommittedTreeAccess.hpp"
-#include "../../trees/detail/MorphologicalTreeConstructionContextQueries.hpp"
-#include "../../trees/detail/TreeTraversalDetail.hpp"
-#include "../../utils/Common.hpp"
-#include "../../utils/Contract.hpp"
-
-#include "detail/maxdist/EdtDIFT.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <concepts>
-#include <cstddef>
-#include <cstdint>
 #include <span>
 #include <stdexcept>
-#include <string>
 #include <string_view>
-#include <type_traits>
-#include <vector>
 
+/** @cond */
 namespace mmcfilters::attributes::computers::detail {
 
 inline void requireMaxDistCapabilities(const MorphologicalTree& tree) {
-    if (tree.nodeAltitudeOrder() == NodeAltitudeOrder::Unconstrained) {
-        throw std::invalid_argument("MAX_DIST requires a globally monotone altitude order.");
+    if (!tree.hasGridDomain2D()) {
+        throw std::invalid_argument("Approximate distance-field attributes require a regular 2D pixel domain.");
     }
 }
 
-template <AltitudeValue T> inline bool isFiniteMaxDistAltitude(T value) noexcept {
-    if constexpr (std::is_floating_point_v<T>) {
-        return std::isfinite(value);
+struct ApproximateDistanceTransformAttributeRequest {
+    bool maxDist = false;
+    bool maxSquaredDist = false;
+    bool squaredSum = false;
+    bool squaredMean = false;
+    bool rms = false;
+    bool squaredVariance = false;
+    bool centerRow = false;
+    bool centerColumn = false;
+    bool plateauArea = false;
+    bool plateauCentroidRow = false;
+    bool plateauCentroidColumn = false;
+    bool distanceSum = false;
+    bool distanceMean = false;
+    bool distanceVariance = false;
+    bool median = false;
+    bool mode = false;
+    bool q25 = false;
+    bool q75 = false;
+    bool q90 = false;
+    bool entropy = false;
+    bool positiveArea = false;
+    bool levelCount = false;
+    bool weightedCentroidRow = false;
+    bool weightedCentroidColumn = false;
+    bool weightedMu20 = false;
+    bool weightedMu02 = false;
+    bool weightedMu11 = false;
+    bool weightedAxisOrientation = false;
+    bool weightedEccentricity = false;
+
+    [[nodiscard]] bool any() const noexcept { return maximum() || moments() || profile() || spatial() || geometry(); }
+    [[nodiscard]] bool maximum() const noexcept { return maxDist || maxSquaredDist; }
+    [[nodiscard]] bool moments() const noexcept {
+        return squaredSum || squaredMean || rms || squaredVariance || distanceSum || distanceMean || distanceVariance;
     }
-    return true;
-}
-
-template <AltitudeValue T> inline void validateFiniteMaxDistAltitude(std::span<const T> altitude) {
-    for (std::size_t index = 0; index < altitude.size(); ++index) {
-        if (!isFiniteMaxDistAltitude(altitude[index])) {
-            throw std::invalid_argument("MAX_DIST requires finite altitude values; node " + std::to_string(index) + " has a non-finite altitude.");
-        }
+    [[nodiscard]] bool profile() const noexcept { return median || mode || q25 || q75 || q90 || entropy || positiveArea || levelCount; }
+    [[nodiscard]] bool spatial() const noexcept {
+        return weightedCentroidRow || weightedCentroidColumn || weightedMu20 || weightedMu02 || weightedMu11 || weightedAxisOrientation || weightedEccentricity;
     }
-}
+    [[nodiscard]] bool localization() const noexcept { return centerRow || centerColumn; }
+    [[nodiscard]] bool plateau() const noexcept { return plateauArea || plateauCentroidRow || plateauCentroidColumn; }
+    [[nodiscard]] bool geometry() const noexcept { return localization() || plateau(); }
+    [[nodiscard]] bool needsCoordinates() const noexcept { return geometry() || spatial(); }
 
-template <AltitudeValue T> inline void validateMaxDistInput(const MorphologicalTree& tree, std::span<const T> altitude) {
-    requireMaxDistCapabilities(tree);
-    if (::mmcfilters::detail::constructionAdjacency(tree) == nullptr) {
-        throw std::invalid_argument("MAX_DIST requires a shared or saturated construction adjacency.");
-    }
-    TreeAltitudeAlgorithms::validateNodeAltitudeBufferShape(tree, altitude);
-    validateFiniteMaxDistAltitude(altitude);
-}
-
-namespace kernel {
-
-/**
- * @brief Internal MAX_DIST altitude-sweep kernel.
- *
- * @details
- * MAX_DIST is evaluated by sweeping tree nodes in typed altitude order and
- * maintaining an incremental squared Euclidean distance transform over the
- * support accumulated at the current level. Local contour additions and
- * removals are shared with `ContoursComputedIncrementally`, avoiding a second
- * dense level-image contour pass.
- *
- * The kernel returns a dense vector indexed by internal node id. The public
- * `MaxDistComputer` is responsible for projecting that vector into the
- * caller-owned attribute buffer layout.
- */
-class MaxDistAttribute {
-  public:
-    /**
-     * @brief Runs the complete MAX_DIST computation in dense node-id space.
-     *
-     * Floating-point altitudes must be finite because the level ordering and
-     * contour tests require a total finite order.
-     *
-     * @param tree Tree topology.
-     * @param altitude Altitude data indexed by node identifier.
-     * @return Values produced by the operation.
-     */
-    template <std::floating_point Real, AltitudeValue T>
-    [[nodiscard]] static std::vector<Real> compute(const MorphologicalTree& tree, std::span<const T> altitude) {
-        std::vector<Real> maxDist(static_cast<std::size_t>(tree.numInternalNodeSlots()), Real{0});
-        const GridDomain2D& domain = ::mmcfilters::detail::CommittedTreeAccess::gridDomain2D(tree);
-        maxdist::EdtDIFT edtDIFT(domain.rows, domain.columns);
-
-        const ContourDeltaStore contourDeltas = ::mmcfilters::detail::kernel::extractLocalContourDeltas(tree);
-        std::vector<std::vector<PixelId>> contours(static_cast<std::size_t>(tree.numInternalNodeSlots()));
-        const std::size_t totalPixels = static_cast<std::size_t>(domain.rows * domain.columns);
-        std::vector<std::uint8_t> removalMark(totalPixels, 0);
-        std::vector<std::uint8_t> contourAdditionMark(totalPixels, 0);
-
-        std::vector<NodeId> sortedNodes = sortedNodesByAltitude(tree, altitude);
-        std::size_t groupBegin = 0;
-        while (groupBegin < sortedNodes.size()) {
-            std::size_t groupEnd = groupBegin + 1;
-            while (groupEnd < sortedNodes.size() && sameAltitude(altitude, sortedNodes[groupBegin], sortedNodes[groupEnd])) {
-                ++groupEnd;
-            }
-
-            processLevel(tree, std::span<const NodeId>(sortedNodes.data() + static_cast<std::ptrdiff_t>(groupBegin), groupEnd - groupBegin), contourDeltas,
-                         edtDIFT, contours, removalMark, contourAdditionMark, maxDist);
-
-            groupBegin = groupEnd;
-        }
-
-        return maxDist;
-    }
-
-  private:
-    /** @brief Defines the `ContourDeltaStore` alias used by the component. */
-    using ContourDeltaStore = ::mmcfilters::ContoursComputedIncrementally::LocalContourDeltas;
-
-    /**
-     * @brief Marks pixels.
-     *
-     * @param pixels Pixel identifiers.
-     * @param marks Mark buffer updated by the operation.
-     */
-    static void markPixels(std::span<const PixelId> pixels, std::vector<std::uint8_t>& marks) {
-        for (PixelId pixelId : pixels) {
-            marks[static_cast<std::size_t>(pixelId)] = 1;
-        }
-    }
-
-    /**
-     * @brief Clears pixel marks.
-     *
-     * @param pixels Pixel identifiers.
-     * @param marks Mark buffer updated by the operation.
-     */
-    static void clearPixelMarks(std::span<const PixelId> pixels, std::vector<std::uint8_t>& marks) {
-        for (PixelId pixelId : pixels) {
-            marks[static_cast<std::size_t>(pixelId)] = 0;
-        }
-    }
-
-    /**
-     * @brief Groups nodes by sorted altitude, independently of the altitude
-     * value domain.
-     *
-     * The vector is ordered by the level sweep required by MAX_DIST: descending
-     * for max-trees and ascending for min-trees. Stable sorting preserves
-     * post-order among unrelated nodes that share an altitude; the declared
-     * ordered contracts already forbid equal altitudes on a parent-child arc.
-     *
-     * @param tree Tree topology.
-     * @param altitude Altitude data indexed by node identifier.
-     * @return Values produced by the operation.
-     */
-    template <AltitudeValue T> [[nodiscard]] static std::vector<NodeId> sortedNodesByAltitude(const MorphologicalTree& tree, std::span<const T> altitude) {
-        std::vector<NodeId> nodes;
-        nodes.reserve(static_cast<std::size_t>(tree.numNodes()));
-        ::mmcfilters::detail::kernel::traversePostOrder(
-            tree, tree.root(), [](NodeId) {}, [](NodeId, NodeId) {}, [&](NodeId nodeId) { nodes.push_back(nodeId); });
-
-        std::stable_sort(nodes.begin(), nodes.end(), [&](NodeId lhs, NodeId rhs) {
-            const T lhsAltitude = altitude[static_cast<std::size_t>(lhs)];
-            const T rhsAltitude = altitude[static_cast<std::size_t>(rhs)];
-            return tree.nodeAltitudeOrder() == NodeAltitudeOrder::Increasing ? lhsAltitude > rhsAltitude : lhsAltitude < rhsAltitude;
-        });
-
-        return nodes;
-    }
-
-    /**
-     * @brief Tests whether two nodes belong to the same altitude group.
-     *
-     * @param altitude Altitude data indexed by node identifier.
-     * @param lhs Left-hand operand.
-     * @param rhs Right-hand operand.
-     * @return True if two nodes belong to the same altitude group; otherwise false.
-     */
-    template <AltitudeValue T> static bool sameAltitude(std::span<const T> altitude, NodeId lhs, NodeId rhs) {
-        return altitude[static_cast<std::size_t>(lhs)] == altitude[static_cast<std::size_t>(rhs)];
-    }
-
-    /**
-     * @brief Processes one group of nodes that share the same altitude.
-     *
-     * Children contours are inherited into the parent contour unless the shared
-     * contour-delta store says the pixel must be removed at this node. Proper
-     * parts are then added as contour seeds when they are local additions, or
-     * opened as interior pixels otherwise. Only after all nodes in the level
-     * group have been materialized does EdtDIFT propagate labels; this preserves
-     * the simultaneous per-level sweep.
-     *
-     * @param tree Tree topology.
-     * @param nodes Node identifiers processed by the operation.
-     * @param contourDeltas Compact local contour additions and removals.
-     * @param edtDIFT Distance-transform state updated by the sweep.
-     * @param contours Contour data.
-     * @param removalMark Generation marks for pixels scheduled for removal.
-     * @param contourAdditionMark Generation marks for contour additions.
-     * @param maxDist Destination MAX_DIST values indexed by node.
-     */
-    template <std::floating_point Real>
-    static void processLevel(const MorphologicalTree& tree, std::span<const NodeId> nodes, const ContourDeltaStore& contourDeltas, maxdist::EdtDIFT& edtDIFT,
-                             std::vector<std::vector<PixelId>>& contours, std::vector<std::uint8_t>& removalMark,
-                             std::vector<std::uint8_t>& contourAdditionMark,
-                             std::vector<Real>& maxDist) {
-        if (nodes.empty()) {
-            return;
-        }
-
-        std::vector<PixelId> toRemove;
-        toRemove.reserve(64);
-        for (NodeId nodeId : nodes) {
-            std::vector<PixelId>& nodeContour = contours[static_cast<std::size_t>(nodeId)];
-            nodeContour.clear();
-
-            const auto removals = contourDeltas.removals(nodeId);
-            toRemove.clear();
-            toRemove.insert(toRemove.end(), removals.begin(), removals.end());
-            markPixels(removals, removalMark);
-
-            const auto additions = contourDeltas.additions(nodeId);
-            std::size_t reserveSize = additions.size();
-            for (NodeId childNodeId : ::mmcfilters::detail::CommittedTreeAccess::children(tree, nodeId)) {
-                reserveSize += contours[static_cast<std::size_t>(childNodeId)].size();
-            }
-            nodeContour.reserve(reserveSize);
-
-            for (NodeId childNodeId : ::mmcfilters::detail::CommittedTreeAccess::children(tree, nodeId)) {
-                std::vector<PixelId>& childContour = contours[static_cast<std::size_t>(childNodeId)];
-                for (PixelId pixelId : childContour) {
-                    if (!removalMark[static_cast<std::size_t>(pixelId)]) {
-                        nodeContour.push_back(pixelId);
-                    }
-                }
-                std::vector<PixelId>().swap(childContour);
-            }
-            clearPixelMarks(removals, removalMark);
-
-            if (!toRemove.empty()) {
-                edtDIFT.treeRemoval(toRemove);
-            }
-
-            markPixels(additions, contourAdditionMark);
-            for (PixelId pixelId : ::mmcfilters::detail::CommittedTreeAccess::properParts(tree, nodeId)) {
-                edtDIFT.addPixelToBinaryImage(pixelId);
-
-                if (contourAdditionMark[static_cast<std::size_t>(pixelId)]) {
-                    nodeContour.push_back(pixelId);
-                    edtDIFT.seed(pixelId);
-                } else {
-                    edtDIFT.open(pixelId);
-                    edtDIFT.insertNeighborsPQueue(pixelId);
-                }
-            }
-            clearPixelMarks(additions, contourAdditionMark);
-        }
-
-        // All nodes at the same altitude must enter the binary image before the
-        // distance transform propagates. This preserves the mathematical
-        // per-level schedule without requiring fixed 0..255 buckets.
-        edtDIFT.run();
-
-        for (NodeId nodeId : nodes) {
-            maxDist[static_cast<std::size_t>(nodeId)] = static_cast<Real>(edtDIFT.maxBedt(contours[static_cast<std::size_t>(nodeId)]));
-        }
+    [[nodiscard]] static ApproximateDistanceTransformAttributeRequest from(std::span<const Attribute> requestedAttributes) {
+        const auto contains = [requestedAttributes](Attribute attribute) {
+            return std::find(requestedAttributes.begin(), requestedAttributes.end(), attribute) != requestedAttributes.end();
+        };
+        return {.maxDist = contains(MaxDist),
+                .maxSquaredDist = contains(MaxSquaredDist),
+                .squaredSum = contains(DistSquaredSum),
+                .squaredMean = contains(DistSquaredMean),
+                .rms = contains(DistRms),
+                .squaredVariance = contains(DistSquaredVariance),
+                .centerRow = contains(MaxDistCenterRow),
+                .centerColumn = contains(MaxDistCenterColumn),
+                .plateauArea = contains(MaxDistPlateauArea),
+                .plateauCentroidRow = contains(MaxDistPlateauCentroidRow),
+                .plateauCentroidColumn = contains(MaxDistPlateauCentroidColumn),
+                .distanceSum = contains(DistSum),
+                .distanceMean = contains(DistMean),
+                .distanceVariance = contains(DistVariance),
+                .median = contains(DistMedian),
+                .mode = contains(DistMode),
+                .q25 = contains(DistQ25),
+                .q75 = contains(DistQ75),
+                .q90 = contains(DistQ90),
+                .entropy = contains(DistEntropy),
+                .positiveArea = contains(DistPositiveArea),
+                .levelCount = contains(DistLevelCount),
+                .weightedCentroidRow = contains(DistWeightedCentroidRow),
+                .weightedCentroidColumn = contains(DistWeightedCentroidColumn),
+                .weightedMu20 = contains(DistWeightedCentralMoment20),
+                .weightedMu02 = contains(DistWeightedCentralMoment02),
+                .weightedMu11 = contains(DistWeightedCentralMoment11),
+                .weightedAxisOrientation = contains(DistWeightedAxisOrientation),
+                .weightedEccentricity = contains(DistWeightedEccentricity)};
     }
 };
 
-/**
- * @brief Writes MAX_DIST after output, topology, altitude, and request domains were established.
- * @param context Established tree, altitude span, MAX_DIST column, and output buffer.
- */
-template <std::floating_point Real, AltitudeValue T> inline void computeMaxDist(const AltitudeAttributeComputeContext<Real, T>& context) {
-    const std::vector<Real> maxDist = MaxDistAttribute::compute<Real>(context.tree, context.altitude);
-    const int stride = context.attrNames.NUM_ATTRIBUTES;
-    const int offset = context.attrNames.indexMap.find(MaxDist)->second;
-    for (NodeId nodeId = 0; nodeId < context.tree.numInternalNodeSlots(); ++nodeId) {
-        if (::mmcfilters::detail::CommittedTreeAccess::isAlive(context.tree, nodeId)) {
-            context.buffer[static_cast<std::size_t>(nodeId * stride + offset)] = maxDist[static_cast<std::size_t>(nodeId)];
-        }
+template <std::floating_point Real, class SquaredDistance>
+inline void materializeApproximateMaximum(const AttributeComputeContext<Real>& context, const ApproximateDistanceTransformAttributeRequest& request,
+                                          NodeId node, SquaredDistance squaredDistance) {
+    if (request.maxDist) {
+        context.buffer[context.attrNames.linearIndex(node, MaxDist)] = static_cast<Real>(std::sqrt(static_cast<long double>(squaredDistance)));
+    }
+    if (request.maxSquaredDist) {
+        context.buffer[context.attrNames.linearIndex(node, MaxSquaredDist)] = static_cast<Real>(squaredDistance);
     }
 }
 
-} // namespace kernel
+template <std::floating_point Real>
+inline void materializeApproximateDistanceFieldExtremum(const AttributeComputeContext<Real>& context,
+                                                        const ApproximateDistanceTransformAttributeRequest& request, NodeId node,
+                                                        const distance_transform::DistanceFieldExtremum& extremum, int numColumns) {
+    if (extremum.pixel == InvalidPixel) {
+        throw std::logic_error("Approximate distance-field localization produced an empty live-node support.");
+    }
+    const auto materialize = [&context, node](Attribute attribute, auto value) {
+        context.buffer[context.attrNames.linearIndex(node, attribute)] = static_cast<Real>(value);
+    };
+    materializeApproximateMaximum(context, request, node, extremum.squaredDistance);
+    if (request.centerRow) {
+        materialize(MaxDistCenterRow, extremum.pixel / numColumns);
+    }
+    if (request.centerColumn) {
+        materialize(MaxDistCenterColumn, extremum.pixel % numColumns);
+    }
+}
+
+template <std::floating_point Real>
+inline void materializeApproximateDistanceFieldPlateau(const AttributeComputeContext<Real>& context,
+                                                       const ApproximateDistanceTransformAttributeRequest& request, NodeId node,
+                                                       const distance_transform::DistanceFieldMaximumPlateau& plateau, int numColumns) {
+    if (plateau.pixel == InvalidPixel || plateau.count == 0) {
+        throw std::logic_error("Approximate distance-field plateau reduction produced an empty live-node support.");
+    }
+    const auto materialize = [&context, node](Attribute attribute, auto value) {
+        context.buffer[context.attrNames.linearIndex(node, attribute)] = static_cast<Real>(value);
+    };
+    materializeApproximateMaximum(context, request, node, plateau.squaredDistance);
+    if (request.centerRow) {
+        materialize(MaxDistCenterRow, plateau.pixel / numColumns);
+    }
+    if (request.centerColumn) {
+        materialize(MaxDistCenterColumn, plateau.pixel % numColumns);
+    }
+    if (request.plateauArea) {
+        materialize(MaxDistPlateauArea, plateau.count);
+    }
+    if (request.plateauCentroidRow) {
+        materialize(MaxDistPlateauCentroidRow, plateau.centroidRow());
+    }
+    if (request.plateauCentroidColumn) {
+        materialize(MaxDistPlateauCentroidColumn, plateau.centroidColumn());
+    }
+}
+
+template <std::floating_point Real>
+inline void materializeApproximateDistanceFieldMoments(const AttributeComputeContext<Real>& context,
+                                                       const ApproximateDistanceTransformAttributeRequest& request, NodeId node,
+                                                       const distance_transform::DistanceFieldMoments& moments) {
+    const auto materialize = [&context, node](Attribute attribute, long double value) {
+        context.buffer[context.attrNames.linearIndex(node, attribute)] = static_cast<Real>(value);
+    };
+    if (request.squaredSum) {
+        materialize(DistSquaredSum, moments.sum());
+    }
+    if (request.squaredMean) {
+        materialize(DistSquaredMean, moments.mean());
+    }
+    if (request.rms) {
+        materialize(DistRms, moments.rms());
+    }
+    if (request.squaredVariance) {
+        materialize(DistSquaredVariance, moments.populationVariance());
+    }
+    if (request.distanceSum) {
+        materialize(DistSum, moments.distanceSum());
+    }
+    if (request.distanceMean) {
+        materialize(DistMean, moments.distanceMean());
+    }
+    if (request.distanceVariance) {
+        materialize(DistVariance, moments.distancePopulationVariance());
+    }
+}
+
+template <std::floating_point Real>
+inline void materializeApproximateDistanceFieldHistogram(const AttributeComputeContext<Real>& context,
+                                                         const ApproximateDistanceTransformAttributeRequest& request, NodeId node,
+                                                         const distance_transform::DistanceFieldHistogram& histogram) {
+    const auto materialize = [&context, node](Attribute attribute, auto value) {
+        context.buffer[context.attrNames.linearIndex(node, attribute)] = static_cast<Real>(value);
+    };
+    if (request.median) {
+        materialize(DistMedian, histogram.quantile(0.5L));
+    }
+    if (request.mode) {
+        materialize(DistMode, histogram.mode());
+    }
+    if (request.q25) {
+        materialize(DistQ25, histogram.quantile(0.25L));
+    }
+    if (request.q75) {
+        materialize(DistQ75, histogram.quantile(0.75L));
+    }
+    if (request.q90) {
+        materialize(DistQ90, histogram.quantile(0.9L));
+    }
+    if (request.entropy) {
+        materialize(DistEntropy, histogram.entropyBits());
+    }
+    if (request.positiveArea) {
+        materialize(DistPositiveArea, histogram.positiveArea());
+    }
+    if (request.levelCount) {
+        materialize(DistLevelCount, histogram.levelCount());
+    }
+}
+
+template <std::floating_point Real>
+inline void materializeApproximateDistanceFieldSpatialMoments(const AttributeComputeContext<Real>& context,
+                                                              const ApproximateDistanceTransformAttributeRequest& request, NodeId node,
+                                                              const distance_transform::DistanceWeightedSpatialMoments& spatialMoments) {
+    const auto materialize = [&context, node](Attribute attribute, auto value) {
+        context.buffer[context.attrNames.linearIndex(node, attribute)] = static_cast<Real>(value);
+    };
+    if (request.weightedCentroidRow) {
+        materialize(DistWeightedCentroidRow, spatialMoments.centroidRow());
+    }
+    if (request.weightedCentroidColumn) {
+        materialize(DistWeightedCentroidColumn, spatialMoments.centroidColumn());
+    }
+    if (request.weightedMu20) {
+        materialize(DistWeightedCentralMoment20, spatialMoments.centralMoment20());
+    }
+    if (request.weightedMu02) {
+        materialize(DistWeightedCentralMoment02, spatialMoments.centralMoment02());
+    }
+    if (request.weightedMu11) {
+        materialize(DistWeightedCentralMoment11, spatialMoments.centralMoment11());
+    }
+    if (request.weightedAxisOrientation) {
+        materialize(DistWeightedAxisOrientation, spatialMoments.axisOrientationDegrees());
+    }
+    if (request.weightedEccentricity) {
+        materialize(DistWeightedEccentricity, spatialMoments.eccentricity());
+    }
+}
+
+template <bool TrackMoments, bool TrackHistogram, bool TrackSpatialMoments, std::floating_point Real>
+inline void computeSelectedApproximateDistanceTransformAttributes(const AttributeComputeContext<Real>& context,
+                                                                  const ApproximateDistanceTransformAttributeRequest& request, int numColumns) {
+    using Transform = distance_transform_approx::MorphologicalTreeApproximateDistanceTransform;
+    const auto consume = [&context, request, numColumns](NodeId node, const distance_transform::DistanceFieldExtremum& extremum,
+                                                         const distance_transform::DistanceFieldMaximumPlateau& plateau, const auto& observer,
+                                                         PixelId representative) {
+        if (request.plateau()) {
+            materializeApproximateDistanceFieldPlateau(context, request, node, plateau, numColumns);
+        } else if (request.localization()) {
+            materializeApproximateDistanceFieldExtremum(context, request, node, extremum, numColumns);
+        } else {
+            materializeApproximateMaximum(context, request, node, extremum.squaredDistance);
+        }
+        if constexpr (TrackMoments) {
+            materializeApproximateDistanceFieldMoments(context, request, node, observer.momentsFor(representative));
+        }
+        if constexpr (TrackHistogram) {
+            materializeApproximateDistanceFieldHistogram(context, request, node, observer.histogramFor(representative));
+        }
+        if constexpr (TrackSpatialMoments) {
+            materializeApproximateDistanceFieldSpatialMoments(context, request, node, observer.spatialMomentsFor(representative));
+        }
+    };
+
+    if (request.plateau()) {
+        Transform::template forEachNodeSelectedStatistics<TrackMoments, TrackHistogram, TrackSpatialMoments, false, true>(context.tree, consume);
+        return;
+    }
+    if (request.localization()) {
+        Transform::template forEachNodeSelectedStatistics<TrackMoments, TrackHistogram, TrackSpatialMoments, true, false>(context.tree, consume);
+        return;
+    }
+    Transform::template forEachNodeSelectedStatistics<TrackMoments, TrackHistogram, TrackSpatialMoments>(context.tree, consume);
+}
+
+template <std::floating_point Real>
+inline void dispatchSelectedApproximateDistanceTransformAttributes(const AttributeComputeContext<Real>& context,
+                                                                   const ApproximateDistanceTransformAttributeRequest& request, int numColumns) {
+    if (request.profile()) {
+        if (request.spatial()) {
+            if (request.moments()) {
+                computeSelectedApproximateDistanceTransformAttributes<true, true, true>(context, request, numColumns);
+                return;
+            }
+            computeSelectedApproximateDistanceTransformAttributes<false, true, true>(context, request, numColumns);
+            return;
+        }
+        if (request.moments()) {
+            computeSelectedApproximateDistanceTransformAttributes<true, true, false>(context, request, numColumns);
+            return;
+        }
+        computeSelectedApproximateDistanceTransformAttributes<false, true, false>(context, request, numColumns);
+        return;
+    }
+    if (request.moments()) {
+        computeSelectedApproximateDistanceTransformAttributes<true, false, true>(context, request, numColumns);
+        return;
+    }
+    computeSelectedApproximateDistanceTransformAttributes<false, false, true>(context, request, numColumns);
+}
+
+template <std::floating_point Real>
+inline void computeApproximateDistanceTransformAttributes(const AttributeComputeContext<Real>& context,
+                                                          const ApproximateDistanceTransformAttributeRequest& request) {
+    using Transform = distance_transform_approx::MorphologicalTreeApproximateDistanceTransform;
+    const int numColumns = request.needsCoordinates() ? context.tree.numColumns() : 0;
+    if (request.profile() || request.spatial()) {
+        dispatchSelectedApproximateDistanceTransformAttributes(context, request, numColumns);
+        return;
+    }
+    if (request.moments()) {
+        if (request.plateau()) {
+            Transform::forEachNodeSummaryAndPlateau(context.tree,
+                                                    [&context, request, numColumns](NodeId node, const distance_transform::DistanceFieldMaximumPlateau& plateau,
+                                                                                    const distance_transform::DistanceFieldMoments& moments) {
+                                                        materializeApproximateDistanceFieldPlateau(context, request, node, plateau, numColumns);
+                                                        materializeApproximateDistanceFieldMoments(context, request, node, moments);
+                                                    });
+            return;
+        }
+        if (request.localization()) {
+            Transform::forEachNodeSummaryAndExtremum(context.tree,
+                                                     [&context, request, numColumns](NodeId node, const distance_transform::DistanceFieldExtremum& extremum,
+                                                                                     const distance_transform::DistanceFieldMoments& moments) {
+                                                         materializeApproximateDistanceFieldExtremum(context, request, node, extremum, numColumns);
+                                                         materializeApproximateDistanceFieldMoments(context, request, node, moments);
+                                                     });
+            return;
+        }
+        Transform::forEachNodeSummary(context.tree, [&context, request](NodeId node, distance_transform_approx::ApproxSquaredDistance maximum,
+                                                                        const distance_transform::DistanceFieldMoments& moments) {
+            materializeApproximateMaximum(context, request, node, maximum);
+            materializeApproximateDistanceFieldMoments(context, request, node, moments);
+        });
+        return;
+    }
+    if (request.plateau()) {
+        Transform::forEachNodePlateau(context.tree,
+                                      [&context, request, numColumns](NodeId node, const distance_transform::DistanceFieldMaximumPlateau& plateau) {
+                                          materializeApproximateDistanceFieldPlateau(context, request, node, plateau, numColumns);
+                                      });
+        return;
+    }
+    if (request.localization()) {
+        Transform::forEachNodeExtremum(context.tree, [&context, request, numColumns](NodeId node, const distance_transform::DistanceFieldExtremum& extremum) {
+            materializeApproximateDistanceFieldExtremum(context, request, node, extremum, numColumns);
+        });
+        return;
+    }
+    Transform::forEachNodeMaximum(context.tree, [&context, request](NodeId node, distance_transform_approx::ApproxSquaredDistance value) {
+        materializeApproximateMaximum(context, request, node, value);
+    });
+}
 
 } // namespace mmcfilters::attributes::computers::detail
+/** @endcond */
 
 namespace mmcfilters::attributes::computers {
 
-/**
- * @brief Stateless MAX_DIST scalar computer.
- *
- * @details
- * The computer exposes the standard attribute-computer protocol for MAX_DIST:
- * it receives a typed altitude-aware compute context, runs the internal
- * distance-transform sweep in dense node-id space, and writes the requested
- * scalar column into the caller-owned buffer.
- */
+/** @brief Topology-only approximate distance-transform attribute computer. */
 class MaxDistComputer {
   public:
     /// Family name used in dependency-plan diagnostics.
@@ -309,57 +384,86 @@ class MaxDistComputer {
     /// Stable family id used by the scheduler.
     static constexpr AttributeComputerFamily family = AttributeComputerFamily::MaxDist;
 
-    /// Execution domain required by the computer.
-    static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Altitude;
+    /// Approximate distance-transform attributes require topology/support, not altitudes.
+    static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
 
-    /**
-     * @brief Canonical list of scalar descriptors materialized by this computer.
-     */
-    inline static constexpr std::array<Attribute, 1> producedAttributes{MaxDist};
+    /// Canonical list of scalar descriptors materialized by this computer.
+    inline static constexpr std::array<Attribute, 29> producedAttributes{MaxDist,
+                                                                         MaxSquaredDist,
+                                                                         DistSquaredSum,
+                                                                         DistSquaredMean,
+                                                                         DistRms,
+                                                                         DistSquaredVariance,
+                                                                         MaxDistCenterRow,
+                                                                         MaxDistCenterColumn,
+                                                                         MaxDistPlateauArea,
+                                                                         MaxDistPlateauCentroidRow,
+                                                                         MaxDistPlateauCentroidColumn,
+                                                                         DistSum,
+                                                                         DistMean,
+                                                                         DistVariance,
+                                                                         DistMedian,
+                                                                         DistMode,
+                                                                         DistQ25,
+                                                                         DistQ75,
+                                                                         DistQ90,
+                                                                         DistEntropy,
+                                                                         DistPositiveArea,
+                                                                         DistLevelCount,
+                                                                         DistWeightedCentroidRow,
+                                                                         DistWeightedCentroidColumn,
+                                                                         DistWeightedCentralMoment20,
+                                                                         DistWeightedCentralMoment02,
+                                                                         DistWeightedCentralMoment11,
+                                                                         DistWeightedAxisOrientation,
+                                                                         DistWeightedEccentricity};
 
-    /**
-     * @brief Rejects tree kinds for which MAX_DIST is not defined.
-     *
-     * @param tree Tree topology.
-     */
+    /** @brief Validates the topology-only geometric capability contract. @param tree Tree to validate. */
     static void requireSupportedTreeKind(const MorphologicalTree& tree) { detail::requireMaxDistCapabilities(tree); }
 
-    /**
-     * @brief Computes MAX_DIST and writes it into the requested output layout.
-     *
-     * @details
-     * Requires max-tree or min-tree topology with adjacency metadata and a
-     * dense typed altitude span. Floating-point altitude values must be finite.
-     *
-     * @param context Operation context or diagnostic label.
-     */
-    template <std::floating_point Real, AltitudeValue T> static void compute(const AltitudeAttributeComputeContext<Real, T>& context) {
+    /** @brief Computes requested approximate distance-transform projections. @tparam Real Output scalar type. @param context Established compute context. */
+    template <std::floating_point Real> static void compute(const AttributeComputeContext<Real>& context) {
+        const detail::ApproximateDistanceTransformAttributeRequest request =
+            detail::ApproximateDistanceTransformAttributeRequest::from(context.requestedAttributes);
         MMCFILTERS_CONTRACT_CHECKED_ONLY(requireAttributeBufferShape(context.tree, context.buffer, context.attrNames);
-                                         detail::validateMaxDistInput(context.tree, context.altitude));
-        if (!requestsAttribute(context.requestedAttributes, MaxDist)) {
-            return;
+                                         requireRequestedAttributeColumns(context); detail::requireMaxDistCapabilities(context.tree));
+        if (request.any()) {
+            static_cast<void>(detail::computeApproximateDistanceTransformAttributes(context, request));
         }
-
-        detail::kernel::computeMaxDist(context);
     }
 
-    /**
-     * @brief Materializes MAX_DIST for one-pixel unit supports.
-     *
-     * A one-pixel support has no interior distance from its contour, so its
-     * unit MAX_DIST value is zero.
-     *
-     * @param context Operation context or diagnostic label.
-     */
-    template <std::floating_point Real, AltitudeValue T> static void computeUnitRows(const AltitudeUnitAttributeComputeContext<Real, T>& context) {
+    /** @brief Materializes approximate unit-support values. @tparam Real Output scalar type. @param context Established unit-row context. */
+    template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
         requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
-        TreeAltitudeAlgorithms::validateNodeAltitudeBufferShape(context.tree, context.altitude);
-        if (!requestsAttribute(context.requestedAttributes, MaxDist)) {
-            return;
-        }
-
+        const int numColumns = context.tree.numColumns();
         for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitPixels.size()); ++leafIndex) {
-            context.buffer[context.attrNames.linearIndex(leafIndex, MaxDist)] = Real{0};
+            const PixelId pixel = context.unitPixels[static_cast<std::size_t>(leafIndex)];
+            for (Attribute attribute : producedAttributes) {
+                if (!requestsAttribute(context.requestedAttributes, attribute)) {
+                    continue;
+                }
+                Real value = Real{0};
+                if (attribute == MaxDistCenterRow) {
+                    value = static_cast<Real>(pixel / numColumns);
+                } else if (attribute == MaxDistCenterColumn) {
+                    value = static_cast<Real>(pixel % numColumns);
+                } else if (attribute == MaxDistPlateauArea) {
+                    value = Real{1};
+                } else if (attribute == MaxDistPlateauCentroidRow) {
+                    value = static_cast<Real>(pixel / numColumns);
+                } else if (attribute == MaxDistPlateauCentroidColumn) {
+                    value = static_cast<Real>(pixel % numColumns);
+                } else if (attribute == DistLevelCount) {
+                    value = Real{1};
+                } else if (attribute == DistWeightedCentroidRow) {
+                    value = static_cast<Real>(pixel / numColumns);
+                } else if (attribute == DistWeightedCentroidColumn) {
+                    value = static_cast<Real>(pixel % numColumns);
+                } else if (attribute == DistWeightedEccentricity) {
+                    value = Real{1};
+                }
+                context.buffer[context.attrNames.linearIndex(leafIndex, attribute)] = value;
+            }
         }
     }
 };

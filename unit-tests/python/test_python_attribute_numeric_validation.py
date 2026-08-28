@@ -256,6 +256,19 @@ def validate_tree_dtype(mmcfilters, tree, label: str, dtype):
         "BITQUAD_PERIMETER_AVERAGE",
         "BITQUAD_LENGTH_AVERAGE",
         "BITQUAD_WIDTH_AVERAGE",
+        "MAX_DIST",
+        "DIST_SQUARED_MEAN_EXACT",
+        "DIST_SQUARED_VARIANCE",
+        "MAX_DIST_CENTER_ROW_EXACT",
+        "MAX_DIST_CENTER_COLUMN",
+        "MAX_DIST_PLATEAU_AREA_EXACT",
+        "MAX_DIST_PLATEAU_CENTROID_COLUMN",
+        "DIST_SUM",
+        "DIST_VARIANCE_EXACT",
+        "DIST_Q90",
+        "DIST_ENTROPY_EXACT",
+        "DIST_WEIGHTED_CENTROID_ROW",
+        "DIST_WEIGHTED_ECCENTRICITY_EXACT",
     ):
         attr = getattr(mmcfilters.Attribute, attr_name)
         single = mmcfilters.Attribute.compute_single_attribute(tree, attr, dtype=dtype)
@@ -278,7 +291,7 @@ def validate_tree_dtype(mmcfilters, tree, label: str, dtype):
         require_finite_matrix(sampled_values, f"{label}: {dtype_label}: sampled {attr_name}", sample_layout, dtype)
         require(sampled_values.shape[0] == tree.num_internal_node_slots, f"{label}: sampled {attr_name} row count")
 
-    for attr_name in ("ECCENTRICITY", "BITQUAD_WIDTH_AVERAGE", "MAX_DIST"):
+    for attr_name in ("ECCENTRICITY", "BITQUAD_WIDTH_AVERAGE", "MAX_DIST_EXACT", "MAX_DIST"):
         attr = getattr(mmcfilters.Attribute, attr_name)
         mapped = mmcfilters.Attribute.compute_attribute_mapping(tree, attr, dtype=dtype)
         require(mapped.shape == (tree.num_rows, tree.num_columns), f"{label}: mapped {attr_name} shape")
@@ -286,12 +299,12 @@ def validate_tree_dtype(mmcfilters, tree, label: str, dtype):
 
     projection_layout, projection_values = mmcfilters.Attribute.compute_attributes(
         tree,
-        [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST],
+        [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST_EXACT],
         dtype=dtype,
     )
     projected = tree.project_node_values_to_exported_higra(
         projection_values,
-        [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST],
+        [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST_EXACT],
     )
     require(projected.ndim == 2, f"{label}: {dtype_label}: exported projection must be 2D")
     require(projected.shape[1] == len(projection_layout), f"{label}: {dtype_label}: exported projection width")
@@ -339,7 +352,7 @@ def validate_tree(mmcfilters, tree, label: str):
     require_same_layout(topology32_layout, topology64_layout, f"{label}: topology cast contract")
     require_float32_matches_float64_cast(topology32, topology64, f"{label}: topology cast contract")
 
-    for attr_name in ("ECCENTRICITY", "BITQUAD_WIDTH_AVERAGE", "MEAN_GRAY_LEVEL", "MAX_DIST"):
+    for attr_name in ("ECCENTRICITY", "BITQUAD_WIDTH_AVERAGE", "MEAN_GRAY_LEVEL", "MAX_DIST_EXACT", "MAX_DIST"):
         attr = getattr(mmcfilters.Attribute, attr_name)
 
         single32 = mmcfilters.Attribute.compute_single_attribute(tree, attr, dtype=np.float32)
@@ -369,22 +382,22 @@ def validate_tree(mmcfilters, tree, label: str):
 
     projection32_layout, projection32_values = mmcfilters.Attribute.compute_attributes(
         tree,
-        [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST],
+        [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST_EXACT],
         dtype=np.float32,
     )
     projection64_layout, projection64_values = mmcfilters.Attribute.compute_attributes(
         tree,
-        [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST],
+        [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST_EXACT],
         dtype=np.float64,
     )
     require_same_layout(projection32_layout, projection64_layout, f"{label}: exported projection input layout")
     projected32 = tree.project_node_values_to_exported_higra(
         projection32_values,
-        [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST],
+        [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST_EXACT],
     )
     projected64 = tree.project_node_values_to_exported_higra(
         projection64_values,
-        [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST],
+        [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST_EXACT],
     )
     require_float32_matches_float64_cast(projected32, projected64, f"{label}: exported projection cast contract")
 

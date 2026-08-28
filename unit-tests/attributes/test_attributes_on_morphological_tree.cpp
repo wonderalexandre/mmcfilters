@@ -368,18 +368,22 @@ int main() {
             requireEqual(areaBuffer[areaNames.linearIndex(5, Area)], 2.0f, "max-tree exact area node 5");
         }
 
-        auto [maxDistNames, maxDistBuffer] = AttributeComputation::computeSingleAttribute(*valuedTree, MaxDist);
+        auto [maxDistNames, maxDistBuffer] = AttributeComputation::computeSingleAttribute(*valuedTree, MaxDistExact);
         const std::vector<float> expectedMaxDist =
             isMaxtree ? std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f} : std::vector<float>{1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
         for (NodeId nodeId : tree.aliveNodeIds()) {
-            requireEqual(maxDistBuffer[maxDistNames.linearIndex(nodeId, MaxDist)], expectedMaxDist[static_cast<std::size_t>(nodeId)],
-                         isMaxtree ? "max-tree MAX_DIST regression" : "min-tree MAX_DIST regression");
+            requireEqual(maxDistBuffer[maxDistNames.linearIndex(nodeId, MaxDistExact)], expectedMaxDist[static_cast<std::size_t>(nodeId)],
+                         isMaxtree ? "max-tree MAX_DIST_EXACT regression" : "min-tree MAX_DIST_EXACT regression");
         }
 
-        if constexpr (contract::validationsEnabled) {
+        {
             auto topologyOnly = makeComponentTree(image, isMaxtree);
-            requireThrows<std::invalid_argument>([&]() { (void)AttributeComputation::computeSingleTopologyAttribute(*topologyOnly, MaxDist); },
-                                                 isMaxtree ? "max-tree MAX_DIST requires explicit altitude" : "min-tree MAX_DIST requires explicit altitude");
+            auto [topologyMaxDistNames, topologyMaxDistBuffer] = AttributeComputation::computeSingleTopologyAttribute(*topologyOnly, MaxDistExact);
+            for (NodeId nodeId : topologyOnly->aliveNodeIds()) {
+                requireEqual(topologyMaxDistBuffer[topologyMaxDistNames.linearIndex(nodeId, MaxDistExact)],
+                             maxDistBuffer[maxDistNames.linearIndex(nodeId, MaxDistExact)],
+                             isMaxtree ? "max-tree topology-only MAX_DIST_EXACT" : "min-tree topology-only MAX_DIST_EXACT");
+            }
         }
 
         std::vector<int> shiftedAltitude;
@@ -389,21 +393,29 @@ int main() {
             shiftedAltitude.push_back(static_cast<int>(value) + offset);
         }
         const ValuedMorphologicalTreeView<int> shiftedView(valuedTree->topology(), std::span<const int>(shiftedAltitude));
-        auto [shiftedMaxDistNames, shiftedMaxDistBuffer] = AttributeComputation::computeSingleAttribute(shiftedView, MaxDist);
+        auto [shiftedMaxDistNames, shiftedMaxDistBuffer] = AttributeComputation::computeSingleAttribute(shiftedView, MaxDistExact);
         for (NodeId nodeId : tree.aliveNodeIds()) {
-            requireEqual(shiftedMaxDistBuffer[shiftedMaxDistNames.linearIndex(nodeId, MaxDist)], maxDistBuffer[maxDistNames.linearIndex(nodeId, MaxDist)],
-                         isMaxtree ? "max-tree MAX_DIST supports altitudes above 255" : "min-tree MAX_DIST supports negative altitudes");
+            requireEqual(shiftedMaxDistBuffer[shiftedMaxDistNames.linearIndex(nodeId, MaxDistExact)], maxDistBuffer[maxDistNames.linearIndex(nodeId, MaxDistExact)],
+                         isMaxtree ? "max-tree MAX_DIST_EXACT is invariant to a positive altitude offset"
+                                   : "min-tree MAX_DIST_EXACT is invariant to a negative altitude offset");
         }
 
         requireMomentFamiliesMatchPixelOracle(tree, isMaxtree ? "max-tree" : "min-tree");
         requireBalanceMatchesTopologyOracle(tree, isMaxtree ? "max-tree balance" : "min-tree balance");
     }
 
-    if constexpr (contract::validationsEnabled) {
+    {
         auto treeOfShapes = makeValuedTreeOfShapes(image, TestTopographicImmersion::SelfDualSpan);
-        requireThrowsContaining<std::invalid_argument>([&]() { (void)AttributeComputation::computeSingleAttribute(*treeOfShapes, MaxDist); },
-                                                       "globally monotone altitude order",
-                                                       "MAX_DIST must reject a hierarchy without monotone altitude capability");
+        auto [tosMaxDistNames, tosMaxDistBuffer] = AttributeComputation::computeSingleAttribute(*treeOfShapes, MaxDistExact);
+        for (NodeId nodeId : treeOfShapes->topology().aliveNodeIds()) {
+            const float value = tosMaxDistBuffer[tosMaxDistNames.linearIndex(nodeId, MaxDistExact)];
+            require(std::isfinite(value) && value >= 0.0f, "Tree of Shapes MAX_DIST_EXACT must be finite and non-negative");
+            if (nodeId != treeOfShapes->topology().root()) {
+                const NodeId parent = treeOfShapes->topology().parent(nodeId);
+                require(value <= tosMaxDistBuffer[tosMaxDistNames.linearIndex(parent, MaxDistExact)],
+                        "Tree of Shapes MAX_DIST_EXACT must be increasing along support inclusion");
+            }
+        }
     }
 
     {
@@ -485,8 +497,9 @@ int main() {
 
         auto valuedTreeForSampling = makeValuedComponentTree(image, true);
         auto [groupShapeNames, groupShapeBuffer] = AttributeComputation::computeSingleAttribute(*valuedTreeForSampling, AttributeGroup::Shape);
-        requireEqual(groupShapeNames.NUM_ATTRIBUTES, 47, "SHAPE group count");
+        requireEqual(groupShapeNames.NUM_ATTRIBUTES, 48, "SHAPE group count");
         requireEqual(groupShapeBuffer[groupShapeNames.linearIndex(5, BoxColumnMin)], 2.0f, "SHAPE group bounding-box path");
+        require(groupShapeNames.contains(MaxDistExact), "SHAPE group includes MAX_DIST_EXACT");
         require(groupShapeNames.contains(MaxDist), "SHAPE group includes MAX_DIST");
         require(groupShapeNames.contains(ContourSideSouth), "SHAPE group includes contour sides");
         auto [sampleLayout, sampledValues] =
@@ -606,7 +619,7 @@ int main() {
         requireMappedAttributeMatch(GrayLevelHeight, "valuedTree GrayLevelHeight mapping must match equivalent valuedTree round-trip hierarchy");
         requireMappedAttributeMatch(Volume, "valuedTree VOLUME mapping must match equivalent valuedTree round-trip hierarchy");
         requireMappedAttributeMatch(RelativeVolume, "valuedTree RELATIVE_VOLUME mapping must match equivalent valuedTree round-trip hierarchy");
-        requireMappedAttributeMatch(MaxDist, "valuedTree MAX_DIST mapping must match equivalent valuedTree round-trip hierarchy");
+        requireMappedAttributeMatch(MaxDistExact, "valuedTree MAX_DIST_EXACT mapping must match equivalent valuedTree round-trip hierarchy");
     }
 
     return 0;

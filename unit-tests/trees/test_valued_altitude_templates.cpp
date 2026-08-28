@@ -444,7 +444,7 @@ template <class T> void checkTypedOwnerExportedHigraAttributeProjection(const st
 
     auto typed = MorphologicalTreeFactory::createMaxTree(image, 1.5);
     const std::vector<AttributeOrGroup> requests{Area,           Volume,      RelativeVolume, MeanGrayLevel,
-                                                 GrayLevelVariance, GrayLevelHeight, MaxDist,        BoxColumnMin, BoxRowMin};
+                                                 GrayLevelVariance, GrayLevelHeight, MaxDistExact,        BoxColumnMin, BoxRowMin};
     const auto computed = AttributeComputation::computeAttributes(typed, requests);
     const auto projected = AttributeComputation::projectNodeValuesToExportedHigra(typed, computed.first, computed.second);
 
@@ -464,7 +464,7 @@ template <class T> void checkTypedOwnerExportedHigraAttributeProjection(const st
     requireNear(projectedAt(MeanGrayLevel), sampleAltitude, 1.0e-5f, label + " unit MeanGrayLevel must preserve typed altitude");
     requireNear(projectedAt(GrayLevelVariance), 0.0f, 1.0e-5f, label + " unit GrayLevelVariance");
     requireNear(projectedAt(GrayLevelHeight), 0.0f, 1.0e-5f, label + " unit GrayLevelHeight");
-    requireNear(projectedAt(MaxDist), 0.0f, 1.0e-5f, label + " unit MAX_DIST");
+    requireNear(projectedAt(MaxDistExact), 0.0f, 1.0e-5f, label + " unit MAX_DIST_EXACT");
     requireNear(projectedAt(BoxColumnMin), static_cast<float>(sampleColumn), 1.0e-5f, label + " unit BOX_COLUMN_MIN");
     requireNear(projectedAt(BoxRowMin), static_cast<float>(sampleRow), 1.0e-5f, label + " unit BOX_ROW_MIN");
 }
@@ -473,13 +473,13 @@ void checkValuedMorphologicalTreeViewIncrementalAttributePipeline(const ValuedMo
     const auto& tree = valuedTree.topology();
     const auto ownerView = valuedTree.asView();
 
-    const auto singleBaseline = AttributeComputation::computeSingleAttribute(valuedTree, MaxDist);
-    const auto singleFromView = AttributeComputation::computeSingleAttribute(ownerView, MaxDist);
-    requireComputedAttributesNear(singleFromView, singleBaseline, tree, {MaxDist}, "owner view single attribute");
+    const auto singleBaseline = AttributeComputation::computeSingleAttribute(valuedTree, MaxDistExact);
+    const auto singleFromView = AttributeComputation::computeSingleAttribute(ownerView, MaxDistExact);
+    requireComputedAttributesNear(singleFromView, singleBaseline, tree, {MaxDistExact}, "owner view single attribute");
 
-    const auto multiBaseline = AttributeComputation::computeAttributes(valuedTree, {Area, MaxDist});
-    const auto multiFromView = AttributeComputation::computeAttributes(ownerView, {Area, MaxDist});
-    requireComputedAttributesNear(multiFromView, multiBaseline, tree, {Area, MaxDist}, "owner view multi attribute");
+    const auto multiBaseline = AttributeComputation::computeAttributes(valuedTree, {Area, MaxDistExact});
+    const auto multiFromView = AttributeComputation::computeAttributes(ownerView, {Area, MaxDistExact});
+    requireComputedAttributesNear(multiFromView, multiBaseline, tree, {Area, MaxDistExact}, "owner view multi attribute");
 
     requireImageNear(AttributeComputation::computeAttributeMapping(ownerView, MeanGrayLevel),
                      AttributeComputation::computeAttributeMapping(valuedTree, MeanGrayLevel),
@@ -497,13 +497,13 @@ void checkValuedMorphologicalTreeViewIncrementalAttributePipeline(const ValuedMo
     requireComputedAttributesNear(externalSingle, externalFromAltitudeSpan, tree, {MeanGrayLevel},
                                   "external view single overload must use attribute-pipeline subset");
 
-    const auto externalMaxDist = AttributeComputation::computeSingleAttribute(externalView, MaxDist);
-    requireComputedAttributesNear(externalMaxDist, singleBaseline, tree, {MaxDist}, "external view attribute-pipeline path must support MAX_DIST");
+    const auto externalMaxDist = AttributeComputation::computeSingleAttribute(externalView, MaxDistExact);
+    requireComputedAttributesNear(externalMaxDist, singleBaseline, tree, {MaxDistExact}, "external view attribute-pipeline path must support MAX_DIST_EXACT");
 
-    const auto externalMixed = AttributeComputation::computeAttributes(externalView, {MeanGrayLevel, MaxDist});
-    const auto baselineMixed = AttributeComputation::computeAttributes(valuedTree, {MeanGrayLevel, MaxDist});
-    requireComputedAttributesNear(externalMixed, baselineMixed, tree, {MeanGrayLevel, MaxDist},
-                                  "external view attribute-pipeline path must support mixed MAX_DIST requests");
+    const auto externalMixed = AttributeComputation::computeAttributes(externalView, {MeanGrayLevel, MaxDistExact});
+    const auto baselineMixed = AttributeComputation::computeAttributes(valuedTree, {MeanGrayLevel, MaxDistExact});
+    requireComputedAttributesNear(externalMixed, baselineMixed, tree, {MeanGrayLevel, MaxDistExact},
+                                  "external view attribute-pipeline path must support mixed MAX_DIST_EXACT requests");
 
     requireImageNear(AttributeComputation::computeAttributeMapping(externalView, MeanGrayLevel),
                      AttributeComputation::computeAttributeMapping(valuedTree, MeanGrayLevel),
@@ -810,8 +810,8 @@ template <class T> void checkGenericGrayLevelStatsKernel(const ValuedMorphologic
 
 template <class T> void checkAttributePipelineApi(const ValuedMorphologicalTree<std::uint8_t>& valuedTree, const std::string& label) {
     const auto& tree = valuedTree.topology();
-    const std::vector<AttributeOrGroup> requests{Area, Volume, RelativeVolume, MeanGrayLevel, GrayLevelVariance, GrayLevelHeight, MaxDist};
-    const std::vector<Attribute> expectedAttributes{Area, Volume, RelativeVolume, GrayLevelHeight, MeanGrayLevel, GrayLevelVariance, MaxDist};
+    const std::vector<AttributeOrGroup> requests{Area, Volume, RelativeVolume, MeanGrayLevel, GrayLevelVariance, GrayLevelHeight, MaxDistExact};
+    const std::vector<Attribute> expectedAttributes{Area, Volume, RelativeVolume, GrayLevelHeight, MeanGrayLevel, GrayLevelVariance, MaxDistExact};
     const auto baseline = AttributeComputation::computeAttributes(valuedTree, requests);
     const std::vector<T> equivalentAltitude = makeEquivalentAltitude<T>(valuedTree);
     const ValuedMorphologicalTreeView<T> equivalentView(tree, std::span<const T>(equivalentAltitude));
@@ -871,8 +871,8 @@ template <class T> void checkAttributePipelineApi(const ValuedMorphologicalTree<
                         label + " altitude-span API uniform fractional offset must preserve GrayLevelVariance");
             requireNear(fractional.second[fractional.first.linearIndex(nodeId, GrayLevelHeight)], baseline.second[baseline.first.linearIndex(nodeId, GrayLevelHeight)],
                         1.0e-5f, label + " altitude-span API uniform fractional offset must preserve GrayLevelHeight");
-            requireNear(fractional.second[fractional.first.linearIndex(nodeId, MaxDist)], baseline.second[baseline.first.linearIndex(nodeId, MaxDist)],
-                        1.0e-5f, label + " altitude-span API uniform fractional offset must preserve MAX_DIST");
+            requireNear(fractional.second[fractional.first.linearIndex(nodeId, MaxDistExact)], baseline.second[baseline.first.linearIndex(nodeId, MaxDistExact)],
+                        1.0e-5f, label + " altitude-span API uniform fractional offset must preserve MAX_DIST_EXACT");
         }
     }
 }
@@ -904,16 +904,17 @@ void checkAttributePipelineMaxDistAndRejectsInvalidInputs(const ValuedMorphologi
     const auto& tree = valuedTree.topology();
     const std::vector<float> altitude = makeEquivalentAltitude<float>(valuedTree);
 
-    const auto baselineMaxDist = AttributeComputation::computeSingleAttribute(valuedTree, MaxDist);
+    const auto baselineMaxDist = AttributeComputation::computeSingleAttribute(valuedTree, MaxDistExact);
     const ValuedMorphologicalTreeView<float> view(tree, std::span<const float>(altitude));
-    const auto maxDistFromAltitudeSpan = AttributeComputation::computeAttributesFromAltitudeSpan(view, {MaxDist});
-    requireComputedAttributesNear(maxDistFromAltitudeSpan, baselineMaxDist, tree, {MaxDist}, "altitude-span attribute API must support MAX_DIST");
+    const auto maxDistFromAltitudeSpan = AttributeComputation::computeAttributesFromAltitudeSpan(view, {MaxDistExact});
+    requireComputedAttributesNear(maxDistFromAltitudeSpan, baselineMaxDist, tree, {MaxDistExact},
+                                  "topology-only MAX_DIST_EXACT must be invariant across valued-tree wrappers");
 
     const std::vector<std::int32_t> int32Altitude = makeEquivalentAltitude<std::int32_t>(valuedTree);
     const ValuedMorphologicalTreeView<std::int32_t> int32View(tree, std::span<const std::int32_t>(int32Altitude));
-    const auto maxDistFromInt32AltitudeSpan = AttributeComputation::computeAttributesFromAltitudeSpan(int32View, {MaxDist});
-    requireComputedAttributesNear(maxDistFromInt32AltitudeSpan, baselineMaxDist, tree, {MaxDist},
-                                  "altitude-span attribute API must support MAX_DIST with int32 altitude");
+    const auto maxDistFromInt32AltitudeSpan = AttributeComputation::computeAttributesFromAltitudeSpan(int32View, {MaxDistExact});
+    requireComputedAttributesNear(maxDistFromInt32AltitudeSpan, baselineMaxDist, tree, {MaxDistExact},
+                                  "topology-only MAX_DIST_EXACT must ignore the altitude scalar type");
 
     if constexpr (contract::validationsEnabled) {
         requireThrows<std::runtime_error>(

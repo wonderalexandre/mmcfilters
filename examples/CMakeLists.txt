@@ -21,13 +21,6 @@ function(mmcfilters_configure_stb_example target)
     target_include_directories(${target} SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../external/stb)
 endfunction()
 
-# Internal examples may include detail headers to exercise/debug implementation
-# kernels directly; public examples should stay on stable headers.
-add_executable(mmcfilters_internal_edt_dift
-    ${MMCFILTERS_INTERNAL_EXAMPLES_ROOT}/edt_dift_example.cpp
-    ${MMCFILTERS_STB_SOURCE}
-)
-
 add_executable(mmcfilters_example_editing_api
     ${MMCFILTERS_EXAMPLES_ROOT}/editing_api_example.cpp
 )
@@ -74,7 +67,6 @@ add_executable(mmcfilters_typed_altitude_benchmark
     ${MMCFILTERS_EXAMPLES_ROOT}/typed_altitude_benchmark.cpp
 )
 
-mmcfilters_configure_stb_example(mmcfilters_internal_edt_dift)
 mmcfilters_configure_example(mmcfilters_example_editing_api)
 mmcfilters_configure_stb_example(mmcfilters_contour_benchmark)
 mmcfilters_configure_stb_example(mmcfilters_contour_trace_benchmark)
@@ -90,7 +82,6 @@ source_group(TREE ${MMCFILTERS_EXAMPLES_ROOT} FILES
     ${MMCFILTERS_EXAMPLES_ROOT}/contour_benchmark.cpp
     ${MMCFILTERS_EXAMPLES_ROOT}/contour_trace_benchmark.cpp
     ${MMCFILTERS_INTERNAL_EXAMPLES_ROOT}/contour_trace_profile.cpp
-    ${MMCFILTERS_INTERNAL_EXAMPLES_ROOT}/edt_dift_example.cpp
     ${MMCFILTERS_INTERNAL_EXAMPLES_ROOT}/finite_window_bitquad_benchmark.cpp
     ${MMCFILTERS_INTERNAL_EXAMPLES_ROOT}/tos_bitquad_projection_export.cpp
     ${MMCFILTERS_INTERNAL_EXAMPLES_ROOT}/tos_bitquad_naive_validation.cpp

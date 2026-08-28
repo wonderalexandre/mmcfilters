@@ -92,7 +92,72 @@ enum class Attribute {
     ContourSideNorth,
     ContourSideWest,
     ContourSideEast,
-    ContourSideSouth
+    ContourSideSouth,
+
+    MaxDistExact,
+
+    DistSquaredSumExact,
+    DistSquaredMeanExact,
+    DistRmsExact,
+    DistSquaredVarianceExact,
+
+    DistSquaredSum,
+    DistSquaredMean,
+    DistRms,
+    DistSquaredVariance,
+
+    MaxDistCenterRowExact,
+    MaxDistCenterColumnExact,
+    MaxDistCenterRow,
+    MaxDistCenterColumn,
+
+    MaxDistPlateauAreaExact,
+    MaxDistPlateauCentroidRowExact,
+    MaxDistPlateauCentroidColumnExact,
+    MaxDistPlateauArea,
+    MaxDistPlateauCentroidRow,
+    MaxDistPlateauCentroidColumn,
+
+    DistSum,
+    DistMean,
+    DistVariance,
+    DistMedian,
+    DistMode,
+    DistQ25,
+    DistQ75,
+    DistQ90,
+    DistEntropy,
+    DistPositiveArea,
+    DistLevelCount,
+    DistWeightedCentroidRow,
+    DistWeightedCentroidColumn,
+    DistWeightedCentralMoment20,
+    DistWeightedCentralMoment02,
+    DistWeightedCentralMoment11,
+    DistWeightedAxisOrientation,
+    DistWeightedEccentricity,
+
+    DistSumExact,
+    DistMeanExact,
+    DistVarianceExact,
+    DistMedianExact,
+    DistModeExact,
+    DistQ25Exact,
+    DistQ75Exact,
+    DistQ90Exact,
+    DistEntropyExact,
+    DistPositiveAreaExact,
+    DistLevelCountExact,
+    DistWeightedCentroidRowExact,
+    DistWeightedCentroidColumnExact,
+    DistWeightedCentralMoment20Exact,
+    DistWeightedCentralMoment02Exact,
+    DistWeightedCentralMoment11Exact,
+    DistWeightedAxisOrientationExact,
+    DistWeightedEccentricityExact,
+
+    MaxSquaredDist,
+    MaxSquaredDistExact
 };
 
 /**
@@ -105,6 +170,8 @@ enum class AttributeGroup {
     Moments,
     Boundary,
     TreeTopology,
+    DistTransf,
+    DistTransfExact,
 };
 
 using AttributeOrGroup = std::variant<Attribute, AttributeGroup>;

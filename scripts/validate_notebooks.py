@@ -20,6 +20,7 @@ EXPECTED_NOTEBOOKS = (
     "Higra_Attribute_Interoperability.ipynb",
     "MaxDistExample.ipynb",
     "Self_Dual_Residual_Trees_Tutorial.ipynb",
+    "Self_Dual_Residual_Trees_Tutorial_Static.ipynb",
     "SimpleExamples.ipynb",
     "ToS_Contour_Example.ipynb",
     "UAO_Examples.ipynb",

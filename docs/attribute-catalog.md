@@ -44,8 +44,8 @@ scalar attributes before these requirements are validated.
 | `Attribute::Volume` | `VOLUME` | `GRAY_LEVEL` | Altitude-aware | Sum of altitude-weighted support contributions over the node subtree. It behaves like the gray-level mass or integral of the image over the connected component support. |
 | `Attribute::RelativeVolume` | `RELATIVE_VOLUME` | `GRAY_LEVEL` | Altitude-aware | Recursive contrast volume `R(n) = area(n) + sum_c [R(c) + area(c) * abs(altitude(c) - altitude(n))]` over the direct children `c`. |
 | `Attribute::GrayLevelHeight` | `GRAY_LEVEL_HEIGHT` | `GRAY_LEVEL` | Altitude-aware | Maximum absolute altitude difference between the node and any node in its subtree. On monotone max-tree and min-tree hierarchies this reduces to the traditional one-sided span; it also applies to hierarchies with unconstrained altitude order. Leaves have value `0`. |
-| `Attribute::MeanGrayLevel` | `MEAN_GRAY_LEVEL` | `GRAY_LEVEL` | Altitude-aware | Arithmetic mean of the image values over the full node support: `sum(f(x), x in X) / |X|`. |
-| `Attribute::GrayLevelVariance` | `GRAY_LEVEL_VARIANCE` | `GRAY_LEVEL` | Altitude-aware | Population variance of the image values over the full node support, with denominator `|X|`. |
+| `Attribute::MeanGrayLevel` | `MEAN_GRAY_LEVEL` | `GRAY_LEVEL` | Altitude-aware | Arithmetic mean of the image values over the full node support: `sum(f(x), x in X) / card(X)`. |
+| `Attribute::GrayLevelVariance` | `GRAY_LEVEL_VARIANCE` | `GRAY_LEVEL` | Altitude-aware | Population variance of the image values over the full node support, with denominator `card(X)`. |
 | `Attribute::Area` | `AREA` | `SHAPE` | Topology/support | Number of pixels in the full node support. Equivalently, it is the sum of proper-part cardinalities over the node's subtree. |
 | `Attribute::BoxWidth` | `BOX_WIDTH` | `SHAPE` | Topology/support | Width, in columns, of the smallest axis-aligned bounding box enclosing the node support. |
 | `Attribute::BoundingBoxHeight` | `BOUNDING_BOX_HEIGHT` | `SHAPE` | Topology/support | Height, in rows, of the smallest axis-aligned bounding box enclosing the node support. |

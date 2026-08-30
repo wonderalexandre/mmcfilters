@@ -175,8 +175,12 @@ if(MMCFILTERS_ENABLE_DOC_TARGETS)
             COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/unit-tests/cmake/audit_api_refactoring.py"
                 ${MMCFILTERS_DOCS_PUBLIC_AUDIT_ARGS}
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/unit-tests/cmake/validate_generated_documentation.py"
+                --root "${CMAKE_CURRENT_SOURCE_DIR}"
+                --artifact-root "${MMCFILTERS_DOCS_PUBLIC_DIR}/html"
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-            COMMENT "Generating and auditing public API documentation"
+            COMMENT "Generating and validating public API documentation"
             VERBATIM
         )
         add_custom_target(docs-internal

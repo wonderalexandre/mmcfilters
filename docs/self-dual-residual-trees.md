@@ -10,7 +10,8 @@ executable demonstration.
 
 | Resource | Location | Purpose |
 | --- | --- | --- |
-| Executable companion | [`notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb`](https://github.com/wonderalexandre/mmcfilters/blob/main/notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb) | Compares the tree of shapes and both residual trees on `hydrant_2_3bit.png`, with interactive tree views and area filtering. |
+| Interactive companion | [`notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb`](https://github.com/wonderalexandre/mmcfilters/blob/main/notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb) | Compares the tree of shapes and both residual trees on `hydrant_2_3bit.png`, with interactive tree inspection and attribute filtering. |
+| Static companion | [`notebooks/Self_Dual_Residual_Trees_Tutorial_Static.ipynb`](https://github.com/wonderalexandre/mmcfilters/blob/main/notebooks/Self_Dual_Residual_Trees_Tutorial_Static.ipynb) | Prints the complete trees with `mtviz.PrintTree` and records the filtered images without widgets or browser callbacks. |
 | Tutorial input | [`dat/hydrant_2_3bit.png`](https://github.com/wonderalexandre/mmcfilters/blob/main/dat/hydrant_2_3bit.png) | 3-bit quantization of the hydrant image used throughout the comparison notebook. |
 | Figure 2 input | [`dat/hydrant.png`](https://github.com/wonderalexandre/mmcfilters/blob/main/dat/hydrant.png) | Original 363x352-pixel grayscale image used by the reproducible notebook experiment. |
 | Public C++ factories | [`mmcfilters/trees/MorphologicalTreeFactory.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/MorphologicalTreeFactory.hpp) | Recommended C++ entry points for unrestricted and saturated residual trees. |
@@ -140,10 +141,10 @@ it is not exposed as a third mode of these residual-tree factories. The library
 provides `MorphologicalTreeFactory::createTreeOfShapes` separately, and the
 notebook uses it only for comparison.
 
-## Demonstration notebook
+## Demonstration notebooks
 
 [`Self_Dual_Residual_Trees_Tutorial.ipynb`](https://github.com/wonderalexandre/mmcfilters/blob/main/notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb)
-is an executable companion rather than a second presentation of the theory. It:
+is the interactive executable companion. It:
 
 1. loads the 3-bit quantized grayscale image `dat/hydrant_2_3bit.png`;
 2. builds the default Min4/Max8 tree of shapes and the unrestricted and
@@ -153,14 +154,22 @@ is an executable companion rather than a second presentation of the theory. It:
    node attributes on hover;
 5. uses the `mtviz` pixel selector and the public smallest-node map and parent
    links to update all three node supports directly in the browser; and
-6. applies the same support-area pruning thresholds to all three hierarchies
-   and displays the resulting images side by side.
+6. provides a combo box for `AREA`, `CIRCULARITY`, `INERTIA`,
+   `RECTANGULARITY`, `BOUNDING_BOX_HEIGHT`, or `MAX_DIST`, together with an
+   attribute-specific threshold slider, and displays the three filtered images
+   side by side.
 
-The notebook does not duplicate the proofs or implement a second constructor.
-It keeps the distinction between the complementary-adjacency tree of shapes
+[`Self_Dual_Residual_Trees_Tutorial_Static.ipynb`](https://github.com/wonderalexandre/mmcfilters/blob/main/notebooks/Self_Dual_Residual_Trees_Tutorial_Static.ipynb)
+performs the same construction without widgets, browser callbacks, or
+interactive plots. It prints the complete topology of each hierarchy with
+`mtviz.PrintTree`, applies fixed thresholds for the same six attributes, and
+stores the input and filtered images as static Matplotlib outputs.
+
+Neither notebook duplicates the proofs or implements a second constructor.
+Both keep the distinction between the complementary-adjacency tree of shapes
 and the shared-adjacency residual factories explicit throughout the comparison.
 
-## Running the notebook
+## Running the notebooks
 
 From the repository root:
 
@@ -168,18 +177,24 @@ From the repository root:
 python -m pip install .
 python -m pip install -r notebooks/requirements.txt
 python -m jupyter lab notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb
+# Or open the static version:
+python -m jupyter lab notebooks/Self_Dual_Residual_Trees_Tutorial_Static.ipynb
 ```
 
 For a headless execution check:
 
 ```bash
 mkdir -p build/notebook-runs
-python -m jupyter nbconvert \
-  --execute \
-  --to notebook \
-  --output-dir build/notebook-runs \
-  notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb
 python scripts/validate_notebooks.py
+for notebook in \
+  notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb \
+  notebooks/Self_Dual_Residual_Trees_Tutorial_Static.ipynb; do
+  python -m jupyter nbconvert \
+    --execute \
+    --to notebook \
+    --output-dir build/notebook-runs \
+    "${notebook}"
+done
 ```
 
 ## Tests and benchmark

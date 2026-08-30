@@ -10,7 +10,8 @@ executable demonstration.
 
 | Resource | Location | Purpose |
 | --- | --- | --- |
-| Executable companion | [`notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb`](https://github.com/wonderalexandre/mmcfilters/blob/main/notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb) | Recreates Figure 1, checks the structural properties, and reproduces the Figure 2 hydrant experiment. |
+| Executable companion | [`notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb`](https://github.com/wonderalexandre/mmcfilters/blob/main/notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb) | Compares the tree of shapes and both residual trees on `hydrant_2_3bit.png`, with interactive tree views and area filtering. |
+| Tutorial input | [`dat/hydrant_2_3bit.png`](https://github.com/wonderalexandre/mmcfilters/blob/main/dat/hydrant_2_3bit.png) | 3-bit quantization of the hydrant image used throughout the comparison notebook. |
 | Figure 2 input | [`dat/hydrant.png`](https://github.com/wonderalexandre/mmcfilters/blob/main/dat/hydrant.png) | Original 363x352-pixel grayscale image used by the reproducible notebook experiment. |
 | Public C++ factories | [`mmcfilters/trees/MorphologicalTreeFactory.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/MorphologicalTreeFactory.hpp) | Recommended C++ entry points for unrestricted and saturated residual trees. |
 | Python bindings | [`pybinds/TreeBindings.cpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/pybinds/TreeBindings.cpp) | Exposes the two factories, the spatial order, the self-dual schedule, and the valued-tree query API. |
@@ -144,25 +145,20 @@ notebook uses it only for comparison.
 [`Self_Dual_Residual_Trees_Tutorial.ipynb`](https://github.com/wonderalexandre/mmcfilters/blob/main/notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb)
 is an executable companion rather than a second presentation of the theory. It:
 
-1. recreates the exact 17x17 six-flat-zone image from Figure 1;
-2. builds the unrestricted and saturated shared-4-adjacency trees;
-3. reads the supports and signed residues from the public API;
-4. recovers `I^0, ..., I^q` using the recurrence in Equation (5);
-5. displays the Hasse diagrams and the crossing saturated sets of Figure 1(c);
-6. checks the telescoping decomposition, nondecreasing support sizes,
-   laminarity, non-empty proper parts, saturated eligibility, and contrast
-   self-duality on the example;
-7. uses the Figure 1 image for compact area-pruning and adjacency diagnostics;
-   and
-8. reproduces the complete Figure 2 hydrant experiment with the original
-   363x352-pixel image, the three area thresholds `639`, `15333`, and `19166`,
-   and all five hierarchies: Min4/Max8 tree of shapes, unrestricted and
-   saturated residual trees with shared 8-adjacency, and unrestricted and
-   saturated residual trees with centered shared 3x11 adjacency.
+1. loads the 3-bit quantized grayscale image `dat/hydrant_2_3bit.png`;
+2. builds the default Min4/Max8 tree of shapes and the unrestricted and
+   saturated residual trees with shared 8-adjacency;
+3. compares node counts and exact reconstruction using the public tree API;
+4. displays all three Hasse diagrams interactively with `mtviz`, including
+   node attributes on hover;
+5. uses the `mtviz` pixel selector and the public smallest-node map and parent
+   links to update all three node supports directly in the browser; and
+6. applies the same support-area pruning thresholds to all three hierarchies
+   and displays the resulting images side by side.
 
-The notebook does not duplicate the proofs and does not implement a second
-version of the constructor. It builds the final valued trees through the public
-API and reconstructs their recorded event sequences for inspection.
+The notebook does not duplicate the proofs or implement a second constructor.
+It keeps the distinction between the complementary-adjacency tree of shapes
+and the shared-adjacency residual factories explicit throughout the comparison.
 
 ## Running the notebook
 

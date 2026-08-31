@@ -22,6 +22,7 @@ Pipfile
 notebooks/.virtual_documents/*
 /notebooks/Saliency_Maps_Tutorial.ipynb
 /notebooks/Shape_Space_Saliency_Xu.ipynb
+/notebooks/Self_Dual_Residual_Trees_Tutorial.ipynb
 /benchmarks/results/
 /docs/benchmarks/
 /docs/refactoring/

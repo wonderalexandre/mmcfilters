@@ -19,7 +19,6 @@ EXPECTED_NOTEBOOKS = (
     "Comparative_Morphological_Tree_Filtering.ipynb",
     "Higra_Attribute_Interoperability.ipynb",
     "MaxDistExample.ipynb",
-    "Self_Dual_Residual_Trees_Tutorial.ipynb",
     "Self_Dual_Residual_Trees_Tutorial_Static.ipynb",
     "SimpleExamples.ipynb",
     "ToS_Contour_Example.ipynb",
@@ -29,6 +28,7 @@ EXPECTED_NOTEBOOKS = (
 LOCAL_ONLY_NOTEBOOKS = {
     "Saliency_Maps_Tutorial.ipynb",
     "Shape_Space_Saliency_Xu.ipynb",
+    "Self_Dual_Residual_Trees_Tutorial.ipynb",
 }
 
 FORBIDDEN_CONTENT = re.compile(

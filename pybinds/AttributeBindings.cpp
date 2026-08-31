@@ -186,7 +186,7 @@ Returns a 2D floating-point array with the same shape as the tree image domain.)
         .value("GRAY_LEVEL_HEIGHT", Attribute::GrayLevelHeight)
         .value("MEAN_GRAY_LEVEL", Attribute::MeanGrayLevel)
         .value("GRAY_LEVEL_VARIANCE", Attribute::GrayLevelVariance)
-        .value("BOX_WIDTH", Attribute::BoxWidth)
+        .value("BOUNDING_BOX_WIDTH", Attribute::BoundingBoxWidth)
         .value("BOUNDING_BOX_HEIGHT", Attribute::BoundingBoxHeight)
         .value("RECTANGULARITY", Attribute::Rectangularity)
         .value("DIAGONAL_LENGTH", Attribute::DiagonalLength)
@@ -300,6 +300,7 @@ Returns a 2D floating-point array with the same shape as the tree image domain.)
         .value("DIST_WEIGHTED_ECCENTRICITY_EXACT", Attribute::DistWeightedEccentricityExact)
         .value("MAX_SQUARED_DIST", Attribute::MaxSquaredDist)
         .value("MAX_SQUARED_DIST_EXACT", Attribute::MaxSquaredDistExact)
+        .value("RAW_INERTIA", Attribute::RawInertia)
         .export_values();
 }
 

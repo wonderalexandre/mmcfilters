@@ -74,6 +74,15 @@ def main() -> int:
     )
     require(hasattr(mmcfilters.Attribute, "CONTOUR_PIXELS"), "Attribute must expose CONTOUR_PIXELS")
     require(hasattr(mmcfilters.Attribute, "CONTOUR_SIDE_SOUTH"), "Attribute must expose CONTOUR_SIDE_SOUTH")
+    require(
+        hasattr(mmcfilters.Attribute, "BOUNDING_BOX_WIDTH"),
+        "Attribute must expose BOUNDING_BOX_WIDTH",
+    )
+    require(
+        not hasattr(mmcfilters.Attribute, "BOX_WIDTH"),
+        "Attribute must not retain BOX_WIDTH as a compatibility alias",
+    )
+    require(hasattr(mmcfilters.Attribute, "RAW_INERTIA"), "Attribute must expose RAW_INERTIA")
     require(hasattr(mmcfilters.Attribute, "MAX_DIST_CENTER_ROW_EXACT"), "Attribute must expose MAX_DIST_CENTER_ROW_EXACT")
     require(hasattr(mmcfilters.Attribute, "MAX_DIST_CENTER_COLUMN"), "Attribute must expose MAX_DIST_CENTER_COLUMN")
     require(hasattr(mmcfilters.Attribute, "MAX_DIST_PLATEAU_AREA_EXACT"), "Attribute must expose MAX_DIST_PLATEAU_AREA_EXACT")
@@ -122,10 +131,14 @@ def main() -> int:
     require(topology_area.shape[0] == tree.num_internal_node_slots, "single topology attribute smoke shape")
     topology_names, topology_attrs = mmcfilters.Attribute.compute_topology_attributes(
         tree,
-        [mmcfilters.Attribute.AREA, mmcfilters.Attribute.BOX_WIDTH],
+        [mmcfilters.Attribute.AREA, mmcfilters.Attribute.BOUNDING_BOX_WIDTH],
     )
     require("AREA" in topology_names, "topology attribute facade must include AREA")
+    require("BOUNDING_BOX_WIDTH" in topology_names, "topology attribute facade must include BOUNDING_BOX_WIDTH")
     require(topology_attrs.shape == (tree.num_internal_node_slots, len(topology_names)), "topology attributes smoke shape")
+    raw_inertia = mmcfilters.Attribute.compute_single_topology_attribute(tree, mmcfilters.Attribute.RAW_INERTIA)
+    require(raw_inertia.shape[0] == tree.num_internal_node_slots, "RAW_INERTIA topology smoke shape")
+    require(float(raw_inertia[tree.root]) >= 0.0, "RAW_INERTIA root value must be non-negative")
     require_raises(
         lambda: mmcfilters.Attribute.compute_single_topology_attribute(tree, mmcfilters.Attribute.MEAN_GRAY_LEVEL),
         "topology attribute facade must reject altitude-dependent attributes",
@@ -135,6 +148,13 @@ def main() -> int:
     require("VOLUME" in gray_names, "Attribute.Group.GRAY_LEVEL must include VOLUME")
     require("GRAY_LEVEL_VARIANCE" in gray_names, "Attribute.Group.GRAY_LEVEL must include GRAY_LEVEL_VARIANCE")
     require(gray_attrs.shape == (tree.num_internal_node_slots, len(gray_names)), "Attribute.Group.GRAY_LEVEL smoke shape")
+
+    moment_names, moment_attrs = mmcfilters.Attribute.compute_topology_attributes(
+        tree,
+        [mmcfilters.Attribute.Group.MOMENTS],
+    )
+    require("RAW_INERTIA" in moment_names, "Attribute.Group.MOMENTS must include RAW_INERTIA")
+    require(moment_attrs.shape == (tree.num_internal_node_slots, len(moment_names)), "Attribute.Group.MOMENTS smoke shape")
 
     boundary_names, boundary_attrs = mmcfilters.Attribute.compute_topology_attributes(
         tree,

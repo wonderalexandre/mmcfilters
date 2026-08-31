@@ -438,16 +438,16 @@ int main() {
 
         requireThrows([&valuedTree] { static_cast<void>(valuedTree.reconstructFromNodeAltitudes()); }, "image reconstruction must require explicit 2D domain metadata");
         if constexpr (contract::validationsEnabled) {
-            requireThrows([&valuedTree] { static_cast<void>(AttributeComputation::computeSingleAttribute(valuedTree, BoxWidth)); },
+            requireThrows([&valuedTree] { static_cast<void>(AttributeComputation::computeSingleAttribute(valuedTree, BoundingBoxWidth)); },
                           "geometric attributes must require explicit 2D domain metadata");
 
             bool namedCapabilityDiagnostic = false;
             try {
-                static_cast<void>(AttributeComputation::computeSingleAttribute(valuedTree, BoxWidth));
+                static_cast<void>(AttributeComputation::computeSingleAttribute(valuedTree, BoundingBoxWidth));
             } catch (const std::invalid_argument& error) {
                 const std::string message = error.what();
                 namedCapabilityDiagnostic =
-                    message.find("BOX_WIDTH") != std::string::npos && message.find("regular 2D pixel domain") != std::string::npos;
+                    message.find("BOUNDING_BOX_WIDTH") != std::string::npos && message.find("regular 2D pixel domain") != std::string::npos;
             }
             require(namedCapabilityDiagnostic, "capability diagnostics must name the attribute and missing contract");
         }

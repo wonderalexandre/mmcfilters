@@ -153,6 +153,8 @@ double momentDerivedValue(const DirectCentralMoments& moments, Attribute attribu
         return 0.0;
     case Inertia:
         return moments.mu20 / std::pow(moments.area, 2.0) + moments.mu02 / std::pow(moments.area, 2.0);
+    case RawInertia:
+        return moments.mu20 + moments.mu02;
     case Circularity:
         if (lambda1 <= std::numeric_limits<float>::epsilon() && std::abs(lambda2) <= std::numeric_limits<float>::epsilon()) {
             return 1.0;
@@ -198,8 +200,22 @@ void requireMomentFamiliesMatchPixelOracle(const MorphologicalTree& tree, const 
         centralMomentValue, label + " central moment pixel oracle", 1.0e-4);
     requireAttributesMatchPixelOracle(tree, {HuMoment1, HuMoment2, HuMoment3, HuMoment4, HuMoment5, HuMoment6, HuMoment7}, huMomentValue,
                                       label + " Hu moment pixel oracle", 1.0e-6);
-    requireAttributesMatchPixelOracle(tree, {Compactness, Eccentricity, LengthMajorAxis, LengthMinorAxis, AxisOrientation, Inertia, Circularity},
+    requireAttributesMatchPixelOracle(tree, {Compactness, Eccentricity, LengthMajorAxis, LengthMinorAxis, AxisOrientation, Inertia, Circularity, RawInertia},
                                       momentDerivedValue, label + " moment-derived pixel oracle", 1.0e-4);
+}
+
+void requireRawInertiaIsIncreasing(const MorphologicalTree& tree, const std::string& label) {
+    auto [names, values] = AttributeComputation::computeSingleTopologyAttribute<double>(tree, RawInertia);
+    for (NodeId nodeId : tree.aliveNodeIds()) {
+        const double value = values[names.linearIndex(nodeId, RawInertia)];
+        require(std::isfinite(value) && value >= 0.0, label + " RAW_INERTIA must be finite and non-negative");
+        if (nodeId == tree.root()) {
+            continue;
+        }
+        const double parentValue = values[names.linearIndex(tree.parent(nodeId), RawInertia)];
+        const double tolerance = std::max(1.0e-12, std::abs(parentValue) * 1.0e-12);
+        require(value <= parentValue + tolerance, label + " RAW_INERTIA must be increasing under support inclusion");
+    }
 }
 
 void requireMomentOutputDtypeOnlyAffectsStorage() {
@@ -401,6 +417,7 @@ int main() {
         }
 
         requireMomentFamiliesMatchPixelOracle(tree, isMaxtree ? "max-tree" : "min-tree");
+        requireRawInertiaIsIncreasing(tree, isMaxtree ? "max-tree" : "min-tree");
         requireBalanceMatchesTopologyOracle(tree, isMaxtree ? "max-tree balance" : "min-tree balance");
     }
 
@@ -422,6 +439,7 @@ int main() {
         auto edited = makeValuedComponentTree(image, true);
         edited->mergeNodeIntoParent(4);
         requireMomentFamiliesMatchPixelOracle(edited->topology(), "max-tree after mergeNodeIntoParent");
+        requireRawInertiaIsIncreasing(edited->topology(), "max-tree after mergeNodeIntoParent");
         requireBalanceMatchesTopologyOracle(edited->topology(), "max-tree after mergeNodeIntoParent balance");
     }
 
@@ -483,6 +501,9 @@ int main() {
         auto [groupTopoNames, groupTopoBuffer] = AttributeComputation::computeSingleTopologyAttribute(*tree, AttributeGroup::TreeTopology);
         requireEqual(groupTopoBuffer[groupTopoNames.linearIndex(4, BalanceNode)], 0.0f, "TREE_TOPOLOGY group path");
         require(groupMomentNames.contains(Circularity), "MOMENTS group includes moment-derived descriptors");
+        require(groupMomentNames.contains(RawInertia), "MOMENTS group includes RAW_INERTIA");
+        requireNear(static_cast<double>(groupMomentBuffer[groupMomentNames.linearIndex(3, RawInertia)]),
+                    momentDerivedValue(computeDirectCentralMoments(*tree, 3), RawInertia), 1.0e-5, "MOMENTS group raw-inertia path");
         const double groupEccentricity = static_cast<double>(groupMomentBuffer[groupMomentNames.linearIndex(5, Eccentricity)]);
         const double expectedGroupEccentricity = momentDerivedValue(computeDirectCentralMoments(*tree, 5), Eccentricity);
         requireNear(groupEccentricity, expectedGroupEccentricity, 1.0e-5, "MOMENTS group moment-derived path");
@@ -497,11 +518,12 @@ int main() {
 
         auto valuedTreeForSampling = makeValuedComponentTree(image, true);
         auto [groupShapeNames, groupShapeBuffer] = AttributeComputation::computeSingleAttribute(*valuedTreeForSampling, AttributeGroup::Shape);
-        requireEqual(groupShapeNames.NUM_ATTRIBUTES, 48, "SHAPE group count");
+        requireEqual(groupShapeNames.NUM_ATTRIBUTES, 49, "SHAPE group count");
         requireEqual(groupShapeBuffer[groupShapeNames.linearIndex(5, BoxColumnMin)], 2.0f, "SHAPE group bounding-box path");
         require(groupShapeNames.contains(MaxDistExact), "SHAPE group includes MAX_DIST_EXACT");
         require(groupShapeNames.contains(MaxDist), "SHAPE group includes MAX_DIST");
         require(groupShapeNames.contains(ContourSideSouth), "SHAPE group includes contour sides");
+        require(groupShapeNames.contains(RawInertia), "SHAPE group includes RAW_INERTIA");
         auto [sampleLayout, sampledValues] =
             AttributeComputation::computeSampledNodeAttribute(*valuedTreeForSampling, Area, AltitudeDifference<std::uint8_t>{1}, 2);
         requireEqual(sampleLayout.NUM_ATTRIBUTES, 5, "sampled attribute count");

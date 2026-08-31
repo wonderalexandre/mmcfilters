@@ -95,7 +95,7 @@ template <AltitudeValue T>
                                                     const std::vector<double>& quantiles) {
     const Attribute scalarAttribute = attribute == CasfComponentTreesAttribute::Area ? Area
                                       : attribute == CasfComponentTreesAttribute::BoundingBoxWidth
-                                          ? BoxWidth
+                                          ? BoundingBoxWidth
                                       : attribute == CasfComponentTreesAttribute::BoundingBoxHeight ? BoundingBoxHeight
                                                                                                       : DiagonalLength;
     std::vector<double> values;

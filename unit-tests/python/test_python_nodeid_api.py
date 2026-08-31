@@ -1398,7 +1398,7 @@ def main() -> int:
     require_raises(
         lambda: mmcfilters.Attribute.compute_single_attribute(
             abstract_tree,
-            mmcfilters.Attribute.BOX_WIDTH,
+            mmcfilters.Attribute.BOUNDING_BOX_WIDTH,
         ),
         "abstract pixel domain must reject geometric attributes",
     )

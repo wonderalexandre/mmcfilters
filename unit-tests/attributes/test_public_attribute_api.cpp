@@ -63,7 +63,7 @@ int main() {
                  "root AREA through public valuedTree facade");
 
     auto topologyAttributes =
-        AttributeComputation::computeTopologyAttributes(valuedTree.topology(), std::vector<AttributeOrGroup>{Area, BoxWidth, BalanceNode});
+        AttributeComputation::computeTopologyAttributes(valuedTree.topology(), std::vector<AttributeOrGroup>{Area, BoundingBoxWidth, BalanceNode});
     requireEqual(topologyAttributes.first.NUM_ATTRIBUTES, 3, "topology public attribute stride");
     requireEqual(topologyAttributes.second[topologyAttributes.first.linearIndex(valuedTree.topology().root(), Area)], 16.0f,
                  "root AREA through explicit topology facade");

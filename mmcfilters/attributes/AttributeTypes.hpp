@@ -28,7 +28,7 @@ enum class Attribute {
     MeanGrayLevel,
     GrayLevelVariance,
 
-    BoxWidth,
+    BoundingBoxWidth,
     BoundingBoxHeight,
     DiagonalLength,
     Rectangularity,
@@ -157,7 +157,9 @@ enum class Attribute {
     DistWeightedEccentricityExact,
 
     MaxSquaredDist,
-    MaxSquaredDistExact
+    MaxSquaredDistExact,
+
+    RawInertia
 };
 
 /**

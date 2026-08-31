@@ -66,7 +66,7 @@ int main() {
     }();
     auto boxComputed = [&]() {
         try {
-            return AttributeComputation::computeAttributes(*valuedTree, {BoxWidth, BoundingBoxHeight, Rectangularity, DiagonalLength});
+            return AttributeComputation::computeAttributes(*valuedTree, {BoundingBoxWidth, BoundingBoxHeight, Rectangularity, DiagonalLength});
         } catch (const std::exception& e) {
             throw std::runtime_error(std::string("bounding-box computation failed: ") + e.what());
         }
@@ -103,7 +103,7 @@ int main() {
     requireEqual(pairCompatibleArea.first.linearIndex(0, Area), 0, "pair-like first field still exposes AttributeNames");
     requireEqual(pairCompatibleArea.second[pairCompatibleArea.first.linearIndex(0, Area)], 16.0f, "pair-like second field still exposes buffer");
 
-    auto [explicitTopologyNames, explicitTopologyBuffer] = AttributeComputation::computeTopologyAttributes(tree, {Area, BoxWidth});
+    auto [explicitTopologyNames, explicitTopologyBuffer] = AttributeComputation::computeTopologyAttributes(tree, {Area, BoundingBoxWidth});
     requireEqual(explicitTopologyBuffer[explicitTopologyNames.linearIndex(0, Area)], 16.0f,
                  "explicit topology attribute facade must compute AREA without altitude");
     if constexpr (contract::validationsEnabled) {
@@ -159,7 +159,7 @@ int main() {
     requireEqual(areaBuffer[areaNames.linearIndex(3, Area)], 8.0f, "node 3 area after middle-slot merge");
     requireEqual(areaBuffer[areaNames.linearIndex(5, Area)], 2.0f, "node 5 area after middle-slot merge");
 
-    requireEqual(boxBuffer[boxNames.linearIndex(0, BoxWidth)], 4.0f, "root box width after middle-slot merge");
+    requireEqual(boxBuffer[boxNames.linearIndex(0, BoundingBoxWidth)], 4.0f, "root box width after middle-slot merge");
     requireEqual(boxBuffer[boxNames.linearIndex(0, BoundingBoxHeight)], 4.0f, "root box height after middle-slot merge");
     require(boxBuffer[boxNames.linearIndex(0, Rectangularity)] > 0.0f, "root rectangularity after middle-slot merge");
     require(boxBuffer[boxNames.linearIndex(0, DiagonalLength)] > 0.0f, "root diagonal length after middle-slot merge");

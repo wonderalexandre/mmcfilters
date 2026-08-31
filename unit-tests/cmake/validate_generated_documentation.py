@@ -10,7 +10,11 @@ import re
 import sys
 
 
-ATTRIBUTE_ROW = re.compile(r"^\|\s*`(Attribute::[^`]+)`\s*\|")
+ATTRIBUTE_ROW = re.compile(
+    r"^\|\s*`(Attribute::[^`]+)`\s*\|"
+    r"[^|]*\|[^|]*\|[^|]*\|"
+    r"\s*`(Increasing|Non-increasing)`\s*\|"
+)
 
 
 class MarkdownTableParser(HTMLParser):
@@ -68,12 +72,16 @@ class MarkdownTableParser(HTMLParser):
                 self._current_table = None
 
 
-def attribute_enumerators(source: Path) -> list[str]:
-    return [
-        match.group(1)
-        for line in source.read_text(encoding="utf-8").splitlines()
-        if (match := ATTRIBUTE_ROW.match(line))
-    ]
+def attribute_rows(source: Path) -> list[tuple[str, str]]:
+    lines = source.read_text(encoding="utf-8").splitlines()
+    candidates = [line for line in lines if line.startswith("| `Attribute::")]
+    rows = [match.groups() for line in candidates if (match := ATTRIBUTE_ROW.match(line))]
+    if len(rows) != len(candidates):
+        raise RuntimeError(
+            "every attribute catalog row must contain an Attribute class of "
+            "`Increasing` or `Non-increasing`"
+        )
+    return rows
 
 
 def find_catalog_html(artifact_root: Path) -> Path:
@@ -89,9 +97,11 @@ def find_catalog_html(artifact_root: Path) -> Path:
 
 def validate_attribute_catalog(root: Path, artifact_root: Path) -> None:
     source = root / "docs" / "attribute-catalog.md"
-    expected = attribute_enumerators(source)
-    if not expected:
+    expected_rows = attribute_rows(source)
+    if not expected_rows:
         raise RuntimeError(f"no attribute rows found in {source}")
+    expected_enumerators = [enumerator for enumerator, _ in expected_rows]
+    expected_classes = [attribute_class for _, attribute_class in expected_rows]
 
     parser = MarkdownTableParser()
     html_path = find_catalog_html(artifact_root)
@@ -103,6 +113,7 @@ def validate_attribute_catalog(root: Path, artifact_root: Path) -> None:
         if table
         and "C++ enumerator" in table[0]
         and "Stable/Python name" in table[0]
+        and "Attribute class" in table[0]
     ]
     if len(catalog_tables) != 1:
         raise RuntimeError(
@@ -110,17 +121,30 @@ def validate_attribute_catalog(root: Path, artifact_root: Path) -> None:
             f"found {len(catalog_tables)}"
         )
 
-    rendered = [row[0] for row in catalog_tables[0][1:] if row]
-    if rendered != expected:
-        missing = [name for name in expected if name not in rendered]
-        unexpected = [name for name in rendered if name not in expected]
+    catalog = catalog_tables[0]
+    class_column = catalog[0].index("Attribute class")
+    rendered_rows = [row for row in catalog[1:] if row]
+    if any(len(row) <= class_column for row in rendered_rows):
+        raise RuntimeError("rendered attribute catalog contains an incomplete row")
+    rendered_enumerators = [row[0] for row in rendered_rows]
+    rendered_classes = [row[class_column] for row in rendered_rows]
+    if rendered_enumerators != expected_enumerators:
+        missing = [name for name in expected_enumerators if name not in rendered_enumerators]
+        unexpected = [name for name in rendered_enumerators if name not in expected_enumerators]
         raise RuntimeError(
             "rendered attribute catalog does not match its Markdown source: "
-            f"expected {len(expected)} rows, found {len(rendered)}; "
+            f"expected {len(expected_enumerators)} rows, found {len(rendered_enumerators)}; "
             f"missing={missing[:5]}, unexpected={unexpected[:5]}"
         )
+    if rendered_classes != expected_classes:
+        raise RuntimeError(
+            "rendered attribute classes do not match their Markdown source"
+        )
 
-    print(f"Validated {len(rendered)} rendered attribute catalog rows.")
+    print(
+        f"Validated {len(rendered_enumerators)} rendered attribute catalog rows "
+        "and inclusion classes."
+    )
 
 
 def main() -> int:

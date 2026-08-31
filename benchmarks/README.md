@@ -66,7 +66,7 @@ Bundle fields use scalar names and explicit group references:
 
 ```text
 attribute_bundle.radiometric_size=AREA,MEAN_GRAY_LEVEL,VOLUME,GRAY_LEVEL_HEIGHT
-attribute_bundle.shape_boundary=group:BOUNDARY,AREA,BOX_WIDTH,BOUNDING_BOX_HEIGHT,MAX_DIST
+attribute_bundle.shape_boundary=group:BOUNDARY,AREA,BOUNDING_BOX_WIDTH,BOUNDING_BOX_HEIGHT,MAX_DIST
 ```
 
 Every bundle is compared with its deduplicated sequence of scalar API calls.

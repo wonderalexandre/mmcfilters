@@ -110,7 +110,7 @@ void addAttributeScenarios(Context& context, std::vector<ScenarioResult>& result
             scalarAttributes.push_back(metadata.attribute);
         }
     } else if (atLeast(context.options.profile, Profile::Core)) {
-        scalarAttributes = {Area,          MeanGrayLevel,   Volume,          BoxWidth,       HuMoment1,
+        scalarAttributes = {Area,          MeanGrayLevel,   Volume,          BoundingBoxWidth,       HuMoment1,
                             BitquadArea, SubtreeHeight,     MaxDist,        ContourPerimeter};
     } else {
         scalarAttributes = {Area, MeanGrayLevel, MaxDist};
@@ -139,7 +139,7 @@ void addAttributeScenarios(Context& context, std::vector<ScenarioResult>& result
         return;
     }
 
-    const std::vector<AttributeOrGroup> heterogeneousRequest{Area, MeanGrayLevel, BoxWidth, HuMoment1, BitquadArea, SubtreeHeight, MaxDist,
+    const std::vector<AttributeOrGroup> heterogeneousRequest{Area, MeanGrayLevel, BoundingBoxWidth, HuMoment1, BitquadArea, SubtreeHeight, MaxDist,
                                                              ContourPerimeter};
     results.push_back(benchmarkScenario(
         "attributes", "heterogeneous_request", TimingScope::EstablishedInput, context.options.repetitions, context.maxTreeMetrics,

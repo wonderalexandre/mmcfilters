@@ -36,6 +36,7 @@ static_assert(static_cast<int>(DistSumExact) == 100);
 static_assert(static_cast<int>(DistWeightedEccentricityExact) == 117);
 static_assert(static_cast<int>(MaxSquaredDist) == 118);
 static_assert(static_cast<int>(MaxSquaredDistExact) == 119);
+static_assert(static_cast<int>(RawInertia) == 120);
 static_assert(static_cast<int>(AttributeGroup::TreeTopology) == 5);
 static_assert(static_cast<int>(AttributeGroup::DistTransf) == 6);
 static_assert(static_cast<int>(AttributeGroup::DistTransfExact) == 7);
@@ -115,7 +116,7 @@ template <class Computer> void requireRegisteredComputerFamily(AttributeComputer
 }
 
 template <class Computer>
-void countProducedAttributes(std::array<int, static_cast<std::size_t>(MaxSquaredDistExact) + 1>& counts) {
+void countProducedAttributes(std::array<int, static_cast<std::size_t>(RawInertia) + 1>& counts) {
     for (Attribute attribute : Computer::producedAttributes) {
         const auto index = static_cast<std::size_t>(attribute);
         require(index < counts.size(), "computer produced attribute must be in registry range");
@@ -124,7 +125,7 @@ void countProducedAttributes(std::array<int, static_cast<std::size_t>(MaxSquared
 }
 
 void requireGlobalAttributeRegistryContracts() {
-    std::array<int, static_cast<std::size_t>(MaxSquaredDistExact) + 1> producedCounts{};
+    std::array<int, static_cast<std::size_t>(RawInertia) + 1> producedCounts{};
     countProducedAttributes<AreaComputer>(producedCounts);
     countProducedAttributes<BoundingBoxComputer>(producedCounts);
     countProducedAttributes<TreeTopologyComputer>(producedCounts);
@@ -207,8 +208,8 @@ void requireCapabilityRegistryContracts() {
     require(!area.altitude && !area.gridDomain2D && area.adjacency == AttributeAdjacencyRequirement::None && !area.monotoneAltitudeOrder,
             "AREA capability contract");
 
-    const auto box = capabilityRequirements(BoxWidth);
-    require(!box.altitude && box.gridDomain2D && box.adjacency == AttributeAdjacencyRequirement::None, "BOX_WIDTH capability contract");
+    const auto box = capabilityRequirements(BoundingBoxWidth);
+    require(!box.altitude && box.gridDomain2D && box.adjacency == AttributeAdjacencyRequirement::None, "BOUNDING_BOX_WIDTH capability contract");
 
     const auto bitquad = capabilityRequirements(BitquadArea);
     require(!bitquad.altitude && bitquad.gridDomain2D && bitquad.adjacency == AttributeAdjacencyRequirement::UniformOrDirectional &&
@@ -262,16 +263,19 @@ int main() {
         requireEqual(grayLevelNames.getIndex(GrayLevelVariance), 4, "GRAY_LEVEL GrayLevelVariance index");
         requireEqual(grayLevelNames.linearIndex(5, GrayLevelVariance), 29, "GRAY_LEVEL dense linear index");
         auto shapeNames = AttributeNames::fromGroup(AttributeGroup::Shape);
-        requireEqual(shapeNames.NUM_ATTRIBUTES, 48, "SHAPE AttributeNames count");
+        requireEqual(shapeNames.NUM_ATTRIBUTES, 49, "SHAPE AttributeNames count");
         requireEqual(shapeNames.getIndex(Area), 0, "SHAPE AREA index");
         require(shapeNames.contains(MaxDistExact), "SHAPE AttributeNames must include MAX_DIST_EXACT");
         require(shapeNames.contains(MaxDist), "SHAPE AttributeNames must include MAX_DIST");
         require(shapeNames.contains(Circularity), "SHAPE AttributeNames must include CIRCULARITY");
+        require(shapeNames.contains(RawInertia), "SHAPE AttributeNames must include RAW_INERTIA");
         requireEqual(shapeNames.getIndex(ContourSideSouth), 47, "SHAPE CONTOUR_SIDE_SOUTH index");
+        requireEqual(shapeNames.getIndex(RawInertia), 48, "SHAPE RAW_INERTIA appended index");
         auto momentNames = AttributeNames::fromGroup(AttributeGroup::Moments);
-        requireEqual(momentNames.NUM_ATTRIBUTES, 21, "MOMENTS AttributeNames count");
+        requireEqual(momentNames.NUM_ATTRIBUTES, 22, "MOMENTS AttributeNames count");
         requireEqual(momentNames.getIndex(CentralMoment20), 0, "MOMENTS CENTRAL_MOMENT_20 index");
         requireEqual(momentNames.getIndex(Circularity), 20, "MOMENTS CIRCULARITY index");
+        requireEqual(momentNames.getIndex(RawInertia), 21, "MOMENTS RAW_INERTIA appended index");
         auto boundaryNames = AttributeNames::fromGroup(AttributeGroup::Boundary);
         requireEqual(boundaryNames.NUM_ATTRIBUTES, 15, "BOUNDARY AttributeNames count");
         requireEqual(boundaryNames.getIndex(BitquadArea), 0, "BOUNDARY BITQUAD_AREA index");
@@ -301,7 +305,7 @@ int main() {
             require(AttributeNames::toString(attribute).ends_with("_EXACT"), "DIST_TRANSF_EXACT attributes must use the _EXACT suffix");
         }
         auto allNames = AttributeNames::fromGroup(AttributeGroup::All);
-        requireEqual(allNames.NUM_ATTRIBUTES, static_cast<int>(MaxSquaredDistExact) + 1, "ALL AttributeNames count");
+        requireEqual(allNames.NUM_ATTRIBUTES, static_cast<int>(RawInertia) + 1, "ALL AttributeNames count");
         requireEqual(allNames.getIndex(ContourPixels), static_cast<int>(ContourPixels), "ALL CONTOUR_PIXELS index");
         requireEqual(allNames.getIndex(ContourSideSouth), static_cast<int>(ContourSideSouth), "ALL CONTOUR_SIDE_SOUTH index");
         const std::vector<Attribute>& allAttributes = ATTRIBUTE_GROUPS.at(AttributeGroup::All);
@@ -319,6 +323,18 @@ int main() {
                      "AttributeNames::toString exact maximum squared distance");
         requireEqual(AttributeNames::toString(MaxSquaredDist), std::string("MAX_SQUARED_DIST"),
                      "AttributeNames::toString approximate maximum squared distance");
+        requireEqual(AttributeNames::toString(RawInertia), std::string("RAW_INERTIA"),
+                     "AttributeNames::toString raw inertia");
+        const auto parsedRawInertia = AttributeNames::parse("RAW_INERTIA");
+        require(parsedRawInertia.has_value() && *parsedRawInertia == RawInertia,
+                "canonical RAW_INERTIA must parse");
+        requireEqual(AttributeNames::toString(BoundingBoxWidth), std::string("BOUNDING_BOX_WIDTH"),
+                     "bounding-box width must use the canonical stable name");
+        const auto parsedBoundingBoxWidth = AttributeNames::parse("BOUNDING_BOX_WIDTH");
+        require(parsedBoundingBoxWidth.has_value() && *parsedBoundingBoxWidth == BoundingBoxWidth,
+                "canonical BOUNDING_BOX_WIDTH must parse");
+        require(!AttributeNames::parse("BOX_WIDTH").has_value(),
+                "removed BOX_WIDTH must not remain as a compatibility alias");
         require(!AttributeNames::parse("MAX_DIST_SQUARED_APPROX").has_value(),
                 "approximate MAX_DIST must not expose an APPROX-suffixed alias");
         require(!AttributeNames::parse("MAX_SQUARED_DIST_APPROX").has_value(),
@@ -352,13 +368,13 @@ int main() {
     {
         requireComputerContract<AreaComputer>({Area}, AttributeComputerDomain::Topology, AttributeComputerFamily::Area, "AreaComputer");
         requireComputerContract<BoundingBoxComputer>(
-            {BoxWidth, BoundingBoxHeight, DiagonalLength, Rectangularity, RatioWh, BoxColumnMin, BoxColumnMax, BoxRowMin, BoxRowMax},
+            {BoundingBoxWidth, BoundingBoxHeight, DiagonalLength, Rectangularity, RatioWh, BoxColumnMin, BoxColumnMax, BoxRowMin, BoxRowMax},
             AttributeComputerDomain::Topology, AttributeComputerFamily::BoundingBox, "BoundingBoxComputer");
         requireComputerContract<TreeTopologyComputer>({SubtreeHeight, DepthNode, IsLeafNode, IsRootNode, NumChildrenNode, NumSiblingsNode,
                                                        NumDescendantsNode, NumLeafDescendantsNode, LeafRatioNode, BalanceNode, AvgChildHeightNode},
                                                       AttributeComputerDomain::Topology, AttributeComputerFamily::TreeTopology, "TreeTopologyComputer");
         requireComputerContract<CentralMomentsComputer>(
-            {CentralMoment20, CentralMoment02, CentralMoment11, CentralMoment30, CentralMoment03, CentralMoment21, CentralMoment12},
+            {CentralMoment20, CentralMoment02, CentralMoment11, CentralMoment30, CentralMoment03, CentralMoment21, CentralMoment12, RawInertia},
             AttributeComputerDomain::Topology, AttributeComputerFamily::CentralMoments, "CentralMomentsComputer");
         requireComputerContract<HuMomentsComputer>({HuMoment1, HuMoment2, HuMoment3, HuMoment4, HuMoment5, HuMoment6, HuMoment7},
                                                    AttributeComputerDomain::Topology, AttributeComputerFamily::HuMoments, "HuMomentsComputer");
@@ -502,7 +518,7 @@ int main() {
         requireEqual(static_cast<int>(scheduledGray.front()), static_cast<int>(MeanGrayLevel), "scheduler gray family attribute");
 
         const std::array<Attribute, 1> rectangularityOnly{Rectangularity};
-        const std::array<Attribute, 1> widthOnly{BoxWidth};
+        const std::array<Attribute, 1> widthOnly{BoundingBoxWidth};
         require(mmcfilters::detail::anyAttributeRequiresDependency(std::span<const Attribute>(rectangularityOnly), Area),
                 "scheduler identifies RECTANGULARITY AREA dependency");
         require(!mmcfilters::detail::anyAttributeRequiresDependency(std::span<const Attribute>(widthOnly), Area),
@@ -546,12 +562,12 @@ int main() {
     {
         auto tree = makeComponentTree(makeComponentTreeFixture(), true);
 
-        const std::array<Attribute, 1> widthRequest{BoxWidth};
-        const AttributeNames widthNames = AttributeNames::fromList({BoxWidth});
+        const std::array<Attribute, 1> widthRequest{BoundingBoxWidth};
+        const AttributeNames widthNames = AttributeNames::fromList({BoundingBoxWidth});
         std::vector<float> widthBuffer(static_cast<std::size_t>(tree->numInternalNodeSlots()) * static_cast<std::size_t>(widthNames.NUM_ATTRIBUTES), 0.0f);
         BoundingBoxComputer::compute(
             AttributeComputeContext<float>{*tree, std::span<float>(widthBuffer), widthNames, std::span<const Attribute>(widthRequest)});
-        requireEqual(widthBuffer[widthNames.linearIndex(tree->root(), BoxWidth)], 4.0f, "BOX_WIDTH context compute does not require AREA dependency");
+        requireEqual(widthBuffer[widthNames.linearIndex(tree->root(), BoundingBoxWidth)], 4.0f, "BOUNDING_BOX_WIDTH context compute does not require AREA dependency");
 
         if constexpr (contract::validationsEnabled) {
             const std::array<Attribute, 1> rectangularityRequest{Rectangularity};

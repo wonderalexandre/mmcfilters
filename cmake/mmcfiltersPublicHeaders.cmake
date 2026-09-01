@@ -10,6 +10,10 @@ set(MMCFILTERS_PUBLIC_HEADER_ENTRYPOINTS
     ${MMCFILTERS_ROOT}/attributes/Attributes.hpp
     ${MMCFILTERS_ROOT}/contours/ContourTraceComputation.hpp
     ${MMCFILTERS_ROOT}/contours/ContoursComputedIncrementally.hpp
+    ${MMCFILTERS_ROOT}/distanceTransform/DistanceTransformComputation.hpp
+    ${MMCFILTERS_ROOT}/distanceTransform/DistanceTransformProfiles.hpp
+    ${MMCFILTERS_ROOT}/distanceTransform/DistanceTransformTypes.hpp
+    ${MMCFILTERS_ROOT}/distanceTransform/NodeDistanceField.hpp
     ${MMCFILTERS_ROOT}/filters/AttributeFilters.hpp
     ${MMCFILTERS_ROOT}/filters/AttributeReconstructionFilters.hpp
     ${MMCFILTERS_ROOT}/filters/NodeDecisionMasks.hpp
@@ -111,6 +115,10 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/contours/detail/MorphologicalTreeBoundaryLifetimeIndex.hpp
     ${MMCFILTERS_ROOT}/contours/detail/ContourTraceDeltaStore.hpp
     ${MMCFILTERS_ROOT}/contours/detail/PendingPixelLists.hpp
+    ${MMCFILTERS_ROOT}/distanceTransform/DistanceTransformComputation.hpp
+    ${MMCFILTERS_ROOT}/distanceTransform/DistanceTransformProfiles.hpp
+    ${MMCFILTERS_ROOT}/distanceTransform/DistanceTransformTypes.hpp
+    ${MMCFILTERS_ROOT}/distanceTransform/NodeDistanceField.hpp
     ${MMCFILTERS_ROOT}/dataStructure/FastQueue.hpp
     ${MMCFILTERS_ROOT}/filters/AttributeFilters.hpp
     ${MMCFILTERS_ROOT}/filters/AttributeReconstructionFilters.hpp

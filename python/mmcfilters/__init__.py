@@ -91,6 +91,10 @@ Attribute computation is centered on `Attribute`:
   `NodeAttributeSamplingPolicy` and `MissingNodeAttributeSamplePolicy` for
   altitude-based ancestor/current/representative-descendant samples.
 
+Distance-transform fields and profiles are explicit topology-only results:
+- `DistanceTransform.compute_node_field(valued_tree, node_id, accuracy="exact")`
+- `DistanceTransform.compute_profiles(valued_tree, accuracy="exact")`
+
 Depth-stability helpers expose topological depth windows through
 `DepthStableRegionComputer.compute_by_depth(depth_window_radius)` and report variation
 scores with `get_variation`/`get_variations`. Result getters raise until the first
@@ -173,6 +177,10 @@ SoftSubtractiveAttributeFilter = _native.SoftSubtractiveAttributeFilter
 DepthStableRegionComputer = _native.DepthStableRegionComputer
 UltimateAttributeOpening = _native.UltimateAttributeOpening
 Attribute = _native.Attribute
+DistanceTransformAccuracy = _native.DistanceTransformAccuracy
+NodeDistanceField = _native.NodeDistanceField
+DistanceTransformProfiles = _native.DistanceTransformProfiles
+DistanceTransform = _native.DistanceTransform
 NodeAttributeSamplingPolicy = _native.NodeAttributeSamplingPolicy
 MissingNodeAttributeSamplePolicy = _native.MissingNodeAttributeSamplePolicy
 ContourComputation = _native.ContourComputation
@@ -245,6 +253,10 @@ __all__ = [
     "SoftSubtractiveAttributeFilter",
     "DepthStableRegionComputer",
     "Attribute",
+    "DistanceTransformAccuracy",
+    "NodeDistanceField",
+    "DistanceTransformProfiles",
+    "DistanceTransform",
     "NodeAttributeSamplingPolicy",
     "MissingNodeAttributeSamplePolicy",
     "UltimateAttributeOpening",

@@ -65,6 +65,22 @@ def main() -> int:
         require(hasattr(mmcfilters, public_name), f"package must expose {public_name}")
     require(hasattr(tree, "reconstruct_from_node_contributions"), "valued tree must expose contribution reconstruction")
     require(hasattr(mmcfilters, "Attribute"), "package must expose Attribute")
+    require(
+        hasattr(mmcfilters, "DistanceTransform"),
+        "package must expose DistanceTransform",
+    )
+    require(
+        hasattr(mmcfilters, "DistanceTransformAccuracy"),
+        "package must expose DistanceTransformAccuracy",
+    )
+    require(
+        hasattr(mmcfilters, "NodeDistanceField"),
+        "package must expose NodeDistanceField",
+    )
+    require(
+        hasattr(mmcfilters, "DistanceTransformProfiles"),
+        "package must expose DistanceTransformProfiles",
+    )
     require(hasattr(mmcfilters, "NodeAttributeSamplingPolicy"), "package must expose NodeAttributeSamplingPolicy")
     require(hasattr(mmcfilters, "MissingNodeAttributeSamplePolicy"), "package must expose MissingNodeAttributeSamplePolicy")
     require(hasattr(mmcfilters.Attribute, "compute_sampled_node_attribute"), "Attribute must expose compute_sampled_node_attribute")

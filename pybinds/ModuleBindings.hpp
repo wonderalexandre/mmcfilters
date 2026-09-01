@@ -17,6 +17,12 @@ void initMorphologicalTree(pybind11::module_& m);
  */
 void initAttributeComputation(pybind11::module_& m);
 /**
+ * @brief Registers node distance-field and profile bindings in the Python module.
+ *
+ * @param m Python module receiving the bindings.
+ */
+void initDistanceTransformComputation(pybind11::module_& m);
+/**
  * @brief Registers contours computed incrementally bindings in the Python module.
  *
  * @param m Python module receiving the bindings.

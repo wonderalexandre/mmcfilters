@@ -3,6 +3,7 @@
 
 #include "mmcfilters/attributes/Attributes.hpp"
 #include "mmcfilters/attributes/computers/detail/distance_transform_approx/MorphologicalTreeApproximateDistanceTransform.hpp"
+#include "mmcfilters/distanceTransform/DistanceTransformComputation.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -112,6 +113,34 @@ void requireWeightedMomentAxisConvention() {
     for (Attribute attribute : {DistWeightedEccentricity, DistWeightedEccentricityExact}) {
         requireNear(value(attribute), 1.0e6, Tolerance, "line-degenerate weighted eccentricity is finite");
     }
+}
+
+void requirePublicFieldAndProfiles(const MorphologicalTree& tree, DistanceTransformAccuracy accuracy) {
+    const NodeDistanceField field = DistanceTransformComputation::computeNodeField(tree, tree.root(), accuracy);
+    requireEqual(field.node(), tree.root(), "root distance-field node");
+    requireEqual(field.size(), std::size_t{25}, "root distance-field sample count");
+    const std::vector<std::int64_t> expectedDense{
+        0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 1, 4, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0,
+    };
+    requireVectorEqual(field.denseSquaredDistances(), expectedDense, "root dense squared-distance field");
+
+    const DistanceTransformProfiles profiles = DistanceTransformComputation::computeProfiles(tree, accuracy);
+    require(profiles.accuracy() == accuracy, "distance-profile accuracy");
+    const auto histogram = profiles.histogram(tree.root());
+    requireEqual(histogram.size(), std::size_t{3}, "root histogram level count");
+    requireEqual(histogram[0].squaredDistance, std::int64_t{0}, "histogram zero level");
+    requireEqual(histogram[0].count, std::uint64_t{16}, "histogram zero count");
+    requireEqual(histogram[1].squaredDistance, std::int64_t{1}, "histogram unit level");
+    requireEqual(histogram[1].count, std::uint64_t{8}, "histogram unit count");
+    requireEqual(histogram[2].squaredDistance, std::int64_t{4}, "histogram maximum level");
+    requireEqual(histogram[2].count, std::uint64_t{1}, "histogram maximum count");
+
+    const auto survival = profiles.survivalProfile(tree.root());
+    requireEqual(survival.size(), std::size_t{3}, "root survival level count");
+    requireEqual(survival[0].countAtOrAbove, std::uint64_t{25}, "survival at zero");
+    requireEqual(survival[1].countAtOrAbove, std::uint64_t{9}, "survival at one");
+    requireEqual(survival[2].countAtOrAbove, std::uint64_t{1}, "survival at four");
+    requireThrows<std::out_of_range>([&] { static_cast<void>(profiles.histogram(InvalidNode)); }, "distance profiles reject invalid node ids");
 }
 
 long double lowerQuantile(std::vector<long double> values, long double probability) {
@@ -343,6 +372,14 @@ int main() {
     requireRootStudy(*tree, true);
     requireRootStudy(*tree, false);
     requireWeightedMomentAxisConvention();
+    requirePublicFieldAndProfiles(*tree, DistanceTransformAccuracy::Exact);
+    requirePublicFieldAndProfiles(*tree, DistanceTransformAccuracy::Approximate);
+
+    const auto invalidAccuracy = static_cast<DistanceTransformAccuracy>(255);
+    requireThrows<std::invalid_argument>([&] { static_cast<void>(DistanceTransformComputation::computeNodeField(*tree, tree->root(), invalidAccuracy)); },
+                                         "distance fields reject unknown accuracy values");
+    requireThrows<std::invalid_argument>([&] { static_cast<void>(DistanceTransformComputation::computeProfiles(*tree, invalidAccuracy)); },
+                                         "distance profiles reject unknown accuracy values");
 
     requireExactStudyMatchesIndependentOracle(*tree, "constant square");
     const auto fixtureTree = makeComponentTree(makeComponentTreeFixture(), true);

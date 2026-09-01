@@ -299,6 +299,13 @@ if(TARGET mmcfilters)
     )
 
     add_test(
+        NAME unit_python_distance_transform
+        COMMAND ${MMCFILTERS_PYTHON_TEST_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_distance_transform.py
+            ${CMAKE_BINARY_DIR}
+    )
+
+    add_test(
         NAME unit_python_filter_wrappers
         COMMAND ${MMCFILTERS_PYTHON_TEST_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_filter_wrappers.py

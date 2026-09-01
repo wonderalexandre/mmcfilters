@@ -263,6 +263,29 @@ boundary_layout, boundary_values = (
 Stable scalar and group membership, input contracts, and family-specific guides
 are indexed by the [Attribute catalog](attribute-catalog.md).
 
+Per-pixel distance fields and all-node sparse profiles have a separate result
+API. Values in a field and profile thresholds are squared distances:
+
+```python
+field = mmcfilters.DistanceTransform.compute_node_field(
+    max_tree,
+    max_tree.root,
+    accuracy="exact",
+)
+dense_squared_distance = field.to_dense(outside_value=-1)
+
+profiles = mmcfilters.DistanceTransform.compute_profiles(
+    max_tree,
+    accuracy=mmcfilters.DistanceTransformAccuracy.APPROXIMATE,
+)
+root_histogram = profiles.histogram(max_tree.root)
+root_survival = profiles.survival_profile(max_tree.root)
+```
+
+The methods are topology-only even though Python receives the public
+`ValuedMorphologicalTree` wrapper. Definitions, units, and execution scope are
+documented in [Distance-transform attributes](distance-transform.md).
+
 Altitude-based node-attribute sampling returns current-node, ancestor, and
 representative-descendant columns. Missing values use a typed policy:
 

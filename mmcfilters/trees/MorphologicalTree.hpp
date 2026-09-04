@@ -620,12 +620,23 @@ class MorphologicalTree {
             return;
         }
 
+        // Explicit frames preserve child order without using the call stack on deep trees.
         int nextDfsEventIndex = 0;
-        computeIncrementalAttributes(
-            const_cast<MorphologicalTree*>(this), root(),
-            [&](NodeId nodeId) -> void { dfsIntervalCache_.entryIndex[nodeId] = nextDfsEventIndex++; },
-            [](NodeId, NodeId) -> void {},
-            [&](NodeId nodeId) -> void { dfsIntervalCache_.exitIndex[nodeId] = nextDfsEventIndex++; });
+        std::vector<std::pair<NodeId, NodeId>> stack;
+        stack.emplace_back(rootNodeId_, firstChild_[rootNodeId_]);
+        dfsIntervalCache_.entryIndex[rootNodeId_] = nextDfsEventIndex++;
+        while (!stack.empty()) {
+            auto& [node, nextChild] = stack.back();
+            if (nextChild == InvalidNode) {
+                dfsIntervalCache_.exitIndex[node] = nextDfsEventIndex++;
+                stack.pop_back();
+            } else {
+                const NodeId child = nextChild;
+                nextChild = nextSibling_[child];
+                dfsIntervalCache_.entryIndex[child] = nextDfsEventIndex++;
+                stack.emplace_back(child, firstChild_[child]);
+            }
+        }
 
         dfsIntervalCache_.valid = true;
     }
@@ -652,23 +663,337 @@ class MorphologicalTree {
     }
 
     /**
-     * @brief Generic depth-first accumulation helper used by incremental computations.
+     * @brief Resolves equality, ancestry and disconnection from DFS intervals.
      *
-     * @param tree Tree topology.
-     * @param rootNodeId Identifier of the traversal root.
-     * @param preProcessing Callback invoked before visiting a node children.
-     * @param mergeProcessing Callback invoked after completing one child.
-     * @param postProcessing Callback invoked after all children are merged.
+     * @param u First live endpoint.
+     * @param v Second live endpoint.
+     * @return Resolved LCA (possibly InvalidNode), or nullopt for an incomparable pair.
      */
-    template <class PreProcessing, class MergeProcessing, class PostProcessing>
-    static void computeIncrementalAttributes(MorphologicalTree* tree, NodeId rootNodeId, PreProcessing&& preProcessing, MergeProcessing&& mergeProcessing,
-                                             PostProcessing&& postProcessing) {
-        preProcessing(rootNodeId);
-        for (NodeId childNodeId : tree->children(rootNodeId)) {
-            computeIncrementalAttributes(tree, childNodeId, preProcessing, mergeProcessing, postProcessing);
-            mergeProcessing(rootNodeId, childNodeId);
+    [[nodiscard]] inline std::optional<NodeId> lowestCommonAncestorFromDfsIntervalsEstablished(NodeId u, NodeId v) const {
+        if (u == v) {
+            return u;
         }
-        postProcessing(rootNodeId);
+        ensureDfsIntervalCache();
+        if (dfsIntervalCache_.entryIndex[static_cast<std::size_t>(u)] < 0 ||
+            dfsIntervalCache_.entryIndex[static_cast<std::size_t>(v)] < 0) {
+            return InvalidNode;
+        }
+        const auto isAncestorCached = [&](NodeId ancestor, NodeId node) {
+            return dfsIntervalCache_.entryIndex[static_cast<std::size_t>(ancestor)] <=
+                       dfsIntervalCache_.entryIndex[static_cast<std::size_t>(node)] &&
+                   dfsIntervalCache_.exitIndex[static_cast<std::size_t>(ancestor)] >=
+                       dfsIntervalCache_.exitIndex[static_cast<std::size_t>(node)];
+        };
+        if (isAncestorCached(u, v)) {
+            return u;
+        }
+        if (isAncestorCached(v, u)) {
+            return v;
+        }
+        return std::nullopt;
+    }
+
+    /**
+     * @brief Shared scalar LCA kernel for caller-established live endpoints.
+     * @param u First live endpoint.
+     * @param v Second live endpoint.
+     * @return Lowest common ancestor, or InvalidNode for disconnected roots.
+     */
+    [[nodiscard]] inline NodeId lowestCommonAncestorEstablished(NodeId u, NodeId v) const {
+        const std::optional<NodeId> intervalResult = lowestCommonAncestorFromDfsIntervalsEstablished(u, v);
+        return intervalResult.has_value() ? *intervalResult : ensureLcaCache().findLowestCommonAncestor(u, v);
+    }
+
+    /**
+     * @brief Estimates the persistent DFS/Euler/RMQ storage for the current tree.
+     * @return Estimated bytes retained after building the scalar LCA cache.
+     */
+    [[nodiscard]] inline long double estimatedLcaRmqStorageBytes() const noexcept {
+        std::size_t rmqLevels = 1;
+        const std::size_t eulerLength = numNodes_ > 0 ? static_cast<std::size_t>(numNodes_) * 2 - 1 : 0;
+        for (std::size_t blockSize = 2; blockSize <= eulerLength && blockSize <= std::numeric_limits<std::size_t>::max() / 2;
+             blockSize *= 2) {
+            ++rmqLevels;
+        }
+        return static_cast<long double>(nodeParent_.size()) * static_cast<long double>(36 + 8 * rmqLevels);
+    }
+
+    /**
+     * @brief Resolves established pairwise LCA queries with a storage-aware strategy.
+     *
+     * An existing Euler/RMQ cache is always reused. When that cache has not
+     * been built, DFS intervals first resolve equality, ancestry and
+     * disconnection. The estimated storage for the remaining incomparable
+     * pairs then selects Euler/RMQ or an iterative offline Tarjan traversal.
+     * @param numQueries Number of pairwise queries.
+     * @param queryForIndex Random-access function returning established live endpoints.
+     * @param consumeLca Consumer receiving each query index and its LCA.
+     * @param forceTarjan Whether to use Tarjan without evaluating the storage strategy.
+     */
+    template <typename QueryAccessor, typename ResultConsumer>
+    inline void forEachLowestCommonAncestorEstablished(std::size_t numQueries, QueryAccessor&& queryForIndex, ResultConsumer&& consumeLca,
+                                                       bool forceTarjan = false) const {
+        if (numQueries == 0) {
+            return;
+        }
+
+        if (lcaCache_ && !forceTarjan) {
+            for (std::size_t queryIndex = 0; queryIndex < numQueries; ++queryIndex) {
+                const auto [first, second] = queryForIndex(queryIndex);
+                consumeLca(queryIndex, lowestCommonAncestorEstablished(first, second));
+            }
+            return;
+        }
+
+        const std::size_t numSlots = nodeParent_.size();
+        std::size_t numUnresolvedQueries = numQueries;
+        if (!forceTarjan) {
+            numUnresolvedQueries = 0;
+            for (std::size_t queryIndex = 0; queryIndex < numQueries; ++queryIndex) {
+                const auto [first, second] = queryForIndex(queryIndex);
+                const std::optional<NodeId> intervalResult = lowestCommonAncestorFromDfsIntervalsEstablished(first, second);
+                if (intervalResult.has_value()) {
+                    consumeLca(queryIndex, *intervalResult);
+                    continue;
+                }
+                ++numUnresolvedQueries;
+            }
+        }
+        if (numUnresolvedQueries == 0 || rootNodeId_ == InvalidNode) {
+            return;
+        }
+
+        const long double estimatedRmqBytes = estimatedLcaRmqStorageBytes();
+        const long double estimatedTarjanBytes =
+            static_cast<long double>(numSlots) * 30.0L + static_cast<long double>(numUnresolvedQueries) * 16.0L;
+        const bool batchFitsCompactIndices = numQueries <= static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max() / 2);
+        if (!forceTarjan && (!batchFitsCompactIndices || estimatedRmqBytes <= estimatedTarjanBytes)) {
+            for (std::size_t queryIndex = 0; queryIndex < numQueries; ++queryIndex) {
+                const auto [first, second] = queryForIndex(queryIndex);
+                if (lowestCommonAncestorFromDfsIntervalsEstablished(first, second).has_value()) {
+                    continue;
+                }
+                consumeLca(queryIndex, ensureLcaCache().findLowestCommonAncestor(first, second));
+            }
+            return;
+        }
+
+        using QueryOffset = std::uint32_t;
+        std::vector<QueryOffset> queryOffsets(numSlots + 1, QueryOffset{0});
+        for (std::size_t queryIndex = 0; queryIndex < numQueries; ++queryIndex) {
+            const auto [first, second] = queryForIndex(queryIndex);
+            if (!forceTarjan && lowestCommonAncestorFromDfsIntervalsEstablished(first, second).has_value()) {
+                continue;
+            }
+            ++queryOffsets[static_cast<std::size_t>(first) + 1];
+            ++queryOffsets[static_cast<std::size_t>(second) + 1];
+        }
+        for (std::size_t index = 1; index < queryOffsets.size(); ++index) {
+            queryOffsets[index] += queryOffsets[index - 1];
+        }
+
+        struct QueryReference {
+            NodeId otherEndpoint = InvalidNode;
+            std::uint32_t queryIndex = 0;
+        };
+        std::vector<QueryReference> queryReferences(queryOffsets.back());
+        for (std::size_t queryIndex = 0; queryIndex < numQueries; ++queryIndex) {
+            const auto [first, second] = queryForIndex(queryIndex);
+            if (!forceTarjan && lowestCommonAncestorFromDfsIntervalsEstablished(first, second).has_value()) {
+                continue;
+            }
+            const QueryOffset firstPosition = queryOffsets[static_cast<std::size_t>(first)]++;
+            queryReferences[firstPosition] = {second, static_cast<std::uint32_t>(queryIndex)};
+            const QueryOffset secondPosition = queryOffsets[static_cast<std::size_t>(second)]++;
+            queryReferences[secondPosition] = {first, static_cast<std::uint32_t>(queryIndex)};
+        }
+        for (std::size_t index = numSlots; index > 0; --index) {
+            queryOffsets[index] = queryOffsets[index - 1];
+        }
+        queryOffsets[0] = QueryOffset{0};
+
+        const auto findSet = [](std::vector<NodeId>& setParents, NodeId node) {
+            NodeId representative = node;
+            while (setParents[static_cast<std::size_t>(representative)] != representative) {
+                representative = setParents[static_cast<std::size_t>(representative)];
+            }
+            while (setParents[static_cast<std::size_t>(node)] != node) {
+                const NodeId next = setParents[static_cast<std::size_t>(node)];
+                setParents[static_cast<std::size_t>(node)] = representative;
+                node = next;
+            }
+            return representative;
+        };
+        const auto uniteSets = [&](std::vector<NodeId>& setParents, std::vector<std::uint8_t>& setRanks, NodeId first, NodeId second) {
+            NodeId firstRoot = findSet(setParents, first);
+            NodeId secondRoot = findSet(setParents, second);
+            if (firstRoot == secondRoot) {
+                return firstRoot;
+            }
+            if (setRanks[static_cast<std::size_t>(firstRoot)] < setRanks[static_cast<std::size_t>(secondRoot)]) {
+                std::swap(firstRoot, secondRoot);
+            }
+            setParents[static_cast<std::size_t>(secondRoot)] = firstRoot;
+            if (setRanks[static_cast<std::size_t>(firstRoot)] == setRanks[static_cast<std::size_t>(secondRoot)]) {
+                ++setRanks[static_cast<std::size_t>(firstRoot)];
+            }
+            return firstRoot;
+        };
+
+        struct TraversalFrame {
+            NodeId node = InvalidNode;
+            NodeId nextChild = InvalidNode;
+        };
+
+        std::vector<NodeId> setParents(numSlots, InvalidNode);
+        std::vector<std::uint8_t> setRanks(numSlots, std::uint8_t{0});
+        std::vector<NodeId> ancestors(numSlots, InvalidNode);
+        std::vector<std::uint8_t> finishedNodes(numSlots, std::uint8_t{0});
+        std::vector<TraversalFrame> traversalStack;
+        traversalStack.reserve(static_cast<std::size_t>(numNodes_));
+        setParents[static_cast<std::size_t>(rootNodeId_)] = rootNodeId_;
+        ancestors[static_cast<std::size_t>(rootNodeId_)] = rootNodeId_;
+        traversalStack.push_back({rootNodeId_, firstChild_[static_cast<std::size_t>(rootNodeId_)]});
+
+        while (!traversalStack.empty()) {
+            TraversalFrame& frame = traversalStack.back();
+            if (frame.nextChild != InvalidNode) {
+                const NodeId child = frame.nextChild;
+                frame.nextChild = nextSibling_[static_cast<std::size_t>(child)];
+                setParents[static_cast<std::size_t>(child)] = child;
+                ancestors[static_cast<std::size_t>(child)] = child;
+                traversalStack.push_back({child, firstChild_[static_cast<std::size_t>(child)]});
+                continue;
+            }
+
+            const NodeId node = frame.node;
+            const std::size_t nodeIndex = static_cast<std::size_t>(node);
+            finishedNodes[nodeIndex] = std::uint8_t{1};
+            for (QueryOffset referenceIndex = queryOffsets[nodeIndex]; referenceIndex < queryOffsets[nodeIndex + 1]; ++referenceIndex) {
+                const QueryReference query = queryReferences[referenceIndex];
+                if (finishedNodes[static_cast<std::size_t>(query.otherEndpoint)] != 0) {
+                    const NodeId representative = findSet(setParents, query.otherEndpoint);
+                    consumeLca(query.queryIndex, ancestors[static_cast<std::size_t>(representative)]);
+                }
+            }
+
+            traversalStack.pop_back();
+            if (!traversalStack.empty()) {
+                const NodeId parent = traversalStack.back().node;
+                const NodeId representative = uniteSets(setParents, setRanks, parent, node);
+                ancestors[static_cast<std::size_t>(representative)] = parent;
+            }
+        }
+    }
+
+    /**
+     * @brief Returns the results of established pairwise LCA queries.
+     * @param queries Pairwise queries with caller-established live endpoints.
+     * @return LCA results in query order; disconnected endpoints map to InvalidNode.
+     */
+    [[nodiscard]] inline std::vector<NodeId>
+    lowestCommonAncestorsEstablished(std::span<const std::pair<NodeId, NodeId>> queries) const {
+        std::vector<NodeId> lcas(queries.size(), InvalidNode);
+        forEachLowestCommonAncestorEstablished(
+            queries.size(), [&](std::size_t queryIndex) { return queries[queryIndex]; },
+            [&](std::size_t queryIndex, NodeId lca) { lcas[queryIndex] = lca; });
+        return lcas;
+    }
+
+    /**
+     * @brief Resolves generated LCA queries while avoiding an unnecessary query buffer.
+     *
+     * A bounded deterministic sample selects Tarjan directly when the batch
+     * contains incomparable pairs and its estimated storage is lower than
+     * RMQ. Otherwise, DFS intervals emit equality and ancestry results, and
+     * only the remaining incomparable endpoint pairs may be stored.
+     * @param numQueries Number of generated pairwise queries.
+     * @param queryForIndex Random-access function returning established live endpoints.
+     * @param consumeLca Consumer receiving each query index and its LCA.
+     */
+    template <typename QueryAccessor, typename ResultConsumer>
+    inline void forEachGeneratedLowestCommonAncestorEstablished(std::size_t numQueries, QueryAccessor&& queryForIndex,
+                                                                 ResultConsumer&& consumeLca) const {
+        if (numQueries == 0) {
+            return;
+        }
+        if (lcaCache_) {
+            for (std::size_t queryIndex = 0; queryIndex < numQueries; ++queryIndex) {
+                const auto [first, second] = queryForIndex(queryIndex);
+                consumeLca(queryIndex, lowestCommonAncestorEstablished(first, second));
+            }
+            return;
+        }
+
+        const bool fullBatchFitsCompactIndices = numQueries <= static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max() / 2);
+        const long double estimatedFullBatchTarjanBytes =
+            static_cast<long double>(nodeParent_.size()) * 30.0L + static_cast<long double>(numQueries) * 24.0L;
+        if (fullBatchFitsCompactIndices && estimatedLcaRmqStorageBytes() > estimatedFullBatchTarjanBytes) {
+            constexpr std::size_t MaxStrategyProbes = 1024;
+            const std::size_t numProbes = std::min(numQueries, MaxStrategyProbes);
+            bool foundIncomparablePair = false;
+            for (std::size_t probe = 0; probe < numProbes; ++probe) {
+                const std::size_t queryIndex = probe * numQueries / numProbes;
+                const auto [first, second] = queryForIndex(queryIndex);
+                if (!lowestCommonAncestorFromDfsIntervalsEstablished(first, second).has_value()) {
+                    foundIncomparablePair = true;
+                    break;
+                }
+            }
+            if (foundIncomparablePair) {
+                std::vector<std::pair<NodeId, NodeId>> allPairs(numQueries);
+                for (std::size_t queryIndex = 0; queryIndex < numQueries; ++queryIndex) {
+                    allPairs[queryIndex] = queryForIndex(queryIndex);
+                }
+                forEachLowestCommonAncestorEstablished(
+                    numQueries, [&](std::size_t queryIndex) { return allPairs[queryIndex]; }, std::forward<ResultConsumer>(consumeLca), true);
+                return;
+            }
+        }
+
+        std::size_t numUnresolvedQueries = 0;
+        for (std::size_t queryIndex = 0; queryIndex < numQueries; ++queryIndex) {
+            const auto [first, second] = queryForIndex(queryIndex);
+            const std::optional<NodeId> intervalResult = lowestCommonAncestorFromDfsIntervalsEstablished(first, second);
+            if (intervalResult.has_value()) {
+                consumeLca(queryIndex, *intervalResult);
+            } else {
+                ++numUnresolvedQueries;
+            }
+        }
+        if (numUnresolvedQueries == 0) {
+            return;
+        }
+
+        const bool filteredBatchFitsCompactIndices = numQueries <= static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()) &&
+                                                     numUnresolvedQueries <=
+                                                         static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max() / 2);
+        const long double estimatedFilteredTarjanBytes =
+            static_cast<long double>(nodeParent_.size()) * 30.0L + static_cast<long double>(numUnresolvedQueries) * 28.0L;
+        if (!filteredBatchFitsCompactIndices || estimatedLcaRmqStorageBytes() <= estimatedFilteredTarjanBytes) {
+            for (std::size_t queryIndex = 0; queryIndex < numQueries; ++queryIndex) {
+                const auto [first, second] = queryForIndex(queryIndex);
+                if (!lowestCommonAncestorFromDfsIntervalsEstablished(first, second).has_value()) {
+                    consumeLca(queryIndex, ensureLcaCache().findLowestCommonAncestor(first, second));
+                }
+            }
+            return;
+        }
+
+        std::vector<std::pair<NodeId, NodeId>> unresolvedPairs;
+        std::vector<std::uint32_t> unresolvedQueryIndices;
+        unresolvedPairs.reserve(numUnresolvedQueries);
+        unresolvedQueryIndices.reserve(numUnresolvedQueries);
+        for (std::size_t queryIndex = 0; queryIndex < numQueries; ++queryIndex) {
+            const auto query = queryForIndex(queryIndex);
+            if (!lowestCommonAncestorFromDfsIntervalsEstablished(query.first, query.second).has_value()) {
+                unresolvedPairs.push_back(query);
+                unresolvedQueryIndices.push_back(static_cast<std::uint32_t>(queryIndex));
+            }
+        }
+        forEachLowestCommonAncestorEstablished(
+            unresolvedPairs.size(), [&](std::size_t queryIndex) { return unresolvedPairs[queryIndex]; },
+            [&](std::size_t queryIndex, NodeId lca) { consumeLca(unresolvedQueryIndices[queryIndex], lca); }, true);
     }
 
     // ========================= Internal topology helpers ========================= //
@@ -2281,19 +2606,41 @@ class MorphologicalTree {
         if (!isAlive(u) || !isAlive(v)) {
             return InvalidNode;
         }
-        if (u == v) {
-            return u;
+        return lowestCommonAncestorEstablished(u, v);
+    }
+
+    /**
+     * @brief Returns lowest common ancestors for a batch of node pairs.
+     *
+     * Invalid or dead endpoints produce InvalidNode. An existing persistent
+     * Euler/RMQ cache is reused. When that cache has not been built, DFS
+     * intervals first resolve equality, ancestry, and disconnection. The
+     * remaining incomparable pairs use streamed RMQ or iterative offline
+     * Tarjan, selected from their estimated storage.
+     * @param queries Pairwise node queries.
+     * @return LCA results in the same order as `queries`.
+     */
+    [[nodiscard]] inline std::vector<NodeId>
+    lowestCommonAncestors(std::span<const std::pair<NodeId, NodeId>> queries) const {
+        std::vector<std::pair<NodeId, NodeId>> liveQueries;
+        std::vector<std::size_t> liveQueryIndices;
+        std::vector<NodeId> lcas(queries.size(), InvalidNode);
+        liveQueries.reserve(queries.size());
+        liveQueryIndices.reserve(queries.size());
+        for (std::size_t queryIndex = 0; queryIndex < queries.size(); ++queryIndex) {
+            const auto [first, second] = queries[queryIndex];
+            if (!isAlive(first) || !isAlive(second)) {
+                continue;
+            }
+            liveQueries.emplace_back(first, second);
+            liveQueryIndices.push_back(queryIndex);
         }
-        if (isAncestor(u, v)) {
-            return u;
+
+        const std::vector<NodeId> liveLcas = lowestCommonAncestorsEstablished(liveQueries);
+        for (std::size_t liveIndex = 0; liveIndex < liveLcas.size(); ++liveIndex) {
+            lcas[liveQueryIndices[liveIndex]] = liveLcas[liveIndex];
         }
-        if (isAncestor(v, u)) {
-            return v;
-        }
-        if (parent(u) == u || parent(v) == v) {
-            return InvalidNode;
-        }
-        return ensureLcaCache().findLowestCommonAncestor(u, v);
+        return lcas;
     }
 
     /**
@@ -2572,24 +2919,32 @@ class MorphologicalTree {
         const MorphologicalTree* tree_ = nullptr;
 
         /**
-         * @brief Appends one DFS step to the Euler tour and recurses into children.
+         * @brief Appends an Euler tour using an explicit DFS stack.
          *
          * @param nodeId Dense internal node identifier.
          * @param currentDepth Depth of the current traversal node.
          */
         void depthFirstTraversal(NodeId nodeId, int currentDepth) {
-            const NodeId slotId = nodeId;
-            if (firstOccurrence_[static_cast<size_t>(slotId)] == -1) {
-                firstOccurrence_[static_cast<size_t>(slotId)] = static_cast<int>(euler_.size());
-            }
-
+            std::vector<std::pair<NodeId, NodeId>> stack;
+            stack.emplace_back(nodeId, tree_->firstChild_[nodeId]);
+            firstOccurrence_[static_cast<size_t>(nodeId)] = static_cast<int>(euler_.size());
             euler_.push_back(nodeId);
             depth_.push_back(currentDepth);
-
-            for (NodeId childNodeId : tree_->children(nodeId)) {
-                depthFirstTraversal(childNodeId, currentDepth + 1);
-                euler_.push_back(nodeId);
-                depth_.push_back(currentDepth);
+            while (!stack.empty()) {
+                const NodeId child = stack.back().second;
+                if (child == InvalidNode) {
+                    stack.pop_back();
+                    if (!stack.empty()) {
+                        euler_.push_back(stack.back().first);
+                        depth_.push_back(currentDepth + static_cast<int>(stack.size()) - 1);
+                    }
+                } else {
+                    stack.back().second = tree_->nextSibling_[child];
+                    firstOccurrence_[static_cast<size_t>(child)] = static_cast<int>(euler_.size());
+                    euler_.push_back(child);
+                    depth_.push_back(currentDepth + static_cast<int>(stack.size()));
+                    stack.emplace_back(child, tree_->firstChild_[child]);
+                }
             }
         }
 
@@ -3298,12 +3653,9 @@ class MorphologicalTree {
                 Item& top = stack_.back();
                 if (!top.expanded) {
                     top.expanded = true;
-                    std::vector<NodeId> children;
-                    for (NodeId childId : T_->children(top.id)) {
-                        children.push_back(childId);
-                    }
-                    for (auto it = children.rbegin(); it != children.rend(); ++it) {
-                        stack_.push_back({*it, false});
+                    // Reverse sibling links preserve child order without a temporary vector.
+                    for (NodeId child = T_->lastChild_[top.id]; child != InvalidNode; child = T_->prevSibling_[child]) {
+                        stack_.push_back({child, false});
                     }
                 } else {
                     current_ = top.id;
@@ -3920,12 +4272,9 @@ class MorphologicalTree {
             if (!stack_.empty()) {
                 NodeId current = stack_.back();
                 stack_.pop_back();
-                std::vector<NodeId> children;
-                for (NodeId childId : T_->children(current)) {
-                    children.push_back(childId);
-                }
-                for (auto it = children.rbegin(); it != children.rend(); ++it) {
-                    stack_.push_back(*it);
+                // Push in reverse sibling order so the first child is visited next.
+                for (NodeId child = T_->lastChild_[current]; child != InvalidNode; child = T_->prevSibling_[child]) {
+                    stack_.push_back(child);
                 }
             }
             return *this;

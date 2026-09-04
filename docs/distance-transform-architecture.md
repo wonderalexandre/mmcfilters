@@ -32,32 +32,41 @@ or distance-weighted spatial descriptors.
 support and foreground contour, using one implementation for max-trees,
 min-trees, trees of shapes, residual trees, and generic trees.
 
-### Region and contour indexes
+### Support and contour indexes
 
-`MorphologicalTreeRegionIndex` appends every proper-part pixel exactly once in
+`NodeSupportIndex` appends every proper-part pixel exactly once in
 pre-order. The proper parts of every subtree consequently form a contiguous
-support interval. Dense intervals and bounding boxes remain indexed by internal
-`NodeId`, including trees with empty proper parts or dead slots. The temporary
+support interval. Dense intervals remain indexed by internal `NodeId`,
+including trees with empty proper parts or dead slots. The temporary
 index costs `O(P + N)` time and memory and is invalidated by tree mutation.
 
-`MorphologicalTreeBoundaryLifetimeIndex` derives contour lifetimes without
-rescanning every support. Let `o(p)` be the inclusion-smallest owner of pixel
-`p`, and let `h(p)` be the LCA of `o(p)` and the owners of its four side
-neighbours. An interior pixel is a contour site on the owner-to-root path from
-`o(p)` up to, but excluding, `h(p)`. A pixel touching the image boundary remains
-active through the root.
+`ContourLifetimeIndex` derives contour lifetimes without rescanning every
+support. Let `o(p)` be the smallest node of pixel `p`, and let
+`h(p)` be the LCA of `o(p)` and the smallest nodes of its four side neighbors.
+An interior pixel is a contour site on the path from `o(p)` to the root, up to
+but excluding `h(p)`. A pixel touching the image boundary remains active through
+the root.
 
-The index builds iterative DFS-preorder intervals and resolves the required LCA
-pairs in one iterative offline Tarjan pass. Construction uses
-`O((P + N) alpha(N))` time and `O(P + N)` memory without recursive descent.
+The index builds pre-order DFS intervals and submits the required LCA pairs as
+one batch to `MorphologicalTree`. Construction takes `O(P + N)` time when the
+tree already has an Euler/RMQ cache. Without that cache, the tree chooses
+between building it and running `O((P + N) alpha(N))` iterative offline Tarjan.
+DFS intervals resolve equal nodes and ancestor pairs directly. Tarjan receives
+only the remaining incomparable pairs. None of these traversals uses recursion.
 
 ### Heavy-path transform schedule
 
-`MorphologicalTreeContourScheduler` chooses the support-largest child as the
-heavy child. Light subtrees are emitted first and the heavy child immediately
-precedes its parent. The parent reuses the heavy contour, transfers light
-contours, and applies lifetime events. Each transferred pixel enters a support
-at least twice as large, so it is transferred at most `O(log P)` times.
+`NodeSupportBoxIndex` adds the bounding boxes required by distance transforms.
+`forEachContourUpdate` adapts the shared `contours::detail::ContourTraversal`,
+which also implements public contour iteration. The traversal selects the child
+with the largest support as the heavy child. It emits light subtrees first and
+the heavy child immediately before its parent. The parent reuses the heavy
+child's contour, transfers the other child contours, and applies the lifetime
+events. Each transferred pixel enters a support at least twice as large, so it
+is transferred at most `O(log P)` times.
+
+Only the distance-transform adapter collects transition lists and heavy-path
+tops; public pixel-contour iteration does not allocate those buffers.
 
 Each heavy path uses the bounding box of its top node as one translated
 transform domain. The leaf initializes the exact separable transform. A
@@ -99,11 +108,12 @@ A4 events, while the field is propagated with the adaptive A8 stencil. One
 global workspace processes topology-derived levels and inserts each proper-part
 pixel once.
 
-A structural preflight checks whether the owners of every A8 edge are
-comparable. If they are, all edges remain active and the hot kernel has the
-unrestricted Opt3 form. Otherwise, an edge between incomparable owners is
-activated when their LCA is processed. This generalizes the component-tree
-schedule to all supported hierarchies without dispatching on a tree-kind label.
+A structural preflight checks whether the smallest nodes of the pixels on every
+A8 edge are comparable. If they are, all edges remain active and the hot kernel
+has the unrestricted Opt3 form. Otherwise, an edge whose pixels have
+incomparable smallest nodes is activated when their LCA is processed. This
+generalizes the component-tree schedule to all supported hierarchies without
+dispatching on a tree-kind label.
 
 ### Queue and validation policy
 
@@ -173,11 +183,11 @@ oracle is installed, linked, or callable from production code.
 ## Complexity
 
 For the approximate backend, level construction and the comparability preflight
-cost `O(N + P)`. Comparable-owner trees need no activation index. The general
-path reuses the tree's Euler/RMQ LCA cache, built in `O(N log N)` for a stable
-topology, performs each A8 owner query in `O(1)`, and stores `O(P)` edge-schedule
-state. Propagation remains data-dependent: a local change may invalidate a
-large forest.
+cost `O(N + P)`. Trees whose adjacent pixels have comparable smallest nodes need
+no activation index. The general path reuses the tree's Euler/RMQ LCA cache,
+built in `O(N log N)` for a stable topology, performs each A8 smallest-node pair
+query in `O(1)`, and stores `O(P)` edge-schedule state. Propagation remains
+data-dependent: a local change may invalidate a large forest.
 
 If `U` is the number of finite-cost assignments and `E` is the number of
 activated domain edges, approximate summary observers add
@@ -191,10 +201,14 @@ costs changed. Exact EDT line work is
 
 `sum_pi 2*H_pi*W_pi + sum_heavy_edges (H_pi*c_e + W_pi*r_e)`.
 
-The structural schedule adds `O(P log P + (P + N) alpha(N))`. Emitting all
-samples additionally costs `sum_v |support(v)|`, and working memory is
-`O(P + N)`. There is no universal subquadratic claim: a chain of distinct
-full-span supports has the output lower bound `Omega(P*N)`.
+The structural schedule adds `O(P log P + P + N)` when the tree already has an
+Euler/RMQ cache. Without that cache, construction adds either the selected RMQ
+index or `O((P + N) alpha(N))` offline Tarjan. Emitting all samples additionally
+costs `sum_v |support(v)|`. Local working memory is `O(P + N)`. When the tree
+selects RMQ, its estimated representation does not exceed the linear Tarjan
+buffers for this batch and remains available to later tree operations.
+There is no universal subquadratic claim: a chain of distinct full-span
+supports has the output lower bound `Omega(P*N)`.
 
 ## Validation
 

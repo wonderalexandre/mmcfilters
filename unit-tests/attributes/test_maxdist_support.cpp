@@ -5,13 +5,13 @@
 #include "mmcfilters/attributes/computers/MaxDistExactComputer.hpp"
 #include "mmcfilters/attributes/computers/MaxDistComputer.hpp"
 #include "mmcfilters/attributes/computers/detail/distance_transform/ExactSquaredEuclideanDistanceTransform2D.hpp"
-#include "mmcfilters/attributes/computers/detail/distance_transform/MorphologicalTreeContourScheduler.hpp"
+#include "mmcfilters/attributes/computers/detail/distance_transform/NodeContourSchedule.hpp"
 #include "mmcfilters/attributes/computers/detail/distance_transform/MorphologicalTreeDistanceTransform.hpp"
-#include "mmcfilters/attributes/computers/detail/distance_transform/MorphologicalTreeRegionIndex.hpp"
+#include "mmcfilters/attributes/computers/detail/distance_transform/NodeSupportBoxIndex.hpp"
 #include "mmcfilters/attributes/computers/detail/distance_transform_approx/AdaptiveSquaredEuclideanDIFT2D.hpp"
 #include "mmcfilters/attributes/computers/detail/distance_transform_approx/SquaredDistanceBucketQueue.hpp"
 #include "mmcfilters/attributes/computers/detail/distance_transform_approx/MorphologicalTreeApproximateDistanceTransform.hpp"
-#include "mmcfilters/contours/detail/MorphologicalTreeBoundaryLifetimeIndex.hpp"
+#include "mmcfilters/contours/detail/ContourLifetimeIndex.hpp"
 #include "attributes/support/maxdist/MaxDistOracles.hpp"
 
 #include <array>
@@ -33,9 +33,9 @@ static_assert(!std::is_move_constructible_v<ExactDistanceTransformWorkspace>);
 
 namespace {
 
-using BoundaryLifetimeIndex = contours::detail::MorphologicalTreeBoundaryLifetimeIndex;
-using ContourScheduler = attributes::computers::detail::distance_transform::MorphologicalTreeContourScheduler;
-using RegionIndex = attributes::computers::detail::distance_transform::MorphologicalTreeRegionIndex;
+using ContourLifetimeIndex = contours::detail::ContourLifetimeIndex;
+namespace contour_schedule = attributes::computers::detail::distance_transform;
+using SupportBoxIndex = attributes::computers::detail::distance_transform::NodeSupportBoxIndex;
 using SquaredDistance = attributes::computers::detail::distance_transform::SquaredDistance;
 using DistanceFieldExtremum = attributes::computers::detail::distance_transform::DistanceFieldExtremum;
 using DistanceFieldMaximumPlateau = attributes::computers::detail::distance_transform::DistanceFieldMaximumPlateau;
@@ -117,12 +117,12 @@ static_assert(attributes::computers::detail::distance_transform::NodeDistanceTra
 static_assert(attributes::computers::detail::distance_transform::NodeDistanceFieldProviderFor<ExactProvider, DenseMaximumReducer>);
 static_assert(ExactProvider::accuracy == attributes::computers::detail::distance_transform::DistanceFieldAccuracy::Exact);
 
-void requireRegionIndexMatchesTree(const MorphologicalTree& tree, const std::string& label) {
-    RegionIndex regions(tree);
-    requireEqual(regions.numIndexedPixels(), static_cast<std::size_t>(tree.numPixels()), label + " indexed pixel count");
+void requireSupportBoxIndexMatchesTree(const MorphologicalTree& tree, const std::string& label) {
+    SupportBoxIndex supportIndex(tree);
+    requireEqual(supportIndex.numIndexedPixels(), static_cast<std::size_t>(tree.numPixels()), label + " indexed pixel count");
 
     for (NodeId node : tree.aliveNodeIds()) {
-        const std::span<const PixelId> indexedSupport = regions.support(node);
+        const std::span<const PixelId> indexedSupport = supportIndex.support(node);
         const std::vector<PixelId> actual(indexedSupport.begin(), indexedSupport.end());
         const auto supportRange = tree.nodeSupport(node);
         const std::vector<PixelId> expected(supportRange.begin(), supportRange.end());
@@ -140,16 +140,16 @@ void requireRegionIndexMatchesTree(const MorphologicalTree& tree, const std::str
             columnMax = std::max(columnMax, pixel % columns);
         }
 
-        const auto& box = regions.boundingBox(node);
+        const auto& box = supportIndex.supportBox(node);
         requireEqual(box.rowMin, rowMin, label + " bbox row min node " + std::to_string(node));
         requireEqual(box.rowMax, rowMax, label + " bbox row max node " + std::to_string(node));
         requireEqual(box.columnMin, columnMin, label + " bbox column min node " + std::to_string(node));
         requireEqual(box.columnMax, columnMax, label + " bbox column max node " + std::to_string(node));
 
-        const auto parentInterval = regions.supportInterval(node);
-        std::vector<attributes::computers::detail::distance_transform::RegionSupportInterval> childIntervals;
+        const auto parentInterval = supportIndex.supportInterval(node);
+        std::vector<attributes::computers::detail::distance_transform::SupportInterval> childIntervals;
         for (NodeId child : tree.children(node)) {
-            const auto childInterval = regions.supportInterval(child);
+            const auto childInterval = supportIndex.supportInterval(child);
             require(childInterval.begin >= parentInterval.begin && childInterval.end <= parentInterval.end,
                     label + " child support interval contained by parent");
             childIntervals.push_back(childInterval);
@@ -162,57 +162,59 @@ void requireRegionIndexMatchesTree(const MorphologicalTree& tree, const std::str
         }
     }
 
-    const auto rootInterval = regions.supportInterval(tree.root());
+    const auto rootInterval = supportIndex.supportInterval(tree.root());
     requireEqual(rootInterval.begin, std::size_t{0}, label + " root support begin");
     requireEqual(rootInterval.end, static_cast<std::size_t>(tree.numPixels()), label + " root support end");
 }
 
-void requireBoundaryLifetimesAndScheduleMatchOracle(const MorphologicalTree& tree, const std::string& label) {
-    BoundaryLifetimeIndex lifetimes(tree);
-    RegionIndex regions(tree);
+void requireContourLifetimesAndScheduleMatchOracle(const MorphologicalTree& tree, const std::string& label) {
+    ContourLifetimeIndex lifetimes(tree);
+    SupportBoxIndex supportIndex(tree);
     NodeId previousScheduledNode = InvalidNode;
     std::vector<std::uint8_t> transitionMask(static_cast<std::size_t>(tree.numPixels()), std::uint8_t{0});
-    ContourScheduler::forEachNode(tree, regions, [&](const auto& frame) {
-        require(tree.isAncestor(frame.heavyPathTop(), frame.node()), label + " heavy-path top is an ancestor");
-        if (frame.startsHeavyPath()) {
-            requireEqual(frame.heavyChild(), InvalidNode, label + " heavy-path start has no heavy child");
+    contour_schedule::forEachContourUpdate(tree, supportIndex, [&](const auto& contourUpdate) {
+        require(tree.isAncestor(contourUpdate.heavyPathTop(), contourUpdate.node()), label + " heavy-path top is an ancestor");
+        if (contourUpdate.startsHeavyPath()) {
+            requireEqual(contourUpdate.heavyChild(), InvalidNode, label + " heavy-path start has no heavy child");
             std::fill(transitionMask.begin(), transitionMask.end(), std::uint8_t{0});
-            for (PixelId pixel : frame.pixels()) {
+            for (PixelId pixel : contourUpdate.contour()) {
                 transitionMask[static_cast<std::size_t>(pixel)] = 1;
             }
         } else {
-            requireEqual(frame.heavyChild(), previousScheduledNode, label + " transition names the immediately preceding heavy child");
-            require(previousScheduledNode != InvalidNode && tree.parent(previousScheduledNode) == frame.node(),
+            requireEqual(contourUpdate.heavyChild(), previousScheduledNode, label + " transition names the immediately preceding heavy child");
+            require(previousScheduledNode != InvalidNode && tree.parent(previousScheduledNode) == contourUpdate.node(),
                     label + " heavy child is emitted immediately before its parent");
-            for (PixelId pixel : frame.additionsFromHeavyChild()) {
+            for (PixelId pixel : contourUpdate.addedContourPixels()) {
                 require(transitionMask[static_cast<std::size_t>(pixel)] == 0, label + " heavy transition adds an inactive site");
                 transitionMask[static_cast<std::size_t>(pixel)] = 1;
             }
-            for (PixelId pixel : frame.removalsFromHeavyChild()) {
+            for (PixelId pixel : contourUpdate.removedContourPixels()) {
                 require(transitionMask[static_cast<std::size_t>(pixel)] != 0, label + " heavy transition removes an active site");
                 transitionMask[static_cast<std::size_t>(pixel)] = 0;
             }
         }
         for (PixelId pixel = 0; pixel < tree.numPixels(); ++pixel) {
-            const bool scheduledBoundary = std::find(frame.pixels().begin(), frame.pixels().end(), pixel) != frame.pixels().end();
-            requireEqual(transitionMask[static_cast<std::size_t>(pixel)] != 0, scheduledBoundary, label + " heavy transition reconstructs the emitted contour");
+            const bool scheduledContourPixel =
+                std::find(contourUpdate.contour().begin(), contourUpdate.contour().end(), pixel) != contourUpdate.contour().end();
+            requireEqual(transitionMask[static_cast<std::size_t>(pixel)] != 0, scheduledContourPixel,
+                         label + " heavy transition reconstructs the emitted contour");
         }
 
-        const auto exact = maxdist_oracle::exactNodeSquaredDistanceTransform(tree, frame.node());
-        std::vector<PixelId> actual(frame.pixels().begin(), frame.pixels().end());
+        const auto exact = maxdist_oracle::exactNodeSquaredDistanceTransform(tree, contourUpdate.node());
+        std::vector<PixelId> actual(contourUpdate.contour().begin(), contourUpdate.contour().end());
         std::vector<PixelId> expected = exact.contourPixels;
         std::sort(actual.begin(), actual.end());
         std::sort(expected.begin(), expected.end());
-        requireVectorEqual(actual, expected, label + " hierarchical contour node " + std::to_string(frame.node()));
+        requireVectorEqual(actual, expected, label + " hierarchical contour node " + std::to_string(contourUpdate.node()));
         std::vector<std::uint8_t> expectedMask(static_cast<std::size_t>(tree.numPixels()), std::uint8_t{0});
         for (PixelId pixel : expected) {
             expectedMask[static_cast<std::size_t>(pixel)] = 1;
         }
         for (PixelId pixel = 0; pixel < tree.numPixels(); ++pixel) {
-            requireEqual(lifetimes.isBoundaryAt(pixel, frame.node()), expectedMask[static_cast<std::size_t>(pixel)] != 0,
-                         label + " boundary lifetime predicate node " + std::to_string(frame.node()));
+            requireEqual(lifetimes.isContourPixel(pixel, contourUpdate.node()), expectedMask[static_cast<std::size_t>(pixel)] != 0,
+                         label + " contour lifetime predicate node " + std::to_string(contourUpdate.node()));
         }
-        previousScheduledNode = frame.node();
+        previousScheduledNode = contourUpdate.node();
     });
 }
 
@@ -413,8 +415,8 @@ void requireExactTransformMatchesBruteForce() {
 }
 
 void requireProductionMatchesExactOracle(const MorphologicalTree& tree, const std::string& label) {
-    requireRegionIndexMatchesTree(tree, label);
-    requireBoundaryLifetimesAndScheduleMatchOracle(tree, label);
+    requireSupportBoxIndexMatchesTree(tree, label);
+    requireContourLifetimesAndScheduleMatchOracle(tree, label);
     const std::vector<std::int64_t> expected = maxdist_oracle::exactMaxSquaredDistance(tree);
     auto [names, values] = AttributeComputation::computeSingleTopologyAttribute(tree, MaxSquaredDistExact);
     for (NodeId node : tree.aliveNodeIds()) {
@@ -856,13 +858,13 @@ void requireUniformBackendAndOracles() {
     requireEqual(maximumReducer.values[static_cast<std::size_t>(constantTree->root())], SquaredDistance{4}, "shared maximum reducer value");
     requireEqual(sumReducer.values[static_cast<std::size_t>(constantTree->root())], SquaredDistance{12}, "shared sum reducer value");
     auto independentConstantTree = makeComponentTree(constantImage, true);
-    RegionIndex foreignRegions(*independentConstantTree);
+    SupportBoxIndex foreignSupportIndex(*independentConstantTree);
     requireThrows<std::invalid_argument>(
         [&] {
-            static_cast<void>(ContourScheduler::forEachNode(*constantTree, foreignRegions,
-                                                            [](const attributes::computers::detail::distance_transform::NodeContourFrame&) {}));
+            static_cast<void>(contour_schedule::forEachContourUpdate(*constantTree, foreignSupportIndex,
+                                                            [](const attributes::computers::detail::distance_transform::NodeContourUpdate&) {}));
         },
-        "contour scheduler must reject a region index from another tree instance");
+        "contour schedule must reject a support box index from another tree instance");
 
     auto fixture = makeComponentTreeFixture();
     for (bool isMaxtree : {true, false}) {
@@ -890,23 +892,23 @@ void requireUniformBackendAndOracles() {
     }
 
     auto editedTree = makeComponentTree(fixture, true);
-    [[maybe_unused]] RegionIndex staleRegions(*editedTree);
-    [[maybe_unused]] BoundaryLifetimeIndex staleBoundaryLifetimes(*editedTree);
+    [[maybe_unused]] SupportBoxIndex staleSupportIndex(*editedTree);
+    [[maybe_unused]] ContourLifetimeIndex staleContourLifetimes(*editedTree);
     editedTree->mergeNodeIntoParent(5);
     if constexpr (contract::validationsEnabled) {
-        requireThrows<std::logic_error>([&] { static_cast<void>(staleRegions.support(editedTree->root())); },
-                                        "region index must reject access after a committed tree mutation");
-        requireThrows<std::logic_error>([&] { static_cast<void>(staleBoundaryLifetimes.lifetime(0)); },
-                                        "boundary-lifetime index must reject access after a committed tree mutation");
+        requireThrows<std::logic_error>([&] { static_cast<void>(staleSupportIndex.support(editedTree->root())); },
+                                        "support box index must reject access after a committed tree mutation");
+        requireThrows<std::logic_error>([&] { static_cast<void>(staleContourLifetimes.lifetime(0)); },
+                                        "contour lifetime index must reject access after a committed tree mutation");
     }
     requireThrows<std::logic_error>(
         [&] {
             static_cast<void>(
-                ContourScheduler::forEachNode(*editedTree, staleRegions, [](const attributes::computers::detail::distance_transform::NodeContourFrame&) {}));
+                contour_schedule::forEachContourUpdate(*editedTree, staleSupportIndex, [](const attributes::computers::detail::distance_transform::NodeContourUpdate&) {}));
         },
-        "contour scheduler must reject a stale region index");
-    RegionIndex editedRegions(*editedTree);
-    requireThrows<std::out_of_range>([&] { static_cast<void>(editedRegions.support(5)); }, "region index must reject a dead dense node slot");
+        "contour schedule must reject a stale support box index");
+    SupportBoxIndex editedSupportIndex(*editedTree);
+    requireThrows<std::out_of_range>([&] { static_cast<void>(editedSupportIndex.support(5)); }, "support box index must reject a dead dense node slot");
     requireProductionMatchesExactOracle(*editedTree, "max-tree with a dead node slot");
     requireSingleNodeExactPathMatchesOracle(*editedTree, editedTree->root(), "max-tree with a dead node slot");
     requireCompositeReducersMatchExactOracle(*editedTree, "composite reducers on a tree with a dead node slot");
@@ -1030,7 +1032,7 @@ void requireRandomizedSmallGridAgreement() {
     }
 }
 
-void requireDeepRegionIndexIsIterative() {
+void requireDeepSupportBoxIndexIsIterative() {
     constexpr int numNodes = 4096;
     std::vector<NodeId> parent(static_cast<std::size_t>(numNodes));
     std::vector<std::uint8_t> altitude(static_cast<std::size_t>(numNodes), std::uint8_t{0});
@@ -1043,11 +1045,11 @@ void requireDeepRegionIndexIsIterative() {
         std::span<const NodeId>(parent), std::span<const NodeId>(smallestNode), std::span<const std::uint8_t>(altitude), NodeId{0}, 1, 1,
         MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Unconstrained, NoConstructionContext{}});
 
-    RegionIndex regions(deepTree.topology());
-    requireEqual(regions.numIndexedPixels(), std::size_t{1}, "deep iterative region index stores the pixel once");
-    requireEqual(regions.supportInterval(0).size(), std::size_t{1}, "deep iterative region index root support");
-    requireEqual(regions.supportInterval(numNodes - 1).size(), std::size_t{1}, "deep iterative region index leaf support");
-    requireEqual(regions.boundingBox(0).area(), std::size_t{1}, "deep iterative region index root box");
+    SupportBoxIndex supportIndex(deepTree.topology());
+    requireEqual(supportIndex.numIndexedPixels(), std::size_t{1}, "deep iterative region index stores the pixel once");
+    requireEqual(supportIndex.supportInterval(0).size(), std::size_t{1}, "deep iterative region index root support");
+    requireEqual(supportIndex.supportInterval(numNodes - 1).size(), std::size_t{1}, "deep iterative region index leaf support");
+    requireEqual(supportIndex.supportBox(0).area(), std::size_t{1}, "deep iterative region index root box");
 
     std::size_t frames = 0;
     attributes::computers::detail::distance_transform::MorphologicalTreeDistanceTransform::forEachNode(
@@ -1055,7 +1057,7 @@ void requireDeepRegionIndexIsIterative() {
     requireEqual(frames, static_cast<std::size_t>(numNodes), "deep exact traversal visits every node iteratively");
 }
 
-void requireDeepOfflineBoundaryLcaIsIterative() {
+void requireDeepSharedBoundaryLcaIsIterative() {
     constexpr NodeId chainLeaf = 32768;
     constexpr NodeId incomparableSibling = chainLeaf + 1;
     constexpr int numNodes = incomparableSibling + 1;
@@ -1076,38 +1078,38 @@ void requireDeepOfflineBoundaryLcaIsIterative() {
         MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Unconstrained, NoConstructionContext{}});
     const MorphologicalTree& tree = deepTree.topology();
 
-    BoundaryLifetimeIndex lifetimes(tree);
+    ContourLifetimeIndex lifetimes(tree);
     const auto& centerLifetime = lifetimes.lifetime(centerPixel);
-    requireEqual(centerLifetime.owner, chainLeaf, "deep offline LCA preserves the center owner");
-    requireEqual(centerLifetime.stopExclusive, tree.root(), "deep incomparable owners stop at their root LCA");
+    requireEqual(centerLifetime.startNode, chainLeaf, "deep shared LCA preserves the center smallest node");
+    requireEqual(centerLifetime.endNodeExclusive, tree.root(), "deep incomparable smallest nodes stop at their root LCA");
     requireVectorEqual(std::vector<PixelId>(lifetimes.additions(chainLeaf).begin(), lifetimes.additions(chainLeaf).end()), {centerPixel},
-                       "deep offline LCA center addition event");
+                       "deep shared LCA center addition event");
     requireVectorEqual(std::vector<PixelId>(lifetimes.removals(tree.root()).begin(), lifetimes.removals(tree.root()).end()), {centerPixel},
-                       "deep offline LCA center removal event");
+                       "deep shared LCA center removal event");
 
-    RegionIndex regions(tree);
-    std::uint64_t frames = 0;
+    SupportBoxIndex supportIndex(tree);
+    std::uint64_t numContourUpdates = 0;
     bool sawLeaf = false;
     bool sawMiddle = false;
     bool sawRoot = false;
     const NodeId middleNode = chainLeaf / 2;
-    ContourScheduler::forEachNode(tree, regions, [&](const auto& frame) {
-        ++frames;
-        if (frame.node() == chainLeaf || frame.node() == middleNode) {
-            requireVectorEqual(std::vector<PixelId>(frame.pixels().begin(), frame.pixels().end()), {centerPixel},
+    contour_schedule::forEachContourUpdate(tree, supportIndex, [&](const auto& contourUpdate) {
+        ++numContourUpdates;
+        if (contourUpdate.node() == chainLeaf || contourUpdate.node() == middleNode) {
+            requireVectorEqual(std::vector<PixelId>(contourUpdate.contour().begin(), contourUpdate.contour().end()), {centerPixel},
                                "deep chain contour remains the center site below the root");
-            sawLeaf = sawLeaf || frame.node() == chainLeaf;
-            sawMiddle = sawMiddle || frame.node() == middleNode;
-        } else if (frame.node() == tree.root()) {
-            std::vector<PixelId> actual(frame.pixels().begin(), frame.pixels().end());
+            sawLeaf = sawLeaf || contourUpdate.node() == chainLeaf;
+            sawMiddle = sawMiddle || contourUpdate.node() == middleNode;
+        } else if (contourUpdate.node() == tree.root()) {
+            std::vector<PixelId> actual(contourUpdate.contour().begin(), contourUpdate.contour().end());
             std::sort(actual.begin(), actual.end());
             requireVectorEqual(actual, {PixelId{0}, PixelId{1}, PixelId{2}, PixelId{3}, PixelId{5}, PixelId{6}, PixelId{7}, PixelId{8}},
-                               "deep offline LCA root contour excludes its interior center");
+                               "deep shared LCA root contour excludes its interior center");
             sawRoot = true;
         }
     });
-    requireEqual(frames, static_cast<std::uint64_t>(numNodes), "deep offline LCA scheduler visits every live node iteratively");
-    require(sawLeaf && sawMiddle && sawRoot, "deep offline LCA contour oracle observes the selected hierarchy frames");
+    requireEqual(numContourUpdates, static_cast<std::uint64_t>(numNodes), "deep shared LCA contour schedule visits every live node iteratively");
+    require(sawLeaf && sawMiddle && sawRoot, "deep shared LCA contour oracle observes the selected hierarchy updates");
 }
 
 void requireShiftedBoxRoundTrip() {
@@ -1197,8 +1199,8 @@ int main() {
     requireAdaptiveApproximateProviderBoundary();
     requireUniformBackendAndOracles();
     requireRandomizedSmallGridAgreement();
-    requireDeepRegionIndexIsIterative();
-    requireDeepOfflineBoundaryLcaIsIterative();
+    requireDeepSupportBoxIndexIsIterative();
+    requireDeepSharedBoundaryLcaIsIterative();
     requireShiftedBoxRoundTrip();
     requirePQueueLifoClearsSingletonBucket();
     requirePQueueLifoMaintainsRemainingTail();

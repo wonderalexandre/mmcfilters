@@ -176,15 +176,11 @@ Attribute = _native.Attribute
 NodeAttributeSamplingPolicy = _native.NodeAttributeSamplingPolicy
 MissingNodeAttributeSamplePolicy = _native.MissingNodeAttributeSamplePolicy
 ContourComputation = _native.ContourComputation
-Contours = _native.Contours
-ContourRange = _native.ContourRange
-ContoursIterator = _native.ContoursIterator
 ContourTraceComputation = _native.ContourTraceComputation
-ContourTraces = _native.ContourTraces
-ContourTraceEdge = _native.ContourTraceEdge
-ContourTraceLoop = _native.ContourTraceLoop
-ContourTraceSide = _native.ContourTraceSide
-ContourLoopKind = _native.ContourLoopKind
+ContourEdge = _native.ContourEdge
+ContourBoundary = _native.ContourBoundary
+ContourSide = _native.ContourSide
+ContourBoundaryKind = _native.ContourBoundaryKind
 ExtinctionValues = _native.ExtinctionValues
 ExtinctionSelectionPolicy = _native.ExtinctionSelectionPolicy
 ExtinctionContourScorePolicy = _native.ExtinctionContourScorePolicy
@@ -249,15 +245,11 @@ __all__ = [
     "MissingNodeAttributeSamplePolicy",
     "UltimateAttributeOpening",
     "ContourComputation",
-    "Contours",
-    "ContourRange",
-    "ContoursIterator",
     "ContourTraceComputation",
-    "ContourTraces",
-    "ContourTraceEdge",
-    "ContourTraceLoop",
-    "ContourTraceSide",
-    "ContourLoopKind",
+    "ContourEdge",
+    "ContourBoundary",
+    "ContourSide",
+    "ContourBoundaryKind",
     "ExtinctionValues",
     "ExtinctionSelectionPolicy",
     "ExtinctionContourScorePolicy",

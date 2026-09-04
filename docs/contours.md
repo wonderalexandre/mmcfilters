@@ -1,120 +1,164 @@
 # Pixel contours
 
-`ContoursComputedIncrementally` represents each node boundary as a set of
-support-pixel IDs. Use it for compact pixel contours and compatibility with
-`CONTOUR_*` scalar attributes. Use [Contour traces](contour-traces.md) when an
-operation needs oriented sides, ordered loops, or external/internal separation.
+Use `ContourComputation` to visit the foreground contour pixels of every tree
+node or to compute the contour of one node. A complete traversal keeps
+`O(P + N)` working storage and does not retain previously emitted contours. Use
+[Contour traces](contour-traces.md) when an operation needs oriented edges,
+ordered boundaries, signed area, or separation between external boundaries and
+holes.
 
-## Contract
+## Contour definition
 
-For a node, the contour contains every support pixel that exposes at least one
-side to the 4-neighbor complement. Pixel IDs are row-major indices in the
-tree's regular 2D pixel domain.
+For each live node, the contour contains every pixel in the node support that
+has at least one side adjacent to the 4-neighbor complement or to the exterior
+of the image. This is the foreground A4 contour. Pixel identifiers follow
+row-major order in the original regular 2D domain.
 
-The side relation is fixed to 4-neighbor geometry, independently of the
-adjacency used to construct the morphological tree. This matches the public
-`CONTOUR_PIXELS` and `CONTOUR_PERIMETER` definitions.
+The contour does not depend on the adjacency used to construct the tree. For a
+tree of shapes, the node support and its contour are projected onto the original
+image grid.
 
-Extraction requires:
+The input tree must have:
 
 - a committed rooted topology;
-- a non-empty regular 2D pixel domain;
-- one valid direct smallest node for every pixel.
+- a non-empty regular 2D domain;
+- one valid live smallest node for every pixel.
 
-The result captures the tree mutation version and rejects reads after topology
-mutation.
-
-For hierarchy-wide consumers, each contour pixel also has a compact path
-lifetime. If `o(p)` is its inclusion-smallest owner, an interior-domain pixel
-stops being a contour site at the LCA of `o(p)` and the owners of its four
-side-neighbours. A global-boundary pixel remains active through the root. The
-internal `MorphologicalTreeBoundaryLifetimeIndex` materializes these start/stop
-events once. `ContoursComputedIncrementally` and other hierarchy-wide consumers
-reuse this source instead of reimplementing the local boundary decision.
+The topology must remain unchanged while a `ContourComputation`, one of its
+iterators, or a borrowed contour span is in use. Checked builds reject access
+after a topology change.
 
 ## C++ API
 
 ```cpp
-auto contours =
-    ContoursComputedIncrementally::extractCompactContours(tree);
+#include <mmcfilters/contours/ContourComputation.hpp>
 
-for (int pixel : contours.getContour(nodeId)) {
-    // use one contour pixel
+mmcfilters::ContourComputation contours(tree); // topology or valued view
+
+for (auto [nodeId, contourPixels] : contours) {
+    // contourPixels is valid until this iterator advances.
 }
 
-for (auto [nodeId, contour] : contours.contoursByNode()) {
-    for (int pixel : contour) {
-        // use every live-node contour
-    }
-}
+contours.forEachContour(
+    [](mmcfilters::NodeId nodeId,
+       std::span<const mmcfilters::PixelId> contourPixels) {
+        // Copy contourPixels only when it must outlive this callback.
+    });
+
+std::vector<mmcfilters::PixelId> nodeContour = contours.contour(nodeId);
 ```
 
-`getContour(nodeId)` returns a cache-aware range. The first iteration
-materializes the requested subtree as needed; later iterations over an already
-materialized node scan cached contiguous values.
+Iteration follows post-order, so every child is emitted before its parent.
+Pixel order and sibling order are unspecified. The range satisfies the C++20
+`input_range` requirements:
 
-`contoursByNode()` iterates live nodes and uses the same node-local
-materialization path. `materializeAll()` is an optional prefetch for workloads
-that will revisit many contours; it is not required for ordinary iteration.
+- copies of one iterator share a single-pass position;
+- each call to `begin()` starts an independent traversal;
+- advancing an iterator invalidates its previous span and spans obtained from
+  copies of that iterator.
+
+A caller can stop iteration with `break` or by throwing from the callback. The
+working buffers are released when the last iterator for that traversal is
+destroyed. Iterators keep the contour indexes alive if the
+`ContourComputation` object is destroyed, but the source tree must outlive both.
+
+`contour(node)` scans only the requested support and returns an independent
+`std::vector`. Calling it does not invalidate an active traversal.
 
 ## Python API
 
 ```python
-contours = mmcfilters.ContourComputation.extraction(tree)
+contours = mmcfilters.ContourComputation(tree)
 
-root_contour = list(contours.get_contour(tree.root))
+for node_id, contour_pixels in contours:
+    process(node_id, contour_pixels)
 
-for node_id, contour in contours.contours_by_node():
-    pixels = list(contour)
+contours.for_each_contour(process)
+node_contour = contours.contour(node_id)
 ```
 
-Python uses `get_contour(node_id)`, `contours_by_node()`, and `materialize_all()` with
-the same semantics as C++.
+Python returns an independently owned NumPy array for every contour, including
+contours passed to callbacks. Retaining an array is therefore safe after the
+iterator advances or is destroyed. The copy occurs once for each emitted
+contour. The Python object and its iterators keep the source tree alive.
 
-## Materialization and lifetime
+## Implementation
 
-Extraction stores compact node-local changes. Accessing a node combines missing
-descendant results, applies the node's local additions and removals, and caches
-the final unique pixel set. Materializing one subtree does not require
-materializing unrelated branches.
+Each pixel enters the contour at its smallest node. An interior pixel leaves the
+contour at the lowest common ancestor of its smallest node and the smallest
+nodes of its four side neighbors. A pixel on the image boundary remains on the
+contour through the root.
 
-A cached result references its source tree in C++. The source must therefore
-outlive contour access. Python keeps the source tree alive through the returned
-contour object.
+`ContourLifetimeIndex` stores these start and end events once. It submits all
+required lowest common ancestor queries to `MorphologicalTree` as one batch.
+The tree reuses an existing Euler tour and range minimum query cache when one is
+available. Otherwise, it chooses between building that cache and running the
+iterative offline Tarjan algorithm from their estimated storage requirements.
+Equality and ancestor relations are resolved directly from depth-first search
+intervals. See [Morphological trees](trees.md) for the batch LCA contract.
 
-After a topology edit, create a new contour result. Altitude-only changes do not
-change support geometry; topology changes require a new result under the source
-tree's mutation contract.
+`ContourTraversal` selects the child with the largest support as the heavy
+child. It processes that child immediately before its parent, allowing the
+parent to reuse the child's contour vector. Contours from the other children
+are transferred and released before the traversal applies the node's start and
+end events. A position table supports constant-time removal by swapping with the
+last element.
+
+The exact distance transform uses the same traversal and adds only the contour
+changes and heavy-path information required to update its distance field. The
+approximate distance transform keeps its level schedule and shares the contour
+lifetime index.
+
+A call to `contour(node)` scans the node support and tests the lifetime of each
+pixel. Repeated calls recompute the contour. The extinction contour map uses the
+incremental traversal and preserves the priority of selected nodes where their
+contours overlap.
 
 ## Complexity
 
-Let:
+Let `P` be the number of pixels, `N` the number of internal node slots, and
+`C = sum_v |contour(v)|` the total number of emitted contour pixels.
 
-- `P` be the number of image pixels;
-- `N` be the number of internal node slots;
-- `M(S)` be the number of not-yet-materialized live nodes visited in subtree
-  `S`;
-- `C(S)` be the number of contour-pixel values committed while materializing
-  `S`.
+- Index construction takes `O(P + N)` time when the tree already has an
+  Euler/RMQ cache. Without that cache, it uses either RMQ construction or
+  `O((P + N) alpha(N))` offline Tarjan. The strategy admits RMQ only when its
+  estimated storage does not exceed the linear Tarjan buffers for this batch.
+- A complete traversal takes `O(N + P log(P + 1))` time to maintain the contour
+  sets. Reading or copying every emitted pixel adds `O(C)` time. Each transfer
+  from a light child moves a pixel into a support at least twice as large, which
+  bounds the number of transfers per pixel by `O(log P)`.
+- Each active traversal uses `O(P + N)` working storage. Independent simultaneous
+  traversals have independent working buffers and share the immutable indexes.
+- `contour(v)` takes `O(|support(v)|)` time and returns
+  `O(|contour(v)|)` owned storage after index construction.
 
-Lifetime extraction performs an iterative offline LCA pass in
-`O((P + N) alpha(N))` time and `O(P + N)` memory, where `alpha` is the inverse
-Ackermann function. It deliberately does not build the tree's persistent
-`O(N log N)` Euler/RMQ LCA cache. Copying lifetime events into the compact
-contour store is `O(P + N)` and does not change this bound.
+The implementation does not cache every emitted contour. If the caller retains
+all outputs, their storage is `O(C)` and can reach `O(PN)`. The working-storage
+bound excludes retained outputs and any LCA cache that already belongs to the
+tree.
 
-The public upper bound for first materialization of `S` is
-`O(M(S) + C(S) + P)`. The tighter output-sensitive form replaces `P` with the
-compact local changes read for that subtree. Accessing an already materialized
-node is `O(1)` before iteration; iterating its range is linear in that contour's
-size.
+## Migration
 
-Materialized storage is output-sensitive because each cached node owns its own
-contiguous contour slice.
+Construct `ContourComputation(tree)` directly. In C++, replace
+`ContoursComputedIncrementally::extractCompactContours(tree)` with the
+constructor. In Python, replace `ContourComputation.extraction(tree)` with the
+constructor.
+
+Iterate the object directly instead of calling `contoursByNode()` or
+`contours_by_node()`. `forEachContour` and `for_each_contour` provide callback
+access to the same traversal. Use `contour(node)` for an owned result from one
+node.
+
+The pixel contour API no longer exposes `Contours`, `ContourRange`,
+`ContoursIterator`, `materializeAll`, materialization flags, storage statistics,
+or per-node delta extraction. The [contour trace API](contour-traces.md) handles
+oriented geometry separately.
 
 ## Related guides
 
-- [Contour traces](contour-traces.md): oriented boundary sides and loops.
-- [Morphological trees](trees.md): smallest-node mapping and `NodeId` domains.
-- [Attribute catalog](attribute-catalog.md): `CONTOUR_*` attributes.
-- [Editing API](editing-api.md): lifetime after topology mutation.
+- [Morphological trees](trees.md) defines the mapping from pixels to their
+  smallest nodes and the `NodeId` domains.
+- [Attribute catalog](attribute-catalog.md) defines the `CONTOUR_*` scalar
+  attributes.
+- [Editing API](editing-api.md) defines the lifetime of derived data after tree
+  mutation.

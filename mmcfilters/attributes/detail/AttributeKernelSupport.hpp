@@ -220,19 +220,18 @@ template <std::floating_point Real, AltitudeValue T> struct AltitudeAttributeCom
  * @brief Non-owning unit-row computation context for topology/support families.
  *
  * @details
- * Unit rows are used when a compact exported-Higra layout needs one row per
- * image-domain proper part. `unitPixels` contains the pixel ids that
- * index `buffer`; `attrNames` describes the columns in that proper-part row
- * domain.
+ * A compact exported Higra layout contains one unit row per pixel leaf.
+ * `unitPixels` lists pixel identifiers in output row order; `attrNames`
+ * describes the columns of each row in `buffer`.
  */
 template <std::floating_point Real> struct UnitAttributeComputeContext {
-    /// Topology that owns the proper parts listed in `unitPixels`.
+    /// Topology supplying the smallest node of each pixel in `unitPixels`.
     const MorphologicalTree& tree;
 
-    /// Proper-part ids whose row order indexes `buffer`.
+    /// Pixel identifiers in output row order.
     std::span<const PixelId> unitPixels;
 
-    /// Caller-owned output buffer in unit-proper-part row order.
+    /// Caller-owned output buffer in pixel row order.
     std::span<Real> buffer;
 
     /// Column layout for `buffer`.
@@ -245,7 +244,7 @@ template <std::floating_point Real> struct UnitAttributeComputeContext {
      * @brief Binds borrowed topology, unit rows, output, and request.
      *
      * @param tree_ Tree topology.
-     * @param unitPixels_ Proper-part data.
+     * @param unitPixels_ Pixel identifiers in output row order.
      * @param buffer_ Buffer read or written by the operation.
      * @param attrNames_ Layout that maps attributes to buffer columns.
      * @param requestedAttributes_ Attributes requested for materialization.
@@ -261,20 +260,20 @@ template <std::floating_point Real> struct UnitAttributeComputeContext {
  * @details
  * This is the unit-row counterpart of
  * `AltitudeAttributeComputeContext<Real, T>`. The altitude span is indexed in
- * dense internal node-id space; each unit row reads the altitude of the node
- * that owns its proper part.
+ * dense internal node-id space; each unit row reads the altitude of its
+ * pixel's smallest node.
  */
 template <std::floating_point Real, AltitudeValue T> struct AltitudeUnitAttributeComputeContext {
-    /// Topology that owns the proper parts listed in `unitPixels`.
+    /// Topology supplying the smallest node of each pixel in `unitPixels`.
     const MorphologicalTree& tree;
 
     /// Borrowed altitude values indexed by internal node id.
     std::span<const T> altitude;
 
-    /// Proper-part ids whose row order indexes `buffer`.
+    /// Pixel identifiers in output row order.
     std::span<const PixelId> unitPixels;
 
-    /// Caller-owned output buffer in unit-proper-part row order.
+    /// Caller-owned output buffer in pixel row order.
     std::span<Real> buffer;
 
     /// Column layout for `buffer`.
@@ -288,7 +287,7 @@ template <std::floating_point Real, AltitudeValue T> struct AltitudeUnitAttribut
      *
      * @param tree_ Tree topology.
      * @param altitude_ Altitude data indexed by node identifier.
-     * @param unitPixels_ Proper-part data.
+     * @param unitPixels_ Pixel identifiers in output row order.
      * @param buffer_ Buffer read or written by the operation.
      * @param attrNames_ Layout that maps attributes to buffer columns.
      * @param requestedAttributes_ Attributes requested for materialization.
@@ -367,15 +366,15 @@ inline bool requestsAttribute(std::span<const Attribute> requestedAttributes, At
 }
 
 /**
- * @brief Validates a proper-part-indexed unit-attribute output buffer.
+ * @brief Validates a unit-attribute output buffer with one row per pixel.
  *
  * @details
  * Unit rows are used when projecting internal tree-node attributes to compact
- * exported Higra layouts. Each row corresponds to one proper part listed in
+ * exported Higra layouts. Each row corresponds to one pixel listed in
  * `unitPixels`, not to an internal tree node.
  *
  * @param tree Tree topology.
- * @param unitPixels Proper-part data.
+ * @param unitPixels Pixel identifiers in output row order.
  * @param buffer Buffer read or written by the operation.
  * @param attrNames Layout that maps attributes to buffer columns.
  */
@@ -394,21 +393,13 @@ inline void requireUnitAttributeBufferShape(const MorphologicalTree& tree, std::
     }
 }
 
-/**
- * @brief Reads the typed altitude assigned to one unit proper part.
- *
- * @param tree Tree topology.
- * @param altitudeView Altitude or level.
- * @param pixel Proper-part data.
- * @return The requested typed altitude assigned to one unit proper part.
- */
 namespace detail::kernel {
 
 /**
- * @brief Reads the typed altitude assigned to an established unit proper part.
+ * @brief Reads the altitude of an established pixel's smallest node.
  * @param tree Established tree topology.
  * @param altitudeView Established altitude span.
- * @param pixel Established proper-part id.
+ * @param pixel Established pixel identifier.
  * @return Altitude of the smallest node.
  */
 template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, PixelId pixel) {
@@ -418,6 +409,14 @@ template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, 
 
 } // namespace detail::kernel
 
+/**
+ * @brief Reads the altitude of a pixel's smallest node.
+ *
+ * @param tree Tree topology.
+ * @param altitudeView Altitude values indexed by internal node slot.
+ * @param pixel Pixel identifier.
+ * @return Altitude of the pixel's smallest node.
+ */
 template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, PixelId pixel) {
     TreeAltitudeAlgorithms::validateNodeAltitudeBufferShape(tree, altitudeView);
     MMCFILTERS_CONTRACT_REQUIRE(tree.isPixel(pixel),

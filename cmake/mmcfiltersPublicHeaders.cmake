@@ -9,6 +9,7 @@ set(MMCFILTERS_PUBLIC_HEADER_ENTRYPOINTS
     ${MMCFILTERS_ROOT}/attributes/AttributeTypes.hpp
     ${MMCFILTERS_ROOT}/attributes/Attributes.hpp
     ${MMCFILTERS_ROOT}/contours/ContourTraceComputation.hpp
+    ${MMCFILTERS_ROOT}/contours/ContourTrace.hpp
     ${MMCFILTERS_ROOT}/contours/ContourComputation.hpp
     ${MMCFILTERS_ROOT}/filters/AttributeFilters.hpp
     ${MMCFILTERS_ROOT}/filters/AttributeReconstructionFilters.hpp
@@ -106,12 +107,14 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/attributes/detail/AttributeRequestUtils.hpp
     ${MMCFILTERS_ROOT}/attributes/detail/TopologyAttributeBackend.hpp
     ${MMCFILTERS_ROOT}/contours/ContourTraceComputation.hpp
+    ${MMCFILTERS_ROOT}/contours/ContourTrace.hpp
     ${MMCFILTERS_ROOT}/contours/ContourComputation.hpp
+    ${MMCFILTERS_ROOT}/contours/detail/ContourBoundaryTracer.hpp
     ${MMCFILTERS_ROOT}/contours/detail/ContourTraversal.hpp
     ${MMCFILTERS_ROOT}/contours/detail/NodeSupportIndex.hpp
     ${MMCFILTERS_ROOT}/contours/detail/ContourLifetimeIndex.hpp
     ${MMCFILTERS_ROOT}/contours/detail/ContourEdgeDeltaStore.hpp
-    ${MMCFILTERS_ROOT}/contours/detail/PendingEdgeLists.hpp
+    ${MMCFILTERS_ROOT}/contours/detail/ContourTraceTraversal.hpp
     ${MMCFILTERS_ROOT}/dataStructure/FastQueue.hpp
     ${MMCFILTERS_ROOT}/filters/AttributeFilters.hpp
     ${MMCFILTERS_ROOT}/filters/AttributeReconstructionFilters.hpp

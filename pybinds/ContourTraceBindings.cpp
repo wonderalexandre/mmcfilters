@@ -7,7 +7,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include <cstdint>
 #include <memory>
 #include <stdexcept>
 #include <vector>
@@ -19,25 +18,41 @@ using namespace pybind11::literals;
 
 namespace {
 
-std::vector<ContourEdge> copyEdges(ContourTraceComputation::EdgeRange range) {
-    std::vector<ContourEdge> edges;
-    edges.reserve(range.size());
-    for (ContourEdge edge : range) {
-        edges.push_back(edge);
-    }
-    return edges;
+std::vector<ContourEdge> copyEdges(ContourEdgeRange range) {
+    return std::vector<ContourEdge>(range.begin(), range.end());
 }
+
+std::vector<PixelId> copyPixels(ContourPixelRange range) {
+    return std::vector<PixelId>(range.begin(), range.end());
+}
+
+std::vector<ContourBoundary> copyBoundaries(std::span<const ContourBoundary> boundaries) {
+    return std::vector<ContourBoundary>(boundaries.begin(), boundaries.end());
+}
+
+struct ContourTraceIterator {
+    ContourTraceComputation::iterator iterator;
+    bool hasStarted = false;
+
+    explicit ContourTraceIterator(const ContourTraceComputation& traces) : iterator(traces.begin()) {}
+
+    py::tuple next() {
+        if (hasStarted && iterator != std::default_sentinel) {
+            ++iterator;
+        }
+        hasStarted = true;
+        if (iterator == std::default_sentinel) {
+            throw py::stop_iteration();
+        }
+        const auto [node, traceView] = *iterator;
+        return py::make_tuple(node, ContourTrace(traceView));
+    }
+};
 
 } // namespace
 
-/**
- * @brief Registers contour trace computation bindings in the Python module.
- *
- * @param m Python module receiving the bindings.
- */
+/** @brief Registers sequential and node-local contour trace access. */
 void initContourTraceComputation(py::module_& m) {
-    using Computation = ContourTraceComputation;
-
     py::enum_<ContourSide>(m, "ContourSide", py::module_local(false))
         .value("NORTH", ContourSide::North)
         .value("WEST", ContourSide::West)
@@ -64,31 +79,37 @@ void initContourTraceComputation(py::module_& m) {
         .def_readwrite("doubled_signed_area", &ContourBoundary::doubledSignedArea)
         .def("__repr__", [](const ContourBoundary& boundary) { return "<ContourBoundary edge_count=" + std::to_string(boundary.edgeCount) + ">"; });
 
-    py::class_<Computation, std::shared_ptr<Computation>>(m, "ContourTraceComputation", py::module_local(false),
-               R"doc(Lazy contour-edge construction and ordered boundary tracing.
+    py::class_<ContourTrace>(m, "ContourTrace", py::module_local(false), "Owned ordered contour trace for one tree node.")
+        .def("boundaries", [](const ContourTrace& self) { return copyBoundaries(self.boundaries()); },
+             "Return independent boundary descriptors.")
+        .def("external_boundary", &ContourTrace::externalBoundary, "Return the unique external boundary.")
+        .def("edges", [](const ContourTrace& self) { return copyEdges(self.edges()); }, "Return every contour edge in boundary order.")
+        .def("boundary_edges", [](const ContourTrace& self, const ContourBoundary& boundary) { return copyEdges(self.boundaryEdges(boundary)); },
+             "boundary"_a, "Return the ordered edges of one boundary.")
+        .def("boundary_pixels", [](const ContourTrace& self, const ContourBoundary& boundary) { return copyPixels(self.boundaryPixels(boundary)); },
+             "boundary"_a, "Return one support pixel for each ordered boundary edge, including repetitions.");
 
-Edges are exposed as support-pixel sides. Boundaries are traced from oriented edges,
-with external and internal boundaries distinguished by orientation. The computation
-keeps its source tree alive.)doc")
+    py::class_<ContourTraceIterator>(m, "_ContourTraceIterator", "Single-pass iterator returning independently owned node traces.")
+        .def("__iter__", [](ContourTraceIterator& self) -> ContourTraceIterator& { return self; }, py::return_value_policy::reference_internal)
+        .def("__next__", &ContourTraceIterator::next);
+
+    using Computation = ContourTraceComputation;
+    py::class_<Computation, std::shared_ptr<Computation>>(m, "ContourTraceComputation", py::module_local(false),
+               R"doc(Incremental ordered contour traces for a stable valued tree.
+
+Iterate (node_id, trace) in post-order, use for_each_trace for callback access,
+or query one node with trace. Python trace results own their data.)doc")
         .def(py::init([](const std::shared_ptr<PythonValuedMorphologicalTree>& tree) {
                  if (!tree) {
-                     throw std::invalid_argument("Contour trace computation requires a non-null ValuedMorphologicalTree.");
+                     throw std::invalid_argument("ContourTraceComputation requires a non-null valued tree.");
                  }
                  return tree->visit([](const auto& concreteTree) { return ContourTraceComputation(concreteTree->asView()); });
              }), py::keep_alive<1, 2>(), "tree"_a.none(false))
-        .def(
-            "edges", [](const Computation& self, NodeId nodeId) { return copyEdges(self.edges(nodeId)); }, "node_id"_a,
-            "Return the unordered contour edges of one live internal node.")
-        .def("boundaries", &Computation::boundaries, "node_id"_a, "Return an independent list of contour boundary metadata for one live internal node.")
-        .def(
-            "boundary_edges", [](const Computation& self, const ContourBoundary& boundary) { return copyEdges(self.boundaryEdges(boundary)); }, "boundary"_a,
-            "Return the ordered contour edges of one boundary.")
-        .def("trace_all", &Computation::traceAll, "Trace the contours of every live node.")
-        .def_property_readonly("has_traced_all_boundaries", &Computation::hasTracedAllBoundaries,
-                               "True when the ordered boundaries of every live node are cached.")
-        .def("has_cached_edges", &Computation::hasCachedEdges, "node_id"_a, "Return whether the contour edges of one live node are cached.")
-        .def("has_traced_boundaries", &Computation::hasTracedBoundaries, "node_id"_a,
-             "Return whether the ordered boundaries of one live node are cached.");
+        .def("__iter__", [](const Computation& self) { return ContourTraceIterator(self); }, py::keep_alive<0, 1>())
+        .def("trace", &Computation::trace, "node_id"_a, "Return an owned ordered trace for one live internal node.")
+        .def("for_each_trace", [](const Computation& self, const py::function& consumer) {
+            self.forEachTrace([&](NodeId node, ContourTraceView traceView) { consumer(node, ContourTrace(traceView)); });
+        }, "consumer"_a, "Call consumer(node_id, trace) in post-order; each trace owns its data.");
 }
 
 } // namespace mmcfilters::pybindings

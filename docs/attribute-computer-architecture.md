@@ -95,6 +95,11 @@ calls compute the base attribute first, then materialize ancestor/descendant
 sample offsets from a typed positive altitude step, sampling radius,
 representative-descendant policy, and missing-sample policy.
 
+For multiple sampling distances, the support cardinality and minimum pixel index
+in the node support are computed once for each node. Each distance reuses those metadata and dense
+neighborhood buffers while performing its ancestor search and representative
+descendant selection. See [Attributes](attributes.md) for sampling semantics.
+
 ## Subsystem architectures
 
 Concrete families may introduce providers, reducers, caches, or specialized

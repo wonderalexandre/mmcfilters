@@ -83,15 +83,9 @@ assert np.array_equal(
 )
 ```
 
-The default convention selects the canonical minimum-4/maximum-8
-complementary-grid immersion without domain padding, uses infinity pixel zero,
-and publishes 8-bit altitudes. Its construction levels never leave the source
-level set, so those altitudes are exact rather than quantized.
-
-The self-dual span immersion admits `UINT8` only without an exterior ring. Its
-boundary reference level is the single source of half levels, and
-`TopographicDomainExtension.NONE` crops that level away before any interior cell
-reads it. The convention fields may be passed straight to the factory:
+See [Morphological trees](trees.md) for the default topographic convention,
+altitude encodings, and connectivity semantics. In Python, convention fields
+may also be passed directly to the factory:
 
 ```python
 unpadded_self_dual = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(
@@ -106,20 +100,13 @@ assert np.array_equal(unpadded_self_dual.reconstruct_from_node_altitudes(), imag
 
 `mmcfilters.self_dual_span_convention(...)` builds the same convention as a
 value when one has to be stored or reused. Passing both a complete convention
-and individual fields to the factory is rejected, so a call always has one
-source of truth.
+and individual fields to the factory is rejected.
 
 Combining the self-dual span with `EXTERIOR_RING` and `UINT8` is rejected.
 
-Max-trees declare `NodeAltitudeOrder.INCREASING`; min-trees declare
-`NodeAltitudeOrder.DECREASING`. Trees of shapes and self-dual residual trees
-declare `NodeAltitudeOrder.UNCONSTRAINED` because their altitudes do not have one global polarity.
-
-The residual-tree factories use a shared symmetric adjacency and one canonical
-`SelfDualResidualSchedule`. Candidate keys are
-`SelfDualResidualKey(support_cardinality, spatial_minimum)`, with
-`RowMajorSpatialOrder` by default. A custom `SpatialOrder` may be supplied; no
-polarity-first tie policy is exposed.
+Residual-tree factories accept a custom `SpatialOrder`. See
+[Self-dual residual trees](self-dual-residual-trees.md) for scheduling and
+construction policies.
 
 ### Native hierarchies
 
@@ -205,7 +192,8 @@ Use valued-tree entry points when an attribute may read node altitude and
 topology/support entry points otherwise. Single-attribute methods return a 1D
 array; multi-attribute methods return `(layout, values)`, where `layout` maps
 names to columns. `dtype` accepts `np.float32` or `np.float64` and defaults to
-`np.float32`.
+`np.float32`. Both dtypes use the same internal `double` computation pipeline;
+the result is converted to the requested NumPy storage.
 
 Every method that accepts an `Attribute` or `Attribute.Group` also accepts its
 stable symbolic name as a string. The accepted names are exactly the ones that
@@ -220,8 +208,9 @@ layout, values = mmcfilters.Attribute.compute_attributes(
 )
 ```
 
-Matching is exact and case-sensitive. An unknown name raises `ValueError` and
-reports the closest known names.
+Enums and symbolic names may be mixed in one request. Matching is exact and
+case-sensitive. An unknown name raises `ValueError` and reports the closest
+known names.
 
 ```python
 area = mmcfilters.Attribute.compute_single_topology_attribute(
@@ -286,6 +275,9 @@ Serialized layout labels use `_ANCESTOR_n` and `_DESCENDANT_n`.
 Use `compute_attribute_mapping` to project a node attribute to the image domain.
 The complete attribute and layout contracts are in [Attributes](attributes.md)
 and the [Attribute catalog](attribute-catalog.md).
+
+Concrete C++ computers, `AttributePipeline`, and finite-window intermediate
+storage are not exposed in Python.
 
 ## Filters and stability
 
@@ -390,15 +382,19 @@ for node_id, contour_pixels in contours:
     process(node_id, contour_pixels)
 ```
 
-Use contour traces for oriented sides and ordered external/internal boundaries:
+Use contour traces for oriented pixel-side edges grouped into closed boundaries.
+Iteration, callbacks, and node queries return owned `ContourTrace` objects;
+edge, pixel, and boundary collections are independent lists:
 
 ```python
 contour_traces = mmcfilters.ContourTraceComputation(max_tree)
-root_edges = contour_traces.edges(max_tree.root)
-root_boundaries = contour_traces.boundaries(max_tree.root)
+root_trace = contour_traces.trace(max_tree.root)
 
-for boundary in root_boundaries:
-    boundary_edges = contour_traces.boundary_edges(boundary)
+for boundary in root_trace.boundaries():
+    boundary_edges = root_trace.boundary_edges(boundary)
+
+for node_id, trace in contour_traces:
+    process(node_id, trace)
 ```
 
 See [Pixel contours](contours.md) and [Contour traces](contour-traces.md).

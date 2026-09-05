@@ -173,7 +173,7 @@ Two implementations are retained only under `unit-tests`:
 
 - an independent brute-force Euclidean oracle reconstructs every small node
   support and contour;
-- the former altitude-level DIFT sweep is an optimized component-tree oracle.
+- an altitude-level DIFT sweep is an optimized component-tree oracle.
 
 The brute-force oracle is the correctness authority for the exact family. The
 component-tree oracle preserves the paper-style approximation for regression

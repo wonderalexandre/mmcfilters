@@ -29,8 +29,7 @@ namespace mmcfilters {
  * operations. Direct and subtractive reconstruction are exposed separately by
  * `DirectAttributeFilter`, `SubtractiveAttributeFilter`, and
  * `SoftSubtractiveAttributeFilter`. The operators consume preservation masks or
- * attribute buffers defined on dense node ids and reconstruct proper-part
- * images as their output.
+ * attribute buffers defined on dense node ids and reconstruct pixel images.
  *
  * Contract and node-domain assumptions:
  *
@@ -38,6 +37,9 @@ namespace mmcfilters {
  *   internal `NodeId` slot domain, not by exported Higra ids;
  * - only alive nodes are reconstructed, but buffers must still cover every
  *   internal slot so callers can reuse the tree-wide attribute layout;
+ * - preservation masks contain exactly `numInternalNodeSlots()` entries;
+ *   raw and shared attribute pointers must provide at least that many readable
+ *   entries. Their length cannot be checked by these overloads;
  * - output pixels are written through direct smallest-node mapping. A node
  *   represents the support of its full subtree, while `properPart(node)`
  *   contains only the pixels owned directly by that node;
@@ -56,6 +58,14 @@ namespace mmcfilters {
  *   subtree is painted at the current accepted ancestor level;
  * - pruning-max rule: only subtrees whose nodes are all rejected are cut, and
  *   such subtrees are painted at the rejected subtree root level.
+ *
+ * Pruning-min accepts a node when its attribute is greater than the threshold;
+ * pruning-max marks a node as rejected when its attribute is less than or equal
+ * to the threshold. Both rules always visit the root. Each visited node writes
+ * its own altitude to its proper part; a collapsed subtree receives the altitude
+ * selected by the rule above. Returned images own their storage and have the
+ * tree's grid dimensions. Overloads taking an output image require those same
+ * dimensions and write into the supplied storage.
  */
 template <AltitudeValue T> class AttributeFilters {
   protected:
@@ -89,7 +99,7 @@ template <AltitudeValue T> class AttributeFilters {
     /**
      * @brief Validates attribute pointer.
      *
-     * @param attribute Attribute requested by the operation.
+     * @param attribute Attribute pointer to check for null.
      * @param context Operation name used in diagnostics.
      */
     template <std::floating_point Real> static void requireAttributePointer(const Real* attribute, const char* context) {
@@ -101,7 +111,7 @@ template <AltitudeValue T> class AttributeFilters {
      * @brief Validates a node-preservation mask against the dense node domain.
      *
      * @param tree Tree topology.
-     * @param nodePreservationMask Per-node decisions where true preserves a node.
+     * @param nodePreservationMask Mask whose length must match the internal node slot count.
      * @param context Operation name used in diagnostics.
      */
     static void requireNodePreservationMaskSize(const MorphologicalTree& tree, const NodePreservationMask& nodePreservationMask,
@@ -134,12 +144,10 @@ template <AltitudeValue T> class AttributeFilters {
     static T altitudeOf(const AltitudeView& view, NodeId nodeId) noexcept { return view.nodeAltitudes()[static_cast<std::size_t>(nodeId)]; }
 
     /**
-     * @brief Writes one node's direct proper parts only.
+     * @brief Writes the pixels in one node's proper part.
      *
-     * Reconstruction is done by writing every alive node's direct proper parts
-     * exactly once. Descendant supports are intentionally not touched here; use
-     * `writeSubtreeProperParts` only when a pruning rule collapses a whole
-     * branch to a single gray level.
+     * Each call writes the node's proper part once. Use `writeSubtreeProperParts`
+     * when a pruning rule collapses a whole branch to a single gray level.
      *
      * @param tree Tree topology.
      * @param nodeId Dense internal node identifier.
@@ -153,7 +161,7 @@ template <AltitudeValue T> class AttributeFilters {
     }
 
     /**
-     * @brief Paints all direct proper parts owned by nodes in one subtree.
+     * @brief Writes every pixel in one node's support.
      *
      * This is the physical image-domain effect of pruning a branch: every node
      * below the cut, including the cut node itself, receives one replacement
@@ -179,8 +187,9 @@ template <AltitudeValue T> class AttributeFilters {
      * overload where `nodePreservationMask[node] == (attribute[node] > threshold)`.
      *
      * @param view Tree view.
-     * @param nodePreservationMask Per-node decisions where true preserves a node.
-     * @param imgOutputPtr Output image receiving the reconstruction.
+     * @param nodePreservationMask Decisions indexed by internal NodeId, with
+     * exactly `numInternalNodeSlots()` entries; true accepts a node.
+     * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     static void filteringByPruningMinMaskImpl(AltitudeView view, const NodePreservationMask& nodePreservationMask, ImagePtr<T> imgOutputPtr) {
         const char* context = "AttributeFilters::filteringByPruningMin";
@@ -215,8 +224,9 @@ template <AltitudeValue T> class AttributeFilters {
      * descendants can preserve their own levels.
      *
      * @param view Tree view.
-     * @param nodePreservationMask Per-node decisions where true preserves a node.
-     * @param imgOutputPtr Output image receiving the reconstruction.
+     * @param nodePreservationMask Decisions indexed by internal NodeId, with
+     * exactly `numInternalNodeSlots()` entries; true accepts a node.
+     * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     static void filteringByPruningMaxMaskImpl(AltitudeView view, const NodePreservationMask& nodePreservationMask, ImagePtr<T> imgOutputPtr) {
         const char* context = "AttributeFilters::filteringByPruningMax";
@@ -265,9 +275,10 @@ template <AltitudeValue T> class AttributeFilters {
      * node-preservation-mask overload.
      *
      * @param view Tree view.
-     * @param attribute Attribute requested by the operation.
-     * @param threshold Threshold applied by the operation.
-     * @param imgOutputPtr Output image receiving the reconstruction.
+     * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
+     * least `numInternalNodeSlots()` readable entries.
+     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>
     static void filteringByPruningMinAttributeImpl(AltitudeView view, const Real* attribute, Real threshold, ImagePtr<T> imgOutputPtr) {
@@ -301,9 +312,10 @@ template <AltitudeValue T> class AttributeFilters {
      * the rejected branch root altitude rather than at the accepted ancestor.
      *
      * @param view Tree view.
-     * @param attribute Attribute requested by the operation.
-     * @param threshold Threshold applied by the operation.
-     * @param imgOutputPtr Output image receiving the reconstruction.
+     * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
+     * least `numInternalNodeSlots()` readable entries.
+     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>
     static void filteringByPruningMaxAttributeImpl(AltitudeView view, const Real* attribute, Real threshold, ImagePtr<T> imgOutputPtr) {
@@ -384,9 +396,10 @@ template <AltitudeValue T> class AttributeFilters {
      * subtrees are reconstructed at the ancestor level selected by the pruning-min
      * rule.
      *
-     * @param attr Attribute requested by the operation.
-     * @param threshold Threshold applied by the operation.
-     * @return Image produced by the operation.
+     * @param attr Non-null attribute buffer indexed by internal NodeId, with at
+     * least `numInternalNodeSlots()` readable entries.
+     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @return Independently allocated image with the tree's grid dimensions.
      */
     template <std::floating_point Real> [[nodiscard]] ImagePtr<T> filteringByPruningMin(const std::shared_ptr<Real[]>& attr, Real threshold) {
         return filteringByPruningMin(attr.get(), threshold);
@@ -395,9 +408,10 @@ template <AltitudeValue T> class AttributeFilters {
     /**
      * @brief Applies pruning-min filtering from a raw internal-node attribute buffer.
      *
-     * @param attr Attribute requested by the operation.
-     * @param threshold Threshold applied by the operation.
-     * @return Image produced by the operation.
+     * @param attr Non-null attribute buffer indexed by internal NodeId, with at
+     * least `numInternalNodeSlots()` readable entries.
+     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @return Independently allocated image with the tree's grid dimensions.
      */
     template <std::floating_point Real> [[nodiscard]] ImagePtr<T> filteringByPruningMin(const Real* attr, Real threshold) {
         ImagePtr<T> imgOutput = Image<T>::create(this->tree.numRows(), this->tree.numColumns());
@@ -411,9 +425,10 @@ template <AltitudeValue T> class AttributeFilters {
      * Nodes with attribute values above `threshold` are kept, and fully rejected
      * subtrees are reconstructed at their own subtree levels.
      *
-     * @param attr Attribute requested by the operation.
-     * @param threshold Threshold applied by the operation.
-     * @return Image produced by the operation.
+     * @param attr Non-null attribute buffer indexed by internal NodeId, with at
+     * least `numInternalNodeSlots()` readable entries.
+     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @return Independently allocated image with the tree's grid dimensions.
      */
     template <std::floating_point Real> [[nodiscard]] ImagePtr<T> filteringByPruningMax(const std::shared_ptr<Real[]>& attr, Real threshold) {
         return filteringByPruningMax(attr.get(), threshold);
@@ -422,9 +437,10 @@ template <AltitudeValue T> class AttributeFilters {
     /**
      * @brief Applies pruning-max filtering from a raw internal-node attribute buffer.
      *
-     * @param attr Attribute requested by the operation.
-     * @param threshold Threshold applied by the operation.
-     * @return Image produced by the operation.
+     * @param attr Non-null attribute buffer indexed by internal NodeId, with at
+     * least `numInternalNodeSlots()` readable entries.
+     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @return Independently allocated image with the tree's grid dimensions.
      */
     template <std::floating_point Real> [[nodiscard]] ImagePtr<T> filteringByPruningMax(const Real* attr, Real threshold) {
         ImagePtr<T> imgOutput = Image<T>::create(this->tree.numRows(), this->tree.numColumns());
@@ -456,8 +472,9 @@ template <AltitudeValue T> class AttributeFilters {
     /**
      * @brief Applies pruning-min filtering from a dense node-preservation mask.
      *
-     * @param nodePreservationMask Per-node decisions where true preserves a node.
-     * @return Image produced by the operation.
+     * @param nodePreservationMask Decisions indexed by internal NodeId, with
+     * exactly `numInternalNodeSlots()` entries; true accepts a node.
+     * @return Independently allocated image with the tree's grid dimensions.
      */
     [[nodiscard]] ImagePtr<T> filteringByPruningMin(const NodePreservationMask& nodePreservationMask) {
         ImagePtr<T> imgOutput = Image<T>::create(this->tree.numRows(), this->tree.numColumns());
@@ -468,8 +485,9 @@ template <AltitudeValue T> class AttributeFilters {
     /**
      * @brief Applies pruning-max filtering from a dense node-preservation mask.
      *
-     * @param nodePreservationMask Per-node decisions where true preserves a node.
-     * @return Image produced by the operation.
+     * @param nodePreservationMask Decisions indexed by internal NodeId, with
+     * exactly `numInternalNodeSlots()` entries; true accepts a node.
+     * @return Independently allocated image with the tree's grid dimensions.
      */
     [[nodiscard]] ImagePtr<T> filteringByPruningMax(const NodePreservationMask& nodePreservationMask) {
         ImagePtr<T> imgOutput = Image<T>::create(this->tree.numRows(), this->tree.numColumns());
@@ -481,8 +499,9 @@ template <AltitudeValue T> class AttributeFilters {
      * @brief Writes pruning-min filtering from a node-preservation mask into an output image.
      *
      * @param valuedTree Valued tree.
-     * @param nodePreservationMask Per-node decisions where true preserves a node.
-     * @param imgOutputPtr Output image receiving the reconstruction.
+     * @param nodePreservationMask Decisions indexed by internal NodeId, with
+     * exactly `numInternalNodeSlots()` entries; true accepts a node.
+     * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     static void filteringByPruningMin(const ValuedMorphologicalTreeView<T>& valuedTree, const NodePreservationMask& nodePreservationMask,
                                       ImagePtr<T> imgOutputPtr) {
@@ -493,8 +512,9 @@ template <AltitudeValue T> class AttributeFilters {
      * @brief Writes pruning-min filtering from a valued-tree owner into an output image.
      *
      * @param valuedTree Valued tree.
-     * @param nodePreservationMask Per-node decisions where true preserves a node.
-     * @param imgOutputPtr Output image receiving the reconstruction.
+     * @param nodePreservationMask Decisions indexed by internal NodeId, with
+     * exactly `numInternalNodeSlots()` entries; true accepts a node.
+     * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     static void filteringByPruningMin(const ValuedMorphologicalTree<T>& valuedTree, const NodePreservationMask& nodePreservationMask,
                                       ImagePtr<T> imgOutputPtr) {
@@ -505,8 +525,9 @@ template <AltitudeValue T> class AttributeFilters {
      * @brief Writes pruning-max filtering from a node-preservation mask into an output image.
      *
      * @param valuedTree Valued tree.
-     * @param nodePreservationMask Per-node decisions where true preserves a node.
-     * @param imgOutputPtr Output image receiving the reconstruction.
+     * @param nodePreservationMask Decisions indexed by internal NodeId, with
+     * exactly `numInternalNodeSlots()` entries; true accepts a node.
+     * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     static void filteringByPruningMax(const ValuedMorphologicalTreeView<T>& valuedTree, const NodePreservationMask& nodePreservationMask,
                                       ImagePtr<T> imgOutputPtr) {
@@ -517,8 +538,9 @@ template <AltitudeValue T> class AttributeFilters {
      * @brief Writes pruning-max filtering from a valued-tree owner into an output image.
      *
      * @param valuedTree Valued tree.
-     * @param nodePreservationMask Per-node decisions where true preserves a node.
-     * @param imgOutputPtr Output image receiving the reconstruction.
+     * @param nodePreservationMask Decisions indexed by internal NodeId, with
+     * exactly `numInternalNodeSlots()` entries; true accepts a node.
+     * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     static void filteringByPruningMax(const ValuedMorphologicalTree<T>& valuedTree, const NodePreservationMask& nodePreservationMask,
                                       ImagePtr<T> imgOutputPtr) {
@@ -529,9 +551,10 @@ template <AltitudeValue T> class AttributeFilters {
      * @brief Writes pruning-min filtering from an owned attribute buffer into an output image.
      *
      * @param valuedTree Valued tree.
-     * @param attribute Attribute requested by the operation.
-     * @param threshold Threshold applied by the operation.
-     * @param imgOutputPtr Output image receiving the reconstruction.
+     * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
+     * least `numInternalNodeSlots()` readable entries.
+     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>
     static void filteringByPruningMin(const ValuedMorphologicalTreeView<T>& valuedTree, const std::shared_ptr<Real[]>& attribute, Real threshold, ImagePtr<T> imgOutputPtr) {
@@ -542,9 +565,10 @@ template <AltitudeValue T> class AttributeFilters {
      * @brief Writes pruning-min filtering from a valued-tree owner and owned attribute buffer.
      *
      * @param valuedTree Valued tree.
-     * @param attribute Attribute requested by the operation.
-     * @param threshold Threshold applied by the operation.
-     * @param imgOutputPtr Output image receiving the reconstruction.
+     * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
+     * least `numInternalNodeSlots()` readable entries.
+     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>
     static void filteringByPruningMin(const ValuedMorphologicalTree<T>& valuedTree, const std::shared_ptr<Real[]>& attribute, Real threshold,
@@ -556,9 +580,10 @@ template <AltitudeValue T> class AttributeFilters {
      * @brief Writes pruning-min filtering from a raw attribute buffer into an output image.
      *
      * @param valuedTree Valued tree.
-     * @param attribute Attribute requested by the operation.
-     * @param threshold Threshold applied by the operation.
-     * @param imgOutputPtr Output image receiving the reconstruction.
+     * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
+     * least `numInternalNodeSlots()` readable entries.
+     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>
     static void filteringByPruningMin(const ValuedMorphologicalTreeView<T>& valuedTree, const Real* attribute, Real threshold, ImagePtr<T> imgOutputPtr) {
@@ -569,9 +594,10 @@ template <AltitudeValue T> class AttributeFilters {
      * @brief Writes pruning-min filtering from a valued-tree owner and raw attribute buffer.
      *
      * @param valuedTree Valued tree.
-     * @param attribute Attribute requested by the operation.
-     * @param threshold Threshold applied by the operation.
-     * @param imgOutputPtr Output image receiving the reconstruction.
+     * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
+     * least `numInternalNodeSlots()` readable entries.
+     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>
     static void filteringByPruningMin(const ValuedMorphologicalTree<T>& valuedTree, const Real* attribute, Real threshold, ImagePtr<T> imgOutputPtr) {
@@ -582,9 +608,10 @@ template <AltitudeValue T> class AttributeFilters {
      * @brief Writes pruning-max filtering from an owned attribute buffer into an output image.
      *
      * @param valuedTree Valued tree.
-     * @param attribute Attribute requested by the operation.
-     * @param threshold Threshold applied by the operation.
-     * @param imgOutputPtr Output image receiving the reconstruction.
+     * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
+     * least `numInternalNodeSlots()` readable entries.
+     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>
     static void filteringByPruningMax(const ValuedMorphologicalTreeView<T>& valuedTree, const std::shared_ptr<Real[]>& attribute, Real threshold, ImagePtr<T> imgOutputPtr) {
@@ -595,9 +622,10 @@ template <AltitudeValue T> class AttributeFilters {
      * @brief Writes pruning-max filtering from a valued-tree owner and owned attribute buffer.
      *
      * @param valuedTree Valued tree.
-     * @param attribute Attribute requested by the operation.
-     * @param threshold Threshold applied by the operation.
-     * @param imgOutputPtr Output image receiving the reconstruction.
+     * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
+     * least `numInternalNodeSlots()` readable entries.
+     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>
     static void filteringByPruningMax(const ValuedMorphologicalTree<T>& valuedTree, const std::shared_ptr<Real[]>& attribute, Real threshold,
@@ -609,9 +637,10 @@ template <AltitudeValue T> class AttributeFilters {
      * @brief Writes pruning-max filtering from a raw attribute buffer into an output image.
      *
      * @param valuedTree Valued tree.
-     * @param attribute Attribute requested by the operation.
-     * @param threshold Threshold applied by the operation.
-     * @param imgOutputPtr Output image receiving the reconstruction.
+     * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
+     * least `numInternalNodeSlots()` readable entries.
+     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>
     static void filteringByPruningMax(const ValuedMorphologicalTreeView<T>& valuedTree, const Real* attribute, Real threshold, ImagePtr<T> imgOutputPtr) {
@@ -622,9 +651,10 @@ template <AltitudeValue T> class AttributeFilters {
      * @brief Writes pruning-max filtering from a valued-tree owner and raw attribute buffer.
      *
      * @param valuedTree Valued tree.
-     * @param attribute Attribute requested by the operation.
-     * @param threshold Threshold applied by the operation.
-     * @param imgOutputPtr Output image receiving the reconstruction.
+     * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
+     * least `numInternalNodeSlots()` readable entries.
+     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>
     static void filteringByPruningMax(const ValuedMorphologicalTree<T>& valuedTree, const Real* attribute, Real threshold, ImagePtr<T> imgOutputPtr) {

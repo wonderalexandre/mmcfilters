@@ -101,7 +101,6 @@ The construction has one canonical `SelfDualResidualSchedule`. Its key is
 lexicographically. `spatialMinimum` is computed from a total `SpatialOrder`; the
 default is `RowMajorSpatialOrder`. Polarity and altitude never participate in
 the key or break a tie, so contrast inversion preserves the support sequence.
-The former polarity-first experimental policy is not part of the API.
 
 ## From the paper to the source code
 

@@ -1,6 +1,5 @@
 /**
- * Benchmark contour-edge construction, lazy edge caching, and ordered
- * boundary tracing.
+ * Benchmark sequential and node-local ordered contour tracing.
  *
  * Build with `-DMMCFILTERS_BUILD_EXAMPLES=ON` and run either
  * `./build/examples/mmcfilters_contour_trace_benchmark 512 512 5` for a
@@ -13,16 +12,13 @@
 #include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
 #include "stb_image.h"
 
-#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
-#include <random>
 #include <stdexcept>
 #include <string>
 #include <utility>
-#include <vector>
 
 using namespace mmcfilters;
 
@@ -74,114 +70,74 @@ template <typename Fn> double timedVoid(Fn&& fn) {
     return static_cast<double>(micros) / 1000.0;
 }
 
-std::vector<NodeId> aliveNodesInTreeOrder(const MorphologicalTree& tree) {
-    std::vector<NodeId> nodes;
-    nodes.reserve(static_cast<std::size_t>(tree.numNodes()));
-    for (NodeId node : tree.aliveNodeIds()) {
-        nodes.push_back(node);
-    }
-    return nodes;
-}
-
-std::vector<NodeId> shuffledAliveNodes(const MorphologicalTree& tree) {
-    auto nodes = aliveNodesInTreeOrder(tree);
-    std::mt19937 rng(0x71ace);
-    std::shuffle(nodes.begin(), nodes.end(), rng);
-    return nodes;
-}
-
-std::size_t edgeChecksum(const ContourTraceComputation& contourTraces, NodeId node) {
-    std::size_t sum = 0;
-    for (ContourEdge edge : contourTraces.edges(node)) {
-        sum += static_cast<std::size_t>(ContourTraceComputation::packEdge(edge.pixel, edge.side) + 1);
-    }
-    return sum;
-}
-
-std::size_t boundaryChecksum(const ContourTraceComputation& contourTraces, NodeId node) {
-    std::size_t sum = 0;
-    for (const ContourBoundary& boundary : contourTraces.boundaries(node)) {
-        sum += static_cast<std::size_t>(boundary.edgeCount + 1);
-        sum += static_cast<std::size_t>(boundary.doubledSignedArea >= 0 ? boundary.doubledSignedArea : -boundary.doubledSignedArea);
-        for (ContourEdge edge : contourTraces.boundaryEdges(boundary)) {
-            sum += static_cast<std::size_t>(ContourTraceComputation::packEdge(edge.pixel, edge.side) + 1);
+template <typename Trace> std::uint64_t traceChecksum(const Trace& trace) {
+    std::uint64_t sum = 0;
+    for (const ContourBoundary& boundary : trace.boundaries()) {
+        sum += static_cast<std::uint64_t>(boundary.edgeCount + 1);
+        sum += static_cast<std::uint64_t>(boundary.kind == ContourBoundaryKind::External ? 1 : 2);
+        sum += static_cast<std::uint64_t>(boundary.doubledSignedArea >= 0 ? boundary.doubledSignedArea : -boundary.doubledSignedArea);
+        for (ContourEdge edge : trace.boundaryEdges(boundary)) {
+            sum += static_cast<std::uint64_t>(ContourTraceComputation::packEdge(edge.pixel, edge.side)) + 1;
         }
     }
     return sum;
 }
 
-std::size_t edgeChecksumInOrder(const std::vector<NodeId>& nodes, const ContourTraceComputation& contourTraces) {
-    std::size_t sum = 0;
-    for (NodeId node : nodes) {
-        sum += edgeChecksum(contourTraces, node);
+std::uint64_t traversalChecksum(const ContourTraceComputation& contourTraces) {
+    std::uint64_t sum = 0;
+    for (auto [node, trace] : contourTraces) {
+        sum += static_cast<std::uint64_t>(node + 1);
+        sum += traceChecksum(trace);
     }
     return sum;
 }
 
-std::size_t boundaryChecksumInOrder(const std::vector<NodeId>& nodes, const ContourTraceComputation& contourTraces) {
-    std::size_t sum = 0;
-    for (NodeId node : nodes) {
-        sum += boundaryChecksum(contourTraces, node);
-    }
+std::uint64_t callbackChecksum(const ContourTraceComputation& contourTraces) {
+    std::uint64_t sum = 0;
+    contourTraces.forEachTrace([&](NodeId node, ContourTraceView trace) {
+        sum += static_cast<std::uint64_t>(node + 1);
+        sum += traceChecksum(trace);
+    });
     return sum;
 }
 
 void measureCase(const std::string& label, const MorphologicalTree& tree, int repeats) {
-    const NodeId root = tree.root();
-    const auto treeOrder = aliveNodesInTreeOrder(tree);
-    const auto randomOrder = shuffledAliveNodes(tree);
-
     std::cout << "\n"
               << label << '\n'
               << "  nodes: live=" << tree.numNodes() << " slots=" << tree.numInternalNodeSlots() << " proper_parts=" << tree.numPixels()
               << '\n';
 
     auto [contourTraces, constructionMs] = timed([&]() { return ContourTraceComputation(tree); });
-    (void)contourTraces;
-    std::cout << "  construction only: " << constructionMs << " ms";
-    std::cout << '\n';
+    std::cout << "  construction only: " << constructionMs << " ms\n";
 
-    auto [rootEdgeComputation, rootEdgeConstructionMs] = timed([&]() { return ContourTraceComputation(tree); });
-    const double rootEdgeAccessMs = timedVoid([&]() {
-        volatile std::size_t checksum = edgeChecksum(rootEdgeComputation, root);
-        (void)checksum;
-    });
-    std::cout << "  root edges(): construction=" << rootEdgeConstructionMs << " ms edge_access=" << rootEdgeAccessMs;
-    std::cout << '\n';
+    auto [rootTrace, rootTraceMs] = timed([&]() { return contourTraces.trace(tree.root()); });
+    std::cout << "  root trace(): " << rootTraceMs << " ms checksum=" << traceChecksum(rootTrace) << '\n';
 
-    auto [rootBoundaryComputation, rootBoundaryConstructionMs] = timed([&]() { return ContourTraceComputation(tree); });
-    const double rootBoundaryTraceMs = timedVoid([&]() {
-        volatile std::size_t checksum = boundaryChecksum(rootBoundaryComputation, root);
-        (void)checksum;
-    });
-    std::cout << "  root boundaries(): construction=" << rootBoundaryConstructionMs << " ms trace=" << rootBoundaryTraceMs;
-    std::cout << '\n';
-
-    auto [orderedEdgeComputation, orderedEdgeConstructionMs] = timed([&]() { return ContourTraceComputation(tree); });
-    const double orderedEdgeAccessMs = timedVoid([&]() {
-        volatile std::size_t checksum = edgeChecksumInOrder(treeOrder, orderedEdgeComputation);
-        (void)checksum;
-    });
-    std::cout << "  all edges() tree order: construction=" << orderedEdgeConstructionMs << " ms edge_access=" << orderedEdgeAccessMs;
-    std::cout << '\n';
-
-    auto [randomBoundaryComputation, randomBoundaryConstructionMs] = timed([&]() { return ContourTraceComputation(tree); });
-    const double randomBoundaryTraceMs = timedVoid([&]() {
-        volatile std::size_t checksum = boundaryChecksumInOrder(randomOrder, randomBoundaryComputation);
-        (void)checksum;
-    });
-    std::cout << "  all boundaries() random order: construction=" << randomBoundaryConstructionMs << " ms trace=" << randomBoundaryTraceMs;
-    std::cout << '\n';
+    auto [firstTraversalChecksum, firstTraversalMs] = timed([&]() { return traversalChecksum(contourTraces); });
+    const std::uint64_t firstCallbackChecksum = callbackChecksum(contourTraces);
+    if (firstCallbackChecksum != firstTraversalChecksum) {
+        throw std::logic_error("Callback and iterator trace checksums differ.");
+    }
+    std::cout << "  first complete traversal: " << firstTraversalMs << " ms checksum=" << firstTraversalChecksum << '\n';
 
     double totalConstructionMs = 0.0;
-    double totalTraceMs = 0.0;
-    for (int i = 0; i < repeats; ++i) {
-        auto [contourTraces, runConstructionMs] = timed([&]() { return ContourTraceComputation(tree); });
+    double totalTraversalMs = 0.0;
+    double totalCallbackMs = 0.0;
+    for (int repeat = 0; repeat < repeats; ++repeat) {
+        auto [runTraces, runConstructionMs] = timed([&]() { return ContourTraceComputation(tree); });
         totalConstructionMs += runConstructionMs;
-        totalTraceMs += timedVoid([&]() { contourTraces.traceAll(); });
+        totalTraversalMs += timedVoid([&]() {
+            volatile std::uint64_t checksum = traversalChecksum(runTraces);
+            (void)checksum;
+        });
+        totalCallbackMs += timedVoid([&]() {
+            volatile std::uint64_t checksum = callbackChecksum(runTraces);
+            (void)checksum;
+        });
     }
-    std::cout << "  repeated traceAll(): construction_avg=" << totalConstructionMs / repeats << " ms trace_avg=" << totalTraceMs / repeats << " ms";
-    std::cout << '\n';
+    std::cout << "  repeated traversal: construction_avg=" << totalConstructionMs / repeats
+              << " ms iterator_avg=" << totalTraversalMs / repeats
+              << " ms callback_avg=" << totalCallbackMs / repeats << " ms\n";
 }
 
 void runBenchmark(ImageUInt8Ptr image, int repeats) {

@@ -125,8 +125,12 @@ enum class HierarchyValuationRangePolicy {
  *
  * Cousty's correspondence applies to hierarchies whose regions are connected in
  * the graph on which the saliency map is defined. `ValidateConnected` checks
- * this invariant in O(m + p + e) disjoint-set work, where `m` is the number of
- * live hierarchy nodes, `p` the proper-part count, and `e` the graph-edge count.
+ * this invariant in O(N + (m + p + e) alpha(p)) time and O(N + p + e) storage,
+ * where `N` counts internal node slots, `m` live nodes, `p` pixels, `e` graph
+ * edges, and `alpha` is the inverse Ackermann function. These bounds exclude
+ * the source tree's LCA caches: DFS intervals require O(N) preparation, and
+ * the first incomparable pair may add O(N log(N + 1)) time and retained
+ * storage for Euler/RMQ. Subsequent queries reuse the caches in O(1) time.
  * `AssumeConnected` is intended for trusted producer-internal hot paths.
  */
 enum class HierarchyConnectivityPolicy {

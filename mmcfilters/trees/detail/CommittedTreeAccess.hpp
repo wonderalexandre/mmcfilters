@@ -78,9 +78,9 @@ class CommittedTreeAccess {
     }
 
     /**
-     * @brief Returns cached smallest row-major support pixels for the current committed tree.
-     * @param tree Committed tree whose spatial support keys are required.
-     * @return Dense smallest-pixel keys indexed by internal node slot.
+     * @brief Returns the minimum pixel index in the node support for every live node.
+     * @param tree Committed tree whose support minima are required.
+     * @return Borrowed dense buffer of minimum pixel indices indexed by internal node slot.
      */
     [[nodiscard]] static std::span<const PixelId> smallestNodeSupportPixels(const MorphologicalTree& tree) {
         ensureNodeSupportMetadata(tree);
@@ -105,7 +105,7 @@ class CommittedTreeAccess {
         return MorphologicalTree::ChildrenRange(&tree, tree.firstChild_[static_cast<std::size_t>(nodeId)], tree.topologyVersion_);
     }
 
-    /** @brief Iterates proper parts of an established node. @param tree Committed tree. @param nodeId Established node id. @return Proper-part range. */
+    /** @brief Iterates pixels in an established node's proper part. @param tree Committed tree. @param nodeId Established node id. @return Proper-part range. */
     [[nodiscard]] static MorphologicalTree::ProperPartRange properParts(const MorphologicalTree& tree, NodeId nodeId) {
         return MorphologicalTree::ProperPartRange(&tree, tree.properHead_[static_cast<std::size_t>(nodeId)], tree.properPartVersion_);
     }

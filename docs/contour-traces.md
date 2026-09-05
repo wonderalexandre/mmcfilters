@@ -1,12 +1,32 @@
 # Contour traces
 
-Use `ContourTraceComputation` when an operation needs the oriented contour edges
-of a node or its ordered external boundaries and holes. Edge extraction and
-boundary tracing are lazy: requesting unordered edges does not pay the cost of
-ordering them. Use [Pixel contours](contours.md) when only the set of contour
-pixels is required.
+`ContourTraceComputation` extracts contour edges and orders them into closed
+boundaries for one node or all live nodes. It derives edges directly from node
+supports, without taking a `ContourComputation` result as input. Use
+[Pixel contours](contours.md) for distinct foreground contour pixels.
 
-## C++ API
+## Geometry and connectivity
+
+A `ContourEdge` identifies a support pixel and a `ContourSide` facing the
+support complement or image exterior: `North`, `West`, `East`, or `South`.
+A `ContourBoundary` records the sequence's offset (`edgeOffset`), edge count
+(`edgeCount`), `ContourBoundaryKind`, and doubled signed area (`doubledSignedArea`).
+Coordinates refer to the original image grid, with rows increasing downward
+and columns to the right. Directed edges keep the support pixel on the right.
+`External` boundaries have positive signed area; `Internal` boundaries around
+holes have negative signed area.
+
+Each edge belongs to exactly one boundary. Consecutive edges share a vertex;
+the last connects to the first without repeating it in the output. Vertices
+and pixels can repeat. Boundary order and each boundary's starting edge are
+unspecified.
+
+At a diagonal contact, a 4-connected foreground uses an 8-connected background
+and a right turn; an 8-connected foreground uses a 4-connected background and
+a left turn. Connectivity determines boundary grouping; it does not change
+the exposed pixel-side edges of a fixed support.
+
+## C++ access and lifetime
 
 ```cpp
 #include <mmcfilters/contours/ContourTraceComputation.hpp>
@@ -15,188 +35,159 @@ using namespace mmcfilters;
 
 ContourTraceComputation contourTraces(tree);
 
-for (ContourEdge edge : contourTraces.edges(nodeId)) {
-    // edge.pixel is a row-major support-pixel identifier.
-    // edge.side is North, West, East, or South.
+for (auto [nodeId, trace] : contourTraces) {
+    for (const ContourBoundary& boundary : trace.boundaries()) {
+        for (ContourEdge edge : trace.boundaryEdges(boundary)) {
+            // Consume edges in boundary order.
+        }
+    }
 }
 
-for (const ContourBoundary& boundary : contourTraces.boundaries(nodeId)) {
-    if (boundary.kind == ContourBoundaryKind::External) {
-        // External boundary.
-    }
+contourTraces.forEachTrace([](NodeId nodeId, ContourTraceView trace) {
+    // Consume the borrowed view or copy it with ContourTrace(trace).
+});
 
-    for (ContourEdge edge : contourTraces.boundaryEdges(boundary)) {
-        // Edges follow boundary order.
-    }
+ContourTrace nodeTrace = contourTraces.trace(nodeId);
+```
+
+Iteration and callbacks visit live nodes in post-order. The C++20 `input_range`
+has single-pass iterators: copies share one position, and each `begin()` starts
+an independent traversal. A yielded `ContourTraceView` and its ranges expire
+when that iterator or a copy advances, or when the traversal is destroyed.
+Callback views expire on return.
+
+`trace(nodeId)` accepts a live internal node and returns an owned `ContourTrace`.
+`ContourTrace(view)` copies a borrowed result. Owned results can outlive the
+computation and tree; their ranges borrow the result's storage. Repeated
+queries and traversals recompute results. Node queries preserve active iterators.
+
+| Method on a trace or view | Result |
+| --- | --- |
+| `boundaries()` | Borrowed span of boundary descriptors |
+| `edges()` | All edges concatenated in boundary order |
+| `externalBoundary()` | Unique external boundary; throws `std::logic_error` if there are zero or multiple |
+| `boundaryEdges(boundary)` | Ordered edges selected by a descriptor from this trace |
+| `boundaryPixels(boundary)` | One `edge.pixel` per ordered edge, including repetitions |
+
+Edge and pixel ranges allocate no storage. Use `boundaryEdges` for a continuous
+sequence: `edges()` can cross between separate boundaries. A projected support
+can have multiple external boundaries. When there is exactly one:
+
+```cpp
+ContourBoundary external = nodeTrace.externalBoundary();
+for (ContourEdge edge : nodeTrace.boundaryEdges(external)) {
+    // Ordered external-boundary edges.
+}
+for (PixelId pixel : nodeTrace.boundaryPixels(external)) {
+    // Different sides can yield the same pixel.
 }
 ```
 
-`edges(node)` returns a borrowed range over the unordered contour edges of one
-node. `boundaries(node)` traces that node and returns an independent vector of
-`ContourBoundary` descriptors. Each descriptor records its kind, its edge range,
-and its doubled signed area. `boundaryEdges(boundary)` returns the ordered edge
-range identified by a descriptor from the same computation. `traceAll()` traces
-every live node.
+The source tree must outlive the computation and its iterators. Its topology
+and pixel mapping must remain unchanged. Iterators retain indexes if the
+computation is destroyed. Rebuild the computation after editing topology or
+pixel mapping. Borrowed views do not check storage validity. Use `break` to
+stop iteration; callback exceptions propagate and release traversal buffers.
 
-The computation references its source tree. The tree must outlive the
-computation and must remain unchanged while its results are used.
+## Input requirements
 
-For a tree of shapes built with complementary adjacencies, construct the
-computation from the valued view so it can determine whether each node is a
-lower or upper shape:
+The source needs a committed rooted topology, a non-empty regular 2D domain,
+and one live smallest node per pixel. A shared canonical 4- or 8-neighbor
+construction adjacency applies to every node. For a tree of shapes with
+complementary adjacencies, pass the valued view:
 
 ```cpp
 ContourTraceComputation contourTraces(valuedTree.asView());
 ```
 
-The constructor copies the connectivity choice for every node and does not
-retain the altitude buffer. Construct another `ContourTraceComputation` after an
-altitude change that alters shape polarity. Construction from topology alone can
-always provide `edges(node)`. If boundary tracing reaches a diagonal ambiguity
-without enough information to select the foreground connectivity,
-`boundaries(node)` throws `std::invalid_argument`.
+Lower shapes use `minAdjacency`; upper shapes use `maxAdjacency`. Altitudes
+below or above the parent's determine polarity. Equal altitudes leave it
+unresolved when these connectivities differ. With `SelfDualSpanImmersion`,
+projected supports use a 4-connected foreground and an 8-connected background
+for both polarities.
 
-## Python API
+Construction copies the connectivity choices without retaining altitudes.
+Rebuild the computation if an altitude change alters polarity. Reaching a
+diagonal contact with unresolved connectivity throws `std::invalid_argument`.
+Missing successors or edges revisited before closure are also errors.
+
+## Python access
 
 ```python
 contour_traces = mmcfilters.ContourTraceComputation(tree)
 
-edges = contour_traces.edges(node_id)
-boundaries = contour_traces.boundaries(node_id)
+for node_id, trace in contour_traces:
+    for boundary in trace.boundaries():
+        boundary_edges = trace.boundary_edges(boundary)
+        boundary_pixels = trace.boundary_pixels(boundary)
 
-for boundary in boundaries:
-    boundary_edges = contour_traces.boundary_edges(boundary)
+contour_traces.for_each_trace(process)  # process(node_id, trace)
+root_trace = contour_traces.trace(tree.root)
+external = root_trace.external_boundary()
 ```
 
-Python returns independent lists for queries on one node. The
-`ContourTraceComputation` object keeps its source tree alive.
+Python accepts a valued tree. Iteration and callbacks copy each emitted view
+into an owned `ContourTrace`; node queries also return owned traces.
+`ContourTraceView` is C++ only. Edge, pixel, and boundary collections are
+independent lists. `external_boundary()` returns one descriptor and raises
+`RuntimeError` unless exactly one external boundary exists.
 
-The public geometry types are:
+Descriptor fields use snake_case: `edge_offset`, `edge_count`, and
+`doubled_signed_area`. The computation and iterators keep the tree alive;
+retained traces and lists are independent of it.
 
-- `ContourSide`, which identifies the side of a support pixel;
-- `ContourEdge`, which contains a pixel identifier and a side;
-- `ContourBoundaryKind`, which distinguishes external and internal boundaries;
-- `ContourBoundary`, which contains an ordered edge range and
-  `doubled_signed_area` in Python or `doubledSignedArea` in C++.
+## Algorithm and cost
 
-## Geometry convention
+An edge's lifetime starts at its support pixel's smallest node and ends just
+before the LCA with its neighbor's smallest node. Empty lifetimes produce no
+events; image-border edges remain through the root. Construction submits
+horizontal and vertical pixel pairs to `MorphologicalTree`'s batch LCA.
+`ContourEdgeDeltaStore` groups events by counting, prefix sums, and direct
+placement. Each edge has at most one addition and removal; no deduplication
+pass is needed.
 
-Each contour edge is one side of a support pixel. Image rows increase downward
-and columns increase to the right. A directed edge keeps the support pixel on
-its right.
+`ContourTraceTraversal` reuses the child buffer with the most edges, merges
+and releases the others, and applies the node's changes. `ContourBoundaryTracer`
+uses a dense vertex index to follow successor edges into closed boundaries.
+Scratch buffers are reused; per-edge geometry retains only the end vertex and
+area contribution. Direction is decoded at diagonal contacts.
 
-Under this convention, external boundaries have positive doubled signed area
-and internal boundaries have negative doubled signed area. The sign determines
-`ContourBoundaryKind`.
+`trace(nodeId)` enumerates support through the node's subtree, tests neighbors
+with ancestry intervals, and orders exposed edges with a sparse vertex index.
 
-At a diagonal contact, tracing uses the foreground connectivity retained from
-tree construction. A 4-connected foreground is paired with an 8-connected
-background, so the successor turns right around the foreground pixel. An
-8-connected foreground is paired with a 4-connected background, so the
-successor turns left around the background pixel.
+Let `P` count image pixels, `N` internal node slots, `P_v` pixels in the support
+of node `v`, `T_v` its subtree's live-node count, and `B_v` its contour edges.
+Let `B = sum_v B_v` over live nodes.
 
-A shared construction adjacency applies to every node. Under complementary
-topographic adjacencies, lower shapes use `minAdjacency` and upper shapes use
-`maxAdjacency`; node and parent altitudes determine the shape polarity. A tree
-of shapes built with `SelfDualSpanImmersion` uses a 4-connected foreground for
-both lower and upper shapes after projection onto the original image grid. This
-matches the scalar bitquad projection, and each foreground uses the
-complementary 8-connected background.
+- Construction: `O(P + N)` time plus LCA preparation and `O(P + N)` storage;
+  see [Pixel contours](contours.md) for batch LCA costs and cache exclusions.
+- Full traversal: `O(P + N + B)` for assembly and ordering, plus `O(P R)` for
+  membership-table resets. The 16-bit generation counter resets about once per
+  65,535 visited nodes; `R` counts those resets. Each traversal uses `O(P + N)`
+  working storage and shares the immutable indexes.
+- `trace(v)` after construction: expected `O(T_v + P_v + B_v)` time and
+  `O(T_v + B_v)` auxiliary storage, including the support iterator's stack.
+  If ancestry intervals are absent, their first construction adds `O(N)` time
+  and tree-owned storage. The result occupies `O(B_v)`.
 
-Every directed edge has one successor determined by this connectivity. A
-boundary closes when the successor is its first directed edge. A boundary may
-visit the same vertex more than once, including its initial vertex, but each
-edge belongs to exactly one boundary. A missing successor or an edge repeated
-before closure is an error.
-
-The API preserves its right-side orientation and the channel order `North`,
-`West`, `East`, and `South`. The SIBGRAPI slides use left-side orientation and
-the order `East`, `West`, `South`, and `North`. Reversing the traversal and the
-sign used by the shoelace formula converts between the conventions. Both
-conventions report a positive area for external boundaries.
+Costs exclude source-tree construction and consumer work. Copying a trace costs
+`O(B_v)`; retaining all traces requires `O(B)` storage. Python also allocates
+and fills each requested list.
 
 ## Relation to scalar attributes
 
-For a node `v`, let `B_v` be the number of its contour edges.
+Edge counts equal `CONTOUR_PERIMETER`; side counts equal the corresponding
+`CONTOUR_SIDE_NORTH`, `CONTOUR_SIDE_WEST`, `CONTOUR_SIDE_EAST`, and
+`CONTOUR_SIDE_SOUTH` attributes. Deduplicating pixels from all edges gives the
+same set as `ContourComputation::contour(v)`.
 
-- `B_v == CONTOUR_PERIMETER(v)`.
-- Counts by side equal `CONTOUR_SIDE_NORTH`, `CONTOUR_SIDE_WEST`,
-  `CONTOUR_SIDE_EAST`, and `CONTOUR_SIDE_SOUTH`.
-- Projecting the edges to unique pixel identifiers produces the same pixel set
-  as `ContourComputation::contour(v)`.
-
-`BITQUAD_NUMBER_HOLES` provides a consistency check when its foreground
-connectivity matches the connectivity used for tracing. Area sums and edge
-coverage alone cannot validate that connectivity: an incorrect split at a
-self-contact can preserve both values while creating a spurious hole.
-
-## Storage and lifetime
-
-Construction stores compact edge additions and removals for every node. The
-first request for a node combines the missing descendants of its subtree and
-caches their final edge sets. Tracing is a separate step, so an operation that
-only needs unordered edges does not allocate ordered boundary descriptors.
-
-The computation captures the topology mutation version. Create a new
-computation after any topology edit.
-
-`hasCachedEdges(node)` and `hasTracedBoundaries(node)` expose the lazy state in
-C++. Python provides `has_cached_edges(node)` and
-`has_traced_boundaries(node)`. `hasTracedAllBoundaries()` in C++, or
-`has_traced_all_boundaries` in Python, becomes true after every live node has
-been traced.
-
-## Complexity
-
-Let:
-
-- `P` be the number of image pixels;
-- `N` be the number of internal node slots;
-- `M(S)` be the number of nodes without cached edges in a requested subtree `S`;
-- `B(S)` be the number of contour edges cached for those nodes;
-- `D(S)` be the number of compact edge changes read for those nodes;
-- `B_v` be the number of contour edges of node `v`.
-
-Construction takes `O(N + P)` time and performs no LCA queries. The first edge
-request for subtree `S` takes `O(M(S) + B(S) + D(S))`; the complete delta store
-is `O(P)` because each pixel has four sides.
-
-Tracing a node takes `O(B_v)` time after initializing the direct vertex index,
-or expected `O(B_v)` time with the sparse hash index. The direct index requires
-`O(P)` initialization once, then resets only the vertices touched by each node.
-Tracing every live node is output-sensitive:
-
-```text
-O(N + P + sum_v B_v)
-```
-
-Cached edge and boundary storage is proportional to the output requested so far.
-Even `edges(root)` caches edge sets for all descendants, although it does not
-trace their ordered boundaries. The API retains these results, so tracing all
-nodes can store `O(sum_v B_v)` output in addition to `O(P + N)` working buffers.
-An LCA cache on the same tree belongs to another operation and is not part of
-this computation.
-
-## Migration
-
-Construct `ContourTraceComputation(tree)` directly in C++ and Python. It replaces
-`ContourTraceComputation::extract(...)` and the former
-`IncrementalContourTraces` result in C++, as well as
-`ContourTraceComputation.extraction(...)` and `ContourTraces` in Python.
-
-The boundary API uses `ContourSide`, `ContourEdge`, `ContourBoundaryKind`, and
-`ContourBoundary`. C++ queries are `edges()`, `boundaries()`, and
-`boundaryEdges()`; Python queries are `edges()`, `boundaries()`, and
-`boundary_edges()`. The former loop-based names and the previous `get` methods
-have no compatibility aliases.
-
-Profiling uses external timers or sampling tools. The library does not expose
-profiling counters or a separate instrumented build mode.
+Summed `doubledSignedArea` values equal twice the support area. Internal-boundary
+counts agree with `BITQUAD_NUMBER_HOLES` when connectivity matches. Edge coverage
+and signed area alone cannot detect an incorrect pairing at a diagonal contact.
 
 ## Related guides
 
-- [Pixel contours](contours.md) covers compact unordered contour pixels.
-- [Attribute catalog](attribute-catalog.md) defines contour side attributes.
-- [Morphological trees](trees.md) defines supports and the mapping from pixels
-  to their smallest nodes.
-- [Editing API](editing-api.md) defines the lifetime of derived data.
+- [Pixel contours](contours.md): distinct foreground contour pixels.
+- [Attribute catalog](attribute-catalog.md): contour and bitquad attributes.
+- [Morphological trees](trees.md): supports, smallest nodes, and LCA queries.
+- [Editing API](editing-api.md): mutations and derived-data lifetime.

@@ -21,7 +21,7 @@ namespace mmcfilters {
 template <AltitudeValue T> struct NativeHierarchyView {
     /// Parent id for every internal-node slot.
     std::span<const NodeId> parent;
-    /// Inclusion-smallest node containing each pixel.
+    /// Smallest node containing each pixel.
     std::span<const NodeId> smallestNodeMap;
     /// Altitude value for every internal-node slot.
     std::span<const T> nodeAltitudes;

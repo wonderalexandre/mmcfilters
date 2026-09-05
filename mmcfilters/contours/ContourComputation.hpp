@@ -19,11 +19,12 @@ namespace mmcfilters {
  * query for one node scans only the requested support and returns an owned pixel
  * vector.
  * The tree must outlive this object and its iterators, and remain unchanged.
- * Index construction and each traversal use O(P + N) auxiliary storage. The
- * tree resolves comparable pairs of smallest nodes from DFS intervals, then
- * selects the lower estimated storage between RMQ and offline Tarjan for the
- * remaining batch. This bound excludes caller-retained output. Pixel order is
- * unspecified.
+ * Index construction and each traversal use O(P + N) auxiliary storage, where
+ * `P` counts pixels and `N` internal node slots. The tree resolves comparable
+ * pairs of smallest nodes from DFS intervals, then selects the lower estimated
+ * storage between RMQ and offline Tarjan for the
+ * remaining batch. This bound excludes caller-retained output and pre-existing
+ * tree-owned LCA caches. Pixel order is unspecified.
  */
 class ContourComputation {
   private:
@@ -79,7 +80,7 @@ class ContourComputation {
       public:
         /// C++20 iterator concept for this single-pass traversal.
         using iterator_concept = std::input_iterator_tag;
-        /// Legacy iterator category used by standard algorithms.
+        /// Iterator category used by standard algorithms.
         using iterator_category = std::input_iterator_tag;
         /// Node identifier and borrowed contour span yielded by dereference.
         using value_type = std::pair<NodeId, std::span<const PixelId>>;

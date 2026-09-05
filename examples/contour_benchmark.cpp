@@ -113,19 +113,34 @@ std::size_t callbackContoursChecksum(const ContourComputation& contours) {
     return sum;
 }
 
-std::uint64_t allBoundariesChecksum(const MorphologicalTree& tree, const ContourTraceComputation& contourTraces) {
+template <typename Trace> std::uint64_t traceChecksum(const Trace& trace) {
     std::uint64_t sum = 0;
-    for (NodeId node : tree.aliveNodeIds()) {
-        sum += static_cast<std::uint64_t>(node + 1);
-        for (const ContourBoundary& boundary : contourTraces.boundaries(node)) {
-            sum += static_cast<std::uint64_t>(boundary.edgeCount + 1);
-            sum += static_cast<std::uint64_t>(boundary.kind == ContourBoundaryKind::External ? 1 : 2);
-            sum += static_cast<std::uint64_t>(boundary.doubledSignedArea >= 0 ? boundary.doubledSignedArea : -boundary.doubledSignedArea);
-            for (ContourEdge edge : contourTraces.boundaryEdges(boundary)) {
-                sum += static_cast<std::uint64_t>(ContourTraceComputation::packEdge(edge.pixel, edge.side)) + 1;
-            }
+    for (const ContourBoundary& boundary : trace.boundaries()) {
+        sum += static_cast<std::uint64_t>(boundary.edgeCount + 1);
+        sum += static_cast<std::uint64_t>(boundary.kind == ContourBoundaryKind::External ? 1 : 2);
+        sum += static_cast<std::uint64_t>(boundary.doubledSignedArea >= 0 ? boundary.doubledSignedArea : -boundary.doubledSignedArea);
+        for (ContourEdge edge : trace.boundaryEdges(boundary)) {
+            sum += static_cast<std::uint64_t>(ContourTraceComputation::packEdge(edge.pixel, edge.side)) + 1;
         }
     }
+    return sum;
+}
+
+std::uint64_t allBoundariesChecksum(const ContourTraceComputation& contourTraces) {
+    std::uint64_t sum = 0;
+    for (auto [node, trace] : contourTraces) {
+        sum += static_cast<std::uint64_t>(node + 1);
+        sum += traceChecksum(trace);
+    }
+    return sum;
+}
+
+std::uint64_t callbackBoundariesChecksum(const ContourTraceComputation& contourTraces) {
+    std::uint64_t sum = 0;
+    contourTraces.forEachTrace([&](NodeId node, ContourTraceView trace) {
+        sum += static_cast<std::uint64_t>(node + 1);
+        sum += traceChecksum(trace);
+    });
     return sum;
 }
 
@@ -178,12 +193,17 @@ template <typename TreeView> void runCase(const std::string& label, const TreeVi
     measure("repeat callback on existing computation", repeats, [&]() { return callbackContoursChecksum(contours); });
 
     auto [contourTraces, traceConstructionMs] = timed([&]() { return ContourTraceComputation(view); });
-    auto [boundaryChecksum, firstBoundaryTraversalMs] = timed([&]() { return allBoundariesChecksum(tree, contourTraces); });
+    auto [boundaryChecksum, firstBoundaryTraversalMs] = timed([&]() { return allBoundariesChecksum(contourTraces); });
+    if (callbackBoundariesChecksum(contourTraces) != boundaryChecksum) {
+        throw std::logic_error("Callback and iterator trace checksums differ.");
+    }
     std::cout << "  contour-trace construction: " << traceConstructionMs << " ms\n"
               << "  first ordered-boundary trace: " << firstBoundaryTraversalMs << " ms checksum=" << boundaryChecksum << '\n';
 
-    measure("construct + trace all boundaries", repeats, [&]() { return allBoundariesChecksum(tree, ContourTraceComputation(view)); });
-    measure("repeat boundary traversal on existing computation", repeats, [&]() { return allBoundariesChecksum(tree, contourTraces); });
+    measure("construct + trace all boundaries", repeats, [&]() { return allBoundariesChecksum(ContourTraceComputation(view)); });
+    measure("construct + callback for all boundaries", repeats, [&]() { return callbackBoundariesChecksum(ContourTraceComputation(view)); });
+    measure("repeat boundary traversal on existing computation", repeats, [&]() { return allBoundariesChecksum(contourTraces); });
+    measure("repeat boundary callback on existing computation", repeats, [&]() { return callbackBoundariesChecksum(contourTraces); });
 }
 
 } // namespace

@@ -11,7 +11,7 @@ namespace mmcfilters::sdrt {
 
 /** @brief Lowest-common-ancestor strategy used by saturated certification. */
 enum class SaturatedMinMaxLcaPolicy {
-    ParentClimb,   ///< Climb current parent paths.
+    ParentClimb,   ///< LCA computation by following parent links.
     BlockedSnapshot, ///< Use periodically rebuilt Euler/RMQ snapshots.
     LinkCut        ///< Maintain the rooted forest with link-cut operations.
 };

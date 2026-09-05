@@ -73,7 +73,7 @@ class ConnectedSubsetTreeLocalizer {
         tree_.requireNotEditing("ConnectedSubsetTreeLocalizer");
     }
 
-    /** @brief Returns the inclusion-smallest node of one valid pixel. @param pixel Valid pixel. @return Pixel's smallest node. */
+    /** @brief Returns the smallest node of one valid pixel. @param pixel Valid pixel. @return Pixel's smallest node. */
     [[nodiscard]] NodeId smallestNode(PixelId pixel) const {
         requireStableTree();
         if (!tree_.isPixel(pixel)) {
@@ -90,7 +90,7 @@ class ConnectedSubsetTreeLocalizer {
      * @brief Returns the inclusion join, equivalently the LCA, of two live smallest nodes.
      * @param lhsSmallestNode First live node.
      * @param rhsSmallestNode Second live node.
-     * @return Inclusion-smallest common ancestor.
+     * @return Lowest common ancestor.
      */
     [[nodiscard]] NodeId join(NodeId lhsSmallestNode, NodeId rhsSmallestNode) const {
         requireStableTree();

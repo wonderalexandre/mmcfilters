@@ -1051,13 +1051,7 @@ def main() -> int:
 
     require(not hasattr(mmcfilters.Attribute, "traversePostOrder"), "post-order traversal callback API should not be public")
     require(not hasattr(mmcfilters, "NodeMT"), "NodeMT should be removed from Python API")
-    require(not hasattr(mmcfilters, "ContourRange"), "cached contour range removed")
-    require(not hasattr(mmcfilters, "ContourProxy"), "legacy ContourProxy alias should be removed")
     require(hasattr(contours, "__iter__"), "contours are directly iterable")
-    for legacy in ("contours_by_node", "trace_all", "has_traced_all_boundaries", "is_contour_materialized", "extraction"):
-        require(not hasattr(contours, legacy), f"legacy contour API removed: {legacy}")
-    require(not hasattr(contours, "contours"), "legacy contours() alias should be removed")
-    require(not hasattr(contours, "isFullyMaterialized"), "isFullyMaterialized alias should be removed")
     require(tree.root == tree.root, "root property should expose a NodeId, not a legacy node handle")
     require(not hasattr(tree, "listNodes"), "legacy listNodes handle API should be removed")
     require(tree.leaves == [5], "leaves is the canonical structural query")

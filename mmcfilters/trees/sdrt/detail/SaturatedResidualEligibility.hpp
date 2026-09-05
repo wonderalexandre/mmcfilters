@@ -142,10 +142,11 @@ template <AltitudeValue T> class SaturatedResidualEligibility {
     SaturatedMinMaxFallbackPolicy fallbackPolicy_;   ///< Selected exact traversal strategy.
 
     /**
-     * @brief Computes a current LCA by altitude-aligned parent climbs.
+     * @brief Computes an LCA by following parent links in the current tree.
      *
      * Mutation-specific exception to MorphologicalTree's static LCA cache:
-     * strict min/max altitude order permits an O(height) query with no global
+     * strict min/max altitude order selects which parent link to follow, permitting
+     * an O(height) query with no global
      * rebuild after a candidate edit. It also resolves dirty snapshot queries.
      * Keep this fallback confined to saturated certification.
      * @param tree Mutable component tree containing both nodes.
@@ -193,7 +194,7 @@ template <AltitudeValue T> class SaturatedResidualEligibility {
     }
 
     /**
-     * @brief Resolves an LCA through the configured index or the parent-climb policy.
+     * @brief Resolves an LCA through the configured index or by following parent links.
      * @param tree Mutable component tree containing both nodes.
      * @param index Policy-selected dynamic LCA index.
      * @param first First node identifier.

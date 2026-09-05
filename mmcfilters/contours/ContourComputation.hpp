@@ -79,7 +79,7 @@ class ContourComputation {
       public:
         /// C++20 iterator concept for this single-pass traversal.
         using iterator_concept = std::input_iterator_tag;
-        /// Legacy iterator category used by standard algorithms.
+        /// Iterator category used by standard algorithms.
         using iterator_category = std::input_iterator_tag;
         /// Node identifier and borrowed contour span yielded by dereference.
         using value_type = std::pair<NodeId, std::span<const PixelId>>;

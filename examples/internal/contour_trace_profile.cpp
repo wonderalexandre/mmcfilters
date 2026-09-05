@@ -1,5 +1,5 @@
 /**
- * External timing harness for edge caching followed by ordered boundary tracing.
+ * External timing harness for node-local and sequential boundary tracing.
  * Build with optimization and debug symbols to use a sampling profiler.
  * All measurements stay in this executable; the library has no profiling hooks.
  */
@@ -69,20 +69,25 @@ template <typename Fn> double timedVoid(Fn&& fn) {
 
 void profileCase(const std::string& label, const MorphologicalTree& tree, int repeats) {
     double totalConstructionMs = 0.0;
-    double totalEdgeAccessMs = 0.0;
-    double totalBoundaryTraceMs = 0.0;
+    double totalRootTraceMs = 0.0;
+    double totalTraversalMs = 0.0;
 
     for (int repeat = 0; repeat < repeats; ++repeat) {
         auto [contourTraces, constructionMs] = timed([&]() { return ContourTraceComputation(tree); });
         totalConstructionMs += constructionMs;
 
-        totalEdgeAccessMs += timedVoid([&]() {
-            const auto edges = contourTraces.edges(tree.root());
-            volatile std::size_t edgeCount = edges.size();
+        totalRootTraceMs += timedVoid([&]() {
+            const auto trace = contourTraces.trace(tree.root());
+            volatile std::size_t edgeCount = trace.edges().size();
             (void)edgeCount;
         });
 
-        totalBoundaryTraceMs += timedVoid([&]() { contourTraces.traceAll(); });
+        totalTraversalMs += timedVoid([&]() {
+            std::size_t edgeCount = 0;
+            contourTraces.forEachTrace([&](NodeId, ContourTraceView trace) { edgeCount += trace.edges().size(); });
+            volatile std::size_t consumedEdgeCount = edgeCount;
+            (void)consumedEdgeCount;
+        });
     }
 
     std::cout << "\n"
@@ -90,8 +95,8 @@ void profileCase(const std::string& label, const MorphologicalTree& tree, int re
               << "  nodes: live=" << tree.numNodes() << " slots=" << tree.numInternalNodeSlots() << " proper_parts=" << tree.numPixels()
               << '\n'
               << "  construction_avg=" << totalConstructionMs / repeats << " ms"
-              << " edge_access_avg=" << totalEdgeAccessMs / repeats << " ms"
-              << " boundary_trace_avg=" << totalBoundaryTraceMs / repeats << " ms\n";
+              << " root_trace_avg=" << totalRootTraceMs / repeats << " ms"
+              << " traversal_avg=" << totalTraversalMs / repeats << " ms\n";
 }
 
 void runProfile(ImageUInt8Ptr image, int repeats) {

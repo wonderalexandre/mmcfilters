@@ -1,8 +1,8 @@
 #pragma once
 
-#include "PendingEdgeLists.hpp"
+#include "../../utils/Common.hpp"
 
-#include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -21,6 +21,12 @@ namespace mmcfilters::contours::detail {
  */
 class ContourEdgeDeltaStore {
   public:
+    /** @brief One distinct packed-edge change assigned to a tree node. */
+    struct Event {
+        NodeId node = InvalidNode; ///< Node receiving the edge change.
+        int packedEdge = -1;       ///< Packed support-pixel edge.
+    };
+
     /**
      * @brief Creates empty edge slices for every internal node.
      * @param numNodes Number of internal node slots.
@@ -43,27 +49,18 @@ class ContourEdgeDeltaStore {
     [[nodiscard]] std::span<const int> removals(NodeId node) const noexcept { return slice(removalEdges_, removalSlices_, node); }
 
     /**
-     * @brief Compacts temporary edge lists into contiguous node slices.
-     * @param additions Pending additions indexed by node.
-     * @param removals Pending removals indexed by node.
-     * @param numPossibleEdges Size of the packed-edge domain.
+     * @brief Groups distinct edge-change events into contiguous node slices.
+     * @param numNodes Number of internal node slots.
+     * @param additions Distinct additions in generation order.
+     * @param removals Distinct removals in generation order.
      * @return Compact addition and removal slices.
      */
-    [[nodiscard]] static ContourEdgeDeltaStore compact(const PendingEdgeLists& additions, const PendingEdgeLists& removals,
-                                                       int numPossibleEdges) {
-        const int numNodes = additions.numNodes();
+    [[nodiscard]] static ContourEdgeDeltaStore groupDistinct(int numNodes, std::span<const Event> additions,
+                                                             std::span<const Event> removals) {
         ContourEdgeDeltaStore store(numNodes);
-        store.additionEdges_.reserve(additions.numEntries());
-        store.removalEdges_.reserve(removals.numEntries());
-        std::vector<uint16_t> edgeMarks(static_cast<std::size_t>(numPossibleEdges), 0);
-        uint16_t markGeneration = 1;
-
-        for (NodeId node = 0; node < numNodes; ++node) {
-            appendNodeEdges(additions, node, store.additionEdges_, store.additionSlices_[static_cast<std::size_t>(node)], edgeMarks,
-                            markGeneration);
-            appendNodeEdges(removals, node, store.removalEdges_, store.removalSlices_[static_cast<std::size_t>(node)], edgeMarks,
-                            markGeneration);
-        }
+        std::vector<uint32_t> writePositions(static_cast<std::size_t>(numNodes));
+        groupEvents(additions, store.additionEdges_, store.additionSlices_, writePositions);
+        groupEvents(removals, store.removalEdges_, store.removalSlices_, writePositions);
         return store;
     }
 
@@ -93,32 +90,34 @@ class ContourEdgeDeltaStore {
     }
 
     /**
-     * @brief Appends one node's distinct pending edges to a compact buffer.
-     * @param lists Pending edge lists.
-     * @param node Source node identifier.
-     * @param edges Destination packed-edge buffer.
-     * @param nodeSlice Slice metadata written for `node`.
-     * @param edgeMarks Deduplication generations indexed by packed edge.
-     * @param markGeneration Active generation, advanced before appending.
+     * @brief Groups one event stream with a counting pass followed by a direct fill.
+     * @param events Distinct changes in generation order.
+     * @param edges Destination buffer grouped by node.
+     * @param slices Destination slices indexed by node.
+     * @param writePositions Reusable end positions for direct placement.
      */
-    static void appendNodeEdges(const PendingEdgeLists& lists, NodeId node, std::vector<int>& edges, Slice& nodeSlice,
-                                std::vector<uint16_t>& edgeMarks, uint16_t& markGeneration) {
-        advanceMarkGeneration(edgeMarks, markGeneration);
-        nodeSlice.offset = checkedUint32(edges.size(), "contour edge delta offset");
-        lists.appendDistinct(node, edges, edgeMarks, markGeneration);
-        nodeSlice.count = checkedUint32(edges.size() - nodeSlice.offset, "contour edge delta count");
-    }
+    static void groupEvents(std::span<const Event> events, std::vector<int>& edges, std::vector<Slice>& slices,
+                            std::vector<uint32_t>& writePositions) {
+        for (Slice& nodeSlice : slices) {
+            nodeSlice = {};
+        }
+        for (const Event& event : events) {
+            assert(event.node >= 0 && event.node < static_cast<NodeId>(slices.size()));
+            ++slices[static_cast<std::size_t>(event.node)].count;
+        }
 
-    /**
-     * @brief Advances the deduplication generation, clearing on wraparound.
-     * @param edgeMarks Deduplication generations indexed by packed edge.
-     * @param markGeneration Active generation.
-     */
-    static void advanceMarkGeneration(std::vector<uint16_t>& edgeMarks, uint16_t& markGeneration) {
-        ++markGeneration;
-        if (markGeneration == 0) {
-            std::fill(edgeMarks.begin(), edgeMarks.end(), 0);
-            markGeneration = 1;
+        std::size_t nextOffset = 0;
+        for (std::size_t node = 0; node < slices.size(); ++node) {
+            Slice& nodeSlice = slices[node];
+            nodeSlice.offset = checkedUint32(nextOffset, "contour edge delta offset");
+            nextOffset += nodeSlice.count;
+            writePositions[node] = checkedUint32(nextOffset, "contour edge delta end");
+        }
+
+        edges.resize(events.size());
+        for (const Event& event : events) {
+            uint32_t& writePosition = writePositions[static_cast<std::size_t>(event.node)];
+            edges[static_cast<std::size_t>(--writePosition)] = event.packedEdge;
         }
     }
 

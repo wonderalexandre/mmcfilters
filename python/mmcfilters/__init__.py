@@ -177,6 +177,7 @@ NodeAttributeSamplingPolicy = _native.NodeAttributeSamplingPolicy
 MissingNodeAttributeSamplePolicy = _native.MissingNodeAttributeSamplePolicy
 ContourComputation = _native.ContourComputation
 ContourTraceComputation = _native.ContourTraceComputation
+ContourTrace = _native.ContourTrace
 ContourEdge = _native.ContourEdge
 ContourBoundary = _native.ContourBoundary
 ContourSide = _native.ContourSide
@@ -246,6 +247,7 @@ __all__ = [
     "UltimateAttributeOpening",
     "ContourComputation",
     "ContourTraceComputation",
+    "ContourTrace",
     "ContourEdge",
     "ContourBoundary",
     "ContourSide",

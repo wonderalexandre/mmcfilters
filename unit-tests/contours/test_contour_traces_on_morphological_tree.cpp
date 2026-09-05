@@ -19,16 +19,8 @@ using namespace mmcfilters::unit_tests;
 
 namespace {
 
-static_assert(std::is_same_v<decltype(std::declval<const ContourTraceComputation&>().boundaries(NodeId{})), std::vector<ContourBoundary>>);
-static_assert(std::is_same_v<decltype(std::declval<const ContourTraceComputation&>().externalBoundary(NodeId{})), ContourBoundary>);
-static_assert(std::is_same_v<decltype(std::declval<const ContourTraceComputation&>().boundaryPixels(ContourBoundary{})),
-                             ContourTraceComputation::PixelRange>);
-template <class T>
-concept HasLegacyLoopMethods = requires(const T& value, const ContourBoundary& boundary) {
-    value.getLoops(NodeId{});
-    value.getLoopEdges(boundary);
-};
-static_assert(!HasLegacyLoopMethods<ContourTraceComputation>);
+static_assert(std::is_same_v<decltype(std::declval<const ContourTraceComputation&>().trace(NodeId{})), ContourTrace>);
+static_assert(std::input_iterator<ContourTraceComputation::iterator>);
 
 std::vector<PixelId> pixelsOfConnectedComponent(const MorphologicalTree& tree, NodeId nodeId) {
     std::vector<PixelId> pixels;
@@ -85,13 +77,17 @@ std::vector<int> expectedEdgesForNode(const MorphologicalTree& tree, NodeId node
     return expected;
 }
 
-std::vector<int> edgeVector(const ContourTraceComputation& traces, NodeId nodeId) {
+template <class Trace> std::vector<int> edgeVector(const Trace& trace) {
     std::vector<int> values;
-    for (ContourEdge edge : traces.edges(nodeId)) {
+    for (ContourEdge edge : trace.edges()) {
         values.push_back(packEdge(edge));
     }
     std::sort(values.begin(), values.end());
     return values;
+}
+
+std::vector<int> edgeVector(const ContourTraceComputation& traces, NodeId nodeId) {
+    return edgeVector(traces.trace(nodeId));
 }
 
 std::vector<PixelId> contourPixelProjection(std::span<const int> packedEdges) {
@@ -114,11 +110,11 @@ std::vector<PixelId> contourVector(const ContourComputation& contours, NodeId no
     return values;
 }
 
-std::vector<int> boundarySignature(const ContourTraceComputation& traces, NodeId nodeId) {
+template <class Trace> std::vector<int> boundarySignature(const Trace& trace) {
     std::vector<std::array<int, 4>> boundarySummaries;
-    for (const ContourBoundary& boundary : traces.boundaries(nodeId)) {
+    for (const ContourBoundary& boundary : trace.boundaries()) {
         int edgeSum = 0;
-        for (ContourEdge edge : traces.boundaryEdges(boundary)) {
+        for (ContourEdge edge : trace.boundaryEdges(boundary)) {
             edgeSum += packEdge(edge) + 1;
         }
         boundarySummaries.push_back(std::array<int, 4>{static_cast<int>(boundary.kind), static_cast<int>(boundary.edgeCount), boundary.doubledSignedArea, edgeSum});
@@ -198,13 +194,13 @@ void verifyOnePixelBoundary() {
     const NodeId nodeId = findNodeByArea(*tree, 1);
     require(nodeId != InvalidNode, "one-pixel fixture must have an area-1 node");
 
-    auto traces = ContourTraceComputation(*tree);
-    auto boundaries = traces.boundaries(nodeId);
+    auto trace = ContourTraceComputation(*tree).trace(nodeId);
+    auto boundaries = trace.boundaries();
     requireEqual(boundaries.size(), std::size_t{1}, "one-pixel support boundary count");
     requireEqual(static_cast<int>(boundaries[0].kind), static_cast<int>(ContourBoundaryKind::External), "one-pixel support boundary kind");
     requireEqual(boundaries[0].edgeCount, uint32_t{4}, "one-pixel support boundary edge count");
     requireEqual(boundaries[0].doubledSignedArea, 2, "one-pixel support signed area");
-    requireEqual(traces.boundaryEdges(boundaries[0]).size(), std::size_t{4}, "one-pixel support boundary edge range");
+    requireEqual(trace.boundaryEdges(boundaries[0]).size(), std::size_t{4}, "one-pixel support boundary edge range");
 }
 
 void verifyRingBoundarySeparation() {
@@ -224,8 +220,8 @@ void verifyRingBoundarySeparation() {
     const NodeId ringNode = findNodeByArea(*tree, 8);
     require(ringNode != InvalidNode, "ring fixture must have an area-8 node");
 
-    auto traces = ContourTraceComputation(*tree);
-    auto boundaries = traces.boundaries(ringNode);
+    auto trace = ContourTraceComputation(*tree).trace(ringNode);
+    auto boundaries = trace.boundaries();
     requireEqual(boundaries.size(), std::size_t{2}, "ring support boundary count");
 
     int externalBoundaries = 0;
@@ -252,16 +248,16 @@ void verifyRingBoundarySeparation() {
     requireEqual(internalEdges, 4, "ring internal edge count");
     requireEqual(totalEdges, 16, "ring total edge count");
 
-    const ContourBoundary external = traces.externalBoundary(ringNode);
+    const ContourBoundary external = trace.externalBoundary();
     requireEqual(static_cast<int>(external.kind), static_cast<int>(ContourBoundaryKind::External), "direct external boundary kind");
     requireEqual(external.edgeCount, uint32_t{12}, "direct external boundary edge count");
 
     std::vector<ContourEdge> orderedEdges;
-    for (ContourEdge edge : traces.boundaryEdges(external)) {
+    for (ContourEdge edge : trace.boundaryEdges(external)) {
         orderedEdges.push_back(edge);
     }
     std::vector<PixelId> orderedPixels;
-    for (PixelId pixel : traces.boundaryPixels(external)) {
+    for (PixelId pixel : trace.boundaryPixels(external)) {
         orderedPixels.push_back(pixel);
     }
     requireEqual(orderedPixels.size(), orderedEdges.size(), "boundary pixel projection size");
@@ -276,8 +272,8 @@ void verifyRingBoundarySeparation() {
 
 void requireBoundarySummary(const MorphologicalTree& tree, NodeId nodeId, int expectedExternalBoundaries, int expectedInternalBoundaries, int expectedExternalEdges,
                         int expectedInternalEdges, const std::string& label) {
-    auto traces = ContourTraceComputation(tree);
-    auto boundaries = traces.boundaries(nodeId);
+    auto trace = ContourTraceComputation(tree).trace(nodeId);
+    auto boundaries = trace.boundaries();
 
     int externalBoundaries = 0;
     int internalBoundaries = 0;
@@ -299,7 +295,7 @@ void requireBoundarySummary(const MorphologicalTree& tree, NodeId nodeId, int ex
     requireEqual(internalBoundaries, expectedInternalBoundaries, label + " internal boundary count");
     requireEqual(externalEdges, expectedExternalEdges, label + " external edge count");
     requireEqual(internalEdges, expectedInternalEdges, label + " internal edge count");
-    requireEqual(externalEdges + internalEdges, static_cast<int>(edgeVector(traces, nodeId).size()), label + " boundary edges must cover cached edges");
+    requireEqual(externalEdges + internalEdges, static_cast<int>(trace.edges().size()), label + " boundaries must cover every trace edge");
 }
 
 void verifyBorderTouchingBoundary() {
@@ -350,8 +346,8 @@ void verifyDiagonalTouchingBoundariesAreDeterministic() {
 }
 
 void verifyClosureAndComplementaryPairing() {
-    // The center background pixel reaches the exterior diagonally. The old
-    // vertex-based stop incorrectly split the 4/8 boundary into two cycles.
+    // The center background pixel reaches the exterior diagonally. Closure must
+    // occur at the initial directed edge even when another vertex is revisited.
     auto image = makeImage(3, 3, {1, 0, 2, 0, 2, 0, 0, 0, 0});
     for (double radius : {1.0, 1.5}) {
         auto tree = makeComponentTree(image, false, radius);
@@ -415,7 +411,8 @@ std::pair<int, int> edgeVertices(ContourEdge edge, int columns) {
     throw std::runtime_error("invalid test side");
 }
 
-void verifyBoundaryTopology(const MorphologicalTree& tree, const ContourTraceComputation& traces, NodeId node, bool fourConnected) {
+template <class Trace>
+void verifyBoundaryTopology(const MorphologicalTree& tree, const Trace& trace, NodeId node, bool fourConnected) {
     const int rows = tree.numRows() + 2;
     const int columns = tree.numColumns() + 2;
     const auto support = pixelsOfConnectedComponent(tree, node);
@@ -425,12 +422,12 @@ void verifyBoundaryTopology(const MorphologicalTree& tree, const ContourTraceCom
     }
     int external = 0, internal = 0, area2 = 0;
     std::vector<int> visitedEdges;
-    for (const auto& boundary : traces.boundaries(node)) {
+    for (const auto& boundary : trace.boundaries()) {
         external += boundary.kind == ContourBoundaryKind::External;
         internal += boundary.kind == ContourBoundaryKind::Internal;
         area2 += boundary.doubledSignedArea;
         std::vector<ContourEdge> edges;
-        for (auto edge : traces.boundaryEdges(boundary)) {
+        for (auto edge : trace.boundaryEdges(boundary)) {
             edges.push_back(edge);
             visitedEdges.push_back(packEdge(edge));
         }
@@ -460,12 +457,8 @@ void verifyExhaustiveTernaryBoundaryTopology() {
             for (double radius : {1.0, 1.5}) {
                 auto tree = makeComponentTree(image, isMaxtree, radius);
                 auto traces = ContourTraceComputation(*tree);
-                // Exercise both sparse lazy queries and dense global tracing.
-                if (pattern % 2 == 0) {
-                    traces.traceAll();
-                }
-                for (NodeId node : tree->aliveNodeIds()) {
-                    verifyBoundaryTopology(*tree, traces, node, radius == 1.0);
+                for (auto [node, trace] : traces) {
+                    verifyBoundaryTopology(*tree, trace, node, radius == 1.0);
                 }
             }
         }
@@ -482,15 +475,13 @@ void verifyShapePolarityPairing() {
             require((findNodeByArea(tree.topology(), 2) != InvalidNode) == eightConnected,
                     "shape fixture must join diagonal pixels exactly for the eight-connected polarity");
             auto traces = ContourTraceComputation(tree.asView());
-            traces.traceAll();
-            for (NodeId node : tree.topology().aliveNodeIds()) {
+            for (auto [node, trace] : traces) {
                 const bool lower = !tree.topology().isRoot(node) && tree.asView().nodeAltitude(node) < tree.asView().nodeAltitude(tree.topology().parent(node));
                 const bool four = immersion == TestTopographicImmersion::Min4Max8 ? lower : !lower;
-                verifyBoundaryTopology(tree.topology(), traces, node, four);
+                verifyBoundaryTopology(tree.topology(), trace, node, four);
                 if (pixelsOfConnectedComponent(tree.topology(), node).size() == 2) {
                     auto topologyOnly = ContourTraceComputation(tree.topology());
-                    requireEqual(topologyOnly.edges(node).size(), std::size_t{8}, "side extraction does not require shape polarity");
-                    requireThrows<std::invalid_argument>([&]() { static_cast<void>(topologyOnly.boundaries(node)); },
+                    requireThrows<std::invalid_argument>([&]() { static_cast<void>(topologyOnly.trace(node)); },
                                                         "ambiguous complementary shape requires a valued view");
                 }
             }
@@ -498,135 +489,74 @@ void verifyShapePolarityPairing() {
     }
 }
 
-void verifyBoundaryAccessOrderIndependence() {
-    auto image = makeComponentTreeFixture();
-
-    for (bool isMaxtree : {true, false}) {
-        auto tree = makeComponentTree(image, isMaxtree);
-        auto baseline = ContourTraceComputation(*tree);
-        baseline.traceAll();
-
-        auto lazy = ContourTraceComputation(*tree);
-        std::vector<NodeId> reverseOrder = collectNodeIds(tree->aliveNodeIds());
-        std::reverse(reverseOrder.begin(), reverseOrder.end());
-        for (NodeId nodeId : reverseOrder) {
-            static_cast<void>(lazy.boundaries(nodeId));
-        }
-
-        const std::string label = isMaxtree ? "max-tree" : "min-tree";
-        for (NodeId nodeId : tree->aliveNodeIds()) {
-            requireVectorEqual(boundarySignature(lazy, nodeId), boundarySignature(baseline, nodeId),
-                               label + " trace boundary access-order independence node " + std::to_string(nodeId));
-        }
-    }
-}
-
-void verifyBoundaryResultsOwnTheirStorage() {
-    auto image = makeComponentTreeFixture();
-    auto tree = makeComponentTree(image, true);
-    auto traces = ContourTraceComputation(*tree);
-    std::vector<NodeId> nodes = collectNodeIds(tree->aliveNodeIds());
-    require(nodes.size() > 1, "owned-boundary fixture must have multiple nodes");
-
-    auto heldBoundaries = traces.boundaries(nodes.front());
-    require(!heldBoundaries.empty(), "owned-boundary fixture first node must expose a boundary");
-    const ContourBoundary expected = heldBoundaries.front();
-
-    for (std::size_t i = 1; i < nodes.size(); ++i) {
-        static_cast<void>(traces.boundaries(nodes[i]));
-    }
-
-    requireEqual(static_cast<int>(heldBoundaries.front().kind), static_cast<int>(expected.kind), "owned boundary kind after later traces");
-    requireEqual(heldBoundaries.front().edgeOffset, expected.edgeOffset, "owned boundary edge offset after later traces");
-    requireEqual(heldBoundaries.front().edgeCount, expected.edgeCount, "owned boundary edge count after later traces");
-    requireEqual(heldBoundaries.front().doubledSignedArea, expected.doubledSignedArea, "owned boundary signed area after later traces");
-    requireEqual(traces.boundaryEdges(heldBoundaries.front()).size(), static_cast<std::size_t>(expected.edgeCount),
-                 "owned boundary must remain usable after later traces");
-}
-
-void verifyBoundariesTraceOnlyRequestedNode() {
+void verifyTraversalMatchesNodeQueries() {
     auto image = makeComponentTreeFixture();
 
     for (bool isMaxtree : {true, false}) {
         auto tree = makeComponentTree(image, isMaxtree);
         auto traces = ContourTraceComputation(*tree);
-        const NodeId root = tree->root();
-
-        static_cast<void>(traces.boundaries(root));
-        require(traces.hasTracedBoundaries(root), "boundaries(root) must trace root");
-
-        int tracedNodes = 0;
-        int liveNodes = 0;
-        for (NodeId nodeId : tree->aliveNodeIds()) {
-            ++liveNodes;
-            if (traces.hasTracedBoundaries(nodeId)) {
-                ++tracedNodes;
-            }
+        std::vector<std::vector<int>> traversalSignatures(static_cast<std::size_t>(tree->numInternalNodeSlots()));
+        std::vector<NodeId> traversalOrder;
+        for (auto [node, trace] : traces) {
+            traversalSignatures[static_cast<std::size_t>(node)] = boundarySignature(trace);
+            traversalOrder.push_back(node);
         }
-        require(liveNodes > 1, "on-demand boundary tracing fixture must have more than one node");
-        requireEqual(tracedNodes, 1, isMaxtree ? "max-tree boundaries(root) must not trace descendants" : "min-tree boundaries(root) must not trace descendants");
 
-        traces.traceAll();
-        require(traces.hasTracedAllBoundaries(), "traceAll must still trace every live node");
+        const std::string label = isMaxtree ? "max-tree" : "min-tree";
+        requireVectorEqual(traversalOrder, collectNodeIds(tree->postOrder()), label + " trace traversal order");
+        for (NodeId node : tree->aliveNodeIds()) {
+            requireVectorEqual(traversalSignatures[static_cast<std::size_t>(node)], boundarySignature(traces.trace(node)),
+                               label + " traversal and node query node " + std::to_string(node));
+        }
     }
 }
 
-void verifyEdgeCachingThenBoundaryTracing() {
+void verifyOwnedTraceRetainsItsStorage() {
     auto image = makeComponentTreeFixture();
     auto tree = makeComponentTree(image, true);
-    ContourTraceComputation traces(*tree);
-    for (NodeId node : tree->aliveNodeIds()) {
-        require(!traces.hasCachedEdges(node) && !traces.hasTracedBoundaries(node), "construction must leave edges and boundaries lazy");
+    auto traces = ContourTraceComputation(*tree);
+    auto iterator = traces.begin();
+    require(iterator != std::default_sentinel, "owned trace fixture must have a first trace");
+    const auto [node, borrowedTrace] = *iterator;
+    ContourTrace ownedTrace(borrowedTrace);
+    const auto expectedSignature = boundarySignature(ownedTrace);
+
+    while (iterator != std::default_sentinel) {
+        ++iterator;
     }
-    static_cast<void>(traces.edges(tree->root()));
-    for (NodeId node : tree->aliveNodeIds()) {
-        require(traces.hasCachedEdges(node), "root edge query must cache all descendant edges");
-        require(!traces.hasTracedBoundaries(node), "edge queries must not trace boundaries");
-        requireVectorEqual(edgeVector(traces, node), expectedEdgesForNode(*tree, node), "cached edges match support masks");
-    }
-    traces.traceAll();
-    require(traces.hasTracedAllBoundaries(), "traceAll must trace every node");
-    for (NodeId node : tree->aliveNodeIds()) {
-        verifyBoundaryTopology(*tree, traces, node, false);
-    }
+    requireVectorEqual(boundarySignature(ownedTrace), expectedSignature, "owned trace after traversal completion");
+    requireVectorEqual(edgeVector(ownedTrace), expectedEdgesForNode(*tree, node), "owned trace edges after traversal completion");
 }
 
-void verifyOnDemandThenGlobalBoundaryTracing() {
-    auto image = ImageUInt8::create(64, 64, std::uint8_t{0});
-    (*image)[ImageUtils::to1D(32, 32, 64)] = std::uint8_t{1};
+void verifyIndependentTraversalPositions() {
+    auto image = makeComponentTreeFixture();
     auto tree = makeComponentTree(image, true);
-    require(tree->numNodes() > 1, "on-demand tracing fixture must have more than one node");
-    ContourTraceComputation traces(*tree);
-    const auto rootSignature = boundarySignature(traces, tree->root());
-    require(traces.hasTracedBoundaries(tree->root()), "on-demand trace must mark root traced");
-    require(!traces.hasTracedAllBoundaries(), "on-demand trace must not trace every node");
-    traces.traceAll();
-    require(traces.hasTracedAllBoundaries(), "global tracing must finish after an on-demand query");
-    requireVectorEqual(boundarySignature(traces, tree->root()), rootSignature, "global tracing preserves already returned boundaries");
-    for (NodeId node : tree->aliveNodeIds()) {
-        verifyBoundaryTopology(*tree, traces, node, false);
-    }
+    auto traces = ContourTraceComputation(*tree);
+    auto first = traces.begin();
+    auto independent = traces.begin();
+    require(first != std::default_sentinel && independent != std::default_sentinel, "independent traversal fixture must be nonempty");
+    requireEqual((*first).first, (*independent).first, "independent traversals begin at the same node");
+
+    auto sharedPosition = first;
+    ++first;
+    requireEqual((*sharedPosition).first, (*first).first, "iterator copies share one traversal position");
+    require((*independent).first != (*first).first, "independent begin calls have separate positions");
 }
 
-void verifyRepeatedOnDemandBoundaryTracingMatchesGlobal() {
-    auto image = ImageUInt8::create(64, 64, std::uint8_t{0});
-    for (int i = 0; i < 12; ++i) {
-        const int row = 4 + (i / 4) * 16;
-        const int column = 4 + (i % 4) * 16;
-        (*image)[ImageUtils::to1D(row, column, 64)] = static_cast<std::uint8_t>(i + 1);
-    }
+void verifyCallbackMatchesIteration() {
+    auto image = makeComponentTreeFixture();
     auto tree = makeComponentTree(image, true);
-    const auto nodes = collectNodeIds(tree->aliveNodeIds());
-    require(nodes.size() > 10, "repeated-query fixture must expose enough nodes");
-    ContourTraceComputation traces(*tree);
-    ContourTraceComputation baseline(*tree);
-    baseline.traceAll();
-    // Cross the sparse/dense scheduling threshold through public queries.
-    for (NodeId node : nodes) {
-        requireVectorEqual(boundarySignature(traces, node), boundarySignature(baseline, node), "on-demand tracing matches global tracing");
-        verifyBoundaryTopology(*tree, traces, node, false);
+    auto traces = ContourTraceComputation(*tree);
+    std::vector<std::vector<int>> expected(static_cast<std::size_t>(tree->numInternalNodeSlots()));
+    for (auto [node, trace] : traces) {
+        expected[static_cast<std::size_t>(node)] = boundarySignature(trace);
     }
-    require(traces.hasTracedAllBoundaries(), "querying every live node must complete tracing");
+    int callbackCount = 0;
+    traces.forEachTrace([&](NodeId node, ContourTraceView trace) {
+        requireVectorEqual(boundarySignature(trace), expected[static_cast<std::size_t>(node)], "callback and iterator trace");
+        ++callbackCount;
+    });
+    requireEqual(callbackCount, tree->numNodes(), "callback trace count");
 }
 
 } // namespace
@@ -641,11 +571,10 @@ int main() {
         if (isMaxtree && contract::validationsEnabled) {
             auto staleTraces = ContourTraceComputation(*tree);
             tree->mergeNodeIntoParent(4);
-            requireThrows<std::logic_error>([&]() { static_cast<void>(staleTraces.hasTracedAllBoundaries()); },
-                                            "boundary trace state must reject topology mutation");
-            requireThrows<std::logic_error>([&]() { static_cast<void>(staleTraces.edges(tree->root())); },
-                                            "trace edge access must reject topology mutation");
-            requireThrows<std::logic_error>([&]() { staleTraces.traceAll(); }, "trace traceAll must reject topology mutation");
+            requireThrows<std::logic_error>([&]() { static_cast<void>(staleTraces.begin()); },
+                                            "trace traversal must reject topology mutation");
+            requireThrows<std::logic_error>([&]() { static_cast<void>(staleTraces.trace(tree->root())); },
+                                            "node trace must reject topology mutation");
         }
 
         auto valuedTree = makeValuedComponentTree(image, isMaxtree);
@@ -678,12 +607,10 @@ int main() {
     verifyClosureAndComplementaryPairing();
     verifyExhaustiveTernaryBoundaryTopology();
     verifyShapePolarityPairing();
-    verifyBoundaryAccessOrderIndependence();
-    verifyBoundaryResultsOwnTheirStorage();
-    verifyBoundariesTraceOnlyRequestedNode();
-    verifyEdgeCachingThenBoundaryTracing();
-    verifyOnDemandThenGlobalBoundaryTracing();
-    verifyRepeatedOnDemandBoundaryTracingMatchesGlobal();
+    verifyTraversalMatchesNodeQueries();
+    verifyOwnedTraceRetainsItsStorage();
+    verifyIndependentTraversalPositions();
+    verifyCallbackMatchesIteration();
 
     return 0;
 }

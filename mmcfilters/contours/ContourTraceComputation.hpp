@@ -1,1400 +1,246 @@
 #pragma once
 
-#include "../localAttributes/FiniteWindowLocalAttributeComputer.hpp"
-#include "../trees/MorphologicalTree.hpp"
+#include "ContourTrace.hpp"
 #include "../trees/ValuedMorphologicalTreeView.hpp"
+#include "../trees/detail/CommittedTreeAccess.hpp"
 #include "../trees/detail/MorphologicalTreeConstructionContextQueries.hpp"
-#include "../trees/detail/TreeTraversalDetail.hpp"
-#include "../utils/Common.hpp"
 #include "../utils/Image.hpp"
+#include "detail/ContourBoundaryTracer.hpp"
 #include "detail/ContourEdgeDeltaStore.hpp"
-#include "detail/PendingEdgeLists.hpp"
+#include "detail/ContourTraceTraversal.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
-#include <limits>
+#include <memory>
+#include <span>
 #include <stdexcept>
-#include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mmcfilters {
 
 /**
- * @brief Side of a support pixel occupied by a contour edge.
- */
-enum class ContourSide : uint8_t { North = 0, West = 1, East = 2, South = 3 };
-
-/**
- * @brief Whether a contour boundary is external or surrounds a hole.
- */
-enum class ContourBoundaryKind : uint8_t { External, Internal };
-
-/**
- * @brief One contour edge represented by its support pixel and side.
- */
-struct ContourEdge {
-    /// Row-major support-pixel index incident to the boundary edge.
-    PixelId pixel = InvalidPixel;
-    /// Side of the support pixel occupied by the boundary edge.
-    ContourSide side = ContourSide::North;
-
-    /// Compares the support pixel and side.
-    friend bool operator==(const ContourEdge&, const ContourEdge&) = default;
-};
-
-/**
- * @brief One ordered external or internal contour boundary.
- */
-struct ContourBoundary {
-    /// Whether this boundary is an external boundary or an internal hole.
-    ContourBoundaryKind kind = ContourBoundaryKind::External;
-    /// First edge in the shared ordered-edge buffer.
-    uint32_t edgeOffset = 0;
-    /// Number of consecutive edges in the boundary.
-    uint32_t edgeCount = 0;
-    /// Doubled signed area under the contour orientation convention.
-    int doubledSignedArea = 0;
-};
-
-/**
- * @brief Lazy contour-edge construction and ordered boundary tracing.
+ * @brief Incremental ordered contour traces on the image domain.
  *
- * Boundary primitives are oriented grid edges. Edges are cached lazily for each
- * node, then traced into ordered boundaries on demand. The orientation convention
- * keeps the support pixel on the right side of each directed edge in image
- * coordinates, where rows grow downward and columns grow rightward. With this
- * convention, external boundaries have positive doubled signed area and internal
- * boundaries have negative doubled signed area.
+ * Construction stores compact edge changes shared by independent traversals.
+ * Iteration emits every live node in post-order and retains only the edge sets
+ * needed to build an unvisited parent. A query for one node scans that node's
+ * support and returns an independently owned trace. The tree must outlive this
+ * object and its iterators and remain unchanged.
  */
 class ContourTraceComputation {
   private:
-    /** @brief Foreground connectivity, or Unknown when construction information is insufficient. */
-    enum class ForegroundConnectivity : uint8_t { Unknown, Four, Eight };
+    using EdgeDeltas = contours::detail::ContourEdgeDeltaStore;       ///< Compact edge changes by node.
+    using ForegroundConnectivity = contours::detail::ForegroundConnectivity; ///< Foreground connectivity at diagonal contacts.
+    using BoundaryTracer = contours::detail::ContourBoundaryTracer;   ///< Ordered boundary tracing implementation.
+    using VertexIndex = contours::detail::ContourVertexIndex;         ///< Vertex-index representation.
 
-    /// Compact edge additions and removals indexed by node.
-    using EdgeDeltas = contours::detail::ContourEdgeDeltaStore;
-
-    /** @brief Buffers prepared before lazy edge caching begins. */
+    /** @brief Immutable buffers prepared during construction. */
     struct ConstructionData {
-        /// Packed edge additions and removals for every node.
-        EdgeDeltas edgeDeltas;
-        /// Capacity estimate for the shared cached-edge buffer.
-        int estimatedCachedEdgeCount = 0;
-        /// Foreground connectivity used to resolve diagonal contacts at each node.
-        std::vector<ForegroundConnectivity> connectivityByNode;
+        EdgeDeltas edgeDeltas;                                   ///< Compact edge changes by node.
+        std::vector<ForegroundConnectivity> connectivityByNode; ///< Digital connectivity by node.
+    };
+
+    /** @brief Immutable indexes shared with independent iterators. */
+    struct SharedIndexes {
+        const MorphologicalTree& tree;                           ///< Stable source topology.
+        std::size_t mutationVersion = 0;                         ///< Captured tree mutation version.
+        EdgeDeltas edgeDeltas;                                   ///< Compact edge changes by node.
+        std::vector<ForegroundConnectivity> connectivityByNode; ///< Digital connectivity by node.
+
+        /** @brief Takes ownership of prepared indexes for one stable tree. @param source Stable source tree. @param data Prepared indexes. */
+        SharedIndexes(const MorphologicalTree& source, ConstructionData data)
+            : tree(source), mutationVersion(source.getMutationVersion()), edgeDeltas(std::move(data.edgeDeltas)),
+              connectivityByNode(std::move(data.connectivityByNode)) {}
+
+        /** @brief Rejects access after a topology mutation. */
+        void requireStableTree() const { tree.requireMutationVersion(mutationVersion, "ContourTraceComputation"); }
+    };
+
+    /** @brief Mutable traversal position shared by copies of one input iterator. */
+    struct TraversalState {
+        std::shared_ptr<const SharedIndexes> indexes;             ///< Shared immutable trace indexes.
+        contours::detail::ContourTraceTraversal traversal;       ///< Incremental traversal at the current node.
+        bool hasCurrentTrace = false;                             ///< Whether dereference currently yields a trace.
+
+        /** @brief Starts an independent traversal over shared indexes. @param source Shared trace indexes. */
+        explicit TraversalState(std::shared_ptr<const SharedIndexes> source)
+            : indexes(std::move(source)), traversal(indexes->tree, indexes->edgeDeltas, indexes->connectivityByNode),
+              hasCurrentTrace(traversal.advance()) {}
     };
 
   public:
     /**
-     * @brief Packs one pixel-side edge into a compact integer id.
+     * @brief Single-pass iterator yielding a node and borrowed ordered trace.
      *
-     * @param pixel Pixel identifier.
-     * @param side Side selected by the operation.
+     * The trace view remains valid until this iterator or one of its copies
+     * advances. Copies share one traversal position. Each call to `begin()`
+     * creates an independent traversal.
+     */
+    class iterator {
+      public:
+        /// C++20 iterator concept for a single-pass traversal.
+        using iterator_concept = std::input_iterator_tag;
+        /// Iterator category used by standard algorithms.
+        using iterator_category = std::input_iterator_tag;
+        /// Node identifier and borrowed ordered trace yielded by dereference.
+        using value_type = std::pair<NodeId, ContourTraceView>;
+        /// Signed iterator-distance type.
+        using difference_type = std::ptrdiff_t;
+
+        iterator() = default;
+
+        /**
+         * @brief Borrows the current node and ordered trace.
+         * @return Current node identifier and trace view.
+         */
+        [[nodiscard]] value_type operator*() const {
+            if (!state_ || !state_->hasCurrentTrace) {
+                throw std::out_of_range("Contour trace iterator is exhausted.");
+            }
+            return state_->traversal.current();
+        }
+
+        /**
+         * @brief Advances to the next node trace.
+         * @return This iterator after advancing.
+         */
+        iterator& operator++() {
+            if (!state_ || !state_->hasCurrentTrace) {
+                throw std::out_of_range("Contour trace iterator is exhausted.");
+            }
+            state_->hasCurrentTrace = state_->traversal.advance();
+            return *this;
+        }
+
+        /** @brief Advances without retaining the preceding borrowed trace. */
+        void operator++(int) { ++*this; }
+
+        /** @brief Tests exhaustion against the traversal sentinel. */
+        friend bool operator==(const iterator& position, std::default_sentinel_t) noexcept {
+            return !position.state_ || !position.state_->hasCurrentTrace;
+        }
+
+      private:
+        friend class ContourTraceComputation;
+
+        /** @brief Creates the first position of an independent traversal. @param indexes Shared trace indexes. */
+        explicit iterator(std::shared_ptr<const SharedIndexes> indexes)
+            : state_(std::make_shared<TraversalState>(std::move(indexes))) {}
+
+        std::shared_ptr<TraversalState> state_; ///< Shared mutable traversal position.
+    };
+
+    /**
+     * @brief Packs one pixel-side edge into a compact integer identifier.
+     * @param pixel Support pixel identifier.
+     * @param side Side occupied by the contour edge.
      * @return Packed contour edge identifier.
      */
-    [[nodiscard]] static int packEdge(PixelId pixel, ContourSide side) { return (4 * pixel) + static_cast<int>(side); }
+    [[nodiscard]] static int packEdge(PixelId pixel, ContourSide side) {
+        return contours::detail::packContourEdge(pixel, side);
+    }
 
     /**
-     * @brief Unpacks one compact edge id.
-     *
-     * @param packedEdge Packed boundary-edge identifier.
-     * @return Support pixel and side represented by `packedEdge`.
+     * @brief Unpacks one compact contour edge identifier.
+     * @param packedEdge Packed contour edge identifier.
+     * @return Support pixel and side represented by the identifier.
      */
     [[nodiscard]] static ContourEdge unpackEdge(int packedEdge) {
-        if (packedEdge < 0) {
-            return {};
+        return contours::detail::unpackContourEdge(packedEdge);
+    }
+
+    /**
+     * @brief Prepares compact edge changes for a stable tree with a 2D domain.
+     * @param tree Source topology, which must outlive the computation.
+     */
+    explicit ContourTraceComputation(const MorphologicalTree& tree)
+        : indexes_(std::make_shared<SharedIndexes>(tree, prepareConstructionData(tree))) {}
+
+    /**
+     * @brief Prepares traces using the current valued view's shape connectivity.
+     * @param view Current valued view whose topology must outlive the computation.
+     */
+    template <AltitudeValue T>
+    explicit ContourTraceComputation(const ValuedMorphologicalTreeView<T>& view)
+        : indexes_(std::make_shared<SharedIndexes>(view.topology(), prepareConstructionData(view))) {}
+
+    /**
+     * @brief Computes an independently owned ordered trace for one live node.
+     *
+     * The support is scanned directly. The result can outlive this computation.
+     *
+     * @param node Live internal node identifier.
+     * @return Owned ordered contour trace.
+     */
+    [[nodiscard]] ContourTrace trace(NodeId node) const {
+        indexes_->requireStableTree();
+        if (!indexes_->tree.isAlive(node)) {
+            throw std::invalid_argument("ContourTraceComputation::trace requires a live internal NodeId.");
         }
-        const int sideIndex = packedEdge & 3;
-        return ContourEdge{packedEdge / 4, static_cast<ContourSide>(sideIndex)};
+
+        std::vector<int> packedEdges;
+        for (PixelId pixel : indexes_->tree.nodeSupport(node)) {
+            for (ContourSide side : contourSides()) {
+                const PixelId neighbor = adjacentPixel(indexes_->tree, pixel, side);
+                if (neighbor == InvalidPixel || !indexes_->tree.isAncestor(node, indexes_->tree.smallestNode(neighbor))) {
+                    packedEdges.push_back(packEdge(pixel, side));
+                }
+            }
+        }
+        if (packedEdges.empty()) {
+            throw std::logic_error("ContourTraceComputation::trace produced an empty edge set for a live node.");
+        }
+
+        std::vector<ContourBoundary> boundaries;
+        BoundaryTracer tracer(indexes_->tree.numRows(), indexes_->tree.numColumns(), VertexIndex::Sparse);
+        tracer.trace(packedEdges, boundaries, indexes_->connectivityByNode[static_cast<std::size_t>(node)]);
+        return ContourTrace(std::move(packedEdges), std::move(boundaries));
+    }
+
+    /**
+     * @brief Starts an independent incremental post-order traversal.
+     * @return Iterator positioned at the first trace, or exhausted.
+     */
+    [[nodiscard]] iterator begin() const {
+        indexes_->requireStableTree();
+        return iterator(indexes_);
+    }
+
+    /** @brief Returns the exhaustion sentinel shared by all traversals. @return Traversal sentinel. */
+    [[nodiscard]] std::default_sentinel_t end() const noexcept { return {}; }
+
+    /**
+     * @brief Calls `consumer(node, trace)` once for every live node.
+     *
+     * The borrowed trace view expires after the callback. Exceptions propagate
+     * and release traversal storage.
+     *
+     * @param consumer Callback accepting a node identifier and trace view.
+     */
+    template <typename Consumer> void forEachTrace(Consumer&& consumer) const {
+        for (auto [node, traceView] : *this) {
+            consumer(node, traceView);
+            indexes_->requireStableTree();
+        }
     }
 
   private:
-    /** @brief Cardinal direction of an oriented contour edge. */
-    enum class Direction : uint8_t { North = 0, East = 1, South = 2, West = 3 };
-
-    /** @brief Storage strategy for the mapping from vertices to outgoing edges. */
-    enum class VertexIndexMode : uint8_t { Dense, Sparse };
-
-    /** @brief Stores one oriented contour edge and its accumulated geometry. */
-    struct DirectedEdge {
-        /// Compact identifier of the source pixel and side.
-        int packedEdge = -1;
-        /// Grid vertex where the directed edge begins.
-        int startVertex = -1;
-        /// Grid vertex where the directed edge ends.
-        int endVertex = -1;
-        /// Direction from `startVertex` to `endVertex`.
-        Direction direction = Direction::North;
-        /// Contribution of this edge to twice the signed boundary area.
-        int doubledSignedArea = 0;
-
-        /**
-         * @brief Constructs a default `DirectedEdge`.
-         */
-        DirectedEdge() = default;
-
-        /**
-         * @brief Constructs `DirectedEdge` from the supplied inputs.
-         *
-         * @param packedEdge Packed boundary-edge identifier.
-         * @param startVertex Starting vertex identifier.
-         * @param endVertex Terminal vertex of the traced directed edge.
-         * @param direction Direction code of the traced edge.
-         * @param doubledSignedArea Twice the signed area accumulated for the boundary.
-         */
-        DirectedEdge(int packedEdge, int startVertex, int endVertex, Direction direction, int doubledSignedArea)
-            : packedEdge(packedEdge), startVertex(startVertex), endVertex(endVertex), direction(direction), doubledSignedArea(doubledSignedArea) {}
-    };
-
-    const MorphologicalTree& tree_; ///< Stable source tree.
-    std::vector<ForegroundConnectivity> connectivityByNode_; ///< Foreground connectivity for each internal node slot.
-    std::size_t treeMutationVersion_ = 0; ///< Tree mutation version captured at construction.
-    mutable EdgeDeltas edgeDeltas_; ///< Edge changes retained until all node edge sets are cached.
-
-    mutable std::vector<int> cachedPackedEdges_; ///< Shared storage for cached contour edges.
-    mutable std::vector<uint32_t> edgeOffsets_; ///< First cached edge for each internal node slot.
-    mutable std::vector<uint32_t> edgeCounts_; ///< Number of cached edges for each internal node slot.
-    mutable std::vector<uint8_t> edgesCached_; ///< Whether each internal node slot has a cached edge set.
-    mutable std::size_t numNodesWithCachedEdges_ = 0; ///< Number of live nodes with cached edge sets.
-
-    mutable std::vector<ContourBoundary> cachedBoundaries_; ///< Shared storage for cached boundary descriptors.
-    mutable std::vector<uint32_t> boundaryOffsets_; ///< First cached boundary for each internal node slot.
-    mutable std::vector<uint32_t> boundaryCounts_; ///< Number of cached boundaries for each internal node slot.
-    mutable std::vector<uint8_t> boundariesCached_; ///< Whether each internal node slot has cached boundaries.
-    mutable std::size_t numNodesWithCachedBoundaries_ = 0; ///< Number of live nodes with cached boundaries.
-
-    mutable std::vector<uint16_t> edgeMarks_; ///< Generation marks used while composing node edge sets.
-    mutable uint16_t edgeMarkGeneration_ = 1; ///< Active generation in `edgeMarks_`.
-    mutable bool edgeScratchReleased_ = false; ///< Whether edge construction scratch storage was released.
-
-    mutable std::vector<DirectedEdge> directedEdges_; ///< Geometry for the node edges currently being traced.
-    mutable std::vector<int> outgoingEdgeHeads_; ///< Dense first-outgoing-edge index for each grid vertex.
-    mutable std::vector<int> nextOutgoingEdges_; ///< Linked-list successor for each directed edge.
-    mutable std::vector<int> touchedVertices_; ///< Dense vertex entries that must be reset after tracing.
-    mutable std::vector<int> sparseVertexKeys_; ///< Grid-vertex keys in the sparse outgoing-edge table.
-    mutable std::vector<int> sparseOutgoingEdgeHeads_; ///< First outgoing edge stored in each sparse table slot.
-    mutable std::vector<uint32_t> sparseSlotGenerations_; ///< Active generation of each sparse table slot.
-    mutable std::vector<int> touchedSparseSlots_; ///< Sparse slots populated by the current node trace.
-    mutable uint32_t sparseGeneration_ = 1; ///< Active generation in the sparse vertex table.
-    mutable std::size_t numIndividualNodeTraces_ = 0; ///< Individual traces performed before selecting dense indexing.
-    mutable std::vector<uint32_t> visitedGenerations_; ///< Visit generation for each edge of the current node.
-    mutable uint32_t visitGeneration_ = 1; ///< Active generation in `visitedGenerations_`.
-    mutable std::vector<int> orderedNodeEdges_; ///< Ordered packed edges produced for the current node.
-    mutable std::vector<ContourBoundary> nodeBoundaries_; ///< Boundary descriptors produced for the current node.
-    mutable bool traceScratchReleased_ = false; ///< Whether boundary-tracing scratch storage was released.
-
-    /**
-     * @brief Takes ownership of the prepared buffers without copying them.
-     * @param tree Stable source topology.
-     * @param constructionData Edge changes and foreground connectivity.
-     */
-    ContourTraceComputation(const MorphologicalTree& tree, ConstructionData constructionData)
-        : tree_(tree), connectivityByNode_(std::move(constructionData.connectivityByNode)), treeMutationVersion_(tree.getMutationVersion()),
-          edgeDeltas_(std::move(constructionData.edgeDeltas)),
-          edgeOffsets_(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0),
-          edgeCounts_(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0),
-          edgesCached_(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0),
-          boundaryOffsets_(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0),
-          boundaryCounts_(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0),
-          boundariesCached_(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0),
-          edgeMarks_(static_cast<std::size_t>(4 * tree.numRows() * tree.numColumns()), 0) {
-        if (constructionData.estimatedCachedEdgeCount > 0) {
-            cachedPackedEdges_.reserve(static_cast<std::size_t>(constructionData.estimatedCachedEdgeCount));
-        }
-    }
-
-  public:
-    /**
-     * @brief Immutable range over unpacked boundary edges.
-     */
-    class EdgeRange {
-      public:
-        /**
-         * @brief Forward iterator that unpacks boundary edges on dereference.
-         */
-        class iterator {
-          public:
-            /// Standard category for a multi-pass forward iterator.
-            using iterator_category = std::forward_iterator_tag;
-            /// Unpacked edge value yielded by dereference.
-            using value_type = ContourEdge;
-            /// Signed iterator-distance type.
-            using difference_type = std::ptrdiff_t;
-            /// No pointer type is exposed because dereference returns a value.
-            using pointer = void;
-            /// Value-returning reference type.
-            using reference = value_type;
-
-            /**
-             * @brief Creates an empty iterator.
-             */
-            iterator() = default;
-
-            /**
-             * @brief Creates an iterator over a packed-edge buffer position.
-             *
-             * @param packedEdges Shared packed edge buffer.
-             * @param index Zero-based index.
-             */
-            iterator(const std::vector<int>* packedEdges, std::size_t index) : packedEdges_(packedEdges), index_(index) {}
-
-            /**
-             * @brief Returns the unpacked edge at the current position.
-             *
-             * @return The unpacked edge at the current position.
-             */
-            value_type operator*() const { return ContourTraceComputation::unpackEdge((*packedEdges_)[index_]); }
-
-            /**
-             * @brief Advances to the next packed edge.
-             *
-             * @return Mutable reference to the updated object.
-             */
-            iterator& operator++() {
-                ++index_;
-                return *this;
-            }
-
-            /**
-             * @brief Advances and returns the previous iterator position.
-             *
-             * @return Iterator position before the advancement.
-             */
-            iterator operator++(int) {
-                iterator previous(*this);
-                ++(*this);
-                return previous;
-            }
-
-            /// Compares the backing buffer and position.
-            friend bool operator==(const iterator& lhs, const iterator& rhs) {
-                return lhs.packedEdges_ == rhs.packedEdges_ && lhs.index_ == rhs.index_;
-            }
-
-            /// Returns true when two iterator positions differ.
-            friend bool operator!=(const iterator& lhs, const iterator& rhs) { return !(lhs == rhs); }
-
-          private:
-            /// Shared packed-edge buffer traversed by this iterator.
-            const std::vector<int>* packedEdges_ = nullptr;
-            /// Current zero-based position in `packedEdges_`.
-            std::size_t index_ = 0;
-        };
-
-        /**
-         * @brief Creates an empty edge range.
-         */
-        EdgeRange() = default;
-
-        /**
-         * @brief Creates a view over `size` packed edges starting at `offset`.
-         *
-         * @param packedEdges Shared packed edge buffer.
-         * @param offset Offset into the underlying storage.
-         * @param size Number of edges in the range.
-         */
-        EdgeRange(const std::vector<int>* packedEdges, std::size_t offset, std::size_t size)
-            : packedEdges_(packedEdges), offset_(offset), size_(size) {}
-
-        /**
-         * @brief Returns an iterator to the first edge.
-         *
-         * @return An iterator to the first edge.
-         */
-        iterator begin() const { return iterator(packedEdges_, offset_); }
-
-        /**
-         * @brief Returns the exclusive end iterator.
-         *
-         * @return The exclusive end iterator.
-         */
-        iterator end() const { return iterator(packedEdges_, offset_ + size_); }
-
-        /**
-         * @brief Returns whether the range contains no edges.
-         *
-         * @return Whether the range contains no edges.
-         */
-        [[nodiscard]] bool empty() const noexcept { return size_ == 0; }
-
-        /**
-         * @brief Returns the number of edges in the range.
-         *
-         * @return The number of edges in the range.
-         */
-        [[nodiscard]] std::size_t size() const noexcept { return size_; }
-
-      private:
-        /// Shared packed-edge buffer viewed by this range.
-        const std::vector<int>* packedEdges_ = nullptr;
-        /// Position of the first edge in `packedEdges_`.
-        std::size_t offset_ = 0;
-        /// Number of edges in the range.
-        std::size_t size_ = 0;
-    };
-
-    /**
-     * @brief Immutable projection of ordered boundary edges onto support pixels.
-     *
-     * One pixel is yielded for each edge. Consecutive edges may therefore yield
-     * the same pixel when they occupy different sides of that pixel.
-     */
-    class PixelRange {
-      public:
-        /**
-         * @brief Forward iterator that returns the support pixel of each edge.
-         */
-        class iterator {
-          public:
-            /// Standard category for a multi-pass forward iterator.
-            using iterator_category = std::forward_iterator_tag;
-            /// Pixel identifier yielded by dereference.
-            using value_type = PixelId;
-            /// Signed iterator-distance type.
-            using difference_type = std::ptrdiff_t;
-            /// No pointer type is exposed because dereference returns a value.
-            using pointer = void;
-            /// Value-returning reference type.
-            using reference = value_type;
-
-            /**
-             * @brief Creates an empty iterator.
-             */
-            iterator() = default;
-
-            /**
-             * @brief Creates a pixel projection over an edge iterator.
-             * @param edgeIterator Current edge iterator.
-             */
-            explicit iterator(EdgeRange::iterator edgeIterator) : edgeIterator_(edgeIterator) {}
-
-            /**
-             * @brief Returns the support pixel of the current edge.
-             * @return Support pixel identifier.
-             */
-            value_type operator*() const { return (*edgeIterator_).pixel; }
-
-            /**
-             * @brief Advances to the next edge pixel.
-             * @return Mutable reference to the updated object.
-             */
-            iterator& operator++() {
-                ++edgeIterator_;
-                return *this;
-            }
-
-            /**
-             * @brief Advances and returns the previous iterator position.
-             * @return Iterator position before the advancement.
-             */
-            iterator operator++(int) {
-                iterator previous(*this);
-                ++(*this);
-                return previous;
-            }
-
-            /// Compares the underlying edge positions.
-            friend bool operator==(const iterator& lhs, const iterator& rhs) { return lhs.edgeIterator_ == rhs.edgeIterator_; }
-
-            /// Returns true when two iterator positions differ.
-            friend bool operator!=(const iterator& lhs, const iterator& rhs) { return !(lhs == rhs); }
-
-          private:
-            /// Edge iterator whose support pixel is projected on dereference.
-            EdgeRange::iterator edgeIterator_;
-        };
-
-        /**
-         * @brief Creates an empty pixel range.
-         */
-        PixelRange() = default;
-
-        /**
-         * @brief Creates a support-pixel projection of an edge range.
-         * @param edges Borrowed ordered edge range.
-         */
-        explicit PixelRange(EdgeRange edges) : edges_(edges) {}
-
-        /**
-         * @brief Returns an iterator to the first edge pixel.
-         * @return Iterator to the first edge pixel.
-         */
-        iterator begin() const { return iterator(edges_.begin()); }
-
-        /**
-         * @brief Returns the exclusive end iterator.
-         * @return Exclusive end iterator.
-         */
-        iterator end() const { return iterator(edges_.end()); }
-
-        /**
-         * @brief Returns whether the range contains no pixels.
-         * @return Whether the range contains no pixels.
-         */
-        [[nodiscard]] bool empty() const noexcept { return edges_.empty(); }
-
-        /**
-         * @brief Returns the number of projected edge pixels, including repetitions.
-         * @return Number of projected edge pixels.
-         */
-        [[nodiscard]] std::size_t size() const noexcept { return edges_.size(); }
-
-      private:
-        /// Ordered edge range projected by this view.
-        EdgeRange edges_;
-    };
-
-    /**
-     * @brief Returns the unordered contour edges of one node.
-     *
-     * @param node Node identifier.
-     * @return Borrowed range over the node's contour edges.
-     */
-    [[nodiscard]] EdgeRange edges(NodeId node) const {
-        requireStableTree("ContourTraceComputation::edges");
-        requireLiveTraceNode(node, "ContourTraceComputation::edges");
-        cacheSubtreeEdges(node);
-        return EdgeRange(&cachedPackedEdges_, edgeOffsets_[static_cast<std::size_t>(node)], edgeCounts_[static_cast<std::size_t>(node)]);
+    /** @brief Returns the four public contour sides in channel order. @return Ordered contour sides. */
+    [[nodiscard]] static constexpr std::array<ContourSide, 4> contourSides() {
+        return {ContourSide::North, ContourSide::West, ContourSide::East, ContourSide::South};
     }
 
     /**
-     * @brief Returns an owning copy of the boundary metadata for one node.
-     *
-     * The returned vector remains valid when later lazy queries cache
-     * boundaries for other nodes.
-     *
-     * @param node Node identifier.
-     * @return An owning copy of the boundary metadata for one node.
+     * @brief Converts canonical grid adjacency to digital connectivity.
+     * @param adjacency Grid adjacency retained by tree construction.
+     * @return Four, eight, or unknown connectivity.
      */
-    [[nodiscard]] std::vector<ContourBoundary> boundaries(NodeId node) const {
-        requireStableTree("ContourTraceComputation::boundaries");
-        requireLiveTraceNode(node, "ContourTraceComputation::boundaries");
-        ensureNodeBoundariesTraced(node);
-        const auto nodeBoundaryOffset = static_cast<std::size_t>(boundaryOffsets_[static_cast<std::size_t>(node)]);
-        const auto numNodeBoundaries = static_cast<std::size_t>(boundaryCounts_[static_cast<std::size_t>(node)]);
-        if (numNodeBoundaries == 0) {
-            return {};
-        }
-        return std::vector<ContourBoundary>(cachedBoundaries_.begin() + static_cast<std::ptrdiff_t>(nodeBoundaryOffset),
-                                             cachedBoundaries_.begin() + static_cast<std::ptrdiff_t>(nodeBoundaryOffset + numNodeBoundaries));
-    }
-
-    /**
-     * @brief Returns the unique external boundary of one node.
-     *
-     * @param node Node identifier.
-     * @return Owning descriptor of the external boundary.
-     * @throws std::logic_error If the node support has no external boundary or
-     * more than one external boundary.
-     */
-    [[nodiscard]] ContourBoundary externalBoundary(NodeId node) const {
-        requireStableTree("ContourTraceComputation::externalBoundary");
-        requireLiveTraceNode(node, "ContourTraceComputation::externalBoundary");
-        ensureNodeBoundariesTraced(node);
-
-        const auto firstBoundary = static_cast<std::size_t>(boundaryOffsets_[static_cast<std::size_t>(node)]);
-        const auto numBoundaries = static_cast<std::size_t>(boundaryCounts_[static_cast<std::size_t>(node)]);
-        const ContourBoundary* external = nullptr;
-        for (std::size_t index = 0; index < numBoundaries; ++index) {
-            const ContourBoundary& boundary = cachedBoundaries_[firstBoundary + index];
-            if (boundary.kind != ContourBoundaryKind::External) {
-                continue;
-            }
-            if (external != nullptr) {
-                throw std::logic_error("ContourTraceComputation::externalBoundary requires a node support with exactly one external boundary.");
-            }
-            external = &boundary;
-        }
-        if (external == nullptr) {
-            throw std::logic_error("ContourTraceComputation::externalBoundary requires a node support with exactly one external boundary.");
-        }
-        return *external;
-    }
-
-    /**
-     * @brief Returns the ordered edges belonging to one boundary.
-     *
-     * @param boundary Contour boundary descriptor.
-     * @return The ordered edges belonging to one boundary.
-     */
-    [[nodiscard]] EdgeRange boundaryEdges(const ContourBoundary& boundary) const {
-        requireStableTree("ContourTraceComputation::boundaryEdges");
-        const std::size_t edgeOffset = boundary.edgeOffset;
-        const std::size_t numEdges = boundary.edgeCount;
-        if (edgeOffset > cachedPackedEdges_.size() || numEdges > cachedPackedEdges_.size() - edgeOffset) {
-            throw std::invalid_argument("ContourBoundary does not belong to this ContourTraceComputation.");
-        }
-        return EdgeRange(&cachedPackedEdges_, edgeOffset, numEdges);
-    }
-
-    /**
-     * @brief Returns the ordered support-pixel projection of one boundary.
-     *
-     * One pixel is returned for each boundary edge. A pixel is repeated when
-     * different boundary edges occupy different sides of that pixel.
-     *
-     * @param boundary Contour boundary descriptor.
-     * @return Borrowed range over the support pixel of each ordered edge.
-     */
-    [[nodiscard]] PixelRange boundaryPixels(const ContourBoundary& boundary) const { return PixelRange(boundaryEdges(boundary)); }
-
-    /**
-     * @brief Caches edges and traces ordered boundaries for every live node.
-     */
-    void traceAll() const {
-        requireStableTree("ContourTraceComputation::traceAll");
-        traceSubtree(tree_.root());
-    }
-
-    /**
-     * @brief Tests whether every live node has cached ordered boundaries.
-     *
-     * @return True after every live node has been traced.
-     */
-    [[nodiscard]] bool hasTracedAllBoundaries() const {
-        requireStableTree("ContourTraceComputation::hasTracedAllBoundaries");
-        for (NodeId node : tree_.aliveNodeIds()) {
-            if (!boundariesCached_[static_cast<std::size_t>(node)]) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * @brief Tests whether one node has cached contour edges.
-     * @param node Live node identifier.
-     * @return True when `edges(node)` has cached the edge set.
-     */
-    [[nodiscard]] bool hasCachedEdges(NodeId node) const {
-        requireStableTree("ContourTraceComputation::hasCachedEdges");
-        requireLiveTraceNode(node, "ContourTraceComputation::hasCachedEdges");
-        return static_cast<bool>(edgesCached_[static_cast<std::size_t>(node)]);
-    }
-
-    /**
-     * @brief Tests whether one node has cached ordered boundaries.
-     * @param node Live node identifier.
-     * @return True when the node's boundaries have been traced.
-     */
-    [[nodiscard]] bool hasTracedBoundaries(NodeId node) const {
-        requireStableTree("ContourTraceComputation::hasTracedBoundaries");
-        requireLiveTraceNode(node, "ContourTraceComputation::hasTracedBoundaries");
-        return static_cast<bool>(boundariesCached_[static_cast<std::size_t>(node)]);
-    }
-
-  private:
-    /**
-     * @brief Rejects access after a topology mutation.
-     * @param context Operation name used in diagnostics.
-     */
-    void requireStableTree(const char* context) const { tree_.requireMutationVersion(treeMutationVersion_, context); }
-
-    /**
-     * @brief Rejects a node outside the live internal node domain.
-     * @param node Candidate node identifier.
-     * @param context Operation name used in diagnostics.
-     */
-    void requireLiveTraceNode(NodeId node, const char* context) const {
-        if (!tree_.isAlive(node)) {
-            throw std::invalid_argument(std::string(context) + " requires a live internal NodeId.");
-        }
-    }
-
-    /**
-     * @brief Converts a checked buffer index to `uint32_t`.
-     * @param value Buffer index or count.
-     * @param context Operation name used in diagnostics.
-     * @return `value` represented as `uint32_t`.
-     */
-    static uint32_t checkedUint32(std::size_t value, const char* context) {
-        if (value > static_cast<std::size_t>(std::numeric_limits<uint32_t>::max())) {
-            throw std::overflow_error(std::string(context) + " exceeds uint32_t.");
-        }
-        return static_cast<uint32_t>(value);
-    }
-
-    /**
-     * @brief Clears a vector and releases its capacity.
-     * @param values Vector whose storage is released.
-     */
-    template <class T> static void releaseVector(std::vector<T>& values) { std::vector<T>().swap(values); }
-
-    /**
-     * @brief Tests whether every live node has a cached edge set.
-     * @return True when edge construction scratch storage can be released.
-     */
-    [[nodiscard]] bool allEdgesCached() const { return numNodesWithCachedEdges_ == static_cast<std::size_t>(tree_.numNodes()); }
-
-    /**
-     * @brief Tests whether every live node has cached ordered boundaries.
-     * @return True when boundary tracing scratch storage can be released.
-     */
-    [[nodiscard]] bool allBoundariesCached() const { return numNodesWithCachedBoundaries_ == static_cast<std::size_t>(tree_.numNodes()); }
-
-    /**
-     * @brief Releases edge construction buffers after all edge sets are cached.
-     */
-    void releaseEdgeScratchIfComplete() const {
-        if (edgeScratchReleased_ || !allEdgesCached()) {
-            return;
-        }
-
-        edgeDeltas_ = EdgeDeltas{};
-        releaseVector(edgeMarks_);
-        edgeMarkGeneration_ = 1;
-        edgeScratchReleased_ = true;
-    }
-
-    /**
-     * @brief Releases the sparse vertex index.
-     */
-    void releaseSparseTraceOutgoingScratch() const {
-        releaseVector(sparseVertexKeys_);
-        releaseVector(sparseOutgoingEdgeHeads_);
-        releaseVector(sparseSlotGenerations_);
-        releaseVector(touchedSparseSlots_);
-        sparseGeneration_ = 1;
-    }
-
-    /**
-     * @brief Releases boundary tracing buffers after all nodes are traced.
-     */
-    void releaseTraceScratchIfComplete() const {
-        if (traceScratchReleased_ || !allBoundariesCached()) {
-            return;
-        }
-
-        resetDenseVertexIndex();
-        releaseVector(directedEdges_);
-        releaseVector(outgoingEdgeHeads_);
-        releaseVector(nextOutgoingEdges_);
-        releaseVector(touchedVertices_);
-        releaseSparseTraceOutgoingScratch();
-        releaseVector(visitedGenerations_);
-        releaseVector(orderedNodeEdges_);
-        releaseVector(nodeBoundaries_);
-        numIndividualNodeTraces_ = 0;
-        visitGeneration_ = 1;
-        traceScratchReleased_ = true;
-    }
-
-    /**
-     * @brief Starts a new edge mark generation.
-     */
-    void advanceEdgeMarkGeneration() const {
-        ++edgeMarkGeneration_;
-        if (edgeMarkGeneration_ == 0) {
-            std::fill(edgeMarks_.begin(), edgeMarks_.end(), 0);
-            edgeMarkGeneration_ = 1;
-        }
-    }
-
-    /**
-     * @brief Appends an edge that is absent from the current set.
-     * @param edges Current node edge set.
-     * @param packedEdge Packed boundary-edge identifier.
-     */
-    void appendIfAbsent(std::vector<int>& edges, int packedEdge) const {
-        if (packedEdge < 0 || packedEdge >= static_cast<int>(edgeMarks_.size())) {
-            return;
-        }
-        if (edgeMarks_[static_cast<std::size_t>(packedEdge)] != edgeMarkGeneration_) {
-            edgeMarks_[static_cast<std::size_t>(packedEdge)] = edgeMarkGeneration_;
-            edges.push_back(packedEdge);
-        }
-    }
-
-    /**
-     * @brief Removes an edge from the current set when present.
-     * @param packedEdge Packed boundary-edge identifier.
-     */
-    void removeIfPresent(int packedEdge) const {
-        if (packedEdge >= 0 && packedEdge < static_cast<int>(edgeMarks_.size())) {
-            edgeMarks_[static_cast<std::size_t>(packedEdge)] = 0;
-        }
-    }
-
-    /**
-     * @brief Returns an iterator to the first cached edge of a node.
-     *
-     * @param node Node identifier.
-     * @return Iterator to the first packed edge.
-     */
-    std::vector<int>::const_iterator cachedEdgeBegin(NodeId node) const {
-        return cachedPackedEdges_.begin() + static_cast<std::ptrdiff_t>(edgeOffsets_[static_cast<std::size_t>(node)]);
-    }
-
-    /**
-     * @brief Returns an iterator past the last cached edge of a node.
-     *
-     * @param node Node identifier.
-     * @return Iterator past the last packed edge.
-     */
-    std::vector<int>::const_iterator cachedEdgeEnd(NodeId node) const {
-        return cachedEdgeBegin(node) + static_cast<std::ptrdiff_t>(edgeCounts_[static_cast<std::size_t>(node)]);
-    }
-
-    /**
-     * @brief Appends one node's contour edges to the shared cache.
-     * @param node Live node identifier.
-     * @param edges Packed contour edges for `node`.
-     */
-    void cacheNodeEdges(NodeId node, const std::vector<int>& edges) const {
-        edgeOffsets_[static_cast<std::size_t>(node)] = checkedUint32(cachedPackedEdges_.size(), "cached trace edge offset");
-        edgeCounts_[static_cast<std::size_t>(node)] = checkedUint32(edges.size(), "cached trace edge count");
-        cachedPackedEdges_.insert(cachedPackedEdges_.end(), edges.begin(), edges.end());
-        const auto nodeIndex = static_cast<std::size_t>(node);
-        if (!edgesCached_[nodeIndex]) {
-            edgesCached_[nodeIndex] = 1;
-            ++numNodesWithCachedEdges_;
-        }
-    }
-
-    /**
-     * @brief Materializes every uncached edge set in a subtree.
-     * @param subtreeRoot Root of the requested subtree.
-     */
-    void cacheSubtreeEdges(NodeId subtreeRoot) const {
-        requireStableTree("ContourTraceComputation::cacheSubtreeEdges");
-        requireLiveTraceNode(subtreeRoot, "ContourTraceComputation::cacheSubtreeEdges");
-        if (edgesCached_[static_cast<std::size_t>(subtreeRoot)]) {
-            return;
-        }
-
-        std::vector<std::pair<NodeId, bool>> traversalStack;
-        traversalStack.emplace_back(subtreeRoot, false);
-        std::vector<int> nodeEdges;
-
-        while (!traversalStack.empty()) {
-            const auto [node, expanded] = traversalStack.back();
-            traversalStack.pop_back();
-            if (edgesCached_[static_cast<std::size_t>(node)]) {
-                continue;
-            }
-            if (!expanded) {
-                traversalStack.emplace_back(node, true);
-                for (NodeId child : tree_.children(node)) {
-                    if (!edgesCached_[static_cast<std::size_t>(child)]) {
-                        traversalStack.emplace_back(child, false);
-                    }
-                }
-                continue;
-            }
-
-            nodeEdges.clear();
-            const auto additions = edgeDeltas_.additions(node);
-            std::size_t requiredCapacity = additions.size();
-            for (NodeId child : tree_.children(node)) {
-                requiredCapacity += static_cast<std::size_t>(edgeCounts_[static_cast<std::size_t>(child)]);
-            }
-            nodeEdges.reserve(requiredCapacity);
-            advanceEdgeMarkGeneration();
-
-            for (NodeId child : tree_.children(node)) {
-                for (auto edge = cachedEdgeBegin(child); edge != cachedEdgeEnd(child); ++edge) {
-                    appendIfAbsent(nodeEdges, *edge);
-                }
-            }
-
-            for (int packedEdge : additions) {
-                appendIfAbsent(nodeEdges, packedEdge);
-            }
-
-            for (int packedEdge : edgeDeltas_.removals(node)) {
-                removeIfPresent(packedEdge);
-            }
-
-            std::size_t nextKeptEdge = 0;
-            for (int packedEdge : nodeEdges) {
-                if (edgeMarks_[static_cast<std::size_t>(packedEdge)] == edgeMarkGeneration_) {
-                    nodeEdges[nextKeptEdge++] = packedEdge;
-                }
-            }
-            nodeEdges.resize(nextKeptEdge);
-            cacheNodeEdges(node, nodeEdges);
-        }
-        releaseEdgeScratchIfComplete();
-    }
-
-    /**
-     * @brief Computes the row-major identifier of a grid vertex.
-     *
-     * @param row Zero-based row coordinate.
-     * @param column Zero-based column coordinate.
-     * @param numVertexColumns Number of grid vertices per row.
-     * @return Row-major vertex identifier.
-     */
-    static int vertexId(int row, int column, int numVertexColumns) { return (row * numVertexColumns) + column; }
-
-    /** @brief Geometry and doubled signed-area contribution of one directed edge. */
-    struct EdgeGeometry {
-        /// Grid vertex where the directed edge begins.
-        int startVertex = -1;
-        /// Grid vertex where the directed edge ends.
-        int endVertex = -1;
-        /// Cardinal direction from the start vertex to the end vertex.
-        Direction direction = Direction::North;
-        /// Contribution of the edge to twice the signed boundary area.
-        int doubledSignedArea = 0;
-    };
-
-    /**
-     * @brief Converts a packed edge to its directed grid geometry.
-     *
-     * @param packedEdge Packed boundary-edge identifier.
-     * @return Oriented endpoints, direction, and signed-area contribution.
-     */
-    EdgeGeometry edgeGeometry(int packedEdge) const {
-        const ContourEdge edge = ContourTraceComputation::unpackEdge(packedEdge);
-        const int imageColumns = tree_.numColumns();
-        const int numVertexColumns = imageColumns + 1;
-        const auto [row, column] = ImageUtils::to2D(edge.pixel, imageColumns);
-
-        switch (edge.side) {
-        case ContourSide::North:
-            return {vertexId(row, column, numVertexColumns), vertexId(row, column + 1, numVertexColumns), Direction::East, -row};
-        case ContourSide::East:
-            return {vertexId(row, column + 1, numVertexColumns), vertexId(row + 1, column + 1, numVertexColumns), Direction::South, column + 1};
-        case ContourSide::South:
-            return {vertexId(row + 1, column + 1, numVertexColumns), vertexId(row + 1, column, numVertexColumns), Direction::West, row + 1};
-        case ContourSide::West:
-            return {vertexId(row + 1, column, numVertexColumns), vertexId(row, column, numVertexColumns), Direction::North, -column};
-        }
-        throw std::runtime_error("Invalid contour side.");
-    }
-
-    /**
-     * @brief Ranks one successor direction for the selected connectivity.
-     * @param incoming Incoming trace direction.
-     * @param outgoing Outgoing trace direction.
-     * @param connectivity Digital foreground connectivity.
-     * @return Smaller values for preferred successors.
-     */
-    static int successorPriority(Direction incoming, Direction outgoing, ForegroundConnectivity connectivity) {
-        const int quarterTurns = (static_cast<int>(outgoing) - static_cast<int>(incoming) + 4) & 3;
-        // Support stays on the right: turning right pairs around the same
-        // foreground pixel (4/8); turning left pairs around the background
-        // pixel (8/4). The choice is independent of traversal history.
-        const std::array<int, 4> priorities =
-            connectivity == ForegroundConnectivity::Eight ? std::array<int, 4>{1, 2, 3, 0} : std::array<int, 4>{1, 0, 3, 2};
-        return priorities[static_cast<std::size_t>(quarterTurns)];
-    }
-
-    /**
-     * @brief Selects the successor of one directed contour edge.
-     *
-     * @param current Current directed edge.
-     * @param outgoingHead First candidate edge leaving the terminal vertex.
-     * @param directedEdges Directed edges that form the traced contour graph.
-     * @param outgoingNext Next-edge links for the outgoing adjacency lists.
-     * @param connectivity Foreground connectivity determining diagonal pairing.
-     * @return Selected next edge.
-     */
-    static int selectSuccessor(const DirectedEdge& current, int outgoingHead, const std::vector<DirectedEdge>& directedEdges,
-                               const std::vector<int>& outgoingNext, ForegroundConnectivity connectivity) {
-        if (connectivity == ForegroundConnectivity::Unknown) {
-            throw std::invalid_argument("Diagonal contour tracing requires canonical 4/8 construction adjacency; "
-                                        "for complementary shapes, pass a valued-tree view with distinct node/parent altitudes.");
-        }
-        int bestEdgeIndex = -1;
-        int bestPriority = std::numeric_limits<int>::max();
-        for (int candidateIndex = outgoingHead; candidateIndex != -1; candidateIndex = outgoingNext[static_cast<std::size_t>(candidateIndex)]) {
-            const int priority = successorPriority(current.direction, directedEdges[static_cast<std::size_t>(candidateIndex)].direction, connectivity);
-            if (priority < bestPriority || (priority == bestPriority && directedEdges[static_cast<std::size_t>(candidateIndex)].packedEdge <
-                                                                            directedEdges[static_cast<std::size_t>(bestEdgeIndex)].packedEdge)) {
-                bestEdgeIndex = candidateIndex;
-                bestPriority = priority;
-            }
-        }
-        return bestEdgeIndex;
-    }
-
-    /**
-     * @brief Clears the used entries of the dense vertex index.
-     */
-    void resetDenseVertexIndex() const {
-        for (int vertex : touchedVertices_) {
-            const auto vertexIndex = static_cast<std::size_t>(vertex);
-            outgoingEdgeHeads_[vertexIndex] = -1;
-        }
-        touchedVertices_.clear();
-    }
-
-    /**
-     * @brief Returns the number of vertices in the image grid.
-     * @return Number of vertices in the regular grid underlying the image.
-     */
-    [[nodiscard]] std::size_t numImageVertices() const {
-        return static_cast<std::size_t>((tree_.numRows() + 1) * (tree_.numColumns() + 1));
-    }
-
-    /**
-     * @brief Allocates the dense vertex index when first needed.
-     */
-    void ensureDenseVertexIndex() const {
-        if (!outgoingEdgeHeads_.empty()) {
-            return;
-        }
-        outgoingEdgeHeads_.assign(numImageVertices(), -1);
-    }
-
-    /**
-     * @brief Rounds a positive value up to a power of two.
-     * @param value Positive lower bound.
-     * @return Smallest power of two greater than or equal to `value`.
-     */
-    static std::size_t nextPowerOfTwoAtLeast(std::size_t value) {
-        std::size_t result = 1;
-        while (result < value) {
-            result <<= 1;
-        }
-        return result;
-    }
-
-    /**
-     * @brief Chooses a sparse vertex table size for one contour.
-     * @param edgeCount Number of boundary edges.
-     * @return Power-of-two table size with a load factor below one half.
-     */
-    static std::size_t sparseVertexTableSize(std::size_t edgeCount) {
-        const std::size_t minimumTableSize = std::max<std::size_t>(2, (2 * edgeCount) + 1);
-        return nextPowerOfTwoAtLeast(minimumTableSize);
-    }
-
-    /**
-     * @brief Returns the number of individual queries allowed before using the dense index.
-     * @return Maximum number of sparse individual-node traces.
-     */
-    static constexpr std::size_t sparseIndexQueryLimit() {
-        // Use sparse adjacency for a few queries on individual nodes, then use
-        // dense storage before repeated access accumulates hash-table overhead.
-        return 8;
-    }
-
-    /**
-     * @brief Chooses the sparse vertex index when it uses less temporary storage.
-     * @param edgeCount Number of boundary edges.
-     * @param appendToSharedCache Whether descriptors are appended directly to the shared cache.
-     * @return True when sparse indexing is selected.
-     */
-    [[nodiscard]] bool shouldUseSparseVertexIndex(std::size_t edgeCount, bool appendToSharedCache) const {
-        if (appendToSharedCache || !outgoingEdgeHeads_.empty()) {
-            return false;
-        }
-        if (numIndividualNodeTraces_ >= sparseIndexQueryLimit()) {
-            return false;
-        }
-        const std::size_t sparseBytes = sparseVertexTableSize(edgeCount) * ((2 * sizeof(int)) + sizeof(uint32_t));
-        const std::size_t denseBytes = numImageVertices() * sizeof(int);
-        return sparseBytes < denseBytes;
-    }
-
-    /**
-     * @brief Prepares the sparse vertex index for one contour.
-     *
-     * @param edgeCount Number of boundary edges.
-     */
-    void prepareSparseVertexIndex(std::size_t edgeCount) const {
-        const std::size_t tableSize = sparseVertexTableSize(edgeCount);
-        if (sparseVertexKeys_.size() != tableSize) {
-            sparseVertexKeys_.assign(tableSize, 0);
-            sparseOutgoingEdgeHeads_.assign(tableSize, -1);
-            sparseSlotGenerations_.assign(tableSize, 0);
-        }
-        touchedSparseSlots_.clear();
-
-        ++sparseGeneration_;
-        if (sparseGeneration_ == 0) {
-            std::fill(sparseSlotGenerations_.begin(), sparseSlotGenerations_.end(), 0);
-            sparseGeneration_ = 1;
-        }
-    }
-
-    /**
-     * @brief Computes the initial sparse table slot for a grid vertex.
-     *
-     * @param vertex Image-grid vertex identifier.
-     * @return Sparse-table slot selected for the vertex.
-     */
-    [[nodiscard]] std::size_t sparseVertexSlot(int vertex) const {
-        const auto hashValue = static_cast<uint32_t>(vertex) * uint32_t{2654435761u};
-        return static_cast<std::size_t>(hashValue) & (sparseVertexKeys_.size() - 1);
-    }
-
-    /**
-     * @brief Returns the first outgoing edge stored for a vertex.
-     *
-     * @param vertex Image-grid vertex identifier.
-     * @return Directed edge index or `-1` when the vertex is absent.
-     */
-    [[nodiscard]] int sparseOutgoingEdgeHead(int vertex) const {
-        std::size_t slot = sparseVertexSlot(vertex);
-        while (sparseSlotGenerations_[slot] == sparseGeneration_) {
-            if (sparseVertexKeys_[slot] == vertex) {
-                return sparseOutgoingEdgeHeads_[slot];
-            }
-            slot = (slot + 1) & (sparseVertexKeys_.size() - 1);
-        }
-        return -1;
-    }
-
-    /**
-     * @brief Finds or inserts a vertex in the sparse index.
-     *
-     * @param vertex Image-grid vertex identifier.
-     * @return Slot containing the existing or newly inserted vertex.
-     */
-    [[nodiscard]] std::size_t findOrInsertSparseVertex(int vertex) const {
-        std::size_t slot = sparseVertexSlot(vertex);
-        while (sparseSlotGenerations_[slot] == sparseGeneration_) {
-            if (sparseVertexKeys_[slot] == vertex) {
-                return slot;
-            }
-            slot = (slot + 1) & (sparseVertexKeys_.size() - 1);
-        }
-
-        sparseSlotGenerations_[slot] = sparseGeneration_;
-        sparseVertexKeys_[slot] = vertex;
-        sparseOutgoingEdgeHeads_[slot] = -1;
-        touchedSparseSlots_.push_back(static_cast<int>(slot));
-        return slot;
-    }
-
-    /**
-     * @brief Returns the first outgoing directed edge of a trace vertex.
-     *
-     * @param vertex Image-grid vertex identifier.
-     * @return Directed-edge index at the head of the vertex list, or the empty sentinel.
-     */
-    template <VertexIndexMode Mode> [[nodiscard]] int outgoingEdgeHead(int vertex) const {
-        if constexpr (Mode == VertexIndexMode::Sparse) {
-            return sparseOutgoingEdgeHead(vertex);
-        } else {
-            return outgoingEdgeHeads_[static_cast<std::size_t>(vertex)];
-        }
-    }
-
-    /**
-     * @brief Prepares the selected vertex index.
-     *
-     * @param edgeCount Number of boundary edges.
-     */
-    template <VertexIndexMode Mode> void prepareVertexIndex(std::size_t edgeCount) const {
-        if constexpr (Mode == VertexIndexMode::Sparse) {
-            prepareSparseVertexIndex(edgeCount);
-        } else {
-            if (!sparseVertexKeys_.empty()) {
-                releaseSparseTraceOutgoingScratch();
-            }
-            ensureDenseVertexIndex();
-            resetDenseVertexIndex();
-        }
-    }
-
-    /**
-     * @brief Clears the selected vertex index after tracing.
-     */
-    template <VertexIndexMode Mode> void resetVertexIndex() const {
-        if constexpr (Mode == VertexIndexMode::Dense) {
-            resetDenseVertexIndex();
-        }
-    }
-
-    /**
-     * @brief Adds a directed edge to its start vertex.
-     *
-     * @param startVertex Starting vertex identifier.
-     * @param edgeIndex Boundary-edge index.
-     */
-    template <VertexIndexMode Mode> void addOutgoingEdge(int startVertex, int edgeIndex) const {
-        if constexpr (Mode == VertexIndexMode::Sparse) {
-            const std::size_t slot = findOrInsertSparseVertex(startVertex);
-            nextOutgoingEdges_.push_back(sparseOutgoingEdgeHeads_[slot]);
-            sparseOutgoingEdgeHeads_[slot] = edgeIndex;
-        } else {
-            const auto vertexIndex = static_cast<std::size_t>(startVertex);
-            if (outgoingEdgeHeads_[vertexIndex] == -1) {
-                touchedVertices_.push_back(startVertex);
-            }
-            nextOutgoingEdges_.push_back(outgoingEdgeHeads_[vertexIndex]);
-            outgoingEdgeHeads_[vertexIndex] = edgeIndex;
-        }
-    }
-
-    /**
-     * @brief Starts a new visited-edge generation.
-     *
-     * @param edgeCount Number of boundary edges.
-     */
-    void advanceVisitGeneration(std::size_t edgeCount) const {
-        if (visitedGenerations_.size() < edgeCount) {
-            visitedGenerations_.resize(edgeCount, 0);
-        }
-        ++visitGeneration_;
-        if (visitGeneration_ == 0) {
-            std::fill(visitedGenerations_.begin(), visitedGenerations_.end(), 0);
-            visitGeneration_ = 1;
-        }
-    }
-
-    /**
-     * @brief Tests whether an edge belongs to the current boundary traversal.
-     * @param edgeIndex Boundary-edge index.
-     * @return True when the edge was visited in the active generation.
-     */
-    [[nodiscard]] bool isVisited(int edgeIndex) const { return visitedGenerations_[static_cast<std::size_t>(edgeIndex)] == visitGeneration_; }
-
-    /**
-     * @brief Marks an edge as visited in the current generation.
-     *
-     * @param edgeIndex Boundary-edge index.
-     */
-    void markVisited(int edgeIndex) const { visitedGenerations_[static_cast<std::size_t>(edgeIndex)] = visitGeneration_; }
-
-    /**
-     * @brief Reserves boundary descriptors for a subtree trace.
-     * @param subtreeRoot Root of the requested subtree.
-     */
-    void reserveBoundaryCapacityForSubtree(NodeId subtreeRoot) const {
-        std::size_t pendingNonEmptyNodes = 0;
-        std::size_t pendingEdgeCount = 0;
-        for (NodeId node : tree_.subtreeNodes(subtreeRoot)) {
-            if (boundariesCached_[static_cast<std::size_t>(node)]) {
-                continue;
-            }
-            const auto edgeCount = static_cast<std::size_t>(edgeCounts_[static_cast<std::size_t>(node)]);
-            if (edgeCount == 0) {
-                continue;
-            }
-            ++pendingNonEmptyNodes;
-            pendingEdgeCount += edgeCount;
-        }
-        if (pendingNonEmptyNodes == 0) {
-            return;
-        }
-
-        const std::size_t edgeBasedEstimate = std::max<std::size_t>(1, pendingEdgeCount / 16);
-        const std::size_t additionalCapacity = std::max(pendingNonEmptyNodes, edgeBasedEstimate);
-        const std::size_t targetCapacity = cachedBoundaries_.size() + additionalCapacity;
-        if (cachedBoundaries_.capacity() < targetCapacity) {
-            cachedBoundaries_.reserve(targetCapacity);
-        }
-    }
-
-    /**
-     * @brief Tests whether tracing can reorder the node's cached edge segment.
-     * @param node Node identifier.
-     * @return True when no uncached parent still depends on the current order.
-     */
-    bool canReuseEdgeStorage(NodeId node) const {
-        if (tree_.isRoot(node)) {
-            return true;
-        }
-        const NodeId parent = tree_.parent(node);
-        return parent == InvalidNode || parent == node || edgesCached_[static_cast<std::size_t>(parent)] != 0;
-    }
-
-    /**
-     * @brief Traces one node when its boundaries are not cached.
-     * @param node Live node identifier.
-     */
-    void ensureNodeBoundariesTraced(NodeId node) const {
-        requireStableTree("ContourTraceComputation::ensureNodeBoundariesTraced");
-        requireLiveTraceNode(node, "ContourTraceComputation::ensureNodeBoundariesTraced");
-        if (boundariesCached_[static_cast<std::size_t>(node)]) {
-            return;
-        }
-        cacheSubtreeEdges(node);
-        traceNodeBoundaries(node, false);
-    }
-
-    /**
-     * @brief Traces every boundary missing from a subtree.
-     * @param subtreeRoot Root of the requested subtree.
-     */
-    void traceSubtree(NodeId subtreeRoot) const {
-        requireStableTree("ContourTraceComputation::traceSubtree");
-        requireLiveTraceNode(subtreeRoot, "ContourTraceComputation::traceSubtree");
-        cacheSubtreeEdges(subtreeRoot);
-        reserveBoundaryCapacityForSubtree(subtreeRoot);
-
-        std::vector<std::pair<NodeId, bool>> traversalStack;
-        traversalStack.emplace_back(subtreeRoot, false);
-
-        while (!traversalStack.empty()) {
-            const auto [node, expanded] = traversalStack.back();
-            traversalStack.pop_back();
-            if (!expanded) {
-                traversalStack.emplace_back(node, true);
-                for (NodeId child : tree_.children(node)) {
-                    if (!boundariesCached_[static_cast<std::size_t>(child)]) {
-                        traversalStack.emplace_back(child, false);
-                    }
-                }
-                continue;
-            }
-            if (!boundariesCached_[static_cast<std::size_t>(node)]) {
-                traceNodeBoundaries(node, true);
-            }
-        }
-    }
-
-    /**
-     * @brief Traces and caches all contour boundaries associated with a tree node.
-     *
-     * @param node Node identifier.
-     * @param appendToSharedCache Whether descriptors are appended directly to the shared cache.
-     */
-    void traceNodeBoundaries(NodeId node, bool appendToSharedCache) const {
-        const std::size_t edgeCount = static_cast<std::size_t>(edgeCounts_[static_cast<std::size_t>(node)]);
-        const bool useSparseIndex = shouldUseSparseVertexIndex(edgeCount, appendToSharedCache);
-        if (!appendToSharedCache) {
-            ++numIndividualNodeTraces_;
-        }
-        if (useSparseIndex) {
-            traceNodeBoundariesWithVertexIndex<VertexIndexMode::Sparse>(node, appendToSharedCache, edgeCount);
-        } else {
-            traceNodeBoundariesWithVertexIndex<VertexIndexMode::Dense>(node, appendToSharedCache, edgeCount);
-        }
-    }
-
-    /**
-     * @brief Traces a node contour with the selected vertex index.
-     *
-     * @param node Node identifier.
-     * @param appendToSharedCache Whether descriptors are appended directly to the shared cache.
-     * @param edgeCount Number of boundary edges.
-     */
-    template <VertexIndexMode Mode> void traceNodeBoundariesWithVertexIndex(NodeId node, bool appendToSharedCache, std::size_t edgeCount) const {
-        prepareVertexIndex<Mode>(edgeCount);
-        directedEdges_.clear();
-        directedEdges_.reserve(edgeCount);
-        nextOutgoingEdges_.clear();
-        nextOutgoingEdges_.reserve(edgeCount);
-
-        for (auto edge = cachedEdgeBegin(node); edge != cachedEdgeEnd(node); ++edge) {
-            const EdgeGeometry geometry = edgeGeometry(*edge);
-            const int edgeIndex = static_cast<int>(directedEdges_.size());
-            directedEdges_.emplace_back(*edge, geometry.startVertex, geometry.endVertex, geometry.direction, geometry.doubledSignedArea);
-            addOutgoingEdge<Mode>(geometry.startVertex, edgeIndex);
-        }
-
-        advanceVisitGeneration(directedEdges_.size());
-        orderedNodeEdges_.clear();
-        orderedNodeEdges_.reserve(directedEdges_.size());
-        nodeBoundaries_.clear();
-        if (!appendToSharedCache) {
-            nodeBoundaries_.reserve((directedEdges_.size() / 4) + 1);
-        }
-
-        std::size_t outputEdgeOffset = static_cast<std::size_t>(edgeOffsets_[static_cast<std::size_t>(node)]);
-        const bool reuseCachedEdgeStorage = canReuseEdgeStorage(node);
-        if (!reuseCachedEdgeStorage) {
-            outputEdgeOffset = cachedPackedEdges_.size();
-        }
-        const std::size_t nodeBoundaryOffset = cachedBoundaries_.size();
-
-        try {
-            for (int startEdgeIndex = 0; startEdgeIndex < static_cast<int>(directedEdges_.size()); ++startEdgeIndex) {
-                if (isVisited(startEdgeIndex)) {
-                    continue;
-                }
-
-                const std::size_t firstBoundaryEdgeIndex = orderedNodeEdges_.size();
-                int doubledSignedArea = 0;
-                int currentEdgeIndex = startEdgeIndex;
-
-                // A cycle may revisit a grid vertex. Only returning to the
-                // initial directed edge closes the successor permutation.
-                do {
-                    if (isVisited(currentEdgeIndex)) {
-                        throw std::runtime_error("Contour successor revisited an edge before closing its cycle.");
-                    }
-                    const DirectedEdge& edge = directedEdges_[static_cast<std::size_t>(currentEdgeIndex)];
-                    markVisited(currentEdgeIndex);
-                    orderedNodeEdges_.push_back(edge.packedEdge);
-                    doubledSignedArea += edge.doubledSignedArea;
-
-                    const int firstSuccessorIndex = outgoingEdgeHead<Mode>(edge.endVertex);
-                    if (firstSuccessorIndex == -1) {
-                        throw std::runtime_error("Contour boundary contains an edge without a successor.");
-                    }
-                    if (nextOutgoingEdges_[static_cast<std::size_t>(firstSuccessorIndex)] == -1) {
-                        currentEdgeIndex = firstSuccessorIndex;
-                    } else {
-                        currentEdgeIndex = selectSuccessor(edge, firstSuccessorIndex, directedEdges_, nextOutgoingEdges_,
-                                                      connectivityByNode_[static_cast<std::size_t>(node)]);
-                        if (currentEdgeIndex == -1) {
-                            throw std::runtime_error("Contour boundary contains an unresolved successor.");
-                        }
-                    }
-                } while (currentEdgeIndex != startEdgeIndex);
-
-                const std::size_t boundaryEdgeCount = orderedNodeEdges_.size() - firstBoundaryEdgeIndex;
-                if (boundaryEdgeCount == 0) {
-                    continue;
-                }
-
-                const ContourBoundaryKind kind = doubledSignedArea >= 0 ? ContourBoundaryKind::External : ContourBoundaryKind::Internal;
-                if (appendToSharedCache) {
-                    cachedBoundaries_.push_back(ContourBoundary{kind, checkedUint32(outputEdgeOffset + firstBoundaryEdgeIndex, "global boundary edge offset"),
-                                                                checkedUint32(boundaryEdgeCount, "boundary edge count"), doubledSignedArea});
-                } else {
-                    nodeBoundaries_.push_back(ContourBoundary{kind, checkedUint32(firstBoundaryEdgeIndex, "node boundary edge offset"),
-                                                               checkedUint32(boundaryEdgeCount, "boundary edge count"), doubledSignedArea});
-                }
-            }
-        } catch (...) {
-            if (appendToSharedCache) {
-                cachedBoundaries_.resize(nodeBoundaryOffset);
-            }
-            resetVertexIndex<Mode>();
-            throw;
-        }
-        resetVertexIndex<Mode>();
-
-        if (orderedNodeEdges_.size() != edgeCount) {
-            if (appendToSharedCache) {
-                cachedBoundaries_.resize(nodeBoundaryOffset);
-            }
-            throw std::runtime_error("Contour trace boundary traversal did not cover every cached edge.");
-        }
-        if (reuseCachedEdgeStorage) {
-            std::copy(orderedNodeEdges_.begin(), orderedNodeEdges_.end(),
-                      cachedPackedEdges_.begin() + static_cast<std::ptrdiff_t>(outputEdgeOffset));
-        } else {
-            cachedPackedEdges_.insert(cachedPackedEdges_.end(), orderedNodeEdges_.begin(), orderedNodeEdges_.end());
-        }
-
-        if (!appendToSharedCache) {
-            for (ContourBoundary& boundary : nodeBoundaries_) {
-                boundary.edgeOffset = checkedUint32(outputEdgeOffset + boundary.edgeOffset, "global boundary edge offset");
-            }
-            cachedBoundaries_.insert(cachedBoundaries_.end(), nodeBoundaries_.begin(), nodeBoundaries_.end());
-        }
-
-        boundaryOffsets_[static_cast<std::size_t>(node)] = checkedUint32(nodeBoundaryOffset, "boundary offset");
-        boundaryCounts_[static_cast<std::size_t>(node)] = checkedUint32(cachedBoundaries_.size() - nodeBoundaryOffset, "boundary count");
-        const auto nodeIndex = static_cast<std::size_t>(node);
-        if (!boundariesCached_[nodeIndex]) {
-            boundariesCached_[nodeIndex] = 1;
-            ++numNodesWithCachedBoundaries_;
-        }
-        releaseTraceScratchIfComplete();
-    }
-
-  private:
-    /**
-     * @brief Converts canonical grid adjacency to digital foreground connectivity.
-     * @param adjacency Regular-grid adjacency retained by tree construction.
-     * @return Four, Eight, or Unknown when the adjacency is noncanonical.
-     */
-    static ForegroundConnectivity foregroundConnectivity(const RegularGridAdjacency2D& adjacency) {
+    [[nodiscard]] static ForegroundConnectivity foregroundConnectivity(const RegularGridAdjacency2D& adjacency) {
         if (adjacency.is4connectivity()) {
             return ForegroundConnectivity::Four;
         }
@@ -1405,11 +251,11 @@ class ContourTraceComputation {
     }
 
     /**
-     * @brief Returns lower and upper connectivity from retained construction semantics.
-     * @param tree Tree whose construction metadata defines shape connectivity.
-     * @return Foreground connectivity for lower and upper shapes, respectively.
+     * @brief Returns lower and upper connectivity from construction semantics.
+     * @param tree Source tree.
+     * @return Lower-shape and upper-shape foreground connectivity.
      */
-    static std::array<ForegroundConnectivity, 2> shapeForegroundConnectivities(const MorphologicalTree& tree) {
+    [[nodiscard]] static std::array<ForegroundConnectivity, 2> shapeForegroundConnectivities(const MorphologicalTree& tree) {
         if (const auto* adjacency = detail::constructionAdjacency(tree)) {
             const auto connectivity = foregroundConnectivity(*adjacency);
             return {connectivity, connectivity};
@@ -1419,38 +265,36 @@ class ContourTraceComputation {
         }
         if (const auto* convention = tree.topographicConvention();
             convention && std::holds_alternative<SelfDualSpanImmersion>(convention->immersion)) {
-            // The projected self-dual span supports use the existing 4/4
-            // convention, also used by the scalar bitquad projection.
             return {ForegroundConnectivity::Four, ForegroundConnectivity::Four};
         }
         return {ForegroundConnectivity::Unknown, ForegroundConnectivity::Unknown};
     }
 
     /**
-     * @brief Captures topology-only choices; mixed lower/upper choices remain unresolved.
-     * @param tree Stable source tree.
-     * @return Foreground connectivity for each internal node slot.
+     * @brief Captures topology-only connectivity choices for every node slot.
+     * @param tree Source tree.
+     * @return Foreground connectivity indexed by node slot.
      */
-    static std::vector<ForegroundConnectivity> foregroundConnectivityByNode(const MorphologicalTree& tree) {
+    [[nodiscard]] static std::vector<ForegroundConnectivity> foregroundConnectivityByNode(const MorphologicalTree& tree) {
         const auto [lowerShape, upperShape] = shapeForegroundConnectivities(tree);
         return std::vector<ForegroundConnectivity>(static_cast<std::size_t>(tree.numInternalNodeSlots()),
                                                    lowerShape == upperShape ? lowerShape : ForegroundConnectivity::Unknown);
     }
 
     /**
-     * @brief Captures shape polarity so lazy tracing never borrows the altitude buffer.
+     * @brief Captures lower and upper shape connectivity from a valued view.
      * @param view Current valued tree view.
-     * @return Foreground connectivity for each internal node slot.
+     * @return Foreground connectivity indexed by node slot.
      */
     template <AltitudeValue T>
-    static std::vector<ForegroundConnectivity> foregroundConnectivityByNode(const ValuedMorphologicalTreeView<T>& view) {
-        const auto& tree = view.topology();
+    [[nodiscard]] static std::vector<ForegroundConnectivity> foregroundConnectivityByNode(const ValuedMorphologicalTreeView<T>& view) {
+        const MorphologicalTree& tree = view.topology();
         auto connectivityByNode = foregroundConnectivityByNode(tree);
         const auto [lowerShape, upperShape] = shapeForegroundConnectivities(tree);
         if (lowerShape != upperShape) {
             for (NodeId node : tree.aliveNodeIds()) {
                 if (tree.isRoot(node)) {
-                    continue; // The rectangular domain boundary has no diagonal ambiguity.
+                    continue;
                 }
                 const auto altitude = view.nodeAltitude(node);
                 const auto parentAltitude = view.nodeAltitude(tree.parent(node));
@@ -1464,41 +308,37 @@ class ContourTraceComputation {
         return connectivityByNode;
     }
 
-    /// Temporary packed-edge lists used before compaction by node.
-    using PendingEdgeLists = contours::detail::PendingEdgeLists;
-
     /**
-     * @brief Returns the pixel adjacent to one side of a source pixel.
-     *
-     * @param tree Tree topology.
-     * @param pixel Pixel identifier.
-     * @param side Contour or boundary side.
-     * @return Identifier of the neighboring pixel.
+     * @brief Returns the pixel adjacent to one side, or `InvalidPixel`.
+     * @param tree Source tree with a grid domain.
+     * @param pixel Source pixel.
+     * @param side Side whose neighbor is requested.
+     * @return Adjacent pixel, or `InvalidPixel` at the image border.
      */
-    static PixelId adjacentPixel(const MorphologicalTree& tree, PixelId pixel, ContourSide side) {
+    [[nodiscard]] static PixelId adjacentPixel(const MorphologicalTree& tree, PixelId pixel, ContourSide side) {
         const int rows = tree.numRows();
         const int columns = tree.numColumns();
         const auto [row, column] = ImageUtils::to2D(pixel, columns);
 
         switch (side) {
         case ContourSide::North:
-            return row == 0 ? -1 : ImageUtils::to1D(row - 1, column, columns);
+            return row == 0 ? InvalidPixel : ImageUtils::to1D(row - 1, column, columns);
         case ContourSide::West:
-            return column == 0 ? -1 : ImageUtils::to1D(row, column - 1, columns);
+            return column == 0 ? InvalidPixel : ImageUtils::to1D(row, column - 1, columns);
         case ContourSide::East:
-            return column == columns - 1 ? -1 : ImageUtils::to1D(row, column + 1, columns);
+            return column == columns - 1 ? InvalidPixel : ImageUtils::to1D(row, column + 1, columns);
         case ContourSide::South:
-            return row == rows - 1 ? -1 : ImageUtils::to1D(row + 1, column, columns);
+            return row == rows - 1 ? InvalidPixel : ImageUtils::to1D(row + 1, column, columns);
         }
-        return -1;
+        return InvalidPixel;
     }
 
     /**
-     * @brief Builds compact edge changes for every tree node.
-     * @param tree Source topology.
-     * @return Edge changes and an output size estimate.
+     * @brief Builds compact edge changes for every live node.
+     * @param tree Source tree.
+     * @return Compact edge additions and removals indexed by node.
      */
-    [[nodiscard]] static ConstructionData prepareEdgeDeltas(const MorphologicalTree& tree) {
+    [[nodiscard]] static EdgeDeltas prepareEdgeDeltas(const MorphologicalTree& tree) {
         if (tree.numRows() <= 0 || tree.numColumns() <= 0) {
             throw std::invalid_argument("Contour tracing requires a non-empty image domain.");
         }
@@ -1507,87 +347,95 @@ class ContourTraceComputation {
         }
 
         const int numNodes = tree.numInternalNodeSlots();
-        const int totalPixels = tree.numRows() * tree.numColumns();
-        const int numPossibleEdges = 4 * totalPixels;
-        const int estimatedCachedEdgeCount = std::max(totalPixels, 1);
+        std::vector<EdgeDeltas::Event> additions;
+        std::vector<EdgeDeltas::Event> removals;
+        additions.reserve(static_cast<std::size_t>(std::max(tree.numPixels(), 1)));
+        removals.reserve(static_cast<std::size_t>(std::max(tree.numPixels(), 1)));
+        const int rows = tree.numRows();
+        const int columns = tree.numColumns();
+        const std::span<const NodeId> smallestNodes = tree.smallestNodeMap();
 
-        PendingEdgeLists pendingAdditions(numNodes, estimatedCachedEdgeCount);
-        PendingEdgeLists pendingRemovals(numNodes, estimatedCachedEdgeCount);
+        const auto addBorderEdge = [&](PixelId pixel, ContourSide side) {
+            additions.push_back({smallestNodes[static_cast<std::size_t>(pixel)], packEdge(pixel, side)});
+        };
+        for (int column = 0; column < columns; ++column) {
+            addBorderEdge(column, ContourSide::North);
+            addBorderEdge((rows - 1) * columns + column, ContourSide::South);
+        }
+        for (int row = 0; row < rows; ++row) {
+            addBorderEdge(row * columns, ContourSide::West);
+            addBorderEdge(row * columns + columns - 1, ContourSide::East);
+        }
 
-        static constexpr std::array<ContourSide, 4> sides{ContourSide::North, ContourSide::West, ContourSide::East,
-                                                               ContourSide::South};
-
-        detail::traversePostOrder(
-            tree, tree.root(), [](NodeId) -> void {}, [](NodeId, NodeId) -> void {},
-            [&](NodeId nodeId) {
-                for (PixelId pixel : tree.properPart(nodeId)) {
-                    for (ContourSide side : sides) {
-                        const int packedEdge = packEdge(pixel, side);
-                        const PixelId neighbor = adjacentPixel(tree, pixel, side);
-                        if (neighbor < 0) {
-                            pendingAdditions.add(nodeId, packedEdge);
-                            continue;
-                        }
-
-                        const NodeId entry = local_attributes::detail::kernel::anchoredEntry(tree, pixel, neighbor);
-                        if (entry == InvalidNode || entry == nodeId) {
-                            continue;
-                        }
-
-                        pendingAdditions.add(nodeId, packedEdge);
-                        pendingRemovals.add(entry, packedEdge);
-                    }
+        std::vector<uint8_t> isRightBorder(static_cast<std::size_t>(tree.numPixels()), uint8_t{0});
+        for (int row = 0; row < rows; ++row) {
+            isRightBorder[static_cast<std::size_t>(row * columns + columns - 1)] = uint8_t{1};
+        }
+        const std::size_t numAdjacentQueries = 2 * static_cast<std::size_t>(tree.numPixels());
+        const auto adjacentPixels = [&](std::size_t queryIndex) {
+            const PixelId firstPixel = static_cast<PixelId>(queryIndex >> 1);
+            const bool horizontal = (queryIndex & 1) == 0;
+            if (horizontal) {
+                const PixelId secondPixel = isRightBorder[static_cast<std::size_t>(firstPixel)] ? firstPixel : firstPixel + 1;
+                return std::pair{firstPixel, secondPixel};
+            }
+            const PixelId secondPixel = firstPixel >= tree.numPixels() - columns ? firstPixel : firstPixel + columns;
+            return std::pair{firstPixel, secondPixel};
+        };
+        const auto lcaQuery = [&](std::size_t queryIndex) {
+            const auto [firstPixel, secondPixel] = adjacentPixels(queryIndex);
+            return std::pair{smallestNodes[static_cast<std::size_t>(firstPixel)],
+                             smallestNodes[static_cast<std::size_t>(secondPixel)]};
+        };
+        detail::CommittedTreeAccess::forEachLowestCommonAncestor(
+            tree, numAdjacentQueries, lcaQuery,
+            [&](std::size_t queryIndex, NodeId entryNode) {
+                const auto [firstPixel, secondPixel] = adjacentPixels(queryIndex);
+                if (firstPixel == secondPixel) {
+                    return;
+                }
+                const bool horizontal = (queryIndex & 1) == 0;
+                const ContourSide firstSide = horizontal ? ContourSide::East : ContourSide::South;
+                const ContourSide secondSide = horizontal ? ContourSide::West : ContourSide::North;
+                const NodeId firstNode = smallestNodes[static_cast<std::size_t>(firstPixel)];
+                const NodeId secondNode = smallestNodes[static_cast<std::size_t>(secondPixel)];
+                if (firstNode != entryNode) {
+                    const int packedEdge = packEdge(firstPixel, firstSide);
+                    additions.push_back({firstNode, packedEdge});
+                    removals.push_back({entryNode, packedEdge});
+                }
+                if (secondNode != entryNode) {
+                    const int packedEdge = packEdge(secondPixel, secondSide);
+                    additions.push_back({secondNode, packedEdge});
+                    removals.push_back({entryNode, packedEdge});
                 }
             });
-
-        return {EdgeDeltas::compact(pendingAdditions, pendingRemovals, numPossibleEdges), estimatedCachedEdgeCount, {}};
+        return EdgeDeltas::groupDistinct(numNodes, additions, removals);
     }
 
     /**
-     * @brief Validates the topology and prepares edge changes and connectivity.
-     * @param tree Stable source tree.
-     * @return Construction buffers for topology-only tracing.
+     * @brief Validates a topology and prepares shared trace indexes.
+     * @param tree Source tree.
+     * @return Prepared edge changes and connectivity values.
      */
     [[nodiscard]] static ConstructionData prepareConstructionData(const MorphologicalTree& tree) {
         tree.requireNotEditing("ContourTraceComputation");
-        ConstructionData constructionData = prepareEdgeDeltas(tree);
-        constructionData.connectivityByNode = foregroundConnectivityByNode(tree);
-        return constructionData;
+        return {prepareEdgeDeltas(tree), foregroundConnectivityByNode(tree)};
     }
 
     /**
-     * @brief Captures lower and upper shape connectivity from a current valued view.
+     * @brief Validates a valued view and prepares shared trace indexes.
      * @param view Current valued tree view.
-     * @return Construction buffers with connectivity resolved from node polarity.
-     */
-    template <AltitudeValue T> [[nodiscard]] static ConstructionData prepareConstructionData(const ValuedMorphologicalTreeView<T>& view) {
-        view.requireTopologyUnchanged("ContourTraceComputation");
-        view.topology().requireNotEditing("ContourTraceComputation");
-        ConstructionData constructionData = prepareEdgeDeltas(view.topology());
-        constructionData.connectivityByNode = foregroundConnectivityByNode(view);
-        return constructionData;
-    }
-
-  public:
-    /**
-     * @brief Prepares compact edge changes for lazy edge and boundary queries.
-     *
-     * The committed tree must outlive this object and remain unchanged. Edges
-     * and boundaries are cached only when requested; traceAll() prepares all.
-     * @param tree Source topology with a non-empty regular 2D domain.
-     */
-    explicit ContourTraceComputation(const MorphologicalTree& tree) : ContourTraceComputation(tree, prepareConstructionData(tree)) {}
-
-    /**
-     * @brief Constructs traces with the valued view's lower/upper shape connectivity.
-     *
-     * Connectivity is captured during construction. The altitude span is not
-     * retained; the source topology must outlive this object and stay unchanged.
-     * @param view Current valued view supplying topology and shape polarity.
+     * @return Prepared edge changes and connectivity values.
      */
     template <AltitudeValue T>
-    explicit ContourTraceComputation(const ValuedMorphologicalTreeView<T>& view)
-        : ContourTraceComputation(view.topology(), prepareConstructionData(view)) {}
+    [[nodiscard]] static ConstructionData prepareConstructionData(const ValuedMorphologicalTreeView<T>& view) {
+        view.requireTopologyUnchanged("ContourTraceComputation");
+        view.topology().requireNotEditing("ContourTraceComputation");
+        return {prepareEdgeDeltas(view.topology()), foregroundConnectivityByNode(view)};
+    }
+
+    std::shared_ptr<const SharedIndexes> indexes_; ///< Immutable data shared with active iterators.
 };
 
 } // namespace mmcfilters

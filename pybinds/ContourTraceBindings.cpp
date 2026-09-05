@@ -28,6 +28,15 @@ std::vector<ContourEdge> copyEdges(ContourTraceComputation::EdgeRange range) {
     return edges;
 }
 
+std::vector<PixelId> copyPixels(ContourTraceComputation::PixelRange range) {
+    std::vector<PixelId> pixels;
+    pixels.reserve(range.size());
+    for (PixelId pixel : range) {
+        pixels.push_back(pixel);
+    }
+    return pixels;
+}
+
 } // namespace
 
 /**
@@ -80,9 +89,13 @@ keeps its source tree alive.)doc")
             "edges", [](const Computation& self, NodeId nodeId) { return copyEdges(self.edges(nodeId)); }, "node_id"_a,
             "Return the unordered contour edges of one live internal node.")
         .def("boundaries", &Computation::boundaries, "node_id"_a, "Return an independent list of contour boundary metadata for one live internal node.")
+        .def("external_boundary", &Computation::externalBoundary, "node_id"_a, "Return the unique external boundary of one live internal node.")
         .def(
             "boundary_edges", [](const Computation& self, const ContourBoundary& boundary) { return copyEdges(self.boundaryEdges(boundary)); }, "boundary"_a,
             "Return the ordered contour edges of one boundary.")
+        .def(
+            "boundary_pixels", [](const Computation& self, const ContourBoundary& boundary) { return copyPixels(self.boundaryPixels(boundary)); }, "boundary"_a,
+            "Return one support pixel per ordered boundary edge, including repetitions.")
         .def("trace_all", &Computation::traceAll, "Trace the contours of every live node.")
         .def_property_readonly("has_traced_all_boundaries", &Computation::hasTracedAllBoundaries,
                                "True when the ordered boundaries of every live node are cached.")

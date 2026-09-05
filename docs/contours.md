@@ -137,23 +137,6 @@ all outputs, their storage is `O(C)` and can reach `O(PN)`. The working-storage
 bound excludes retained outputs and any LCA cache that already belongs to the
 tree.
 
-## Migration
-
-Construct `ContourComputation(tree)` directly. In C++, replace
-`ContoursComputedIncrementally::extractCompactContours(tree)` with the
-constructor. In Python, replace `ContourComputation.extraction(tree)` with the
-constructor.
-
-Iterate the object directly instead of calling `contoursByNode()` or
-`contours_by_node()`. `forEachContour` and `for_each_contour` provide callback
-access to the same traversal. Use `contour(node)` for an owned result from one
-node.
-
-The pixel contour API no longer exposes `Contours`, `ContourRange`,
-`ContoursIterator`, `materializeAll`, materialization flags, storage statistics,
-or per-node delta extraction. The [contour trace API](contour-traces.md) handles
-oriented geometry separately.
-
 ## Related guides
 
 - [Morphological trees](trees.md) defines the mapping from pixels to their

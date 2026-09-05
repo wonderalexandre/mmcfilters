@@ -177,19 +177,6 @@ nodes can store `O(sum_v B_v)` output in addition to `O(P + N)` working buffers.
 An LCA cache on the same tree belongs to another operation and is not part of
 this computation.
 
-## Migration
-
-Construct `ContourTraceComputation(tree)` directly in C++ and Python. It replaces
-`ContourTraceComputation::extract(...)` and the former
-`IncrementalContourTraces` result in C++, as well as
-`ContourTraceComputation.extraction(...)` and `ContourTraces` in Python.
-
-The boundary API uses `ContourSide`, `ContourEdge`, `ContourBoundaryKind`, and
-`ContourBoundary`. C++ queries are `edges()`, `boundaries()`, and
-`boundaryEdges()`; Python queries are `edges()`, `boundaries()`, and
-`boundary_edges()`. The former loop-based names and the previous `get` methods
-have no compatibility aliases.
-
 Profiling uses external timers or sampling tools. The library does not expose
 profiling counters or a separate instrumented build mode.
 

@@ -7,6 +7,27 @@ using namespace mmcfilters;
 using namespace mmcfilters::unit_tests;
 
 int main() {
+    {
+        // Multiple siblings and grandchildren exercise stack growth and child order.
+        const std::vector<NodeId> parents{0, 0, 0, 0, 1, 1, 2, 2, 3, 3};
+        const std::vector<NodeId> smallestNodes{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+        const std::vector<int> altitudes(10, 0);
+        auto valued = MorphologicalTreeFactory::createFromNativeTopology(
+            std::span<const NodeId>(parents), std::span<const NodeId>(smallestNodes), std::span<const int>(altitudes), 0,
+            MorphologicalTreeSemantics{});
+        const auto& tree = valued.topology();
+        requireVectorEqual(collectNodeIds(tree.subtreeNodes(tree.root())), {0, 1, 4, 5, 2, 6, 7, 3, 8, 9}, "branching pre-order preserves sibling order");
+        requireVectorEqual(collectNodeIds(tree.postOrder()), {4, 5, 1, 6, 7, 2, 8, 9, 3, 0}, "branching post-order preserves sibling order");
+        requireVectorEqual(collectNodeIds(tree.subtreeNodes(2)), {2, 6, 7}, "subtree traversal stops at its root boundary");
+
+        const std::vector<std::pair<NodeId, NodeId>> offlineQueries{{4, 5}, {4, 6}, {6, 7}, {0, 9}, {8, 8}, {InvalidNode, 4}, {4, 20}};
+        requireVectorEqual(tree.lowestCommonAncestors(offlineQueries), {1, 0, 2, 0, 8, InvalidNode, InvalidNode},
+                           "batched LCA uses offline Tarjan before the RMQ cache exists");
+
+        require(tree.lowestCommonAncestor(4, 5) == 1, "scalar LCA builds the lazy RMQ cache");
+        const std::vector<std::pair<NodeId, NodeId>> cachedQueries{{4, 5}, {4, 6}, {6, 7}, {0, 9}, {8, 8}};
+        requireVectorEqual(tree.lowestCommonAncestors(cachedQueries), {1, 0, 2, 0, 8}, "batched LCA reuses an existing RMQ cache");
+    }
     auto image = makeComponentTreeFixture();
     auto maxTree = makeComponentTree(image, true);
     auto minTree = makeComponentTree(image, false);
@@ -60,6 +81,9 @@ int main() {
     requireVectorEqual(collectNodeIds(maxTree->getPathBetweenNodes(detachedNodeId, detachedNodeId)), {detachedNodeId}, "detached node path to itself");
     requireVectorEqual(collectNodeIds(maxTree->getPathBetweenNodes(detachedNodeId, maxTree->root())), {},
                        "detached node path to connected root should be empty");
+    const std::vector<std::pair<NodeId, NodeId>> detachedQueries{{detachedNodeId, detachedNodeId}, {detachedNodeId, maxTree->root()}};
+    requireVectorEqual(maxTree->lowestCommonAncestors(detachedQueries), {detachedNodeId, InvalidNode},
+                       "batched LCA handles a detached live node consistently");
 
     return 0;
 }

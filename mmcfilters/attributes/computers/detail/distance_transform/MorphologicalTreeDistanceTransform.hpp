@@ -1,8 +1,8 @@
 #pragma once
 
 #include "ExactSquaredEuclideanDistanceTransform2D.hpp"
-#include "MorphologicalTreeContourScheduler.hpp"
-#include "MorphologicalTreeRegionIndex.hpp"
+#include "NodeContourSchedule.hpp"
+#include "NodeSupportBoxIndex.hpp"
 #include "NodeDistanceFieldProvider.hpp"
 #include "../../../../trees/MorphologicalTree.hpp"
 #include "../../../../utils/Common.hpp"
@@ -42,7 +42,7 @@ class NodeDistanceTransformFrame {
     /**
      * @brief Returns the minimal global-coordinate support box.
      */
-    [[nodiscard]] const RegionBox2D& boundingBox() const noexcept { return box_; }
+    [[nodiscard]] const SupportBox2D& supportBox() const noexcept { return supportBox_; }
 
     /**
      * @brief Feeds any number of reducers through one support enumeration.
@@ -74,14 +74,14 @@ class NodeDistanceTransformFrame {
   private:
     friend class MorphologicalTreeDistanceTransform;
 
-    NodeDistanceTransformFrame(NodeId node, std::span<const PixelId> supportPixels, RegionBox2D box, RegionBox2D transformBox, int globalColumns,
+    NodeDistanceTransformFrame(NodeId node, std::span<const PixelId> supportPixels, SupportBox2D supportBox, SupportBox2D transformBox, int globalColumns,
                                const ExactSquaredEuclideanDistanceTransform2D& transform)
-        : node_(node), supportPixels_(supportPixels), box_(box), transformBox_(transformBox), globalColumns_(globalColumns), transform_(transform) {}
+        : node_(node), supportPixels_(supportPixels), supportBox_(supportBox), transformBox_(transformBox), globalColumns_(globalColumns), transform_(transform) {}
 
     NodeId node_ = InvalidNode;
     std::span<const PixelId> supportPixels_;
-    RegionBox2D box_{};
-    RegionBox2D transformBox_{};
+    SupportBox2D supportBox_{};
+    SupportBox2D transformBox_{};
     int globalColumns_ = 0;
     const ExactSquaredEuclideanDistanceTransform2D& transform_;
 };
@@ -90,7 +90,7 @@ class NodeDistanceTransformFrame {
  * @brief Uniform node-wise exact EDT backend for every 2D MorphologicalTree.
  *
  * Every node is evaluated from the same support-driven procedure. Proper parts
- * are indexed once, foreground 4-neighbour contours are scheduled bottom-up
+ * are indexed once, foreground 4-neighbor contours are scheduled bottom-up
  * from compact local changes, and one reusable exact separable EDT workspace is
  * initialized once per heavy path and updated by exact dirty-line transforms.
  * Tree kind, altitude, and construction adjacency never select another
@@ -117,33 +117,33 @@ class MorphologicalTreeDistanceTransform {
      * @param consumer Callback invoked exactly once with the requested frame.
      */
     template <class Consumer> static void forNode(const MorphologicalTree& tree, NodeId node, Consumer&& consumer) {
-        const MorphologicalTreeRegionIndex regions(tree);
+        const NodeSupportBoxIndex supportIndex(tree);
         const GridDomain2D& domain = ::mmcfilters::detail::CommittedTreeAccess::gridDomain2D(tree);
         if (!tree.isAlive(node)) {
             throw std::out_of_range("Single-node distance-transform computation requires a live node id.");
         }
 
         const std::size_t mutationVersion = tree.getMutationVersion();
-        const contours::detail::MorphologicalTreeBoundaryLifetimeIndex boundaries(tree);
-        const std::span<const PixelId> supportPixels = regions.establishedSupport(node);
-        const RegionBox2D box = regions.establishedBoundingBox(node);
+        const contours::detail::ContourLifetimeIndex contourLifetimes(tree);
+        const std::span<const PixelId> supportPixels = supportIndex.establishedSupport(node);
+        const SupportBox2D supportBox = supportIndex.establishedSupportBox(node);
 
         std::vector<PixelId> localContourPixels;
         localContourPixels.reserve(supportPixels.size());
         for (PixelId pixel : supportPixels) {
-            if (boundaries.establishedIsBoundaryAt(pixel, node)) {
-                localContourPixels.push_back(box.localPixel(pixel, domain.columns));
+            if (contourLifetimes.establishedIsContourPixel(pixel, node)) {
+                localContourPixels.push_back(supportBox.localPixel(pixel, domain.columns));
             }
         }
         if (localContourPixels.empty()) {
             throw std::logic_error("Single-node distance-transform computation found an empty foreground contour.");
         }
 
-        ExactSquaredEuclideanDistanceTransform2D transform(box.rows(), box.columns());
+        ExactSquaredEuclideanDistanceTransform2D transform(supportBox.rows(), supportBox.columns());
         transform.computeEstablished(localContourPixels);
 
-        const NodeDistanceTransformFrame frame(node, supportPixels, box, box, domain.columns, transform);
-        consumer(frame);
+        const NodeDistanceTransformFrame distanceField(node, supportPixels, supportBox, supportBox, domain.columns, transform);
+        consumer(distanceField);
         tree.requireMutationVersion(mutationVersion, "MorphologicalTreeDistanceTransform::forNode callback");
     }
 
@@ -154,24 +154,24 @@ class MorphologicalTreeDistanceTransform {
      * @param consumer Callback invoked synchronously with each borrowed frame.
      */
     template <class Consumer> static void forEachNode(const MorphologicalTree& tree, Consumer&& consumer) {
-        MorphologicalTreeRegionIndex regions(tree);
+        NodeSupportBoxIndex supportIndex(tree);
         const GridDomain2D& domain = ::mmcfilters::detail::CommittedTreeAccess::gridDomain2D(tree);
         ExactSquaredEuclideanDistanceTransform2D transform(1, 1);
         std::vector<PixelId> localContourPixels;
         std::vector<PixelId> localAdditionPixels;
         std::vector<PixelId> localRemovalPixels;
-        RegionBox2D transformBox{};
+        SupportBox2D transformBox{};
 
-        MorphologicalTreeContourScheduler::forEachEstablishedNode(tree, regions, [&](const NodeContourFrame& contourFrame) {
-            const NodeId node = contourFrame.node();
-            const std::span<const PixelId> supportPixels = regions.establishedSupport(node);
-            const RegionBox2D box = regions.establishedBoundingBox(node);
+        forEachEstablishedContourUpdate(tree, supportIndex, [&](const NodeContourUpdate& contourUpdate) {
+            const NodeId node = contourUpdate.node();
+            const std::span<const PixelId> supportPixels = supportIndex.establishedSupport(node);
+            const SupportBox2D supportBox = supportIndex.establishedSupportBox(node);
 
-            if (contourFrame.startsHeavyPath()) {
-                transformBox = regions.establishedBoundingBox(contourFrame.heavyPathTop());
+            if (contourUpdate.startsHeavyPath()) {
+                transformBox = supportIndex.establishedSupportBox(contourUpdate.heavyPathTop());
                 localContourPixels.clear();
-                localContourPixels.reserve(contourFrame.pixels().size());
-                for (PixelId pixel : contourFrame.pixels()) {
+                localContourPixels.reserve(contourUpdate.contour().size());
+                for (PixelId pixel : contourUpdate.contour()) {
                     localContourPixels.push_back(transformBox.localPixel(pixel, domain.columns));
                 }
                 if (localContourPixels.empty()) {
@@ -183,19 +183,19 @@ class MorphologicalTreeDistanceTransform {
             } else {
                 localAdditionPixels.clear();
                 localRemovalPixels.clear();
-                localAdditionPixels.reserve(contourFrame.additionsFromHeavyChild().size());
-                localRemovalPixels.reserve(contourFrame.removalsFromHeavyChild().size());
-                for (PixelId pixel : contourFrame.additionsFromHeavyChild()) {
+                localAdditionPixels.reserve(contourUpdate.addedContourPixels().size());
+                localRemovalPixels.reserve(contourUpdate.removedContourPixels().size());
+                for (PixelId pixel : contourUpdate.addedContourPixels()) {
                     localAdditionPixels.push_back(transformBox.localPixel(pixel, domain.columns));
                 }
-                for (PixelId pixel : contourFrame.removalsFromHeavyChild()) {
+                for (PixelId pixel : contourUpdate.removedContourPixels()) {
                     localRemovalPixels.push_back(transformBox.localPixel(pixel, domain.columns));
                 }
                 transform.applyEstablishedSiteDelta(localAdditionPixels, localRemovalPixels);
             }
 
-            const NodeDistanceTransformFrame frame(node, supportPixels, box, transformBox, domain.columns, transform);
-            consumer(frame);
+            const NodeDistanceTransformFrame distanceField(node, supportPixels, supportBox, transformBox, domain.columns, transform);
+            consumer(distanceField);
         });
     }
 

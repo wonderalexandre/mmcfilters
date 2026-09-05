@@ -153,8 +153,8 @@ public API.
 Topology mutations invalidate objects that cache or interpret node-indexed
 state. Guarded objects include:
 
-- `ContoursComputedIncrementally::IncrementalContours`;
-- `ContourTraceComputation::IncrementalContourTraces`;
+- `ContourComputation`;
+- `ContourTraceComputation`;
 - `ValuedMorphologicalTreeView<T>`;
 - `AttributeFilters`;
 - `ExtinctionValues`;

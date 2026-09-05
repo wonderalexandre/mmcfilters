@@ -523,6 +523,47 @@ void testConfigurablePolicyEquivalence() {
     }
 }
 
+void testDynamicIndexesAgainstSharedLca() {
+    constexpr std::array policies{sdrt::SaturatedMinMaxLcaPolicy::BlockedSnapshot, sdrt::SaturatedMinMaxLcaPolicy::LinkCut};
+    for (const auto policy : policies) {
+        for (bool maximum : {false, true}) {
+            const auto image = makeComponentTreeFixture();
+            auto tree = maximum ? MorphologicalTreeFactory::createMaxTree(image) : MorphologicalTreeFactory::createMinTree(image);
+            sdrt::detail::SaturatedLcaTypes<std::uint8_t>::DynamicLcaIndex index;
+            index.bind(tree, policy);
+            std::size_t answered = 0;
+            std::size_t dirty = 0;
+            while (true) {
+                const auto& topology = tree.topology();
+                const auto liveNodes = collectNodeIds(topology.aliveNodeIds());
+                for (NodeId first : liveNodes) {
+                    for (NodeId second : liveNodes) {
+                        const auto actual = index.findLowestCommonAncestor(first, second);
+                        if (actual.has_value()) {
+                            ++answered;
+                            requireEqual(*actual, topology.lowestCommonAncestor(first, second), "dynamic index matches shared LCA after edits");
+                        } else {
+                            ++dirty;
+                            require(policy == sdrt::SaturatedMinMaxLcaPolicy::BlockedSnapshot, "link-cut resolves every live pair");
+                        }
+                    }
+                }
+                if (topology.numNodes() == 1) {
+                    break;
+                }
+                const auto removed = *std::find_if(liveNodes.begin(), liveNodes.end(), [&](NodeId node) { return node != topology.root(); });
+                tree.mergeNodeIntoParent(removed);
+                // Include removed nodes and reparented children; each index detects net changes.
+                index.noteMutation(std::span<const NodeId>(liveNodes));
+            }
+            require(answered > 0, "dynamic index answers queries from a prepared index");
+            if (policy == sdrt::SaturatedMinMaxLcaPolicy::BlockedSnapshot) {
+                require(dirty > 0, "blocked snapshot delegates affected pairs to the current parent paths");
+            }
+        }
+    }
+}
+
 } // namespace
 
 int main() {
@@ -537,5 +578,6 @@ int main() {
     testSharedArbitrarySymmetricAdjacency();
     testSaturatedResidualEligibilityInIsolation();
     testConfigurablePolicyEquivalence();
+    testDynamicIndexesAgainstSharedLca();
     return 0;
 }

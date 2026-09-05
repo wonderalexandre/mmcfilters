@@ -196,10 +196,6 @@ mmcfilters_add_unit_test(unit_contours_on_morphological_tree
 mmcfilters_add_unit_test(unit_contour_traces_on_morphological_tree
     contours/test_contour_traces_on_morphological_tree.cpp
 )
-target_compile_definitions(unit_contour_traces_on_morphological_tree
-    PRIVATE
-        MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
-)
 
 mmcfilters_add_unit_test(unit_extinction_values_on_morphological_tree
     filters/test_extinction_values_on_morphological_tree.cpp

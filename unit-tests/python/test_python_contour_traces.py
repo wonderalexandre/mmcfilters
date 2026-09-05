@@ -56,10 +56,14 @@ def main() -> int:
 
     mmcfilters = load_native_module(pathlib.Path(sys.argv[1]).resolve())
     require(hasattr(mmcfilters, "ContourTraceComputation"), "package must expose ContourTraceComputation")
-    require(hasattr(mmcfilters, "ContourLoopKind"), "package must expose ContourLoopKind")
-    require(hasattr(mmcfilters, "ContourTraceSide"), "package must expose ContourTraceSide")
+    require(not hasattr(mmcfilters, "ContourTraces"), "trace construction and results must use one public class")
+    require(not hasattr(mmcfilters, "ContourTraceLoop"), "legacy loop metadata name must not be exposed")
+    require(not hasattr(mmcfilters, "ContourLoopKind"), "legacy loop-kind name must not be exposed")
+    require(not hasattr(mmcfilters.ContourTraceComputation, "extraction"), "trace computation uses the constructor")
+    require(hasattr(mmcfilters, "ContourBoundaryKind"), "package must expose ContourBoundaryKind")
+    require(hasattr(mmcfilters, "ContourSide"), "package must expose ContourSide")
     require_raises(
-        lambda: mmcfilters.ContourTraceComputation.extraction(None),
+        lambda: mmcfilters.ContourTraceComputation(None),
         "contour trace extraction must reject None",
     )
 
@@ -77,38 +81,63 @@ def main() -> int:
     require(len(ring_nodes) == 1, "ring fixture must expose one area-8 node")
 
     tree_reference_count = sys.getrefcount(tree)
-    traces = mmcfilters.ContourTraceComputation.extraction(tree)
+    traces = mmcfilters.ContourTraceComputation(tree)
+    require(isinstance(traces, mmcfilters.ContourTraceComputation), "constructor must return the public computation type")
+    require(not hasattr(traces, "get_loops"), "legacy get_loops method must not be exposed")
+    require(not hasattr(traces, "get_loop_edges"), "legacy get_loop_edges method must not be exposed")
     require(
         sys.getrefcount(tree) > tree_reference_count,
-        "ContourTraces must retain a strong reference to its source tree",
+        "ContourTraceComputation must retain a strong reference to its source tree",
     )
     del tree
     gc.collect()
 
-    # ContourTraces borrows the topology internally, so its Python binding must
+    # ContourTraceComputation borrows the topology internally, so its Python binding must
     # keep the source tree alive for every lazy query.
-    require(traces.is_materialized is False, "traces must start without global materialization")
-    edges = traces.get_edges(ring_nodes[0])
+    require(traces.has_traced_all_boundaries is False, "traces must start without cached boundaries")
+    edges = traces.edges(ring_nodes[0])
     require(len(edges) == 16, "ring trace edge count")
-    require(traces.is_edge_materialized(ring_nodes[0]) is True, "get_edges must materialize node edges")
-    require(traces.is_node_traced(ring_nodes[0]) is False, "get_edges must not trace loops")
+    require(traces.has_cached_edges(ring_nodes[0]) is True, "edges must cache the node edge set")
+    require(traces.has_traced_boundaries(ring_nodes[0]) is False, "edges must not trace boundaries")
 
-    loops = traces.get_loops(ring_nodes[0])
-    require(len(loops) == 2, "ring trace loop count")
-    require(traces.is_node_traced(ring_nodes[0]) is True, "get_loops must trace node loops")
-    external = [loop for loop in loops if loop.kind == mmcfilters.ContourLoopKind.EXTERNAL]
-    internal = [loop for loop in loops if loop.kind == mmcfilters.ContourLoopKind.INTERNAL]
-    require(len(external) == 1, "ring must have one external loop")
-    require(len(internal) == 1, "ring must have one internal loop")
-    require(external[0].edge_count == 12, "ring external loop edge count")
-    require(internal[0].edge_count == 4, "ring internal loop edge count")
-    require(external[0].signed_area2 > 0, "external loop signed area")
-    require(internal[0].signed_area2 < 0, "internal loop signed area")
-    require(len(traces.get_loop_edges(external[0])) == 12, "external loop edge range")
-    require(len(traces.get_loop_edges(internal[0])) == 4, "internal loop edge range")
+    boundaries = traces.boundaries(ring_nodes[0])
+    require(len(boundaries) == 2, "ring trace boundary count")
+    require(traces.has_traced_boundaries(ring_nodes[0]) is True, "boundaries must trace node boundaries")
+    external = [boundary for boundary in boundaries if boundary.kind == mmcfilters.ContourBoundaryKind.EXTERNAL]
+    internal = [boundary for boundary in boundaries if boundary.kind == mmcfilters.ContourBoundaryKind.INTERNAL]
+    require(len(external) == 1, "ring must have one external boundary")
+    require(len(internal) == 1, "ring must have one internal boundary")
+    require(external[0].edge_count == 12, "ring external boundary edge count")
+    require(internal[0].edge_count == 4, "ring internal boundary edge count")
+    require(external[0].doubled_signed_area > 0, "external boundary signed area")
+    require(internal[0].doubled_signed_area < 0, "internal boundary signed area")
+    require(len(traces.boundary_edges(external[0])) == 12, "external boundary edge range")
+    require(len(traces.boundary_edges(internal[0])) == 4, "internal boundary edge range")
 
-    traces.materialize_all()
-    require(traces.is_materialized is True, "materialize_all must trace all nodes")
+    traces.trace_all()
+    require(traces.has_traced_all_boundaries is True, "trace_all must trace all nodes")
+
+    # The center zero reaches the exterior only under 8-connected background.
+    # A repeated grid vertex must not prematurely close a 4/8 contour.
+    image = np.array([[1, 0, 2], [0, 2, 0], [0, 0, 0]], dtype=np.uint8)
+    for radius, expected in ((1.0, [(16, 14)]), (1.5, [(4, -2), (12, 16)])):
+        tree = mmcfilters.MorphologicalTreeFactory.create_min_tree(image, radius)
+        area = mmcfilters.Attribute.compute_single_topology_attribute(tree, mmcfilters.Attribute.AREA)
+        node = next(node for node, value in enumerate(area.tolist()) if int(value) == 7)
+        traces = mmcfilters.ContourTraceComputation(tree)
+        actual = sorted((boundary.edge_count, boundary.doubled_signed_area) for boundary in traces.boundaries(node))
+        require(actual == expected, f"complementary contour pairing for radius={radius}: {actual}")
+
+    # Python passes a valued view: upper 8-connected shapes must retain their
+    # polarity even though the native result is subsequently accessed lazily.
+    image = np.ones((5, 5), dtype=np.uint8)
+    image[1, 1] = image[2, 2] = 2
+    tree = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(image)
+    area = mmcfilters.Attribute.compute_single_topology_attribute(tree, mmcfilters.Attribute.AREA)
+    node = next(node for node, value in enumerate(area.tolist()) if int(value) == 2)
+    traces = mmcfilters.ContourTraceComputation(tree)
+    boundaries = traces.boundaries(node)
+    require(len(boundaries) == 1 and boundaries[0].edge_count == 8, "upper 8-connected shape must have one self-touching cycle")
     return 0
 
 

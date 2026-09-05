@@ -4,8 +4,8 @@
 #include "DynamicDistanceFieldStatistics2D.hpp"
 #include "MorphologicalTreePropagationEdgeIndex.hpp"
 #include "MorphologicalTreeTopologicalLevelIndex.hpp"
-#include "../distance_transform/MorphologicalTreeRegionIndex.hpp"
-#include "../../../../contours/detail/MorphologicalTreeBoundaryLifetimeIndex.hpp"
+#include "../distance_transform/NodeSupportBoxIndex.hpp"
+#include "../../../../contours/detail/ContourLifetimeIndex.hpp"
 #include "../../../../trees/MorphologicalTree.hpp"
 #include "../../../../trees/detail/CommittedTreeAccess.hpp"
 
@@ -92,13 +92,13 @@ template <class PropagationPolicy, class ExecutionPolicy> class BasicMorphologic
      * accessor and support span are borrowed and must not escape the callback.
      */
     template <class FieldConsumer> static void forEachNodeField(const MorphologicalTree& tree, FieldConsumer&& consumeField) {
-        distance_transform::MorphologicalTreeRegionIndex regions(tree);
+        distance_transform::NodeSupportBoxIndex supportIndex(tree);
         forEachNodeWithPolicies<NoopDistanceFieldObserver2D, NoopMaximumPixelTracker2D>(
             tree,
-            [&regions, &consumeField](NodeId node, const distance_transform::DistanceFieldExtremum&, const distance_transform::DistanceFieldMaximumPlateau&,
+            [&supportIndex, &consumeField](NodeId node, const distance_transform::DistanceFieldExtremum&, const distance_transform::DistanceFieldMaximumPlateau&,
                                       const NoopDistanceFieldObserver2D&, PixelId, const auto& transform) {
                 const auto squaredDistanceAt = [&transform](PixelId pixel) { return transform.squaredDistance(pixel); };
-                consumeField(node, regions.support(node), squaredDistanceAt);
+                consumeField(node, supportIndex.support(node), squaredDistanceAt);
             });
     }
 
@@ -329,7 +329,7 @@ template <class PropagationPolicy, class ExecutionPolicy> class BasicMorphologic
                                     ExecutionPolicy::assumeOpenImpliesSupport, ExecutionPolicy::useLinearRemovalOffsets,
                                     ExecutionPolicy::validateInternalInvariants, ExecutionPolicy::eraseInvalidatedPixels>;
         const std::size_t mutationVersion = tree.getMutationVersion();
-        const contours::detail::MorphologicalTreeBoundaryLifetimeIndex boundaries(tree);
+        const contours::detail::ContourLifetimeIndex contourLifetimes(tree);
         const MorphologicalTreeTopologicalLevelIndex levels(tree);
         std::unique_ptr<MorphologicalTreePropagationEdgeIndex> propagationEdges;
         if constexpr (CheckActiveEdges) {
@@ -351,10 +351,10 @@ template <class PropagationPolicy, class ExecutionPolicy> class BasicMorphologic
             newlyOpenedPixels.clear();
 
             for (NodeId node : levelNodes) {
-                buildNodeContour(tree, node, boundaries, contoursByNode, contourPositions);
-                transform.removeSeeds(boundaries.establishedRemovals(node));
+                buildNodeContour(tree, node, contourLifetimes, contoursByNode, contourPositions);
+                transform.removeSeeds(contourLifetimes.establishedRemovals(node));
 
-                const std::span<const PixelId> additions = boundaries.establishedAdditions(node);
+                const std::span<const PixelId> additions = contourLifetimes.establishedAdditions(node);
                 markPixels(additions, additionMarks, tree.numPixels());
                 std::size_t consumedAdditions = 0;
                 for (PixelId pixel : ::mmcfilters::detail::CommittedTreeAccess::properParts(tree, node)) {
@@ -420,32 +420,32 @@ template <class PropagationPolicy, class ExecutionPolicy> class BasicMorphologic
     /**
      * @brief Detects when the unrestricted Opt3 propagation graph is exact.
      *
-     * If the inclusion-smallest owners of every A8 edge are comparable, the
+     * If the smallest nodes of both pixels on every A8 edge are comparable, the
      * edge is already internal as soon as both endpoints enter the support.
      * Consequently no sibling can communicate prematurely and all domain
      * edges may stay active, exactly as in the paper implementation. Trees that
      * do not satisfy this topology-only condition retain LCA-gated activation.
      */
     [[nodiscard]] static bool allA8EdgeOwnersComparable(const MorphologicalTree& tree, GridDomain2D domain) {
-        const std::span<const NodeId> owners = tree.smallestNodeMap();
+        const std::span<const NodeId> smallestNodes = tree.smallestNodeMap();
         constexpr std::array<std::pair<int, int>, 4> forwardOffsets{{{0, 1}, {1, -1}, {1, 0}, {1, 1}}};
         for (PixelId pixel = 0; pixel < tree.numPixels(); ++pixel) {
             const int row = pixel / domain.columns;
             const int column = pixel % domain.columns;
-            const NodeId firstOwner = owners[static_cast<std::size_t>(pixel)];
+            const NodeId firstSmallestNode = smallestNodes[static_cast<std::size_t>(pixel)];
             for (const auto [rowOffset, columnOffset] : forwardOffsets) {
-                const int neighbourRow = row + rowOffset;
-                const int neighbourColumn = column + columnOffset;
-                if (neighbourRow < 0 || neighbourRow >= domain.rows || neighbourColumn < 0 || neighbourColumn >= domain.columns) {
+                const int neighborRow = row + rowOffset;
+                const int neighborColumn = column + columnOffset;
+                if (neighborRow < 0 || neighborRow >= domain.rows || neighborColumn < 0 || neighborColumn >= domain.columns) {
                     continue;
                 }
-                const PixelId neighbour = neighbourRow * domain.columns + neighbourColumn;
-                const NodeId secondOwner = owners[static_cast<std::size_t>(neighbour)];
-                if (firstOwner == secondOwner) {
+                const PixelId neighbor = neighborRow * domain.columns + neighborColumn;
+                const NodeId secondSmallestNode = smallestNodes[static_cast<std::size_t>(neighbor)];
+                if (firstSmallestNode == secondSmallestNode) {
                     continue;
                 }
-                if (!::mmcfilters::detail::CommittedTreeAccess::isAncestor(tree, firstOwner, secondOwner) &&
-                    !::mmcfilters::detail::CommittedTreeAccess::isAncestor(tree, secondOwner, firstOwner)) {
+                if (!::mmcfilters::detail::CommittedTreeAccess::isAncestor(tree, firstSmallestNode, secondSmallestNode) &&
+                    !::mmcfilters::detail::CommittedTreeAccess::isAncestor(tree, secondSmallestNode, firstSmallestNode)) {
                     return false;
                 }
             }
@@ -466,16 +466,16 @@ template <class PropagationPolicy, class ExecutionPolicy> class BasicMorphologic
         return domain;
     }
 
-    static void buildNodeContour(const MorphologicalTree& tree, NodeId node, const contours::detail::MorphologicalTreeBoundaryLifetimeIndex& boundaries,
+    static void buildNodeContour(const MorphologicalTree& tree, NodeId node, const contours::detail::ContourLifetimeIndex& contourLifetimes,
                                  std::vector<std::unique_ptr<std::vector<PixelId>>>& contoursByNode, std::vector<PixelId>& positions) {
         NodeId storageChild = InvalidNode;
         std::size_t largestContour = 0;
-        std::size_t combinedSize = boundaries.establishedAdditions(node).size();
+        std::size_t combinedSize = contourLifetimes.establishedAdditions(node).size();
         for (NodeId child : ::mmcfilters::detail::CommittedTreeAccess::children(tree, node)) {
             const auto& childContour = contoursByNode[static_cast<std::size_t>(child)];
             if constexpr (ExecutionPolicy::validateInternalInvariants) {
                 if (!childContour) {
-                    throw std::logic_error("Topology-level contour scheduling found an unmaterialized child contour.");
+                    throw std::logic_error("Topology-level contour scheduling found a missing child contour.");
                 }
             }
             combinedSize = sumSizes(combinedSize, childContour->size());
@@ -505,7 +505,7 @@ template <class PropagationPolicy, class ExecutionPolicy> class BasicMorphologic
             childContour.reset();
         }
 
-        for (PixelId pixel : boundaries.establishedAdditions(node)) {
+        for (PixelId pixel : contourLifetimes.establishedAdditions(node)) {
             if constexpr (ExecutionPolicy::validateInternalInvariants) {
                 if (!tree.isPixel(pixel) || positions[static_cast<std::size_t>(pixel)] != InvalidPixel) {
                     throw std::logic_error("Topology-level contour scheduling found an invalid or duplicate local addition.");
@@ -515,7 +515,7 @@ template <class PropagationPolicy, class ExecutionPolicy> class BasicMorphologic
             nodeContour->push_back(pixel);
         }
 
-        for (PixelId pixel : boundaries.establishedRemovals(node)) {
+        for (PixelId pixel : contourLifetimes.establishedRemovals(node)) {
             const PixelId position = positions[static_cast<std::size_t>(pixel)];
             if constexpr (ExecutionPolicy::validateInternalInvariants) {
                 if (!tree.isPixel(pixel) || position == InvalidPixel || static_cast<std::size_t>(position) >= nodeContour->size() ||

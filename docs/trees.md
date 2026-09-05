@@ -357,6 +357,7 @@ Topology query names describe the relation they return:
 | strict descendants | `descendants(node)` | `descendants(node)` |
 | inclusive subtree | `subtreeNodes(node)` | `subtree_nodes(node)` |
 | lowest common ancestor | `lowestCommonAncestor(a, b)` | `lowest_common_ancestor(a, b)` |
+| batch of lowest common ancestors | `lowestCommonAncestors(pairs)` | `lowest_common_ancestors(pairs)` |
 
 `ancestors(node)` includes `node` itself and ends at the root. Conversely,
 `descendants(node)` excludes `node`, whereas `subtreeNodes(node)` includes it.
@@ -368,6 +369,20 @@ that order.
 `breadth_first_traversal`) return tree-wide traversal schedules. Post-order
 visits every child before its parent. It can schedule bottom-up aggregation,
 but traversal and aggregation are distinct operations.
+
+`lowestCommonAncestors(pairs)` preserves the order of the input pairs. Invalid,
+dead, or disconnected endpoints produce `InvalidNode` (`-1` in Python), matching
+the scalar query.
+
+The batch operation reuses the tree's Euler tour and range minimum query cache
+when that cache already exists. Without it, depth-first search intervals first
+resolve equal nodes, ancestor pairs, and disconnected nodes. The remaining
+incomparable pairs use either an Euler/RMQ index or iterative offline Tarjan.
+The implementation estimates both storage requirements from the number `N` of
+node slots and the number `Q` of pairs, then chooses the smaller representation.
+Tarjan takes `O((N + Q) alpha(N))` time and `O(N + Q)` temporary storage and does
+not create a persistent LCA cache. The Euler/RMQ representation uses
+`O(N log N)` storage and remains available to later tree queries.
 
 `dfsEntryIndex(node)` and `dfsExitIndex(node)` (Python:
 `dfs_entry_index(node)` and `dfs_exit_index(node)`) are indices in one shared,

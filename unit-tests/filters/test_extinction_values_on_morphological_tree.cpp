@@ -47,6 +47,45 @@ template <class Real> std::vector<Real> expectedExtinctionValueAttribute(const M
     return expected;
 }
 
+void verifyStreamingContourMapPriority() {
+    // On a one-row domain every support pixel is a contour pixel. The dominant
+    // extremum's root contour overlaps the lower-priority nested cutoffs.
+    auto valued = MorphologicalTreeFactory::createMinTree(makeImage(1, 7, {3, 0, 2, 0, 3, 0, 1}), 1.0);
+    const auto& tree = valued.topology();
+    auto [names, areas] = AttributeComputation::computeSingleAttribute(valued, Area);
+    (void)names;
+    ExtinctionValues<std::uint8_t> extinction(valued, areas);
+    const auto& records = extinction.getRegionalExtrema();
+    bool sawOverlap = false;
+    for (int limit : {0, 1, 2, 100}) {
+        const auto selectedCount = std::min(static_cast<std::size_t>(limit), records.size());
+        for (auto policy : {ExtinctionContourScorePolicy::RankScore, ExtinctionContourScorePolicy::ExtinctionValue}) {
+            std::vector<NodeId> order;
+            std::vector<float> scores(tree.numInternalNodeSlots(), 0.0f);
+            for (std::size_t i = 0; i < selectedCount; ++i) {
+                const NodeId node = records[i].cutoffNode;
+                if (std::find(order.begin(), order.end(), node) == order.end()) {
+                    order.push_back(node);
+                }
+                const float score = policy == ExtinctionContourScorePolicy::RankScore ? static_cast<float>(selectedCount - i) : records[i].extinction;
+                scores[node] = std::max(scores[node], score);
+            }
+            std::vector<float> expected(tree.numPixels(), 0.0f);
+            for (NodeId node : order) {
+                for (NodeId descendant : tree.subtreeNodes(node)) {
+                    for (PixelId pixel : tree.properPart(descendant)) {
+                        sawOverlap = sawOverlap || (expected[pixel] != 0.0f && expected[pixel] != scores[node]);
+                        expected[pixel] = scores[node];
+                    }
+                }
+            }
+            const auto actual = extinction.contourMap(ExtinctionSelectionPolicy<float>::byTopK(limit), policy);
+            requireVectorEqual(collectImageValues(actual), expected, "streaming contour map preserves selected-node overwrite priority");
+        }
+    }
+    require(sawOverlap, "contour-map fixture exercises overlapping cutoffs with different scores");
+}
+
 void verifyDeterministicTieOrdering() {
     auto valuedTree = makeFlatThreeLeafMaxTreeFixture();
     const MorphologicalTree& tree = valuedTree.topology();
@@ -303,6 +342,7 @@ int main() {
         requireImageShape(saliency, valuedTree->topology().numRows(), valuedTree->topology().numColumns());
     }
 
+    verifyStreamingContourMapPriority();
     verifyDeterministicTieOrdering();
     verifyFormalAttributeRejectsInvalidExtinctionValues();
     verifyTreeOfShapesIsRejected();

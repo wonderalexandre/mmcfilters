@@ -143,6 +143,11 @@ template <AltitudeValue T> class SaturatedResidualEligibility {
 
     /**
      * @brief Computes a current LCA by altitude-aligned parent climbs.
+     *
+     * Mutation-specific exception to MorphologicalTree's static LCA cache:
+     * strict min/max altitude order permits an O(height) query with no global
+     * rebuild after a candidate edit. It also resolves dirty snapshot queries.
+     * Keep this fallback confined to saturated certification.
      * @param tree Mutable component tree containing both nodes.
      * @param first First node identifier.
      * @param second Second node identifier.

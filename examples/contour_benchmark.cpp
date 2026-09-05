@@ -1,15 +1,19 @@
 /**
- * Benchmark compact contour extraction and lazy contour materialization.
+ * Benchmark compact contour indexes, incremental iteration, and ordered
+ * boundary tracing.
  *
  * Build with `-DMMCFILTERS_BUILD_EXAMPLES=ON` and run either
  * `./build/examples/mmcfilters_contour_benchmark 512 512 5` for a synthetic
  * image or `./build/examples/mmcfilters_contour_benchmark path/to/image.png 5`
  * for a grayscale image file.
  *
- * Timings separate extraction, `getContour(node)`, `contoursByNode()`,
- * random-order access, and explicit `materializeAll()` prefetch.
+ * Timings separate contour construction, access to one node, iterator
+ * traversal, callbacks, contour-trace construction, and ordered-boundary
+ * traversal. Measure process memory externally; the public API has no profiling
+ * counters.
  */
-#include "mmcfilters/contours/ContoursComputedIncrementally.hpp"
+#include "mmcfilters/contours/ContourComputation.hpp"
+#include "mmcfilters/contours/ContourTraceComputation.hpp"
 #include "mmcfilters/trees/MorphologicalTree.hpp"
 #include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
 #include "stb_image.h"
@@ -20,9 +24,10 @@
 #include <filesystem>
 #include <iostream>
 #include <limits>
-#include <random>
+#include <span>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace mmcfilters;
@@ -33,9 +38,9 @@ ImageUInt8Ptr makeBenchmarkImage(int rows, int columns) {
     auto image = ImageUInt8::create(rows, columns);
     for (int row = 0; row < rows; ++row) {
         for (int column = 0; column < columns; ++column) {
-            const int idx = row * columns + column;
+            const PixelId pixel = row * columns + column;
             const int radial = (row - rows / 2) * (row - rows / 2) + (column - columns / 2) * (column - columns / 2);
-            (*image)[idx] = static_cast<uint8_t>((radial / 97 + row * 3 + column * 5) & 0xff);
+            (*image)[pixel] = static_cast<uint8_t>((radial / 97 + row * 3 + column * 5) & 0xff);
         }
     }
     return image;
@@ -79,72 +84,49 @@ template <typename Fn> void measure(const std::string& label, int repeats, Fn&& 
               << " checksum=" << checksum << '\n';
 }
 
-std::size_t sumContour(const ContoursComputedIncrementally::IncrementalContours& contours, NodeId node) {
+std::size_t contourChecksum(const ContourComputation& contours, NodeId node) {
     std::size_t sum = 0;
-    for (PixelId pixel : contours.getContour(node)) {
+    for (PixelId pixel : contours.contour(node)) {
         sum += static_cast<std::size_t>(pixel + 1);
     }
     return sum;
 }
 
-std::vector<NodeId> aliveNodesInTreeOrder(const MorphologicalTree& tree) {
-    std::vector<NodeId> nodes;
-    nodes.reserve(static_cast<std::size_t>(tree.numNodes()));
-    for (NodeId node : tree.aliveNodeIds()) {
-        nodes.push_back(node);
-    }
-    return nodes;
-}
-
-std::vector<NodeId> shuffledAliveNodes(const MorphologicalTree& tree) {
-    auto nodes = aliveNodesInTreeOrder(tree);
-    std::mt19937 rng(0x5eed);
-    std::shuffle(nodes.begin(), nodes.end(), rng);
-    return nodes;
-}
-
-std::size_t sumContoursInOrder(const std::vector<NodeId>& nodes, const ContoursComputedIncrementally::IncrementalContours& contours) {
+std::size_t allContoursChecksum(const ContourComputation& contours) {
     std::size_t sum = 0;
-    for (NodeId node : nodes) {
-        sum += sumContour(contours, node);
-    }
-    return sum;
-}
-
-std::size_t sumContoursByNode(const ContoursComputedIncrementally::IncrementalContours& contours) {
-    std::size_t sum = 0;
-    for (auto [node, contour] : contours.contoursByNode()) {
+    for (auto [node, pixels] : contours) {
         (void)node;
-        for (PixelId pixel : contour) {
+        for (PixelId pixel : pixels) {
             sum += static_cast<std::size_t>(pixel + 1);
         }
     }
     return sum;
 }
 
-double mib(std::size_t bytes) { return static_cast<double>(bytes) / (1024.0 * 1024.0); }
-
-std::size_t storageChecksum(const ContoursComputedIncrementally::IncrementalContours::StorageStats& stats) {
-    return stats.addDeltaValues + stats.removeDeltaValues + stats.cachedContourValues + stats.cachedContourCapacity + stats.cachedContourReadyNodes +
-           stats.approxAllocatedBytes;
+std::size_t callbackContoursChecksum(const ContourComputation& contours) {
+    std::size_t sum = 0;
+    contours.forEachContour([&](NodeId, std::span<const PixelId> pixels) {
+        for (PixelId pixel : pixels) {
+            sum += static_cast<std::size_t>(pixel + 1);
+        }
+    });
+    return sum;
 }
 
-void printStorageStats(const std::string& label, const ContoursComputedIncrementally::IncrementalContours& contours) {
-    const auto stats = contours.storageStats();
-    std::cout << "    " << label << ": "
-              << "add_delta_values=" << stats.addDeltaValues << " remove_delta_values=" << stats.removeDeltaValues
-              << " cached_contour_values=" << stats.cachedContourValues << " cached_contour_capacity=" << stats.cachedContourCapacity
-              << " cached_ready_nodes=" << stats.cachedContourReadyNodes << " approx_allocated=" << mib(stats.approxAllocatedBytes) << " MiB\n";
-}
-
-void printBenchmarkMethods() {
-    std::cout << "methods:\n"
-              << "  extract only -> ContoursComputedIncrementally::extractCompactContours(tree)\n"
-              << "  root via getContour(root) -> contours.getContour(root)\n"
-              << "  iterate all via getContour(node) -> for node in order: contours.getContour(node)\n"
-              << "  iterate all via contoursByNode() -> for (auto [node, contour] : contours.contoursByNode())\n"
-              << "  iterate all random via getContour(node) -> shuffled nodes + contours.getContour(node)\n"
-              << "  materializeAll + iterate -> contours.materializeAll(); then contours.getContour(node)\n";
+std::uint64_t allBoundariesChecksum(const MorphologicalTree& tree, const ContourTraceComputation& contourTraces) {
+    std::uint64_t sum = 0;
+    for (NodeId node : tree.aliveNodeIds()) {
+        sum += static_cast<std::uint64_t>(node + 1);
+        for (const ContourBoundary& boundary : contourTraces.boundaries(node)) {
+            sum += static_cast<std::uint64_t>(boundary.edgeCount + 1);
+            sum += static_cast<std::uint64_t>(boundary.kind == ContourBoundaryKind::External ? 1 : 2);
+            sum += static_cast<std::uint64_t>(boundary.doubledSignedArea >= 0 ? boundary.doubledSignedArea : -boundary.doubledSignedArea);
+            for (ContourEdge edge : contourTraces.boundaryEdges(boundary)) {
+                sum += static_cast<std::uint64_t>(ContourTraceComputation::packEdge(edge.pixel, edge.side)) + 1;
+            }
+        }
+    }
+    return sum;
 }
 
 void printTreeStats(const MorphologicalTree& tree, double buildMs) {
@@ -177,93 +159,31 @@ void printTreeStats(const MorphologicalTree& tree, double buildMs) {
               << " min=" << minDirectProperParts << " max=" << maxDirectProperParts << '\n';
 }
 
-void printSingleRunBreakdown(const MorphologicalTree& tree, const std::vector<NodeId>& nodesInTreeOrder, const std::vector<NodeId>& nodesInRandomOrder) {
-    std::cout << "  single-run breakdown:\n";
-
-    auto [extractedContours, extractMs] = timed([&]() { return ContoursComputedIncrementally::extractCompactContours(tree); });
-    std::cout << "    extract only: " << extractMs << " ms"
-              << " checksum=" << storageChecksum(extractedContours.storageStats()) << '\n';
-    printStorageStats("after extract", extractedContours);
-
-    auto [treeOrderSum, treeOrderIterMs] = timed([&]() { return sumContoursInOrder(nodesInTreeOrder, extractedContours); });
-    std::cout << "    iterate all via getContour(node) after extract: " << treeOrderIterMs << " ms"
-              << " checksum=" << treeOrderSum << '\n';
-    printStorageStats("after tree-order iteration", extractedContours);
-
-    auto [byNodeContours, byNodeExtractMs] = timed([&]() { return ContoursComputedIncrementally::extractCompactContours(tree); });
-    const auto byNodeExtractStats = byNodeContours.storageStats();
-    auto [byNodeSum, byNodeIterMs] = timed([&]() { return sumContoursByNode(byNodeContours); });
-    std::cout << "    extract only for contoursByNode(): " << byNodeExtractMs << " ms"
-              << " checksum=" << storageChecksum(byNodeExtractStats) << '\n';
-    std::cout << "    iterate all via contoursByNode() after extract: " << byNodeIterMs << " ms"
-              << " checksum=" << byNodeSum << '\n';
-    printStorageStats("after contoursByNode()", byNodeContours);
-
-    auto [randomContours, randomExtractMs] = timed([&]() { return ContoursComputedIncrementally::extractCompactContours(tree); });
-    const auto randomExtractStats = randomContours.storageStats();
-    auto [randomOrderSum, randomOrderIterMs] = timed([&]() { return sumContoursInOrder(nodesInRandomOrder, randomContours); });
-    std::cout << "    extract only for random order: " << randomExtractMs << " ms"
-              << " checksum=" << storageChecksum(randomExtractStats) << '\n';
-    std::cout << "    iterate all via getContour(node) random order after extract: " << randomOrderIterMs << " ms"
-              << " checksum=" << randomOrderSum << '\n';
-    printStorageStats("after random-order iteration", randomContours);
-
-    auto [globalCacheContours, globalCacheExtractMs] = timed([&]() { return ContoursComputedIncrementally::extractCompactContours(tree); });
-    const auto globalCacheExtractStats = globalCacheContours.storageStats();
-    auto [globalCacheChecksum, globalCacheMs] = timed([&]() {
-        globalCacheContours.materializeAll();
-        return storageChecksum(globalCacheContours.storageStats());
-    });
-    auto [globalCacheIterSum, globalCacheIterMs] = timed([&]() { return sumContoursInOrder(nodesInTreeOrder, globalCacheContours); });
-    std::cout << "    extract only for materialize all: " << globalCacheExtractMs << " ms"
-              << " checksum=" << storageChecksum(globalCacheExtractStats) << '\n';
-    std::cout << "    materializeAll() after extract: " << globalCacheMs << " ms"
-              << " checksum=" << globalCacheChecksum << '\n';
-    std::cout << "    iterate all via getContour(node) after materializeAll(): " << globalCacheIterMs << " ms"
-              << " checksum=" << globalCacheIterSum << '\n';
-    printStorageStats("after materialize all", globalCacheContours);
-}
-
-void runCase(const std::string& label, const MorphologicalTree& tree, double buildMs, int repeats) {
-    const NodeId root = tree.root();
-    const auto nodesInTreeOrder = aliveNodesInTreeOrder(tree);
-    const auto nodesInRandomOrder = shuffledAliveNodes(tree);
-
+template <typename TreeView> void runCase(const std::string& label, const TreeView& view, double buildMs, int repeats) {
+    const MorphologicalTree& tree = view.topology();
     std::cout << "\n[" << label << "]\n";
     printTreeStats(tree, buildMs);
 
-    measure("extract only [extractCompactContours]", repeats, [&]() {
-        auto contours = ContoursComputedIncrementally::extractCompactContours(tree);
-        return storageChecksum(contours.storageStats());
-    });
+    auto [contours, contourConstructionMs] = timed([&]() { return ContourComputation(view); });
+    std::cout << "  contour construction (includes batch LCA when needed): " << contourConstructionMs << " ms\n";
+    const auto iteratorChecksum = allContoursChecksum(contours);
+    if (callbackContoursChecksum(contours) != iteratorChecksum) {
+        throw std::logic_error("Callback and iterator contour checksums differ.");
+    }
+    measure("construct + root contour()", repeats, [&]() { return contourChecksum(ContourComputation(view), tree.root()); });
+    measure("construct + iterate all contours", repeats, [&]() { return allContoursChecksum(ContourComputation(view)); });
+    measure("construct + callback for all contours", repeats, [&]() { return callbackContoursChecksum(ContourComputation(view)); });
+    measure("root contour() on existing computation", repeats, [&]() { return contourChecksum(contours, tree.root()); });
+    measure("repeat traversal on existing computation", repeats, [&]() { return allContoursChecksum(contours); });
+    measure("repeat callback on existing computation", repeats, [&]() { return callbackContoursChecksum(contours); });
 
-    measure("extract + root via getContour(root)", repeats, [&]() {
-        auto contours = ContoursComputedIncrementally::extractCompactContours(tree);
-        return sumContour(contours, root);
-    });
+    auto [contourTraces, traceConstructionMs] = timed([&]() { return ContourTraceComputation(view); });
+    auto [boundaryChecksum, firstBoundaryTraversalMs] = timed([&]() { return allBoundariesChecksum(tree, contourTraces); });
+    std::cout << "  contour-trace construction: " << traceConstructionMs << " ms\n"
+              << "  first ordered-boundary trace: " << firstBoundaryTraversalMs << " ms checksum=" << boundaryChecksum << '\n';
 
-    measure("extract + iterate all via getContour(node)", repeats, [&]() {
-        auto contours = ContoursComputedIncrementally::extractCompactContours(tree);
-        return sumContoursInOrder(nodesInTreeOrder, contours);
-    });
-
-    measure("extract + iterate all via contoursByNode()", repeats, [&]() {
-        auto contours = ContoursComputedIncrementally::extractCompactContours(tree);
-        return sumContoursByNode(contours);
-    });
-
-    measure("extract + iterate all via getContour(node) random order", repeats, [&]() {
-        auto contours = ContoursComputedIncrementally::extractCompactContours(tree);
-        return sumContoursInOrder(nodesInRandomOrder, contours);
-    });
-
-    measure("extract + materializeAll() + iterate via getContour(node)", repeats, [&]() {
-        auto contours = ContoursComputedIncrementally::extractCompactContours(tree);
-        contours.materializeAll();
-        return sumContoursInOrder(nodesInTreeOrder, contours);
-    });
-
-    printSingleRunBreakdown(tree, nodesInTreeOrder, nodesInRandomOrder);
+    measure("construct + trace all boundaries", repeats, [&]() { return allBoundariesChecksum(tree, ContourTraceComputation(view)); });
+    measure("repeat boundary traversal on existing computation", repeats, [&]() { return allBoundariesChecksum(tree, contourTraces); });
 }
 
 } // namespace
@@ -282,14 +202,20 @@ int main(int argc, char** argv) {
         image = makeBenchmarkImage(rows, columns);
     }
 
+    if (repeats <= 0) {
+        throw std::invalid_argument("Repeat count must be positive.");
+    }
+
     std::cout << "domain=" << image->getNumRows() << "x" << image->getNumColumns() << " repeats=" << repeats << '\n';
-    printBenchmarkMethods();
 
     auto [componentTree, componentBuildMs] = timed([&]() { return MorphologicalTreeFactory::createMaxTree(image, 1.5); });
-    runCase("component-tree max-tree radius=1.5", componentTree.topology(), componentBuildMs, repeats);
+    runCase("component-tree max-tree radius=1.5", componentTree.asView(), componentBuildMs, repeats);
+
+    auto [minTree, minBuildMs] = timed([&]() { return MorphologicalTreeFactory::createMinTree(image, 1.5); });
+    runCase("component-tree min-tree radius=1.5", minTree.asView(), minBuildMs, repeats);
 
     auto [tosTree, tosBuildMs] = timed([&]() { return MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(image, selfDualSpanConvention()); });
-    runCase("tree-of-shapes SelfDual", tosTree.topology(), tosBuildMs, repeats);
+    runCase("tree of shapes (self-dual span)", tosTree.asView(), tosBuildMs, repeats);
 
     return 0;
 }

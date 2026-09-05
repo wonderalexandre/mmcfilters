@@ -371,17 +371,41 @@ def main() -> int:
     require(tree.parent(0) == 0, "root parent must point to itself")
     require(tree.alive_node_ids == [0, 1, 2, 3, 4, 5], "alive NodeIds")
     require(tree.num_nodes == len(tree.alive_node_ids), "alive node cardinality")
-    contours = mmcfilters.ContourComputation.extraction(tree)
-    require(contours.is_materialized is False, "contours must start without global materialization in Python")
+    contours = mmcfilters.ContourComputation(tree)
     leaf_id = tree.leaves[0]
-    leaf_contour_before_root_materialization = list(contours.get_contour(leaf_id))
-    require(contours.is_contour_materialized(leaf_id) is True, "get_contour iteration must cache the requested leaf in Python")
-    require(contours.is_materialized is False, "get_contour iteration must not materialize all contours in Python")
-    list(contours.get_contour(tree.root))
-    require(contours.is_materialized is True, "root get_contour iteration must materialize all contours in Python")
-    contours.materialize_all()
-    require(contours.is_materialized is True, "materialize_all must materialize all contours in Python")
-    require(sorted(leaf_contour_before_root_materialization) == sorted(list(contours.get_contour(leaf_id))), "Python incremental contour read must match materialized contour")
+    saved_leaf = contours.contour(leaf_id)
+    require(isinstance(saved_leaf, np.ndarray) and saved_leaf.flags.owndata, "point contour is an owned NumPy array")
+    entries = list(contours)
+    require(len(entries) == tree.num_nodes, "iterator visits every node")
+    require([node for node, _ in entries] == [5, 4, 3, 2, 1, 0], "contour traversal is post-order")
+    for node, pixels in entries:
+        require(pixels.flags.owndata, "each streamed array owns its data")
+        np.testing.assert_array_equal(np.sort(pixels), np.sort(contours.contour(node)))
+    for i in range(len(entries) - 1):
+        require(not np.shares_memory(entries[i][1], entries[i + 1][1]), "retained arrays do not share reused storage")
+    np.testing.assert_array_equal(saved_leaf, contours.contour(leaf_id))
+    callbacks = []
+    contours.for_each_contour(lambda node, pixels: callbacks.append((node, pixels)))
+    require([node for node, _ in callbacks] == [node for node, _ in entries], "callback adapts the same traversal")
+    for (_, actual), (_, expected) in zip(callbacks, entries):
+        np.testing.assert_array_equal(actual, expected)
+    first, second = iter(contours), iter(contours)
+    require(next(first)[0] == next(second)[0] == leaf_id, "independent Python traversals")
+    next(first)
+    require(next(second)[0] == 4, "advancing one iterator does not advance another")
+    exhausted = iter(contours)
+    list(exhausted)
+    require(next(exhausted, None) is None and next(exhausted, None) is None, "Python iterator stays exhausted")
+    def stop_contours(node, pixels):
+        raise RuntimeError("stop callback")
+    require_raises(lambda: contours.for_each_contour(stop_contours), "callback exceptions propagate")
+    require(len(list(contours)) == tree.num_nodes, "traversal restarts after callback exception")
+    # The iterator must keep both the compact indexes and the source tree alive.
+    detached = iter(mmcfilters.ContourComputation(mmcfilters.MorphologicalTreeFactory.create_max_tree(np.array([[0, 1, 0]], dtype=np.uint8), 1.0)))
+    import gc
+    gc.collect()
+    require(len(list(detached)) == 2, "iterator owns its Python source lifetime")
+    require_raises(lambda: contours.contour(-1), "on-demand query rejects invalid NodeId")
     require(tree.leaves == [5], "leaf NodeIds")
     require(tree.num_leaf_nodes == len(tree.leaves), "leaf cardinality")
     require(tree.children(3) == [4], "children by NodeId")
@@ -396,6 +420,10 @@ def main() -> int:
     require(tree.post_order() == [5, 4, 3, 2, 1, 0], "post-order traversal schedule")
     require(tree.breadth_first_traversal() == [0, 1, 2, 3, 4, 5], "breadth-first traversal")
     require(tree.lowest_common_ancestor(5, 2) == 2, "lowest common ancestor")
+    require(
+        tree.lowest_common_ancestors([(5, 2), (4, 5), (tree.root, 5), (-1, 2)]) == [2, 4, tree.root, -1],
+        "batched lowest common ancestors preserve query order",
+    )
     require(sorted(tree.alive_node_ids, key=tree.dfs_entry_index) == tree.subtree_nodes(tree.root), "DFS entry order equals pre-order")
     require(sorted(tree.alive_node_ids, key=tree.dfs_exit_index) == tree.post_order(), "DFS exit order equals post-order")
     dfs_event_indices = [index for node in tree.alive_node_ids for index in (tree.dfs_entry_index(node), tree.dfs_exit_index(node))]
@@ -1023,9 +1051,11 @@ def main() -> int:
 
     require(not hasattr(mmcfilters.Attribute, "traversePostOrder"), "post-order traversal callback API should not be public")
     require(not hasattr(mmcfilters, "NodeMT"), "NodeMT should be removed from Python API")
-    require(hasattr(mmcfilters, "ContourRange"), "ContourRange should be exported")
+    require(not hasattr(mmcfilters, "ContourRange"), "cached contour range removed")
     require(not hasattr(mmcfilters, "ContourProxy"), "legacy ContourProxy alias should be removed")
-    require(hasattr(contours, "contours_by_node"), "contours_by_node should be the contour iteration API")
+    require(hasattr(contours, "__iter__"), "contours are directly iterable")
+    for legacy in ("contours_by_node", "trace_all", "has_traced_all_boundaries", "is_contour_materialized", "extraction"):
+        require(not hasattr(contours, legacy), f"legacy contour API removed: {legacy}")
     require(not hasattr(contours, "contours"), "legacy contours() alias should be removed")
     require(not hasattr(contours, "isFullyMaterialized"), "isFullyMaterialized alias should be removed")
     require(tree.root == tree.root, "root property should expose a NodeId, not a legacy node handle")

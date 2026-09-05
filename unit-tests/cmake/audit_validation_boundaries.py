@@ -44,7 +44,7 @@ FORBIDDEN = (
     "ContourSideFiniteWindowComputation::",
     "BitquadAttributeProjection::",
     "ContourSideAttributeMaterialization::",
-    "ContoursComputedIncrementally::extract",
+    "ContourComputation(",
     "requireAttributeBufferShape(",
     "validateNodeAltitudeBufferShape(",
 )

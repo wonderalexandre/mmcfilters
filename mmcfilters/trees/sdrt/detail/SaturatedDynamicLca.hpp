@@ -3,6 +3,14 @@
 /**
  * @file SaturatedDynamicLca.hpp
  * @brief Dynamic LCA strategies used exclusively by saturated certification.
+ *
+ * Exception to the shared MorphologicalTree LCA service: certification queries
+ * interleave with component-tree topology edits. The shared static Euler/RMQ
+ * cache is invalidated by those edits and would need O(N log N) rebuilding
+ * before the next incomparable-node query. These private indexes instead retain
+ * a partially valid snapshot or update a link-cut forest across mutations.
+ * Stable-tree consumers must use MorphologicalTree::lowestCommonAncestor (or
+ * its CommittedTreeAccess forwarding facade).
  */
 
 #include "../ResidualTreePolicies.hpp"
@@ -25,7 +33,6 @@ namespace mmcfilters::sdrt::detail {
 template <AltitudeValue T> struct SaturatedLcaTypes {
     /** @brief Valued component-tree type indexed by the LCA strategies. */
     using Tree = ValuedMorphologicalTree<T>;
-
 
     /**
      * @brief Exact batched dynamic LCA index.

@@ -9,7 +9,7 @@ set(MMCFILTERS_PUBLIC_HEADER_ENTRYPOINTS
     ${MMCFILTERS_ROOT}/attributes/AttributeTypes.hpp
     ${MMCFILTERS_ROOT}/attributes/Attributes.hpp
     ${MMCFILTERS_ROOT}/contours/ContourTraceComputation.hpp
-    ${MMCFILTERS_ROOT}/contours/ContoursComputedIncrementally.hpp
+    ${MMCFILTERS_ROOT}/contours/ContourComputation.hpp
     ${MMCFILTERS_ROOT}/filters/AttributeFilters.hpp
     ${MMCFILTERS_ROOT}/filters/AttributeReconstructionFilters.hpp
     ${MMCFILTERS_ROOT}/filters/NodeDecisionMasks.hpp
@@ -84,9 +84,9 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform/DistanceFieldHistogram.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform/DistanceWeightedSpatialMoments.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform/ExactSquaredEuclideanDistanceTransform2D.hpp
-    ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform/MorphologicalTreeContourScheduler.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform/NodeContourSchedule.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform/MorphologicalTreeDistanceTransform.hpp
-    ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform/MorphologicalTreeRegionIndex.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform/NodeSupportBoxIndex.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform/NodeDistanceFieldProvider.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform_approx/AdaptiveSquaredEuclideanDIFT2D.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform_approx/DynamicDistanceFieldMoments2D.hpp
@@ -106,11 +106,12 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/attributes/detail/AttributeRequestUtils.hpp
     ${MMCFILTERS_ROOT}/attributes/detail/TopologyAttributeBackend.hpp
     ${MMCFILTERS_ROOT}/contours/ContourTraceComputation.hpp
-    ${MMCFILTERS_ROOT}/contours/ContoursComputedIncrementally.hpp
-    ${MMCFILTERS_ROOT}/contours/detail/ContourDeltaStore.hpp
-    ${MMCFILTERS_ROOT}/contours/detail/MorphologicalTreeBoundaryLifetimeIndex.hpp
-    ${MMCFILTERS_ROOT}/contours/detail/ContourTraceDeltaStore.hpp
-    ${MMCFILTERS_ROOT}/contours/detail/PendingPixelLists.hpp
+    ${MMCFILTERS_ROOT}/contours/ContourComputation.hpp
+    ${MMCFILTERS_ROOT}/contours/detail/ContourTraversal.hpp
+    ${MMCFILTERS_ROOT}/contours/detail/NodeSupportIndex.hpp
+    ${MMCFILTERS_ROOT}/contours/detail/ContourLifetimeIndex.hpp
+    ${MMCFILTERS_ROOT}/contours/detail/ContourEdgeDeltaStore.hpp
+    ${MMCFILTERS_ROOT}/contours/detail/PendingEdgeLists.hpp
     ${MMCFILTERS_ROOT}/dataStructure/FastQueue.hpp
     ${MMCFILTERS_ROOT}/filters/AttributeFilters.hpp
     ${MMCFILTERS_ROOT}/filters/AttributeReconstructionFilters.hpp

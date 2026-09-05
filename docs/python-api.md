@@ -379,25 +379,26 @@ definitions and preconditions.
 
 ## Contours
 
-Pixel contours are materialized lazily:
+Pixel contours support incremental post-order iteration and queries for one
+node. Each result is an independently owned NumPy array:
 
 ```python
-contours = mmcfilters.ContourComputation.extraction(max_tree)
-root_contour = list(contours.get_contour(max_tree.root))
+contours = mmcfilters.ContourComputation(max_tree)
+root_contour = contours.contour(max_tree.root)
 
-for node_id, contour in contours.contours_by_node():
-    pixels = list(contour)
+for node_id, contour_pixels in contours:
+    process(node_id, contour_pixels)
 ```
 
-Use contour traces for oriented sides and ordered external/internal loops:
+Use contour traces for oriented sides and ordered external/internal boundaries:
 
 ```python
-traces = mmcfilters.ContourTraceComputation.extraction(max_tree)
-root_edges = traces.get_edges(max_tree.root)
-root_loops = traces.get_loops(max_tree.root)
+contour_traces = mmcfilters.ContourTraceComputation(max_tree)
+root_edges = contour_traces.edges(max_tree.root)
+root_boundaries = contour_traces.boundaries(max_tree.root)
 
-for loop in root_loops:
-    edges = traces.get_loop_edges(loop)
+for boundary in root_boundaries:
+    boundary_edges = contour_traces.boundary_edges(boundary)
 ```
 
 See [Pixel contours](contours.md) and [Contour traces](contour-traces.md).

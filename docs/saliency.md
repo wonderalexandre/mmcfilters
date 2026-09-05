@@ -61,9 +61,9 @@ its endpoints' smallest nodes, computes their LCA, and writes the selected hiera
 level. `EdgeSaliencyMap<T>` stores parallel `sources`, `targets`, and `values`
 arrays with image-domain metadata.
 
-Edges whose endpoints have the same smallest node are present with value zero. Formal valuations must therefore
-be finite and non-negative. Equal parent/child levels are accepted by
-`AllowLevelCollapse`; `RequireStrictHierarchy` rejects them.
+Edges whose endpoints have the same smallest node are present with value zero.
+Formal valuations must be finite and non-negative. Equal parent/child levels
+are accepted by `AllowLevelCollapse`; `RequireStrictHierarchy` rejects them.
 
 Use:
 
@@ -80,8 +80,8 @@ supplied non-decreasing structural or attribute valuation.
 
 For component trees, `ComponentTreePartitionHierarchyAdapter` completes the
 partial-partition interpretation: pixel singletons form partition zero,
-same-smallest-node zero edges form proper-part atoms, and component nodes merge those
-atoms with child supports.
+zero-valued edges connect pixels within proper parts, and component nodes merge
+those components with child supports.
 
 ## Extinction persistence
 
@@ -118,17 +118,28 @@ parent/child relations as graph edges. Equal-valued connected nodes form
 plateaus; regional minima or maxima receive finite extinction values in this
 second graph.
 
-The result is projected by maximum on original-region contours rather than by
-the LCA value. If \f$s(v)\ge0\f$ is the score of region \f$v\f$, then
+Let \f$C(v)\subseteq E\f$ be the support of node \f$v\f$. Its graph boundary is
+the cut
+
+\f[
+\partial_{\mathcal A}C(v)=
+\{\{p,q\}\in\mathcal A : |\{p,q\}\cap C(v)|=1\}.
+\f]
+
+An edge belongs to this boundary exactly when one endpoint is in the support.
+For non-negative node scores \f$s(v)\f$, projection takes the maximum over all
+boundaries containing the edge:
 
 \f[
 w(\{p,q\})=
-\max\{s(v)\mid \{p,q\}\subseteq\partial C(v)\}.
+\max\bigl(\{0\}\cup
+\{s(v) : v\in\mathcal V,\ \{p,q\}\in\partial_{\mathcal A}C(v)\}\bigr).
 \f]
 
 Equivalently, the maximum is taken over the two smallest-node-to-LCA paths, excluding
-the LCA. Use this operation when the input attribute is not a monotone valuation
-of the original hierarchy.
+the LCA. An edge whose endpoints have the same smallest node receives zero.
+Use this operation when the input attribute is not a monotone valuation of the
+original hierarchy.
 
 ## Validity contracts
 
@@ -160,8 +171,9 @@ formal values, and non-finite values are rejected.
 - Equal-strength extinction branches follow deterministic leaf and traversal
   order.
 - Equal hierarchy edges use row-major endpoint IDs.
-- Shape-space plateaus use their outermost node as representative, then the
-  smallest `NodeId`.
+- Shape-space plateaus use their outermost node as representative. Ties between
+  extrema and result ordering use the minimum pixel index in the node support,
+  then support cardinality and depth, independently of internal `NodeId` assignment.
 
 These rules make results reproducible without claiming mathematical uniqueness
 under other valid tie policies.
@@ -179,19 +191,39 @@ the aggregation rule.
 
 ## Complexity
 
-Let \f$m=|\mathcal{V}|\f$ be the number of live nodes, \f$p=|E|\f$ the number of
-pixel-domain elements (equivalently, proper-part element references),
-\f$e=|\mathcal{A}|\f$ the number of graph edges, and \f$l\f$ the number of
-component-tree leaves.
+Let `N` count internal node slots, \f$m=|\mathcal{V}|\f$ live nodes,
+\f$p=|E|\f$ pixels, \f$e=|\mathcal{A}|\f$ graph edges, and \f$l\f$
+component-tree leaves. Edits can leave dead slots, so `m <= N`; dense buffers
+are sized by `N`. Let `alpha` denote the inverse Ackermann function.
 
-| Operation | Time | Auxiliary memory including output where noted |
+The following bounds exclude source-tree construction and its LCA caches.
+Projection rows also exclude hierarchy-connectivity validation, listed
+separately. Direct projection validates connectivity by default; extinction
+persistence always validates it.
+
+| Operation | Time | Additional storage, including output |
 | --- | --- | --- |
-| hierarchy-connectivity validation | `O(m + p + e)` | `O(m + p + e)` |
-| direct LCA projection | linear preprocessing plus `O(e)` | `O(m + e)` including output |
-| extinction persistence map | `O(e log e + p log p)` plus linear terms | `O(m + p + e)` |
-| extinction record construction | conservative `O(lm)` | `O(m + l)` |
-| shape-space extinction | `O(m log m)` | `O(m)` excluding results |
-| shape-space contour projection | `O(m log m + e log m)` | `O(m log m + e)` including output |
+| hierarchy-connectivity validation | `O(N + (m + p + e) alpha(p))` | `O(N + p + e)` |
+| direct LCA projection | `O(N + p + e)` | `O(N + e)` |
+| extinction persistence map | `O(N + e log(e + 1) + p log(p + 1))` | `O(N + e + p log(p + 1))` |
+| extinction record construction | conservative `O(N + lm)` | `O(N + l)` |
+| shape-space extinction | `O(N + p + m log(m + 1))` | `O(N)` |
+| shape-space contour projection | `O(N log(N + 1) + p + e log(N + 1))` | `O(N log(N + 1) + e)` |
+
+These projection paths and connectivity validation use scalar
+`MorphologicalTree::lowestCommonAncestor` queries. DFS intervals take `O(N)`
+time and storage to prepare and resolve comparable pairs in constant time.
+The first incomparable pair may additionally build an Euler/RMQ cache with
+`O(N log(N + 1))` time and storage. Later queries reuse it in constant time.
+Add this preparation cost when the source cache is absent; retained cache
+storage belongs to the tree. See [Morphological trees](trees.md).
+
+Each extinction-persistence call constructs a new dendrogram with `O(p)` nodes;
+the table includes its possible `O(p log(p + 1))` LCA cache. Extinction-record
+construction is a separate cost paid when initializing `ExtinctionValues`.
+Shape-space extinction includes preparation of the support cardinality and
+minimum pixel index in the node support for each node. Retaining multiple maps
+adds their `O(e)` outputs.
 
 ## C++ and Python entry points
 

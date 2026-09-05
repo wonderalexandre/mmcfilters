@@ -231,7 +231,7 @@ class TreeEditor {
     struct PixelRollbackState {
         /** @brief Identifies the pixel slot whose links are restored. */
         PixelId pixel = InvalidPixel;
-        /** @brief Identifies the pixel's inclusion-smallest node. */
+        /** @brief Identifies the pixel's smallest node. */
         NodeId smallestNodeId = InvalidNode;
         /** @brief Identifies the next pixel in the same proper part. */
         PixelId next = InvalidPixel;

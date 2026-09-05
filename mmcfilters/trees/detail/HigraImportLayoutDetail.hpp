@@ -11,7 +11,7 @@ namespace mmcfilters::detail {
 /**
  * @brief Leaf-first Higra id layout used by the import adapter.
  *
- * Higra stores proper-part leaves in `[0, numLeaves)` and internal nodes in
+ * Higra stores pixel leaves in `[0, numLeaves)` and internal nodes in
  * `[numLeaves, numVertices)`. `MorphologicalTree` stores internal nodes in a
  * separate dense domain, so conversion is a constant offset.
  *

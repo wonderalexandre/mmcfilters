@@ -320,9 +320,9 @@ Set `ranked=True` for the canonical dense edge scale.)doc")
         .def("compute_monotone_extinction_projection", &ExtinctionValuesPybind::computeMonotoneExtinctionProjection, "radius"_a = py::none(), "ranked"_a = false,
              R"doc(Project the max-propagated extinction node attribute directly by LCA.
 
-This method preserves the former `compute_formal_saliency_edge_map` behavior for
-experiments that intentionally use the monotone node valuation. It is not the
-Cousty hierarchical-watershed persistence construction.)doc")
+Each transition edge receives the maximum descendant extinction of its
+endpoints' lowest common ancestor. Edges within one smallest node receive zero.
+Set `ranked=True` to return dense ranks of the realized transition values.)doc")
         .def("get_regional_extrema", &ExtinctionValuesPybind::getRegionalExtremaPy, "Return extinction tuples as (leaf_node_id, cutoff_node_id, value).");
 }
 

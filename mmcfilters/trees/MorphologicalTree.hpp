@@ -1368,7 +1368,7 @@ class MorphologicalTree {
      * proper part.
      *
      * @param nodeParent Parent-node value.
-     * @param smallestNodeMap Pixel-indexed inclusion-smallest node map.
+     * @param smallestNodeMap Pixel-indexed smallest node map.
      * @param root Root node of the traversal.
      * @param gridDomain2D Optional regular-grid pixel domain.
      * @param semantics Hierarchy semantics validated by the operation.
@@ -1498,7 +1498,7 @@ class MorphologicalTree {
      * @brief Copies and fully validates a native topology input.
      *
      * @param nodeParent Parent-node value.
-     * @param smallestNodeMap Pixel-indexed inclusion-smallest node map.
+     * @param smallestNodeMap Pixel-indexed smallest node map.
      * @param root Root node of the traversal.
      * @param gridDomain2D Optional regular-grid pixel domain.
      * @param semantics Hierarchy semantics validated by the operation.
@@ -1524,7 +1524,7 @@ class MorphologicalTree {
      * evidence.
      *
      * @param nodeParent Parent-node value.
-     * @param smallestNodeMap Pixel-indexed inclusion-smallest node map.
+     * @param smallestNodeMap Pixel-indexed smallest node map.
      * @param root Root node of the traversal.
      * @param gridDomain2D Optional regular-grid pixel domain.
      * @param semantics Hierarchy semantics validated by the operation.
@@ -1544,7 +1544,7 @@ class MorphologicalTree {
      * @brief Factory-only materialization of a proven owning native topology.
      *
      * @param nodeParent Parent-node value.
-     * @param smallestNodeMap Pixel-indexed inclusion-smallest node map.
+     * @param smallestNodeMap Pixel-indexed smallest node map.
      * @param root Root node of the traversal.
      * @param gridDomain2D Optional regular-grid pixel domain.
      * @param semantics Hierarchy semantics validated by the operation.
@@ -1685,7 +1685,7 @@ class MorphologicalTree {
      * support.
      *
      * @param nodeParent Parent-node value.
-     * @param smallestNodeMap Pixel-indexed inclusion-smallest node map.
+     * @param smallestNodeMap Pixel-indexed smallest node map.
      * @param root Root node of the traversal.
      * @param rows Number of rows in the domain.
      * @param columns Number of columns in the domain.
@@ -1705,7 +1705,7 @@ class MorphologicalTree {
      * available.
      *
      * @param nodeParent Parent-node value.
-     * @param smallestNodeMap Pixel-indexed inclusion-smallest node map.
+     * @param smallestNodeMap Pixel-indexed smallest node map.
      * @param root Root node of the traversal.
      * @param semantics Hierarchy semantics validated by the operation.
      */
@@ -2084,7 +2084,7 @@ class MorphologicalTree {
     }
 
     /**
-     * @brief Returns the inclusion-smallest node containing `pixel`.
+     * @brief Returns the smallest node containing `pixel`.
      *
      * @param pixel Pixel in the finite tree domain.
      * @return The smallest node whose support contains pixel, or InvalidNode for an invalid pixel in checked builds.
@@ -2598,9 +2598,16 @@ class MorphologicalTree {
     /**
      * @brief Returns the lowest common ancestor of `u` and `v`.
      *
-     * @param u First endpoint or element.
-     * @param v Second endpoint or element.
-     * @return The lowest common ancestor of u and v.
+     * Queries take O(1) time once the required caches exist. For `N` internal
+     * node slots, DFS intervals require O(N) time and storage and resolve
+     * comparable pairs. The first incomparable pair may additionally build
+     * an Euler/RMQ cache in O(N log(N + 1)) time and storage. The tree retains
+     * these caches until the corresponding topology state is invalidated.
+     *
+     * @param u First internal node identifier.
+     * @param v Second internal node identifier.
+     * @return Lowest common ancestor, or InvalidNode for invalid or dead
+     * endpoints or when no common ancestor can be resolved.
      */
     inline NodeId lowestCommonAncestor(NodeId u, NodeId v) const {
         if (!isAlive(u) || !isAlive(v)) {
@@ -3382,9 +3389,9 @@ class MorphologicalTree {
         }
 
         /**
-         * @brief Returns the current proper-part id.
+         * @brief Returns the current pixel identifier.
          *
-         * @return The current proper-part id.
+         * @return The current pixel identifier.
          */
         PixelId operator*() const {
             T_->checkProperPartIteratorVersion(expectedVersion_);
@@ -3551,9 +3558,9 @@ class MorphologicalTree {
         }
 
         /**
-         * @brief Returns the current proper-part id.
+         * @brief Returns the current pixel identifier.
          *
-         * @return The current proper-part id.
+         * @return The current pixel identifier.
          */
         PixelId operator*() const {
             checkVersions();

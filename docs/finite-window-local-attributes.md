@@ -28,10 +28,10 @@ to another live node.
 
 ## Anchored entries
 
-For anchor pixel \(p\), let \(P(p)\) be its smallest node. The anchor branch is
-the chain from \(P(p)\) to the root. For a valid translated sample \(q\), the
-anchored entry is the first node on that branch whose support contains \(q\).
-With \(A=P(p)\) and \(S=P(q)\), all three cases have the uniform expression
+For anchor pixel \f$p\f$, let \f$P(p)\f$ be its smallest node. The anchor branch is
+the chain from \f$P(p)\f$ to the root. For a valid translated sample \f$q\f$, the
+anchored entry is the first node on that branch whose support contains \f$q\f$.
+With \f$A=P(p)\f$ and \f$S=P(q)\f$, the anchored entry is
 
 \f[
 E^p(q)=A\vee S=\mathrm{LCA}(A,S).
@@ -56,13 +56,12 @@ validating the tree once.
 
 ## Visibility state, decision, and event algebra
 
-For a node \(X\) on the anchor branch, coordinate \(j\) of the binary
+For a node \f$X\f$ on the anchor branch, coordinate \f$j\f$ of the binary
 visibility state is one precisely when the anchored entry of \f$\delta_j\f$ is
-contained in \(X\). State bits only change from zero to one while moving toward
+contained in \f$X\f$. State bits only change from zero to one while moving toward
 the root, and all offsets sharing an anchored entry change simultaneously.
 
-A `LocalDecision` contains only the theorem-facing map from a local state to a
-value:
+A `LocalDecision` maps a local state to a value:
 
 ```cpp
 using Value = ...;
@@ -104,39 +103,30 @@ The public generic C++ pipeline separates three roles:
 returns the final `NodeAttribute<Value>` records. The increment path evaluates
 one anchor at a time and streams its event-delta values directly into the
 dense node increments. It reuses fixed-capacity scratch storage bounded by the
-32-coordinate observation-window contract; it does not allocate entry maps,
-ordered-entry sequences, or event-delta vectors per pixel. The internal dense
-buffer stores only additive values while the computation is running; node
-identifiers are materialized only in public normative result records. Concrete
-computations with multiple anchor positions, including bitquad computations,
-accumulate every anchor position directly into one dense buffer instead of
-constructing and combining one full temporary buffer per position. The four
-canonical bitquad windows and the canonical contour-side window are immutable
-internal objects constructed once and reused by subsequent computations. The
-explicit `computeEventDeltas` operation still materializes and returns the normative
-records when a caller requests that stage. Concrete bitquad and contour-side
-storage remains an attribute-computer detail.
+32-coordinate observation-window contract. The internal dense buffer stores
+additive values; public result records also carry node identifiers.
+Computations with multiple anchor positions, including bitquads, accumulate
+directly into one dense buffer. The four canonical bitquad windows and the
+canonical contour-side window are immutable objects reused across computations.
+`computeEventDeltas` materializes records when that stage is requested.
 
-The concrete bitquad-family and contour-side computations use this split API:
-their state-to-value decisions no longer contain addition or subtraction.
-Materialized pixel contours use a stateful boundary-lifetime consumer instead.
-These consumers share localization and event semantics, but are not forced
-into the finite-window additive model.
+Bitquad-family and contour-side computations supply separate decisions and
+event algebras. Pixel-contour extraction shares their localization and event
+semantics but uses a stateful lifetime consumer; see [Pixel contours](contours.md).
 
 ## Complexity and runtime effect
 
-Let `P` be the number of pixels, `N` the number of live tree nodes, and `m` the
+Let `P` be the number of pixels, `N` the number of internal node slots, and `m` the
 window size (`m <= 32`). Event compilation takes `O(P m log m)` time for
 per-anchor entry ordering and `O(N)` time for bottom-up aggregation. Fixed
 scratch uses `O(m)` auxiliary storage, while dense increment and result buffers
 use `O(N)`. The tree's lazy ancestry cache costs `O(N)`; the first genuinely
-cross-branch join may additionally build its `O(N log N)` Euler/RMQ LCA cache.
+cross-branch join may additionally build its `O(N log(N + 1))` Euler/RMQ LCA cache.
 Later joins are constant time.
 
 Because `m` is bounded by 32, the main computation remains linear in `P + N`
-apart from one possible cold LCA-cache construction. Splitting decision from
-algebra adds no traversal, allocation, or asymptotic work. Both are template
-policies and the hot calls can be inlined.
+apart from one possible LCA-cache construction. Decision and algebra are
+template policies whose calls can be inlined.
 
 ## Canonical bitquad specialization
 

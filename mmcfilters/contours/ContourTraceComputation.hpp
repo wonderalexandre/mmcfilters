@@ -78,8 +78,8 @@ class ContourTraceComputation {
      * @brief Single-pass iterator yielding a node and borrowed ordered trace.
      *
      * The trace view remains valid until this iterator or one of its copies
-     * advances. Copies share one traversal position. Each call to `begin()`
-     * creates an independent traversal.
+     * advances, or their shared traversal is destroyed. Copies share one
+     * traversal position. Each call to `begin()` creates an independent traversal.
      */
     class iterator {
       public:

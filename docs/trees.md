@@ -177,12 +177,9 @@ auto saturated =
         saturatedOptions);
 ```
 
-By default, construction uses `RowMajorSpatialOrder`, parent-climb LCA, and
-multi-source boundary fallback. The unique self-dual schedule orders candidates
-by `(supportCardinality, spatialMinimum)` and never by polarity. Both modes use
-incremental small-to-large flat-zone boundary maintenance and
-region-contraction event assembly. Configuration is supplied through
-mode-specific C++ option objects.
+By default, construction uses `RowMajorSpatialOrder`, LCA computation by following
+parent links, and multi-source boundary fallback. See [Self-dual residual trees](self-dual-residual-trees.md)
+for the candidate schedule, boundary maintenance, and event assembly.
 
 ### Tree-of-shapes policies
 

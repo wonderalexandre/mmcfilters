@@ -33,11 +33,13 @@ compiled with different contract modes:
 
 ```bash
 cmake -S . -B build-checked \
+  -DCMAKE_BUILD_TYPE=Release \
   -DMMCFILTERS_BUILD_PYTHON=OFF \
   -DMMCFILTERS_BUILD_BENCHMARKS=ON \
   -DMMCFILTERS_CONTRACT_MODE=CHECKED
 
 cmake -S . -B build-unchecked \
+  -DCMAKE_BUILD_TYPE=Release \
   -DMMCFILTERS_BUILD_PYTHON=OFF \
   -DMMCFILTERS_BUILD_BENCHMARKS=ON \
   -DMMCFILTERS_CONTRACT_MODE=UNCHECKED
@@ -47,6 +49,10 @@ cmake --build build-checked \
 cmake --build build-unchecked \
   --target mmcfilters_scientific_pipeline_benchmark
 ```
+
+These commands assume a single-configuration generator such as Makefiles or Ninja.
+For a multi-configuration generator, select Release with `--config Release` on
+both build commands and run the executables from that configuration.
 
 The complete API benchmark suite and its reproducible execution protocol are
 documented in the

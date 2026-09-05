@@ -243,7 +243,7 @@ class ExtinctionValuesPybind {
     }
 
     /**
-     * @brief Computes the legacy max-propagated extinction LCA projection.
+     * @brief Computes the max-propagated extinction LCA projection.
      *
      * @param radius Optional projection-neighbourhood radius. When omitted, the
      * tree must carry one unambiguous stored adjacency.

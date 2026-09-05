@@ -238,8 +238,12 @@ class ContourTrace;
 /**
  * @brief Borrowed ordered contour trace for one tree node.
  *
- * A view contains all ordered external and internal boundaries. Views emitted
- * by a computation iterator remain valid only until that iterator advances.
+ * A view contains all ordered external and internal boundaries without owning
+ * their storage. A computation iterator's view remains valid until that
+ * iterator or one of its copies advances, or their shared traversal is
+ * destroyed. A callback's view is valid only during the callback. Views of
+ * an owned ContourTrace require its edge and boundary storage to remain alive
+ * and unchanged. The same limits apply to spans and ranges obtained from a view.
  */
 class ContourTraceView {
   public:
@@ -324,6 +328,10 @@ class ContourTraceView {
 
 /**
  * @brief Independently owned ordered contour trace for one tree node.
+ *
+ * Returned views, spans, and ranges borrow this trace's storage. Keep that
+ * storage alive and unchanged while using them; replacing it by assignment
+ * or destroying it invalidates those borrowed objects.
  */
 class ContourTrace {
   public:
@@ -340,7 +348,11 @@ class ContourTrace {
     /** @brief Returns all ordered boundary descriptors. @return Borrowed boundary descriptor span. */
     [[nodiscard]] std::span<const ContourBoundary> boundaries() const noexcept { return view().boundaries(); }
 
-    /** @brief Returns the unique external boundary. @return Unique external boundary descriptor. */
+    /**
+     * @brief Returns the unique external boundary.
+     * @return Unique external boundary descriptor.
+     * @throws std::logic_error If zero or multiple external boundaries exist.
+     */
     [[nodiscard]] ContourBoundary externalBoundary() const { return view().externalBoundary(); }
 
     /** @brief Returns every contour edge in boundary order. @return Ordered edge range. */
@@ -360,7 +372,11 @@ class ContourTrace {
      */
     [[nodiscard]] ContourPixelRange boundaryPixels(const ContourBoundary& boundary) const { return view().boundaryPixels(boundary); }
 
-    /** @brief Returns a borrowed view over this owned trace. @return Trace view valid for this object's lifetime. */
+    /**
+     * @brief Returns a borrowed view over this owned trace.
+     * @return View borrowing the current edge and boundary storage. Replacing
+     * or destroying that storage invalidates the view and its spans and ranges.
+     */
     [[nodiscard]] ContourTraceView view() const noexcept { return ContourTraceView(packedEdges_, boundaries_); }
 
   private:

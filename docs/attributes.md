@@ -17,11 +17,9 @@ The canonical execution layout is always the dense internal `NodeId` space of
 `MorphologicalTree`. Projection is a boundary operation, not the internal
 representation used by computers.
 
-The subsystem is designed for incremental, tree-structured attribute
-computation: computers accumulate family-specific state over the current
-morphological tree and materialize dense public buffers at API boundaries.
-After topology edits, recompute public attribute buffers unless a higher-level
-operator documents its own edit-aware update path.
+Recompute attribute buffers after topology edits. See
+[Attribute computer architecture](attribute-computer-architecture.md) for
+computation strategies and extension contracts.
 
 ## Public API
 
@@ -143,15 +141,9 @@ The altitude step must be positive. Offset `0` is the current node, negative
 offsets are ancestor samples, and positive offsets are representative-
 descendant samples. The default `LargestSupportDescendant` policy selects the
 candidate with greatest node-support cardinality and breaks ties by the
-smallest row-major pixel in the candidate support. Missing positions use one of
+minimum pixel index in the node support. Missing positions use one of
 the typed `MissingNodeAttributeSamplePolicy` values: `RepeatNearest` (default),
 `NotANumber`, or `Zero`.
-
-When a radius contains multiple altitude distances, the implementation computes
-support cardinalities and smallest-pixel tie-break keys once, then reuses those
-metadata and the dense neighbourhood buffers for every distance. This changes
-only storage lifetime: each distance still performs the same ancestor search
-and `LargestSupportDescendant` selection.
 
 Projecting node attributes to pixels or to an exported Higra layout:
 
@@ -169,62 +161,27 @@ auto exported = AttributeComputation::projectNodeValuesToExportedHigra(
 
 ## Python surface
 
-Python keeps a smaller public surface than C++:
-
-- image factories currently expose the canonical `np.uint8`
-  `ValuedMorphologicalTree` path;
-- `Attribute.compute_single_attribute(...)` and
-  `Attribute.compute_attributes(...)` are the valued-tree attribute entry points;
-- `Attribute.compute_single_topology_attribute(...)` and
-  `Attribute.compute_topology_attributes(...)` are the explicit
-  topology/support entry points;
-- `NodeIdSpace` can be passed to the Python attribute methods when a preserved
-  output node ID space is needed;
-- attribute methods accept `dtype=np.float32` or `dtype=np.float64`; the default
-  remains `np.float32`;
-- every method taking an `Attribute` or `Attribute.Group` also takes its stable
-  symbolic name as a string, matched exactly and case-sensitively;
-- `AttributePipeline`, concrete C++ computers, and finite-window intermediate storage are not
-  part of the Python API.
-
-Typical Python calls use the same valued-tree versus topology/support split:
+Python uses the same valued-tree and topology/support distinction:
 
 ```python
 gray_level_height_by_node = mmcfilters.Attribute.compute_single_attribute(
     valued_tree,
     mmcfilters.Attribute.GRAY_LEVEL_HEIGHT,
 )
-names, values = mmcfilters.Attribute.compute_attributes(
+area_by_node = mmcfilters.Attribute.compute_single_topology_attribute(
     valued_tree,
-    [mmcfilters.Attribute.AREA, mmcfilters.Attribute.Group.GRAY_LEVEL],
-)
-topology_names, topology_values = mmcfilters.Attribute.compute_topology_attributes(
-    valued_tree,
-    [mmcfilters.Attribute.AREA, mmcfilters.Attribute.Group.BOUNDARY],
+    mmcfilters.Attribute.AREA,
 )
 ```
 
-The same calls accept the symbolic names, which are the keys the returned layout
-already uses. Enum values and names may be mixed in one request:
-
-```python
-gray_level_height_by_node = mmcfilters.Attribute.compute_single_attribute(
-    valued_tree,
-    "GRAY_LEVEL_HEIGHT",
-)
-names, values = mmcfilters.Attribute.compute_attributes(valued_tree, ["AREA", "GRAY_LEVEL"])
-```
-
-The `dtype` keyword selects the returned NumPy storage. Both supported dtypes
-use the same internal `double` computation pipeline. Filtering helpers accept
-either dtype when the array satisfies their one-dimensional, contiguous buffer
-contract. See [Python API](python-api.md) for Python-specific examples and
-failure modes.
+See [Python API](python-api.md) for NumPy layouts, dtypes, symbolic names,
+sampling, and buffer requirements.
 
 ## Result layout and output spaces
 
-Attribute results are dense flat buffers interpreted by `AttributeNames`.
-The canonical internal layout is:
+C++ attribute results are dense flat buffers interpreted by `AttributeNames`.
+Ordinary multi-attribute results use node-major layout, with columns in
+scalar-enumerator order:
 
 ```text
 values[node_id * num_attributes + attribute_column]
@@ -242,26 +199,19 @@ corresponding `double` specialization. Public computation methods can request a
 different public node ID space, but projection always happens after the
 internal pipeline has computed the result in `NodeIdSpace::MorphologicalTree`.
 
-`NodeIdSpace::Higra` means the preserved imported Higra node ID domain. It is
-available only for trees imported from Higra whose original node ID space has
-not been invalidated by edits. Direct projection to this space copies live
-internal-node rows and fills proper-part rows with unit-component values for
-the requested attributes.
+`NodeIdSpace::Higra` requests the preserved imported node domain.
+`projectNodeValuesToExportedHigra(...)` aligns results with a fresh export.
+Both layouts contain pixel leaves and internal nodes; pixel rows receive
+unit-component values. See [Higra interoperability](higra-interoperability.md)
+for domain validity and projection rules.
 
-For a compact Higra layout exported from the current tree, use
-`AttributeComputation::projectNodeValuesToExportedHigra(...)`. That
-helper emits the `[proper parts | live internal nodes]` layout produced by
-hierarchy export and fills unit proper-part rows through the responsible
-attribute computers. `compute_attribute_mapping(...)` is the image-domain helper:
-each proper part receives the value stored at its smallest node.
-
-For the distinction between preserved imported Higra node IDs and exported
-compact Higra snapshots, see [Higra interoperability](higra-interoperability.md).
+`computeAttributeMapping(...)` projects to the image domain: each pixel
+receives the value stored at its smallest node.
 
 ## Numeric stability contract
 
 Scalar attributes returned by the ordinary public attribute APIs are finite for
-valid live nodes and exported proper-part rows. This includes degenerate
+valid live nodes and exported pixel rows. This includes degenerate
 supports such as one-pixel components, line-like components, zero continuous
 bitquad perimeter, and bitquad configurations whose Euler estimate is zero.
 

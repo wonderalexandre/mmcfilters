@@ -567,7 +567,7 @@ class BitquadFiniteWindowComputation {
      * @tparam Value Node-value type.
      * @param tree Tree supplying the smallest-node map.
      * @param nodeValues Dense values indexed by node identifier.
-     * @return Values indexed by proper-part identifier.
+     * @return Values indexed by pixel identifier.
      */
     template <class Value> [[nodiscard]] static std::vector<Value> projectToSmallestNodeMap(const MorphologicalTree& tree, std::span<const Value> nodeValues) {
         std::vector<Value> projected(static_cast<std::size_t>(tree.numPixels()));

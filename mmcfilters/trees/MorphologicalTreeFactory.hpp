@@ -94,12 +94,11 @@ class MorphologicalTreeFactory {
     }
 
     /**
-     * @brief Preserves observable versioning from former linked constructors.
+     * @brief Selects the initial mutation token for a materialized hierarchy.
      *
-     * Component-tree and Higra constructors historically called one linking
-     * primitive per non-root node between two storage invalidations. Native
-     * materialization links in bulk, so this policy restores the same final
-     * opaque mutation token without replaying those per-node invalidations.
+     * Component-tree and Higra factories use a token of `numNodes + 1` to
+     * account for storage initialization, non-root links, and finalization.
+     * The token is assigned once after bulk materialization.
      */
     enum class MaterializedVersionPolicy { CanonicalNative, PreserveLinkedConstruction };
 
@@ -158,7 +157,7 @@ class MorphologicalTreeFactory {
      *
      * @param hierarchy Hierarchy data.
      * @param preservedExternalNodeIdOffset Node identifier.
-     * @param versionPolicy Policy used to preserve or reset imported version metadata.
+     * @param versionPolicy Policy selecting the initial topology mutation token.
      * @return The materialized proven owning native hierarchy.
      */
     template <AltitudeValue T>
@@ -170,8 +169,7 @@ class MorphologicalTreeFactory {
         MorphologicalTree topology(tag(), std::move(storage.parent), std::move(storage.smallestNodeMap), storage.root, storage.gridDomain2D,
                                    std::move(storage.semantics), std::move(storage.topologyProof));
         if (versionPolicy == MaterializedVersionPolicy::PreserveLinkedConstruction) {
-            // One initial storage invalidation, one per non-root link, and one
-            // final iterator invalidation produced `numNodes + 1`.
+            // Account for initialization, non-root links, and finalization.
             topology.mutationVersion_ = numNodes + 1;
         }
         if (preservedExternalNodeIdOffset) {
@@ -401,7 +399,7 @@ class MorphologicalTreeFactory {
      * non-empty support.
      *
      * @param parent Parent node indexed by internal node identifier.
-     * @param smallestNodeMap Pixel-indexed inclusion-smallest node map.
+     * @param smallestNodeMap Pixel-indexed smallest node map.
      * @param nodeAltitudes Altitude data indexed by internal node identifier.
      * @param root Root node of the traversal.
      * @param semantics Hierarchy semantics validated by the operation.
@@ -420,7 +418,7 @@ class MorphologicalTreeFactory {
      * geometry-dependent algorithms but does not alter the topology contract.
      *
      * @param parent Parent node indexed by internal node identifier.
-     * @param smallestNodeMap Pixel-indexed inclusion-smallest node map.
+     * @param smallestNodeMap Pixel-indexed smallest node map.
      * @param nodeAltitudes Altitude data indexed by internal node identifier.
      * @param root Root node of the traversal.
      * @param rows Number of rows in the domain.

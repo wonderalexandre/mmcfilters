@@ -390,15 +390,19 @@ for node_id, contour_pixels in contours:
     process(node_id, contour_pixels)
 ```
 
-Use contour traces for oriented sides and ordered external/internal boundaries:
+Use contour traces for oriented pixel-side edges grouped into closed boundaries.
+Iteration, callbacks, and node queries return owned `ContourTrace` objects;
+edge, pixel, and boundary collections are independent lists:
 
 ```python
 contour_traces = mmcfilters.ContourTraceComputation(max_tree)
-root_edges = contour_traces.edges(max_tree.root)
-root_boundaries = contour_traces.boundaries(max_tree.root)
+root_trace = contour_traces.trace(max_tree.root)
 
-for boundary in root_boundaries:
-    boundary_edges = contour_traces.boundary_edges(boundary)
+for boundary in root_trace.boundaries():
+    boundary_edges = root_trace.boundary_edges(boundary)
+
+for node_id, trace in contour_traces:
+    process(node_id, trace)
 ```
 
 See [Pixel contours](contours.md) and [Contour traces](contour-traces.md).

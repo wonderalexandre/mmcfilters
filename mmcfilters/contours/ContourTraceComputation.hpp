@@ -338,6 +338,117 @@ class ContourTraceComputation {
     };
 
     /**
+     * @brief Immutable projection of ordered boundary edges onto support pixels.
+     *
+     * One pixel is yielded for each edge. Consecutive edges may therefore yield
+     * the same pixel when they occupy different sides of that pixel.
+     */
+    class PixelRange {
+      public:
+        /**
+         * @brief Forward iterator that returns the support pixel of each edge.
+         */
+        class iterator {
+          public:
+            /// Standard category for a multi-pass forward iterator.
+            using iterator_category = std::forward_iterator_tag;
+            /// Pixel identifier yielded by dereference.
+            using value_type = PixelId;
+            /// Signed iterator-distance type.
+            using difference_type = std::ptrdiff_t;
+            /// No pointer type is exposed because dereference returns a value.
+            using pointer = void;
+            /// Value-returning reference type.
+            using reference = value_type;
+
+            /**
+             * @brief Creates an empty iterator.
+             */
+            iterator() = default;
+
+            /**
+             * @brief Creates a pixel projection over an edge iterator.
+             * @param edgeIterator Current edge iterator.
+             */
+            explicit iterator(EdgeRange::iterator edgeIterator) : edgeIterator_(edgeIterator) {}
+
+            /**
+             * @brief Returns the support pixel of the current edge.
+             * @return Support pixel identifier.
+             */
+            value_type operator*() const { return (*edgeIterator_).pixel; }
+
+            /**
+             * @brief Advances to the next edge pixel.
+             * @return Mutable reference to the updated object.
+             */
+            iterator& operator++() {
+                ++edgeIterator_;
+                return *this;
+            }
+
+            /**
+             * @brief Advances and returns the previous iterator position.
+             * @return Iterator position before the advancement.
+             */
+            iterator operator++(int) {
+                iterator previous(*this);
+                ++(*this);
+                return previous;
+            }
+
+            /// Compares the underlying edge positions.
+            friend bool operator==(const iterator& lhs, const iterator& rhs) { return lhs.edgeIterator_ == rhs.edgeIterator_; }
+
+            /// Returns true when two iterator positions differ.
+            friend bool operator!=(const iterator& lhs, const iterator& rhs) { return !(lhs == rhs); }
+
+          private:
+            /// Edge iterator whose support pixel is projected on dereference.
+            EdgeRange::iterator edgeIterator_;
+        };
+
+        /**
+         * @brief Creates an empty pixel range.
+         */
+        PixelRange() = default;
+
+        /**
+         * @brief Creates a support-pixel projection of an edge range.
+         * @param edges Borrowed ordered edge range.
+         */
+        explicit PixelRange(EdgeRange edges) : edges_(edges) {}
+
+        /**
+         * @brief Returns an iterator to the first edge pixel.
+         * @return Iterator to the first edge pixel.
+         */
+        iterator begin() const { return iterator(edges_.begin()); }
+
+        /**
+         * @brief Returns the exclusive end iterator.
+         * @return Exclusive end iterator.
+         */
+        iterator end() const { return iterator(edges_.end()); }
+
+        /**
+         * @brief Returns whether the range contains no pixels.
+         * @return Whether the range contains no pixels.
+         */
+        [[nodiscard]] bool empty() const noexcept { return edges_.empty(); }
+
+        /**
+         * @brief Returns the number of projected edge pixels, including repetitions.
+         * @return Number of projected edge pixels.
+         */
+        [[nodiscard]] std::size_t size() const noexcept { return edges_.size(); }
+
+      private:
+        /// Ordered edge range projected by this view.
+        EdgeRange edges_;
+    };
+
+    /**
      * @brief Returns the unordered contour edges of one node.
      *
      * @param node Node identifier.
@@ -373,6 +484,38 @@ class ContourTraceComputation {
     }
 
     /**
+     * @brief Returns the unique external boundary of one node.
+     *
+     * @param node Node identifier.
+     * @return Owning descriptor of the external boundary.
+     * @throws std::logic_error If the node support has no external boundary or
+     * more than one external boundary.
+     */
+    [[nodiscard]] ContourBoundary externalBoundary(NodeId node) const {
+        requireStableTree("ContourTraceComputation::externalBoundary");
+        requireLiveTraceNode(node, "ContourTraceComputation::externalBoundary");
+        ensureNodeBoundariesTraced(node);
+
+        const auto firstBoundary = static_cast<std::size_t>(boundaryOffsets_[static_cast<std::size_t>(node)]);
+        const auto numBoundaries = static_cast<std::size_t>(boundaryCounts_[static_cast<std::size_t>(node)]);
+        const ContourBoundary* external = nullptr;
+        for (std::size_t index = 0; index < numBoundaries; ++index) {
+            const ContourBoundary& boundary = cachedBoundaries_[firstBoundary + index];
+            if (boundary.kind != ContourBoundaryKind::External) {
+                continue;
+            }
+            if (external != nullptr) {
+                throw std::logic_error("ContourTraceComputation::externalBoundary requires a node support with exactly one external boundary.");
+            }
+            external = &boundary;
+        }
+        if (external == nullptr) {
+            throw std::logic_error("ContourTraceComputation::externalBoundary requires a node support with exactly one external boundary.");
+        }
+        return *external;
+    }
+
+    /**
      * @brief Returns the ordered edges belonging to one boundary.
      *
      * @param boundary Contour boundary descriptor.
@@ -387,6 +530,17 @@ class ContourTraceComputation {
         }
         return EdgeRange(&cachedPackedEdges_, edgeOffset, numEdges);
     }
+
+    /**
+     * @brief Returns the ordered support-pixel projection of one boundary.
+     *
+     * One pixel is returned for each boundary edge. A pixel is repeated when
+     * different boundary edges occupy different sides of that pixel.
+     *
+     * @param boundary Contour boundary descriptor.
+     * @return Borrowed range over the support pixel of each ordered edge.
+     */
+    [[nodiscard]] PixelRange boundaryPixels(const ContourBoundary& boundary) const { return PixelRange(boundaryEdges(boundary)); }
 
     /**
      * @brief Caches edges and traces ordered boundaries for every live node.

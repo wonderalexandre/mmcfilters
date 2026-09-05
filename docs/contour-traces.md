@@ -29,14 +29,27 @@ for (const ContourBoundary& boundary : contourTraces.boundaries(nodeId)) {
         // Edges follow boundary order.
     }
 }
+
+ContourBoundary external = contourTraces.externalBoundary(nodeId);
+for (ContourEdge edge : contourTraces.boundaryEdges(external)) {
+    // Edges follow the unique external boundary in order.
+}
+
+for (PixelId pixel : contourTraces.boundaryPixels(external)) {
+    // Equivalent to edge.pixel for each ordered edge.
+}
 ```
 
 `edges(node)` returns a borrowed range over the unordered contour edges of one
 node. `boundaries(node)` traces that node and returns an independent vector of
 `ContourBoundary` descriptors. Each descriptor records its kind, its edge range,
-and its doubled signed area. `boundaryEdges(boundary)` returns the ordered edge
-range identified by a descriptor from the same computation. `traceAll()` traces
-every live node.
+and its doubled signed area. `externalBoundary(node)` returns the unique external
+boundary and rejects a node support with zero or multiple external boundaries.
+`boundaryEdges(boundary)` returns the ordered edge range identified by a
+descriptor from the same computation. `boundaryPixels(boundary)` projects that
+range onto `edge.pixel` without allocating storage; the same pixel can occur
+more than once when different edges occupy different sides of it. `traceAll()`
+traces every live node.
 
 The computation references its source tree. The tree must outlive the
 computation and must remain unchanged while its results are used.
@@ -63,12 +76,14 @@ contour_traces = mmcfilters.ContourTraceComputation(tree)
 
 edges = contour_traces.edges(node_id)
 boundaries = contour_traces.boundaries(node_id)
+external = contour_traces.external_boundary(node_id)
 
 for boundary in boundaries:
     boundary_edges = contour_traces.boundary_edges(boundary)
+    boundary_pixels = contour_traces.boundary_pixels(boundary)
 ```
 
-Python returns independent lists for queries on one node. The
+Python returns independent lists for edge and pixel queries. The
 `ContourTraceComputation` object keeps its source tree alive.
 
 The public geometry types are:

@@ -20,6 +20,9 @@ using namespace mmcfilters::unit_tests;
 namespace {
 
 static_assert(std::is_same_v<decltype(std::declval<const ContourTraceComputation&>().boundaries(NodeId{})), std::vector<ContourBoundary>>);
+static_assert(std::is_same_v<decltype(std::declval<const ContourTraceComputation&>().externalBoundary(NodeId{})), ContourBoundary>);
+static_assert(std::is_same_v<decltype(std::declval<const ContourTraceComputation&>().boundaryPixels(ContourBoundary{})),
+                             ContourTraceComputation::PixelRange>);
 template <class T>
 concept HasLegacyLoopMethods = requires(const T& value, const ContourBoundary& boundary) {
     value.getLoops(NodeId{});
@@ -248,6 +251,27 @@ void verifyRingBoundarySeparation() {
     requireEqual(externalEdges, 12, "ring external edge count");
     requireEqual(internalEdges, 4, "ring internal edge count");
     requireEqual(totalEdges, 16, "ring total edge count");
+
+    const ContourBoundary external = traces.externalBoundary(ringNode);
+    requireEqual(static_cast<int>(external.kind), static_cast<int>(ContourBoundaryKind::External), "direct external boundary kind");
+    requireEqual(external.edgeCount, uint32_t{12}, "direct external boundary edge count");
+
+    std::vector<ContourEdge> orderedEdges;
+    for (ContourEdge edge : traces.boundaryEdges(external)) {
+        orderedEdges.push_back(edge);
+    }
+    std::vector<PixelId> orderedPixels;
+    for (PixelId pixel : traces.boundaryPixels(external)) {
+        orderedPixels.push_back(pixel);
+    }
+    requireEqual(orderedPixels.size(), orderedEdges.size(), "boundary pixel projection size");
+    for (std::size_t index = 0; index < orderedEdges.size(); ++index) {
+        requireEqual(orderedPixels[index], orderedEdges[index].pixel, "boundary pixel projection preserves edge order");
+    }
+    auto distinctPixels = orderedPixels;
+    std::sort(distinctPixels.begin(), distinctPixels.end());
+    distinctPixels.erase(std::unique(distinctPixels.begin(), distinctPixels.end()), distinctPixels.end());
+    require(distinctPixels.size() < orderedPixels.size(), "boundary pixel projection must retain repetitions from distinct pixel sides");
 }
 
 void requireBoundarySummary(const MorphologicalTree& tree, NodeId nodeId, int expectedExternalBoundaries, int expectedInternalBoundaries, int expectedExternalEdges,

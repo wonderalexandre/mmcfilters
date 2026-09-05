@@ -113,6 +113,12 @@ def main() -> int:
     require(internal[0].doubled_signed_area < 0, "internal boundary signed area")
     require(len(traces.boundary_edges(external[0])) == 12, "external boundary edge range")
     require(len(traces.boundary_edges(internal[0])) == 4, "internal boundary edge range")
+    direct_external = traces.external_boundary(ring_nodes[0])
+    require(direct_external.kind == mmcfilters.ContourBoundaryKind.EXTERNAL, "direct external boundary kind")
+    ordered_edges = traces.boundary_edges(direct_external)
+    ordered_pixels = traces.boundary_pixels(direct_external)
+    require(ordered_pixels == [edge.pixel for edge in ordered_edges], "boundary pixel projection must preserve edge order")
+    require(len(set(ordered_pixels)) < len(ordered_pixels), "boundary pixel projection must retain repeated pixels")
 
     traces.trace_all()
     require(traces.has_traced_all_boundaries is True, "trace_all must trace all nodes")

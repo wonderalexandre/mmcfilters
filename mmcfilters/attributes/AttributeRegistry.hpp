@@ -56,6 +56,11 @@ inline constexpr AttributeCapabilityRequirements BITQUAD_REQUIREMENTS{.gridDomai
                                                                       .altitudeForDirectionalAdjacency = true,
                                                                       .canonical4Or8Adjacency = true};
 
+inline constexpr AttributeCapabilityRequirements FILLED_SHAPE_REQUIREMENTS{.gridDomain2D = true,
+    .adjacency = AttributeAdjacencyRequirement::UniformOrDirectional,
+    .altitudeForDirectionalAdjacency = true,
+    .canonical4Or8Adjacency = true};
+
 inline constexpr AttributeCapabilityRequirements MAX_DIST_REQUIREMENTS{.gridDomain2D = true};
 
 inline constexpr AttributeCapabilityRequirements MAX_DIST_EXACT_REQUIREMENTS{.gridDomain2D = true};
@@ -94,7 +99,7 @@ struct AttributeMetadata {
  * table drift fail as an unknown attribute instead of returning incorrect
  * metadata.
  */
-inline constexpr std::array<AttributeMetadata, static_cast<std::size_t>(Attribute::MaxSquaredDistExact) + 1> ATTRIBUTE_METADATA{
+inline constexpr std::array<AttributeMetadata, static_cast<std::size_t>(Attribute::FilledCircularity) + 1> ATTRIBUTE_METADATA{
     {{Area, "AREA", "Area: Number of pixels in the connected component.", false, NO_REQUIREMENTS},
      {Volume, "VOLUME",
       "Volume: Sum of the gray-level intensities of all pixels in the connected component. Interpreted as the total mass under the component, or the integral "
@@ -389,7 +394,33 @@ inline constexpr std::array<AttributeMetadata, static_cast<std::size_t>(Attribut
       true, MAX_DIST_REQUIREMENTS},
      {MaxSquaredDistExact, "MAX_SQUARED_DIST_EXACT",
       "Maximum exact squared Euclidean distance from the foreground A4 contour over the node support in the original 2D pixel domain, in squared pixels.",
-      true, MAX_DIST_EXACT_REQUIREMENTS}}};
+      true, MAX_DIST_EXACT_REQUIREMENTS},
+
+     {FilledArea, "FILLED_AREA",
+      "Number of pixels enclosed by the unique external boundary, including holes.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledCentroidRow, "FILLED_CENTROID_ROW",
+      "Zero-based mean row of the filled region pixels.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledCentroidColumn, "FILLED_CENTROID_COLUMN",
+      "Zero-based mean column of the filled region pixels.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledLengthMajorAxis, "FILLED_LENGTH_MAJOR_AXIS",
+      "Major-axis length proxy of the filled region, with the LENGTH_MAJOR_AXIS convention.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledLengthMinorAxis, "FILLED_LENGTH_MINOR_AXIS",
+      "Minor-axis length proxy of the filled region, with the LENGTH_MINOR_AXIS convention.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledAxisOrientation, "FILLED_AXIS_ORIENTATION",
+      "Non-negative principal column-axis orientation of the filled region in degrees; isotropic regions return zero.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledEccentricity, "FILLED_ECCENTRICITY",
+      "Major/minor eigenvalue ratio of the filled region pixel-center moments, capped at 1e6; one pixel returns one.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledInertia, "FILLED_INERTIA",
+      "Sum of the filled region second central moments divided by squared filled area.", true, FILLED_SHAPE_REQUIREMENTS},
+     {HoleAreaFraction, "HOLE_AREA_FRACTION",
+      "Fraction of the filled area occupied by holes: 1 - AREA / FILLED_AREA.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledCentroidDisplacementNormalized, "FILLED_CENTROID_DISPLACEMENT_NORMALIZED",
+      "Distance between support and filled-region centroids divided by the square root of FILLED_AREA.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledCompactness, "FILLED_COMPACTNESS",
+      "Filled area divided by 2*pi times the sum of filled-region second central moments; zero dispersion returns zero.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledCircularity, "FILLED_CIRCULARITY",
+      "Minor/major eigenvalue ratio of the filled-region second moments; one pixel returns one and a nontrivial line returns zero.",
+      true, FILLED_SHAPE_REQUIREMENTS}}};
 
 /**
  * @brief Tests whether ordinally aligned attribute metadata holds.
@@ -659,6 +690,10 @@ inline const std::unordered_map<AttributeGroup, std::vector<Attribute>>& attribu
               DistWeightedCentralMoment11Exact,
               DistWeightedAxisOrientationExact,
               DistWeightedEccentricityExact}},
+            {AttributeGroup::FilledShape,
+             {FilledArea, FilledCentroidRow, FilledCentroidColumn, FilledLengthMajorAxis, FilledLengthMinorAxis,
+              FilledAxisOrientation, FilledEccentricity, FilledInertia, HoleAreaFraction, FilledCentroidDisplacementNormalized,
+              FilledCompactness, FilledCircularity}},
             {AttributeGroup::All, std::move(all)}};
     }();
     return groups;

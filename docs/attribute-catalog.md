@@ -31,7 +31,7 @@ The complete capability matrix is:
 | `AREA`, `SUBTREE_HEIGHT` through `BALANCE_NODE`, `AVG_CHILD_HEIGHT_NODE` | no | no | none | no | no | no |
 | `VOLUME`, `RELATIVE_VOLUME`, `GRAY_LEVEL_HEIGHT`, `MEAN_GRAY_LEVEL`, `GRAY_LEVEL_VARIANCE` | yes | no | none | no | no | no |
 | bounding boxes, central/Hu moments, moment-derived attributes, `CONTOUR_*` | no | yes | none | no | no | no |
-| `BITQUAD_*` | no | yes | uniform or directional | no | yes | yes |
+| `BITQUAD_*`, `FILLED_*`, `HOLE_AREA_FRACTION` | no | yes | uniform or directional | no | yes | yes |
 | `MAX_DIST_EXACT`, `MAX_DIST`, `MAX_SQUARED_DIST*`, `MAX_DIST_CENTER_*`, `DIST_*` | no | yes | none | no | no | no |
 
 C++ callers can query
@@ -46,6 +46,18 @@ scalar attributes before these requirements are validated.
 | `Attribute::GrayLevelHeight` | `GRAY_LEVEL_HEIGHT` | `GRAY_LEVEL` | Altitude-aware | Maximum absolute altitude difference between the node and any node in its subtree. On monotone max-tree and min-tree hierarchies this reduces to the traditional one-sided span; it also applies to hierarchies with unconstrained altitude order. Leaves have value `0`. |
 | `Attribute::MeanGrayLevel` | `MEAN_GRAY_LEVEL` | `GRAY_LEVEL` | Altitude-aware | Arithmetic mean of the image values over the full node support: `sum(f(x), x in X) / card(X)`. |
 | `Attribute::GrayLevelVariance` | `GRAY_LEVEL_VARIANCE` | `GRAY_LEVEL` | Altitude-aware | Population variance of the image values over the full node support, with denominator `card(X)`. |
+| `Attribute::FilledArea` | `FILLED_AREA` | `FILLED_SHAPE` | Topology/support | Number of pixels enclosed by the unique external boundary, including holes; requires exactly one external boundary per live node. |
+| `Attribute::FilledCentroidRow` | `FILLED_CENTROID_ROW` | `FILLED_SHAPE` | Topology/support | Zero-based mean row of the filled region pixels. |
+| `Attribute::FilledCentroidColumn` | `FILLED_CENTROID_COLUMN` | `FILLED_SHAPE` | Topology/support | Zero-based mean column of the filled region pixels. |
+| `Attribute::FilledLengthMajorAxis` | `FILLED_LENGTH_MAJOR_AXIS` | `FILLED_SHAPE` | Topology/support | Major-axis length proxy of the filled region, in pixels; follows `LENGTH_MAJOR_AXIS`. |
+| `Attribute::FilledLengthMinorAxis` | `FILLED_LENGTH_MINOR_AXIS` | `FILLED_SHAPE` | Topology/support | Minor-axis length proxy of the filled region, in pixels; follows `LENGTH_MINOR_AXIS`. |
+| `Attribute::FilledAxisOrientation` | `FILLED_AXIS_ORIENTATION` | `FILLED_SHAPE` | Topology/support | Non-negative principal column-axis orientation in degrees; isotropic regions return `0`. |
+| `Attribute::FilledEccentricity` | `FILLED_ECCENTRICITY` | `FILLED_SHAPE` | Topology/support | Major/minor eigenvalue ratio of the filled region moments, capped at `1e6`; one pixel returns `1`. |
+| `Attribute::FilledInertia` | `FILLED_INERTIA` | `FILLED_SHAPE` | Topology/support | Sum of the filled region second central moments divided by squared filled area. |
+| `Attribute::HoleAreaFraction` | `HOLE_AREA_FRACTION` | `FILLED_SHAPE` | Topology/support | Fraction of filled area occupied by holes: `1 - AREA / FILLED_AREA`. |
+| `Attribute::FilledCentroidDisplacementNormalized` | `FILLED_CENTROID_DISPLACEMENT_NORMALIZED` | `FILLED_SHAPE` | Topology/support | Euclidean distance between support and filled-region centroids divided by the square root of filled area. |
+| `Attribute::FilledCompactness` | `FILLED_COMPACTNESS` | `FILLED_SHAPE` | Topology/support | `FILLED_AREA / (2*pi*(mu20 + mu02))`, using filled-region second central moments; zero dispersion returns `0`. |
+| `Attribute::FilledCircularity` | `FILLED_CIRCULARITY` | `FILLED_SHAPE` | Topology/support | Minor/major eigenvalue ratio of the filled-region second moments; one pixel returns `1` and a nontrivial line returns `0`. |
 | `Attribute::Area` | `AREA` | `SHAPE` | Topology/support | Number of pixels in the full node support. Equivalently, it is the sum of proper-part cardinalities over the node's subtree. |
 | `Attribute::BoxWidth` | `BOX_WIDTH` | `SHAPE` | Topology/support | Width, in columns, of the smallest axis-aligned bounding box enclosing the node support. |
 | `Attribute::BoundingBoxHeight` | `BOUNDING_BOX_HEIGHT` | `SHAPE` | Topology/support | Height, in rows, of the smallest axis-aligned bounding box enclosing the node support. |

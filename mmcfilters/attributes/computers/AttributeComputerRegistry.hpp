@@ -6,6 +6,7 @@
 #include "BitquadAttributeComputer.hpp"
 #include "BoundingBoxComputer.hpp"
 #include "ContourSideAttributeComputer.hpp"
+#include "FilledShapeAttributeComputer.hpp"
 #include "GrayLevelStatsComputer.hpp"
 #include "MaxDistComputer.hpp"
 #include "MaxDistExactComputer.hpp"
@@ -119,7 +120,7 @@ template <AttributeComputer Computer> [[nodiscard]] std::vector<Attribute> runti
  */
 using TopologyAttributeComputers = std::tuple<AreaComputer, BoundingBoxComputer, TreeTopologyComputer, CentralMomentsComputer, HuMomentsComputer,
                                               MomentBasedAttributeComputer, BitquadAttributeComputer, ContourSideAttributeComputer, MaxDistComputer,
-                                              MaxDistExactComputer>;
+                                              MaxDistExactComputer, FilledShapeAttributeComputer>;
 
 /**
  * @brief Canonical list of altitude-aware families known to the pipeline.
@@ -132,6 +133,6 @@ using AltitudeAttributeComputers = std::tuple<VolumeComputer, GrayLevelStatsComp
 using RegisteredAttributeComputers =
     std::tuple<AreaComputer, BoundingBoxComputer, TreeTopologyComputer, CentralMomentsComputer, HuMomentsComputer, MomentBasedAttributeComputer,
                BitquadAttributeComputer, ContourSideAttributeComputer, VolumeComputer, GrayLevelStatsComputer, MaxDistComputer,
-               MaxDistExactComputer>;
+               MaxDistExactComputer, FilledShapeAttributeComputer>;
 
 } // namespace mmcfilters::attributes::computers

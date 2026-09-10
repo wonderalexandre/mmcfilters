@@ -53,14 +53,14 @@ inline void validateAttributeCapabilities(const MorphologicalTree& tree, std::sp
             throw std::invalid_argument(prefix + "a construction adjacency or topographic convention is required.");
         }
         if (requirements.altitudeForDirectionalAdjacency && bitquadProjectionNeedsShapePolarity(tree) && !altitudeAvailable) {
-            throw std::invalid_argument(prefix + "node altitudes are required to derive lower/upper shape polarity for bitquad connectivity selection.");
+            throw std::invalid_argument(prefix + "node altitudes are required to derive lower/upper shape polarity for connectivity selection.");
         }
         if (requirements.canonical4Or8Adjacency) {
             if ((constructionAdjacency != nullptr && !constructionAdjacency->isCanonical4Or8Connectivity()) ||
                 (projectionAdjacencies && (!projectionAdjacencies->minAdjacency.isCanonical4Or8Connectivity() ||
                                            !projectionAdjacencies->maxAdjacency.isCanonical4Or8Connectivity()))) {
                 throw std::invalid_argument(
-                    prefix + "canonical 4- or 8-connectivity is required; the retained adjacency is unsupported by bitquad formulas.");
+                    prefix + "canonical 4- or 8-connectivity is required; the retained adjacency is unsupported.");
             }
         }
     }

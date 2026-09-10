@@ -157,7 +157,20 @@ enum class Attribute {
     DistWeightedEccentricityExact,
 
     MaxSquaredDist,
-    MaxSquaredDistExact
+    MaxSquaredDistExact,
+
+    FilledArea,
+    FilledCentroidRow,
+    FilledCentroidColumn,
+    FilledLengthMajorAxis,
+    FilledLengthMinorAxis,
+    FilledAxisOrientation,
+    FilledEccentricity,
+    FilledInertia,
+    HoleAreaFraction,
+    FilledCentroidDisplacementNormalized,
+    FilledCompactness,
+    FilledCircularity,
 };
 
 /**
@@ -172,6 +185,7 @@ enum class AttributeGroup {
     TreeTopology,
     DistTransf,
     DistTransfExact,
+    FilledShape,
 };
 
 using AttributeOrGroup = std::variant<Attribute, AttributeGroup>;

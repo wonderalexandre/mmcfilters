@@ -41,6 +41,10 @@ mmcfilters_add_unit_test(unit_altitude_traits
     utils/test_altitude_traits.cpp
 )
 
+mmcfilters_add_unit_test(unit_filled_shape_attributes
+    attributes/test_filled_shape_attributes.cpp
+)
+
 mmcfilters_add_unit_test(unit_regular_grid_adjacency_2d
     utils/test_regular_grid_adjacency_2d.cpp
 )
@@ -291,6 +295,13 @@ if(TARGET mmcfilters)
             "MMCFILTERS_TEST_DATA_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../dat"
             ${MMCFILTERS_PYTHON_TEST_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_attribute_numeric_validation.py
+            ${CMAKE_BINARY_DIR}
+    )
+
+    add_test(
+        NAME unit_python_filled_shape
+        COMMAND ${MMCFILTERS_PYTHON_TEST_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_filled_shape.py
             ${CMAKE_BINARY_DIR}
     )
 

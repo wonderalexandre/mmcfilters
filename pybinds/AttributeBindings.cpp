@@ -177,6 +177,7 @@ Returns a 2D floating-point array with the same shape as the tree image domain.)
         .value("TREE_TOPOLOGY", AttributeGroup::TreeTopology)
         .value("DIST_TRANSF", AttributeGroup::DistTransf)
         .value("DIST_TRANSF_EXACT", AttributeGroup::DistTransfExact)
+        .value("FILLED_SHAPE", AttributeGroup::FilledShape)
         .export_values();
 
     py::enum_<Attribute>(cls, "Type", py::module_local(false))
@@ -300,6 +301,18 @@ Returns a 2D floating-point array with the same shape as the tree image domain.)
         .value("DIST_WEIGHTED_ECCENTRICITY_EXACT", Attribute::DistWeightedEccentricityExact)
         .value("MAX_SQUARED_DIST", Attribute::MaxSquaredDist)
         .value("MAX_SQUARED_DIST_EXACT", Attribute::MaxSquaredDistExact)
+        .value("FILLED_AREA", Attribute::FilledArea)
+        .value("FILLED_CENTROID_ROW", Attribute::FilledCentroidRow)
+        .value("FILLED_CENTROID_COLUMN", Attribute::FilledCentroidColumn)
+        .value("FILLED_LENGTH_MAJOR_AXIS", Attribute::FilledLengthMajorAxis)
+        .value("FILLED_LENGTH_MINOR_AXIS", Attribute::FilledLengthMinorAxis)
+        .value("FILLED_AXIS_ORIENTATION", Attribute::FilledAxisOrientation)
+        .value("FILLED_ECCENTRICITY", Attribute::FilledEccentricity)
+        .value("FILLED_INERTIA", Attribute::FilledInertia)
+        .value("HOLE_AREA_FRACTION", Attribute::HoleAreaFraction)
+        .value("FILLED_CENTROID_DISPLACEMENT_NORMALIZED", Attribute::FilledCentroidDisplacementNormalized)
+        .value("FILLED_COMPACTNESS", Attribute::FilledCompactness)
+        .value("FILLED_CIRCULARITY", Attribute::FilledCircularity)
         .export_values();
 }
 

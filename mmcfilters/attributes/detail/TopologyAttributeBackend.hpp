@@ -80,7 +80,7 @@ inline std::vector<Attribute> expandTopologyBackendAttributes(const std::vector<
 }
 
 /**
- * @brief Sentinel used when bitquad projection does not have altitude data.
+ * @brief Sentinel used when topology computation has no altitude data.
  */
 struct NoTopologyBackendAltitude {};
 
@@ -116,25 +116,52 @@ inline void computeBitquadBackendAttributesIntoResult(const MorphologicalTree& t
 }
 
 /**
+ * @brief Materializes filled-region attributes with topology connectivity.
+ * @param tree Source topology.
+ * @param requested Filled-region scalars to compute.
+ * @param names Output layout.
+ * @param buffer Output values.
+ */
+template <std::floating_point Real>
+inline void computeFilledShapeBackendAttributes(const MorphologicalTree& tree, std::span<const Attribute> requested,
+                                               const AttributeNames& names, std::span<Real> buffer, NoTopologyBackendAltitude) {
+    attributes::computers::FilledShapeAttributeComputer::compute(AttributeComputeContext<Real>{tree, buffer, names, requested});
+}
+
+/**
+ * @brief Materializes filled-region attributes with valued shape connectivity.
+ * @param tree Source topology.
+ * @param requested Filled-region scalars to compute.
+ * @param names Output layout.
+ * @param buffer Output values.
+ * @param altitude Node altitudes used for shape polarity.
+ */
+template <std::floating_point Real, AltitudeValue T>
+inline void computeFilledShapeBackendAttributes(const MorphologicalTree& tree, std::span<const Attribute> requested,
+                                               const AttributeNames& names, std::span<Real> buffer, std::span<const T> altitude) {
+    attributes::computers::FilledShapeAttributeComputer::compute(AltitudeAttributeComputeContext<Real, T>{tree, altitude, buffer, names, requested});
+}
+
+/**
  * @brief Executes topology/support families into an already allocated result buffer.
  *
  * @details
  * `plan.requestedAttributes` determines the public columns to fill. Hidden
  * dependencies are materialized in owned scratch buffers and registered in the
  * local dependency cache, but they are not copied to the public result unless
- * requested directly. `BitquadAltitude` is either `NoTopologyBackendAltitude`
- * or a typed altitude span for Tree of Shapes bitquad projection.
+ * requested directly. `TopologyAltitude` is either `NoTopologyBackendAltitude`
+ * or a typed altitude span for connectivity selection in a Tree of Shapes.
  *
  * @param tree Tree topology.
  * @param plan Attribute computation plan.
  * @param available Available computed-attribute views.
  * @param resultNames Destination.
  * @param resultBuffer Destination.
- * @param bitquadAltitude Altitude or level.
+ * @param topologyAltitude Altitude or level.
  */
-template <std::floating_point Real, class BitquadAltitude>
+template <std::floating_point Real, class TopologyAltitude>
 inline void executeTopologyAttributeComputationPlan(const MorphologicalTree& tree, const AttributeComputationPlan& plan, DependencyMapT<Real> available,
-                                                    const AttributeNames& resultNames, std::span<Real> resultBuffer, BitquadAltitude bitquadAltitude) {
+                                                    const AttributeNames& resultNames, std::span<Real> resultBuffer, TopologyAltitude topologyAltitude) {
     OwnedComputedResultsT<Real> ownedResults;
 
     auto ensureInternalAreaDependency = [&]() -> DependencySourceT<Real> {
@@ -175,6 +202,7 @@ inline void executeTopologyAttributeComputationPlan(const MorphologicalTree& tre
     const std::vector<Attribute> huMomentAttributes = plan.requestedForFamily(attributes::computers::AttributeComputerFamily::HuMoments);
     const std::vector<Attribute> momentBasedAttributes = plan.requestedForFamily(attributes::computers::AttributeComputerFamily::MomentDerived);
     const std::vector<Attribute> bitquadAttributes = plan.requestedForFamily(attributes::computers::AttributeComputerFamily::Bitquad);
+    const std::vector<Attribute> filledShapeAttributes = plan.requestedForFamily(attributes::computers::AttributeComputerFamily::FilledShape);
     const std::vector<Attribute> contourAttributes = plan.requestedForFamily(attributes::computers::AttributeComputerFamily::ContourSide);
     const std::vector<Attribute> maxDistAttributes = plan.requestedForFamily(attributes::computers::AttributeComputerFamily::MaxDist);
     const std::vector<Attribute> maxDistExactAttributes = plan.requestedForFamily(attributes::computers::AttributeComputerFamily::MaxDistExact);
@@ -260,7 +288,7 @@ inline void executeTopologyAttributeComputationPlan(const MorphologicalTree& tre
     }
 
     if (!bitquadAttributes.empty()) {
-        computeBitquadBackendAttributesIntoResult(tree, std::span<const Attribute>(bitquadAttributes), resultNames, resultBuffer, bitquadAltitude);
+        computeBitquadBackendAttributesIntoResult(tree, std::span<const Attribute>(bitquadAttributes), resultNames, resultBuffer, topologyAltitude);
 
         for (const Attribute attribute : bitquadAttributes) {
             available[attribute] = ComputedAttributeViewT<Real>{&resultNames, resultBuffer.data(), NodeIdSpace::MorphologicalTree};
@@ -274,6 +302,13 @@ inline void executeTopologyAttributeComputationPlan(const MorphologicalTree& tre
         attributes::computers::detail::kernel::computeContourSideAttributes(context, request);
 
         for (const Attribute attribute : contourAttributes) {
+            available[attribute] = ComputedAttributeViewT<Real>{&resultNames, resultBuffer.data(), NodeIdSpace::MorphologicalTree};
+        }
+    }
+
+    if (!filledShapeAttributes.empty()) {
+        computeFilledShapeBackendAttributes(tree, std::span<const Attribute>(filledShapeAttributes), resultNames, resultBuffer, topologyAltitude);
+        for (const Attribute attribute : filledShapeAttributes) {
             available[attribute] = ComputedAttributeViewT<Real>{&resultNames, resultBuffer.data(), NodeIdSpace::MorphologicalTree};
         }
     }
@@ -320,14 +355,14 @@ inline void executeTopologyAttributeComputationPlan(const MorphologicalTree& tre
  * @param available Available computed-attribute views.
  * @param resultNames Destination.
  * @param resultBuffer Destination.
- * @param bitquadAltitude Altitude or level.
+ * @param topologyAltitude Altitude or level.
  */
-template <std::floating_point Real, class BitquadAltitude>
+template <std::floating_point Real, class TopologyAltitude>
 inline void computeTopologyOnlyAttributesIntoResultImpl(const MorphologicalTree& tree, std::span<const Attribute> requestedAttributes,
                                                         DependencyMapT<Real> available, const AttributeNames& resultNames, std::span<Real> resultBuffer,
-                                                        BitquadAltitude bitquadAltitude) {
+                                                        TopologyAltitude topologyAltitude) {
     executeTopologyAttributeComputationPlan(tree, makeAttributeComputationPlan(requestedAttributes), std::move(available), resultNames, resultBuffer,
-                                            bitquadAltitude);
+                                            topologyAltitude);
 }
 
 /**

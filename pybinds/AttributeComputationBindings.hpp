@@ -36,6 +36,7 @@ inline const std::vector<std::pair<std::string, AttributeGroup>>& attributeGroup
         {"SHAPE", AttributeGroup::Shape},       {"MOMENTS", AttributeGroup::Moments},
         {"BOUNDARY", AttributeGroup::Boundary}, {"TREE_TOPOLOGY", AttributeGroup::TreeTopology},
         {"DIST_TRANSF", AttributeGroup::DistTransf}, {"DIST_TRANSF_EXACT", AttributeGroup::DistTransfExact},
+        {"FILLED_SHAPE", AttributeGroup::FilledShape},
     };
     return names;
 }

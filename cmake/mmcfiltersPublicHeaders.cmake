@@ -68,6 +68,7 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/attributes/computers/BitquadAttributeComputer.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/BoundingBoxComputer.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/ContourSideAttributeComputer.hpp
+    ${MMCFILTERS_ROOT}/attributes/computers/FilledShapeAttributeComputer.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/GrayLevelStatsComputer.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/MaxDistExactComputer.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/MaxDistComputer.hpp

@@ -48,6 +48,12 @@ static_assert(AttributeComputer<HuMomentsComputer>);
 static_assert(AttributeComputer<MomentBasedAttributeComputer>);
 static_assert(AttributeComputer<BitquadAttributeComputer>);
 static_assert(AttributeComputer<ContourSideAttributeComputer>);
+static_assert(TopologyAttributeComputer<FilledShapeAttributeComputer>);
+static_assert(static_cast<int>(FilledArea) == 120);
+static_assert(static_cast<int>(FilledCentroidDisplacementNormalized) == 129);
+static_assert(static_cast<int>(FilledCompactness) == 130);
+static_assert(static_cast<int>(FilledCircularity) == 131);
+static_assert(static_cast<int>(AttributeGroup::FilledShape) == 8);
 static_assert(AttributeComputer<VolumeComputer>);
 static_assert(AttributeComputer<GrayLevelStatsComputer>);
 static_assert(AttributeComputer<MaxDistExactComputer>);
@@ -66,9 +72,9 @@ static_assert(TopologyAttributeComputer<MaxDistComputer>);
 
 static_assert(AltitudeAttributeComputer<VolumeComputer>);
 static_assert(AltitudeAttributeComputer<GrayLevelStatsComputer>);
-static_assert(std::tuple_size_v<TopologyAttributeComputers> == 10);
+static_assert(std::tuple_size_v<TopologyAttributeComputers> == 11);
 static_assert(std::tuple_size_v<AltitudeAttributeComputers> == 2);
-static_assert(std::tuple_size_v<RegisteredAttributeComputers> == 12);
+static_assert(std::tuple_size_v<RegisteredAttributeComputers> == 13);
 
 template <class Computer>
 void requireComputerContract(std::initializer_list<Attribute> producedAttributes, AttributeComputerDomain domain, AttributeComputerFamily family,
@@ -115,7 +121,7 @@ template <class Computer> void requireRegisteredComputerFamily(AttributeComputer
 }
 
 template <class Computer>
-void countProducedAttributes(std::array<int, static_cast<std::size_t>(MaxSquaredDistExact) + 1>& counts) {
+void countProducedAttributes(std::array<int, attributes::registry::ATTRIBUTE_METADATA.size()>& counts) {
     for (Attribute attribute : Computer::producedAttributes) {
         const auto index = static_cast<std::size_t>(attribute);
         require(index < counts.size(), "computer produced attribute must be in registry range");
@@ -124,7 +130,7 @@ void countProducedAttributes(std::array<int, static_cast<std::size_t>(MaxSquared
 }
 
 void requireGlobalAttributeRegistryContracts() {
-    std::array<int, static_cast<std::size_t>(MaxSquaredDistExact) + 1> producedCounts{};
+    std::array<int, attributes::registry::ATTRIBUTE_METADATA.size()> producedCounts{};
     countProducedAttributes<AreaComputer>(producedCounts);
     countProducedAttributes<BoundingBoxComputer>(producedCounts);
     countProducedAttributes<TreeTopologyComputer>(producedCounts);
@@ -133,6 +139,7 @@ void requireGlobalAttributeRegistryContracts() {
     countProducedAttributes<MomentBasedAttributeComputer>(producedCounts);
     countProducedAttributes<BitquadAttributeComputer>(producedCounts);
     countProducedAttributes<ContourSideAttributeComputer>(producedCounts);
+    countProducedAttributes<FilledShapeAttributeComputer>(producedCounts);
     countProducedAttributes<VolumeComputer>(producedCounts);
     countProducedAttributes<GrayLevelStatsComputer>(producedCounts);
     countProducedAttributes<MaxDistExactComputer>(producedCounts);
@@ -301,7 +308,7 @@ int main() {
             require(AttributeNames::toString(attribute).ends_with("_EXACT"), "DIST_TRANSF_EXACT attributes must use the _EXACT suffix");
         }
         auto allNames = AttributeNames::fromGroup(AttributeGroup::All);
-        requireEqual(allNames.NUM_ATTRIBUTES, static_cast<int>(MaxSquaredDistExact) + 1, "ALL AttributeNames count");
+        requireEqual(allNames.NUM_ATTRIBUTES, static_cast<int>(attributes::registry::ATTRIBUTE_METADATA.size()), "ALL AttributeNames count");
         requireEqual(allNames.getIndex(ContourPixels), static_cast<int>(ContourPixels), "ALL CONTOUR_PIXELS index");
         requireEqual(allNames.getIndex(ContourSideSouth), static_cast<int>(ContourSideSouth), "ALL CONTOUR_SIDE_SOUTH index");
         const std::vector<Attribute>& allAttributes = ATTRIBUTE_GROUPS.at(AttributeGroup::All);

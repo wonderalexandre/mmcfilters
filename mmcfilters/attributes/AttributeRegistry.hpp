@@ -99,7 +99,7 @@ struct AttributeMetadata {
  * table drift fail as an unknown attribute instead of returning incorrect
  * metadata.
  */
-inline constexpr std::array<AttributeMetadata, static_cast<std::size_t>(Attribute::FilledCircularity) + 1> ATTRIBUTE_METADATA{
+inline constexpr std::array<AttributeMetadata, static_cast<std::size_t>(Attribute::FilledAxisOrientationSigned) + 1> ATTRIBUTE_METADATA{
     {{Area, "AREA", "Area: Number of pixels in the connected component.", false, NO_REQUIREMENTS},
      {Volume, "VOLUME",
       "Volume: Sum of the gray-level intensities of all pixels in the connected component. Interpreted as the total mass under the component, or the integral "
@@ -420,7 +420,13 @@ inline constexpr std::array<AttributeMetadata, static_cast<std::size_t>(Attribut
       "Filled area divided by 2*pi times the sum of filled-region second central moments; zero dispersion returns zero.", true, FILLED_SHAPE_REQUIREMENTS},
      {FilledCircularity, "FILLED_CIRCULARITY",
       "Minor/major eigenvalue ratio of the filled-region second moments; one pixel returns one and a nontrivial line returns zero.",
-      true, FILLED_SHAPE_REQUIREMENTS}}};
+      true, FILLED_SHAPE_REQUIREMENTS},
+     {AxisOrientationSigned, "AXIS_ORIENTATION_SIGNED",
+      "Signed principal column-axis orientation of the node support in degrees, in [-90, 90], with positive row direction downward; "
+      "isotropic regions return zero.", true, GRID_DOMAIN_2D_REQUIREMENTS},
+     {FilledAxisOrientationSigned, "FILLED_AXIS_ORIENTATION_SIGNED",
+      "Signed principal column-axis orientation of the filled region in degrees, in [-90, 90], with positive row direction downward; "
+      "isotropic regions return zero.", true, FILLED_SHAPE_REQUIREMENTS}}};
 
 /**
  * @brief Tests whether ordinally aligned attribute metadata holds.
@@ -618,11 +624,11 @@ inline const std::unordered_map<AttributeGroup, std::vector<Attribute>>& attribu
               ContourSideNorth,
               ContourSideWest,
               ContourSideEast,
-              ContourSideSouth}},
+              ContourSideSouth, AxisOrientationSigned}},
             {AttributeGroup::Moments,
              {CentralMoment20, CentralMoment02, CentralMoment11, CentralMoment30, CentralMoment03, CentralMoment21, CentralMoment12,
               HuMoment1,       HuMoment2,       HuMoment3,       HuMoment4,       HuMoment5,       HuMoment6,       HuMoment7,
-              Inertia,           Compactness,       Eccentricity,      LengthMajorAxis, LengthMinorAxis, AxisOrientation,  Circularity}},
+              Inertia,           Compactness,       Eccentricity,      LengthMajorAxis, LengthMinorAxis, AxisOrientation,  Circularity, AxisOrientationSigned}},
             {AttributeGroup::Boundary,
              {BitquadArea, BitquadNumberEuler, BitquadNumberHoles, BitquadPerimeter, BitquadPerimeterContinuous, BitquadCircularity,
               BitquadPerimeterAverage, BitquadLengthAverage, BitquadWidthAverage, ContourPixels, ContourPerimeter, ContourSideNorth,
@@ -693,7 +699,7 @@ inline const std::unordered_map<AttributeGroup, std::vector<Attribute>>& attribu
             {AttributeGroup::FilledShape,
              {FilledArea, FilledCentroidRow, FilledCentroidColumn, FilledLengthMajorAxis, FilledLengthMinorAxis,
               FilledAxisOrientation, FilledEccentricity, FilledInertia, HoleAreaFraction, FilledCentroidDisplacementNormalized,
-              FilledCompactness, FilledCircularity}},
+              FilledCompactness, FilledCircularity, FilledAxisOrientationSigned}},
             {AttributeGroup::All, std::move(all)}};
     }();
     return groups;

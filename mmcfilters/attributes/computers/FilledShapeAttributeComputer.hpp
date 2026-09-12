@@ -82,10 +82,10 @@ class FilledShapeAttributeComputer {
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology; ///< Support-based computation.
 
     /// Canonical output order of the family.
-    inline static constexpr std::array<Attribute, 12> producedAttributes{
+    inline static constexpr std::array<Attribute, 13> producedAttributes{
         FilledArea, FilledCentroidRow, FilledCentroidColumn, FilledLengthMajorAxis, FilledLengthMinorAxis,
         FilledAxisOrientation, FilledEccentricity, FilledInertia, HoleAreaFraction, FilledCentroidDisplacementNormalized,
-        FilledCompactness, FilledCircularity};
+        FilledCompactness, FilledCircularity, FilledAxisOrientationSigned};
 
     /** @brief Computes requested filled-region descriptors. @param context Tree, requests, and destination columns. */
     template <std::floating_point Real> static void compute(const AttributeComputeContext<Real>& context) {
@@ -121,7 +121,7 @@ class FilledShapeAttributeComputer {
         const auto offsets = outputOffsets(context.attrNames, context.requestedAttributes);
         for (NodeId row = 0; row < static_cast<NodeId>(context.unitPixels.size()); ++row) {
             const PixelId pixel = context.unitPixels[static_cast<std::size_t>(row)];
-            const std::array<long double, 12> values{1, static_cast<long double>(pixel / columns),
+            const std::array<long double, 13> values{1, static_cast<long double>(pixel / columns),
                 static_cast<long double>(pixel % columns), 0, 0, 0, 1, 0, 0, 0, 0, 1};
             writeRow(context.buffer, context.attrNames.NUM_ATTRIBUTES, row, offsets, values);
         }
@@ -140,8 +140,8 @@ class FilledShapeAttributeComputer {
      * @param requested Scalars to materialize.
      * @return Column offsets in family order, or -1 for unrequested scalars.
      */
-    static std::array<int, 12> outputOffsets(const AttributeNames& names, std::span<const Attribute> requested) {
-        std::array<int, 12> offsets;
+    static std::array<int, 13> outputOffsets(const AttributeNames& names, std::span<const Attribute> requested) {
+        std::array<int, 13> offsets;
         offsets.fill(-1);
         for (Attribute attribute : requested) {
             const auto it = std::find(producedAttributes.begin(), producedAttributes.end(), attribute);
@@ -162,8 +162,8 @@ class FilledShapeAttributeComputer {
      * @param values Computed descriptors in family order.
      */
     template <std::floating_point Real>
-    static void writeRow(std::span<Real> buffer, int stride, NodeId node, const std::array<int, 12>& offsets,
-                         const std::array<long double, 12>& values) {
+    static void writeRow(std::span<Real> buffer, int stride, NodeId node, const std::array<int, 13>& offsets,
+                         const std::array<long double, 13>& values) {
         const std::size_t row = static_cast<std::size_t>(node) * static_cast<std::size_t>(stride);
         for (std::size_t i = 0; i < offsets.size(); ++i) {
             if (offsets[i] >= 0) {
@@ -180,7 +180,7 @@ class FilledShapeAttributeComputer {
     template <std::floating_point Real>
     static void computeTraces(const AttributeComputeContext<Real>& context, const ContourTraceComputation& traces) {
         const auto offsets = outputOffsets(context.attrNames, context.requestedAttributes);
-        const bool secondOrder = offsets[10] >= 0 || offsets[11] >= 0 ||
+        const bool secondOrder = offsets[10] >= 0 || offsets[11] >= 0 || offsets[12] >= 0 ||
             std::any_of(offsets.begin() + 3, offsets.begin() + 8, [](int offset) { return offset >= 0; });
         const bool compareSupport = offsets[8] >= 0 || offsets[9] >= 0;
         const int columns = context.tree.numColumns();
@@ -194,7 +194,7 @@ class FilledShapeAttributeComputer {
             const long double area = filled.area;
             const long double centroidColumn = filled.column / area;
             const long double centroidRow = filled.row / area;
-            std::array<long double, 12> values{area, centroidRow + originRow, centroidColumn + originColumn, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+            std::array<long double, 13> values{area, centroidRow + originRow, centroidColumn + originColumn, 0, 0, 0, 1, 0, 0, 0, 0, 1};
             if (secondOrder) {
                 const long double mu20 = std::max(0.L, filled.column2 - filled.column * centroidColumn);
                 const long double mu02 = std::max(0.L, filled.row2 - filled.row * centroidRow);
@@ -205,7 +205,8 @@ class FilledShapeAttributeComputer {
                 values[3] = std::sqrt(2 * lambda1 / area);
                 values[4] = std::sqrt(2 * lambda2 / area);
                 if (mu20 != mu02 || mu11 != 0) {
-                    values[5] = std::abs(std::atan2(2 * mu11, mu20 - mu02) * 90 / std::numbers::pi_v<long double>);
+                    values[12] = std::atan2(2 * mu11, mu20 - mu02) * 90 / std::numbers::pi_v<long double>;
+                    values[5] = std::abs(values[12]);
                 }
                 const long double epsilon = std::numeric_limits<Real>::epsilon();
                 values[6] = lambda1 <= epsilon ? 1 : (lambda2 <= epsilon ? 1e6L : std::min(lambda1 / lambda2, 1e6L));

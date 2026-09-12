@@ -54,7 +54,7 @@ template <AltitudeValue T>
 void verifyRasterOracle(const ValuedMorphologicalTree<T>& valued, bool foregroundFour, bool directional = false) {
     const MorphologicalTree& tree = valued.topology();
     const auto result = AttributeComputation::computeAttributes<double>(valued, {AttributeGroup::FilledShape});
-    requireEqual(result.first.NUM_ATTRIBUTES, 12, "filled family column count");
+    requireEqual(result.first.NUM_ATTRIBUTES, 13, "filled family column count");
     const auto& names = result.first;
     for (NodeId node : tree.aliveNodeIds()) {
         auto value = [&](Attribute attribute) { return result.second[names.linearIndex(node, attribute)]; };
@@ -93,13 +93,14 @@ void verifyRasterOracle(const ValuedMorphologicalTree<T>& valued, bool foregroun
         const double lambda2 = std::max(0., mu20 + mu02 - discriminant);
         const double eccentricity = lambda1 <= 1e-12 ? 1 : (lambda2 <= 1e-12 ? 1e6 : std::min(lambda1 / lambda2, 1e6));
         const double angle = (std::abs(mu20 - mu02) + std::abs(mu11) <= 1e-12) ? 0 :
-            std::abs(0.5 * std::atan2(2 * mu11, mu20 - mu02)) * 180 / std::numbers::pi;
+            0.5 * std::atan2(2 * mu11, mu20 - mu02) * 180 / std::numbers::pi;
         requireNear(value(FilledArea), area, 1e-10, "raster filled area");
         requireNear(value(FilledCentroidColumn), column, 1e-10, "raster filled column centroid");
         requireNear(value(FilledCentroidRow), row, 1e-10, "raster filled row centroid");
         requireNear(value(FilledLengthMajorAxis), std::sqrt(2 * lambda1 / area), 1e-9, "raster major axis");
         requireNear(value(FilledLengthMinorAxis), std::sqrt(2 * lambda2 / area), 1e-7, "raster minor axis");
-        requireNear(value(FilledAxisOrientation), angle, 1e-9, "raster orientation");
+        requireNear(value(FilledAxisOrientation), std::abs(angle), 1e-9, "raster orientation");
+        requireNear(value(FilledAxisOrientationSigned), angle, 1e-9, "raster signed orientation");
         requireNear(value(FilledEccentricity), eccentricity, 1e-7, "raster eccentricity");
         requireNear(value(FilledInertia), (mu20 + mu02) / (area * area), 1e-10, "raster inertia");
         const double compactness = mu20 + mu02 > 1e-12 ? area / (2 * std::numbers::pi * (mu20 + mu02)) : 0;
@@ -152,6 +153,35 @@ void verifyGeometryAndRouting() {
         const auto scalar = AttributeComputation::computeSingleAttribute<double>(*rectangle, filledAttribute);
         requireNear(scalar.second[scalar.first.linearIndex(root, filledAttribute)],
                     filled.second[filled.first.linearIndex(root, filledAttribute)], 1e-10, "scalar moment selection");
+    }
+}
+
+void verifySignedOrientation() {
+    // Exact opposite slopes distinguish a signed axis from its absolute value.
+    for (bool descending : {false, true}) {
+        auto image = ImageUInt8::create(9, 9, 0);
+        for (int row = 1; row <= 7; ++row) {
+            const int center = descending ? 8 - row : row;
+            for (int column = center - 1; column <= center + 1; ++column) {
+                (*image)[row * 9 + column] = 1;
+            }
+        }
+        const auto tree = makeValuedComponentTree(image, true);
+        const auto scalar = AttributeComputation::computeSingleAttribute<double>(*tree, FilledAxisOrientationSigned);
+        const auto group = AttributeComputation::computeAttributes<double>(*tree, {AttributeGroup::FilledShape});
+        const auto support = AttributeComputation::computeSingleAttribute<double>(*tree, AxisOrientationSigned);
+        requireEqual(scalar.first.NUM_ATTRIBUTES, 1, "signed-only request");
+        for (NodeId node : tree->topology().aliveNodeIds()) {
+            const double angle = scalar.second[scalar.first.linearIndex(node, FilledAxisOrientationSigned)];
+            requireNear(support.second[support.first.linearIndex(node, AxisOrientationSigned)], angle, 1e-12,
+                        "hole-free support and filled signed orientations agree");
+            requireEqual(angle, group.second[group.first.linearIndex(node, FilledAxisOrientationSigned)], "signed scalar routing");
+            requireEqual(std::abs(angle), group.second[group.first.linearIndex(node, FilledAxisOrientation)], "legacy orientation is unchanged");
+            if (!tree->topology().isRoot(node)) {
+                const double expected = std::atan2(descending ? -8. : 8., 2. / 3.) * 90 / std::numbers::pi;
+                requireNear(angle, expected, 1e-10, "opposite slope orientation");
+            }
+        }
     }
 }
 
@@ -229,6 +259,7 @@ void verifyShapeConnectivityAndUnsupportedSupports() {
 
 int main() {
     verifyGeometryAndRouting();
+    verifySignedOrientation();
     verifyRandomAndDegenerateSupports();
     verifyGroupsAndUnitRows();
     verifyShapeConnectivityAndUnsupportedSupports();

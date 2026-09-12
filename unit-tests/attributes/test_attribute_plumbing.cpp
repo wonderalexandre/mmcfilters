@@ -53,6 +53,8 @@ static_assert(static_cast<int>(FilledArea) == 120);
 static_assert(static_cast<int>(FilledCentroidDisplacementNormalized) == 129);
 static_assert(static_cast<int>(FilledCompactness) == 130);
 static_assert(static_cast<int>(FilledCircularity) == 131);
+static_assert(static_cast<int>(AxisOrientationSigned) == 132);
+static_assert(static_cast<int>(FilledAxisOrientationSigned) == 133);
 static_assert(static_cast<int>(AttributeGroup::FilledShape) == 8);
 static_assert(AttributeComputer<VolumeComputer>);
 static_assert(AttributeComputer<GrayLevelStatsComputer>);
@@ -269,14 +271,14 @@ int main() {
         requireEqual(grayLevelNames.getIndex(GrayLevelVariance), 4, "GRAY_LEVEL GrayLevelVariance index");
         requireEqual(grayLevelNames.linearIndex(5, GrayLevelVariance), 29, "GRAY_LEVEL dense linear index");
         auto shapeNames = AttributeNames::fromGroup(AttributeGroup::Shape);
-        requireEqual(shapeNames.NUM_ATTRIBUTES, 48, "SHAPE AttributeNames count");
+        requireEqual(shapeNames.NUM_ATTRIBUTES, 49, "SHAPE AttributeNames count");
         requireEqual(shapeNames.getIndex(Area), 0, "SHAPE AREA index");
         require(shapeNames.contains(MaxDistExact), "SHAPE AttributeNames must include MAX_DIST_EXACT");
         require(shapeNames.contains(MaxDist), "SHAPE AttributeNames must include MAX_DIST");
         require(shapeNames.contains(Circularity), "SHAPE AttributeNames must include CIRCULARITY");
         requireEqual(shapeNames.getIndex(ContourSideSouth), 47, "SHAPE CONTOUR_SIDE_SOUTH index");
         auto momentNames = AttributeNames::fromGroup(AttributeGroup::Moments);
-        requireEqual(momentNames.NUM_ATTRIBUTES, 21, "MOMENTS AttributeNames count");
+        requireEqual(momentNames.NUM_ATTRIBUTES, 22, "MOMENTS AttributeNames count");
         requireEqual(momentNames.getIndex(CentralMoment20), 0, "MOMENTS CENTRAL_MOMENT_20 index");
         requireEqual(momentNames.getIndex(Circularity), 20, "MOMENTS CIRCULARITY index");
         auto boundaryNames = AttributeNames::fromGroup(AttributeGroup::Boundary);
@@ -370,7 +372,7 @@ int main() {
         requireComputerContract<HuMomentsComputer>({HuMoment1, HuMoment2, HuMoment3, HuMoment4, HuMoment5, HuMoment6, HuMoment7},
                                                    AttributeComputerDomain::Topology, AttributeComputerFamily::HuMoments, "HuMomentsComputer");
         requireComputerContract<MomentBasedAttributeComputer>(
-            {Inertia, Compactness, Eccentricity, LengthMajorAxis, LengthMinorAxis, AxisOrientation, Circularity}, AttributeComputerDomain::Topology,
+            {Inertia, Compactness, Eccentricity, LengthMajorAxis, LengthMinorAxis, AxisOrientation, Circularity, AxisOrientationSigned}, AttributeComputerDomain::Topology,
             AttributeComputerFamily::MomentDerived, "MomentBasedAttributeComputer");
         requireComputerContract<BitquadAttributeComputer>({BitquadArea, BitquadNumberEuler, BitquadNumberHoles, BitquadPerimeter,
                                                            BitquadPerimeterContinuous, BitquadCircularity, BitquadPerimeterAverage,

@@ -497,7 +497,7 @@ int main() {
 
         auto valuedTreeForSampling = makeValuedComponentTree(image, true);
         auto [groupShapeNames, groupShapeBuffer] = AttributeComputation::computeSingleAttribute(*valuedTreeForSampling, AttributeGroup::Shape);
-        requireEqual(groupShapeNames.NUM_ATTRIBUTES, 48, "SHAPE group count");
+        requireEqual(groupShapeNames.NUM_ATTRIBUTES, 49, "SHAPE group count");
         requireEqual(groupShapeBuffer[groupShapeNames.linearIndex(5, BoxColumnMin)], 2.0f, "SHAPE group bounding-box path");
         require(groupShapeNames.contains(MaxDistExact), "SHAPE group includes MAX_DIST_EXACT");
         require(groupShapeNames.contains(MaxDist), "SHAPE group includes MAX_DIST");

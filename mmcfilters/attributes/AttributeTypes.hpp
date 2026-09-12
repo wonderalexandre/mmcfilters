@@ -171,6 +171,9 @@ enum class Attribute {
     FilledCentroidDisplacementNormalized,
     FilledCompactness,
     FilledCircularity,
+
+    AxisOrientationSigned,
+    FilledAxisOrientationSigned,
 };
 
 /**

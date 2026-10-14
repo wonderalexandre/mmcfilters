@@ -24,7 +24,7 @@ namespace mmcfilters::detail {
  */
 template <AltitudeValue T> struct HigraHierarchyImport {
     /** @brief Hierarchy. */
-    ValidatedNativeHierarchy<T> hierarchy;
+    OwnedNativeHierarchy<T> hierarchy;
     /** @brief Dense node identifier of the internal node offset. */
     NodeId internalNodeOffset = InvalidNode;
 };
@@ -121,9 +121,8 @@ template <AltitudeValue T>
     }
 
     const NativeHierarchyView<T> view{nodeParent, smallestNodeMap, altitude, root, gridDomain, semantics};
-    NativeTopologyProof proof = NativeHierarchyValidation::validateComplete(view);
-    return {makeValidatedNativeHierarchy<T>(std::move(nodeParent), std::move(smallestNodeMap), std::move(altitude), root, gridDomain, std::move(semantics),
-                                            std::move(proof)),
+    NativeHierarchyValidation::validateComplete(view);
+    return {makeOwnedNativeHierarchy<T>(std::move(nodeParent), std::move(smallestNodeMap), std::move(altitude), root, gridDomain, std::move(semantics)),
             layout.numLeaves()};
 }
 

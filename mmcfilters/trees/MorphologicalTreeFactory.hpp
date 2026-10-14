@@ -153,21 +153,24 @@ class MorphologicalTreeFactory {
     }
 
     /**
-     * @brief Consumes a proven owning native hierarchy.
+     * @brief Materializes an owning native hierarchy without repeating complete structural validation.
+     *
+     * Internal producers establish structural validity during construction.
+     * External imports complete structural validation before reaching this method.
      *
      * @param hierarchy Hierarchy data.
      * @param preservedExternalNodeIdOffset Node identifier.
      * @param versionPolicy Policy used to preserve or reset imported version metadata.
-     * @return The materialized proven owning native hierarchy.
+     * @return The materialized valued-tree owner.
      */
     template <AltitudeValue T>
     [[nodiscard]] static ValuedMorphologicalTree<T>
-    materializeNativeHierarchy(detail::ValidatedNativeHierarchy<T>&& hierarchy, std::optional<NodeId> preservedExternalNodeIdOffset = std::nullopt,
+    materializeNativeHierarchy(detail::OwnedNativeHierarchy<T>&& hierarchy, std::optional<NodeId> preservedExternalNodeIdOffset = std::nullopt,
                                MaterializedVersionPolicy versionPolicy = MaterializedVersionPolicy::CanonicalNative) {
         auto storage = std::move(hierarchy).release();
         const std::size_t numNodes = storage.parent.size();
         MorphologicalTree topology(tag(), std::move(storage.parent), std::move(storage.smallestNodeMap), storage.root, storage.gridDomain2D,
-                                   std::move(storage.semantics), std::move(storage.topologyProof));
+                                   std::move(storage.semantics));
         if (versionPolicy == MaterializedVersionPolicy::PreserveLinkedConstruction) {
             // One initial storage invalidation, one per non-root link, and one
             // final iterator invalidation produced `numNodes + 1`.
@@ -337,10 +340,10 @@ class MorphologicalTreeFactory {
     }
 
     /**
-     * @brief Materializes the common output contract of a native producer.
+     * @brief Imports native buffers after complete structural validation.
      *
      * @param hierarchy Hierarchy data.
-     * @return The materialized common output contract of a native producer.
+     * @return The materialized valued-tree owner.
      */
     template <AltitudeValue T> [[nodiscard]] static ValuedMorphologicalTree<T> createFromNativeHierarchy(NativeHierarchyView<T> hierarchy) {
         return materializeNativeHierarchy<T>(detail::validateAndCopyNativeHierarchy<T>(std::move(hierarchy)));

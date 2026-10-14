@@ -57,9 +57,8 @@ static_assert(HasExecuteWithMSER<UltimateAttributeOpening<std::uint8_t>>);
 static_assert(HasExecuteWithMSER<UltimateAttributeOpening<std::int16_t>>);
 static_assert(!HasPublicTrustedCommit<ValuedMorphologicalTreeEditor<std::uint8_t>>);
 static_assert(!HasPublicTrustedNativeHierarchy<MorphologicalTreeFactory>);
-static_assert(std::is_move_constructible_v<detail::ValidatedNativeHierarchy<std::uint8_t>>);
-static_assert(!std::is_copy_constructible_v<detail::ValidatedNativeHierarchy<std::uint8_t>>);
-static_assert(!std::is_copy_constructible_v<detail::NativeTopologyProof>);
+static_assert(std::is_move_constructible_v<detail::OwnedNativeHierarchy<std::uint8_t>>);
+static_assert(!std::is_copy_constructible_v<detail::OwnedNativeHierarchy<std::uint8_t>>);
 
 static_assert(std::is_same_v<decltype(std::declval<adjust::CasfComponentTrees<std::uint8_t>&>().minTree()), const ValuedMorphologicalTree<std::uint8_t>&>);
 static_assert(std::is_same_v<decltype(std::declval<adjust::CasfComponentTrees<std::uint8_t>&>().maxTree()), const ValuedMorphologicalTree<std::uint8_t>&>);

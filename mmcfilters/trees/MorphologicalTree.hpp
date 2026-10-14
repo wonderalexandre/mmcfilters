@@ -9,7 +9,6 @@
 #include "MorphologicalTreeSemantics.hpp"
 #include "ProperPartDomain.hpp"
 #include "detail/MorphologicalTreeConstructionTag.hpp"
-#include "detail/NativeHierarchyValidationDetail.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -1203,40 +1202,20 @@ class MorphologicalTree {
     }
 
     /**
-     * @brief Consumes producer-owned buffers paired with generic structural
-     * evidence.
+     * @brief Factory-only materialization of an owning native topology.
+     *
+     * Internal producers supply valid topology buffers. External imports must
+     * complete structural validation before calling this constructor.
      *
      * @param nodeParent Parent-node value.
      * @param smallestNodeMap Pixel-indexed inclusion-smallest node map.
      * @param root Root node of the traversal.
      * @param gridDomain2D Optional regular-grid pixel domain.
      * @param semantics Hierarchy semantics validated by the operation.
-     * @param topologyProof Proof that the native topology invariants hold.
-     */
-    void initializeValidatedNativeTopology(std::vector<NodeId>&& nodeParent, std::vector<NodeId>&& smallestNodeMap, NodeId root,
-                                           std::optional<GridDomain2D> gridDomain2D, MorphologicalTreeSemantics semantics,
-                                           detail::NativeTopologyProof&& topologyProof) {
-        topologyProof.requireMatches(nodeParent.size(), smallestNodeMap.size(), root);
-        initializeNativeTopologyStorage(std::move(nodeParent), std::move(smallestNodeMap), root, gridDomain2D, std::move(semantics));
-#ifndef NDEBUG
-        validateConnectedRootedTree();
-#endif
-    }
-
-    /**
-     * @brief Factory-only materialization of a proven owning native topology.
-     *
-     * @param nodeParent Parent-node value.
-     * @param smallestNodeMap Pixel-indexed inclusion-smallest node map.
-     * @param root Root node of the traversal.
-     * @param gridDomain2D Optional regular-grid pixel domain.
-     * @param semantics Hierarchy semantics validated by the operation.
-     * @param topologyProof Proof that the native topology invariants hold.
      */
     MorphologicalTree(detail::MorphologicalTreeConstructionTag, std::vector<NodeId>&& nodeParent, std::vector<NodeId>&& smallestNodeMap, NodeId root,
-                      std::optional<GridDomain2D> gridDomain2D, MorphologicalTreeSemantics semantics, detail::NativeTopologyProof&& topologyProof) {
-        initializeValidatedNativeTopology(std::move(nodeParent), std::move(smallestNodeMap), root, gridDomain2D, std::move(semantics),
-                                          std::move(topologyProof));
+                      std::optional<GridDomain2D> gridDomain2D, MorphologicalTreeSemantics semantics) {
+        initializeNativeTopologyStorage(std::move(nodeParent), std::move(smallestNodeMap), root, gridDomain2D, std::move(semantics));
     }
 
     /**

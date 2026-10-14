@@ -50,17 +50,16 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
         std::vector<NodeId> parents;
         std::vector<NodeId> smallestNodeMap;
         std::vector<T> nodeAltitudes;
-        mmcfilters::detail::NativeTopologyProof topologyProof;
 
         void requireBuilt() const {
             if (root == InvalidNode)
                 throw std::logic_error("Residual-tree builder has no completed result.");
         }
 
-        [[nodiscard]] mmcfilters::detail::ValidatedNativeHierarchy<T> take(MorphologicalTreeSemantics semantics) && {
+        [[nodiscard]] mmcfilters::detail::OwnedNativeHierarchy<T> take(MorphologicalTreeSemantics semantics) && {
             requireBuilt();
-            auto hierarchy = mmcfilters::detail::makeValidatedNativeHierarchy<T>(std::move(parents), std::move(smallestNodeMap), std::move(nodeAltitudes), root,
-                                                                             GridDomain2D{rows, columns}, std::move(semantics), std::move(topologyProof));
+            auto hierarchy = mmcfilters::detail::makeOwnedNativeHierarchy<T>(std::move(parents), std::move(smallestNodeMap), std::move(nodeAltitudes), root,
+                                                                             GridDomain2D{rows, columns}, std::move(semantics));
             root = InvalidNode;
             rows = columns = 0;
             return hierarchy;
@@ -240,7 +239,7 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
         result_.requireBuilt();
         return result_.nodeAltitudes;
     }
-    [[nodiscard]] mmcfilters::detail::ValidatedNativeHierarchy<T> takeValidatedHierarchy(MorphologicalTreeSemantics semantics) && {
+    [[nodiscard]] mmcfilters::detail::OwnedNativeHierarchy<T> takeValidatedHierarchy(MorphologicalTreeSemantics semantics) && {
         return std::move(result_).take(std::move(semantics));
     }
 
@@ -460,7 +459,7 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
             throw std::runtime_error("Residual root requires a non-empty proper part.");
         const NativeHierarchyView<T> hierarchy{
             state.parents_, state.smallestNodeMap_, state.nodeAltitudes_, 0, GridDomain2D{image->getNumRows(), image->getNumColumns()}, std::move(semantics)};
-        auto topologyProof = mmcfilters::detail::NativeHierarchyValidation::validateComplete(hierarchy);
+        mmcfilters::detail::NativeHierarchyValidation::validateDescriptorOnly(hierarchy);
         for (PixelId pixel = 0; pixel < image->getSize(); ++pixel) {
             const NodeId node = state.smallestNodeMap_[static_cast<std::size_t>(pixel)];
             if (state.nodeAltitudes_[static_cast<std::size_t>(node)] != (*image)[pixel]) {
@@ -472,8 +471,7 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
                 0,
                 std::move(state.parents_),
                 std::move(state.smallestNodeMap_),
-                std::move(state.nodeAltitudes_),
-                std::move(topologyProof)};
+                std::move(state.nodeAltitudes_)};
     }
 
     /** Validate the domain once; no full image/tree validation occurs inside the leveling loop. */

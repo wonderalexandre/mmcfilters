@@ -14,280 +14,12 @@
 
 namespace mmcfilters::detail {
 
-class NativeHierarchyValidation;
-class TopologicalNativeHierarchyRecorder;
-
 /**
- * @brief Move-only evidence that native topology buffers satisfy the generic
- * rooted partial-partition contract.
+ * @brief Owns native hierarchy buffers supplied by an internal producer or a validated import.
  *
- * The proof is bound to the node/pixel cardinalities and root id. It can
- * only be issued by the complete validator or by the recorder used by a
- * producer that establishes the same facts in its existing construction
- * passes.
+ * @tparam T Altitude type stored by the hierarchy.
  */
-class NativeTopologyProof {
-    friend class NativeHierarchyValidation;
-    friend class TopologicalNativeHierarchyRecorder;
-
-    /** @brief Number of nodes. */
-    std::size_t numNodes_ = 0;
-    /** @brief Number of proper parts. */
-    std::size_t numPixels_ = 0;
-    /** @brief Dense node identifier of the root. */
-    NodeId root_ = InvalidNode;
-    /** @brief Indicates whether the proof token contains validated evidence. */
-    bool valid_ = false;
-
-    /**
-     * @brief Constructs `NativeTopologyProof` from the supplied inputs.
-     *
-     * @param numNodes Number of internal nodes.
-     * @param numPixels Number of pixels.
-     * @param root Root node of the operation.
-     */
-    NativeTopologyProof(std::size_t numNodes, std::size_t numPixels, NodeId root) noexcept
-        : numNodes_(numNodes), numPixels_(numPixels), root_(root), valid_(true) {}
-
-  public:
-    /**
-     * @brief Constructs a default `NativeTopologyProof`.
-     */
-    NativeTopologyProof() noexcept = default;
-    /**
-     * @brief Disables copy construction.
-     */
-    NativeTopologyProof(const NativeTopologyProof&) = delete;
-    /**
-     * @brief Disables copy assignment.
-     */
-    NativeTopologyProof& operator=(const NativeTopologyProof&) = delete;
-    /**
-     * @brief Constructs a default `NativeTopologyProof`.
-     */
-    NativeTopologyProof(NativeTopologyProof&&) noexcept = default;
-    /**
-     * @brief Assigns the supplied object state.
-     *
-     * @return Reference to the assigned object.
-     */
-    NativeTopologyProof& operator=(NativeTopologyProof&&) noexcept = default;
-
-    /**
-     * @brief Validates matches.
-     *
-     * @param numNodes Number of internal nodes.
-     * @param numPixels Number of pixels.
-     * @param root Root node of the operation.
-     */
-    void requireMatches(std::size_t numNodes, std::size_t numPixels, NodeId root) const {
-        if (!valid_ || numNodes_ != numNodes || numPixels_ != numPixels || root_ != root) {
-            throw std::logic_error("Native topology proof does not match the materialized buffers.");
-        }
-    }
-};
-
-/**
- * @brief Move-only evidence that every emitted node has non-empty subtree
- * support.
- *
- * This narrower proof lets an assembler establish support inductively while
- * it emits nodes. A later validator still checks the complete parent and smallest-node
- * domains, but does not need another support-propagation pass.
- */
-class NativeSubtreeSupportProof {
-    friend class NativeSubtreeSupportRecorder;
-    friend class NativeHierarchyValidation;
-
-    /** @brief Number of supported nodes. */
-    std::size_t numSupportedNodes_ = 0;
-    /** @brief Indicates whether the proof token contains validated evidence. */
-    bool valid_ = false;
-
-    /**
-     * @brief Constructs `NativeSubtreeSupportProof` from the supplied inputs.
-     *
-     * @param numSupportedNodes Count.
-     */
-    explicit NativeSubtreeSupportProof(std::size_t numSupportedNodes) noexcept : numSupportedNodes_(numSupportedNodes), valid_(true) {}
-
-  public:
-    /**
-     * @brief Constructs a default `NativeSubtreeSupportProof`.
-     */
-    NativeSubtreeSupportProof() noexcept = default;
-    /**
-     * @brief Disables copy construction.
-     */
-    NativeSubtreeSupportProof(const NativeSubtreeSupportProof&) = delete;
-    /**
-     * @brief Disables copy assignment.
-     */
-    NativeSubtreeSupportProof& operator=(const NativeSubtreeSupportProof&) = delete;
-    /**
-     * @brief Constructs a default `NativeSubtreeSupportProof`.
-     */
-    NativeSubtreeSupportProof(NativeSubtreeSupportProof&&) noexcept = default;
-    /**
-     * @brief Assigns the supplied object state.
-     *
-     * @return Reference to the assigned object.
-     */
-    NativeSubtreeSupportProof& operator=(NativeSubtreeSupportProof&&) noexcept = default;
-};
-
-/**
- * @brief Constant-space recorder for inductive subtree-support evidence.
- *
- * A producer calls `recordSupportedNode()` exactly when it creates a node from
- * at least one direct proper part or from an already supported child.
- */
-class NativeSubtreeSupportRecorder {
-    /** @brief Number of supported nodes. */
-    std::size_t numSupportedNodes_ = 0;
-
-  public:
-    /**
-     * @brief Records supported node.
-     */
-    void recordSupportedNode() {
-        if (numSupportedNodes_ == std::numeric_limits<std::size_t>::max()) {
-            throw std::length_error("Native subtree-support evidence exceeds the supported size.");
-        }
-        ++numSupportedNodes_;
-    }
-
-    /**
-     * @brief Finalizes and returns the accumulated proof.
-     *
-     * @param expectedNodes Expected number of internal nodes.
-     * @return Finalized and returns the accumulated proof.
-     */
-    [[nodiscard]] NativeSubtreeSupportProof finish(std::size_t expectedNodes) && {
-        if (numSupportedNodes_ != expectedNodes) {
-            throw std::logic_error("Native subtree-support evidence does not cover every node.");
-        }
-        return NativeSubtreeSupportProof(numSupportedNodes_);
-    }
-};
-
-/**
- * @brief Constant-space proof recorder for producers that emit parents before
- * children in dense node-id order.
- *
- * `recordSupportedNode()` establishes connectivity by requiring every
- * non-root parent to have already been recorded. Its name makes the additional
- * producer obligation explicit: the recorded node must already be known to
- * have non-empty full subtree support.
- */
-class TopologicalNativeHierarchyRecorder {
-    /** @brief Expected nodes. */
-    std::size_t expectedNodes_;
-    /** @brief Expected proper parts. */
-    std::size_t expectedProperParts_;
-    /** @brief Dense node identifier of the expected root. */
-    NodeId expectedRoot_;
-    /** @brief Next node. */
-    std::size_t nextNode_ = 0;
-    /** @brief Next proper part. */
-    std::size_t nextProperPart_ = 0;
-
-  public:
-    /**
-     * @brief Constructs `TopologicalNativeHierarchyRecorder` from the supplied inputs.
-     *
-     * @param expectedNodes Expected number of internal nodes.
-     * @param expectedProperParts Expected number of proper parts.
-     * @param expectedRoot Expected root identifier.
-     */
-    TopologicalNativeHierarchyRecorder(std::size_t expectedNodes, std::size_t expectedProperParts, NodeId expectedRoot)
-        : expectedNodes_(expectedNodes), expectedProperParts_(expectedProperParts), expectedRoot_(expectedRoot) {
-        if (expectedNodes_ == 0 || expectedProperParts_ == 0) {
-            throw std::invalid_argument("Native hierarchy evidence requires non-empty node and pixel domains.");
-        }
-        if (expectedNodes_ > static_cast<std::size_t>(std::numeric_limits<NodeId>::max()) ||
-            expectedProperParts_ > static_cast<std::size_t>(std::numeric_limits<NodeId>::max())) {
-            throw std::length_error("Native hierarchy evidence exceeds the NodeId domain.");
-        }
-        if (expectedRoot_ != 0) {
-            throw std::invalid_argument("Topological native hierarchy evidence requires the root to be emitted first.");
-        }
-    }
-
-    /**
-     * @brief Records supported node.
-     *
-     * @param node Node identifier.
-     * @param parent Parent accumulator or node.
-     */
-    void recordSupportedNode(NodeId node, NodeId parent) {
-        if (node != static_cast<NodeId>(nextNode_)) {
-            throw std::logic_error("Topological native hierarchy nodes must be recorded in dense id order.");
-        }
-        if (node == expectedRoot_) {
-            if (parent != node) {
-                throw std::logic_error("The recorded native hierarchy root must be self-parented.");
-            }
-        } else if (parent < 0 || parent >= node) {
-            throw std::logic_error("A recorded native hierarchy parent must already be connected.");
-        }
-        ++nextNode_;
-    }
-
-    /**
-     * @brief Records proper part.
-     *
-     * @param pixel Proper-part identifier.
-     * @param smallestNode Smallest node associated with the pixel.
-     */
-    void recordProperPart(PixelId pixel, NodeId smallestNode) {
-        if (pixel != static_cast<PixelId>(nextProperPart_)) {
-            throw std::logic_error("Native proper parts must be recorded in dense id order.");
-        }
-        if (smallestNode < 0 || smallestNode >= static_cast<NodeId>(expectedNodes_)) {
-            throw std::logic_error("A recorded smallest node is outside the node domain.");
-        }
-        ++nextProperPart_;
-    }
-
-    /**
-     * @brief Records one smallest node in a producer-established permutation pass.
-     *
-     * The producer is responsible for visiting every proper part exactly once.
-     * This variant avoids a second dense-domain scan when the construction
-     * algorithm already traverses a proven permutation of the proper parts.
-     *
-     * @param smallestNode Smallest node associated with the pixel.
-     */
-    void recordSmallestNode(NodeId smallestNode) {
-        if (nextProperPart_ >= expectedProperParts_) {
-            throw std::logic_error("Native proper-part evidence exceeds the declared domain.");
-        }
-        if (smallestNode < 0 || smallestNode >= static_cast<NodeId>(expectedNodes_)) {
-            throw std::logic_error("A recorded smallest node is outside the node domain.");
-        }
-        ++nextProperPart_;
-    }
-
-    /**
-     * @brief Finalizes and returns the accumulated proof.
-     *
-     * @return Finalized and returns the accumulated proof.
-     */
-    [[nodiscard]] NativeTopologyProof finish() && {
-        if (nextNode_ != expectedNodes_ || nextProperPart_ != expectedProperParts_) {
-            throw std::logic_error("Native hierarchy evidence does not cover every node and proper part.");
-        }
-        return NativeTopologyProof(expectedNodes_, expectedProperParts_, expectedRoot_);
-    }
-};
-
-/**
- * @brief Owns native hierarchy buffers after structural validation.
- *
- * @tparam T Altitude type stored by the validated hierarchy.
- */
-template <AltitudeValue T> struct ValidatedNativeHierarchyStorage {
+template <AltitudeValue T> struct OwnedNativeHierarchyStorage {
     /** @brief Dense node identifier of the node parent. */
     std::vector<NodeId> parent;
     /** @brief Dense identifier of the smallest node. */
@@ -300,62 +32,57 @@ template <AltitudeValue T> struct ValidatedNativeHierarchyStorage {
     std::optional<GridDomain2D> gridDomain2D;
     /** @brief Semantics. */
     MorphologicalTreeSemantics semantics;
-    /** @brief Topology proof. */
-    NativeTopologyProof topologyProof;
 };
 
 /**
- * @brief Owning, move-only native hierarchy paired with structural evidence.
+ * @brief Owning, move-only native hierarchy for factory materialization.
  *
  * Internal producers move their existing buffers into this representation.
  * Public span imports are validated first and copied once into it. In both
- * cases materialization subsequently transfers the buffers into the valuedTree
- * owner without another copy.
+ * cases materialization transfers the buffers into the valued-tree owner
+ * without another copy. Internal producers are responsible for structural validity.
  */
-template <AltitudeValue T> class ValidatedNativeHierarchy {
+template <AltitudeValue T> class OwnedNativeHierarchy {
     /** @brief Storage. */
-    ValidatedNativeHierarchyStorage<T> storage_;
+    OwnedNativeHierarchyStorage<T> storage_;
 
   public:
     /**
-     * @brief Takes ownership of structurally validated native hierarchy storage.
+     * @brief Takes ownership of native hierarchy storage without structural validation.
      *
      * @param storage Storage object that owns the native hierarchy arrays.
      */
-    explicit ValidatedNativeHierarchy(ValidatedNativeHierarchyStorage<T>&& storage) : storage_(std::move(storage)) {
-        storage_.topologyProof.requireMatches(storage_.parent.size(), storage_.smallestNodeMap.size(), storage_.root);
-    }
+    explicit OwnedNativeHierarchy(OwnedNativeHierarchyStorage<T>&& storage) : storage_(std::move(storage)) {}
 
     /**
      * @brief Disables copy construction.
      */
-    ValidatedNativeHierarchy(const ValidatedNativeHierarchy&) = delete;
+    OwnedNativeHierarchy(const OwnedNativeHierarchy&) = delete;
     /**
      * @brief Disables copy assignment.
      */
-    ValidatedNativeHierarchy& operator=(const ValidatedNativeHierarchy&) = delete;
+    OwnedNativeHierarchy& operator=(const OwnedNativeHierarchy&) = delete;
     /**
-     * @brief Transfers ownership of the validated native hierarchy.
+     * @brief Transfers ownership of the native hierarchy.
      */
-    ValidatedNativeHierarchy(ValidatedNativeHierarchy&&) noexcept = default;
+    OwnedNativeHierarchy(OwnedNativeHierarchy&&) noexcept = default;
     /**
      * @brief Assigns the supplied object state.
      *
      * @return Reference to the assigned object.
      */
-    ValidatedNativeHierarchy& operator=(ValidatedNativeHierarchy&&) noexcept = default;
+    OwnedNativeHierarchy& operator=(OwnedNativeHierarchy&&) noexcept = default;
 
     /**
      * @brief Releases ownership of the stored native hierarchy.
      *
      * @return Owned native hierarchy storage.
      */
-    [[nodiscard]] ValidatedNativeHierarchyStorage<T> release() && { return std::move(storage_); }
+    [[nodiscard]] OwnedNativeHierarchyStorage<T> release() && { return std::move(storage_); }
 };
 
 /**
- * @brief Central validator and materialization boundary for native hierarchy
- * buffers.
+ * @brief Complete structural validation for external native hierarchy imports.
  */
 class NativeHierarchyValidation {
     /**
@@ -430,9 +157,9 @@ class NativeHierarchyValidation {
 
   public:
     /**
-     * @brief Validates descriptor only.
+     * @brief Validates hierarchy dimensions and semantic metadata without scanning topology buffers.
      *
-     * @param hierarchy Native hierarchy data to validate or convert.
+     * @param hierarchy Native hierarchy descriptor.
      */
     template <AltitudeValue T> static void validateDescriptorOnly(const NativeHierarchyView<T>& hierarchy) { validateDescriptor(hierarchy); }
 
@@ -441,9 +168,8 @@ class NativeHierarchyValidation {
      * raw-buffer import.
      *
      * @param hierarchy Hierarchy data.
-     * @return Result of performs the complete structural validation required for a public raw-buffer import.
      */
-    template <AltitudeValue T> [[nodiscard]] static NativeTopologyProof validateComplete(const NativeHierarchyView<T>& hierarchy) {
+    template <AltitudeValue T> static void validateComplete(const NativeHierarchyView<T>& hierarchy) {
         validateDescriptor(hierarchy);
 
         const int numNodes = static_cast<int>(hierarchy.parent.size());
@@ -505,96 +231,26 @@ class NativeHierarchyValidation {
         if (processedNodes != hierarchy.parent.size()) {
             throw std::invalid_argument("Native hierarchy contains a cycle or nodes disconnected from the root.");
         }
-
-        return NativeTopologyProof(hierarchy.parent.size(), hierarchy.smallestNodeMap.size(), hierarchy.root);
-    }
-
-    /**
-     * @brief Validates parent connectivity and the smallest-node map while consuming
-     * support evidence already established by the producer.
-     *
-     * `validateSmallestNode` runs inside the existing proper-part pass, allowing a
-     * native producer to retain its reconstruction oracle without another scan.
-     *
-     * @param hierarchy Hierarchy data.
-     * @param supportProof Proof that every node support is non-empty.
-     * @param validateSmallestNode Callback that revalidates each smallest-node mapping.
-     * @return Validation result for parent connectivity and the smallest-node map while consuming support evidence already established by the producer.
-     */
-    template <AltitudeValue T, class SmallestNodeValidator>
-    [[nodiscard]] static NativeTopologyProof validateWithEstablishedSupport(const NativeHierarchyView<T>& hierarchy, NativeSubtreeSupportProof&& supportProof,
-                                                                            SmallestNodeValidator&& validateSmallestNode) {
-        validateDescriptor(hierarchy);
-        if (!supportProof.valid_ || supportProof.numSupportedNodes_ != hierarchy.parent.size()) {
-            throw std::logic_error("Native subtree-support proof does not match the node domain.");
-        }
-
-        const int numNodes = static_cast<int>(hierarchy.parent.size());
-        if (hierarchy.parent[static_cast<std::size_t>(hierarchy.root)] != hierarchy.root) {
-            throw std::invalid_argument("Native hierarchy root must be self-parented.");
-        }
-
-        std::vector<std::uint8_t> parentState(hierarchy.parent.size(), std::uint8_t{0});
-        parentState[static_cast<std::size_t>(hierarchy.root)] = 2;
-        for (NodeId node = 0; node < numNodes; ++node) {
-            if (node == hierarchy.root) {
-                continue;
-            }
-
-            NodeId cursor = node;
-            while (parentState[static_cast<std::size_t>(cursor)] == 0) {
-                parentState[static_cast<std::size_t>(cursor)] = 1;
-                const NodeId parent = hierarchy.parent[static_cast<std::size_t>(cursor)];
-                if (parent < 0 || parent >= numNodes || parent == cursor) {
-                    throw std::invalid_argument("Native hierarchy parent is self-referential or outside the internal-node domain.");
-                }
-                cursor = parent;
-            }
-            if (parentState[static_cast<std::size_t>(cursor)] == 1) {
-                throw std::invalid_argument("Native hierarchy contains a non-root cycle.");
-            }
-
-            cursor = node;
-            while (parentState[static_cast<std::size_t>(cursor)] == 1) {
-                parentState[static_cast<std::size_t>(cursor)] = 2;
-                cursor = hierarchy.parent[static_cast<std::size_t>(cursor)];
-            }
-        }
-
-        for (PixelId pixel = 0; pixel < static_cast<PixelId>(hierarchy.smallestNodeMap.size()); ++pixel) {
-            const NodeId smallestNode = hierarchy.smallestNodeMap[static_cast<std::size_t>(pixel)];
-            if (smallestNode < 0 || smallestNode >= numNodes) {
-                throw std::invalid_argument("Native hierarchy smallest node is outside the internal-node domain.");
-            }
-            validateSmallestNode(pixel, smallestNode);
-        }
-
-        return NativeTopologyProof(hierarchy.parent.size(), hierarchy.smallestNodeMap.size(), hierarchy.root);
     }
 };
 
-template<AltitudeValue T>
-[[nodiscard]] ValidatedNativeHierarchy<T>
 /**
  * @brief Validates a native hierarchy and copies it into owned storage.
  *
  * @param hierarchy Native hierarchy data to validate or convert.
  * @return Owning copy of the validated native hierarchy.
  */
-validateAndCopyNativeHierarchy(
-    NativeHierarchyView<T> hierarchy) {
-    NativeTopologyProof proof = NativeHierarchyValidation::validateComplete(hierarchy);
-    return ValidatedNativeHierarchy<T>(
-        ValidatedNativeHierarchyStorage<T>{std::vector<NodeId>(hierarchy.parent.begin(), hierarchy.parent.end()),
-                                           std::vector<NodeId>(hierarchy.smallestNodeMap.begin(), hierarchy.smallestNodeMap.end()),
-                                           std::vector<T>(hierarchy.nodeAltitudes.begin(), hierarchy.nodeAltitudes.end()), hierarchy.root, hierarchy.gridDomain2D,
-                                           std::move(hierarchy.semantics), std::move(proof)});
+template <AltitudeValue T> [[nodiscard]] OwnedNativeHierarchy<T> validateAndCopyNativeHierarchy(NativeHierarchyView<T> hierarchy) {
+    NativeHierarchyValidation::validateComplete(hierarchy);
+    return OwnedNativeHierarchy<T>(
+        OwnedNativeHierarchyStorage<T>{std::vector<NodeId>(hierarchy.parent.begin(), hierarchy.parent.end()),
+                                       std::vector<NodeId>(hierarchy.smallestNodeMap.begin(), hierarchy.smallestNodeMap.end()),
+                                       std::vector<T>(hierarchy.nodeAltitudes.begin(), hierarchy.nodeAltitudes.end()), hierarchy.root, hierarchy.gridDomain2D,
+                                       std::move(hierarchy.semantics)});
 }
 
-template<AltitudeValue T>
-[[nodiscard]] ValidatedNativeHierarchy<T>
 /**
- * @brief Creates validated native hierarchy.
+ * @brief Takes ownership of a trusted internal producer result without structural validation.
  *
  * @param parent Parent node indexed by internal node identifier.
  * @param smallestNodeMap Smallest node indexed by pixel identifier.
@@ -602,23 +258,14 @@ template<AltitudeValue T>
  * @param root Root node of the operation.
  * @param gridDomain2D Two-dimensional grid metadata associated with the hierarchy.
  * @param semantics Semantic metadata associated with the hierarchy.
- * @param proof Validation proof to attach to the imported hierarchy.
- * @return Created validated native hierarchy.
+ * @return Owned native hierarchy.
  */
-makeValidatedNativeHierarchy(
-    std::vector<NodeId>&& parent,
-    std::vector<NodeId>&& smallestNodeMap,
-    std::vector<T>&& nodeAltitudes,
-    NodeId root,
-    std::optional<GridDomain2D> gridDomain2D,
-    MorphologicalTreeSemantics semantics,
-    NativeTopologyProof&& proof) {
-    const NativeHierarchyView<T> hierarchy{parent, smallestNodeMap, nodeAltitudes, root, gridDomain2D, semantics};
-    NativeHierarchyValidation::validateDescriptorOnly(hierarchy);
-    proof.requireMatches(parent.size(), smallestNodeMap.size(), root);
-
-    return ValidatedNativeHierarchy<T>(ValidatedNativeHierarchyStorage<T>{std::move(parent), std::move(smallestNodeMap), std::move(nodeAltitudes), root,
-                                                                          gridDomain2D, std::move(semantics), std::move(proof)});
+template <AltitudeValue T>
+[[nodiscard]] OwnedNativeHierarchy<T> makeOwnedNativeHierarchy(std::vector<NodeId>&& parent, std::vector<NodeId>&& smallestNodeMap,
+                                                             std::vector<T>&& nodeAltitudes, NodeId root, std::optional<GridDomain2D> gridDomain2D,
+                                                             MorphologicalTreeSemantics semantics) {
+    return OwnedNativeHierarchy<T>(OwnedNativeHierarchyStorage<T>{std::move(parent), std::move(smallestNodeMap), std::move(nodeAltitudes), root,
+                                                                 gridDomain2D, std::move(semantics)});
 }
 
 } // namespace mmcfilters::detail

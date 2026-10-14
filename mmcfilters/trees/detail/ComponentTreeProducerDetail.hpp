@@ -43,7 +43,7 @@ template <AltitudeValue T> class ComponentTreeProducer {
     ComponentTreeProducer(ComponentTreePolarity polarity, RegularGridAdjacency2D adjacency) : polarity_(polarity), adjacency_(std::move(adjacency)) {}
 
     /**
-     * @brief Builds proven owning topology, ownership, and altitude buffers.
+     * @brief Builds owning topology, ownership, and altitude buffers.
      *
      * Internal node ids are assigned in exactly the historical ordered-pixel
      * materialization order. The altitude representative is the smallest
@@ -52,9 +52,9 @@ template <AltitudeValue T> class ComponentTreeProducer {
      * different object representations.
      *
      * @param image Image.
-     * @return The resulting proven owning topology, ownership, and altitude buffers.
+     * @return The resulting owning topology, ownership, and altitude buffers.
      */
-    [[nodiscard]] ValidatedNativeHierarchy<T> build(const ImagePtr<T>& image) {
+    [[nodiscard]] OwnedNativeHierarchy<T> build(const ImagePtr<T>& image) {
         assert(polarity_ == ComponentTreePolarity::MaxTree || polarity_ == ComponentTreePolarity::MinTree);
         const bool isMaxTree = polarity_ == ComponentTreePolarity::MaxTree;
         const MorphologicalTreeKind kind = isMaxTree ? MorphologicalTreeKind::MaxTree : MorphologicalTreeKind::MinTree;
@@ -75,8 +75,6 @@ template <AltitudeValue T> class ComponentTreeProducer {
         representativePixel.reserve(static_cast<std::size_t>(numBuiltNodes));
         std::vector<NodeId> smallestNodeMap(static_cast<std::size_t>(numPixels), InvalidNode);
 
-        TopologicalNativeHierarchyRecorder proofRecorder(static_cast<std::size_t>(numBuiltNodes), static_cast<std::size_t>(numPixels), NodeId{0});
-
         NodeId root = InvalidNode;
         for (int index = 0; index < numPixels; ++index) {
             const PixelId pixel = orderedPixels[static_cast<std::size_t>(index)];
@@ -89,7 +87,6 @@ template <AltitudeValue T> class ComponentTreeProducer {
                 nodeParent.push_back(smallestNodeId);
                 altitude.push_back(imageValues[static_cast<std::size_t>(pixel)]);
                 representativePixel.push_back(pixel);
-                proofRecorder.recordSupportedNode(smallestNodeId, smallestNodeId);
             } else {
                 const PixelId parentPixel = pixelParent[static_cast<std::size_t>(pixel)];
                 const NodeId parentOwner = smallestNodeMap[static_cast<std::size_t>(parentPixel)];
@@ -98,7 +95,6 @@ template <AltitudeValue T> class ComponentTreeProducer {
                     nodeParent.push_back(parentOwner);
                     altitude.push_back(imageValues[static_cast<std::size_t>(pixel)]);
                     representativePixel.push_back(pixel);
-                    proofRecorder.recordSupportedNode(smallestNodeId, parentOwner);
                 } else {
                     smallestNodeId = parentOwner;
                 }
@@ -109,14 +105,12 @@ template <AltitudeValue T> class ComponentTreeProducer {
                 representativePixel[static_cast<std::size_t>(smallestNodeId)] = pixel;
                 altitude[static_cast<std::size_t>(smallestNodeId)] = imageValues[static_cast<std::size_t>(pixel)];
             }
-            proofRecorder.recordSmallestNode(smallestNodeId);
         }
 
         assert(root == 0 && nodeParent.size() == static_cast<std::size_t>(numBuiltNodes));
 
-        return makeValidatedNativeHierarchy<T>(std::move(nodeParent), std::move(smallestNodeMap), std::move(altitude), root, gridDomain,
-                                               makeMorphologicalTreeSemantics(kind, SharedAdjacencyContext{std::move(adjacency)}),
-                                               std::move(proofRecorder).finish());
+        return makeOwnedNativeHierarchy<T>(std::move(nodeParent), std::move(smallestNodeMap), std::move(altitude), root, gridDomain,
+                                           makeMorphologicalTreeSemantics(kind, SharedAdjacencyContext{std::move(adjacency)}));
     }
 };
 

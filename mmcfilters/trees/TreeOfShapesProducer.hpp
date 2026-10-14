@@ -134,19 +134,16 @@ template <class Altitude> struct TreeOfShapesBuildResult {
     int numRows = 0;
     /// Number of columns in the original pixel domain.
     int numColumns = 0;
-    /// Move-only proof that the producer established the topology invariants.
-    detail::NativeTopologyProof topologyProof;
 
     /**
-     * @brief Transfers the producer-owned buffers together with their generic
-     * topology proof.
+     * @brief Transfers the producer-owned buffers without structural validation.
      *
      * @param semantics Hierarchy semantics validated by the operation.
-     * @return The transferred producer-owned buffers together with their generic topology proof.
+     * @return The transferred producer-owned buffers.
      */
-    [[nodiscard]] detail::ValidatedNativeHierarchy<Altitude> takeValidatedHierarchy(MorphologicalTreeSemantics semantics) && {
-        return detail::makeValidatedNativeHierarchy<Altitude>(std::move(parent), std::move(smallestNodeMap), std::move(nodeAltitudes), root,
-                                                              GridDomain2D{numRows, numColumns}, std::move(semantics), std::move(topologyProof));
+    [[nodiscard]] detail::OwnedNativeHierarchy<Altitude> takeValidatedHierarchy(MorphologicalTreeSemantics semantics) && {
+        return detail::makeOwnedNativeHierarchy<Altitude>(std::move(parent), std::move(smallestNodeMap), std::move(nodeAltitudes), root,
+                                                          GridDomain2D{numRows, numColumns}, std::move(semantics));
     }
 };
 
@@ -1494,7 +1491,6 @@ class TreeOfShapesProducer {
         result.root = nodeIdByRep[static_cast<size_t>(projectedRootRep)];
         result.numRows = numRows;
         result.numColumns = numColumns;
-        detail::TopologicalNativeHierarchyRecorder proofRecorder(static_cast<std::size_t>(numNodes), static_cast<std::size_t>(numPixels), result.root);
 
         for (PixelId repStar : canonicalReps) {
             const NodeId nodeId = nodeIdByRep[static_cast<size_t>(repStar)];
@@ -1518,7 +1514,6 @@ class TreeOfShapesProducer {
                 }
                 result.parent[static_cast<size_t>(nodeId)] = nodeIdByRep[static_cast<size_t>(ancestorRep)];
             }
-            proofRecorder.recordSupportedNode(nodeId, result.parent[static_cast<std::size_t>(nodeId)]);
 
             result.nodeAltitudes[static_cast<size_t>(nodeId)] =
                 ToSAltitudeEncodingFor<Altitude>::type::encode(canonical.grayLevel[static_cast<size_t>(repStar)], immersionMode_);
@@ -1531,7 +1526,6 @@ class TreeOfShapesProducer {
                 throw std::runtime_error("Tree-of-shapes proper part belongs to a contracted node.");
             }
             result.smallestNodeMap[static_cast<size_t>(elementId)] = smallestNodeId;
-            proofRecorder.recordProperPart(elementId, smallestNodeId);
         }
         for (NodeId nodeId = 0; nodeId < numNodes; ++nodeId) {
             const NodeId parentNodeId = result.parent[static_cast<std::size_t>(nodeId)];
@@ -1540,7 +1534,6 @@ class TreeOfShapesProducer {
                 throw std::runtime_error("Tree-of-shapes construction produced an equal-altitude parent-child edge.");
             }
         }
-        result.topologyProof = std::move(proofRecorder).finish();
         return result;
     }
 

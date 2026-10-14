@@ -378,6 +378,20 @@ class MorphologicalTree {
         properPartCardinalityByNode_[slotId] = 0;
     }
 
+    /** Reserve before mutation, with amortized linear growth across successive releases. */
+    void reserveFreeNodeSlots(std::size_t additionalSlots) {
+        const auto maximum = freeNodeIds_.max_size();
+        if (additionalSlots > maximum - freeNodeIds_.size()) {
+            throw std::length_error("MorphologicalTree free-node storage exceeded its size bound.");
+        }
+        const auto required = freeNodeIds_.size() + additionalSlots;
+        const auto capacity = freeNodeIds_.capacity();
+        if (required > capacity) {
+            const auto grown = capacity > maximum / 2 ? maximum : capacity * 2;
+            freeNodeIds_.reserve(std::max(required, grown));
+        }
+    }
+
     /**
      * @brief Tests whether a dense slot currently belongs to the free list.
      *
@@ -885,7 +899,7 @@ class MorphologicalTree {
         const NodeId childSlotId = childId;
         if (releaseNodeFlag && numChildrenByNode_[static_cast<std::size_t>(childSlotId)] == 0 &&
             properPartCardinalityByNode_[static_cast<std::size_t>(childSlotId)] == 0) {
-            freeNodeIds_.reserve(freeNodeIds_.size() + 1);
+            reserveFreeNodeSlots(1);
         }
         unlinkChildSlot(parentSlotId, childSlotId);
         nodeParent_[childSlotId] = childSlotId;
@@ -2459,7 +2473,7 @@ class MorphologicalTree {
         for ([[maybe_unused]] NodeId subtreeNode : subtreeNodes(nodeId)) {
             ++releaseCount;
         }
-        freeNodeIds_.reserve(freeNodeIds_.size() + releaseCount);
+        reserveFreeNodeSlots(releaseCount);
 
         const auto descendToDeepestLastChild = [this](NodeId startId) {
             NodeId currentId = startId;
@@ -2504,7 +2518,7 @@ class MorphologicalTree {
         }
         const NodeId parentSlotId = parentNodeId;
         const NodeId nodeSlotId = nodeId;
-        freeNodeIds_.reserve(freeNodeIds_.size() + 1);
+        reserveFreeNodeSlots(1);
 
         spliceProperPartsSlots(parentSlotId, nodeSlotId);
         spliceChildrenSlots(parentSlotId, nodeSlotId, ChildSplicePolicy::ReplaceSourceSlotWhenDirectChild);

@@ -480,7 +480,7 @@ class TreeEditor {
         }
         ensureRollbackJournal();
         rollbackJournal_->freeListMutations.reserve(rollbackJournal_->freeListMutations.size() + count);
-        tree_->freeNodeIds_.reserve(tree_->freeNodeIds_.size() + count);
+        tree_->reserveFreeNodeSlots(count);
     }
 
     /**

@@ -3,6 +3,8 @@
 #include "mmcfilters/attributes/AttributeComputation.hpp"
 #include "mmcfilters/filters/AttributeFilters.hpp"
 #include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
+#include "mmcfilters/utils/CommittedGridAccess.hpp"
+#include "mmcfilters/utils/CommittedImageAccess.hpp"
 #include "mmcfilters/utils/Contract.hpp"
 
 #include <array>
@@ -106,6 +108,16 @@ void requireCheckedBoundaryDiagnostics() {
                                              "checked primitive tree access must reject an invalid node");
         requireThrows<std::invalid_argument>([&] { static_cast<void>(MorphologicalTreeFactory::createMaxTree(makeImage(), 0.0)); },
                                              "checked construction boundary must reject a disconnected adjacency");
+        requireThrows<std::invalid_argument>([] { static_cast<void>(detail::CommittedImageAccess::createValue<std::uint8_t>(0, 1)); },
+                                             "image value allocation must reject non-positive dimensions");
+        requireThrows<std::overflow_error>(
+            [] { static_cast<void>(detail::CommittedImageAccess::createValue<std::uint8_t>(std::numeric_limits<int>::max(), 2)); },
+            "image value allocation must reject pixel-count overflow");
+        requireThrows<std::invalid_argument>([] { static_cast<void>(detail::CommittedGridAccess::radiusAdjacency(-1, 1, 1.0)); },
+                                             "radius adjacency allocation must reject negative dimensions");
+        requireThrows<std::invalid_argument>(
+            [] { static_cast<void>(detail::CommittedGridAccess::radiusAdjacency(1, 1, std::numeric_limits<double>::quiet_NaN())); },
+            "radius adjacency allocation must reject a non-finite radius");
     }
 }
 

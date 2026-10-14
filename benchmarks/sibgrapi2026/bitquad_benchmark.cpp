@@ -189,7 +189,7 @@ mf::ValuedMorphologicalTree<std::uint8_t> importTree(const ReferenceTree& tree, 
     }
 
     std::vector<mf::NodeId> parent(numberOfNodes);
-    std::vector<mf::NodeId> owner(numberOfPixels, mf::InvalidNode);
+    std::vector<mf::NodeId> smallestNodeMap(numberOfPixels, mf::InvalidNode);
     std::vector<std::uint8_t> altitude(numberOfNodes);
     for (std::size_t node = 0; node < numberOfNodes; ++node) {
         const auto sourceNode = tree.node(static_cast<mt::uint32>(node));
@@ -197,7 +197,7 @@ mf::ValuedMorphologicalTree<std::uint8_t> importTree(const ReferenceTree& tree, 
         altitude[node] = static_cast<std::uint8_t>(sourceNode->level());
     }
     for (std::size_t pixel = 0; pixel < numberOfPixels; ++pixel) {
-        owner[pixel] = static_cast<mf::NodeId>(tree.smallComponent(static_cast<mt::uint32>(pixel))->id());
+        smallestNodeMap[pixel] = static_cast<mf::NodeId>(tree.smallComponent(static_cast<mt::uint32>(pixel))->id());
     }
 
     mf::MorphologicalTreeSemantics semantics;
@@ -207,7 +207,7 @@ mf::ValuedMorphologicalTree<std::uint8_t> importTree(const ReferenceTree& tree, 
         semantics = mf::makeMorphologicalTreeSemantics(kind);
     }
     return mf::MorphologicalTreeFactory::createFromNativeTopology(
-        std::span<const mf::NodeId>(parent), std::span<const mf::NodeId>(owner), std::span<const std::uint8_t>(altitude),
+        std::span<const mf::NodeId>(parent), std::span<const mf::NodeId>(smallestNodeMap), std::span<const std::uint8_t>(altitude),
         static_cast<mf::NodeId>(tree.root()->id()), rows, columns, std::move(semantics));
 }
 

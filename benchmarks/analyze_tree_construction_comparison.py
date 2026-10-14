@@ -19,7 +19,6 @@ METHODS = (
     "max_tree_8c",
     "min_tree_8c",
     "residual_unrestricted_8c",
-    "residual_saturated_8c",
 )
 
 METHOD_LABELS = {
@@ -27,8 +26,7 @@ METHOD_LABELS = {
     "tos_self_dual": "ToS self-dual",
     "max_tree_8c": "Max-tree 8c",
     "min_tree_8c": "Min-tree 8c",
-    "residual_unrestricted_8c": "Residual irrestrita 8c",
-    "residual_saturated_8c": "Residual saturada 8c",
+    "residual_unrestricted_8c": "Residual de extremos 8c",
 }
 
 RESOLUTIONS = ("480p", "720p", "1080p")
@@ -42,9 +40,7 @@ DEFAULT_PREFIX = "tree-construction-comparison"
 PAIRWISE_COMPARISONS = (
     ("tos_self_dual", "tos_max4c_min8c"),
     ("min_tree_8c", "max_tree_8c"),
-    ("residual_saturated_8c", "residual_unrestricted_8c"),
     ("residual_unrestricted_8c", "tos_self_dual"),
-    ("residual_saturated_8c", "tos_self_dual"),
 )
 
 
@@ -155,7 +151,7 @@ def load_and_validate(path: Path) -> list[dict[str, object]]:
     for key, schedule in schedules.items():
         if {str(row["algorithm"]) for row in schedule} != set(METHODS):
             raise ValueError(f"invalid algorithm schedule for {key}")
-        if {int(row["position"]) for row in schedule} != set(range(6)):
+        if {int(row["position"]) for row in schedule} != set(range(len(METHODS))):
             raise ValueError(f"invalid position schedule for {key}")
     return rows
 

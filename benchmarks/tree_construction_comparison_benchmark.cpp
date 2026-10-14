@@ -27,11 +27,11 @@ using UInt8Tree = ValuedMorphologicalTree<std::uint8_t>;
 using TreeOfShapesTree = ValuedMorphologicalTree<ToSGrayLevel>;
 using Tree = std::variant<UInt8Tree, TreeOfShapesTree>;
 
-enum class Algorithm : std::size_t { TreeOfShapesMax4cMin8c, TreeOfShapesSelfDual, MaxTree8c, MinTree8c, UnrestrictedResidualTree8c, SaturatedResidualTree8c };
+enum class Algorithm : std::size_t { TreeOfShapesMax4cMin8c, TreeOfShapesSelfDual, MaxTree8c, MinTree8c, ExtremumResidualTree8c };
 
-constexpr std::array<Algorithm, 6> Algorithms{
+constexpr std::array<Algorithm, 5> Algorithms{
     Algorithm::TreeOfShapesMax4cMin8c,     Algorithm::TreeOfShapesSelfDual,   Algorithm::MaxTree8c, Algorithm::MinTree8c,
-    Algorithm::UnrestrictedResidualTree8c, Algorithm::SaturatedResidualTree8c};
+    Algorithm::ExtremumResidualTree8c};
 
 constexpr std::array<std::string_view, 3> Resolutions{"480p", "720p", "1080p"};
 
@@ -87,10 +87,8 @@ struct Measurement {
         return "max_tree_8c";
     case Algorithm::MinTree8c:
         return "min_tree_8c";
-    case Algorithm::UnrestrictedResidualTree8c:
+    case Algorithm::ExtremumResidualTree8c:
         return "residual_unrestricted_8c";
-    case Algorithm::SaturatedResidualTree8c:
-        return "residual_saturated_8c";
     }
     throw std::invalid_argument("unsupported benchmark algorithm");
 }
@@ -109,12 +107,9 @@ struct Measurement {
         return MorphologicalTreeFactory::createMaxTree(image, adjacency8c);
     case Algorithm::MinTree8c:
         return MorphologicalTreeFactory::createMinTree(image, adjacency8c);
-    case Algorithm::UnrestrictedResidualTree8c:
-        return MorphologicalTreeFactory::createUnrestrictedResidualTree(
-            image, adjacency8c, sdrt::UnrestrictedResidualTreeOptions{});
-    case Algorithm::SaturatedResidualTree8c:
-        return MorphologicalTreeFactory::createSaturatedResidualTree(
-            image, adjacency8c, PixelId{0}, sdrt::SaturatedResidualTreeOptions{});
+    case Algorithm::ExtremumResidualTree8c:
+        return MorphologicalTreeFactory::createExtremumResidualTreeByCTs(
+            image, adjacency8c, sdrt::ExtremumResidualTreeOptions{});
     }
     throw std::invalid_argument("unsupported benchmark algorithm");
 }

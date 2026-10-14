@@ -20,8 +20,7 @@ enum class MorphologicalTreeKind {
     MaxTree,
     MinTree,
     TreeOfShapes,
-    UnrestrictedResidualTree,
-    SaturatedResidualTree
+    ExtremumResidualTree
 };
 
 /** @brief Global ordering constraint of node altitudes along parent-child arcs. */
@@ -40,12 +39,6 @@ struct NoConstructionContext {};
 /** @brief Records one adjacency shared by both construction polarities. */
 struct SharedAdjacencyContext {
     RegularGridAdjacency2D adjacency; ///< Shared construction adjacency.
-};
-
-/** @brief Records the shared adjacency and infinity pixel of a saturated residual construction. */
-struct SaturatedResidualContext {
-    RegularGridAdjacency2D adjacency; ///< Shared construction adjacency.
-    PixelId infinityPixel = 0;        ///< Declared infinity pixel in the active domain.
 };
 
 /** @brief Ordered pair of complementary minimum and maximum adjacencies. */
@@ -123,7 +116,7 @@ inline TopographicConvention selfDualSpanConvention(TopographicDomainExtension d
 
 /** @brief Tagged construction context retained by morphological-tree semantics. */
 using MorphologicalTreeConstructionContext =
-    std::variant<NoConstructionContext, SharedAdjacencyContext, SaturatedResidualContext, TopographicConvention>;
+    std::variant<NoConstructionContext, SharedAdjacencyContext, TopographicConvention>;
 
 /**
  * @brief Immutable scientific interpretation attached to one morphological tree.
@@ -146,8 +139,7 @@ inline NodeAltitudeOrder defaultNodeAltitudeOrder(MorphologicalTreeKind kind) no
         return NodeAltitudeOrder::Decreasing;
     case MorphologicalTreeKind::Generic:
     case MorphologicalTreeKind::TreeOfShapes:
-    case MorphologicalTreeKind::UnrestrictedResidualTree:
-    case MorphologicalTreeKind::SaturatedResidualTree:
+    case MorphologicalTreeKind::ExtremumResidualTree:
         return NodeAltitudeOrder::Unconstrained;
     }
     return NodeAltitudeOrder::Unconstrained;
@@ -177,16 +169,10 @@ inline void validateMorphologicalTreeSemantics(const MorphologicalTreeSemantics&
     }
     if (std::holds_alternative<SharedAdjacencyContext>(semantics.constructionContext)) {
         if (semantics.kind == MorphologicalTreeKind::Generic || semantics.kind == MorphologicalTreeKind::MaxTree ||
-            semantics.kind == MorphologicalTreeKind::MinTree || semantics.kind == MorphologicalTreeKind::UnrestrictedResidualTree) {
+            semantics.kind == MorphologicalTreeKind::MinTree || semantics.kind == MorphologicalTreeKind::ExtremumResidualTree) {
             return;
         }
         throw std::invalid_argument("SharedAdjacencyContext is incompatible with the declared morphological-tree kind.");
-    }
-    if (std::holds_alternative<SaturatedResidualContext>(semantics.constructionContext)) {
-        if (semantics.kind == MorphologicalTreeKind::SaturatedResidualTree) {
-            return;
-        }
-        throw std::invalid_argument("SaturatedResidualContext requires SaturatedResidualTree kind.");
     }
     if (std::holds_alternative<TopographicConvention>(semantics.constructionContext)) {
         if (semantics.kind == MorphologicalTreeKind::TreeOfShapes) {

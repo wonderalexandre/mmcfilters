@@ -80,6 +80,13 @@ namespace mmcfilters::adjust {
  * `O(P_L + A_L + M_L + K_L)`.
  */
 template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
+  public:
+    /** One complete dual proper-part transfer, in execution order. */
+    struct ProperPartTransfer {
+        NodeId source;
+        NodeId target;
+    };
+
   private:
     /** @brief Defines the `tree_t` alias used by the component. */
     using tree_t = ValuedMorphologicalTree<altitude_t>;
@@ -430,17 +437,21 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
      */
     std::vector<NodeId> lastTopologyChangedNodes_;
 
+    /** Complete proper-part transfers needed to update support associations. */
+    std::vector<ProperPartTransfer> lastProperPartTransfers_;
+
+    /** Dual proper part containing the complete selected support after the last update. */
+    NodeId lastSelectedSupportNode_ = InvalidNode;
+
     /** @brief Whether the last update transferred the selected support in bulk. */
     bool lastBulkProperPartTransfer_ = false;
 
     /**
      * @brief Exact external dual smallest nodes supplied by a preceding leaf certificate.
      *
-     * Min/max residual construction already scans the selected leaf boundary
-     * before committing it. These fields let the immediately following dual
-     * update reuse those owners instead of traversing the same pixel boundary
-     * a second time. Ordinary callers leave the cache empty and retain the
-     * original self-contained update path.
+     * Callers that already inspected the selected leaf boundary can supply its
+     * dual nodes for reuse by the next update. With no certificate, the updater
+     * discovers the boundary from pixel adjacency using its own marks.
      */
     tree_t* primedDualTree_ = nullptr;
     /** @brief Dense node identifier of the primed leaf identifier. */
@@ -451,7 +462,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
     /**
      * @brief Contiguous support used when an ordinary caller did not certify it.
      *
-     * The saturated builder supplies its already collected support directly.
+     * The extremum residual tree builder supplies its already collected support directly.
      * Other callers retain the self-contained API and pay one local copy, after
      * which all phases of the update reuse the same contiguous pixel sequence.
      */
@@ -519,6 +530,8 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
         lastCandidateNodes_.clear();
         topologyChangedMarks_.resetAll();
         lastTopologyChangedNodes_.clear();
+        lastProperPartTransfers_.clear();
+        lastSelectedSupportNode_ = InvalidNode;
         lastBulkProperPartTransfer_ = false;
     }
 
@@ -603,6 +616,12 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
             noteTopologyChanged(child);
         }
         editor.moveChildren(parentId, childId);
+        if (topology.properPartCardinality(childId) > 0) {
+            lastProperPartTransfers_.push_back({childId, parentId});
+            if (lastSelectedSupportNode_ == childId) {
+                lastSelectedSupportNode_ = parentId;
+            }
+        }
         editor.mergeProperParts(parentId, childId);
     }
 
@@ -627,6 +646,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
     void moveSelectedProperPartsToNode(tree_t* dualTree, editor_t& editor, NodeId unionNode, std::span<const PixelId> support, NodeId nodeCa,
                                        bool& nodeCaRemoved, NodeId certifiedWholeSupportSmallestNode) {
         const MorphologicalTree& dualTopology = topologyOf(dualTree);
+        lastSelectedSupportNode_ = unionNode;
         if (certifiedWholeSupportSmallestNode != InvalidNode && certifiedWholeSupportSmallestNode != unionNode && dualTopology.isNode(certifiedWholeSupportSmallestNode) &&
             dualTopology.isAlive(certifiedWholeSupportSmallestNode) &&
             dualTopology.properPartCardinality(certifiedWholeSupportSmallestNode) == static_cast<int>(support.size())) {
@@ -635,6 +655,7 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
                 assert(dualTopology.smallestNode(pixelId) == certifiedWholeSupportSmallestNode);
             }
 #endif
+            lastProperPartTransfers_.push_back({certifiedWholeSupportSmallestNode, unionNode});
             editor.mergeProperParts(unionNode, certifiedWholeSupportSmallestNode);
             lastBulkProperPartTransfer_ = true;
             if (dualTopology.isAlive(certifiedWholeSupportSmallestNode) && dualTopology.properPartCardinality(certifiedWholeSupportSmallestNode) == 0 &&
@@ -916,6 +937,12 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
      */
     const std::vector<NodeId>& getLastTopologyChangedNodes() const { return lastTopologyChangedNodes_; }
 
+    /** Complete dual proper-part transfers; valid until the next update. */
+    [[nodiscard]] std::span<const ProperPartTransfer> getLastProperPartTransfers() const noexcept { return lastProperPartTransfers_; }
+
+    /** Destination established by moving the selected pixels and any subsequent whole-part merges. */
+    [[nodiscard]] NodeId getLastSelectedSupportNode() const noexcept { return lastSelectedSupportNode_; }
+
     /**
      * @brief Reports whether the last selected proper part used a bulk transfer.
      *
@@ -1121,6 +1148,8 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
             }
         }
         assert(nodeCa != InvalidNode);
+
+        lastSelectedSupportNode_ = nodeCa;
 
         std::span<const NodeId> adjacentNodes = certifiedAdjacentNodes;
         if (adjacentNodes.empty() && primedDualTree_ == dualTree && primedLeafId_ == leafId) {

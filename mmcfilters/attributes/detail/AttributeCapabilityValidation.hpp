@@ -46,7 +46,7 @@ inline void validateAttributeCapabilities(const MorphologicalTree& tree, std::sp
         const RegularGridAdjacency2D* constructionAdjacency = ::mmcfilters::detail::constructionAdjacency(tree);
         const auto projectionAdjacencies = currentBitquadProjectionAdjacencies(tree);
         if (requirements.adjacency == attributes::registry::AttributeAdjacencyRequirement::Uniform && constructionAdjacency == nullptr) {
-            throw std::invalid_argument(prefix + "a shared or saturated construction adjacency is required.");
+            throw std::invalid_argument(prefix + "a shared construction adjacency is required.");
         }
         if (requirements.adjacency == attributes::registry::AttributeAdjacencyRequirement::UniformOrDirectional && constructionAdjacency == nullptr &&
             !projectionAdjacencies) {

@@ -46,7 +46,7 @@ template <AltitudeValue T> struct HigraHierarchyImport {
 template <AltitudeValue T>
 [[nodiscard]] HigraHierarchyImport<T> adaptHigraHierarchy(std::span<const NodeId> parent, std::span<const T> higraAltitude, int rows, int columns,
                                                           MorphologicalTreeKind kind, std::optional<RegularGridAdjacency2D> adjacency) {
-    if (kind == MorphologicalTreeKind::UnrestrictedResidualTree || kind == MorphologicalTreeKind::SaturatedResidualTree) {
+    if (kind == MorphologicalTreeKind::ExtremumResidualTree) {
         throw std::invalid_argument(
             "Higra import does not accept residual-tree kinds because residual-tree proper parts are not represented by the Higra leaf layout.");
     }

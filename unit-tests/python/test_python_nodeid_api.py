@@ -110,7 +110,10 @@ def main() -> int:
         mmcfilters.SelfDualResidualKey(1, 2),
         mmcfilters.SelfDualResidualKey(1, 3),
     ]
-    require(schedule.select_residual_candidate(keys) == 2, "Python residual schedule must use the configured spatial order")
+    require(schedule.select_smallest_extremum_index(keys) == 2, "Python residual schedule must use the configured spatial order")
+    order = mmcfilters.SelfDualResidualOrder(mmcfilters.SpatialOrder([3, 2, 1, 0]))
+    require(order.compare_extremum_keys(keys[2], keys[1]), "Python extremum-key comparison must respect the spatial order")
+    require(not order.compare_extremum_keys(keys[1], keys[1]), "Python extremum-key comparison must be strict")
     require(hasattr(mmcfilters, "MorphologicalTreeSemantics"), "package import must expose MorphologicalTreeSemantics")
     require(hasattr(mmcfilters, "NodeAltitudeOrder"), "package import must expose NodeAltitudeOrder")
     require(hasattr(mmcfilters, "SharedAdjacencyContext"), "package import must expose SharedAdjacencyContext")
@@ -179,6 +182,7 @@ def main() -> int:
     for canonical_factory in (
         "create_max_tree",
         "create_min_tree",
+        "create_extremum_residual_tree",
         "create_tree_of_shapes",
         "create_from_native_topology",
         "create_from_higra_parent",
@@ -187,6 +191,7 @@ def main() -> int:
     for legacy_factory in (
         "createMaxTree",
         "createMinTree",
+        "create_extremum_residual_tree_by_cts",
         "createTreeOfShapes",
         "createFromNativeTopology",
         "createFromHigraParent",
@@ -235,39 +240,37 @@ def main() -> int:
     tree = valued_tree
     valued_max_tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image)
     valued_min_tree = mmcfilters.MorphologicalTreeFactory.create_min_tree(image)
-    residual_tree = mmcfilters.MorphologicalTreeFactory.create_unrestricted_residual_tree(
+    residual_tree = mmcfilters.MorphologicalTreeFactory.create_extremum_residual_tree(
         image,
         radius=1.0,
     )
-    custom_order_residual_tree = mmcfilters.MorphologicalTreeFactory.create_unrestricted_residual_tree(
+    custom_order_residual_tree = mmcfilters.MorphologicalTreeFactory.create_extremum_residual_tree(
         image,
         radius=1.0,
         spatial_order=mmcfilters.SpatialOrder(list(reversed(range(image.size)))),
     )
-    saturated_residual_tree = (
-        mmcfilters.MorphologicalTreeFactory.create_saturated_residual_tree(
-            image,
-            infinity_pixel=0,
-            radius=1.0,
+    residual_adjacency = mmcfilters.RegularGridAdjacency2D(*image.shape, 1.0)
+    for reference, explicit_tree in (
+        (residual_tree, mmcfilters.MorphologicalTreeFactory.create_extremum_residual_tree(image, residual_adjacency)),
+    ):
+        require(explicit_tree.kind == reference.kind, "explicit residual adjacency preserves tree kind")
+        require(
+            [explicit_tree.parent(node_id) for node_id in explicit_tree.alive_node_ids]
+            == [reference.parent(node_id) for node_id in reference.alive_node_ids],
+            "explicit residual adjacency preserves parent relations",
         )
-    )
-
+        require(np.array_equal(explicit_tree.reconstruct_from_node_altitudes(), image), "explicit residual adjacency reconstructs the image")
     require(valued_max_tree.alive_node_ids == tree.alive_node_ids, "factory max-tree must expose the expected topology")
     require(valued_max_tree.kind == mmcfilters.MorphologicalTreeKind.MAX_TREE, "factory max-tree tree type")
     require(valued_min_tree.kind == mmcfilters.MorphologicalTreeKind.MIN_TREE, "factory min-tree tree type")
     require(
         residual_tree.kind
-        == mmcfilters.MorphologicalTreeKind.UNRESTRICTED_RESIDUAL_TREE,
-        "factory unrestricted residual-tree type",
+        == mmcfilters.MorphologicalTreeKind.EXTREMUM_RESIDUAL_TREE,
+        "factory extremum residual-tree type",
     )
     require(
         np.array_equal(custom_order_residual_tree.reconstruct_from_node_altitudes(), image),
         "custom spatial order must preserve exact residual reconstruction",
-    )
-    require(
-        saturated_residual_tree.kind
-        == mmcfilters.MorphologicalTreeKind.SATURATED_RESIDUAL_TREE,
-        "factory saturated residual-tree type",
     )
     require(
         residual_tree.node_altitude_order == mmcfilters.NodeAltitudeOrder.UNCONSTRAINED,
@@ -275,11 +278,7 @@ def main() -> int:
     )
     require(
         residual_tree.reconstruct_from_node_altitudes().tolist() == image.tolist(),
-        "unrestricted residual-tree exact reconstruction",
-    )
-    require(
-        saturated_residual_tree.reconstruct_from_node_altitudes().tolist() == image.tolist(),
-        "saturated residual-tree exact reconstruction",
+        "extremum residual-tree exact reconstruction",
     )
     require(
         valued_max_tree.node_altitude_order

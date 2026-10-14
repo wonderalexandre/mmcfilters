@@ -64,14 +64,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--count", type=int, default=10)
     parser.add_argument(
         "--trees",
-        default="max,min,tos,residual_unrestricted,residual_saturated",
+        default="max,min,tos,residual_unrestricted",
         help="Comma-separated tree kinds (default: all five studied kinds).",
     )
     parser.add_argument("--resolutions", default="480p,720p,1080p")
     parser.add_argument("--modes", default=",".join(MODES))
     parser.add_argument("--repetitions", type=int, default=1)
     parser.add_argument("--radius", type=float, default=1.5)
-    parser.add_argument("--infinity-pixel", type=int, default=0)
     parser.add_argument("--bootstrap-replicates", type=int, default=20_000)
     parser.add_argument("--expected-contract-mode", choices=("CHECKED", "UNCHECKED"))
     parser.add_argument("--resume", action="store_true")
@@ -190,11 +189,11 @@ def discover_requests() -> tuple[dict[str, Any], dict[str, list[str]]]:
     return requests, names
 
 
-def warm_up(tree_kinds: list[str], modes: list[str], requests: dict[str, Any], radius: float, infinity_pixel: int) -> None:
+def warm_up(tree_kinds: list[str], modes: list[str], requests: dict[str, Any], radius: float) -> None:
     row, column = np.indices((24, 32), dtype=np.int64)
     image = np.ascontiguousarray(((17 * row + 29 * column + row * column) % 256).astype(np.uint8))
     for tree_kind in tree_kinds:
-        tree = build_tree(image, tree_kind, radius, infinity_pixel)
+        tree = build_tree(image, tree_kind, radius)
         for mode in modes:
             mmcfilters.Attribute.compute_topology_attributes(tree, requests[mode], dtype=np.float32)
 
@@ -578,7 +577,6 @@ def main() -> int:
         "modes": modes,
         "repetitions": arguments.repetitions,
         "radius": arguments.radius,
-        "infinity_pixel": arguments.infinity_pixel,
         "dtype": "float32",
         "bootstrap_replicates": arguments.bootstrap_replicates,
         "contract_mode": active_contract_mode,
@@ -623,7 +621,7 @@ def main() -> int:
     for row in read_csv(output_directory / "tree-cases.csv"):
         tree_rows_by_key[(row["resolution"], int(row["image_index"]), row["tree"])] = row
 
-    warm_up(tree_kinds, modes, requests, arguments.radius, arguments.infinity_pixel)
+    warm_up(tree_kinds, modes, requests, arguments.radius)
     campaign_start = time.perf_counter()
     mode_orders = list(itertools.permutations(modes))
     total_tree_cases = len(resolutions) * len(images) * len(tree_kinds)
@@ -662,7 +660,7 @@ def main() -> int:
                     continue
 
                 build_start = time.perf_counter_ns()
-                tree = build_tree(image, tree_kind, arguments.radius, arguments.infinity_pixel)
+                tree = build_tree(image, tree_kind, arguments.radius)
                 build_seconds = (time.perf_counter_ns() - build_start) / 1_000_000_000.0
                 nodes = len(tree.alive_node_ids)
                 for repetition in range(arguments.repetitions):

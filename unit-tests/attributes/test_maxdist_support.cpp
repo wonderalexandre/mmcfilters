@@ -980,15 +980,11 @@ void requireUniformBackendAndOracles() {
     requireProductionMatchesExactOracle(emptyProperPartChain.topology(), "generic unary chain with empty proper parts");
     requireSingleNodeExactPathMatchesOracle(emptyProperPartChain.topology(), NodeId{1}, "generic unary chain with empty proper parts");
     requireApproximateSummariesMatchExactSmallGrid(emptyProperPartChain.topology(), "generic unary chain with empty proper parts");
-    auto unrestrictedResidual = MorphologicalTreeFactory::createUnrestrictedResidualTree(fixture);
-    requireProductionMatchesExactOracle(unrestrictedResidual.topology(), "unrestricted residual tree");
-    requireSingleNodeExactPathMatchesOracle(unrestrictedResidual.topology(), unrestrictedResidual.topology().root(), "unrestricted residual tree");
-    requireApproximateSummariesMatchExactSmallGrid(unrestrictedResidual.topology(), "unrestricted residual tree");
+    auto extremumResidual = MorphologicalTreeFactory::createExtremumResidualTreeByCTs(fixture);
+    requireProductionMatchesExactOracle(extremumResidual.topology(), "extremum residual tree");
+    requireSingleNodeExactPathMatchesOracle(extremumResidual.topology(), extremumResidual.topology().root(), "extremum residual tree");
+    requireApproximateSummariesMatchExactSmallGrid(extremumResidual.topology(), "extremum residual tree");
 
-    auto saturatedResidual = MorphologicalTreeFactory::createSaturatedResidualTree(fixture, PixelId{0});
-    requireProductionMatchesExactOracle(saturatedResidual.topology(), "saturated residual tree");
-    requireSingleNodeExactPathMatchesOracle(saturatedResidual.topology(), saturatedResidual.topology().root(), "saturated residual tree");
-    requireApproximateSummariesMatchExactSmallGrid(saturatedResidual.topology(), "saturated residual tree");
 }
 
 void requireRandomizedSmallGridAgreement() {

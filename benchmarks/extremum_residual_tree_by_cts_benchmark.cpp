@@ -1,6 +1,5 @@
 #include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
-#include "mmcfilters/trees/sdrt/SaturatedResidualTreeBuilder.hpp"
-#include "mmcfilters/trees/sdrt/UnrestrictedResidualTreeBuilder.hpp"
+#include "mmcfilters/trees/sdrt/ExtremumResidualTreeByCTsBuilder.hpp"
 #include "stb_image.h"
 
 #include <algorithm>
@@ -20,20 +19,16 @@ using namespace mmcfilters::sdrt;
 namespace {
 
 using Clock = std::chrono::steady_clock;
-using SaturatedBuilder = SaturatedResidualTreeBuilder<std::uint8_t>;
-using UnrestrictedBuilder = UnrestrictedResidualTreeBuilder<std::uint8_t>;
+using ExtremumByCTsBuilder = ExtremumResidualTreeByCTsBuilder<std::uint8_t>;
 
 struct Options {
-    enum class Mode { Both, Unrestricted, Saturated };
-
     std::string imagePath;
     int repetitions = 3;
-    Mode mode = Mode::Both;
 };
 
 Options parseOptions(int argc, char** argv) {
-    if (argc < 2 || argc > 4) {
-        throw std::invalid_argument("expected image path, optional repetition count, and optional mode (both, unrestricted, or saturated)");
+    if (argc < 2 || argc > 3) {
+        throw std::invalid_argument("expected image path and optional repetition count");
     }
     Options options;
     options.imagePath = argv[1];
@@ -42,16 +37,6 @@ Options parseOptions(int argc, char** argv) {
     }
     if (options.repetitions <= 0) {
         throw std::invalid_argument("repetitions must be positive");
-    }
-    if (argc == 4) {
-        const std::string mode = argv[3];
-        if (mode == "unrestricted") {
-            options.mode = Options::Mode::Unrestricted;
-        } else if (mode == "saturated") {
-            options.mode = Options::Mode::Saturated;
-        } else if (mode != "both") {
-            throw std::invalid_argument("mode must be both, unrestricted, or saturated");
-        }
     }
     return options;
 }
@@ -125,8 +110,7 @@ void runIsolated(const Options& options, const ImageUInt8Ptr& image, const Regul
     printDomain(options, image, mode);
     std::cout << std::fixed << std::setprecision(3)
               << mode << "_median_ms=" << median(std::move(times)) << '\n'
-              << mode << "_nodes=" << builder.parents().size() << '\n'
-              << mode << "_rejected_extrema=" << builder.statistics().rejectedExtrema << '\n';
+              << mode << "_nodes=" << builder.parents().size() << '\n';
 }
 
 } // namespace
@@ -136,55 +120,11 @@ int main(int argc, char** argv) {
         const Options options = parseOptions(argc, argv);
         const auto image = loadImage(options.imagePath);
         const RegularGridAdjacency2D adjacency(image->getNumRows(), image->getNumColumns(), 1.0);
-        if (options.mode == Options::Mode::Unrestricted) {
-            UnrestrictedBuilder unrestricted(adjacency);
-            runIsolated(options, image, adjacency, unrestricted, "unrestricted");
-            return 0;
-        }
-        if (options.mode == Options::Mode::Saturated) {
-            SaturatedBuilder saturated(adjacency, PixelId{0});
-            runIsolated(options, image, adjacency, saturated, "saturated");
-            return 0;
-        }
-
-        UnrestrictedBuilder unrestricted(adjacency);
-        SaturatedBuilder saturated(adjacency, PixelId{0});
-
-        build(unrestricted, image, adjacency);
-        build(saturated, image, adjacency);
-        if (!reconstructs(unrestricted, image) || !reconstructs(saturated, image)) {
-            throw std::runtime_error("a min/max mode failed reconstruction");
-        }
-
-        std::vector<double> unrestrictedTimes;
-        std::vector<double> saturatedTimes;
-        unrestrictedTimes.reserve(options.repetitions);
-        saturatedTimes.reserve(options.repetitions);
-        for (int repetition = 0; repetition < options.repetitions; ++repetition) {
-            if ((repetition & 1) == 0) {
-                unrestrictedTimes.push_back(measureMilliseconds([&] { build(unrestricted, image, adjacency); }));
-                saturatedTimes.push_back(measureMilliseconds([&] { build(saturated, image, adjacency); }));
-            } else {
-                saturatedTimes.push_back(measureMilliseconds([&] { build(saturated, image, adjacency); }));
-                unrestrictedTimes.push_back(measureMilliseconds([&] { build(unrestricted, image, adjacency); }));
-            }
-        }
-
-        const double unrestrictedMedian = median(unrestrictedTimes);
-        const double saturatedMedian = median(saturatedTimes);
-        const auto& unrestrictedStats = unrestricted.statistics();
-        const auto& saturatedStats = saturated.statistics();
-        printDomain(options, image, "both");
-        std::cout << std::fixed << std::setprecision(3) << "unrestricted_median_ms=" << unrestrictedMedian << '\n'
-                  << "saturated_median_ms=" << saturatedMedian << '\n'
-                  << "saturated_over_unrestricted=" << saturatedMedian / unrestrictedMedian << '\n'
-                  << "unrestricted_nodes=" << unrestricted.parents().size() << '\n'
-                  << "saturated_nodes=" << saturated.parents().size() << '\n'
-                  << "unrestricted_rejected_extrema=" << unrestrictedStats.rejectedExtrema << '\n'
-                  << "saturated_rejected_extrema=" << saturatedStats.rejectedExtrema << '\n';
+        ExtremumByCTsBuilder builder(adjacency);
+        runIsolated(options, image, adjacency, builder, "extremum");
         return 0;
     } catch (const std::exception& error) {
-        std::cerr << "min/max residual benchmark failed: " << error.what() << '\n';
+        std::cerr << "extremum residual tree by CTs benchmark failed: " << error.what() << '\n';
         return 1;
     }
 }

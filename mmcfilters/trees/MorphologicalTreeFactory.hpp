@@ -9,9 +9,8 @@
 #include "detail/HigraHierarchyAdapterDetail.hpp"
 #include "detail/MorphologicalTreeConstructionTag.hpp"
 #include "detail/NativeHierarchyValidationDetail.hpp"
-#include "sdrt/SaturatedResidualTreeBuilder.hpp"
 #include "sdrt/ResidualEvolution.hpp"
-#include "sdrt/UnrestrictedResidualTreeBuilder.hpp"
+#include "sdrt/ExtremumResidualTreeByCTsBuilder.hpp"
 #include "../utils/Image.hpp"
 #include "../utils/Contract.hpp"
 
@@ -265,7 +264,7 @@ class MorphologicalTreeFactory {
     }
 
     /**
-     * @brief Builds the unrestricted residual tree.
+     * @brief Builds the extremum residual tree by synchronized component trees.
      *
      * Current regional extrema from the synchronized max-tree and min-tree are
      * selected by the self-dual residual schedule. Both component trees use the
@@ -273,80 +272,35 @@ class MorphologicalTreeFactory {
      *
      * @param img Image processed by the operation.
      * @param adjacency Adjacency relation.
-     * @param options Spatial-order options for unrestricted construction.
-     * @return An unrestricted residual tree over `adjacency`.
+     * @param options Spatial-order options for extremum construction.
+     * @return An extremum residual tree over `adjacency`.
      */
     template <AltitudeValue T>
     [[nodiscard]] static ValuedMorphologicalTree<T>
-    createUnrestrictedResidualTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency,
-                                   sdrt::UnrestrictedResidualTreeOptions options = {}) {
+    createExtremumResidualTreeByCTs(ImagePtr<T> img, RegularGridAdjacency2D adjacency, sdrt::ExtremumResidualTreeOptions options = {}) {
         auto minTree = createMinTree(img, adjacency);
         auto maxTree = createMaxTree(img, adjacency);
-        sdrt::UnrestrictedResidualTreeBuilder<T> builder(adjacency, options);
+        sdrt::ExtremumResidualTreeByCTsBuilder<T> builder(adjacency, options);
         builder.build(img, std::move(minTree), std::move(maxTree));
         return materializeNativeHierarchy<T>(
             std::move(builder).takeValidatedHierarchy(makeMorphologicalTreeSemantics(
-                MorphologicalTreeKind::UnrestrictedResidualTree, SharedAdjacencyContext{std::move(adjacency)})));
+                MorphologicalTreeKind::ExtremumResidualTree, SharedAdjacencyContext{std::move(adjacency)})));
     }
 
     /**
-     * @brief Builds the unrestricted residual tree with a radius adjacency.
+     * @brief Builds the extremum residual tree with a radius adjacency.
      *
      * @param img Image processed by the operation.
      * @param radius Radius of the regular-grid adjacency.
-     * @param options Spatial-order options for unrestricted construction.
-     * @return An unrestricted residual tree using the radius adjacency.
+     * @param options Spatial-order options for extremum construction.
+     * @return An extremum residual tree using the radius adjacency.
      */
     template <AltitudeValue T>
     [[nodiscard]] static ValuedMorphologicalTree<T>
-    createUnrestrictedResidualTree(ImagePtr<T> img, double radius = 1.5, sdrt::UnrestrictedResidualTreeOptions options = {}) {
-        TreeAltitudeAlgorithms::validateFiniteImageAltitudes(img, "MorphologicalTreeFactory::createUnrestrictedResidualTree image");
+    createExtremumResidualTreeByCTs(ImagePtr<T> img, double radius = 1.5, sdrt::ExtremumResidualTreeOptions options = {}) {
+        TreeAltitudeAlgorithms::validateFiniteImageAltitudes(img, "MorphologicalTreeFactory::createExtremumResidualTreeByCTs image");
         RegularGridAdjacency2D adjacency(img->getNumRows(), img->getNumColumns(), radius);
-        return createUnrestrictedResidualTree(std::move(img), std::move(adjacency), options);
-    }
-
-    /**
-     * @brief Builds the saturated residual tree.
-     *
-     * Only current regional extrema whose complement is connected to
-     * `infinityPixel` are eligible. The supplied adjacency must be symmetric,
-     * connected on the image domain, and shared by both component trees.
-     *
-     * @param img Image processed by the operation.
-     * @param adjacency Adjacency relation.
-     * @param infinityPixel Row-major infinity pixel.
-     * @param options Saturation and spatial-order policies.
-     * @return A saturated residual tree relative to `infinityPixel`.
-     */
-    template <AltitudeValue T>
-    [[nodiscard]] static ValuedMorphologicalTree<T>
-    createSaturatedResidualTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency, PixelId infinityPixel,
-                                sdrt::SaturatedResidualTreeOptions options = {}) {
-        auto minTree = createMinTree(img, adjacency);
-        auto maxTree = createMaxTree(img, adjacency);
-        sdrt::SaturatedResidualTreeBuilder<T> builder(adjacency, infinityPixel, options);
-        builder.build(img, std::move(minTree), std::move(maxTree));
-        return materializeNativeHierarchy<T>(
-            std::move(builder).takeValidatedHierarchy(makeMorphologicalTreeSemantics(
-                MorphologicalTreeKind::SaturatedResidualTree, SaturatedResidualContext{std::move(adjacency), infinityPixel})));
-    }
-
-    /**
-     * @brief Builds the saturated residual tree with a radius adjacency.
-     *
-     * @param img Image processed by the operation.
-     * @param infinityPixel Row-major infinity pixel.
-     * @param radius Radius of the regular-grid adjacency.
-     * @param options Saturation and spatial-order policies.
-     * @return A saturated residual tree using the radius adjacency.
-     */
-    template <AltitudeValue T>
-    [[nodiscard]] static ValuedMorphologicalTree<T>
-    createSaturatedResidualTree(ImagePtr<T> img, PixelId infinityPixel, double radius = 1.5,
-                                sdrt::SaturatedResidualTreeOptions options = {}) {
-        TreeAltitudeAlgorithms::validateFiniteImageAltitudes(img, "MorphologicalTreeFactory::createSaturatedResidualTree image");
-        RegularGridAdjacency2D adjacency(img->getNumRows(), img->getNumColumns(), radius);
-        return createSaturatedResidualTree(std::move(img), std::move(adjacency), infinityPixel, options);
+        return createExtremumResidualTreeByCTs(std::move(img), std::move(adjacency), options);
     }
 
     /**

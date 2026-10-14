@@ -125,8 +125,12 @@ mmcfilters_add_unit_test(unit_hierarchy_saliency_map
     trees/test_hierarchy_saliency_map.cpp
 )
 
-mmcfilters_add_unit_test(unit_min_max_residual_tree_factory
-    trees/sdrt/test_min_max_residual_tree_factory.cpp
+mmcfilters_add_unit_test(unit_extremum_residual_tree_by_cts_factory
+    trees/sdrt/test_extremum_residual_tree_by_cts_factory.cpp
+)
+
+mmcfilters_add_unit_test(unit_residual_tree_paper_equivalence
+    trees/sdrt/test_residual_tree_paper_equivalence.cpp
 )
 
 mmcfilters_add_unit_test(unit_shape_space_saliency

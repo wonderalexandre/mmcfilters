@@ -55,16 +55,9 @@ min_tree = mmcfilters.MorphologicalTreeFactory.create_min_tree(
     image,
     radius=1.5,
 )
-residual_tree = mmcfilters.MorphologicalTreeFactory.create_unrestricted_residual_tree(
+residual_tree = mmcfilters.MorphologicalTreeFactory.create_extremum_residual_tree(
     image,
     radius=1.5,
-)
-saturated_residual_tree = (
-    mmcfilters.MorphologicalTreeFactory.create_saturated_residual_tree(
-        image,
-        infinity_pixel=0,
-        radius=1.5,
-    )
 )
 tree_of_shapes = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(image)
 assert tree_of_shapes.node_altitudes.dtype == np.uint8

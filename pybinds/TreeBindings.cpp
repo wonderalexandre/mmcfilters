@@ -1011,9 +1011,6 @@ template <class TreeLike, class PyClass> void bindTreeQueryApi(PyClass& cls) {
             "shared_adjacency_context", [](TreeLike& self) { return topology(self).sharedAdjacencyContext(); },
             py::return_value_policy::reference_internal, "Shared-adjacency context, or None.")
         .def_property_readonly(
-            "saturated_residual_context", [](TreeLike& self) { return topology(self).saturatedResidualContext(); },
-            py::return_value_policy::reference_internal, "Saturated-residual context, or None.")
-        .def_property_readonly(
             "topographic_convention", [](TreeLike& self) { return topology(self).topographicConvention(); },
             py::return_value_policy::reference_internal, "Topographic convention, or None.")
         .def_property_readonly(
@@ -1066,8 +1063,7 @@ void initMorphologicalTree(py::module_& m) {
         .value("MAX_TREE", MorphologicalTreeKind::MaxTree)
         .value("MIN_TREE", MorphologicalTreeKind::MinTree)
         .value("TREE_OF_SHAPES", MorphologicalTreeKind::TreeOfShapes)
-        .value("UNRESTRICTED_RESIDUAL_TREE", MorphologicalTreeKind::UnrestrictedResidualTree)
-        .value("SATURATED_RESIDUAL_TREE", MorphologicalTreeKind::SaturatedResidualTree)
+        .value("EXTREMUM_RESIDUAL_TREE", MorphologicalTreeKind::ExtremumResidualTree)
         .export_values();
 
     py::enum_<sdrt::Polarity>(m, "Polarity", py::module_local(false))
@@ -1095,13 +1091,13 @@ void initMorphologicalTree(py::module_& m) {
 
     py::class_<sdrt::SelfDualResidualOrder>(m, "SelfDualResidualOrder", py::module_local(false))
         .def(py::init<sdrt::SpatialOrder>(), "spatial_order"_a = sdrt::RowMajorSpatialOrder{})
-        .def("compare_residual_candidates", &sdrt::SelfDualResidualOrder::compareResidualCandidates, "lhs"_a, "rhs"_a);
+        .def("compare_extremum_keys", &sdrt::SelfDualResidualOrder::compareExtremumKeys, "lhs"_a, "rhs"_a);
 
     py::class_<sdrt::SelfDualResidualSchedule>(m, "SelfDualResidualSchedule", py::module_local(false))
         .def(py::init<sdrt::SpatialOrder>(), "spatial_order"_a = sdrt::RowMajorSpatialOrder{})
-        .def("select_residual_candidate", [](const sdrt::SelfDualResidualSchedule& self,
+        .def("select_smallest_extremum_index", [](const sdrt::SelfDualResidualSchedule& self,
                                               const std::vector<sdrt::SelfDualResidualKey>& keys) {
-            return self.selectResidualCandidate(keys);
+            return self.selectSmallestExtremumIndex(keys);
         }, "residual_keys"_a);
 
     py::enum_<NodeAltitudeOrder>(m, "NodeAltitudeOrder", py::module_local(false))
@@ -1122,12 +1118,6 @@ void initMorphologicalTree(py::module_& m) {
                                        "One adjacency shared by both construction polarities.")
         .def(py::init<RegularGridAdjacency2D>(), "adjacency"_a)
         .def_readonly("adjacency", &SharedAdjacencyContext::adjacency);
-
-    py::class_<SaturatedResidualContext>(m, "SaturatedResidualContext", py::module_local(false),
-                                         "Adjacency and infinity pixel of a saturated residual construction.")
-        .def(py::init<RegularGridAdjacency2D, PixelId>(), "adjacency"_a, "infinity_pixel"_a = PixelId{0})
-        .def_readonly("adjacency", &SaturatedResidualContext::adjacency)
-        .def_readonly("infinity_pixel", &SaturatedResidualContext::infinityPixel);
 
     py::class_<ComplementaryAdjacencies>(m, "ComplementaryAdjacencies", py::module_local(false),
                                          "Minimum and maximum adjacencies of a complementary-grid immersion.")
@@ -1248,45 +1238,23 @@ construction stays on the source lattice, so `UINT8` becomes available:
             },
             "input"_a, "adjacency"_a, "Create a min-tree with an explicit regular-grid 2D adjacency.")
         .def_static(
-            "create_unrestricted_residual_tree",
+            "create_extremum_residual_tree",
             [](UInt8InputArray input, double radius, sdrt::SpatialOrder spatialOrder) {
                 const double validatedRadius =
-                    pybind_utils::requireAdjacencyRadius(radius, "MorphologicalTreeFactory.create_unrestricted_residual_tree");
-                return wrapPythonValuedTree(MorphologicalTreeFactory::createUnrestrictedResidualTree(
-                    imageFromArray(input), validatedRadius, sdrt::UnrestrictedResidualTreeOptions{std::move(spatialOrder)}));
+                    pybind_utils::requireAdjacencyRadius(radius, "MorphologicalTreeFactory.create_extremum_residual_tree");
+                return wrapPythonValuedTree(MorphologicalTreeFactory::createExtremumResidualTreeByCTs(
+                    imageFromArray(input), validatedRadius, sdrt::ExtremumResidualTreeOptions{std::move(spatialOrder)}));
             },
             "input"_a, "radius"_a = 1.5, "spatial_order"_a = sdrt::RowMajorSpatialOrder{},
-            "Create the unrestricted residual tree with synchronized max-tree and min-tree states.")
+            "Create the extremum residual tree with synchronized max-tree and min-tree states.")
         .def_static(
-            "create_unrestricted_residual_tree",
+            "create_extremum_residual_tree",
             [](UInt8InputArray input, RegularGridAdjacency2D adjacency, sdrt::SpatialOrder spatialOrder) {
-                return wrapPythonValuedTree(MorphologicalTreeFactory::createUnrestrictedResidualTree(
-                    imageFromArray(input), std::move(adjacency), sdrt::UnrestrictedResidualTreeOptions{std::move(spatialOrder)}));
+                return wrapPythonValuedTree(MorphologicalTreeFactory::createExtremumResidualTreeByCTs(
+                    imageFromArray(input), std::move(adjacency), sdrt::ExtremumResidualTreeOptions{std::move(spatialOrder)}));
             },
             "input"_a, "adjacency"_a, "spatial_order"_a = sdrt::RowMajorSpatialOrder{},
-            "Create the unrestricted residual tree with an explicit shared symmetric adjacency.")
-        .def_static(
-            "create_saturated_residual_tree",
-            [](UInt8InputArray input, PixelId infinityPixel, double radius, sdrt::SpatialOrder spatialOrder) {
-                const double validatedRadius =
-                    pybind_utils::requireAdjacencyRadius(radius, "MorphologicalTreeFactory.create_saturated_residual_tree");
-                sdrt::SaturatedResidualTreeOptions options;
-                options.spatialOrder = std::move(spatialOrder);
-                return wrapPythonValuedTree(MorphologicalTreeFactory::createSaturatedResidualTree(
-                    imageFromArray(input), infinityPixel, validatedRadius, std::move(options)));
-            },
-            "input"_a, "infinity_pixel"_a = PixelId{0}, "radius"_a = 1.5, "spatial_order"_a = sdrt::RowMajorSpatialOrder{},
-            "Create the saturated residual tree with synchronized max-tree and min-tree states.")
-        .def_static(
-            "create_saturated_residual_tree",
-            [](UInt8InputArray input, RegularGridAdjacency2D adjacency, PixelId infinityPixel, sdrt::SpatialOrder spatialOrder) {
-                sdrt::SaturatedResidualTreeOptions options;
-                options.spatialOrder = std::move(spatialOrder);
-                return wrapPythonValuedTree(MorphologicalTreeFactory::createSaturatedResidualTree(
-                    imageFromArray(input), std::move(adjacency), infinityPixel, std::move(options)));
-            },
-            "input"_a, "adjacency"_a, "infinity_pixel"_a = PixelId{0}, "spatial_order"_a = sdrt::RowMajorSpatialOrder{},
-            "Create the saturated residual tree with an explicit shared symmetric adjacency.")
+            "Create the extremum residual tree with an explicit shared symmetric adjacency.")
         .def_static(
             "create_tree_of_shapes",
             [](UInt8InputArray input, std::optional<TopographicConvention> convention, std::optional<TreeOfShapesImmersion> immersion,

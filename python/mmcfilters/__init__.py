@@ -11,8 +11,7 @@ Preferred usage is the NodeId-based tree query API:
 Factory constructors return `ValuedMorphologicalTree`:
 - `MorphologicalTreeFactory.create_max_tree(image)`
 - `MorphologicalTreeFactory.create_min_tree(image)`
-- `MorphologicalTreeFactory.create_unrestricted_residual_tree(image)`
-- `MorphologicalTreeFactory.create_saturated_residual_tree(image, infinity_pixel=0)`
+- `MorphologicalTreeFactory.create_extremum_residual_tree(image)`
 - `MorphologicalTreeFactory.create_tree_of_shapes(image)`
 - `MorphologicalTreeFactory.create_from_native_topology(parent, smallest_node_map, node_altitudes, root, semantics)`
 - `MorphologicalTreeFactory.create_from_native_topology(parent, smallest_node_map, node_altitudes, root, rows, columns, semantics)`
@@ -148,7 +147,6 @@ GridDomain2D = _native.GridDomain2D
 MorphologicalTreeSemantics = _native.MorphologicalTreeSemantics
 NoConstructionContext = _native.NoConstructionContext
 SharedAdjacencyContext = _native.SharedAdjacencyContext
-SaturatedResidualContext = _native.SaturatedResidualContext
 ComplementaryAdjacencies = _native.ComplementaryAdjacencies
 SelfDualSpanImmersion = _native.SelfDualSpanImmersion
 ComplementaryPairing = _native.ComplementaryPairing
@@ -225,7 +223,6 @@ __all__ = [
     "MorphologicalTreeSemantics",
     "NoConstructionContext",
     "SharedAdjacencyContext",
-    "SaturatedResidualContext",
     "ComplementaryAdjacencies",
     "SelfDualSpanImmersion",
     "ComplementaryPairing",

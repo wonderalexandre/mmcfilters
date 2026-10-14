@@ -128,14 +128,9 @@ def main() -> int:
     hierarchy_cases = {
         "max-tree": mmcfilters.MorphologicalTreeFactory.create_max_tree(general_image),
         "min-tree": mmcfilters.MorphologicalTreeFactory.create_min_tree(general_image),
-        "unrestricted residual tree": (
-            mmcfilters.MorphologicalTreeFactory.create_unrestricted_residual_tree(
+        "extremum residual tree": (
+            mmcfilters.MorphologicalTreeFactory.create_extremum_residual_tree(
                 general_image, radius=1.0
-            )
-        ),
-        "saturated residual tree": (
-            mmcfilters.MorphologicalTreeFactory.create_saturated_residual_tree(
-                general_image, infinity_pixel=0, radius=1.0
             )
         ),
         "tree of shapes": (

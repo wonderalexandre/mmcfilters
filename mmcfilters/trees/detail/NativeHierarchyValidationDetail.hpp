@@ -391,8 +391,7 @@ class NativeHierarchyValidation {
         case MorphologicalTreeKind::MaxTree:
         case MorphologicalTreeKind::MinTree:
         case MorphologicalTreeKind::TreeOfShapes:
-        case MorphologicalTreeKind::UnrestrictedResidualTree:
-        case MorphologicalTreeKind::SaturatedResidualTree:
+        case MorphologicalTreeKind::ExtremumResidualTree:
             break;
         default:
             throw std::invalid_argument("Native hierarchy kind is not supported.");
@@ -409,12 +408,6 @@ class NativeHierarchyValidation {
         };
         if (const auto* context = std::get_if<SharedAdjacencyContext>(&hierarchy.semantics.constructionContext)) {
             requireMatchingGrid(context->adjacency, "SharedAdjacencyContext adjacency");
-        } else if (const auto* context = std::get_if<SaturatedResidualContext>(&hierarchy.semantics.constructionContext)) {
-            requireMatchingGrid(context->adjacency, "SaturatedResidualContext adjacency");
-            if (context->infinityPixel < 0 ||
-                static_cast<std::size_t>(context->infinityPixel) >= hierarchy.gridDomain2D->size("Saturated residual domain")) {
-                throw std::invalid_argument("SaturatedResidualContext infinity pixel must belong to the attached 2D grid.");
-            }
         } else if (const auto* convention = std::get_if<TopographicConvention>(&hierarchy.semantics.constructionContext)) {
             if (convention->infinityPixel < 0) {
                 throw std::invalid_argument("TopographicConvention infinity pixel must be non-negative.");

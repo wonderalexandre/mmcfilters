@@ -6,12 +6,9 @@
 
 namespace mmcfilters::detail {
 
-/** @brief Returns the adjacency explicitly retained by a shared or saturated construction context. */
+/** @brief Returns the adjacency explicitly retained by a shared construction context. */
 inline const RegularGridAdjacency2D* constructionAdjacency(const MorphologicalTree& tree) noexcept {
     if (const auto* context = tree.sharedAdjacencyContext()) {
-        return &context->adjacency;
-    }
-    if (const auto* context = tree.saturatedResidualContext()) {
         return &context->adjacency;
     }
     return nullptr;

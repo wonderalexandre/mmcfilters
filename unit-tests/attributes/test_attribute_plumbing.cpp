@@ -36,7 +36,7 @@ static_assert(static_cast<int>(DistSumExact) == 100);
 static_assert(static_cast<int>(DistWeightedEccentricityExact) == 117);
 static_assert(static_cast<int>(MaxSquaredDist) == 118);
 static_assert(static_cast<int>(MaxSquaredDistExact) == 119);
-static_assert(static_cast<int>(RawInertia) == 120);
+static_assert(static_cast<int>(RawInertia) == 134);
 static_assert(static_cast<int>(AttributeGroup::TreeTopology) == 5);
 static_assert(static_cast<int>(AttributeGroup::DistTransf) == 6);
 static_assert(static_cast<int>(AttributeGroup::DistTransfExact) == 7);
@@ -49,6 +49,14 @@ static_assert(AttributeComputer<HuMomentsComputer>);
 static_assert(AttributeComputer<MomentBasedAttributeComputer>);
 static_assert(AttributeComputer<BitquadAttributeComputer>);
 static_assert(AttributeComputer<ContourSideAttributeComputer>);
+static_assert(TopologyAttributeComputer<FilledShapeAttributeComputer>);
+static_assert(static_cast<int>(FilledArea) == 120);
+static_assert(static_cast<int>(FilledCentroidDisplacementNormalized) == 129);
+static_assert(static_cast<int>(FilledCompactness) == 130);
+static_assert(static_cast<int>(FilledCircularity) == 131);
+static_assert(static_cast<int>(AxisOrientationSigned) == 132);
+static_assert(static_cast<int>(FilledAxisOrientationSigned) == 133);
+static_assert(static_cast<int>(AttributeGroup::FilledShape) == 8);
 static_assert(AttributeComputer<VolumeComputer>);
 static_assert(AttributeComputer<GrayLevelStatsComputer>);
 static_assert(AttributeComputer<MaxDistExactComputer>);
@@ -67,9 +75,9 @@ static_assert(TopologyAttributeComputer<MaxDistComputer>);
 
 static_assert(AltitudeAttributeComputer<VolumeComputer>);
 static_assert(AltitudeAttributeComputer<GrayLevelStatsComputer>);
-static_assert(std::tuple_size_v<TopologyAttributeComputers> == 10);
+static_assert(std::tuple_size_v<TopologyAttributeComputers> == 11);
 static_assert(std::tuple_size_v<AltitudeAttributeComputers> == 2);
-static_assert(std::tuple_size_v<RegisteredAttributeComputers> == 12);
+static_assert(std::tuple_size_v<RegisteredAttributeComputers> == 13);
 
 template <class Computer>
 void requireComputerContract(std::initializer_list<Attribute> producedAttributes, AttributeComputerDomain domain, AttributeComputerFamily family,
@@ -116,7 +124,7 @@ template <class Computer> void requireRegisteredComputerFamily(AttributeComputer
 }
 
 template <class Computer>
-void countProducedAttributes(std::array<int, static_cast<std::size_t>(RawInertia) + 1>& counts) {
+void countProducedAttributes(std::array<int, attributes::registry::ATTRIBUTE_METADATA.size()>& counts) {
     for (Attribute attribute : Computer::producedAttributes) {
         const auto index = static_cast<std::size_t>(attribute);
         require(index < counts.size(), "computer produced attribute must be in registry range");
@@ -125,7 +133,7 @@ void countProducedAttributes(std::array<int, static_cast<std::size_t>(RawInertia
 }
 
 void requireGlobalAttributeRegistryContracts() {
-    std::array<int, static_cast<std::size_t>(RawInertia) + 1> producedCounts{};
+    std::array<int, attributes::registry::ATTRIBUTE_METADATA.size()> producedCounts{};
     countProducedAttributes<AreaComputer>(producedCounts);
     countProducedAttributes<BoundingBoxComputer>(producedCounts);
     countProducedAttributes<TreeTopologyComputer>(producedCounts);
@@ -134,6 +142,7 @@ void requireGlobalAttributeRegistryContracts() {
     countProducedAttributes<MomentBasedAttributeComputer>(producedCounts);
     countProducedAttributes<BitquadAttributeComputer>(producedCounts);
     countProducedAttributes<ContourSideAttributeComputer>(producedCounts);
+    countProducedAttributes<FilledShapeAttributeComputer>(producedCounts);
     countProducedAttributes<VolumeComputer>(producedCounts);
     countProducedAttributes<GrayLevelStatsComputer>(producedCounts);
     countProducedAttributes<MaxDistExactComputer>(producedCounts);
@@ -263,19 +272,21 @@ int main() {
         requireEqual(grayLevelNames.getIndex(GrayLevelVariance), 4, "GRAY_LEVEL GrayLevelVariance index");
         requireEqual(grayLevelNames.linearIndex(5, GrayLevelVariance), 29, "GRAY_LEVEL dense linear index");
         auto shapeNames = AttributeNames::fromGroup(AttributeGroup::Shape);
-        requireEqual(shapeNames.NUM_ATTRIBUTES, 49, "SHAPE AttributeNames count");
+        requireEqual(shapeNames.NUM_ATTRIBUTES, 50, "SHAPE AttributeNames count");
         requireEqual(shapeNames.getIndex(Area), 0, "SHAPE AREA index");
         require(shapeNames.contains(MaxDistExact), "SHAPE AttributeNames must include MAX_DIST_EXACT");
         require(shapeNames.contains(MaxDist), "SHAPE AttributeNames must include MAX_DIST");
         require(shapeNames.contains(Circularity), "SHAPE AttributeNames must include CIRCULARITY");
         require(shapeNames.contains(RawInertia), "SHAPE AttributeNames must include RAW_INERTIA");
         requireEqual(shapeNames.getIndex(ContourSideSouth), 47, "SHAPE CONTOUR_SIDE_SOUTH index");
-        requireEqual(shapeNames.getIndex(RawInertia), 48, "SHAPE RAW_INERTIA appended index");
+        requireEqual(shapeNames.getIndex(AxisOrientationSigned), 48, "SHAPE signed orientation index");
+        requireEqual(shapeNames.getIndex(RawInertia), 49, "SHAPE RAW_INERTIA appended index");
         auto momentNames = AttributeNames::fromGroup(AttributeGroup::Moments);
-        requireEqual(momentNames.NUM_ATTRIBUTES, 22, "MOMENTS AttributeNames count");
+        requireEqual(momentNames.NUM_ATTRIBUTES, 23, "MOMENTS AttributeNames count");
         requireEqual(momentNames.getIndex(CentralMoment20), 0, "MOMENTS CENTRAL_MOMENT_20 index");
         requireEqual(momentNames.getIndex(Circularity), 20, "MOMENTS CIRCULARITY index");
-        requireEqual(momentNames.getIndex(RawInertia), 21, "MOMENTS RAW_INERTIA appended index");
+        requireEqual(momentNames.getIndex(AxisOrientationSigned), 21, "MOMENTS signed orientation index");
+        requireEqual(momentNames.getIndex(RawInertia), 22, "MOMENTS RAW_INERTIA appended index");
         auto boundaryNames = AttributeNames::fromGroup(AttributeGroup::Boundary);
         requireEqual(boundaryNames.NUM_ATTRIBUTES, 15, "BOUNDARY AttributeNames count");
         requireEqual(boundaryNames.getIndex(BitquadArea), 0, "BOUNDARY BITQUAD_AREA index");
@@ -305,7 +316,7 @@ int main() {
             require(AttributeNames::toString(attribute).ends_with("_EXACT"), "DIST_TRANSF_EXACT attributes must use the _EXACT suffix");
         }
         auto allNames = AttributeNames::fromGroup(AttributeGroup::All);
-        requireEqual(allNames.NUM_ATTRIBUTES, static_cast<int>(RawInertia) + 1, "ALL AttributeNames count");
+        requireEqual(allNames.NUM_ATTRIBUTES, static_cast<int>(attributes::registry::ATTRIBUTE_METADATA.size()), "ALL AttributeNames count");
         requireEqual(allNames.getIndex(ContourPixels), static_cast<int>(ContourPixels), "ALL CONTOUR_PIXELS index");
         requireEqual(allNames.getIndex(ContourSideSouth), static_cast<int>(ContourSideSouth), "ALL CONTOUR_SIDE_SOUTH index");
         const std::vector<Attribute>& allAttributes = ATTRIBUTE_GROUPS.at(AttributeGroup::All);
@@ -379,7 +390,7 @@ int main() {
         requireComputerContract<HuMomentsComputer>({HuMoment1, HuMoment2, HuMoment3, HuMoment4, HuMoment5, HuMoment6, HuMoment7},
                                                    AttributeComputerDomain::Topology, AttributeComputerFamily::HuMoments, "HuMomentsComputer");
         requireComputerContract<MomentBasedAttributeComputer>(
-            {Inertia, Compactness, Eccentricity, LengthMajorAxis, LengthMinorAxis, AxisOrientation, Circularity}, AttributeComputerDomain::Topology,
+            {Inertia, Compactness, Eccentricity, LengthMajorAxis, LengthMinorAxis, AxisOrientation, Circularity, AxisOrientationSigned}, AttributeComputerDomain::Topology,
             AttributeComputerFamily::MomentDerived, "MomentBasedAttributeComputer");
         requireComputerContract<BitquadAttributeComputer>({BitquadArea, BitquadNumberEuler, BitquadNumberHoles, BitquadPerimeter,
                                                            BitquadPerimeterContinuous, BitquadCircularity, BitquadPerimeterAverage,

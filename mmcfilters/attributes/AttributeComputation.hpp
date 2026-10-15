@@ -272,8 +272,8 @@ class AttributeComputation {
      * @details
      * `nodeValues` must be row-major by dense internal `NodeId`, with one column
      * per attribute described by `attrNames`. The exported buffer follows the
-     * compact Higra convention `[proper parts | live internal nodes]`. Unit
-     * proper-part rows are computed by the export projection path for each
+     * compact Higra convention `[pixel leaves | live internal nodes]`. Rows for
+     * pixel leaves are computed by the export projection path for each
      * requested attribute, and internal-node rows are copied from `nodeValues`
      * using the same layout helper as hierarchy export.
      *
@@ -327,23 +327,23 @@ class AttributeComputation {
                                                                             const std::vector<Real>& nodeValues);
 
     /**
-     * @brief Projects a node attribute to a proper-part image in the original domain.
+     * @brief Projects a node attribute to a pixel image in the original domain.
      *
      * @tparam T Altitude type owned by `tree`.
      * @param tree Valued tree supplying topology and dense altitude data.
      * @param attribute Scalar attribute to compute and map.
-     * @return Image where each proper part receives its smallest-node attribute value.
+     * @return Image where each pixel receives the attribute value of its smallest node.
      */
     template <std::floating_point Real = float, AltitudeValue T>
     [[nodiscard]] static ImagePtr<Real> computeAttributeMapping(const ValuedMorphologicalTree<T>& tree, Attribute attribute);
 
     /**
-     * @brief Projects a node attribute from a valued-tree view to a proper-part image.
+     * @brief Projects a node attribute from a valued-tree view to a pixel image.
      *
      * @tparam T Altitude type borrowed by `tree`.
      * @param tree Valued-tree view supplying topology and dense altitude data.
      * @param attribute Scalar attribute to compute and map.
-     * @return Image where each proper part receives its smallest-node attribute value.
+     * @return Image where each pixel receives the attribute value of its smallest node.
      */
     template <std::floating_point Real = float, AltitudeValue T>
     [[nodiscard]] static ImagePtr<Real> computeAttributeMapping(const ValuedMorphologicalTreeView<T>& tree, Attribute attribute);

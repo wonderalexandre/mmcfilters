@@ -516,7 +516,7 @@ inline std::vector<Real> projectNodeValuesToExportedHigraTyped(const Morphologic
     const size_t numColumnValues = static_cast<size_t>(numColumns);
     const std::vector<Real> unitValues = computeUnitAttributeRows<Real>(topology, altitude, layout.properParts, attrNames);
 
-    // Compact Higra buffers place unit proper-part rows before internal-node rows.
+    // Compact Higra buffers place rows for pixel leaves before internal-node rows.
     std::vector<Real> projected(static_cast<size_t>(layout.numVertices) * numColumnValues, Real{0});
 
     for (NodeId leafIndex = 0; leafIndex < layout.numLeaves; ++leafIndex) {

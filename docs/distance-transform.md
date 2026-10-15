@@ -12,18 +12,12 @@ Two coordinated families are public:
 - names ending in `_EXACT`, such as `MAX_DIST_EXACT`, select the exact
   Euclidean distance transform, whose internal cost field is squared.
 
-There is deliberately no `_APPROX` suffix. `AttributeGroup::DistTransf` in C++
-and `Attribute.Group.DIST_TRANSF` in Python contain the 29 approximate scalars.
+`AttributeGroup::DistTransf` in C++ and `Attribute.Group.DIST_TRANSF` in Python
+contain the 29 approximate scalars.
 `AttributeGroup::DistTransfExact` and `Attribute.Group.DIST_TRANSF_EXACT` contain
-the 29 matching exact scalars. The exact group enumerator was appended, so the
-numeric ordinals of pre-existing groups remain unchanged. Request both groups
-explicitly to obtain all 58 paired descriptors. As with every multi-attribute request,
-a computed result layout uses the API's canonical scalar-ordinal order rather
-than the registry's presentation order.
-
-`MAX_DIST` retains its pre-existing scalar-enum ordinal. New scalar enumerators,
-including `MAX_SQUARED_DIST` and the `_EXACT` family, are appended so the
-ordinals of pre-existing attributes remain unchanged.
+the 29 matching exact scalars. Request both groups to obtain all 58 attributes.
+Results follow canonical scalar-ordinal order; see [Attributes](attributes.md)
+for result layouts.
 
 ## Mathematical contract
 

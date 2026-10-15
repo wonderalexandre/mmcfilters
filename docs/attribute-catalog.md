@@ -46,7 +46,7 @@ The complete capability matrix is:
 | `AREA`, `SUBTREE_HEIGHT` through `BALANCE_NODE`, `AVG_CHILD_HEIGHT_NODE` | no | no | none | no | no | no |
 | `VOLUME`, `RELATIVE_VOLUME`, `GRAY_LEVEL_HEIGHT`, `MEAN_GRAY_LEVEL`, `GRAY_LEVEL_VARIANCE` | yes | no | none | no | no | no |
 | bounding boxes, central/Hu moments, moment-derived attributes, `CONTOUR_*` | no | yes | none | no | no | no |
-| `BITQUAD_*` | no | yes | uniform or directional | no | yes | yes |
+| `BITQUAD_*`, `FILLED_*`, `HOLE_AREA_FRACTION` | no | yes | uniform or directional | no | yes | yes |
 | `MAX_DIST_EXACT`, `MAX_DIST`, `MAX_SQUARED_DIST*`, `MAX_DIST_CENTER_*`, `DIST_*` | no | yes | none | no | no | no |
 
 C++ callers can query
@@ -177,3 +177,17 @@ scalar attributes before these requirements are validated.
 | `Attribute::LeafRatioNode` | `LEAF_RATIO_NODE` | `TREE_TOPOLOGY` | Tree topology | `Non-increasing` | Ratio of leaf descendants to subtree size, `leaf_descendants / (descendants + 1)`. Leaves return `1`. |
 | `Attribute::BalanceNode` | `BALANCE_NODE` | `TREE_TOPOLOGY` | Tree topology | `Non-increasing` | Difference between maximum and minimum child-subtree heights. It is `0` for leaves and increases when child depths are uneven. |
 | `Attribute::AvgChildHeightNode` | `AVG_CHILD_HEIGHT_NODE` | `TREE_TOPOLOGY` | Tree topology | `Non-increasing` | Average height of direct child subtrees. Leaves return `0`; non-leaf nodes average direct child heights. |
+| `Attribute::FilledArea` | `FILLED_AREA` | `FILLED_SHAPE` | Topology/support | `Increasing` | Number of pixels enclosed by the unique external boundary, including holes; requires exactly one external boundary per live node. |
+| `Attribute::FilledCentroidRow` | `FILLED_CENTROID_ROW` | `FILLED_SHAPE` | Topology/support | `Non-increasing` | Zero-based mean row of the filled region pixels. |
+| `Attribute::FilledCentroidColumn` | `FILLED_CENTROID_COLUMN` | `FILLED_SHAPE` | Topology/support | `Non-increasing` | Zero-based mean column of the filled region pixels. |
+| `Attribute::FilledLengthMajorAxis` | `FILLED_LENGTH_MAJOR_AXIS` | `FILLED_SHAPE` | Topology/support | `Non-increasing` | Major-axis length proxy of the filled region, in pixels; follows `LENGTH_MAJOR_AXIS`. |
+| `Attribute::FilledLengthMinorAxis` | `FILLED_LENGTH_MINOR_AXIS` | `FILLED_SHAPE` | Topology/support | `Non-increasing` | Minor-axis length proxy of the filled region, in pixels; follows `LENGTH_MINOR_AXIS`. |
+| `Attribute::FilledAxisOrientation` | `FILLED_AXIS_ORIENTATION` | `FILLED_SHAPE` | Topology/support | `Non-increasing` | Non-negative principal column-axis orientation in degrees; isotropic regions return `0`. |
+| `Attribute::FilledAxisOrientationSigned` | `FILLED_AXIS_ORIENTATION_SIGNED` | `FILLED_SHAPE` | Topology/support | `Non-increasing` | Signed principal column-axis orientation in degrees, `0.5 * atan2(2*mu11, mu20-mu02)`, in `[-90,90]`; positive row direction is downward. Isotropic regions return `0`. The existing `FILLED_AXIS_ORIENTATION` remains its absolute value. |
+| `Attribute::FilledEccentricity` | `FILLED_ECCENTRICITY` | `FILLED_SHAPE` | Topology/support | `Non-increasing` | Major/minor eigenvalue ratio of the filled region moments, capped at `1e6`; one pixel returns `1`. |
+| `Attribute::FilledInertia` | `FILLED_INERTIA` | `FILLED_SHAPE` | Topology/support | `Non-increasing` | Sum of the filled region second central moments divided by squared filled area. |
+| `Attribute::HoleAreaFraction` | `HOLE_AREA_FRACTION` | `FILLED_SHAPE` | Topology/support | `Non-increasing` | Fraction of filled area occupied by holes: `1 - AREA / FILLED_AREA`. |
+| `Attribute::FilledCentroidDisplacementNormalized` | `FILLED_CENTROID_DISPLACEMENT_NORMALIZED` | `FILLED_SHAPE` | Topology/support | `Non-increasing` | Euclidean distance between support and filled-region centroids divided by the square root of filled area. |
+| `Attribute::FilledCompactness` | `FILLED_COMPACTNESS` | `FILLED_SHAPE` | Topology/support | `Non-increasing` | `FILLED_AREA / (2*pi*(mu20 + mu02))`, using filled-region second central moments; zero dispersion returns `0`. |
+| `Attribute::FilledCircularity` | `FILLED_CIRCULARITY` | `FILLED_SHAPE` | Topology/support | `Non-increasing` | Minor/major eigenvalue ratio of the filled-region second moments; one pixel returns `1` and a nontrivial line returns `0`. |
+| `Attribute::AxisOrientationSigned` | `AXIS_ORIENTATION_SIGNED` | `SHAPE`, `MOMENTS` | Topology/support | `Non-increasing` | Signed principal column-axis orientation of the node support: `0.5 * atan2(2*mu11, mu20-mu02)` in degrees, in `[-90,90]`; positive row direction is downward. Isotropic and one-pixel supports return `0`; the axis is defined modulo 180 degrees. `AXIS_ORIENTATION` remains its absolute value. |

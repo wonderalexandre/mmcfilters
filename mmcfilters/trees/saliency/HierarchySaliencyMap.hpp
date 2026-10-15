@@ -32,15 +32,15 @@ namespace mmcfilters {
  * undirected edge appears exactly once.
  */
 template <class Value> struct EdgeSaliencyMap {
-    /// Number of rows in the proper-part grid.
+    /// Number of rows in the image grid.
     int numRows = 0;
-    /// Number of columns in the proper-part grid.
+    /// Number of columns in the image grid.
     int numColumns = 0;
     /// Radius of the adjacency used to enumerate the edges.
     double adjacencyRadius = 0.0;
-    /// Source proper-part id of each undirected edge.
+    /// Source pixel identifier of each undirected edge.
     std::vector<NodeId> sources;
-    /// Target proper-part id of each undirected edge.
+    /// Target pixel identifier of each undirected edge.
     std::vector<NodeId> targets;
     /// Saliency value parallel to `sources` and `targets`.
     std::vector<Value> values;
@@ -76,7 +76,7 @@ enum class HierarchyLevelConvention {
 /**
  * @brief Projects a morphological tree hierarchy onto an image adjacency graph.
  *
- * The generic `computeEdgeMap` primitive finds the inclusion-smallest nodes of each graph
+ * The generic `computeEdgeMap` primitive finds the smallest nodes of each graph
  * edge endpoint, takes their lowest common ancestor in the hierarchy, and writes
  * `nodeValue(lca)` as the edge value. The formal `computeSaliencyEdgeMap` path
  * additionally assigns the base value `0` to edges whose endpoints already
@@ -313,7 +313,7 @@ class HierarchySaliencyMap {
      * Under `PartitionAppearanceLevel`, the returned transition value is instead
      * `valuation(LCA(...)) - 1`, following Algorithm 1 of Cousty et al. In that
      * convention, live-node values must be positive integer partition indexes.
-     * Here `smallestNode` maps a pixel to its inclusion-smallest hierarchy node.
+     * Here `smallestNode` maps a pixel to its smallest hierarchy node.
      * This keeps the saliency map defined on the full graph edge set while
      * respecting the paper's cut-based definition: edges internal to a finest
      * region are not contour transitions at any positive hierarchy level.

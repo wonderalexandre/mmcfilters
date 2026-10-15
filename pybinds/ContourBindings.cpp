@@ -1,16 +1,14 @@
 #include "ModuleBindings.hpp"
 #include "PythonValuedMorphologicalTree.hpp"
 
-#include "../mmcfilters/contours/ContoursComputedIncrementally.hpp"
-#include "../mmcfilters/trees/ValuedMorphologicalTree.hpp"
+#include "../mmcfilters/contours/ContourComputation.hpp"
 
+#include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
 
+#include <algorithm>
 #include <memory>
 #include <stdexcept>
-#include <tuple>
-#include <utility>
 
 namespace mmcfilters::pybindings {
 
@@ -19,76 +17,56 @@ using namespace pybind11::literals;
 
 namespace {
 
-struct ContourComputationBinding {};
+py::array_t<PixelId> copyContourPixels(std::span<const PixelId> pixels) {
+    py::array_t<PixelId> pixelsCopy(static_cast<py::ssize_t>(pixels.size()));
+    std::copy(pixels.begin(), pixels.end(), pixelsCopy.mutable_data());
+    return pixelsCopy;
+}
+
+struct ContourIterator {
+    ContourComputation::iterator iterator;
+    bool hasStarted = false;
+
+    explicit ContourIterator(const ContourComputation& contours) : iterator(contours.begin()) {}
+
+    py::tuple next() {
+        if (hasStarted && iterator != std::default_sentinel) {
+            ++iterator;
+        }
+        hasStarted = true;
+        if (iterator == std::default_sentinel) {
+            throw py::stop_iteration();
+        }
+        const auto [node, pixels] = *iterator;
+        return py::make_tuple(node, copyContourPixels(pixels));
+    }
+};
 
 } // namespace
 
-/**
- * @brief Registers contours computed incrementally bindings in the Python module.
- *
- * @param m Python module receiving the bindings.
- */
-void initContoursComputedIncrementally(py::module_& m) {
-    using Contours = ContoursComputedIncrementally::IncrementalContours;
-    using ContourRange = Contours::ContourRange;
-    using Range = decltype(std::declval<Contours&>().contoursByNode());
-    using Iter = decltype(std::declval<Range&>().begin());
+/** @brief Registers sequential pixel-contour access and queries for one node. */
+void initContourComputation(py::module_& m) {
+    py::class_<ContourIterator>(m, "_ContourIterator", "Single-pass iterator with independently owned NumPy contour arrays.")
+        .def("__iter__", [](ContourIterator& self) -> ContourIterator& { return self; }, py::return_value_policy::reference_internal)
+        .def("__next__", &ContourIterator::next);
 
-    py::class_<ContourRange>(m, "ContourRange", py::module_local(false), "Lazy iterable range of row-major pixel indices for one internal-node contour.")
-        .def(
-            "__iter__", [](const ContourRange& p) { return py::make_iterator(p.begin(), p.end()); }, py::keep_alive<0, 1>(),
-            "Iterate contour pixels as row-major integer indices.")
-        .def("empty", &ContourRange::empty, "Return true when the contour has no pixels.");
+    py::class_<ContourComputation>(m, "ContourComputation", R"doc(Incremental foreground A4 pixel contours for a stable valued tree.
 
-    struct ContoursIterator {
-        Range range;
-        Iter it;
-        Iter itEnd;
-
-        explicit ContoursIterator(Contours& self) : range(self.contoursByNode()), it(range.begin()), itEnd(range.end()) {}
-    };
-
-    py::class_<ContoursIterator>(m, "ContoursIterator", py::module_local(false), "Iterator over `(node_id, ContourRange)` pairs for all live nodes.")
-        .def(py::init<Contours&>(), "contours"_a)
-        .def(
-            "__iter__", [](ContoursIterator& self) -> ContoursIterator& { return self; }, py::return_value_policy::reference_internal, "Return this iterator.")
-        .def(
-            "__next__",
-            [](ContoursIterator& self) -> py::object {
-                if (self.it == self.itEnd) {
-                    throw py::stop_iteration();
-                }
-                auto entry = *self.it++;
-                auto nodeId = std::get<0>(entry);
-                auto proxy = std::get<1>(entry);
-                return py::make_tuple(nodeId, proxy);
-            },
-            "Return the next `(node_id, ContourRange)` pair.");
-
-    py::class_<Contours, std::shared_ptr<Contours>>(m, "Contours", py::module_local(false),
-                                                    R"doc(Incremental contour result with lazy materialization.
-
-Contours are exposed as row-major pixel-index ranges. The first read of a node
-may materialize and cache its subtree contour; later reads use cached storage.)doc")
-        .def(
-            "contours_by_node", [](Contours& self) { return ContoursIterator(self); }, py::keep_alive<0, 1>(),
-            "Iterate `(node_id, contour_range)` for every live internal node.")
-        .def("get_contour", &Contours::getContour, "node_id"_a, "Return a lazy contour range for one live internal node.")
-        .def("materialize_all", &Contours::materializeAll, "Materialize and cache contours for every live node.")
-        .def_property_readonly("is_materialized", &Contours::isMaterialized, "Whether all live-node contours have been materialized.")
-        .def("is_contour_materialized", &Contours::isContourMaterialized, "node_id"_a, "Return whether one live node contour has been materialized.");
-
-    py::class_<ContourComputationBinding>(m, "ContourComputation", py::module_local(false),
-                                          "Factory for incremental contour extraction on morphological trees.")
-        .def_static(
-            "extraction",
-            [](const std::shared_ptr<PythonValuedMorphologicalTree>& valuedTree) {
-                if (!valuedTree) {
-                    throw std::invalid_argument("Contour extraction requires a non-null ValuedMorphologicalTree.");
-                }
-                return valuedTree->visit([](const auto& concreteTree) { return ContoursComputedIncrementally::extractCompactContours(concreteTree->asView()); });
-            },
-            py::keep_alive<0, 1>(), "tree"_a.none(false), "Extract compact contours from a valued tree.");
+Iterate (node_id, pixels) in post-order, or query one node with contour.
+Each result is an independent NumPy array. No contour history is cached.)doc")
+        .def(py::init([](const std::shared_ptr<PythonValuedMorphologicalTree>& tree) {
+                 if (!tree) {
+                     throw std::invalid_argument("ContourComputation requires a non-null valued tree.");
+                 }
+                 return tree->visit([](const auto& concreteTree) { return ContourComputation(concreteTree->asView()); });
+             }),
+             py::keep_alive<1, 2>(), "tree"_a.none(false))
+        .def("__iter__", [](const ContourComputation& self) { return ContourIterator(self); }, py::keep_alive<0, 1>())
+        .def("contour", [](const ContourComputation& self, NodeId node) { return copyContourPixels(self.contour(node)); }, "node_id"_a,
+             "Return an owned contour array for one live internal node by scanning its support, without caching.")
+        .def("for_each_contour", [](const ContourComputation& self, const py::function& consumer) {
+            self.forEachContour([&](NodeId node, std::span<const PixelId> pixels) { consumer(node, copyContourPixels(pixels)); });
+        }, "consumer"_a, "Call consumer(node_id, pixels) in post-order; each array owns its data.");
 }
 
 } // namespace mmcfilters::pybindings

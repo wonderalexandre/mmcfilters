@@ -41,6 +41,10 @@ mmcfilters_add_unit_test(unit_altitude_traits
     utils/test_altitude_traits.cpp
 )
 
+mmcfilters_add_unit_test(unit_filled_shape_attributes
+    attributes/test_filled_shape_attributes.cpp
+)
+
 mmcfilters_add_unit_test(unit_regular_grid_adjacency_2d
     utils/test_regular_grid_adjacency_2d.cpp
 )
@@ -200,10 +204,6 @@ mmcfilters_add_unit_test(unit_contours_on_morphological_tree
 mmcfilters_add_unit_test(unit_contour_traces_on_morphological_tree
     contours/test_contour_traces_on_morphological_tree.cpp
 )
-target_compile_definitions(unit_contour_traces_on_morphological_tree
-    PRIVATE
-        MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
-)
 
 mmcfilters_add_unit_test(unit_extinction_values_on_morphological_tree
     filters/test_extinction_values_on_morphological_tree.cpp
@@ -306,6 +306,13 @@ if(TARGET mmcfilters)
         NAME unit_python_distance_transform
         COMMAND ${MMCFILTERS_PYTHON_TEST_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_distance_transform.py
+            ${CMAKE_BINARY_DIR}
+    )
+
+    add_test(
+        NAME unit_python_filled_shape
+        COMMAND ${MMCFILTERS_PYTHON_TEST_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_filled_shape.py
             ${CMAKE_BINARY_DIR}
     )
 

@@ -64,7 +64,7 @@ non-empty support for every live node. It returns `TreeValidationResult`:
 `commit()` is the exception-based wrapper. It closes the session on success and
 throws when validation fails.
 
-Complete validation is linear in the internal node slots plus proper parts:
+Complete validation is linear in the number of internal node slots plus pixels:
 
 ```text
 O(numInternalNodeSlots + numPixels)
@@ -153,8 +153,8 @@ public API.
 Topology mutations invalidate objects that cache or interpret node-indexed
 state. Guarded objects include:
 
-- `ContoursComputedIncrementally::IncrementalContours`;
-- `ContourTraceComputation::IncrementalContourTraces`;
+- `ContourComputation`;
+- `ContourTraceComputation`;
 - `ValuedMorphologicalTreeView<T>`;
 - `AttributeFilters`;
 - `ExtinctionValues`;

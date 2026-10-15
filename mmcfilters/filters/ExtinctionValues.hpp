@@ -11,7 +11,7 @@
 #include "../utils/Image.hpp"
 #include "../utils/Common.hpp"
 #include "../utils/Contract.hpp"
-#include "../contours/ContoursComputedIncrementally.hpp"
+#include "../contours/ContourComputation.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -711,12 +711,28 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
         ImagePtr<Real> imgOutputPtr = Image<Real>::create(tree.numRows(), tree.numColumns(), Real{0});
         auto contourOutput = imgOutputPtr->rawData();
 
-        auto contours = ContoursComputedIncrementally::extractCompactContours(tree);
-        for (NodeId node : keptNodes) {
-            for (int p : contours.getContour(node)) {
-                contourOutput[p] = scoreByNode[static_cast<std::size_t>(node)];
-            }
+        if (keptNodes.empty()) {
+            return imgOutputPtr;
         }
+        // Preserve the selected-node overwrite priority independently of the
+        // contour traversal's post-order (shared boundary pixels can overlap).
+        std::vector<std::size_t> priorityByNode(tree.numInternalNodeSlots(), 0);
+        for (std::size_t selectionIndex = 0; selectionIndex < keptNodes.size(); ++selectionIndex) {
+            priorityByNode[static_cast<std::size_t>(keptNodes[selectionIndex])] = selectionIndex + 1;
+        }
+        std::vector<std::size_t> pixelPriority(tree.numPixels(), 0);
+        ContourComputation(tree).forEachContour([&](NodeId node, std::span<const PixelId> pixels) {
+            const auto selectionPriority = priorityByNode[static_cast<std::size_t>(node)];
+            if (selectionPriority == 0) {
+                return;
+            }
+            for (PixelId pixel : pixels) {
+                if (selectionPriority > pixelPriority[static_cast<std::size_t>(pixel)]) {
+                    contourOutput[pixel] = scoreByNode[static_cast<std::size_t>(node)];
+                    pixelPriority[static_cast<std::size_t>(pixel)] = selectionPriority;
+                }
+            }
+        });
 
         return imgOutputPtr;
     }

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "component_tree_dift/EdtDIFT.hpp"
-#include "mmcfilters/contours/ContoursComputedIncrementally.hpp"
+#include "mmcfilters/contours/detail/ContourLifetimeIndex.hpp"
 #include "mmcfilters/trees/MorphologicalTree.hpp"
 #include "mmcfilters/utils/Altitude.hpp"
 #include "mmcfilters/utils/Common.hpp"
@@ -123,7 +123,7 @@ template <AltitudeValue T> inline std::vector<int> componentTreeDiftMaxSquaredDi
     const int numNodes = tree.numInternalNodeSlots();
     const int numPixels = tree.numRows() * tree.numColumns();
     EdtDIFT transform(tree.numRows(), tree.numColumns());
-    const auto contourDeltas = ContoursComputedIncrementally::extractContourDeltas(tree);
+    const contours::detail::ContourLifetimeIndex contourDeltas(tree);
     std::vector<std::vector<PixelId>> contours(static_cast<std::size_t>(numNodes));
     std::vector<std::uint8_t> removalMark(static_cast<std::size_t>(numPixels), 0);
     std::vector<std::uint8_t> additionMark(static_cast<std::size_t>(numPixels), 0);

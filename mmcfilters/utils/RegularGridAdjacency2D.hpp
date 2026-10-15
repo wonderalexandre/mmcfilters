@@ -48,7 +48,7 @@ enum class RegularGridAdjacencyShape { EuclideanDisk, StructuringElement };
  * @brief Immutable regular-grid 2D adjacency with allocation-free traversal.
  *
  * `RegularGridAdjacency2D` stores a reusable stencil of offsets for a regular
- * 2D proper-part grid. The immutable stencil can be traversed either fully or in
+ * 2D image grid. The immutable stencil can be traversed either fully or in
  * forward-only mode, which exposes only one directed half of the neighbourhood
  * and is therefore convenient when unique undirected edges are needed.
  *

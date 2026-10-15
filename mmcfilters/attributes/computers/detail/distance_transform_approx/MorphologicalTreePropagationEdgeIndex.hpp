@@ -27,7 +27,7 @@ struct PropagationEdge2D {
 /**
  * @brief Topology-derived activation events for all undirected A8 pixel edges.
  *
- * An edge `(p,q)` becomes valid exactly at the LCA of the inclusion-smallest
+ * An edge `(p,q)` becomes valid exactly at the LCA of the smallest
  * nodes of its endpoints. This
  * lets several incomparable regions coexist in one DIFT workspace without
  * allowing propagation between siblings before their parent is processed.

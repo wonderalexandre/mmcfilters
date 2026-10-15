@@ -19,6 +19,7 @@ EXCLUDE                = "@MMCFILTERS_DOCS_SOURCE_DIR@/docs/refactoring"
 # Keep them out of the member-by-member contributor API audit.
 EXCLUDE_PATTERNS       = */attributes/computers/detail/distance_transform/* \
                          */attributes/computers/detail/distance_transform_approx/* \
+                         */benchmarks/results/* \
                          */unit-tests/attributes/support/maxdist/*
 
 # Keep extraction selective so WARN_IF_UNDOCUMENTED remains effective. Doxygen

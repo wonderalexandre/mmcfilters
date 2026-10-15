@@ -102,23 +102,23 @@ template <AltitudeValue T> class DynamicTreeAttributeComputer {
     virtual void postProcessing(NodeId nodeId, const ValuedMorphologicalTree<T>& tree, buffer_type& buffer) const = 0;
 
     /**
-     * @brief Incremental hook called after all direct proper parts move from one node to another.
+     * @brief Incremental hook called after all pixels in one node's proper part move to another node.
      * @details Default implementation is a no-op so concrete computers override
      * only the structural events they need.
      *
-     * The parameters are source node id, destination node id, and current tree
-     * state. Implementations that maintain direct-proper-part caches can use
+     * The parameters are destination node id, source node id, and current tree
+     * state. Implementations that cache proper-part summaries can use
      * this event to move or invalidate cached summaries without a full rebuild.
      */
     virtual void onMoveProperParts(NodeId, NodeId, const ValuedMorphologicalTree<T>&) const {}
 
     /**
-     * @brief Incremental hook called after one proper part moves between nodes.
+     * @brief Incremental hook called after one pixel moves between node proper parts.
      * @details Default implementation is a no-op so concrete computers override
      * only the structural events they need.
      *
-     * The parameters are proper-part id, source node id, destination node id,
-     * and current tree state.
+     * The parameters are destination node id, source node id, pixel id, and
+     * current tree state.
      */
     virtual void onMoveProperPart(NodeId, NodeId, PixelId, const ValuedMorphologicalTree<T>&) const {}
 
@@ -223,7 +223,7 @@ template <AltitudeValue T> class DynamicAreaAttributeComputer : public DynamicTr
  *
  * The computer keeps two levels of cached state:
  *
- * - `local_`: bounding box of the node's direct proper parts, including enough
+ * - `local_`: bounding box of the node's proper part, including enough
  *   extremum multiplicities to update most single-pixel removals without a
  *   scan;
  * - `subtree_`: bounding box after child aggregation for the current
@@ -262,7 +262,7 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
     };
 
     /**
-     * @brief Cached box of direct proper parts plus metadata for local updates.
+     * @brief Cached proper-part bounding box with metadata for local updates.
      *
      * Extremum multiplicities allow most single-pixel removals to be handled
      * without scanning the node's whole proper-part list. If the moved pixel was
@@ -540,7 +540,7 @@ template <AltitudeValue T> class DynamicBoundingBoxAttributeComputer : public Dy
     }
 
     /**
-     * @brief Initializes the subtree box of one node from its direct proper parts.
+     * @brief Initializes one node's subtree bounding box from its proper part.
      *
      * @param nodeId Dense internal node identifier.
      * @param tree Tree topology.

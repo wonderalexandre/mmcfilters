@@ -7,7 +7,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include <cstdint>
 #include <memory>
 #include <stdexcept>
 #include <vector>
@@ -19,82 +18,98 @@ using namespace pybind11::literals;
 
 namespace {
 
-struct ContourTraceComputationBinding {};
-
-std::vector<ContourTraceEdge> collectEdges(ContourTraceComputation::IncrementalContourTraces::EdgeRange range) {
-    std::vector<ContourTraceEdge> values;
-    values.reserve(range.size());
-    for (ContourTraceEdge edge : range) {
-        values.push_back(edge);
-    }
-    return values;
+std::vector<ContourEdge> copyEdges(ContourEdgeRange range) {
+    return std::vector<ContourEdge>(range.begin(), range.end());
 }
+
+std::vector<PixelId> copyPixels(ContourPixelRange range) {
+    return std::vector<PixelId>(range.begin(), range.end());
+}
+
+std::vector<ContourBoundary> copyBoundaries(std::span<const ContourBoundary> boundaries) {
+    return std::vector<ContourBoundary>(boundaries.begin(), boundaries.end());
+}
+
+struct ContourTraceIterator {
+    ContourTraceComputation::iterator iterator;
+    bool hasStarted = false;
+
+    explicit ContourTraceIterator(const ContourTraceComputation& traces) : iterator(traces.begin()) {}
+
+    py::tuple next() {
+        if (hasStarted && iterator != std::default_sentinel) {
+            ++iterator;
+        }
+        hasStarted = true;
+        if (iterator == std::default_sentinel) {
+            throw py::stop_iteration();
+        }
+        const auto [node, traceView] = *iterator;
+        return py::make_tuple(node, ContourTrace(traceView));
+    }
+};
 
 } // namespace
 
-/**
- * @brief Registers contour trace computation bindings in the Python module.
- *
- * @param m Python module receiving the bindings.
- */
+/** @brief Registers sequential and node-local contour trace access. */
 void initContourTraceComputation(py::module_& m) {
-    using Traces = ContourTraceComputation::IncrementalContourTraces;
-
-    py::enum_<ContourTraceSide>(m, "ContourTraceSide", py::module_local(false))
-        .value("NORTH", ContourTraceSide::North)
-        .value("WEST", ContourTraceSide::West)
-        .value("EAST", ContourTraceSide::East)
-        .value("SOUTH", ContourTraceSide::South)
+    py::enum_<ContourSide>(m, "ContourSide", py::module_local(false))
+        .value("NORTH", ContourSide::North)
+        .value("WEST", ContourSide::West)
+        .value("EAST", ContourSide::East)
+        .value("SOUTH", ContourSide::South)
         .export_values();
 
-    py::enum_<ContourLoopKind>(m, "ContourLoopKind", py::module_local(false))
-        .value("EXTERNAL", ContourLoopKind::External)
-        .value("INTERNAL", ContourLoopKind::Internal)
+    py::enum_<ContourBoundaryKind>(m, "ContourBoundaryKind", py::module_local(false))
+        .value("EXTERNAL", ContourBoundaryKind::External)
+        .value("INTERNAL", ContourBoundaryKind::Internal)
         .export_values();
 
-    py::class_<ContourTraceEdge>(m, "ContourTraceEdge", py::module_local(false), "One side-level contour edge attached to a support pixel.")
+    py::class_<ContourEdge>(m, "ContourEdge", py::module_local(false), "One contour edge identified by its support pixel and side.")
         .def(py::init<>())
-        .def_readwrite("pixel", &ContourTraceEdge::pixel)
-        .def_readwrite("side", &ContourTraceEdge::side)
-        .def("__repr__", [](const ContourTraceEdge& edge) { return "<ContourTraceEdge pixel=" + std::to_string(edge.pixel) + ">"; });
+        .def_readwrite("pixel", &ContourEdge::pixel)
+        .def_readwrite("side", &ContourEdge::side)
+        .def("__repr__", [](const ContourEdge& edge) { return "<ContourEdge pixel=" + std::to_string(edge.pixel) + ">"; });
 
-    py::class_<ContourTraceLoop>(m, "ContourTraceLoop", py::module_local(false), "Metadata for one ordered contour loop.")
+    py::class_<ContourBoundary>(m, "ContourBoundary", py::module_local(false), "Metadata for one ordered contour boundary.")
         .def(py::init<>())
-        .def_readwrite("kind", &ContourTraceLoop::kind)
-        .def_readwrite("edge_offset", &ContourTraceLoop::edgeOffset)
-        .def_readwrite("edge_count", &ContourTraceLoop::edgeCount)
-        .def_readwrite("signed_area2", &ContourTraceLoop::signedArea2)
-        .def("__repr__", [](const ContourTraceLoop& loop) { return "<ContourTraceLoop edge_count=" + std::to_string(loop.edgeCount) + ">"; });
+        .def_readwrite("kind", &ContourBoundary::kind)
+        .def_readwrite("edge_offset", &ContourBoundary::edgeOffset)
+        .def_readwrite("edge_count", &ContourBoundary::edgeCount)
+        .def_readwrite("doubled_signed_area", &ContourBoundary::doubledSignedArea)
+        .def("__repr__", [](const ContourBoundary& boundary) { return "<ContourBoundary edge_count=" + std::to_string(boundary.edgeCount) + ">"; });
 
-    py::class_<Traces, std::shared_ptr<Traces>>(m, "ContourTraces", py::module_local(false),
-                                                R"doc(Incremental contour trace result with lazy edge and loop materialization.
+    py::class_<ContourTrace>(m, "ContourTrace", py::module_local(false), "Owned ordered contour trace for one tree node.")
+        .def("boundaries", [](const ContourTrace& self) { return copyBoundaries(self.boundaries()); },
+             "Return independent boundary descriptors.")
+        .def("external_boundary", &ContourTrace::externalBoundary, "Return the unique external boundary.")
+        .def("edges", [](const ContourTrace& self) { return copyEdges(self.edges()); }, "Return every contour edge in boundary order.")
+        .def("boundary_edges", [](const ContourTrace& self, const ContourBoundary& boundary) { return copyEdges(self.boundaryEdges(boundary)); },
+             "boundary"_a, "Return the ordered edges of one boundary.")
+        .def("boundary_pixels", [](const ContourTrace& self, const ContourBoundary& boundary) { return copyPixels(self.boundaryPixels(boundary)); },
+             "boundary"_a, "Return one support pixel for each ordered boundary edge, including repetitions.");
 
-Edges are exposed as support-pixel sides. Loops are traced from oriented edges,
-with external and internal boundaries separated by orientation. The source tree
-is retained for the lifetime of this result.)doc")
-        .def(
-            "get_edges", [](const Traces& self, NodeId nodeId) { return collectEdges(self.getEdges(nodeId)); }, "node_id"_a,
-            "Return unordered side-level contour edges for one live internal node.")
-        .def("get_loops", &Traces::getLoops, "node_id"_a, "Return an independent list of contour loop metadata for one live internal node.")
-        .def(
-            "get_loop_edges", [](const Traces& self, const ContourTraceLoop& loop) { return collectEdges(self.getLoopEdges(loop)); }, "loop"_a,
-            "Return ordered side-level contour edges for one loop.")
-        .def("materialize_all", &Traces::materializeAll, "Materialize and trace every live-node contour.")
-        .def_property_readonly("is_materialized", &Traces::isMaterialized, "Whether every live-node trace has been materialized.")
-        .def("is_edge_materialized", &Traces::isEdgeMaterialized, "node_id"_a, "Return whether one live node's boundary edges have been materialized.")
-        .def("is_node_traced", &Traces::isNodeTraced, "node_id"_a, "Return whether one live node's loops have been traced.");
+    py::class_<ContourTraceIterator>(m, "_ContourTraceIterator", "Single-pass iterator returning independently owned node traces.")
+        .def("__iter__", [](ContourTraceIterator& self) -> ContourTraceIterator& { return self; }, py::return_value_policy::reference_internal)
+        .def("__next__", &ContourTraceIterator::next);
 
-    py::class_<ContourTraceComputationBinding>(m, "ContourTraceComputation", py::module_local(false),
-                                               "Factory for definitive geometric contour trace extraction on morphological trees.")
-        .def_static(
-            "extraction",
-            [](const std::shared_ptr<PythonValuedMorphologicalTree>& valuedTree) {
-                if (!valuedTree) {
-                    throw std::invalid_argument("Contour trace extraction requires a non-null ValuedMorphologicalTree.");
-                }
-                return valuedTree->visit([](const auto& concreteTree) { return ContourTraceComputation::extract(concreteTree->asView()); });
-            },
-            py::keep_alive<0, 1>(), "tree"_a.none(false), "Extract lazy contour traces from a valued tree.");
+    using Computation = ContourTraceComputation;
+    py::class_<Computation, std::shared_ptr<Computation>>(m, "ContourTraceComputation", py::module_local(false),
+               R"doc(Incremental ordered contour traces for a stable valued tree.
+
+Iterate (node_id, trace) in post-order, use for_each_trace for callback access,
+or query one node with trace. Python trace results own their data.)doc")
+        .def(py::init([](const std::shared_ptr<PythonValuedMorphologicalTree>& tree) {
+                 if (!tree) {
+                     throw std::invalid_argument("ContourTraceComputation requires a non-null valued tree.");
+                 }
+                 return tree->visit([](const auto& concreteTree) { return ContourTraceComputation(concreteTree->asView()); });
+             }), py::keep_alive<1, 2>(), "tree"_a.none(false))
+        .def("__iter__", [](const Computation& self) { return ContourTraceIterator(self); }, py::keep_alive<0, 1>())
+        .def("trace", &Computation::trace, "node_id"_a, "Return an owned ordered trace for one live internal node.")
+        .def("for_each_trace", [](const Computation& self, const py::function& consumer) {
+            self.forEachTrace([&](NodeId node, ContourTraceView traceView) { consumer(node, ContourTrace(traceView)); });
+        }, "consumer"_a, "Call consumer(node_id, trace) in post-order; each trace owns its data.");
 }
 
 } // namespace mmcfilters::pybindings

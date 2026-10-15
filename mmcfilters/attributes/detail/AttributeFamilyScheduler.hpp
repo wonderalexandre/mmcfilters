@@ -201,6 +201,7 @@ inline std::vector<Attribute> dependenciesForAttribute(Attribute attribute) {
     case LengthMajorAxis:
     case LengthMinorAxis:
     case AxisOrientation:
+    case AxisOrientationSigned:
     case Circularity:
         return {Area, CentralMoment20, CentralMoment02, CentralMoment11};
 

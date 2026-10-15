@@ -1,6 +1,5 @@
 /**
- * Benchmark side-level contour trace extraction, lazy edge materialization, and
- * loop tracing.
+ * Benchmark sequential and node-local ordered contour tracing.
  *
  * Build with `-DMMCFILTERS_BUILD_EXAMPLES=ON` and run either
  * `./build/examples/mmcfilters_contour_trace_benchmark 512 512 5` for a
@@ -13,16 +12,13 @@
 #include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
 #include "stb_image.h"
 
-#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
-#include <random>
 #include <stdexcept>
 #include <string>
 #include <utility>
-#include <vector>
 
 using namespace mmcfilters;
 
@@ -32,9 +28,9 @@ ImageUInt8Ptr makeBenchmarkImage(int rows, int columns) {
     auto image = ImageUInt8::create(rows, columns);
     for (int row = 0; row < rows; ++row) {
         for (int column = 0; column < columns; ++column) {
-            const int idx = row * columns + column;
+            const PixelId pixel = row * columns + column;
             const int radial = (row - rows / 2) * (row - rows / 2) + (column - columns / 2) * (column - columns / 2);
-            (*image)[idx] = static_cast<uint8_t>((radial / 113 + row * 7 + column * 3) & 0xff);
+            (*image)[pixel] = static_cast<uint8_t>((radial / 113 + row * 7 + column * 3) & 0xff);
         }
     }
     return image;
@@ -74,171 +70,74 @@ template <typename Fn> double timedVoid(Fn&& fn) {
     return static_cast<double>(micros) / 1000.0;
 }
 
-std::vector<NodeId> aliveNodesInTreeOrder(const MorphologicalTree& tree) {
-    std::vector<NodeId> nodes;
-    nodes.reserve(static_cast<std::size_t>(tree.numNodes()));
-    for (NodeId node : tree.aliveNodeIds()) {
-        nodes.push_back(node);
-    }
-    return nodes;
-}
-
-std::vector<NodeId> shuffledAliveNodes(const MorphologicalTree& tree) {
-    auto nodes = aliveNodesInTreeOrder(tree);
-    std::mt19937 rng(0x71ace);
-    std::shuffle(nodes.begin(), nodes.end(), rng);
-    return nodes;
-}
-
-std::size_t sumEdges(const ContourTraceComputation::IncrementalContourTraces& traces, NodeId node) {
-    std::size_t sum = 0;
-    for (ContourTraceEdge edge : traces.getEdges(node)) {
-        sum += static_cast<std::size_t>(ContourTraceComputation::packEdge(edge.pixel, edge.side) + 1);
-    }
-    return sum;
-}
-
-std::size_t sumLoops(const ContourTraceComputation::IncrementalContourTraces& traces, NodeId node) {
-    std::size_t sum = 0;
-    for (const ContourTraceLoop& loop : traces.getLoops(node)) {
-        sum += static_cast<std::size_t>(loop.edgeCount + 1);
-        sum += static_cast<std::size_t>(loop.signedArea2 >= 0 ? loop.signedArea2 : -loop.signedArea2);
-        for (ContourTraceEdge edge : traces.getLoopEdges(loop)) {
-            sum += static_cast<std::size_t>(ContourTraceComputation::packEdge(edge.pixel, edge.side) + 1);
+template <typename Trace> std::uint64_t traceChecksum(const Trace& trace) {
+    std::uint64_t sum = 0;
+    for (const ContourBoundary& boundary : trace.boundaries()) {
+        sum += static_cast<std::uint64_t>(boundary.edgeCount + 1);
+        sum += static_cast<std::uint64_t>(boundary.kind == ContourBoundaryKind::External ? 1 : 2);
+        sum += static_cast<std::uint64_t>(boundary.doubledSignedArea >= 0 ? boundary.doubledSignedArea : -boundary.doubledSignedArea);
+        for (ContourEdge edge : trace.boundaryEdges(boundary)) {
+            sum += static_cast<std::uint64_t>(ContourTraceComputation::packEdge(edge.pixel, edge.side)) + 1;
         }
     }
     return sum;
 }
 
-std::size_t sumEdgesInOrder(const std::vector<NodeId>& nodes, const ContourTraceComputation::IncrementalContourTraces& traces) {
-    std::size_t sum = 0;
-    for (NodeId node : nodes) {
-        sum += sumEdges(traces, node);
+std::uint64_t traversalChecksum(const ContourTraceComputation& contourTraces) {
+    std::uint64_t sum = 0;
+    for (auto [node, trace] : contourTraces) {
+        sum += static_cast<std::uint64_t>(node + 1);
+        sum += traceChecksum(trace);
     }
     return sum;
 }
 
-std::size_t sumLoopsInOrder(const std::vector<NodeId>& nodes, const ContourTraceComputation::IncrementalContourTraces& traces) {
-    std::size_t sum = 0;
-    for (NodeId node : nodes) {
-        sum += sumLoops(traces, node);
-    }
+std::uint64_t callbackChecksum(const ContourTraceComputation& contourTraces) {
+    std::uint64_t sum = 0;
+    contourTraces.forEachTrace([&](NodeId node, ContourTraceView trace) {
+        sum += static_cast<std::uint64_t>(node + 1);
+        sum += traceChecksum(trace);
+    });
     return sum;
 }
-
-#ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
-double mib(std::size_t bytes) { return static_cast<double>(bytes) / (1024.0 * 1024.0); }
-
-std::size_t storageChecksum(const ContourTraceComputation::IncrementalContourTraces::StorageStats& stats) {
-    return stats.addDeltaValues + stats.removeDeltaValues + stats.cachedEdgeValues + stats.cachedLoopEdges + stats.cachedLoops + stats.cachedEdgeReadyNodes +
-           stats.cachedLoopReadyNodes + stats.approxAllocatedBytes;
-}
-#endif
-
-void appendStorageChecksum(const ContourTraceComputation::IncrementalContourTraces& traces) {
-#ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
-    std::cout << " checksum=" << storageChecksum(traces.storageStats());
-#else
-    (void)traces;
-#endif
-}
-
-#ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
-void printStorageStats(const std::string& label, const ContourTraceComputation::IncrementalContourTraces& traces) {
-    const auto stats = traces.storageStats();
-    std::cout << "    " << label << ": "
-              << "add_delta_values=" << stats.addDeltaValues << " remove_delta_values=" << stats.removeDeltaValues
-              << " cached_edge_values=" << stats.cachedEdgeValues << " cached_loop_edges=" << stats.cachedLoopEdges << " cached_loops=" << stats.cachedLoops
-              << " cached_edge_ready_nodes=" << stats.cachedEdgeReadyNodes << " cached_loop_ready_nodes=" << stats.cachedLoopReadyNodes
-              << " dense_outgoing_slots=" << stats.traceDenseOutgoingSlots << " sparse_outgoing_slots=" << stats.traceSparseOutgoingSlots
-              << " approx_allocated=" << mib(stats.approxAllocatedBytes) << " MiB\n";
-}
-#endif
 
 void measureCase(const std::string& label, const MorphologicalTree& tree, int repeats) {
-    const NodeId root = tree.root();
-    const auto treeOrder = aliveNodesInTreeOrder(tree);
-    const auto randomOrder = shuffledAliveNodes(tree);
-
     std::cout << "\n"
               << label << '\n'
               << "  nodes: live=" << tree.numNodes() << " slots=" << tree.numInternalNodeSlots() << " proper_parts=" << tree.numPixels()
               << '\n';
 
-    auto [extractOnly, extractMs] = timed([&]() { return ContourTraceComputation::extract(tree); });
-    std::cout << "  extract only: " << extractMs << " ms";
-    appendStorageChecksum(extractOnly);
-    std::cout << '\n';
-#ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
-    printStorageStats("after extract", extractOnly);
-#endif
+    auto [contourTraces, constructionMs] = timed([&]() { return ContourTraceComputation(tree); });
+    std::cout << "  construction only: " << constructionMs << " ms\n";
 
-    auto [rootEdgeTraces, rootEdgeExtractMs] = timed([&]() { return ContourTraceComputation::extract(tree); });
-    const double rootEdgeMs = timedVoid([&]() {
-        volatile std::size_t checksum = sumEdges(rootEdgeTraces, root);
-        (void)checksum;
-    });
-    std::cout << "  root getEdges(): extract=" << rootEdgeExtractMs << " ms materialize=" << rootEdgeMs;
-    appendStorageChecksum(rootEdgeTraces);
-    std::cout << '\n';
-#ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
-    printStorageStats("after root edges", rootEdgeTraces);
-#endif
+    auto [rootTrace, rootTraceMs] = timed([&]() { return contourTraces.trace(tree.root()); });
+    std::cout << "  root trace(): " << rootTraceMs << " ms checksum=" << traceChecksum(rootTrace) << '\n';
 
-    auto [rootLoopTraces, rootLoopExtractMs] = timed([&]() { return ContourTraceComputation::extract(tree); });
-    const double rootLoopMs = timedVoid([&]() {
-        volatile std::size_t checksum = sumLoops(rootLoopTraces, root);
-        (void)checksum;
-    });
-    std::cout << "  root getLoops(): extract=" << rootLoopExtractMs << " ms trace=" << rootLoopMs;
-    appendStorageChecksum(rootLoopTraces);
-    std::cout << '\n';
-#ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
-    printStorageStats("after root loops", rootLoopTraces);
-#endif
-
-    auto [orderedEdgeTraces, orderedEdgeExtractMs] = timed([&]() { return ContourTraceComputation::extract(tree); });
-    const double orderedEdgeMs = timedVoid([&]() {
-        volatile std::size_t checksum = sumEdgesInOrder(treeOrder, orderedEdgeTraces);
-        (void)checksum;
-    });
-    std::cout << "  all getEdges() tree order: extract=" << orderedEdgeExtractMs << " ms materialize=" << orderedEdgeMs;
-    appendStorageChecksum(orderedEdgeTraces);
-    std::cout << '\n';
-#ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
-    printStorageStats("after all edges", orderedEdgeTraces);
-#endif
-
-    auto [randomLoopTraces, randomLoopExtractMs] = timed([&]() { return ContourTraceComputation::extract(tree); });
-    const double randomLoopMs = timedVoid([&]() {
-        volatile std::size_t checksum = sumLoopsInOrder(randomOrder, randomLoopTraces);
-        (void)checksum;
-    });
-    std::cout << "  all getLoops() random order: extract=" << randomLoopExtractMs << " ms trace=" << randomLoopMs;
-    appendStorageChecksum(randomLoopTraces);
-    std::cout << '\n';
-#ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
-    printStorageStats("after all loops random", randomLoopTraces);
-#endif
-
-    double totalExtract = 0.0;
-    double totalMaterialize = 0.0;
-#ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
-    std::size_t repeatedChecksum = 0;
-#endif
-    for (int i = 0; i < repeats; ++i) {
-        auto [traces, runExtractMs] = timed([&]() { return ContourTraceComputation::extract(tree); });
-        totalExtract += runExtractMs;
-        totalMaterialize += timedVoid([&]() { traces.materializeAll(); });
-#ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
-        repeatedChecksum += storageChecksum(traces.storageStats());
-#endif
+    auto [firstTraversalChecksum, firstTraversalMs] = timed([&]() { return traversalChecksum(contourTraces); });
+    const std::uint64_t firstCallbackChecksum = callbackChecksum(contourTraces);
+    if (firstCallbackChecksum != firstTraversalChecksum) {
+        throw std::logic_error("Callback and iterator trace checksums differ.");
     }
-    std::cout << "  repeated materializeAll(): extract_avg=" << totalExtract / repeats << " ms materialize_avg=" << totalMaterialize / repeats << " ms";
-#ifdef MMCFILTERS_ENABLE_CONTOUR_TRACE_PROFILE
-    std::cout << " checksum=" << repeatedChecksum;
-#endif
-    std::cout << '\n';
+    std::cout << "  first complete traversal: " << firstTraversalMs << " ms checksum=" << firstTraversalChecksum << '\n';
+
+    double totalConstructionMs = 0.0;
+    double totalTraversalMs = 0.0;
+    double totalCallbackMs = 0.0;
+    for (int repeat = 0; repeat < repeats; ++repeat) {
+        auto [runTraces, runConstructionMs] = timed([&]() { return ContourTraceComputation(tree); });
+        totalConstructionMs += runConstructionMs;
+        totalTraversalMs += timedVoid([&]() {
+            volatile std::uint64_t checksum = traversalChecksum(runTraces);
+            (void)checksum;
+        });
+        totalCallbackMs += timedVoid([&]() {
+            volatile std::uint64_t checksum = callbackChecksum(runTraces);
+            (void)checksum;
+        });
+    }
+    std::cout << "  repeated traversal: construction_avg=" << totalConstructionMs / repeats
+              << " ms iterator_avg=" << totalTraversalMs / repeats
+              << " ms callback_avg=" << totalCallbackMs / repeats << " ms\n";
 }
 
 void runBenchmark(ImageUInt8Ptr image, int repeats) {

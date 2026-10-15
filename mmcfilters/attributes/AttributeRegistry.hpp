@@ -56,6 +56,11 @@ inline constexpr AttributeCapabilityRequirements BITQUAD_REQUIREMENTS{.gridDomai
                                                                       .altitudeForDirectionalAdjacency = true,
                                                                       .canonical4Or8Adjacency = true};
 
+inline constexpr AttributeCapabilityRequirements FILLED_SHAPE_REQUIREMENTS{.gridDomain2D = true,
+    .adjacency = AttributeAdjacencyRequirement::UniformOrDirectional,
+    .altitudeForDirectionalAdjacency = true,
+    .canonical4Or8Adjacency = true};
+
 inline constexpr AttributeCapabilityRequirements MAX_DIST_REQUIREMENTS{.gridDomain2D = true};
 
 inline constexpr AttributeCapabilityRequirements MAX_DIST_EXACT_REQUIREMENTS{.gridDomain2D = true};
@@ -392,6 +397,37 @@ inline constexpr std::array<AttributeMetadata, static_cast<std::size_t>(Attribut
       "Maximum exact squared Euclidean distance from the foreground A4 contour over the node support in the original 2D pixel domain, in squared pixels.",
       true, MAX_DIST_EXACT_REQUIREMENTS},
 
+     {FilledArea, "FILLED_AREA",
+      "Number of pixels enclosed by the unique external boundary, including holes.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledCentroidRow, "FILLED_CENTROID_ROW",
+      "Zero-based mean row of the filled region pixels.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledCentroidColumn, "FILLED_CENTROID_COLUMN",
+      "Zero-based mean column of the filled region pixels.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledLengthMajorAxis, "FILLED_LENGTH_MAJOR_AXIS",
+      "Major-axis length proxy of the filled region, with the LENGTH_MAJOR_AXIS convention.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledLengthMinorAxis, "FILLED_LENGTH_MINOR_AXIS",
+      "Minor-axis length proxy of the filled region, with the LENGTH_MINOR_AXIS convention.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledAxisOrientation, "FILLED_AXIS_ORIENTATION",
+      "Non-negative principal column-axis orientation of the filled region in degrees; isotropic regions return zero.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledEccentricity, "FILLED_ECCENTRICITY",
+      "Major/minor eigenvalue ratio of the filled region pixel-center moments, capped at 1e6; one pixel returns one.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledInertia, "FILLED_INERTIA",
+      "Sum of the filled region second central moments divided by squared filled area.", true, FILLED_SHAPE_REQUIREMENTS},
+     {HoleAreaFraction, "HOLE_AREA_FRACTION",
+      "Fraction of the filled area occupied by holes: 1 - AREA / FILLED_AREA.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledCentroidDisplacementNormalized, "FILLED_CENTROID_DISPLACEMENT_NORMALIZED",
+      "Distance between support and filled-region centroids divided by the square root of FILLED_AREA.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledCompactness, "FILLED_COMPACTNESS",
+      "Filled area divided by 2*pi times the sum of filled-region second central moments; zero dispersion returns zero.", true, FILLED_SHAPE_REQUIREMENTS},
+     {FilledCircularity, "FILLED_CIRCULARITY",
+      "Minor/major eigenvalue ratio of the filled-region second moments; one pixel returns one and a nontrivial line returns zero.",
+      true, FILLED_SHAPE_REQUIREMENTS},
+     {AxisOrientationSigned, "AXIS_ORIENTATION_SIGNED",
+      "Signed principal column-axis orientation of the node support in degrees, in [-90, 90], with positive row direction downward; "
+      "isotropic regions return zero.", true, GRID_DOMAIN_2D_REQUIREMENTS},
+     {FilledAxisOrientationSigned, "FILLED_AXIS_ORIENTATION_SIGNED",
+      "Signed principal column-axis orientation of the filled region in degrees, in [-90, 90], with positive row direction downward; "
+      "isotropic regions return zero.", true, FILLED_SHAPE_REQUIREMENTS},
      {RawInertia, "RAW_INERTIA",
       "Raw inertia: Unnormalized polar second central moment mu20 + mu02, equal to the sum of squared Euclidean distances from support pixels to the support "
       "centroid.",
@@ -594,11 +630,12 @@ inline const std::unordered_map<AttributeGroup, std::vector<Attribute>>& attribu
               ContourSideWest,
               ContourSideEast,
               ContourSideSouth,
+              AxisOrientationSigned,
               RawInertia}},
             {AttributeGroup::Moments,
              {CentralMoment20, CentralMoment02, CentralMoment11, CentralMoment30, CentralMoment03, CentralMoment21, CentralMoment12,
               HuMoment1,       HuMoment2,       HuMoment3,       HuMoment4,       HuMoment5,       HuMoment6,       HuMoment7,
-              Inertia,           Compactness,       Eccentricity,      LengthMajorAxis, LengthMinorAxis, AxisOrientation,  Circularity,
+              Inertia,           Compactness,       Eccentricity,      LengthMajorAxis, LengthMinorAxis, AxisOrientation,  Circularity, AxisOrientationSigned,
               RawInertia}},
             {AttributeGroup::Boundary,
              {BitquadArea, BitquadNumberEuler, BitquadNumberHoles, BitquadPerimeter, BitquadPerimeterContinuous, BitquadCircularity,
@@ -667,6 +704,10 @@ inline const std::unordered_map<AttributeGroup, std::vector<Attribute>>& attribu
               DistWeightedCentralMoment11Exact,
               DistWeightedAxisOrientationExact,
               DistWeightedEccentricityExact}},
+            {AttributeGroup::FilledShape,
+             {FilledArea, FilledCentroidRow, FilledCentroidColumn, FilledLengthMajorAxis, FilledLengthMinorAxis,
+              FilledAxisOrientation, FilledEccentricity, FilledInertia, HoleAreaFraction, FilledCentroidDisplacementNormalized,
+              FilledCompactness, FilledCircularity, FilledAxisOrientationSigned}},
             {AttributeGroup::All, std::move(all)}};
     }();
     return groups;

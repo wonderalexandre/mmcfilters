@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <limits>
 #include <span>
+#include <utility>
+#include <vector>
 
 namespace mmcfilters::detail {
 
@@ -76,9 +78,9 @@ class CommittedTreeAccess {
     }
 
     /**
-     * @brief Returns cached smallest row-major support pixels for the current committed tree.
-     * @param tree Committed tree whose spatial support keys are required.
-     * @return Dense smallest-pixel keys indexed by internal node slot.
+     * @brief Returns the minimum pixel index in the node support for every live node.
+     * @param tree Committed tree whose support minima are required.
+     * @return Borrowed dense buffer of minimum pixel indices indexed by internal node slot.
      */
     [[nodiscard]] static std::span<const PixelId> smallestNodeSupportPixels(const MorphologicalTree& tree) {
         ensureNodeSupportMetadata(tree);
@@ -103,7 +105,7 @@ class CommittedTreeAccess {
         return MorphologicalTree::ChildrenRange(&tree, tree.firstChild_[static_cast<std::size_t>(nodeId)], tree.topologyVersion_);
     }
 
-    /** @brief Iterates proper parts of an established node. @param tree Committed tree. @param nodeId Established node id. @return Proper-part range. */
+    /** @brief Iterates pixels in an established node's proper part. @param tree Committed tree. @param nodeId Established node id. @return Proper-part range. */
     [[nodiscard]] static MorphologicalTree::ProperPartRange properParts(const MorphologicalTree& tree, NodeId nodeId) {
         return MorphologicalTree::ProperPartRange(&tree, tree.properHead_[static_cast<std::size_t>(nodeId)], tree.properPartVersion_);
     }
@@ -139,23 +141,32 @@ class CommittedTreeAccess {
      * @return Lowest common ancestor.
      */
     [[nodiscard]] static NodeId lowestCommonAncestor(const MorphologicalTree& tree, NodeId lhs, NodeId rhs) {
-        if (lhs == rhs) {
-            return lhs;
-        }
-        tree.ensureDfsIntervalCache();
-        const auto isAncestorCached = [&](NodeId ancestor, NodeId node) {
-            return tree.dfsIntervalCache_.entryIndex[static_cast<std::size_t>(ancestor)] <=
-                       tree.dfsIntervalCache_.entryIndex[static_cast<std::size_t>(node)] &&
-                   tree.dfsIntervalCache_.exitIndex[static_cast<std::size_t>(ancestor)] >=
-                       tree.dfsIntervalCache_.exitIndex[static_cast<std::size_t>(node)];
-        };
-        if (isAncestorCached(lhs, rhs)) {
-            return lhs;
-        }
-        if (isAncestorCached(rhs, lhs)) {
-            return rhs;
-        }
-        return tree.ensureLcaCache().findLowestCommonAncestor(lhs, rhs);
+        return tree.lowestCommonAncestorEstablished(lhs, rhs);
+    }
+
+    /**
+     * @brief Finds lowest common ancestors for established node pairs.
+     * @param tree Committed tree.
+     * @param queries Pairwise queries with established live endpoints.
+     * @return Lowest common ancestors in query order.
+     */
+    [[nodiscard]] static std::vector<NodeId>
+    lowestCommonAncestors(const MorphologicalTree& tree, std::span<const std::pair<NodeId, NodeId>> queries) {
+        return tree.lowestCommonAncestorsEstablished(queries);
+    }
+
+    /**
+     * @brief Streams a generated batch through the tree-owned LCA strategy.
+     * @param tree Committed tree.
+     * @param numQueries Number of generated pairwise queries.
+     * @param queryForIndex Random-access function called with indices in `[0, numQueries)`.
+     * @param consumeLca Consumer receiving each query index and its LCA.
+     */
+    template <typename QueryAccessor, typename ResultConsumer>
+    static void forEachLowestCommonAncestor(const MorphologicalTree& tree, std::size_t numQueries, QueryAccessor&& queryForIndex,
+                                            ResultConsumer&& consumeLca) {
+        tree.forEachGeneratedLowestCommonAncestorEstablished(numQueries, std::forward<QueryAccessor>(queryForIndex),
+                                                              std::forward<ResultConsumer>(consumeLca));
     }
 
     /**

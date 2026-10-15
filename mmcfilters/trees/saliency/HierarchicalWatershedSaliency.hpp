@@ -108,9 +108,9 @@ class HierarchicalWatershedSaliency {
 
     /** @brief One graph edge together with its component-hierarchy merge key. */
     template <AltitudeValue T> struct OrderedGraphEdge {
-        /// Row-major source proper-part id.
+        /// Row-major source pixel identifier.
         NodeId source = InvalidNode;
-        /// Row-major target proper-part id.
+        /// Row-major target pixel identifier.
         NodeId target = InvalidNode;
         /// Lowest common ancestor of the endpoint smallest nodes.
         NodeId lca = InvalidNode;
@@ -223,7 +223,7 @@ class HierarchicalWatershedSaliency {
      *
      * @tparam T Altitude scalar type.
      * @param orderedEdges Graph edges in component-hierarchy order.
-     * @param numVertices Number of graph vertices/proper parts.
+     * @param numVertices Number of pixels in the graph.
      * @param context Operation name included in validation errors.
      * @return The `numVertices - 1` selected MST edges in Kruskal order.
      * @throws std::invalid_argument If the projection graph is disconnected.
@@ -261,7 +261,7 @@ class HierarchicalWatershedSaliency {
      * @param mst MST edges in altitude-ordered Kruskal order.
      * @param leafExtinction Dense extinction slots indexed by internal node id.
      * @return MST edges paired with their persistence values.
-     * @throws std::invalid_argument If a component-tree leaf owns no proper part.
+     * @throws std::invalid_argument If a component-tree leaf has an empty proper part.
      */
     template <AltitudeValue T, std::floating_point Real>
     static std::vector<PersistenceEdge<T, Real>> assignPersistence(const MorphologicalTree& tree, const std::vector<OrderedGraphEdge<T>>& mst,
@@ -299,9 +299,9 @@ class HierarchicalWatershedSaliency {
      *
      * @tparam T Source component-tree altitude scalar type.
      * @tparam Real Floating-point persistence scalar type.
-     * @param persistenceEdges Persistence-valuedTree MST edges.
-     * @param rows Number of rows in the proper-part grid.
-     * @param columns Number of columns in the proper-part grid.
+     * @param persistenceEdges MST edges with persistence values.
+     * @param rows Number of rows in the image grid.
+     * @param columns Number of columns in the image grid.
      * @param adjacency Projection graph stored on the returned dendrogram.
      * @return Binary native hierarchy with singleton leaves and persistence altitudes.
      */
@@ -360,8 +360,7 @@ class HierarchicalWatershedSaliency {
      * finite monotone altitudes.
      * @param leafExtinction Dense internal-node-id buffer. Values at live leaves
      * must be finite and non-negative; other slots are ignored.
-     * @param adjacency Connected projection graph on exactly the tree proper-part
-     * grid domain.
+     * @param adjacency Connected projection graph on exactly the tree's image grid.
      * @return Full edge-indexed QFZ saliency map with persistence values.
      * @throws std::logic_error If the topology changed after `valuedTree` was made.
      * @throws std::invalid_argument If the hierarchy, adjacency, extinction buffer,
@@ -369,11 +368,16 @@ class HierarchicalWatershedSaliency {
      * @throws std::runtime_error If a live LCA cannot be recovered for a graph edge.
      *
      * @par Complexity
-     * Let `m` be the number of tree nodes, `p` the number of proper-part graph
-     * vertices, and `e` the number of adjacency edges. The two stable sorts cost
-     * `O(e log e + p log p)` time; validation, Kruskal passes, and final LCA
-     * projection add linear terms after tree preprocessing. Dominant auxiliary
-     * memory is `O(m + e + p)`.
+     * Let `N` count internal node slots, `m` live source-tree nodes, `p` pixels,
+     * and `e` adjacency edges. Including connectivity validation, time is
+     * `O(N + (m + p + e) alpha(p) + e log(e + 1) + p log(p + 1))`, where
+     * `alpha` is the inverse Ackermann function. Additional storage, including
+     * output, is `O(N + e + p log(p + 1))`; this includes the new dendrogram's
+     * possible Euler/RMQ cache.
+     *
+     * These bounds exclude source-tree construction, extinction-value
+     * computation, and source-tree LCA caches. Preparing absent source caches
+     * can add O(N log(N + 1)) time and tree-owned storage.
      */
     template <AltitudeValue T, std::floating_point Real>
     [[nodiscard]] static EdgeSaliencyMap<Real> compute(const ValuedMorphologicalTreeView<T>& valuedTree, std::span<const Real> leafExtinction,

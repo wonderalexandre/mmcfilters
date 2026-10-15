@@ -31,7 +31,7 @@ struct ExportedHigraLayout {
     std::vector<NodeId> sortedNodes;
     /// Dense internal `NodeId` slot -> compact Higra node id. Dead slots map to `InvalidNode`.
     std::vector<NodeId> nodeToHigra;
-    /// Proper parts in compact Higra leaf order. This is currently row-major proper-part id order.
+    /// Pixel identifiers in compact Higra leaf order (row-major).
     std::vector<PixelId> properParts;
     /// Number of leaf/pixel ids at the beginning of the compact Higra domain.
     int numLeaves = 0;

@@ -88,11 +88,12 @@ struct MomentDerivedRequest {
     bool majorAxis = false;       ///< Whether major-axis length is requested.
     bool minorAxis = false;       ///< Whether minor-axis length is requested.
     bool axisOrientation = false; ///< Whether principal-axis orientation is requested.
+    bool axisOrientationSigned = false; ///< Whether signed principal-axis orientation is requested.
     bool circularity = false;     ///< Whether moment-based circularity is requested.
 
     /** @brief Reports whether at least one derived attribute is requested. @return True when any request flag is set. */
     [[nodiscard]] bool any() const noexcept {
-        return inertia || compactness || eccentricity || majorAxis || minorAxis || axisOrientation || circularity;
+        return inertia || compactness || eccentricity || majorAxis || minorAxis || axisOrientation || axisOrientationSigned || circularity;
     }
 
     /**
@@ -107,6 +108,7 @@ struct MomentDerivedRequest {
                 .majorAxis = requestsAttribute(requestedAttributes, LengthMajorAxis),
                 .minorAxis = requestsAttribute(requestedAttributes, LengthMinorAxis),
                 .axisOrientation = requestsAttribute(requestedAttributes, AxisOrientation),
+                .axisOrientationSigned = requestsAttribute(requestedAttributes, AxisOrientationSigned),
                 .circularity = requestsAttribute(requestedAttributes, Circularity)};
     }
 };
@@ -322,6 +324,7 @@ inline void computeMomentDerived(const AttributeComputeContext<Real>& context, c
     const int majorAxisOffset = request.majorAxis ? offsetOf(LengthMajorAxis) : 0;
     const int minorAxisOffset = request.minorAxis ? offsetOf(LengthMinorAxis) : 0;
     const int orientationOffset = request.axisOrientation ? offsetOf(AxisOrientation) : 0;
+    const int signedOrientationOffset = request.axisOrientationSigned ? offsetOf(AxisOrientationSigned) : 0;
     const int circularityOffset = request.circularity ? offsetOf(Circularity) : 0;
     const auto outputIndex = [&](NodeId node, int offset) { return static_cast<std::size_t>(node * stride + offset); };
 
@@ -367,14 +370,14 @@ inline void computeMomentDerived(const AttributeComputeContext<Real>& context, c
             if (request.compactness)
                 context.buffer[outputIndex(node, compactnessOffset)] = (Real{1} / (Real{2} * std::numbers::pi_v<Real>)) *
                                                                        ::mmcfilters::attributes::numeric::safeDivide(area, mu20 + mu02);
-            if (request.axisOrientation) {
-                if (mu20 != mu02 || mu11 != Real{0}) {
-                    const Real radians = Real{0.5} * std::atan2(Real{2} * mu11, mu20 - mu02);
-                    const Real degrees = radians * (Real{180} / std::numbers::pi_v<Real>);
+            if (request.axisOrientation || request.axisOrientationSigned) {
+                const Real degrees = (mu20 != mu02 || mu11 != Real{0})
+                    ? Real{0.5} * std::atan2(Real{2} * mu11, mu20 - mu02) * (Real{180} / std::numbers::pi_v<Real>)
+                    : Real{0};
+                if (request.axisOrientation)
                     context.buffer[outputIndex(node, orientationOffset)] = std::fmod(std::abs(degrees), Real{360});
-                } else {
-                    context.buffer[outputIndex(node, orientationOffset)] = Real{0};
-                }
+                if (request.axisOrientationSigned)
+                    context.buffer[outputIndex(node, signedOrientationOffset)] = degrees;
             }
             if (request.inertia) {
                 const Real areaSquared = area * area;
@@ -615,8 +618,8 @@ class MomentBasedAttributeComputer {
     /**
      * @brief Canonical list of moment-derived descriptors produced by this computer.
      */
-    inline static constexpr std::array<Attribute, 7> producedAttributes{Inertia,           Compactness,      Eccentricity, LengthMajorAxis,
-                                                                        LengthMinorAxis, AxisOrientation, Circularity};
+    inline static constexpr std::array<Attribute, 8> producedAttributes{Inertia,           Compactness,      Eccentricity, LengthMajorAxis,
+                                                                        LengthMinorAxis, AxisOrientation, Circularity, AxisOrientationSigned};
 
     /**
      * @brief Computes the requested moment-derived descriptors.
@@ -659,8 +662,8 @@ class MomentBasedAttributeComputer {
      */
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
         requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
-        constexpr std::array<Attribute, 7> zeroAttributes{Compactness,      Eccentricity, LengthMajorAxis, LengthMinorAxis,
-                                                          AxisOrientation, Inertia,      Circularity};
+        constexpr std::array<Attribute, 8> zeroAttributes{Compactness,      Eccentricity, LengthMajorAxis, LengthMinorAxis,
+                                                          AxisOrientation, Inertia,      Circularity, AxisOrientationSigned};
         for (const Attribute attribute : zeroAttributes) {
             if (!requestsAttribute(context.requestedAttributes, attribute)) {
                 continue;

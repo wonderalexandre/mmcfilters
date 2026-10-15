@@ -2,6 +2,7 @@
 
 #include "mmcfilters/trees/TreeOfShapesProducer.hpp"
 #include "mmcfilters/trees/detail/ComponentTreeUnionFind.hpp"
+#include "mmcfilters/trees/detail/CommittedTreeAccess.hpp"
 #include "mmcfilters/trees/TreeEditor.hpp"
 
 #include <algorithm>
@@ -13,6 +14,27 @@ using namespace mmcfilters;
 using namespace mmcfilters::unit_tests;
 
 static_assert(sizeof(ToSFloodDepth) >= sizeof(std::uint32_t), "Tree-of-shapes flood depth must not wrap at 16 bits.");
+
+// Independent parent-path oracle: no DFS intervals or RMQ data are consulted.
+static void requireSharedLcaMatchesParentPaths(const MorphologicalTree& tree) {
+    for (NodeId first : tree.aliveNodeIds()) {
+        const auto firstAncestors = collectNodeIds(tree.ancestors(first));
+        for (NodeId second : tree.aliveNodeIds()) {
+            NodeId expected = InvalidNode;
+            for (NodeId candidate : tree.ancestors(second)) {
+                if (std::find(firstAncestors.begin(), firstAncestors.end(), candidate) != firstAncestors.end()) {
+                    expected = candidate;
+                    break;
+                }
+            }
+            requireEqual(tree.lowestCommonAncestor(first, second), expected, "public LCA matches parent-path oracle");
+            requireEqual(detail::CommittedTreeAccess::lowestCommonAncestor(tree, first, second), expected,
+                         "internal LCA matches parent-path oracle");
+        }
+    }
+    requireEqual(tree.lowestCommonAncestor(InvalidNode, tree.root()), InvalidNode, "invalid LCA endpoint");
+    requireEqual(tree.lowestCommonAncestor(tree.root(), tree.numInternalNodeSlots()), InvalidNode, "out-of-range LCA endpoint");
+}
 
 int main() {
     auto requireThrows = [](auto&& fn, const std::string& label) {
@@ -323,18 +345,23 @@ int main() {
         requireEqual(maxTree->lowestCommonAncestor(5, 4), 4, "LCA symmetry on chain");
         requireEqual(minTree->lowestCommonAncestor(3, 4), 2, "LCA siblings in min-tree");
         requireEqual(minTree->lowestCommonAncestor(4, 5), 2, "LCA cousins in min-tree");
+        requireSharedLcaMatchesParentPaths(*maxTree);
+        requireSharedLcaMatchesParentPaths(*minTree);
 
         maxTree->mergeNodeIntoParent(5);
+        requireEqual(maxTree->lowestCommonAncestor(5, 4), InvalidNode, "removed LCA endpoint");
+        requireSharedLcaMatchesParentPaths(*maxTree);
         auto editor = maxTree->edit();
         const NodeId reused = editor.createDetachedNode();
         editor.attach(4, reused);
         editor.reparent(reused, 2);
         requireEqual(maxTree->lowestCommonAncestor(4, reused), 2, "LCA after moveNode");
         requireEqual(maxTree->lowestCommonAncestor(reused, 3), 2, "LCA after reattachment");
+        requireSharedLcaMatchesParentPaths(*maxTree);
     }
 
     {
-        constexpr NodeId branchLength = 2048;
+        constexpr NodeId branchLength = 32768;
         constexpr int numPixels = 2;
         constexpr NodeId firstBranchLeaf = branchLength;
         constexpr NodeId secondBranchRoot = branchLength + 1;
@@ -405,7 +432,7 @@ int main() {
         require(std::holds_alternative<NoConstructionContext>(tree.constructionContext()), "generic native topology has no construction context");
         require(tree.hasGridDomain2D() && tree.gridDomain2D()->rows == 1 && tree.gridDomain2D()->columns == 1, "generic native topology explicit 2D domain");
         require(tree.hasEmptyProperPart(0) && tree.hasEmptyProperPart(1) && !tree.hasEmptyProperPart(2),
-                "generic native topology derives structural nodes from inclusion-smallest nodeship");
+                "generic native topology derives structural nodes from pixel assignments to smallest nodes");
         require(!tree.isTreeOfPartialPartitions(), "generic chain with empty proper parts is broader than a tree of partial partitions");
         requireThrows([&tree] { tree.validateTreeOfPartialPartitions(); }, "tree-of-partial-partitions validation must reject the generic chain");
         for (NodeId nodeId : tree.aliveNodeIds()) {

@@ -27,7 +27,7 @@ void initDistanceTransformComputation(pybind11::module_& m);
  *
  * @param m Python module receiving the bindings.
  */
-void initContoursComputedIncrementally(pybind11::module_& m);
+void initContourComputation(pybind11::module_& m);
 /**
  * @brief Registers contour trace computation bindings in the Python module.
  *

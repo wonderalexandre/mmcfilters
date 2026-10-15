@@ -23,6 +23,7 @@ enum class AttributeComputerFamily {
     MomentDerived,
     Bitquad,
     ContourSide,
+    FilledShape,
     Unsupported
 };
 

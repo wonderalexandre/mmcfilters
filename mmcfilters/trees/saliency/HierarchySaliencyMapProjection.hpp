@@ -21,15 +21,15 @@ namespace mmcfilters {
  * undirected image-domain graph edge selected as a contour edge.
  */
 struct EdgeContourMap {
-    /// Number of rows in the proper-part grid.
+    /// Number of rows in the image grid.
     int numRows = 0;
-    /// Number of columns in the proper-part grid.
+    /// Number of columns in the image grid.
     int numColumns = 0;
     /// Radius of the adjacency used to enumerate the edges.
     double adjacencyRadius = 0.0;
-    /// Source proper-part id of each selected edge.
+    /// Source pixel identifier of each selected edge.
     std::vector<NodeId> sources;
-    /// Target proper-part id of each selected edge.
+    /// Target pixel identifier of each selected edge.
     std::vector<NodeId> targets;
 
     /**
@@ -65,15 +65,15 @@ enum class EdgeToPixelReducer {
  * `LCA(smallestNode(sources[i]), smallestNode(targets[i]))`.
  */
 struct NodeContourEdgeMap {
-    /// Number of rows in the proper-part grid.
+    /// Number of rows in the image grid.
     int numRows = 0;
-    /// Number of columns in the proper-part grid.
+    /// Number of columns in the image grid.
     int numColumns = 0;
     /// Radius of the adjacency used to enumerate the edges.
     double adjacencyRadius = 0.0;
-    /// Source proper-part id of each contour edge.
+    /// Source pixel identifier of each contour edge.
     std::vector<NodeId> sources;
-    /// Target proper-part id of each contour edge.
+    /// Target pixel identifier of each contour edge.
     std::vector<NodeId> targets;
     /// Boundary-owning hierarchy node parallel to each edge.
     std::vector<NodeId> nodes;
@@ -104,9 +104,9 @@ struct NodeContourEdgeMap {
  * in the full formal saliency map they have the implicit base value `0`.
  */
 struct IncrementalNodeContourMap {
-    /// Number of rows in the proper-part grid.
+    /// Number of rows in the image grid.
     int numRows = 0;
-    /// Number of columns in the proper-part grid.
+    /// Number of columns in the image grid.
     int numColumns = 0;
     /// Number of slots in the dense node-id domain.
     int numNodeSlots = 0;

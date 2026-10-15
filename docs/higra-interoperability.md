@@ -16,8 +16,9 @@ The library exposes two distinct Higra-related domains:
 | Preserved imported Higra domain | `createFromHigraParent(...)` | No | Original imported node IDs |
 | Exported compact Higra domain | `exportHigraHierarchy()` | Snapshot only | Current live tree export |
 
-`NodeIdSpace::Higra` refers only to the preserved imported domain. It does not
-mean "whatever `exportHigraHierarchy()` would produce now".
+`NodeIdSpace::Higra` selects the original imported node IDs while that domain
+remains valid. Normal tree queries, filters, and contours use internal
+`NodeIdSpace::MorphologicalTree` indexing.
 
 `exportHigraHierarchy()` always computes a new compact layout for the current
 live rooted tree. Use `projectNodeValuesToExportedHigra(...)` or Python
@@ -29,18 +30,21 @@ with that exported snapshot.
 The compact Higra layout used by import and export is:
 
 ```text
-[proper parts | internal nodes]
+[pixel leaves | internal nodes]
 ```
 
-For an image domain with `rows * columns` proper parts:
+For an image domain with `rows * columns` pixels:
 
-- proper-part leaf IDs are `[0, rows * columns)`;
+- pixel leaf IDs are `[0, rows * columns)`;
 - internal node IDs are `[rows * columns, parent.size())`;
-- every leaf points to an internal node;
+- every pixel leaf points to its smallest node in the external layout;
 - every internal node points to another internal node or to itself;
 - exactly one internal node is self-parented and is the root.
 
-When exporting, proper parts are emitted in row-major order. Internal nodes are
+Each pixel leaf represents one pixel. A tree node's proper part is the set of
+pixels mapped to that node; it may contain several pixels or be empty.
+
+When exporting, pixel leaves are emitted in row-major order. Internal nodes are
 assigned compact node IDs from the live rooted tree. For max-trees and min-trees,
 the export order follows the tree altitude polarity with a deterministic
 post-order tie-breaker. Trees of shapes and other
@@ -49,13 +53,13 @@ every non-root internal node appears before its parent even when one branch
 increases in altitude and another decreases.
 
 The exported altitude array has the same length as the exported parent array.
-Each proper-part leaf receives the altitude of its smallest node.
+Each pixel leaf receives the altitude of its smallest node.
 
 This layout policy lives at the interoperability boundary. Import converts it
 to separate dense buffers for node parents and smallest nodes before generic
 tree materialization; `MorphologicalTree` does not parse Higra parent arrays.
 While the topology is unchanged, it retains only the affine external ID offset
-needed by the compatibility queries below.
+needed by the imported-ID queries below.
 
 ## Importing a static hierarchy
 
@@ -70,7 +74,7 @@ Use `MorphologicalTreeFactory::createFromHigraParent(...)` in C++:
 
 using namespace mmcfilters;
 
-std::vector<NodeId> parent = /* compact [proper parts | internal nodes] */;
+std::vector<NodeId> parent = /* compact [pixel leaves | internal nodes] */;
 std::vector<std::uint8_t> altitude = /* same size as parent */;
 
 auto tree = MorphologicalTreeFactory::createFromHigraParent(
@@ -184,7 +188,7 @@ area_in_imported_space = mmcfilters.Attribute.compute_single_attribute(
 ```
 
 Live internal-node rows receive the values computed in the internal
-`MorphologicalTree` node ID space. Proper-part leaf rows in the preserved
+`MorphologicalTree` node ID space. Rows for pixel leaves in the preserved
 imported Higra domain receive the same unit-component values used by compact
 Higra export.
 
@@ -208,7 +212,7 @@ internal node slots.
 Dead internal slots are not exported. Export size is:
 
 ```text
-num_total_proper_parts + num_live_internal_nodes
+num_pixels + num_live_internal_nodes
 ```
 
 The exported parent and altitude arrays should be treated as a pair. If the tree
@@ -217,8 +221,8 @@ the new compact node IDs.
 
 ## Projecting attributes to exported layout
 
-`NodeIdSpace::Higra` is not the right tool for exported snapshots. To align
-attributes with `exportHigraHierarchy()`, project a dense internal-node buffer:
+To align attributes with `exportHigraHierarchy()`, project a dense internal-node
+buffer:
 
 ```cpp
 auto [names, values] = AttributeComputation::computeAttributes(
@@ -260,18 +264,18 @@ exported_area = tree.project_node_values_to_exported_higra(
 )
 ```
 
-The projection output follows the same `[proper parts | live internal nodes]`
+The projection output follows the same `[pixel leaves | live internal nodes]`
 layout as the exported hierarchy. Internal-node rows are copied from the
-node-indexed input. Proper-part rows are filled with unit-component values for
+node-indexed input. Pixel rows are filled with unit-component values for
 the requested attributes.
 
-Examples of unit proper-part values:
+Examples of values for a pixel leaf:
 
 - `AREA`: `1`;
 - `MeanGrayLevel`: the altitude of the smallest node;
 - `VOLUME`: one pixel at the smallest node altitude;
 - `GrayLevelVariance`, `GrayLevelHeight`, and `MAX_DIST`: `0`;
-- bounding-box attributes: the proper-part row/column coordinates.
+- bounding-box coordinates: the pixel's row and column; width and height: `1`.
 
 Projection fails if:
 
@@ -312,29 +316,7 @@ area_imported_space = mmcfilters.Attribute.compute_single_attribute(
 ```
 
 `area_exported` and `area_imported_space` use the same compact node ID layout
-after the round trip. Both paths fill proper-part rows with unit-component values.
-
-## Choosing the API
-
-Use preserved `NodeIdSpace::Higra` when:
-
-- the tree was imported from Higra;
-- the topology has not been edited;
-- the downstream consumer wants the original imported node IDs;
-- proper-part rows should follow the same unit-component convention as export.
-
-Use exported Higra projection when:
-
-- the tree was image-built;
-- the topology may have been edited;
-- the downstream consumer will use `exportHigraHierarchy()` output.
-
-Use internal `NodeIdSpace::MorphologicalTree` when:
-
-- the data stays inside `mmcfilters`;
-- filters, `UltimateAttributeOpening`, contours, or topology queries will
-  consume it;
-- dead internal slots and live-node iteration are part of the workflow.
+after the round trip. Both paths fill pixel rows with unit-component values.
 
 ## Related guides
 

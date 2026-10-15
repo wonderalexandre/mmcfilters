@@ -35,7 +35,7 @@ Expected C++ buffers are:
 | --- | --- | --- |
 | attribute | floating point | one value per internal node slot |
 | node-preservation mask | `bool` | one decision per internal node slot; `true` preserves |
-| score | `float` | one value per internal node slot |
+| score | floating-point `Real` (`float` by default) | one value per internal node slot |
 | Ultimate Attribute Opening (UAO) selection | byte/boolean | one value per internal node slot |
 
 Python attributes must be one-dimensional C-contiguous `np.float32` or
@@ -87,10 +87,17 @@ before passing it to a filter.
 - **Soft subtractive:** `SoftSubtractiveAttributeFilter` is its continuous
   counterpart: it multiplies every zero-baseline node residue by a finite dense
   score in `[0, 1]`; the output has the score dtype.
-- **Pruning-min:** accepted branches remain traversable and rejected subtrees
-  follow the pruning-min reconstruction convention.
-- **Pruning-max:** rejected subtrees are detected bottom-up and follow the
-  pruning-max reconstruction convention.
+- **Pruning-min:** a rejected child and all its descendants receive the current
+  accepted node's altitude. Descendants of that child are not evaluated.
+- **Pruning-max:** a child subtree is collapsed only when every node in it is
+  rejected. Its pixels receive that child's altitude. Subtrees containing an
+  accepted descendant remain traversable, and visited nodes retain their own
+  altitude.
+
+Both pruning rules visit the root regardless of its preservation decision.
+Attribute overloads preserve a node when `attribute[node] > threshold`; equality
+rejects it. Soft subtractive filtering accepts a floating-point `Real` score
+buffer and returns an image of the same type, including `double`.
 
 `NodePreservationMask` uses `true` for preservation. `NodePruningMask` uses
 `true` for pruning; convert between them only with `toNodePruningMask(...)` or

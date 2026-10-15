@@ -927,7 +927,11 @@ template <class TreeLike, class PyClass> void bindTreeQueryApi(PyClass& cls) {
             "Return node_id followed by its proper ancestors up to and including the root.")
         .def(
             "lowest_common_ancestor", [](TreeLike& self, NodeId u, NodeId v) { return topology(self).lowestCommonAncestor(u, v); }, "u"_a, "v"_a,
-            "Return the inclusion-lowest common ancestor of two live nodes.")
+            "Return the lowest common ancestor of two live nodes.")
+        .def(
+            "lowest_common_ancestors",
+            [](TreeLike& self, const std::vector<std::pair<NodeId, NodeId>>& queries) { return topology(self).lowestCommonAncestors(queries); }, "queries"_a,
+            "Return the lowest common ancestor of each node pair in input order.")
         .def(
             "path_between_nodes",
             [](TreeLike& self, NodeId sourceNodeId, NodeId targetNodeId) {
@@ -945,7 +949,7 @@ template <class TreeLike, class PyClass> void bindTreeQueryApi(PyClass& cls) {
             "Return the parent of node_id; the root is its own parent.")
         .def(
             "smallest_node", [](TreeLike& self, PixelId pixel) { return topology(self).smallestNode(pixel); }, "pixel"_a,
-            "Return the inclusion-smallest node containing pixel.")
+            "Return the smallest node containing pixel.")
         .def_property_readonly(
             "smallest_node_map",
             [](TreeLike& self) {

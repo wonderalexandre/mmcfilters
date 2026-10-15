@@ -66,7 +66,7 @@ Bundle fields use scalar names and explicit group references:
 
 ```text
 attribute_bundle.radiometric_size=AREA,MEAN_GRAY_LEVEL,VOLUME,GRAY_LEVEL_HEIGHT
-attribute_bundle.shape_boundary=group:BOUNDARY,AREA,BOX_WIDTH,BOUNDING_BOX_HEIGHT,MAX_DIST
+attribute_bundle.shape_boundary=group:BOUNDARY,AREA,BOUNDING_BOX_WIDTH,BOUNDING_BOX_HEIGHT,MAX_DIST
 ```
 
 Every bundle is compared with its deduplicated sequence of scalar API calls.
@@ -246,16 +246,15 @@ PYTHONPATH=build/python python3 benchmarks/distance_transform_sensitivity.py \
   /path/to/icdar_resized \
   benchmarks/results/distance-transform-sensitivity-icdar \
   --count 10 \
-  --trees max,min,tos,residual_unrestricted,residual_saturated \
-  --radius 1.5 --infinity-pixel 0
+  --trees max,min,tos,residual_unrestricted \
+  --radius 1.5
 ```
 
 Input files are selected in lexicographic order and recorded with SHA-256
 hashes. The output directory contains experiment metadata, per-image and
 aggregate CSV tables, and a generated `analysis.md`. Use the same Python ABI as
 the compiled extension and retain the complete output directory when reporting
-the experiment. `--infinity-pixel` affects only the saturated residual tree;
-the residual factories otherwise use their default row-major spatial order.
+the experiment. The extremum residual factory uses its default row-major spatial order.
 The `tos` case uses the default canonical minimum-4/maximum-8 complementary
 grid without domain padding (`TopographicDomainExtension.NONE`), infinity pixel
 zero, and `uint8` altitude encoding. The radius applies only to component and
@@ -273,7 +272,7 @@ PYTHONPATH=build/python python3 benchmarks/distance_transform_timing.py \
   /path/to/icdar_resized \
   benchmarks/results/distance-transform-timing-icdar \
   --count 10 \
-  --trees max,min,tos,residual_unrestricted,residual_saturated \
+  --trees max,min,tos,residual_unrestricted \
   --resolutions 480p,720p,1080p --repetitions 3
 ```
 

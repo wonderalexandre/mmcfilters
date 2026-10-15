@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import argparse
 import bisect
+import io
 import json
 import pathlib
 import re
 import sys
 import tempfile
+import tokenize
 
 
 TEXT_SUFFIXES = {
@@ -432,15 +434,64 @@ def candidate_paths(root: pathlib.Path, config: dict):
                 yield path
 
 
-def audit_text(path: pathlib.Path) -> str:
+def blank_text(text: str) -> str:
+    """Mask prose or comments while preserving source offsets and line numbers."""
+    return re.sub(r"[^\n]", " ", text)
+
+
+def source_code_text(text: str, suffix: str) -> str:
+    if suffix == ".py":
+        masked = list(text)
+        starts = [0] + [match.end() for match in re.finditer("\n", text)]
+        try:
+            for token in tokenize.generate_tokens(io.StringIO(text).readline):
+                # Keep ordinary string literals: API names can be strings.
+                is_docstring = token.type == tokenize.STRING and re.match(r"(?i)^[rubf]*(?:\"\"\"|''')", token.string)
+                if token.type != tokenize.COMMENT and not is_docstring:
+                    continue
+                begin = starts[token.start[0] - 1] + token.start[1]
+                end = starts[token.end[0] - 1] + token.end[1]
+                masked[begin:end] = blank_text(text[begin:end])
+        except (tokenize.TokenError, IndentationError):
+            pass  # Incomplete notebook snippets still retain their code tokens.
+        return "".join(masked)
+    # Preserve literals (including pybind method names) and mask C/C++ comments.
+    tokens = re.compile(r'''("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|//[^\n]*|/\*[\s\S]*?\*/''')
+    return tokens.sub(lambda match: match.group(0) if match.group(1) else blank_text(match.group(0)), text)
+
+
+def documentation_code_text(text: str) -> str:
+    """Audit fenced examples and inline API names, allowing scientific prose."""
+    masked = list(blank_text(text))
+    fences = re.compile(r"^[ \t]*(?P<fence>`{3,}|~{3,})(?P<language>[^\n]*)\n(?P<body>[\s\S]*?)^[ \t]*(?P=fence)[ \t]*$", re.MULTILINE)
+    spans = []
+    for match in fences.finditer(text):
+        begin, end = match.span("body")
+        suffix = ".py" if match.group("language").strip() in {"py", "python", "python3"} else ".cpp"
+        masked[begin:end] = source_code_text(match.group("body"), suffix)
+        spans.append(match.span())
+    for match in re.finditer(r"(?<!`)(`{1,2})(?!`)([^`\n]+)\1(?!`)", text):
+        if any(begin <= match.start() < end for begin, end in spans):
+            continue
+        begin, end = match.span(2)
+        masked[begin:end] = match.group(2)
+    return "".join(masked)
+
+
+def audit_text(path: pathlib.Path, *, code_only: bool = False) -> str:
     text = path.read_text(encoding="utf-8")
     if path.suffix != ".ipynb":
+        if code_only:
+            return documentation_code_text(text) if path.suffix in {".md", ".rst", ".txt", ".html"} and path.name != "CMakeLists.txt" else source_code_text(text, path.suffix)
         return text
     notebook = json.loads(text)
     sources: list[str] = []
     for cell in notebook.get("cells", []):
         source = cell.get("source", [])
-        sources.append("".join(source) if isinstance(source, list) else str(source))
+        cell_text = "".join(source) if isinstance(source, list) else str(source)
+        if code_only:
+            cell_text = source_code_text(cell_text, ".py") if cell.get("cell_type") == "code" else documentation_code_text(cell_text)
+        sources.append(cell_text)
     return "\n".join(sources)
 
 
@@ -454,10 +505,19 @@ def vocabulary_observations(root: pathlib.Path, config: dict) -> dict[str, list[
         except (UnicodeDecodeError, json.JSONDecodeError):
             continue
         relative = path.relative_to(root)
+        code_text = None
         line_starts = [0]
         line_starts.extend(match.end() for match in re.finditer("\n", text))
         lowercase_text: str | None = None
         for entry, pattern in compiled:
+            if entry.get("scope") == "code":
+                if code_text is None:
+                    code_text = audit_text(path, code_only=True)
+                for match in pattern.finditer(code_text):
+                    line = code_text.count("\n", 0, match.start()) + 1
+                    column = match.start() - code_text.rfind("\n", 0, match.start())
+                    observations[entry["term"]].append(f"{relative}:{line}:{column}:{match.group(0)}")
+                continue
             search_hint = entry["term"].split()[0]
             if entry.get("ignore_case", False):
                 if lowercase_text is None:
@@ -497,6 +557,8 @@ def validate_vocabulary(root: pathlib.Path, path: pathlib.Path, report_only: boo
     known_ids = expected_matrix_ids()
     for entry in entries:
         term = entry["term"]
+        if entry.get("scope", "all") not in {"all", "code"}:
+            failures.append(f"{path}: {term!r} scope must be all or code")
         state = entry.get("state")
         if state not in {"pending", "active"}:
             failures.append(f"{path}: {term!r} state must be pending or active")
@@ -546,7 +608,16 @@ def validate_artifact_vocabulary(artifact_roots: list[pathlib.Path], config: dic
             except (UnicodeDecodeError, json.JSONDecodeError):
                 continue
             lowercase_text: str | None = None
+            code_text = None
             for entry, pattern in compiled:
+                if entry.get("scope") == "code":
+                    if code_text is None:
+                        code_text = audit_text(path, code_only=True)
+                    match = pattern.search(code_text)
+                    if match:
+                        line = code_text.count("\n", 0, match.start()) + 1
+                        failures.append(f"{resolved.name}/{path.relative_to(resolved)}:{line}: published code contains removed term {entry['term']!r}")
+                    continue
                 search_hint = entry["term"].split()[0]
                 if entry.get("ignore_case", False):
                     if lowercase_text is None:
@@ -686,6 +757,52 @@ def run_self_test() -> int:
         artifact_failures = validate_artifact_vocabulary([artifact_root], config)
         if artifact_failures:
             print(f"API refactoring audit self-test rejected a clean artifact: {artifact_failures}", file=sys.stderr)
+            return 1
+
+        scoped_root = root / "code-scope"
+        scoped_root.mkdir()
+        scoped_config = {
+            "schema_version": 1,
+            "scan": ["."],
+            "entries": [{"term": "selectionPredicate", "mode": "identifier", "scope": "code", "state": "active"}],
+        }
+        clean_sources = {
+            "guide.md": "The selectionPredicate is a mathematical predicate.\n```cpp\n// selectionPredicate in a scientific comment\nbool preserveNode = true;\n```\n",
+            "api.hpp": "// selectionPredicate in a comment\n/* selectionPredicate */\nbool preserveNode;\n",
+            "api.py": '"""The selectionPredicate is a predicate."""\n# selectionPredicate\npreserve_node = True\n',
+            "example.ipynb": json.dumps({"cells": [
+                {"cell_type": "markdown", "source": ["The selectionPredicate is a predicate."]},
+                {"cell_type": "code", "source": ["# selectionPredicate\npreserve_node = True\n"]},
+            ]}),
+        }
+        for name, source in clean_sources.items():
+            (scoped_root / name).write_text(source, encoding="utf-8")
+        if vocabulary_observations(scoped_root, scoped_config)["selectionPredicate"] or validate_artifact_vocabulary([scoped_root], scoped_config):
+            print("Code-scope audit rejected scientific prose or comments", file=sys.stderr)
+            return 1
+        invalid_sources = {
+            "guide.md": "Scientific prose.\n```cpp\nbool selectionPredicate;\n```\n",
+            "api.hpp": "// Scientific comment.\nbool selectionPredicate;\n",
+            "api.py": "# Scientific comment.\nselectionPredicate = True\n",
+            "example.ipynb": json.dumps({"cells": [
+                {"cell_type": "code", "source": ["selectionPredicate = True\n"]},
+            ]}),
+        }
+        for name, source in invalid_sources.items():
+            path = scoped_root / name
+            path.write_text(source, encoding="utf-8")
+            matches = vocabulary_observations(scoped_root, scoped_config)["selectionPredicate"]
+            published = validate_artifact_vocabulary([scoped_root], scoped_config)
+            if len(matches) != 1 or len(published) != 1:
+                print(f"Code-scope audit missed an identifier in {name}: {matches}, {published}", file=sys.stderr)
+                return 1
+            if name == "guide.md" and ":3:" not in matches[0]:
+                print(f"Code-scope audit changed source line numbers: {matches}", file=sys.stderr)
+                return 1
+            path.write_text(clean_sources[name], encoding="utf-8")
+        (scoped_root / "guide.md").write_text("Use `selectionPredicate` as an API name.\n", encoding="utf-8")
+        if len(vocabulary_observations(scoped_root, scoped_config)["selectionPredicate"]) != 1:
+            print("Code-scope audit missed an inline API identifier", file=sys.stderr)
             return 1
 
         contextual_config = {

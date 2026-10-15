@@ -113,7 +113,7 @@ Topology/support attributes without requiring an altitude-bearing valued tree:
 ```cpp
 auto [names, values] = AttributeComputation::computeTopologyAttributes(
     tree,
-    std::vector<AttributeOrGroup>{Area, BoxWidth, BalanceNode});
+    std::vector<AttributeOrGroup>{Area, BoundingBoxWidth, BalanceNode});
 ```
 
 Returning values in a preserved public node ID space, for a tree created by

@@ -11,8 +11,7 @@ Preferred usage is the NodeId-based tree query API:
 Factory constructors return `ValuedMorphologicalTree`:
 - `MorphologicalTreeFactory.create_max_tree(image)`
 - `MorphologicalTreeFactory.create_min_tree(image)`
-- `MorphologicalTreeFactory.create_unrestricted_residual_tree(image)`
-- `MorphologicalTreeFactory.create_saturated_residual_tree(image, infinity_pixel=0)`
+- `MorphologicalTreeFactory.create_extremum_residual_tree(image)`
 - `MorphologicalTreeFactory.create_tree_of_shapes(image)`
 - `MorphologicalTreeFactory.create_from_native_topology(parent, smallest_node_map, node_altitudes, root, semantics)`
 - `MorphologicalTreeFactory.create_from_native_topology(parent, smallest_node_map, node_altitudes, root, rows, columns, semantics)`
@@ -91,6 +90,10 @@ Attribute computation is centered on `Attribute`:
   `NodeAttributeSamplingPolicy` and `MissingNodeAttributeSamplePolicy` for
   altitude-based ancestor/current/representative-descendant samples.
 
+Distance-transform fields and profiles are explicit topology-only results:
+- `DistanceTransform.compute_node_field(valued_tree, node_id, accuracy="exact")`
+- `DistanceTransform.compute_profiles(valued_tree, accuracy="exact")`
+
 Depth-stability helpers expose topological depth windows through
 `DepthStableRegionComputer.compute_by_depth(depth_window_radius)` and report variation
 scores with `get_variation`/`get_variations`. Result getters raise until the first
@@ -144,7 +147,6 @@ GridDomain2D = _native.GridDomain2D
 MorphologicalTreeSemantics = _native.MorphologicalTreeSemantics
 NoConstructionContext = _native.NoConstructionContext
 SharedAdjacencyContext = _native.SharedAdjacencyContext
-SaturatedResidualContext = _native.SaturatedResidualContext
 ComplementaryAdjacencies = _native.ComplementaryAdjacencies
 SelfDualSpanImmersion = _native.SelfDualSpanImmersion
 ComplementaryPairing = _native.ComplementaryPairing
@@ -173,6 +175,10 @@ SoftSubtractiveAttributeFilter = _native.SoftSubtractiveAttributeFilter
 DepthStableRegionComputer = _native.DepthStableRegionComputer
 UltimateAttributeOpening = _native.UltimateAttributeOpening
 Attribute = _native.Attribute
+DistanceTransformAccuracy = _native.DistanceTransformAccuracy
+NodeDistanceField = _native.NodeDistanceField
+DistanceTransformProfiles = _native.DistanceTransformProfiles
+DistanceTransform = _native.DistanceTransform
 NodeAttributeSamplingPolicy = _native.NodeAttributeSamplingPolicy
 MissingNodeAttributeSamplePolicy = _native.MissingNodeAttributeSamplePolicy
 ContourComputation = _native.ContourComputation
@@ -214,7 +220,6 @@ __all__ = [
     "MorphologicalTreeSemantics",
     "NoConstructionContext",
     "SharedAdjacencyContext",
-    "SaturatedResidualContext",
     "ComplementaryAdjacencies",
     "SelfDualSpanImmersion",
     "ComplementaryPairing",
@@ -242,6 +247,10 @@ __all__ = [
     "SoftSubtractiveAttributeFilter",
     "DepthStableRegionComputer",
     "Attribute",
+    "DistanceTransformAccuracy",
+    "NodeDistanceField",
+    "DistanceTransformProfiles",
+    "DistanceTransform",
     "NodeAttributeSamplingPolicy",
     "MissingNodeAttributeSamplePolicy",
     "UltimateAttributeOpening",

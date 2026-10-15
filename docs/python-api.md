@@ -55,16 +55,9 @@ min_tree = mmcfilters.MorphologicalTreeFactory.create_min_tree(
     image,
     radius=1.5,
 )
-residual_tree = mmcfilters.MorphologicalTreeFactory.create_unrestricted_residual_tree(
+residual_tree = mmcfilters.MorphologicalTreeFactory.create_extremum_residual_tree(
     image,
     radius=1.5,
-)
-saturated_residual_tree = (
-    mmcfilters.MorphologicalTreeFactory.create_saturated_residual_tree(
-        image,
-        infinity_pixel=0,
-        radius=1.5,
-    )
 )
 tree_of_shapes = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(image)
 assert tree_of_shapes.node_altitudes.dtype == np.uint8
@@ -251,6 +244,29 @@ boundary_layout, boundary_values = (
 
 Stable scalar and group membership, input contracts, and family-specific guides
 are indexed by the [Attribute catalog](attribute-catalog.md).
+
+Per-pixel distance fields and all-node sparse profiles have a separate result
+API. Values in a field and profile thresholds are squared distances:
+
+```python
+field = mmcfilters.DistanceTransform.compute_node_field(
+    max_tree,
+    max_tree.root,
+    accuracy="exact",
+)
+dense_squared_distance = field.to_dense(outside_value=-1)
+
+profiles = mmcfilters.DistanceTransform.compute_profiles(
+    max_tree,
+    accuracy=mmcfilters.DistanceTransformAccuracy.APPROXIMATE,
+)
+root_histogram = profiles.histogram(max_tree.root)
+root_survival = profiles.survival_profile(max_tree.root)
+```
+
+The methods are topology-only even though Python receives the public
+`ValuedMorphologicalTree` wrapper. Definitions, units, and execution scope are
+documented in [Distance-transform attributes](distance-transform.md).
 
 Altitude-based node-attribute sampling returns current-node, ancestor, and
 representative-descendant columns. Missing values use a typed policy:

@@ -18,15 +18,13 @@ COMPONENT_AND_TOS = {
 }
 RESIDUAL = {
     "residual_unrestricted_8c",
-    "residual_saturated_8c",
 }
 CHART_LABELS = {
     "tos_max4c_min8c": "ToS M4/M8",
     "tos_self_dual": "ToS SD",
     "max_tree_8c": "Max 8c",
     "min_tree_8c": "Min 8c",
-    "residual_unrestricted_8c": "Irrestrita 8c",
-    "residual_saturated_8c": "Saturada 8c",
+    "residual_unrestricted_8c": "Extremos 8c",
 }
 
 
@@ -119,17 +117,6 @@ def main() -> None:
     tos_self_dual_1080 = mean("1080p", "tos_self_dual")
     tos_max_min_1080 = mean("1080p", "tos_max4c_min8c")
     residual_unrestricted_1080 = mean("1080p", "residual_unrestricted_8c")
-    residual_saturated_1080 = mean("1080p", "residual_saturated_8c")
-    residual_ratio_1080 = residual_saturated_1080 / residual_unrestricted_1080
-    saturation_overheads = [
-        (
-            mean(resolution, "residual_saturated_8c")
-            / mean(resolution, "residual_unrestricted_8c")
-            - 1.0
-        )
-        * 100.0
-        for resolution in ("480p", "720p", "1080p")
-    ]
     tos_advantages = [
         (
             mean(resolution, "tos_max4c_min8c")
@@ -160,8 +147,6 @@ def main() -> None:
                 "relative_to_fastest"
             ]
         ),
-        "residual_saturated_1080_ms": residual_saturated_1080,
-        "residual_saturated_vs_unrestricted": residual_ratio_1080,
     }
 
     common_summary_metrics = [
@@ -175,7 +160,7 @@ def main() -> None:
             "headline",
             "Indicadores principais em 1080p",
             f"benchmarks/results/{prefix}-summary.csv",
-            "Seleção dos quatro tempos principais e de seus comparadores a partir da síntese validada.",
+            "Seleção dos três tempos principais e de seus comparadores a partir da síntese validada.",
             args.generated_at,
             metric_definitions=common_summary_metrics,
             sql=(
@@ -187,9 +172,7 @@ def main() -> None:
                 "  max(CASE WHEN resolution='1080p' AND algorithm='tos_self_dual' THEN mean_ms END) AS tos_self_dual_1080_ms,\n"
                 "  max(CASE WHEN resolution='1080p' AND algorithm='tos_self_dual' THEN relative_to_fastest END) AS tos_self_dual_vs_fastest,\n"
                 "  max(CASE WHEN resolution='1080p' AND algorithm='residual_unrestricted_8c' THEN mean_ms END) AS residual_unrestricted_1080_ms,\n"
-                "  max(CASE WHEN resolution='1080p' AND algorithm='residual_unrestricted_8c' THEN relative_to_fastest END) AS residual_unrestricted_vs_fastest,\n"
-                "  max(CASE WHEN resolution='1080p' AND algorithm='residual_saturated_8c' THEN mean_ms END) AS residual_saturated_1080_ms,\n"
-                "  max(CASE WHEN resolution='1080p' AND algorithm='residual_saturated_8c' THEN mean_ms END) / max(CASE WHEN resolution='1080p' AND algorithm='residual_unrestricted_8c' THEN mean_ms END) AS residual_saturated_vs_unrestricted\n"
+                "  max(CASE WHEN resolution='1080p' AND algorithm='residual_unrestricted_8c' THEN relative_to_fastest END) AS residual_unrestricted_vs_fastest\n"
                 "FROM s;"
             ),
         ),
@@ -255,7 +238,7 @@ def main() -> None:
             "surface": "report",
             "title": report_title,
             "description": (
-                "Comparação de seis construções em dez imagens, três resoluções e "
+                "Comparação de cinco construções em dez imagens, três resoluções e "
                 "cinco repetições, com medição externa da chamada pública completa."
             ),
             "generatedAt": args.generated_at,
@@ -299,40 +282,18 @@ def main() -> None:
                 },
                 {
                     "id": "unrestricted-1080",
-                    "description": "A residual irrestrita inclui a construção inicial da max-tree e da min-tree.",
+                    "description": "A residual de extremos inclui a construção inicial da max-tree e da min-tree.",
                     "dataset": "headline_1080p",
                     "sourceId": "headline",
                     "metrics": [
                         {
-                            "label": "Residual irrestrita 1080p (ms)",
+                            "label": "Residual de extremos 1080p (ms)",
                             "field": "residual_unrestricted_1080_ms",
                             "format": "number",
                         },
                         {
                             "label": "× tempo mínimo",
                             "field": "residual_unrestricted_vs_fastest",
-                            "format": "number",
-                        },
-                    ],
-                },
-                {
-                    "id": "saturated-1080",
-                    "description": (
-                        "A certificação de saturação adicionou cerca de "
-                        f"{format_pt((residual_ratio_1080 - 1.0) * 100.0, 0)}% "
-                        "em 1080p."
-                    ),
-                    "dataset": "headline_1080p",
-                    "sourceId": "headline",
-                    "metrics": [
-                        {
-                            "label": "Residual saturada 1080p (ms)",
-                            "field": "residual_saturated_1080_ms",
-                            "format": "number",
-                        },
-                        {
-                            "label": "× irrestrita",
-                            "field": "residual_saturated_vs_unrestricted",
                             "format": "number",
                         },
                     ],
@@ -398,12 +359,12 @@ def main() -> None:
                 {
                     "id": "residual-times",
                     "title": "Tempo de construção das árvores residuais",
-                    "subtitle": "Média de dez medianas por imagem; a versão saturada certifica a conectividade do complemento.",
+                    "subtitle": "Média de dez medianas por imagem para a construção por component trees.",
                     "intent": "comparison",
-                    "question": "Qual é o custo adicional da restrição de saturação nas três resoluções?",
+                    "question": "Como o tempo da árvore residual de extremos varia entre as três resoluções?",
                     "rationale": "Separar as residuais evita que sua escala comprima visualmente as árvores mais rápidas.",
                     "comparisonContext": {
-                        "baseline": "residual irrestrita",
+                        "baseline": "residual de extremos",
                         "grain": "média de dez medianas por imagem",
                         "denominator": "dez imagens ICDAR",
                         "normalization": "cinco repetições por imagem e método",
@@ -509,10 +470,8 @@ def main() -> None:
                         f"Em 1080p, suas médias foram **{format_pt(max_tree_1080)} ms** e "
                         f"**{format_pt(min_tree_1080)} ms**. A ToS self-dual exigiu "
                         f"**{format_pt(tos_self_dual_1080)} ms** e a ToS Max4cMin8c, "
-                        f"**{format_pt(tos_max_min_1080)} ms**. A residual irrestrita chegou a "
-                        f"**{format_pt(residual_unrestricted_1080)} ms**; a saturada, a "
-                        f"**{format_pt(residual_saturated_1080)} ms**, ou "
-                        f"**{format_pt(residual_ratio_1080)}×** o tempo da irrestrita."
+                        f"**{format_pt(tos_max_min_1080)} ms**. A residual de extremos chegou a "
+                        f"**{format_pt(residual_unrestricted_1080)} ms**."
                     ),
                 },
                 {
@@ -523,7 +482,6 @@ def main() -> None:
                         "fastest-1080",
                         "tos-1080",
                         "unrestricted-1080",
-                        "saturated-1080",
                     ],
                 },
                 {
@@ -555,14 +513,12 @@ def main() -> None:
                     "layout": "full",
                     "sourceId": "summary",
                     "body": (
-                        "## A certificação de saturação é o maior sobrecusto\n\n"
-                        f"A residual irrestrita foi **{format_pt(residual_unrestricted_1080 / tos_self_dual_1080)}×** "
-                        "mais lenta que a ToS self-dual em 1080p. A residual saturada adicionou "
-                        f"**{format_pt(min(saturation_overheads), 0)}–{format_pt(max(saturation_overheads), 0)}%** "
-                        "sobre a irrestrita entre as três resoluções e, em 1080p, atingiu "
-                        f"**{format_pt(residual_saturated_1080 / max_tree_1080)}×** o tempo da max-tree. "
-                        "A dispersão entre imagens é muito maior nas residuais, "
-                        "o que mostra dependência forte da estrutura de extremos e não apenas do número de pixels."
+                        "## Construção residual por component trees\n\n"
+                        f"A residual de extremos levou **{format_pt(residual_unrestricted_1080 / tos_self_dual_1080)}×** "
+                        "o tempo da ToS self-dual em 1080p e "
+                        f"**{format_pt(residual_unrestricted_1080 / max_tree_1080)}×** o tempo da max-tree. "
+                        "A medição inclui a construção inicial da max-tree e da min-tree, "
+                        "a evolução dos extremos e a montagem da hierarquia residual."
                     ),
                 },
                 {
@@ -621,8 +577,7 @@ def main() -> None:
                         "Foram usadas `test_000.png`–`test_009.png` do ICDAR em **480×853**, **720×1280** "
                         "e **1080×1920**, sempre em tons de cinza de 8 bits. `Max4cMin8c` corresponde ao modo "
                         "interno `Min8cMax4c`, que nomeia primeiro a conectividade dos mínimos. Max-tree, "
-                        "min-tree e as duas residuais usam adjacência 8c (`radius=1.5`); a residual saturada usa "
-                        "o pixel de índice zero como infinito."
+                        "min-tree e a residual de extremos usam adjacência 8c (`radius=1.5`)."
                     ),
                 },
                 {
@@ -633,7 +588,7 @@ def main() -> None:
                     "body": (
                         "## Metodologia reproduzível\n\n"
                         "Cada método foi aquecido uma vez e validado por reconstrução exata. Depois foram feitas "
-                        "cinco construções por imagem, com ordem rotacionada entre os seis métodos. O tempo mede "
+                        "cinco construções por imagem, com ordem rotacionada entre os cinco métodos. O tempo mede "
                         "externamente a chamada pública completa e exclui carregamento da imagem e destruição da "
                         "árvore; o código de produção não coleta durações internas. Nas "
                         "residuais, inclui as max-tree e min-tree iniciais e a materialização final. O agregado "
@@ -648,7 +603,7 @@ def main() -> None:
                     "sourceId": "per_image",
                     "body": (
                         "## Limitações, incerteza e robustez\n\n"
-                        "A cobertura está completa: **900 medições**, sem tempo inválido, com número de nós "
+                        "A cobertura está completa: **750 medições**, sem tempo inválido, com número de nós "
                         "determinístico e reconstrução exata no aquecimento. Todas as repetições válidas foram "
                         "preservadas, e a mediana de cinco reduz a influência de atrasos isolados. Os ICs "
                         "bootstrap descrevem apenas a variação entre estas dez "
@@ -665,8 +620,8 @@ def main() -> None:
                     "layout": "full",
                     "body": (
                         "## Próximos passos recomendados\n\n"
-                        "1. Priorizar o perfil da **certificação de saturação**, pois ela explica o maior "
-                        "sobrecusto controlável, usando um profiler externo ou builds dedicadas.\n"
+                        "1. Medir o custo da **evolução dos extremos** para identificar o "
+                        "trabalho dominante, usando um profiler externo ou builds dedicadas.\n"
                         "2. Usar `test_003` e outras imagens lentas como casos de perfil, mantendo as dez imagens "
                         "para confirmar generalidade.\n"
                         "3. Preservar max-tree/min-tree 8c como piso de custo e repetir este protocolo após cada "
@@ -681,8 +636,8 @@ def main() -> None:
                     "layout": "full",
                     "body": (
                         "## Questões em aberto\n\n"
-                        "Quanto da variação entre imagens é explicado pelo número de nós, extremos rejeitados e "
-                        "travessias exatas do complemento? A ordem relativa permanece igual em imagens coloridas ou com "
+                        "Quanto da variação entre imagens é explicado pelo número de nós, zonas extremas e "
+                        "atualizações das component trees? A ordem relativa permanece igual em imagens coloridas ou com "
                         "maior profundidade de níveis? E a equivalência de custo entre max-tree e min-tree se "
                         "mantém em outras distribuições de contraste?"
                     ),

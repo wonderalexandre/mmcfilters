@@ -28,7 +28,7 @@ enum class Attribute {
     MeanGrayLevel,
     GrayLevelVariance,
 
-    BoxWidth,
+    BoundingBoxWidth,
     BoundingBoxHeight,
     DiagonalLength,
     Rectangularity,
@@ -174,6 +174,8 @@ enum class Attribute {
 
     AxisOrientationSigned,
     FilledAxisOrientationSigned,
+
+    RawInertia
 };
 
 /**

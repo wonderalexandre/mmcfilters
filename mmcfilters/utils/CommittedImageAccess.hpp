@@ -7,7 +7,7 @@
 namespace mmcfilters::detail {
 
 /**
- * @brief Image allocation after positive, non-overflowing dimensions were established.
+ * @brief Image allocation through the ordinary constructors and owning factory.
  *
  * Internal reconstruction kernels use this entry point when their dimensions
  * come from an already validated tree grid domain. Shared allocation delegates
@@ -16,9 +16,9 @@ namespace mmcfilters::detail {
  */
 class CommittedImageAccess {
   public:
-    /** @brief Allocates an image value from established dimensions. @param rows Established row count. @param columns Established column count. @return Owned image value. */
+    /** @brief Allocates an image value through the ordinary constructor. @param rows Row count. @param columns Column count. @return Owned image value. */
     template <typename PixelType> [[nodiscard]] static Image<PixelType> createValue(int rows, int columns) {
-        return Image<PixelType>(rows, columns, typename Image<PixelType>::EstablishedDimensionsTag{});
+        return Image<PixelType>(rows, columns);
     }
 
     /** @brief Allocates a shared image from established dimensions. @param rows Established row count. @param columns Established column count. @return Shared owned image. */

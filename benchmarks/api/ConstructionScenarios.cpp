@@ -33,14 +33,9 @@ void addConstructionScenarios(Context& context, std::vector<ScenarioResult>& res
                                               complementaryTopographicConvention(context.options.rows, context.options.columns, true));
                                       });
     addTreeConstruction<std::uint8_t>(context, results, "self_dual_residual_unrestricted", [&] {
-        return MorphologicalTreeFactory::createUnrestrictedResidualTree(
+        return MorphologicalTreeFactory::createExtremumResidualTreeByCTs(
             context.imageUInt8, context.adjacency,
-            sdrt::UnrestrictedResidualTreeOptions{});
-    });
-    addTreeConstruction<std::uint8_t>(context, results, "self_dual_residual_saturated", [&] {
-        return MorphologicalTreeFactory::createSaturatedResidualTree(context.imageUInt8, context.adjacency, PixelId{0},
-                                                                             sdrt::SaturatedResidualTreeOptions{
-                                                                                 sdrt::RowMajorSpatialOrder{}});
+            sdrt::ExtremumResidualTreeOptions{});
     });
     addTreeConstruction<std::int32_t>(context, results, "max_tree_int32", [&] { return MorphologicalTreeFactory::createMaxTree(context.imageInt32, 1.5); });
     addTreeConstruction<float>(context, results, "max_tree_float", [&] { return MorphologicalTreeFactory::createMaxTree(context.imageFloat, 1.5); });

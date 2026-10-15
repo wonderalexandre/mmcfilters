@@ -1,4 +1,4 @@
-# Distance-transform attributes
+# Distance-transform attributes, fields, and profiles
 
 The distance-transform subsystem is topology-only and requires a non-empty
 regular 2D tree domain. It measures every node support against its foreground
@@ -85,6 +85,57 @@ Every name above has an exact counterpart obtained by appending `_EXACT`.
 | weighted central moments | pixel³ |
 | orientation | degrees |
 | eccentricity | dimensionless |
+
+## Fields and profiles
+
+The scalar attribute pipeline returns one value per node. When an application
+needs the underlying transform, the C++ API also exposes topology-only owning
+results:
+
+```cpp
+#include <mmcfilters/distanceTransform/DistanceTransformComputation.hpp>
+
+auto field = mmcfilters::DistanceTransformComputation::computeNodeField(
+    tree, node, mmcfilters::DistanceTransformAccuracy::Exact);
+auto dense = field.denseSquaredDistances(-1);
+
+auto profiles = mmcfilters::DistanceTransformComputation::computeProfiles(
+    tree, mmcfilters::DistanceTransformAccuracy::Approximate);
+auto histogram = profiles.histogram(node);
+auto survival = profiles.survivalProfile(node);
+```
+
+`NodeDistanceField` contains the support pixels of one live node and their
+aligned squared distances `z`. `denseSquaredDistances` materializes the original
+2D domain and uses the caller-provided value outside the node support.
+
+`DistanceTransformProfiles` contains a sorted sparse histogram for every live
+node. A histogram bin is `(z, count)`. A survival bin is
+`(z, countAtOrAbove)` and therefore gives the support area whose squared
+distance is at least `z`.
+
+Both results accept exact and approximate accuracy. Exact single-node field
+computation transforms only the requested support after constructing the shared
+topology indexes. Approximate single-node field computation follows the
+hierarchy-wide DIFT and retains only the requested result. Profile computation
+materializes all-node histograms. These APIs accept any supported hierarchy
+with a committed, non-empty regular 2D domain; node altitudes are not read.
+
+The equivalent Python entry points accept either `"exact"`, `"approximate"`,
+or `DistanceTransformAccuracy`:
+
+```python
+field = mmcfilters.DistanceTransform.compute_node_field(
+    tree, tree.root, accuracy="exact"
+)
+dense_squared_distance = field.to_dense(outside_value=-1)
+
+profiles = mmcfilters.DistanceTransform.compute_profiles(
+    tree, accuracy=mmcfilters.DistanceTransformAccuracy.APPROXIMATE
+)
+histogram = profiles.histogram(tree.root)
+survival = profiles.survival_profile(tree.root)
+```
 
 ## Related guides
 

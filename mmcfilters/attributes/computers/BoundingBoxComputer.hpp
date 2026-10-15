@@ -70,7 +70,7 @@ struct BoundingBoxRequest {
      * @return Resulting request descriptor from the requested attributes.
      */
     [[nodiscard]] static BoundingBoxRequest from(std::span<const Attribute> requestedAttributes) {
-        return {.width = contains(requestedAttributes, BoxWidth),
+        return {.width = contains(requestedAttributes, BoundingBoxWidth),
                 .height = contains(requestedAttributes, BoundingBoxHeight),
                 .rectangularity = contains(requestedAttributes, Rectangularity),
                 .ratioWH = contains(requestedAttributes, RatioWh),
@@ -111,7 +111,7 @@ inline void computeBoundingBox(const AttributeComputeContext<Real>& context, con
 
     const int stride = context.attrNames.NUM_ATTRIBUTES;
     const auto offsetOf = [&](Attribute attribute) { return context.attrNames.indexMap.find(attribute)->second; };
-    const int widthOffset = request.width ? offsetOf(BoxWidth) : 0;
+    const int widthOffset = request.width ? offsetOf(BoundingBoxWidth) : 0;
     const int heightOffset = request.height ? offsetOf(BoundingBoxHeight) : 0;
     const int rectangularityOffset = request.rectangularity ? offsetOf(Rectangularity) : 0;
     const int ratioOffset = request.ratioWH ? offsetOf(RatioWh) : 0;
@@ -226,7 +226,7 @@ class BoundingBoxComputer {
     /**
      * @brief Canonical list of bounding-box descriptors produced by this computer.
      */
-    inline static constexpr std::array<Attribute, 9> producedAttributes{BoxWidth,   BoundingBoxHeight,  DiagonalLength, Rectangularity, RatioWh,
+    inline static constexpr std::array<Attribute, 9> producedAttributes{BoundingBoxWidth,   BoundingBoxHeight,  DiagonalLength, Rectangularity, RatioWh,
                                                                         BoxColumnMin, BoxColumnMax, BoxRowMin,     BoxRowMax};
 
     /**
@@ -277,7 +277,7 @@ class BoundingBoxComputer {
             const PixelId pixel = context.unitPixels[static_cast<size_t>(leafIndex)];
             const auto [row, column] = ImageUtils::to2D(pixel, numColumns);
             if (request.width) {
-                context.buffer[context.attrNames.linearIndex(leafIndex, BoxWidth)] = Real{1};
+                context.buffer[context.attrNames.linearIndex(leafIndex, BoundingBoxWidth)] = Real{1};
             }
             if (request.height) {
                 context.buffer[context.attrNames.linearIndex(leafIndex, BoundingBoxHeight)] = Real{1};

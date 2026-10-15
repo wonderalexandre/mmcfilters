@@ -39,7 +39,7 @@ Operations that read altitude require `ValuedMorphologicalTree<T>` or
   `altitude(parent) > altitude(child)`;
 - `NodeAltitudeOrder::Unconstrained` declares no global altitude direction;
 - `MorphologicalTreeConstructionContext` records explicit absence of
-  construction provenance, a shared adjacency, saturated-residual parameters,
+  construction provenance, a shared adjacency,
   or a complete topographic convention;
 - `MorphologicalTreeKind` is a descriptive label, not an algorithm-dispatch
   contract.
@@ -98,14 +98,9 @@ auto image = ImageUInt8::create(4, 4, std::uint8_t{0});
 
 auto maxTree = MorphologicalTreeFactory::createMaxTree(image, 1.5);
 auto minTree = MorphologicalTreeFactory::createMinTree(image, 1.5);
-auto residual = MorphologicalTreeFactory::createUnrestrictedResidualTree(
+auto residual = MorphologicalTreeFactory::createExtremumResidualTreeByCTs(
     image,
     1.5);
-auto saturatedResidual =
-    MorphologicalTreeFactory::createSaturatedResidualTree(
-        image,
-        PixelId{0},
-        1.5);
 auto treeOfShapes = MorphologicalTreeFactory::createTreeOfShapes(image);
 ```
 
@@ -121,21 +116,16 @@ Python image factories accept two-dimensional C-contiguous `np.uint8` arrays
 and return `ValuedMorphologicalTree`. See [Python API](python-api.md) for the
 binding-specific contract.
 
-### Self-dual residual trees
+### Extremum residual trees
 
-`createUnrestrictedResidualTree` constructs a hierarchy from synchronized max-tree
-and min-tree states using one symmetric adjacency. The saturated variant also
-requires the complement of a selected extremum to remain connected to the
-row-major `infinityPixel` supplied by the caller.
+`createExtremumResidualTreeByCTs` constructs the extremum residual tree from
+synchronized max-tree and min-tree states using one symmetric adjacency.
+The `ByCTs` suffix identifies construction through component trees. The
+corresponding builder is `sdrt::ExtremumResidualTreeByCTsBuilder`.
 
-The unrestricted and saturated factories publish distinct
-`UnrestrictedResidualTree` and `SaturatedResidualTree` kinds. The former
-retains a `SharedAdjacencyContext`; the latter retains a
-`SaturatedResidualContext`, including its infinity pixel. Both publish:
-
-- `NodeAltitudeOrder::Unconstrained`.
-
-Their alternating gray-level altitudes are not a monotone hierarchy valuation.
+The factory publishes `MorphologicalTreeKind::ExtremumResidualTree`, retains a
+`SharedAdjacencyContext`, and uses `NodeAltitudeOrder::Unconstrained`.
+Its alternating gray-level altitudes are not a monotone hierarchy valuation.
 Use a structural or otherwise non-decreasing node valuation for operations that
 require values to increase toward the root.
 
@@ -146,40 +136,32 @@ auto adjacency = RegularGridAdjacency2D::fromStructuringElement(
     rows,
     columns,
     offsets);
-auto residual = MorphologicalTreeFactory::createUnrestrictedResidualTree(
+auto residual = MorphologicalTreeFactory::createExtremumResidualTreeByCTs(
     image,
     adjacency);
 ```
 
-Construction policies are grouped by mode, so unrestricted callers cannot
-accidentally configure saturation-only mechanisms:
+Use `ExtremumResidualTreeOptions` to configure the spatial order:
 
 ```cpp
-#include <mmcfilters/trees/sdrt/ResidualTreePolicies.hpp>
+#include <mmcfilters/trees/sdrt/ResidualEvolution.hpp>
 
-sdrt::UnrestrictedResidualTreeOptions unrestrictedOptions;
-unrestrictedOptions.spatialOrder =
+sdrt::ExtremumResidualTreeOptions extremumOptions;
+extremumOptions.spatialOrder =
     sdrt::SpatialOrder(std::vector<PixelId>{3, 2, 1, 0});
-auto unrestricted = MorphologicalTreeFactory::createUnrestrictedResidualTree(
+auto extremum = MorphologicalTreeFactory::createExtremumResidualTreeByCTs(
     image,
     adjacency,
-    unrestrictedOptions);
+    extremumOptions);
 
-sdrt::SaturatedResidualTreeOptions saturatedOptions;
-saturatedOptions.lcaPolicy = sdrt::SaturatedMinMaxLcaPolicy::LinkCut;
-saturatedOptions.fallbackPolicy =
-    sdrt::SaturatedMinMaxFallbackPolicy::BoundaryMultiSource;
-auto saturated =
-    MorphologicalTreeFactory::createSaturatedResidualTree(
-        image,
-        adjacency,
-        PixelId{0},
-        saturatedOptions);
 ```
 
-By default, construction uses `RowMajorSpatialOrder`, LCA computation by following
-parent links, and multi-source boundary fallback. See [Self-dual residual trees](self-dual-residual-trees.md)
-for the candidate schedule, boundary maintenance, and event assembly.
+By default, construction uses `RowMajorSpatialOrder`. The self-dual schedule
+orders candidates by `(supportCardinality, spatialMinimum)` and never by polarity.
+The builder reads each selected support from the proper part of a component-tree
+leaf and follows Algorithm 1 of the paper. Recorded nodes with an undefined
+parent represent the pending supports implicitly; proper-part association lists
+identify their current component-tree locations.
 
 ### Tree-of-shapes policies
 

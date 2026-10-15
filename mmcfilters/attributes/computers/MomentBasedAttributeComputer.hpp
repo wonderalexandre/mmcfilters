@@ -29,9 +29,10 @@ struct CentralMomentsRequest {
     bool mu03 = false; ///< Whether the central moment mu03 is requested.
     bool mu21 = false; ///< Whether the central moment mu21 is requested.
     bool mu12 = false; ///< Whether the central moment mu12 is requested.
+    bool rawInertia = false; ///< Whether the unnormalized polar second central moment is requested.
 
     /** @brief Reports whether at least one central moment is requested. @return True when any request flag is set. */
-    [[nodiscard]] bool any() const noexcept { return mu20 || mu02 || mu11 || mu30 || mu03 || mu21 || mu12; }
+    [[nodiscard]] bool any() const noexcept { return mu20 || mu02 || mu11 || mu30 || mu03 || mu21 || mu12 || rawInertia; }
 
     /**
      * @brief Builds the selection mask from requested scalar attributes.
@@ -45,7 +46,8 @@ struct CentralMomentsRequest {
                 .mu30 = requestsAttribute(requestedAttributes, CentralMoment30),
                 .mu03 = requestsAttribute(requestedAttributes, CentralMoment03),
                 .mu21 = requestsAttribute(requestedAttributes, CentralMoment21),
-                .mu12 = requestsAttribute(requestedAttributes, CentralMoment12)};
+                .mu12 = requestsAttribute(requestedAttributes, CentralMoment12),
+                .rawInertia = requestsAttribute(requestedAttributes, RawInertia)};
     }
 };
 
@@ -161,6 +163,7 @@ inline void computeCentralMoments(const AttributeComputeContext<Real>& context, 
     const int mu03Offset = request.mu03 ? offsetOf(CentralMoment03) : 0;
     const int mu21Offset = request.mu21 ? offsetOf(CentralMoment21) : 0;
     const int mu12Offset = request.mu12 ? offsetOf(CentralMoment12) : 0;
+    const int rawInertiaOffset = request.rawInertia ? offsetOf(RawInertia) : 0;
     const auto outputIndex = [&](NodeId node, int offset) { return static_cast<std::size_t>(node * stride + offset); };
 
     const GridDomain2D& domain = ::mmcfilters::detail::CommittedTreeAccess::gridDomain2D(context.tree);
@@ -195,10 +198,14 @@ inline void computeCentralMoments(const AttributeComputeContext<Real>& context, 
             }
             const Real cx = moments.m10 / moments.m00;
             const Real cy = moments.m01 / moments.m00;
+            const bool needsMu20 = request.mu20 || request.rawInertia;
+            const bool needsMu02 = request.mu02 || request.rawInertia;
+            const Real mu20 = needsMu20 ? moments.m20 - Real{2} * cx * moments.m10 + cx * cx * moments.m00 : Real{0};
+            const Real mu02 = needsMu02 ? moments.m02 - Real{2} * cy * moments.m01 + cy * cy * moments.m00 : Real{0};
             if (request.mu20)
-                context.buffer[outputIndex(node, mu20Offset)] = moments.m20 - Real{2} * cx * moments.m10 + cx * cx * moments.m00;
+                context.buffer[outputIndex(node, mu20Offset)] = mu20;
             if (request.mu02)
-                context.buffer[outputIndex(node, mu02Offset)] = moments.m02 - Real{2} * cy * moments.m01 + cy * cy * moments.m00;
+                context.buffer[outputIndex(node, mu02Offset)] = mu02;
             if (request.mu11)
                 context.buffer[outputIndex(node, mu11Offset)] = moments.m11 - cx * moments.m01 - cy * moments.m10 + cx * cy * moments.m00;
             if (request.mu30)
@@ -215,6 +222,8 @@ inline void computeCentralMoments(const AttributeComputeContext<Real>& context, 
                 context.buffer[outputIndex(node, mu12Offset)] = moments.m12 - Real{2} * cy * moments.m11 - cx * moments.m02 +
                                                                 Real{2} * cx * cy * moments.m01 + cy * cy * moments.m10 -
                                                                 cx * cy * cy * moments.m00;
+            if (request.rawInertia)
+                context.buffer[outputIndex(node, rawInertiaOffset)] = mu20 + mu02;
         });
 }
 
@@ -411,6 +420,10 @@ template <std::floating_point Real> inline void validateMomentDependencyContext(
  * - second order: `mu20`, `mu02`, `mu11`;
  * - third order: `mu30`, `mu03`, `mu21`, `mu12`.
  *
+ * The same pass also exposes `RAW_INERTIA = mu20 + mu02`, the unnormalized
+ * polar second central moment. Computing it here avoids an extra dependency
+ * materialization or traversal when it is requested by itself.
+ *
  * The implementation is organised in two passes over the hierarchy:
  * 1. accumulate raw geometric moments over each subtree support;
  * 2. convert those raw moments to central moments at the node centroid.
@@ -431,10 +444,10 @@ class CentralMomentsComputer {
     static constexpr AttributeComputerDomain domain = AttributeComputerDomain::Topology;
 
     /**
-     * @brief Canonical list of central moments produced together.
+     * @brief Canonical list of central-moment descriptors produced together.
      */
-    inline static constexpr std::array<Attribute, 7> producedAttributes{CentralMoment20, CentralMoment02, CentralMoment11, CentralMoment30,
-                                                                        CentralMoment03, CentralMoment21, CentralMoment12};
+    inline static constexpr std::array<Attribute, 8> producedAttributes{CentralMoment20, CentralMoment02, CentralMoment11, CentralMoment30,
+                                                                        CentralMoment03, CentralMoment21, CentralMoment12, RawInertia};
 
     /**
      * @brief Computes the requested central moments.
@@ -465,7 +478,7 @@ class CentralMomentsComputer {
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
         requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
         constexpr std::array<Attribute, 8> zeroAttributes{CentralMoment20, CentralMoment02, CentralMoment11, CentralMoment30,
-                                                          CentralMoment03, CentralMoment21, CentralMoment12};
+                                                          CentralMoment03, CentralMoment21, CentralMoment12, RawInertia};
         for (const Attribute attribute : zeroAttributes) {
             if (!requestsAttribute(context.requestedAttributes, attribute)) {
                 continue;
@@ -549,7 +562,7 @@ class HuMomentsComputer {
      */
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
         requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
-        constexpr std::array<Attribute, 8> zeroAttributes{HuMoment1, HuMoment2, HuMoment3, HuMoment4, HuMoment5, HuMoment6, HuMoment7};
+        constexpr std::array<Attribute, 7> zeroAttributes{HuMoment1, HuMoment2, HuMoment3, HuMoment4, HuMoment5, HuMoment6, HuMoment7};
         for (const Attribute attribute : zeroAttributes) {
             if (!requestsAttribute(context.requestedAttributes, attribute)) {
                 continue;

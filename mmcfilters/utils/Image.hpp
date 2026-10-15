@@ -19,10 +19,6 @@
 
 namespace mmcfilters {
 
-namespace detail {
-class CommittedImageAccess;
-}
-
 /**
  * @brief Generic row-major 2D image with contiguous storage and shared ownership.
  *
@@ -42,8 +38,6 @@ class CommittedImageAccess;
  */
 template <typename PixelType> class Image {
   private:
-    friend class detail::CommittedImageAccess;
-    struct EstablishedDimensionsTag {};
     /** @brief Number of rows. */
     int numRows;
     /** @brief Number of columns. */
@@ -68,16 +62,6 @@ template <typename PixelType> class Image {
                                     throw std::overflow_error("Image dimensions exceed the supported int-indexed size."));
         return rowCount * columnCount;
     }
-
-    /**
-     * @brief Allocates storage after dimensions were established by a dominating boundary.
-     * @param rows Established positive row count.
-     * @param columns Established positive column count.
-     * @param tag Proof tag selecting the validation-free constructor.
-     */
-    Image(int rows, int columns, [[maybe_unused]] EstablishedDimensionsTag tag)
-        : numRows(rows), numColumns(columns),
-          data(new PixelType[static_cast<std::size_t>(rows) * static_cast<std::size_t>(columns)], [](PixelType* pixels) { delete[] pixels; }) {}
 
   public:
     /// Pixel scalar type stored by this image.

@@ -99,7 +99,7 @@ struct AttributeMetadata {
  * table drift fail as an unknown attribute instead of returning incorrect
  * metadata.
  */
-inline constexpr std::array<AttributeMetadata, static_cast<std::size_t>(Attribute::FilledAxisOrientationSigned) + 1> ATTRIBUTE_METADATA{
+inline constexpr std::array<AttributeMetadata, static_cast<std::size_t>(Attribute::RawInertia) + 1> ATTRIBUTE_METADATA{
     {{Area, "AREA", "Area: Number of pixels in the connected component.", false, NO_REQUIREMENTS},
      {Volume, "VOLUME",
       "Volume: Sum of the gray-level intensities of all pixels in the connected component. Interpreted as the total mass under the component, or the integral "
@@ -116,7 +116,8 @@ inline constexpr std::array<AttributeMetadata, static_cast<std::size_t>(Attribut
      {GrayLevelVariance, "GRAY_LEVEL_VARIANCE", "Gray-level variance: Population variance of the image values over the node support.", false,
       ALTITUDE_REQUIREMENTS},
 
-     {BoxWidth, "BOX_WIDTH", "Bounding box width: Width of the minimum rectangle enclosing the connected component.", true, GRID_DOMAIN_2D_REQUIREMENTS},
+     {BoundingBoxWidth, "BOUNDING_BOX_WIDTH", "Bounding-box width: Width of the minimum rectangle enclosing the connected component.", true,
+      GRID_DOMAIN_2D_REQUIREMENTS},
      {BoundingBoxHeight, "BOUNDING_BOX_HEIGHT", "Bounding-box height: Height of the minimum rectangle enclosing the connected component.", true,
       GRID_DOMAIN_2D_REQUIREMENTS},
      {DiagonalLength, "DIAGONAL_LENGTH", "Diagonal length: Euclidean length of the diagonal of the bounding box, computed as sqrt(width^2 + height^2).", true,
@@ -426,7 +427,11 @@ inline constexpr std::array<AttributeMetadata, static_cast<std::size_t>(Attribut
       "isotropic regions return zero.", true, GRID_DOMAIN_2D_REQUIREMENTS},
      {FilledAxisOrientationSigned, "FILLED_AXIS_ORIENTATION_SIGNED",
       "Signed principal column-axis orientation of the filled region in degrees, in [-90, 90], with positive row direction downward; "
-      "isotropic regions return zero.", true, FILLED_SHAPE_REQUIREMENTS}}};
+      "isotropic regions return zero.", true, FILLED_SHAPE_REQUIREMENTS},
+     {RawInertia, "RAW_INERTIA",
+      "Raw inertia: Unnormalized polar second central moment mu20 + mu02, equal to the sum of squared Euclidean distances from support pixels to the support "
+      "centroid.",
+      true, GRID_DOMAIN_2D_REQUIREMENTS}}};
 
 /**
  * @brief Tests whether ordinally aligned attribute metadata holds.
@@ -578,7 +583,7 @@ inline const std::unordered_map<AttributeGroup, std::vector<Attribute>>& attribu
             {AttributeGroup::GrayLevel, {Volume, RelativeVolume, GrayLevelHeight, MeanGrayLevel, GrayLevelVariance}},
             {AttributeGroup::Shape,
              {Area,
-              BoxWidth,
+              BoundingBoxWidth,
               BoundingBoxHeight,
               DiagonalLength,
               Rectangularity,
@@ -624,11 +629,14 @@ inline const std::unordered_map<AttributeGroup, std::vector<Attribute>>& attribu
               ContourSideNorth,
               ContourSideWest,
               ContourSideEast,
-              ContourSideSouth, AxisOrientationSigned}},
+              ContourSideSouth,
+              AxisOrientationSigned,
+              RawInertia}},
             {AttributeGroup::Moments,
              {CentralMoment20, CentralMoment02, CentralMoment11, CentralMoment30, CentralMoment03, CentralMoment21, CentralMoment12,
               HuMoment1,       HuMoment2,       HuMoment3,       HuMoment4,       HuMoment5,       HuMoment6,       HuMoment7,
-              Inertia,           Compactness,       Eccentricity,      LengthMajorAxis, LengthMinorAxis, AxisOrientation,  Circularity, AxisOrientationSigned}},
+              Inertia,           Compactness,       Eccentricity,      LengthMajorAxis, LengthMinorAxis, AxisOrientation,  Circularity, AxisOrientationSigned,
+              RawInertia}},
             {AttributeGroup::Boundary,
              {BitquadArea, BitquadNumberEuler, BitquadNumberHoles, BitquadPerimeter, BitquadPerimeterContinuous, BitquadCircularity,
               BitquadPerimeterAverage, BitquadLengthAverage, BitquadWidthAverage, ContourPixels, ContourPerimeter, ContourSideNorth,

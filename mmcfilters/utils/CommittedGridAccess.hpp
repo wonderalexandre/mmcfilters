@@ -14,14 +14,14 @@ namespace mmcfilters::detail {
 class CommittedGridAccess {
   public:
     /**
-     * @brief Constructs a radius adjacency from established parameters.
-     * @param rows Established row count.
-     * @param columns Established column count.
-     * @param radius Established finite radius.
+     * @brief Constructs a radius adjacency through the ordinary constructor.
+     * @param rows Row count.
+     * @param columns Column count.
+     * @param radius Neighborhood radius.
      * @return Constructed regular-grid adjacency.
      */
     [[nodiscard]] static RegularGridAdjacency2D radiusAdjacency(int rows, int columns, double radius) {
-        return RegularGridAdjacency2D(rows, columns, radius, RegularGridAdjacency2D::EstablishedRadiusTag{});
+        return RegularGridAdjacency2D(rows, columns, radius);
     }
 
     /** @brief Iterates the full adjacent stencil of an established pixel. @param adjacency Established adjacency. @param pixel Established pixel id. @return Adjacent-index range. */

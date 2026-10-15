@@ -30,7 +30,7 @@ import mmcfilters
 
 EXACT_SUFFIX = "_EXACT"
 IMAGE_SUFFIXES = {".png", ".pgm", ".tif", ".tiff", ".jpg", ".jpeg", ".bmp"}
-TREE_KINDS = {"max", "min", "tos", "residual_unrestricted", "residual_saturated"}
+TREE_KINDS = {"max", "min", "tos", "residual_unrestricted"}
 AREA_STRATA = (
     ("area_1", 1, 1),
     ("area_2_9", 2, 9),
@@ -55,15 +55,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--trees",
         default="max,min",
-        help="Comma-separated tree kinds: max,min,tos,residual_unrestricted,residual_saturated (default: max,min).",
+        help="Comma-separated tree kinds: max,min,tos,residual_unrestricted (default: max,min).",
     )
     parser.add_argument("--radius", type=float, default=1.5, help="Tree-construction adjacency radius (default: 1.5).")
-    parser.add_argument(
-        "--infinity-pixel",
-        type=int,
-        default=0,
-        help="Infinity pixel used by residual_saturated (default: 0).",
-    )
     parser.add_argument("--atol", type=float, default=1.0e-12, help="Absolute agreement tolerance (default: 1e-12).")
     parser.add_argument("--rtol", type=float, default=1.0e-9, help="Relative agreement tolerance (default: 1e-9).")
     return parser.parse_args()
@@ -102,22 +96,16 @@ def load_grayscale(path: Path) -> np.ndarray:
         return np.ascontiguousarray(np.asarray(image.convert("L"), dtype=np.uint8))
 
 
-def build_tree(image: np.ndarray, kind: str, radius: float, infinity_pixel: int):
+def build_tree(image: np.ndarray, kind: str, radius: float):
     if kind == "max":
         return mmcfilters.MorphologicalTreeFactory.create_max_tree(image, radius=radius)
     if kind == "min":
         return mmcfilters.MorphologicalTreeFactory.create_min_tree(image, radius=radius)
     if kind == "residual_unrestricted":
-        return mmcfilters.MorphologicalTreeFactory.create_unrestricted_residual_tree(image, radius=radius)
+        return mmcfilters.MorphologicalTreeFactory.create_extremum_residual_tree(image, radius=radius)
     if kind == "tos":
         return mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(image)
-    if infinity_pixel < 0 or infinity_pixel >= image.size:
-        raise ValueError(f"--infinity-pixel must be in [0, {image.size}) for residual_saturated")
-    return mmcfilters.MorphologicalTreeFactory.create_saturated_residual_tree(
-        image,
-        infinity_pixel=infinity_pixel,
-        radius=radius,
-    )
+    raise ValueError(f"unsupported tree kind: {kind}")
 
 
 def attribute_category(name: str) -> str:
@@ -391,13 +379,9 @@ def build_report(metadata: dict, summary_rows: list[dict], area_rows: list[dict]
         for row in area_rows
         if row["tree"] == "combined" and row["attribute"] == "DIST_SQUARED_SUM" and float(row["exact_equal_rate"]) == 1.0
     ]
-    saturation_protocol = []
-    if "residual_saturated" in metadata["tree_kinds"]:
-        saturation_protocol.append(
-            f"- Saturated residual infinity pixel: `{metadata['infinity_pixel']}`; residual spatial order: row-major default."
-        )
+    topographic_protocol = []
     if "tos" in metadata["tree_kinds"]:
-        saturation_protocol.append(
+        topographic_protocol.append(
             "- Tree of Shapes: default canonical complementary grid (minimum 4-connectivity, maximum 8-connectivity), "
             "no domain padding (`TopographicDomainExtension.NONE`), infinity pixel `0`, and `uint8` altitude encoding."
         )
@@ -409,7 +393,7 @@ def build_report(metadata: dict, summary_rows: list[dict], area_rows: list[dict]
         f"- Images: `{metadata['image_count']}` lexicographically first files from `{metadata['image_directory']}`.",
         f"- Trees: `{', '.join(metadata['tree_kinds'])}`.",
         f"- Component/residual adjacency radius: `{metadata['radius']}`.",
-        *saturation_protocol,
+        *topographic_protocol,
         f"- Comparison domain: every live internal node, paired by the same `NodeId`, using `float64` output.",
         f"- Agreement: `|approx-exact| <= {metadata['atol']} + {metadata['rtol']} |exact|`.",
         "- `NMAE = sum(|approx-exact|) / sum(|exact|)`; `NRMSE = sqrt(sum(error²) / sum(exact²))`.",
@@ -556,7 +540,7 @@ def build_report(metadata: dict, summary_rows: list[dict], area_rows: list[dict]
         )
         main_findings.append(
             f"- Across {residual_nodes:,} residual-tree nodes, `MAX_SQUARED_DIST` changed on "
-            f"{residual_maximum_changes:,} nodes; the residual descriptor table separates unrestricted and saturated behavior."
+            f"{residual_maximum_changes:,} nodes; the residual descriptor table reports each attribute for the extremum residual tree."
         )
     if "tos" in metadata["tree_kinds"]:
         tos_field = summary_lookup[("tos", "DIST_SQUARED_SUM")]
@@ -624,7 +608,7 @@ def build_report(metadata: dict, summary_rows: list[dict], area_rows: list[dict]
         "- Raw errors are meaningful only within an attribute's declared unit; do not rank different units by MAE alone.",
         "- Zero-heavy attributes can show high agreement while differing on the subset of geometrically nontrivial nodes; the CSV includes `exact_nonzero_rate` and nonzero relative error.",
         "- Center and centroid rows/columns are also summarized jointly as Euclidean displacement.",
-        "- This experiment characterizes only the requested tree kinds and construction settings. Changing the adjacency, residual spatial order, saturated infinity pixel, or tree family can change the supports.",
+        "- This experiment characterizes only the requested tree kinds and construction settings. Changing the adjacency, residual spatial order, topographic convention, or tree family can change the supports.",
         "- Trees of shapes are not included in this campaign.",
         "",
         "## Artifacts",
@@ -659,7 +643,6 @@ def main() -> int:
         "selection_order": "lexicographic filename order",
         "tree_kinds": tree_kinds,
         "radius": arguments.radius,
-        "infinity_pixel": arguments.infinity_pixel,
         "tree_of_shapes_convention": {
             "immersion": "canonical complementary grid (minimum 4-connectivity, maximum 8-connectivity)",
             "domain_extension": "none (no padding)",
@@ -692,7 +675,7 @@ def main() -> int:
         image_hash = sha256_file(path)
         for tree_kind in tree_kinds:
             build_start = time.perf_counter()
-            tree = build_tree(image, tree_kind, arguments.radius, arguments.infinity_pixel)
+            tree = build_tree(image, tree_kind, arguments.radius)
             build_seconds = time.perf_counter() - build_start
 
             compute_start = time.perf_counter()

@@ -129,8 +129,12 @@ mmcfilters_add_unit_test(unit_hierarchy_saliency_map
     trees/test_hierarchy_saliency_map.cpp
 )
 
-mmcfilters_add_unit_test(unit_min_max_residual_tree_factory
-    trees/sdrt/test_min_max_residual_tree_factory.cpp
+mmcfilters_add_unit_test(unit_extremum_residual_tree_by_cts_factory
+    trees/sdrt/test_extremum_residual_tree_by_cts_factory.cpp
+)
+
+mmcfilters_add_unit_test(unit_residual_tree_paper_equivalence
+    trees/sdrt/test_residual_tree_paper_equivalence.cpp
 )
 
 mmcfilters_add_unit_test(unit_shape_space_saliency
@@ -295,6 +299,13 @@ if(TARGET mmcfilters)
             "MMCFILTERS_TEST_DATA_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../dat"
             ${MMCFILTERS_PYTHON_TEST_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_attribute_numeric_validation.py
+            ${CMAKE_BINARY_DIR}
+    )
+
+    add_test(
+        NAME unit_python_distance_transform
+        COMMAND ${MMCFILTERS_PYTHON_TEST_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_distance_transform.py
             ${CMAKE_BINARY_DIR}
     )
 

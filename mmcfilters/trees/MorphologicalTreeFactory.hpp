@@ -9,9 +9,8 @@
 #include "detail/HigraHierarchyAdapterDetail.hpp"
 #include "detail/MorphologicalTreeConstructionTag.hpp"
 #include "detail/NativeHierarchyValidationDetail.hpp"
-#include "sdrt/SaturatedResidualTreeBuilder.hpp"
 #include "sdrt/ResidualEvolution.hpp"
-#include "sdrt/UnrestrictedResidualTreeBuilder.hpp"
+#include "sdrt/ExtremumResidualTreeByCTsBuilder.hpp"
 #include "../utils/Image.hpp"
 #include "../utils/Contract.hpp"
 
@@ -153,21 +152,24 @@ class MorphologicalTreeFactory {
     }
 
     /**
-     * @brief Consumes a proven owning native hierarchy.
+     * @brief Materializes an owning native hierarchy without repeating complete structural validation.
+     *
+     * Internal producers establish structural validity during construction.
+     * External imports complete structural validation before reaching this method.
      *
      * @param hierarchy Hierarchy data.
      * @param preservedExternalNodeIdOffset Node identifier.
-     * @param versionPolicy Policy selecting the initial topology mutation token.
-     * @return The materialized proven owning native hierarchy.
+     * @param versionPolicy Policy used to preserve or reset imported version metadata.
+     * @return The materialized valued-tree owner.
      */
     template <AltitudeValue T>
     [[nodiscard]] static ValuedMorphologicalTree<T>
-    materializeNativeHierarchy(detail::ValidatedNativeHierarchy<T>&& hierarchy, std::optional<NodeId> preservedExternalNodeIdOffset = std::nullopt,
+    materializeNativeHierarchy(detail::OwnedNativeHierarchy<T>&& hierarchy, std::optional<NodeId> preservedExternalNodeIdOffset = std::nullopt,
                                MaterializedVersionPolicy versionPolicy = MaterializedVersionPolicy::CanonicalNative) {
         auto storage = std::move(hierarchy).release();
         const std::size_t numNodes = storage.parent.size();
         MorphologicalTree topology(tag(), std::move(storage.parent), std::move(storage.smallestNodeMap), storage.root, storage.gridDomain2D,
-                                   std::move(storage.semantics), std::move(storage.topologyProof));
+                                   std::move(storage.semantics));
         if (versionPolicy == MaterializedVersionPolicy::PreserveLinkedConstruction) {
             // Account for initialization, non-root links, and finalization.
             topology.mutationVersion_ = numNodes + 1;
@@ -263,7 +265,7 @@ class MorphologicalTreeFactory {
     }
 
     /**
-     * @brief Builds the unrestricted residual tree.
+     * @brief Builds the extremum residual tree by synchronized component trees.
      *
      * Current regional extrema from the synchronized max-tree and min-tree are
      * selected by the self-dual residual schedule. Both component trees use the
@@ -271,80 +273,35 @@ class MorphologicalTreeFactory {
      *
      * @param img Image processed by the operation.
      * @param adjacency Adjacency relation.
-     * @param options Spatial-order options for unrestricted construction.
-     * @return An unrestricted residual tree over `adjacency`.
+     * @param options Spatial-order options for extremum construction.
+     * @return An extremum residual tree over `adjacency`.
      */
     template <AltitudeValue T>
     [[nodiscard]] static ValuedMorphologicalTree<T>
-    createUnrestrictedResidualTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency,
-                                   sdrt::UnrestrictedResidualTreeOptions options = {}) {
+    createExtremumResidualTreeByCTs(ImagePtr<T> img, RegularGridAdjacency2D adjacency, sdrt::ExtremumResidualTreeOptions options = {}) {
         auto minTree = createMinTree(img, adjacency);
         auto maxTree = createMaxTree(img, adjacency);
-        sdrt::UnrestrictedResidualTreeBuilder<T> builder(adjacency, options);
+        sdrt::ExtremumResidualTreeByCTsBuilder<T> builder(adjacency, options);
         builder.build(img, std::move(minTree), std::move(maxTree));
         return materializeNativeHierarchy<T>(
             std::move(builder).takeValidatedHierarchy(makeMorphologicalTreeSemantics(
-                MorphologicalTreeKind::UnrestrictedResidualTree, SharedAdjacencyContext{std::move(adjacency)})));
+                MorphologicalTreeKind::ExtremumResidualTree, SharedAdjacencyContext{std::move(adjacency)})));
     }
 
     /**
-     * @brief Builds the unrestricted residual tree with a radius adjacency.
+     * @brief Builds the extremum residual tree with a radius adjacency.
      *
      * @param img Image processed by the operation.
      * @param radius Radius of the regular-grid adjacency.
-     * @param options Spatial-order options for unrestricted construction.
-     * @return An unrestricted residual tree using the radius adjacency.
+     * @param options Spatial-order options for extremum construction.
+     * @return An extremum residual tree using the radius adjacency.
      */
     template <AltitudeValue T>
     [[nodiscard]] static ValuedMorphologicalTree<T>
-    createUnrestrictedResidualTree(ImagePtr<T> img, double radius = 1.5, sdrt::UnrestrictedResidualTreeOptions options = {}) {
-        TreeAltitudeAlgorithms::validateFiniteImageAltitudes(img, "MorphologicalTreeFactory::createUnrestrictedResidualTree image");
+    createExtremumResidualTreeByCTs(ImagePtr<T> img, double radius = 1.5, sdrt::ExtremumResidualTreeOptions options = {}) {
+        TreeAltitudeAlgorithms::validateFiniteImageAltitudes(img, "MorphologicalTreeFactory::createExtremumResidualTreeByCTs image");
         RegularGridAdjacency2D adjacency(img->getNumRows(), img->getNumColumns(), radius);
-        return createUnrestrictedResidualTree(std::move(img), std::move(adjacency), options);
-    }
-
-    /**
-     * @brief Builds the saturated residual tree.
-     *
-     * Only current regional extrema whose complement is connected to
-     * `infinityPixel` are eligible. The supplied adjacency must be symmetric,
-     * connected on the image domain, and shared by both component trees.
-     *
-     * @param img Image processed by the operation.
-     * @param adjacency Adjacency relation.
-     * @param infinityPixel Row-major infinity pixel.
-     * @param options Saturation and spatial-order policies.
-     * @return A saturated residual tree relative to `infinityPixel`.
-     */
-    template <AltitudeValue T>
-    [[nodiscard]] static ValuedMorphologicalTree<T>
-    createSaturatedResidualTree(ImagePtr<T> img, RegularGridAdjacency2D adjacency, PixelId infinityPixel,
-                                sdrt::SaturatedResidualTreeOptions options = {}) {
-        auto minTree = createMinTree(img, adjacency);
-        auto maxTree = createMaxTree(img, adjacency);
-        sdrt::SaturatedResidualTreeBuilder<T> builder(adjacency, infinityPixel, options);
-        builder.build(img, std::move(minTree), std::move(maxTree));
-        return materializeNativeHierarchy<T>(
-            std::move(builder).takeValidatedHierarchy(makeMorphologicalTreeSemantics(
-                MorphologicalTreeKind::SaturatedResidualTree, SaturatedResidualContext{std::move(adjacency), infinityPixel})));
-    }
-
-    /**
-     * @brief Builds the saturated residual tree with a radius adjacency.
-     *
-     * @param img Image processed by the operation.
-     * @param infinityPixel Row-major infinity pixel.
-     * @param radius Radius of the regular-grid adjacency.
-     * @param options Saturation and spatial-order policies.
-     * @return A saturated residual tree using the radius adjacency.
-     */
-    template <AltitudeValue T>
-    [[nodiscard]] static ValuedMorphologicalTree<T>
-    createSaturatedResidualTree(ImagePtr<T> img, PixelId infinityPixel, double radius = 1.5,
-                                sdrt::SaturatedResidualTreeOptions options = {}) {
-        TreeAltitudeAlgorithms::validateFiniteImageAltitudes(img, "MorphologicalTreeFactory::createSaturatedResidualTree image");
-        RegularGridAdjacency2D adjacency(img->getNumRows(), img->getNumColumns(), radius);
-        return createSaturatedResidualTree(std::move(img), std::move(adjacency), infinityPixel, options);
+        return createExtremumResidualTreeByCTs(std::move(img), std::move(adjacency), options);
     }
 
     /**
@@ -381,10 +338,10 @@ class MorphologicalTreeFactory {
     }
 
     /**
-     * @brief Materializes the common output contract of a native producer.
+     * @brief Imports native buffers after complete structural validation.
      *
      * @param hierarchy Hierarchy data.
-     * @return The materialized common output contract of a native producer.
+     * @return The materialized valued-tree owner.
      */
     template <AltitudeValue T> [[nodiscard]] static ValuedMorphologicalTree<T> createFromNativeHierarchy(NativeHierarchyView<T> hierarchy) {
         return materializeNativeHierarchy<T>(detail::validateAndCopyNativeHierarchy<T>(std::move(hierarchy)));

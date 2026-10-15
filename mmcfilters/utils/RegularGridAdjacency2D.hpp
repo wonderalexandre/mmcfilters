@@ -60,7 +60,6 @@ class RegularGridAdjacency2D {
   private:
     friend class detail::CommittedGridAccess;
     struct StructuringElementTag {};
-    struct EstablishedRadiusTag {};
 
     /** @brief Number of columns. */
     int numColumns;
@@ -272,21 +271,10 @@ class RegularGridAdjacency2D {
      * @param radius Radius of the neighbourhood stencil. `1.0` gives 4-connectivity
      * and `1.5` gives 8-connectivity on the integer grid.
      */
-    RegularGridAdjacency2D(int numRows, int numColumns, double radius)
-        : RegularGridAdjacency2D(numRows, numColumns, checkedRadiusParameters(numRows, numColumns, radius), EstablishedRadiusTag{}) {}
-
-  private:
-    /**
-     * @brief Builds a radius stencil after its parameters were established.
-     * @param numRows Established grid row count.
-     * @param numColumns Established grid column count.
-     * @param radius Established finite radius.
-     * @param tag Proof tag selecting the validation-free constructor.
-     */
-    RegularGridAdjacency2D(int numRows, int numColumns, double radius, [[maybe_unused]] EstablishedRadiusTag tag) {
+    RegularGridAdjacency2D(int numRows, int numColumns, double radius) {
+        this->radius = checkedRadiusParameters(numRows, numColumns, radius);
         this->numRows = numRows;
         this->numColumns = numColumns;
-        this->radius = radius;
         this->radius2 = radius * radius;
 
         int i, j, k, dx, dy, r0, r2, i0 = 0;
@@ -398,7 +386,6 @@ class RegularGridAdjacency2D {
         buildForwardOffsetIndices();
     }
 
-  public:
     /**
      * @brief Builds adjacency induced by a symmetric structuring element.
      *

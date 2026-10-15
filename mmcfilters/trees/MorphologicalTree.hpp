@@ -9,7 +9,6 @@
 #include "MorphologicalTreeSemantics.hpp"
 #include "ProperPartDomain.hpp"
 #include "detail/MorphologicalTreeConstructionTag.hpp"
-#include "detail/NativeHierarchyValidationDetail.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -376,6 +375,23 @@ class MorphologicalTree {
         properHead_[slotId] = InvalidPixel;
         properTail_[slotId] = InvalidPixel;
         properPartCardinalityByNode_[slotId] = 0;
+    }
+
+    /**
+     * @brief Reserves free-node storage before mutation, with amortized linear growth across releases.
+     * @param additionalSlots Number of node slots about to be released into the free list.
+     */
+    void reserveFreeNodeSlots(std::size_t additionalSlots) {
+        const auto maximum = freeNodeIds_.max_size();
+        if (additionalSlots > maximum - freeNodeIds_.size()) {
+            throw std::length_error("MorphologicalTree free-node storage exceeded its size bound.");
+        }
+        const auto required = freeNodeIds_.size() + additionalSlots;
+        const auto capacity = freeNodeIds_.capacity();
+        if (required > capacity) {
+            const auto grown = capacity > maximum / 2 ? maximum : capacity * 2;
+            freeNodeIds_.reserve(std::max(required, grown));
+        }
     }
 
     /**
@@ -1210,7 +1226,7 @@ class MorphologicalTree {
         const NodeId childSlotId = childId;
         if (releaseNodeFlag && numChildrenByNode_[static_cast<std::size_t>(childSlotId)] == 0 &&
             properPartCardinalityByNode_[static_cast<std::size_t>(childSlotId)] == 0) {
-            freeNodeIds_.reserve(freeNodeIds_.size() + 1);
+            reserveFreeNodeSlots(1);
         }
         unlinkChildSlot(parentSlotId, childSlotId);
         nodeParent_[childSlotId] = childSlotId;
@@ -1389,8 +1405,7 @@ class MorphologicalTree {
         case MorphologicalTreeKind::MaxTree:
         case MorphologicalTreeKind::MinTree:
         case MorphologicalTreeKind::TreeOfShapes:
-        case MorphologicalTreeKind::UnrestrictedResidualTree:
-        case MorphologicalTreeKind::SaturatedResidualTree:
+        case MorphologicalTreeKind::ExtremumResidualTree:
             break;
         default:
             throw std::invalid_argument("Native topology kind is not supported.");
@@ -1419,11 +1434,6 @@ class MorphologicalTree {
         };
         if (const auto* context = std::get_if<SharedAdjacencyContext>(&semantics_.constructionContext)) {
             requireMatchingGrid(context->adjacency, "SharedAdjacencyContext adjacency");
-        } else if (const auto* context = std::get_if<SaturatedResidualContext>(&semantics_.constructionContext)) {
-            requireMatchingGrid(context->adjacency, "SaturatedResidualContext adjacency");
-            if (context->infinityPixel < 0 || static_cast<std::size_t>(context->infinityPixel) >= gridDomain2D_->size("Saturated residual domain")) {
-                throw std::invalid_argument("SaturatedResidualContext infinity pixel must belong to the attached 2D grid.");
-            }
         } else if (const auto* convention = std::get_if<TopographicConvention>(&semantics_.constructionContext)) {
             if (convention->infinityPixel < 0) {
                 throw std::invalid_argument("TopographicConvention infinity pixel must be non-negative.");
@@ -1520,40 +1530,20 @@ class MorphologicalTree {
     }
 
     /**
-     * @brief Consumes producer-owned buffers paired with generic structural
-     * evidence.
+     * @brief Factory-only materialization of an owning native topology.
+     *
+     * Internal producers supply valid topology buffers. External imports must
+     * complete structural validation before calling this constructor.
      *
      * @param nodeParent Parent-node value.
      * @param smallestNodeMap Pixel-indexed smallest node map.
      * @param root Root node of the traversal.
      * @param gridDomain2D Optional regular-grid pixel domain.
      * @param semantics Hierarchy semantics validated by the operation.
-     * @param topologyProof Proof that the native topology invariants hold.
-     */
-    void initializeValidatedNativeTopology(std::vector<NodeId>&& nodeParent, std::vector<NodeId>&& smallestNodeMap, NodeId root,
-                                           std::optional<GridDomain2D> gridDomain2D, MorphologicalTreeSemantics semantics,
-                                           detail::NativeTopologyProof&& topologyProof) {
-        topologyProof.requireMatches(nodeParent.size(), smallestNodeMap.size(), root);
-        initializeNativeTopologyStorage(std::move(nodeParent), std::move(smallestNodeMap), root, gridDomain2D, std::move(semantics));
-#ifndef NDEBUG
-        validateConnectedRootedTree();
-#endif
-    }
-
-    /**
-     * @brief Factory-only materialization of a proven owning native topology.
-     *
-     * @param nodeParent Parent-node value.
-     * @param smallestNodeMap Pixel-indexed smallest node map.
-     * @param root Root node of the traversal.
-     * @param gridDomain2D Optional regular-grid pixel domain.
-     * @param semantics Hierarchy semantics validated by the operation.
-     * @param topologyProof Proof that the native topology invariants hold.
      */
     MorphologicalTree(detail::MorphologicalTreeConstructionTag, std::vector<NodeId>&& nodeParent, std::vector<NodeId>&& smallestNodeMap, NodeId root,
-                      std::optional<GridDomain2D> gridDomain2D, MorphologicalTreeSemantics semantics, detail::NativeTopologyProof&& topologyProof) {
-        initializeValidatedNativeTopology(std::move(nodeParent), std::move(smallestNodeMap), root, gridDomain2D, std::move(semantics),
-                                          std::move(topologyProof));
+                      std::optional<GridDomain2D> gridDomain2D, MorphologicalTreeSemantics semantics) {
+        initializeNativeTopologyStorage(std::move(nodeParent), std::move(smallestNodeMap), root, gridDomain2D, std::move(semantics));
     }
 
     /**
@@ -2163,11 +2153,6 @@ class MorphologicalTree {
     /** @brief Returns the shared-adjacency context, or `nullptr`. @return Stored context when its variant is active. */
     inline const SharedAdjacencyContext* sharedAdjacencyContext() const noexcept {
         return std::get_if<SharedAdjacencyContext>(&semantics_.constructionContext);
-    }
-
-    /** @brief Returns the saturated-residual context, or `nullptr`. @return Stored context when its variant is active. */
-    inline const SaturatedResidualContext* saturatedResidualContext() const noexcept {
-        return std::get_if<SaturatedResidualContext>(&semantics_.constructionContext);
     }
 
     /** @brief Returns the topographic convention, or `nullptr`. @return Stored convention when its variant is active. */
@@ -2813,7 +2798,7 @@ class MorphologicalTree {
         for ([[maybe_unused]] NodeId subtreeNode : subtreeNodes(nodeId)) {
             ++releaseCount;
         }
-        freeNodeIds_.reserve(freeNodeIds_.size() + releaseCount);
+        reserveFreeNodeSlots(releaseCount);
 
         const auto descendToDeepestLastChild = [this](NodeId startId) {
             NodeId currentId = startId;
@@ -2858,7 +2843,7 @@ class MorphologicalTree {
         }
         const NodeId parentSlotId = parentNodeId;
         const NodeId nodeSlotId = nodeId;
-        freeNodeIds_.reserve(freeNodeIds_.size() + 1);
+        reserveFreeNodeSlots(1);
 
         spliceProperPartsSlots(parentSlotId, nodeSlotId);
         spliceChildrenSlots(parentSlotId, nodeSlotId, ChildSplicePolicy::ReplaceSourceSlotWhenDirectChild);

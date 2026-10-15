@@ -11,6 +11,10 @@ set(MMCFILTERS_PUBLIC_HEADER_ENTRYPOINTS
     ${MMCFILTERS_ROOT}/contours/ContourTraceComputation.hpp
     ${MMCFILTERS_ROOT}/contours/ContourTrace.hpp
     ${MMCFILTERS_ROOT}/contours/ContourComputation.hpp
+    ${MMCFILTERS_ROOT}/distanceTransform/DistanceTransformComputation.hpp
+    ${MMCFILTERS_ROOT}/distanceTransform/DistanceTransformProfiles.hpp
+    ${MMCFILTERS_ROOT}/distanceTransform/DistanceTransformTypes.hpp
+    ${MMCFILTERS_ROOT}/distanceTransform/NodeDistanceField.hpp
     ${MMCFILTERS_ROOT}/filters/AttributeFilters.hpp
     ${MMCFILTERS_ROOT}/filters/AttributeReconstructionFilters.hpp
     ${MMCFILTERS_ROOT}/filters/NodeDecisionMasks.hpp
@@ -39,11 +43,8 @@ set(MMCFILTERS_PUBLIC_HEADER_ENTRYPOINTS
     ${MMCFILTERS_ROOT}/trees/saliency/HierarchySaliencyMapValidation.hpp
     ${MMCFILTERS_ROOT}/trees/saliency/HierarchicalWatershedSaliency.hpp
     ${MMCFILTERS_ROOT}/trees/saliency/ShapeSpaceSaliency.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/SaturatedResidualTreeBuilder.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/ResidualTreeBuildStatistics.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/ResidualEvolution.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/ResidualTreePolicies.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/UnrestrictedResidualTreeBuilder.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/ExtremumResidualTreeByCTsBuilder.hpp
     ${MMCFILTERS_ROOT}/utils/Altitude.hpp
     ${MMCFILTERS_ROOT}/utils/Common.hpp
     ${MMCFILTERS_ROOT}/utils/Contract.hpp
@@ -51,9 +52,9 @@ set(MMCFILTERS_PUBLIC_HEADER_ENTRYPOINTS
     ${MMCFILTERS_ROOT}/utils/RegularGridAdjacency2D.hpp
 )
 
-# Explicit installation manifest. Besides the entry points above, this contains
-# only the implementation support reached by their header-only definitions.
-# Unreferenced internal helpers are deliberately absent.
+# Explicit installation manifest: stable entry points, their implementation
+# support, and documented opt-in experimental headers. Other unreferenced
+# internal helpers are deliberately absent.
 set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/attributes/AttributeComputation.hpp
     ${MMCFILTERS_ROOT}/attributes/AttributeNames.hpp
@@ -116,6 +117,10 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/contours/detail/ContourLifetimeIndex.hpp
     ${MMCFILTERS_ROOT}/contours/detail/ContourEdgeDeltaStore.hpp
     ${MMCFILTERS_ROOT}/contours/detail/ContourTraceTraversal.hpp
+    ${MMCFILTERS_ROOT}/distanceTransform/DistanceTransformComputation.hpp
+    ${MMCFILTERS_ROOT}/distanceTransform/DistanceTransformProfiles.hpp
+    ${MMCFILTERS_ROOT}/distanceTransform/DistanceTransformTypes.hpp
+    ${MMCFILTERS_ROOT}/distanceTransform/NodeDistanceField.hpp
     ${MMCFILTERS_ROOT}/dataStructure/FastQueue.hpp
     ${MMCFILTERS_ROOT}/filters/AttributeFilters.hpp
     ${MMCFILTERS_ROOT}/filters/AttributeReconstructionFilters.hpp
@@ -163,22 +168,8 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/trees/saliency/HierarchySaliencyMapValidation.hpp
     ${MMCFILTERS_ROOT}/trees/saliency/HierarchicalWatershedSaliency.hpp
     ${MMCFILTERS_ROOT}/trees/saliency/ShapeSpaceSaliency.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/ResidualTreeBuildStatistics.hpp
     ${MMCFILTERS_ROOT}/trees/sdrt/ResidualEvolution.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/ResidualTreePolicies.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/SaturatedResidualTreeBuilder.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/UnrestrictedResidualTreeBuilder.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/detail/SynchronizedResidualTreeEvolution.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/detail/FlatZonePartition.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeCandidateAgenda.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeCandidateContext.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeCandidatePreparation.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeCandidateTypes.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeEventAssembler.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeMaterialization.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/detail/ResidualTreeRegionTypes.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/detail/SaturatedDynamicLca.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/detail/SaturatedResidualEligibility.hpp
+    ${MMCFILTERS_ROOT}/trees/sdrt/ExtremumResidualTreeByCTsBuilder.hpp
     ${MMCFILTERS_ROOT}/utils/Altitude.hpp
     ${MMCFILTERS_ROOT}/utils/Assert.hpp
     ${MMCFILTERS_ROOT}/utils/Common.hpp

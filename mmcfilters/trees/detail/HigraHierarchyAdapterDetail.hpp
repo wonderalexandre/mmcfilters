@@ -24,7 +24,7 @@ namespace mmcfilters::detail {
  */
 template <AltitudeValue T> struct HigraHierarchyImport {
     /** @brief Hierarchy. */
-    ValidatedNativeHierarchy<T> hierarchy;
+    OwnedNativeHierarchy<T> hierarchy;
     /** @brief Dense node identifier of the internal node offset. */
     NodeId internalNodeOffset = InvalidNode;
 };
@@ -46,7 +46,7 @@ template <AltitudeValue T> struct HigraHierarchyImport {
 template <AltitudeValue T>
 [[nodiscard]] HigraHierarchyImport<T> adaptHigraHierarchy(std::span<const NodeId> parent, std::span<const T> higraAltitude, int rows, int columns,
                                                           MorphologicalTreeKind kind, std::optional<RegularGridAdjacency2D> adjacency) {
-    if (kind == MorphologicalTreeKind::UnrestrictedResidualTree || kind == MorphologicalTreeKind::SaturatedResidualTree) {
+    if (kind == MorphologicalTreeKind::ExtremumResidualTree) {
         throw std::invalid_argument(
             "Higra import does not accept residual-tree kinds because residual-tree proper parts are not represented by the Higra leaf layout.");
     }
@@ -121,9 +121,8 @@ template <AltitudeValue T>
     }
 
     const NativeHierarchyView<T> view{nodeParent, smallestNodeMap, altitude, root, gridDomain, semantics};
-    NativeTopologyProof proof = NativeHierarchyValidation::validateComplete(view);
-    return {makeValidatedNativeHierarchy<T>(std::move(nodeParent), std::move(smallestNodeMap), std::move(altitude), root, gridDomain, std::move(semantics),
-                                            std::move(proof)),
+    NativeHierarchyValidation::validateComplete(view);
+    return {makeOwnedNativeHierarchy<T>(std::move(nodeParent), std::move(smallestNodeMap), std::move(altitude), root, gridDomain, std::move(semantics)),
             layout.numLeaves()};
 }
 

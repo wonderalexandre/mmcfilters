@@ -83,8 +83,8 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
   public:
     /** One complete dual proper-part transfer, in execution order. */
     struct ProperPartTransfer {
-        NodeId source;
-        NodeId target;
+        NodeId source; ///< Dual node whose complete proper part was transferred.
+        NodeId target; ///< Dual node receiving that proper part.
     };
 
   private:
@@ -937,10 +937,16 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
      */
     const std::vector<NodeId>& getLastTopologyChangedNodes() const { return lastTopologyChangedNodes_; }
 
-    /** Complete dual proper-part transfers; valid until the next update. */
+    /**
+     * @brief Exposes complete dual proper-part transfers from the last update.
+     * @return Borrowed transfer records in execution order, valid until the next update.
+     */
     [[nodiscard]] std::span<const ProperPartTransfer> getLastProperPartTransfers() const noexcept { return lastProperPartTransfers_; }
 
-    /** Destination established by moving the selected pixels and any subsequent whole-part merges. */
+    /**
+     * @brief Identifies the dual proper part containing the support after the last update.
+     * @return Destination established by selected-pixel moves and subsequent whole-part merges.
+     */
     [[nodiscard]] NodeId getLastSelectedSupportNode() const noexcept { return lastSelectedSupportNode_; }
 
     /**

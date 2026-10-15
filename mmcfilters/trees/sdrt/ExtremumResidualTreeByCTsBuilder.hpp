@@ -18,7 +18,7 @@
 
 namespace mmcfilters::sdrt {
 namespace detail {
-// Defined only by the tests that check Eq. (31) after each elementary leveling.
+/** @brief Test access to support preparation and association invariants. @tparam T Image altitude type. */
 template <AltitudeValue T> struct ExtremumResidualTreeTestAccess;
 }
 
@@ -30,32 +30,40 @@ template <AltitudeValue T> struct ExtremumResidualTreeTestAccess;
  * Selected supports come from current component-tree proper parts. The dual
  * component-tree update is delegated to DualMinMaxTreeIncrementalFilterLeaf.
  * Result spans remain valid until the next build or result transfer.
+ *
+ * @tparam T Image and node altitude type.
  */
 template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
   public:
-    using Altitude = T;
-    using ImagePointer = ImagePtr<T>;
-    using Tree = ValuedMorphologicalTree<T>;
+    using Altitude = T; ///< Scalar type shared by image samples and node altitudes.
+    using ImagePointer = ImagePtr<T>; ///< Shared pointer to the input image.
+    using Tree = ValuedMorphologicalTree<T>; ///< Valued component tree consumed during construction.
 
   private:
     friend struct detail::ExtremumResidualTreeTestAccess<T>;
-    using NodeList = std::list<NodeId>;
-    using Adjustment = adjust::DualMinMaxTreeIncrementalFilterLeaf<T>;
+    using NodeList = std::list<NodeId>; ///< Pending residual nodes associated with one component proper part.
+    using Adjustment = adjust::DualMinMaxTreeIncrementalFilterLeaf<T>; ///< Synchronized elementary-leveling updater.
 
     /** Completed output; construction buffers are owned by the local BuildState. */
     struct Result {
-        int rows = 0;
-        int columns = 0;
-        NodeId root = InvalidNode;
-        std::vector<NodeId> parents;
-        std::vector<NodeId> smallestNodeMap;
-        std::vector<T> nodeAltitudes;
+        int rows = 0; ///< Number of rows in the completed image domain.
+        int columns = 0; ///< Number of columns in the completed image domain.
+        NodeId root = InvalidNode; ///< Terminal root, or InvalidNode when no result is available.
+        std::vector<NodeId> parents; ///< Inclusion parent for every recorded support.
+        std::vector<NodeId> smallestNodeMap; ///< Smallest recorded support containing each pixel.
+        std::vector<T> nodeAltitudes; ///< Original proper-part valuation of every recorded support.
 
+        /** @brief Rejects access before a successful build or after result transfer. */
         void requireBuilt() const {
             if (root == InvalidNode)
                 throw std::logic_error("Residual-tree builder has no completed result.");
         }
 
+        /**
+         * @brief Transfers the completed buffers and invalidates this result.
+         * @param semantics Hierarchy kind, altitude order, and construction context attached by the factory.
+         * @return Owning native hierarchy containing the completed topology and valuation.
+         */
         [[nodiscard]] mmcfilters::detail::OwnedNativeHierarchy<T> take(MorphologicalTreeSemantics semantics) && {
             requireBuilt();
             auto hierarchy = mmcfilters::detail::makeOwnedNativeHierarchy<T>(std::move(parents), std::move(smallestNodeMap), std::move(nodeAltitudes), root,
@@ -67,34 +75,43 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
     };
     /** Selected support and certificates reused by the incremental dual update. */
     struct LeafContext {
-        std::vector<PixelId> supportPixels;
+        std::vector<PixelId> supportPixels; ///< Pixels in the selected extremal flat zone.
         NodeId dualProperPartNode = InvalidNode; ///< Unique dual proper part containing the selected flat zone.
-        NodeId wholeSupportSmallestNode = InvalidNode;
+        NodeId wholeSupportSmallestNode = InvalidNode; ///< Dual node when its entire proper part is selected; otherwise InvalidNode.
     };
     /** Inverse association relation: X ◀ Y is stored in nodesByProperPart[Y]. */
     struct Associations {
-        std::vector<NodeList> nodesByProperPart_;
-        std::vector<NodeList::iterator> positions_;
+        std::vector<NodeList> nodesByProperPart_; ///< Pending residual nodes indexed by component-tree proper part.
+        std::vector<NodeList::iterator> positions_; ///< List position for each associated pending residual node.
 
       public:
+        /** @brief Allocates empty association lists. @param numSlots Number of component-tree node slots. */
         explicit Associations(std::size_t numSlots) : nodesByProperPart_(numSlots) {}
 
+        /** @brief Extends the lists for newly allocated component nodes. @param numSlots Required number of node slots. */
         void resize(std::size_t numSlots) {
             if (numSlots > nodesByProperPart_.size())
                 nodesByProperPart_.resize(numSlots);
         }
 
+        /** @brief Accesses a checked association list. @param node Component-tree node slot. @return Mutable list of pending residual nodes. */
         NodeList& at(NodeId node) {
             if (node < 0 || static_cast<std::size_t>(node) >= nodesByProperPart_.size())
                 throw std::out_of_range("Residual association has an invalid component node.");
             return nodesByProperPart_[static_cast<std::size_t>(node)];
         }
+        /** @brief Reads a checked association list. @param node Component-tree node slot. @return Borrowed list of pending residual nodes. */
         const NodeList& at(NodeId node) const {
             if (node < 0 || static_cast<std::size_t>(node) >= nodesByProperPart_.size())
                 throw std::out_of_range("Residual association has an invalid component node.");
             return nodesByProperPart_[static_cast<std::size_t>(node)];
         }
 
+        /**
+         * @brief Associates a pending support with a component proper part.
+         * @param residualNode Recorded residual support awaiting an inclusion parent.
+         * @param componentNode Component-tree proper part containing the support.
+         */
         void insert(NodeId residualNode, NodeId componentNode) {
             auto& nodes = at(componentNode);
             if (static_cast<std::size_t>(residualNode) >= positions_.size())
@@ -103,10 +120,18 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
             positions_[static_cast<std::size_t>(residualNode)] = std::prev(nodes.end());
         }
 
-        // Every child of the selected leaf also belongs to its unique dual
-        // proper part. Whole-list splices preserve all stored iterators.
+        /**
+         * @brief Removes a support after its inclusion parent has been recorded.
+         * @param residualNode Associated residual support being consumed.
+         * @param componentNode Component-tree proper part containing the association.
+         */
         void erase(NodeId residualNode, NodeId componentNode) { at(componentNode).erase(positions_.at(static_cast<std::size_t>(residualNode))); }
 
+        /**
+         * @brief Moves all associations with a whole proper-part transfer, preserving list iterators.
+         * @param source Component node whose proper part was transferred.
+         * @param target Live component node receiving that proper part.
+         */
         void transfer(NodeId source, NodeId target) {
             if (source == target)
                 throw std::logic_error("Residual association transfer requires distinct nodes.");
@@ -117,13 +142,19 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
 
     /** Xi is implicit: non-root recorded nodes with parents_[node] == InvalidNode. */
     struct AssemblyState {
-        Associations maxAssociations_;
-        Associations minAssociations_;
-        NodeId recordedSupportNode_ = InvalidNode;
-        Polarity selectedPolarity_ = Polarity::Maximum;
-        std::vector<NodeId> parents_{InvalidNode};
-        std::vector<NodeId> smallestNodeMap_;
-        std::vector<T> nodeAltitudes_{T{}};
+        Associations maxAssociations_; ///< Pending supports associated with max-tree proper parts.
+        Associations minAssociations_; ///< Pending supports associated with min-tree proper parts.
+        NodeId recordedSupportNode_ = InvalidNode; ///< Newly recorded support awaiting association updates.
+        Polarity selectedPolarity_ = Polarity::Maximum; ///< Polarity of the newly recorded support.
+        std::vector<NodeId> parents_{InvalidNode}; ///< Inclusion parents; slot zero is reserved for the terminal root.
+        std::vector<NodeId> smallestNodeMap_; ///< First recorded support containing each pixel, or InvalidNode until assigned.
+        std::vector<T> nodeAltitudes_{T{}}; ///< Proper-part valuations, with the terminal valuation reserved at slot zero.
+        /**
+         * @brief Allocates assembly buffers for a nonempty representable pixel domain.
+         * @param numPixels Number of pixels and upper bound on residual nodes.
+         * @param maxNodeSlots Initial number of max-tree node slots.
+         * @param minNodeSlots Initial number of min-tree node slots.
+         */
         AssemblyState(std::size_t numPixels, std::size_t maxNodeSlots, std::size_t minNodeSlots)
             : maxAssociations_(maxNodeSlots), minAssociations_(minNodeSlots), smallestNodeMap_(numPixels, InvalidNode) {
             if (numPixels == 0 || numPixels >= static_cast<std::size_t>(std::numeric_limits<NodeId>::max())) {
@@ -134,62 +165,92 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
         }
     };
 
+    /** @brief Current extremal flat zone and its deterministic selection key. */
     struct Extremum {
-        SelfDualResidualKey residualKey;
-        Polarity polarity;
-        NodeId nodeId;
+        SelfDualResidualKey residualKey; ///< Support cardinality and spatial minimum used for selection.
+        Polarity polarity; ///< Component-tree side in which the flat zone is a leaf.
+        NodeId nodeId; ///< Leaf identifier in that component tree.
     };
+    /** @brief Orders current extrema by support cardinality and spatial minimum. */
     struct ExtremumLess {
-        SelfDualResidualOrder order;
+        SelfDualResidualOrder order; ///< Shared polarity-independent ordering rule.
+        /** @brief Compares selection keys. @param lhs First candidate. @param rhs Second candidate. @return Whether lhs precedes rhs. */
         bool operator()(const Extremum& lhs, const Extremum& rhs) const { return order(lhs.residualKey, rhs.residualKey); }
     };
+    /** @brief Cached agenda membership for one component-tree node slot. */
     struct LeafSlot {
-        bool active = false;
-        Extremum extremum{{}, Polarity::Maximum, InvalidNode};
+        bool active = false; ///< Whether the cached extremum is present in the agenda.
+        Extremum extremum{{}, Polarity::Maximum, InvalidNode}; ///< Last selection key and identity inserted for this slot.
     };
+    /** @brief Ordered current extrema and membership caches for both component trees. */
     struct AgendaState {
-        SpatialOrder spatialOrder;
-        std::set<Extremum, ExtremumLess> extrema;
-        std::vector<LeafSlot> maxSlots;
-        std::vector<LeafSlot> minSlots;
+        SpatialOrder spatialOrder; ///< Total pixel order used to break cardinality ties.
+        std::set<Extremum, ExtremumLess> extrema; ///< Active nonterminal extrema in deterministic selection order.
+        std::vector<LeafSlot> maxSlots; ///< Max-tree agenda membership indexed by node slot.
+        std::vector<LeafSlot> minSlots; ///< Min-tree agenda membership indexed by node slot.
 
+        /**
+         * @brief Creates an empty agenda with membership caches for both trees.
+         * @param order Total pixel order used by candidate keys.
+         * @param maxCount Initial number of max-tree node slots.
+         * @param minCount Initial number of min-tree node slots.
+         */
         AgendaState(SpatialOrder order, std::size_t maxCount, std::size_t minCount)
             : spatialOrder(std::move(order)), extrema(ExtremumLess{SelfDualResidualOrder(spatialOrder)}), maxSlots(maxCount), minSlots(minCount) {}
     };
 
     /** One build owns all temporary state; only Result survives build(). */
     struct BuildState {
-        const ImagePointer& image;
-        Tree& minTree;
-        Tree& maxTree;
-        Adjustment adjustment;
-        AgendaState agenda;
-        LeafContext context;
-        AssemblyState assembly;
+        const ImagePointer& image; ///< Original image retained for exact reconstruction checks.
+        Tree& minTree; ///< Mutable min-tree of the current leveled image.
+        Tree& maxTree; ///< Mutable max-tree of the current leveled image.
+        Adjustment adjustment; ///< Incremental updater keeping both component trees synchronized.
+        AgendaState agenda; ///< Selection agenda of current extremal flat zones.
+        LeafContext context; ///< Reusable selected support and dual proper-part certificates.
+        AssemblyState assembly; ///< Recorded residual supports and pending associations.
 
+        /**
+         * @brief Connects the temporary construction state to the two consumed trees.
+         * @param input Original image whose valuation must be reconstructed.
+         * @param min Mutable min-tree for elementary levelings.
+         * @param max Mutable max-tree for elementary levelings.
+         * @param adjacency Shared spatial adjacency of both trees.
+         * @param order Total pixel order used for deterministic selection.
+         */
         BuildState(const ImagePointer& input, Tree& min, Tree& max, const RegularGridAdjacency2D& adjacency, const SpatialOrder& order)
             : image(input), minTree(min), maxTree(max), adjustment(&min, &max, adjacency),
               agenda(order, max.topology().numInternalNodeSlots(), min.topology().numInternalNodeSlots()),
               assembly(input->getSize(), max.topology().numInternalNodeSlots(), min.topology().numInternalNodeSlots()) {}
     };
 
+    /** @brief Selected extremum with tree references and values captured before leveling. */
     struct PreparedExtremum {
-        Extremum selected;
-        Tree& primal;
-        Tree& dual;
-        NodeId parent;
+        Extremum selected; ///< Candidate removed by the next elementary leveling.
+        Tree& primal; ///< Component tree in which the selected flat zone is a leaf.
+        Tree& dual; ///< Opposite component tree updated after primal pruning.
+        NodeId parent; ///< Primal parent receiving the selected leaf during pruning.
         T nodeAltitude; ///< eta(X_s), captured before elementary leveling (Eqs. 25, 33).
     };
 
-    RegularGridAdjacency2D adjacency_;
-    SpatialOrder spatialOrder_;
-    Result result_;
+    RegularGridAdjacency2D adjacency_; ///< Shared adjacency used by both component trees.
+    SpatialOrder spatialOrder_; ///< Total pixel order defining deterministic selection ties.
+    Result result_; ///< Completed output retained after temporary construction state is released.
 
   public:
+    /**
+     * @brief Configures component-tree construction with a shared adjacency and pixel order.
+     * @param adjacency Spatial adjacency matching the input image domain.
+     * @param options Spatial ordering policy for equal-cardinality extremal flat zones.
+     */
     explicit ExtremumResidualTreeByCTsBuilder(RegularGridAdjacency2D adjacency, ExtremumResidualTreeOptions options = {})
         : adjacency_(std::move(adjacency)), spatialOrder_(std::move(options.spatialOrder)) {}
 
-    /** Consume the initial min/max trees (Algorithm 1, line 1). */
+    /**
+     * @brief Consumes the initial min/max trees and records the extremum residual hierarchy.
+     * @param image Original image reconstructed by the resulting proper-part valuations.
+     * @param minTree Min-tree of image, consumed and modified during construction.
+     * @param maxTree Max-tree of image, consumed and modified during construction.
+     */
     void build(const ImagePointer& image, Tree&& minTree, Tree&& maxTree) {
         result_ = {};
         requireResidualInputs(image, adjacency_, spatialOrder_);
@@ -213,47 +274,68 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
     }
 
   public:
+    /** @brief Reports the completed image height. @return Number of rows after a successful build. */
     [[nodiscard]] int rows() const {
         result_.requireBuilt();
         return result_.rows;
     }
+    /** @brief Reports the completed image width. @return Number of columns after a successful build. */
     [[nodiscard]] int columns() const {
         result_.requireBuilt();
         return result_.columns;
     }
+    /** @brief Identifies the terminal full-domain support. @return Root identifier of the completed residual tree. */
     [[nodiscard]] NodeId root() const {
         result_.requireBuilt();
         return result_.root;
     }
+    /** @brief Exposes the shared component-tree adjacency. @return Borrowed adjacency retained by this builder. */
     [[nodiscard]] const RegularGridAdjacency2D& adjacency() const noexcept { return adjacency_; }
+    /** @brief Exposes the deterministic pixel order. @return Borrowed spatial ordering policy. */
     [[nodiscard]] const SpatialOrder& spatialOrder() const noexcept { return spatialOrder_; }
+    /** @brief Exposes the completed inclusion hierarchy. @return Borrowed parent identifiers indexed by residual node. */
     [[nodiscard]] std::span<const NodeId> parents() const {
         result_.requireBuilt();
         return result_.parents;
     }
+    /** @brief Exposes the completed proper-part assignment. @return Borrowed smallest residual node for each pixel. */
     [[nodiscard]] std::span<const NodeId> smallestNodeMap() const {
         result_.requireBuilt();
         return result_.smallestNodeMap;
     }
+    /** @brief Exposes the original proper-part valuations. @return Borrowed altitude buffer indexed by residual node. */
     [[nodiscard]] std::span<const T> nodeAltitudes() const {
         result_.requireBuilt();
         return result_.nodeAltitudes;
     }
+    /**
+     * @brief Transfers the completed result to the tree factory and invalidates result access.
+     * @param semantics Hierarchy descriptor attached by the consuming factory.
+     * @return Owning native hierarchy with buffers validated during construction.
+     */
     [[nodiscard]] mmcfilters::detail::OwnedNativeHierarchy<T> takeValidatedHierarchy(MorphologicalTreeSemantics semantics) && {
         return std::move(result_).take(std::move(semantics));
     }
 
   private:
+    /**
+     * @brief Tests whether a node represents an eligible nonterminal extremal flat zone.
+     * @param tree Current component tree on the candidate side.
+     * @param node Candidate node identifier.
+     * @return Whether the node is a live non-root leaf with a nonempty proper part.
+     */
     [[nodiscard]] static bool isResidualLeaf(const Tree& tree, NodeId node) {
         const auto& topology = tree.topology();
         return node >= 0 && topology.isNode(node) && topology.isAlive(node) && node != topology.root() && topology.isLeaf(node) &&
                topology.properPartCardinality(node) > 0;
     }
 
+    /** @brief Selects one side of the agenda cache. @param agenda Current selection state. @param polarity Component-tree side. @return Node-slot cache for that side. */
     static std::vector<LeafSlot>& slots(AgendaState& agenda, Polarity polarity) {
         return polarity == Polarity::Maximum ? agenda.maxSlots : agenda.minSlots;
     }
 
+    /** @brief Removes an active cached candidate. @param agenda Current selection state. @param polarity Component-tree side. @param node Candidate node slot. */
     static void deactivate(AgendaState& agenda, Polarity polarity, NodeId node) {
         auto& side = slots(agenda, polarity);
         if (node < 0 || static_cast<std::size_t>(node) >= side.size()) return;
@@ -263,6 +345,13 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
         slot.active = false;
     }
 
+    /**
+     * @brief Updates agenda membership and the selection key after a local tree change.
+     * @param agenda Current selection state.
+     * @param tree Component tree containing the candidate.
+     * @param polarity Component-tree side used to identify the candidate.
+     * @param node Node slot whose leaf status or support may have changed.
+     */
     static void refreshLeaf(AgendaState& agenda, const Tree& tree, Polarity polarity, NodeId node) {
         if (!isResidualLeaf(tree, node)) {
             deactivate(agenda, polarity, node);
@@ -286,11 +375,13 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
         slot = {true, extremum};
     }
 
+    /** @brief Inserts all initial nonterminal extrema into the agenda. @param state Temporary state holding both initial trees. */
     static void initialize(BuildState& state) {
         for (NodeId node : state.maxTree.topology().aliveNodeIds()) refreshLeaf(state.agenda, state.maxTree, Polarity::Maximum, node);
         for (NodeId node : state.minTree.topology().aliveNodeIds()) refreshLeaf(state.agenda, state.minTree, Polarity::Minimum, node);
     }
 
+    /** @brief Selects the first valid candidate, refreshing stale entries as needed. @param state Current component trees and agenda. @return Smallest extremum, or no value at termination. */
     [[nodiscard]] static std::optional<Extremum> selectSmallestExtremum(BuildState& state) {
         while (!state.agenda.extrema.empty()) {
             const Extremum selected = *state.agenda.extrema.begin();
@@ -303,6 +394,12 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
         return std::nullopt;
     }
 
+    /**
+     * @brief Collects the selected support and captures its altitude before leveling.
+     * @param state Current trees and reusable support buffer.
+     * @param selected Valid extremum returned by the agenda.
+     * @return Primal/dual references, primal parent, and original extremum altitude.
+     */
     [[nodiscard]] PreparedExtremum prepareExtremum(BuildState& state, const Extremum& selected) const {
         Tree& primal = selected.polarity == Polarity::Maximum ? state.maxTree : state.minTree;
         Tree& dual = selected.polarity == Polarity::Maximum ? state.minTree : state.maxTree;
@@ -313,6 +410,7 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
         return {selected, primal, dual, parent, primal.nodeAltitude(selected.nodeId)};
     }
 
+    /** @brief Prunes the selected leaf and updates the dual tree incrementally. @param state Current trees, support, and updater. @param extremum Prepared selection before leveling. */
     static void levelExtremum(BuildState& state, const PreparedExtremum& extremum) {
         const auto& context = state.context;
         // An empty adjacent-node span delegates boundary discovery to the updater.
@@ -324,11 +422,13 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
                                                           {}, context.wholeSupportSmallestNode);
     }
 
+    /** @brief Applies association transfers reported by the latest elementary leveling. @param state Current assembly and updater results. @param extremum Selection whose primal parent receives the support. */
     static void updateAssociations(BuildState& state, const PreparedExtremum& extremum) {
         updateAssociations(state.assembly, state.minTree, state.maxTree, extremum.parent, state.adjustment.getLastSelectedSupportNode(),
                            state.adjustment.getLastProperPartTransfers());
     }
 
+    /** @brief Refreshes only primal and dual candidates touched by the latest leveling. @param state Current trees, updater, and agenda. @param extremum Selection identifying the affected primal leaf and parent. */
     static void refreshAffectedLeaves(BuildState& state, const PreparedExtremum& extremum) {
         const auto& selected = extremum.selected;
         const Polarity dualPolarity = selected.polarity == Polarity::Maximum ? Polarity::Minimum : Polarity::Maximum;
@@ -337,6 +437,7 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
         refreshLeaf(state.agenda, extremum.primal, selected.polarity, extremum.parent);
     }
 
+    /** @brief Attaches remaining pending supports to the terminal full-domain root. @param state Completed evolution and residual assembly. @return Validated output buffers with the terminal valuation. */
     [[nodiscard]] Result finalizeRoot(BuildState& state) const {
         const T terminalAltitude = residualTerminalAltitude(state.minTree, state.maxTree);
         return finalize(std::move(state.assembly), state.image,
@@ -344,11 +445,18 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
                            terminalAltitude);
     }
 
+    /** @brief Selects the association relation for one component-tree side. @param state Current residual assembly. @param polarity Component-tree side. @return Mutable inverse association relation. */
     static Associations& associations(AssemblyState& state, Polarity polarity) {
         return polarity == Polarity::Maximum ? state.maxAssociations_ : state.minAssociations_;
     }
 
-    /** Read the proper part of the leaf and prepare the incremental dual update. */
+    /**
+     * @brief Reads a leaf proper part and establishes certificates for the dual update.
+     * @param context Reusable support buffer and dual proper-part identifiers.
+     * @param leaf Selected non-root primal leaf.
+     * @param primal Component tree containing the selected extremum as a leaf.
+     * @param dual Opposite component tree containing the support in one proper part.
+     */
     static void prepareResidualLeaf(LeafContext& context, NodeId leaf, const Tree& primal, const Tree& dual) {
         const auto& dualTopology = dual.topology();
         context.supportPixels.clear();
@@ -372,6 +480,16 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
             context.wholeSupportSmallestNode = context.dualProperPartNode;
         }
     }
+    /**
+     * @brief Records a support, assigns its proper part, and attaches its pending children.
+     * @param state Residual assembly before the selected elementary leveling.
+     * @param support Pixels in the selected extremal flat zone.
+     * @param polarity Side in which the selected flat zone is a leaf.
+     * @param nodeAltitude Original valuation captured before leveling.
+     * @param primalLeaf Selected leaf whose associations identify the pending children.
+     * @param dualProperPart Dual proper part containing the complete selected support.
+     * @return Identifier of the newly recorded residual node.
+     */
     [[nodiscard]] static NodeId recordSupport(AssemblyState& state, std::span<const PixelId> support, Polarity polarity, T nodeAltitude,
                                             NodeId primalLeaf, NodeId dualProperPart) {
         if (state.recordedSupportNode_ != InvalidNode)
@@ -414,6 +532,16 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
         return node;
     }
 
+    /**
+     * @brief Moves pending associations with proper parts and associates the newly recorded support.
+     * @tparam ProperPartTransfer Updater record containing source and target component nodes.
+     * @param state Assembly containing one newly recorded support.
+     * @param minTree Current min-tree after leveling.
+     * @param maxTree Current max-tree after leveling.
+     * @param primalProperPart Live primal node receiving the selected leaf.
+     * @param dualProperPart Live dual node containing the selected support after the update.
+     * @param dualTransfers Whole dual proper-part transfers reported by the updater.
+     */
     template <class ProperPartTransfer>
     static void updateAssociations(AssemblyState& state, const Tree& minTree, const Tree& maxTree, NodeId primalProperPart, NodeId dualProperPart,
                             std::span<const ProperPartTransfer> dualTransfers) {
@@ -439,6 +567,14 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
         state.recordedSupportNode_ = InvalidNode;
     }
 
+    /**
+     * @brief Completes the root and checks the descriptor and exact proper-part reconstruction.
+     * @param state Completed assembly whose buffers are transferred to the result.
+     * @param image Original image defining the pixel domain and reconstruction target.
+     * @param semantics Residual-tree descriptor checked before buffer transfer.
+     * @param terminalAltitude Common altitude of the terminal constant component trees.
+     * @return Completed topology and valuation buffers.
+     */
     [[nodiscard]] static Result finalize(AssemblyState&& state, const ImagePointer& image, MorphologicalTreeSemantics semantics, T terminalAltitude) {
         if (state.recordedSupportNode_ != InvalidNode)
             throw std::logic_error("Residual finalization requires completed association updates.");
@@ -474,7 +610,12 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
                 std::move(state.nodeAltitudes_)};
     }
 
-    /** Validate the domain once; no full image/tree validation occurs inside the leveling loop. */
+    /**
+     * @brief Checks finite image samples, a matching connected domain, and the spatial order once before evolution.
+     * @param image Non-null input image with a nonempty representable domain.
+     * @param adjacency Spatial adjacency whose domain must match the image.
+     * @param order Total pixel order valid on the image domain.
+     */
     static void requireResidualInputs(const ImagePtr<T>& image, const RegularGridAdjacency2D& adjacency, const SpatialOrder& order) {
         if (!image)
             throw std::invalid_argument("Residual-tree construction requires a non-null image.");
@@ -504,6 +645,12 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
             throw std::invalid_argument("Residual-tree adjacency must connect the image domain.");
     }
 
+    /**
+     * @brief Checks the initial component-tree kind, domain, and altitude buffer shape.
+     * @param tree Component tree supplied for consumption by the builder.
+     * @param image Input image defining the expected domain.
+     * @param kind Required min-tree or max-tree kind.
+     */
     static void requireResidualComponentTree(const Tree& tree, const ImagePtr<T>& image, MorphologicalTreeKind kind) {
         const auto& topology = tree.topology();
         if (topology.kind() != kind || topology.numRows() != image->getNumRows() || topology.numColumns() != image->getNumColumns() ||
@@ -513,6 +660,12 @@ template <AltitudeValue T> class ExtremumResidualTreeByCTsBuilder {
         tree.validateNodeAltitudeBufferShape();
     }
 
+    /**
+     * @brief Checks that evolution ended at two matching constant component trees.
+     * @param minTree Terminal min-tree containing only its root.
+     * @param maxTree Terminal max-tree containing only its root.
+     * @return Common terminal altitude used to value the residual root.
+     */
     [[nodiscard]] static T residualTerminalAltitude(const Tree& minTree, const Tree& maxTree) {
         const T altitude = minTree.nodeAltitude(minTree.topology().root());
         if (minTree.topology().numNodes() != 1 || maxTree.topology().numNodes() != 1 || maxTree.nodeAltitude(maxTree.topology().root()) != altitude) {

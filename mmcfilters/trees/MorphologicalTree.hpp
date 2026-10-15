@@ -377,7 +377,10 @@ class MorphologicalTree {
         properPartCardinalityByNode_[slotId] = 0;
     }
 
-    /** Reserve before mutation, with amortized linear growth across successive releases. */
+    /**
+     * @brief Reserves free-node storage before mutation, with amortized linear growth across releases.
+     * @param additionalSlots Number of node slots about to be released into the free list.
+     */
     void reserveFreeNodeSlots(std::size_t additionalSlots) {
         const auto maximum = freeNodeIds_.max_size();
         if (additionalSlots > maximum - freeNodeIds_.size()) {

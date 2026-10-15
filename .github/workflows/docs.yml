@@ -52,15 +52,18 @@ jobs:
         run: cmake --build build --target docs-public docs-internal
 
       - name: Fail on Doxygen warnings
+        if: always()
         shell: bash
         run: |
+          warningStatus=0
           for log in build/docs/doxygen-public.log build/docs/doxygen-internal.log; do
             if [[ -s "${log}" ]]; then
               echo "::error file=${log}::Doxygen emitted warnings."
               cat "${log}"
-              exit 1
+              warningStatus=1
             fi
           done
+          exit "${warningStatus}"
 
       - name: Upload public Doxygen HTML
         uses: actions/upload-artifact@v7

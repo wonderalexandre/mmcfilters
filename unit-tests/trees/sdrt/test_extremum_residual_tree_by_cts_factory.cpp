@@ -19,21 +19,42 @@ using namespace mmcfilters::unit_tests;
 
 // Test-only access keeps the stepwise Eq. (31) oracle outside the public API.
 namespace mmcfilters::sdrt::detail {
+/** @brief Exposes private construction stages to the stepwise association oracle. @tparam T Image altitude type. */
 template <AltitudeValue T> struct ExtremumResidualTreeTestAccess {
-    using Builder = ExtremumResidualTreeByCTsBuilder<T>;
-    using Context = typename Builder::LeafContext;
+    using Builder = ExtremumResidualTreeByCTsBuilder<T>; ///< Production builder checked by the oracle.
+    using Context = typename Builder::LeafContext; ///< Selected support and dual proper-part certificates.
 
+    /**
+     * @brief Collects a selected leaf support through the production helper.
+     * @param context Reusable selected-support buffer.
+     * @param leaf Selected primal leaf identifier.
+     * @param primal Component tree containing that leaf.
+     * @param dual Opposite component tree used to establish proper-part certificates.
+     */
     static void prepareLeaf(Context& context, NodeId leaf, const ValuedMorphologicalTree<T>& primal,
                             const ValuedMorphologicalTree<T>& dual) {
         Builder::prepareResidualLeaf(context, leaf, primal, dual);
     }
+    /** @brief Test facade for recording supports and inspecting pending associations. */
     struct Assembler {
-        typename Builder::AssemblyState state;
+        typename Builder::AssemblyState state; ///< Production assembly state inspected after each test step.
+        /** @brief Allocates an isolated test assembly. @param pixels Number of domain pixels. @param maxSlots Initial max-tree node slots. @param minSlots Initial min-tree node slots. */
         Assembler(std::size_t pixels, std::size_t maxSlots, std::size_t minSlots) : state(pixels, maxSlots, minSlots) {}
+        /**
+         * @brief Records a test support through the production assembly routine.
+         * @param support Pixels in the selected flat zone.
+         * @param polarity Component-tree side of the selected leaf.
+         * @param nodeAltitude Original valuation of the support.
+         * @param primalLeaf Selected primal leaf identifier.
+         * @param dualProperPart Dual proper part containing the support.
+         * @return Newly recorded residual node identifier.
+         */
         NodeId recordSupport(std::span<const PixelId> support, Polarity polarity, T nodeAltitude, NodeId primalLeaf, NodeId dualProperPart) {
             return Builder::recordSupport(state, support, polarity, nodeAltitude, primalLeaf, dualProperPart);
         }
+        /** @brief Counts recorded nonterminal supports. @return Number of residual nodes excluding the reserved root. */
         std::size_t numRecordedSupports() const { return state.parents_.size() - 1; }
+        /** @brief Enumerates the implicit pending set. @return Recorded non-root nodes whose parent remains undefined. */
         std::vector<NodeId> pendingNodes() const {
             std::vector<NodeId> pending;
             for (NodeId node = 1; node < static_cast<NodeId>(state.parents_.size()); ++node)
@@ -41,14 +62,31 @@ template <AltitudeValue T> struct ExtremumResidualTreeTestAccess {
                     pending.push_back(node);
             return pending;
         }
+        /** @brief Reads one inverse association list. @param polarity Component-tree side. @param componentNode Proper-part node identifier. @return Borrowed list of associated pending supports. */
         const auto& associatedNodes(Polarity polarity, NodeId componentNode) const {
             return (polarity == Polarity::Maximum ? state.maxAssociations_ : state.minAssociations_).at(componentNode);
         }
+        /**
+         * @brief Applies production association updates to the test state.
+         * @tparam Transfer Whole proper-part transfer record type.
+         * @param minTree Current min-tree after leveling.
+         * @param maxTree Current max-tree after leveling.
+         * @param primal Live primal destination of the selected support.
+         * @param dual Live dual destination of the selected support.
+         * @param transfers Whole dual proper-part transfers reported by the updater.
+         */
         template <class Transfer>
         void updateAssociations(const ValuedMorphologicalTree<T>& minTree, const ValuedMorphologicalTree<T>& maxTree,
                                 NodeId primal, NodeId dual, std::span<const Transfer> transfers) {
             Builder::updateAssociations(state, minTree, maxTree, primal, dual, transfers);
         }
+        /**
+         * @brief Completes the test assembly through the production reconstruction checks.
+         * @param image Original image defining the expected valuation.
+         * @param adjacency Shared construction adjacency attached to the descriptor.
+         * @param terminalAltitude Common terminal component-tree altitude.
+         * @return Completed residual topology and valuation buffers.
+         */
         auto finalize(const ImagePtr<T>& image, const RegularGridAdjacency2D& adjacency, T terminalAltitude) && {
             return Builder::finalize(std::move(state), image,
                                     makeMorphologicalTreeSemantics(MorphologicalTreeKind::ExtremumResidualTree, SharedAdjacencyContext{adjacency}),

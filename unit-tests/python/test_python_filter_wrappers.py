@@ -188,6 +188,10 @@ def main() -> int:
         lambda: direct_filter.apply_direct_attribute_filter(mmcfilters.NodePreservationMask([True])),
         "DirectAttributeFilter must reject a short preservation mask",
     )
+    require_raises(
+        lambda: subtractive_filter.apply_subtractive_attribute_filter(mmcfilters.NodePreservationMask([True])),
+        "SubtractiveAttributeFilter must reject a short preservation mask",
+    )
     reject_root = keep_all.copy()
     reject_root[valued_tree.root] = False
     require_raises(
@@ -212,6 +216,14 @@ def main() -> int:
         ),
         "SoftSubtractiveAttributeFilter must reject scores above one",
     )
+    for dtype in (np.float32, np.float64):
+        require_raises(lambda: soft_subtractive_filter.apply(np.ones(1, dtype=dtype)),
+                       "Soft reconstruction rejects a short score buffer")
+        for invalid in (np.nan, np.inf, -np.inf):
+            contributions = np.zeros(valued_tree.num_internal_node_slots, dtype=dtype)
+            contributions[valued_tree.root] = invalid
+            require_raises(lambda: valued_tree.reconstruct_from_node_contributions(contributions),
+                           "Public reconstruction rejects non-finite external contributions")
     valued_tree_all_preserved = mmcfilters.NodePreservationMask(keep_all)
     altitude_adjusted = mmcfilters.adjust_node_preservation_mask_by_altitude_stability(
         valued_tree,
@@ -463,6 +475,8 @@ def main() -> int:
     stale_keep_all = [True] * stale_valued_tree.num_internal_node_slots
     stale_attribute = mmcfilters.Attribute.compute_single_attribute(stale_valued_tree, mmcfilters.Attribute.GRAY_LEVEL_HEIGHT)
     stale_filter = mmcfilters.DirectAttributeFilter(stale_valued_tree)
+    stale_subtractive = mmcfilters.SubtractiveAttributeFilter(stale_valued_tree)
+    stale_soft = mmcfilters.SoftSubtractiveAttributeFilter(stale_valued_tree)
     stale_extinction = mmcfilters.ExtinctionValues(stale_valued_tree, stale_attribute)
     stale_uao = mmcfilters.UltimateAttributeOpening(stale_valued_tree, stale_attribute)
     stale_valued_tree.merge_node_into_parent(4)
@@ -470,6 +484,10 @@ def main() -> int:
         lambda: stale_filter.apply_direct_attribute_filter(mmcfilters.NodePreservationMask(stale_keep_all)),
         "DirectAttributeFilter must reject use after topology mutation",
     )
+    require_raises(lambda: stale_subtractive.apply(mmcfilters.NodePreservationMask(stale_keep_all)),
+                   "SubtractiveAttributeFilter must reject use after topology mutation")
+    require_raises(lambda: stale_soft.apply(np.ones(len(stale_keep_all), dtype=np.float32)),
+                   "SoftSubtractiveAttributeFilter must reject use after topology mutation")
     require_raises(lambda: stale_extinction.filtering(keep_all_policy), "ExtinctionValues must reject filtering after topology mutation")
     require_raises(lambda: stale_extinction.contour_map(keep_all_policy, rank_contours), "ExtinctionValues must reject contour after topology mutation")
     require_raises(lambda: stale_extinction.get_extinction_value_attribute(), "ExtinctionValues must reject extinction attribute after topology mutation")

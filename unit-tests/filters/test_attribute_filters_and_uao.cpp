@@ -95,9 +95,72 @@ ValuedMorphologicalTree<std::uint8_t> makeViterbiBranchFixture() {
                                                                          MorphologicalTreeKind::MaxTree, RegularGridAdjacency2D(1, 3, 1.5));
 }
 
+void checkReconstructionNumericValidation() {
+    auto fractionalImage = ImageFloat::create(1, 3);
+    (*fractionalImage)[0] = 1.25f;
+    (*fractionalImage)[1] = 5.25f;
+    (*fractionalImage)[2] = 3.25f;
+    for (bool isMaxTree : {true, false}) {
+        const auto tree = isMaxTree ? MorphologicalTreeFactory::createMaxTree(fractionalImage) : MorphologicalTreeFactory::createMinTree(fractionalImage);
+        std::vector<float> scores(static_cast<std::size_t>(tree.topology().numInternalNodeSlots()));
+        for (NodeId node : tree.topology().aliveNodeIds()) {
+            const float altitude = tree.nodeAltitude(node);
+            scores[static_cast<std::size_t>(node)] = altitude == 1.25f ? 0.25f : altitude == 3.25f ? 0.5f : 0.75f;
+        }
+        requireVectorEqual(collectImageValues(applySoftSubtractiveAttributeFilter(tree, std::span<const float>(scores))),
+                           isMaxTree ? std::vector<float>{0.3125f, 2.8125f, 1.3125f} : std::vector<float>{2.9375f, 3.9375f, 2.9375f},
+                           "Soft reconstruction must preserve fractional scores and signed floating-point residues");
+    }
+
+    auto image = ImageFloat::create(1, 2);
+    (*image)[0] = -std::numeric_limits<float>::max();
+    (*image)[1] = std::numeric_limits<float>::max();
+    for (bool isMaxTree : {true, false}) {
+        const auto tree = isMaxTree ? MorphologicalTreeFactory::createMaxTree(image) : MorphologicalTreeFactory::createMinTree(image);
+        const NodePreservationMask keepAll(static_cast<std::size_t>(tree.topology().numInternalNodeSlots()), true);
+        requireVectorEqual(collectImageValues(applyDirectAttributeFilter(tree, keepAll)), collectImageValues(image),
+                           "Direct reconstruction must preserve finite extreme float altitudes");
+        if constexpr (contract::validationsEnabled) {
+            requireThrows<std::invalid_argument>([&] { static_cast<void>(applySubtractiveAttributeFilter(tree, keepAll)); },
+                                                 "Subtractive reconstruction must reject overflow in a finite altitude difference");
+            for (float score : {0.0f, 1.0f}) {
+                const std::vector<float> scores(keepAll.size(), score);
+                requireThrows<std::invalid_argument>([&] { static_cast<void>(applySoftSubtractiveAttributeFilter(tree, std::span<const float>(scores))); },
+                                                     "Soft reconstruction must reject non-finite contributions from residue overflow");
+            }
+        }
+        std::vector<bool> rootOnly(keepAll.size(), false);
+        rootOnly[static_cast<std::size_t>(tree.topology().root())] = true;
+        requireVectorEqual(collectImageValues(applySubtractiveAttributeFilter(tree, NodePreservationMask(rootOnly))),
+                           std::vector<float>(2, tree.nodeAltitude(tree.topology().root())),
+                           "Subtractive reconstruction must not evaluate residues rejected by the mask");
+    }
+
+    const auto singleton = MorphologicalTreeFactory::createMaxTree(Image<double>::create(1, 1, std::numeric_limits<double>::max()));
+    const std::vector<double> doubleScores(1, 1.0);
+    requireVectorEqual(collectImageValues(applySoftSubtractiveAttributeFilter(singleton, std::span<const double>(doubleScores))),
+                       std::vector<double>{std::numeric_limits<double>::max()}, "Soft reconstruction must preserve a finite double contribution");
+    if constexpr (contract::validationsEnabled) {
+        for (float score : {0.0f, 1.0f}) {
+            const std::vector<float> scores(1, score);
+            requireThrows<std::invalid_argument>([&] { static_cast<void>(applySoftSubtractiveAttributeFilter(singleton, std::span<const float>(scores))); },
+                                                 "Soft reconstruction must reject non-finite contributions after narrowing to float");
+        }
+        const std::vector<double> shortContributions;
+        requireThrows<std::invalid_argument>([&] { static_cast<void>(singleton.reconstructFromNodeContributions(std::span<const double>(shortContributions))); },
+                                             "Public contribution reconstruction must reject an invalid buffer size");
+        for (double value : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity()}) {
+            const std::vector<double> contributions{value};
+            requireThrows<std::invalid_argument>([&] { static_cast<void>(singleton.reconstructFromNodeContributions(std::span<const double>(contributions))); },
+                                                 "Public contribution reconstruction must reject non-finite external contributions");
+        }
+    }
+}
+
 int main() {
     static_assert(!std::is_convertible_v<NodePreservationMask, NodePruningMask>);
     static_assert(!std::is_convertible_v<NodePruningMask, NodePreservationMask>);
+    checkReconstructionNumericValidation();
 
     {
         auto chain = makeViterbiChainFixture();
@@ -175,6 +238,8 @@ int main() {
             if constexpr (contract::validationsEnabled) {
                 requireThrows<std::invalid_argument>([&]() { static_cast<void>(directFilter.applyDirectAttributeFilter(shortMask)); },
                                                      "DirectAttributeFilter must reject a short node preservation mask");
+                requireThrows<std::invalid_argument>([&]() { static_cast<void>(subtractiveFilter.applySubtractiveAttributeFilter(shortMask)); },
+                                                     "SubtractiveAttributeFilter must reject a short node preservation mask");
                 requireThrows<std::invalid_argument>([&]() { static_cast<void>(softSubtractiveFilter.applySoftSubtractiveAttributeFilter(shortScores)); },
                                                      "SoftSubtractiveAttributeFilter must reject a short score buffer");
 
@@ -208,11 +273,18 @@ int main() {
                 auto [staleNames, staleAttr] = AttributeComputation::computeSingleAttribute(*staleValuedTree, MeanGrayLevel);
                 (void)staleNames;
                 DirectAttributeFilter<std::uint8_t> staleFilter(*staleValuedTree);
+                SubtractiveAttributeFilter<std::uint8_t> staleSubtractiveFilter(*staleValuedTree);
+                SoftSubtractiveAttributeFilter<std::uint8_t> staleSoftFilter(*staleValuedTree);
                 UltimateAttributeOpening<std::uint8_t> staleUao(*staleValuedTree, staleAttr);
                 NodePreservationMask staleKeepAll(static_cast<std::size_t>(staleValuedTree->topology().numInternalNodeSlots()), true);
                 staleValuedTree->mergeNodeIntoParent(4);
                 requireThrows<std::logic_error>([&]() { static_cast<void>(staleFilter.applyDirectAttributeFilter(staleKeepAll)); },
                                                 "DirectAttributeFilter must reject use after topology mutation");
+                requireThrows<std::logic_error>([&]() { static_cast<void>(staleSubtractiveFilter.applySubtractiveAttributeFilter(staleKeepAll)); },
+                                                "SubtractiveAttributeFilter must reject use after topology mutation");
+                const std::vector<float> staleScores(staleKeepAll.size(), 1.0f);
+                requireThrows<std::logic_error>([&]() { static_cast<void>(staleSoftFilter.applySoftSubtractiveAttributeFilter(staleScores)); },
+                                                "SoftSubtractiveAttributeFilter must reject use after topology mutation");
                 requireThrows<std::logic_error>([&]() { staleUao.execute(4); },
                                                 "UltimateAttributeOpening<std::uint8_t> execute must reject use after topology mutation");
                 requireThrows<std::logic_error>([&]() { static_cast<void>(staleUao.getMaxContrastImage()); },
@@ -228,6 +300,21 @@ int main() {
                     "DirectAttributeFilter view API must reject stale ValuedMorphologicalTreeView");
                 requireThrows<std::logic_error>([&]() { static_cast<void>(AttributeComputation::computeSingleAttribute(staleView, MeanGrayLevel)); },
                                                 "AttributeComputation must reject stale ValuedMorphologicalTreeView");
+
+                auto editingTree = makeValuedComponentTree(image, true);
+                DirectAttributeFilter<std::uint8_t> editingDirect(*editingTree);
+                SubtractiveAttributeFilter<std::uint8_t> editingSubtractive(*editingTree);
+                SoftSubtractiveAttributeFilter<std::uint8_t> editingSoft(*editingTree);
+                auto editor = editingTree->edit();
+                const NodePreservationMask editingMask(static_cast<std::size_t>(editingTree->topology().numInternalNodeSlots()), true);
+                const std::vector<float> editingScores(editingMask.size(), 1.0f);
+                requireThrows<std::logic_error>([&] { static_cast<void>(editingDirect.applyDirectAttributeFilter(editingMask)); },
+                                                "Direct reconstruction must require a committed tree");
+                requireThrows<std::logic_error>([&] { static_cast<void>(editingSubtractive.applySubtractiveAttributeFilter(editingMask)); },
+                                                "Subtractive reconstruction must require a committed tree");
+                requireThrows<std::logic_error>([&] { static_cast<void>(editingSoft.applySoftSubtractiveAttributeFilter(editingScores)); },
+                                                "Soft reconstruction must require a committed tree");
+                editor.commit();
             }
         }
 
@@ -645,6 +732,9 @@ int main() {
         requireVectorEqual(collectImageValues(subtractiveAfterMerge), collectImageValuesAs<AltitudeDifference<std::uint8_t>>(expectedAfterMerge),
                            isMaxtree ? "valuedTree max-tree subtractive filter keep-all after merge"
                                      : "valuedTree min-tree subtractive filter keep-all after merge");
+        const std::vector<float> scoresAfterMerge(keepAllAfterMerge.size(), 1.0f);
+        requireVectorEqual(collectImageValues(applySoftSubtractiveAttributeFilter(*valuedTree, std::span<const float>(scoresAfterMerge))),
+                           collectImageValuesAs<float>(expectedAfterMerge), "Soft reconstruction must handle dead node slots after a merge");
 
         auto [mergedAttrNames, mergedAttr] = AttributeComputation::computeSingleAttribute(*valuedTree, BoundingBoxHeight);
         (void)mergedAttrNames;

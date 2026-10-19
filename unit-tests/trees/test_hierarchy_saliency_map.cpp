@@ -339,7 +339,25 @@ int main() {
         requireThrows<std::invalid_argument>(
             [&] { static_cast<void>(HierarchySaliencyMap::computeEdgeMap(stagedTree, RegularGridAdjacency2D(1, 3, 1.0), [](NodeId node) { return node; })); },
             "LCA edge projection must reject an active staged forest");
+        requireThrows<std::invalid_argument>(
+            [&] { static_cast<void>(HierarchySaliencyMapProjection::nodeContourEdges(stagedTree, RegularGridAdjacency2D(1, 3, 1.0))); },
+            "node-contour projection must reject an active staged forest");
         editor.rollback();
+        requireVectorEqual(HierarchySaliencyMap::computeTopologicalLevelEdgeMap(stagedTree, RegularGridAdjacency2D(1, 3, 1.0)).values,
+            {1, 0}, "rollback restores the committed hierarchy guarantee used by saliency");
+    }
+
+    if constexpr (contract::validationsEnabled) {
+        auto mutableTree = valuedTree.topology().clone();
+        int callbackCount = 0;
+        requireThrows<std::logic_error>(
+            [&] { static_cast<void>(HierarchySaliencyMap::computeEdgeMap(mutableTree, RegularGridAdjacency2D(1, 3, 1.0), [&](NodeId) {
+                ++callbackCount;
+                mutableTree.pruneNode(0);
+                return 1;
+            })); },
+            "edge projection rejects topology mutation by its scorer before reading the next edge");
+        requireEqual(callbackCount, 1, "scorer mutation is detected immediately");
     }
 
     {

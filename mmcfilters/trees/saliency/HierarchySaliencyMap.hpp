@@ -199,16 +199,7 @@ class HierarchySaliencyMap {
      */
     [[nodiscard]] static std::vector<int> computeTopologicalLevels(const MorphologicalTree& tree) {
         detail::requireCommittedRootedHierarchy(tree, "HierarchySaliencyMap::computeTopologicalLevels");
-
-        std::vector<int> levels(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0);
-        for (NodeId nodeId : tree.postOrder()) {
-            int level = 0;
-            for (NodeId childId : tree.children(nodeId)) {
-                level = std::max(level, levels[static_cast<std::size_t>(childId)] + 1);
-            }
-            levels[static_cast<std::size_t>(nodeId)] = level;
-        }
-        return levels;
+        return computeTopologicalLevelsEstablished(tree);
     }
 
     /**
@@ -257,28 +248,21 @@ class HierarchySaliencyMap {
         saliency.numColumns = tree.numColumns();
         saliency.adjacencyRadius = adjacency.getRadius();
 
+        const std::size_t mutationVersion = tree.getMutationVersion();
         auto&& scorer = nodeValue;
         const int numPixels = tree.numPixels();
         for (NodeId source = 0; source < numPixels; ++source) {
-            const NodeId sourceSmallestNode = tree.smallestNode(source);
-            if (!tree.isAlive(sourceSmallestNode)) {
-                throw std::runtime_error("HierarchySaliencyMap::computeEdgeMap found a pixel without a live smallest node.");
-            }
+            const NodeId sourceSmallestNode = detail::TreeKernelAccess::smallestNodeMap(tree, source);
 
-            for (int target : adjacency.getForwardNeighborIndices(source)) {
-                const NodeId targetSmallestNode = tree.smallestNode(target);
-                if (!tree.isAlive(targetSmallestNode)) {
-                    throw std::runtime_error("HierarchySaliencyMap::computeEdgeMap found a neighbour pixel without a live smallest node.");
-                }
+            for (int target : detail::CommittedGridAccess::forwardNeighbors(adjacency, source)) {
+                const NodeId targetSmallestNode = detail::TreeKernelAccess::smallestNodeMap(tree, target);
 
-                const NodeId lca = tree.lowestCommonAncestor(sourceSmallestNode, targetSmallestNode);
-                if (lca == InvalidNode || !tree.isAlive(lca)) {
-                    throw std::runtime_error("HierarchySaliencyMap::computeEdgeMap could not find a live LCA for an adjacency edge.");
-                }
+                const NodeId lca = detail::TreeKernelAccess::lowestCommonAncestor(tree, sourceSmallestNode, targetSmallestNode);
 
                 saliency.sources.push_back(source);
                 saliency.targets.push_back(target);
                 saliency.values.push_back(std::invoke(scorer, lca));
+                tree.requireMutationVersion(mutationVersion, context);
             }
         }
 
@@ -332,10 +316,11 @@ class HierarchySaliencyMap {
                            HierarchyLevelConvention levelConvention = HierarchyLevelConvention::EdgeSaliencyValue,
                            HierarchyConnectivityPolicy connectivityPolicy = HierarchyConnectivityPolicy::ValidateConnected) {
         constexpr const char* context = "HierarchySaliencyMap::computeSaliencyEdgeMap";
-        HierarchySaliencyMapValidation::validateHierarchyValuation(tree, valuation, policy, HierarchyValuationRangePolicy::RequireNonNegative, context);
         validateTreeAndAdjacency(tree, adjacency, context);
+        HierarchySaliencyMapValidation::validateHierarchyValuationEstablished(tree, valuation, policy,
+            HierarchyValuationRangePolicy::RequireNonNegative, context);
         if (connectivityPolicy == HierarchyConnectivityPolicy::ValidateConnected) {
-            HierarchySaliencyMapValidation::validateHierarchyConnectivity(tree, adjacency, context);
+            HierarchySaliencyMapValidation::validateHierarchyConnectivityEstablished(tree, adjacency, context);
         }
         if (levelConvention == HierarchyLevelConvention::PartitionAppearanceLevel) {
             for (NodeId nodeId : tree.aliveNodeIds()) {
@@ -351,43 +336,7 @@ class HierarchySaliencyMap {
             }
         }
 
-        EdgeSaliencyMap<Value> saliency;
-        saliency.numRows = tree.numRows();
-        saliency.numColumns = tree.numColumns();
-        saliency.adjacencyRadius = adjacency.getRadius();
-
-        const int numPixels = tree.numPixels();
-        for (NodeId source = 0; source < numPixels; ++source) {
-            const NodeId sourceSmallestNode = tree.smallestNode(source);
-            if (!tree.isAlive(sourceSmallestNode)) {
-                throw std::runtime_error(std::string(context) + " found a pixel without a live smallest node.");
-            }
-
-            for (int target : adjacency.getForwardNeighborIndices(source)) {
-                const NodeId targetSmallestNode = tree.smallestNode(target);
-                if (!tree.isAlive(targetSmallestNode)) {
-                    throw std::runtime_error(std::string(context) + " found a neighbour pixel without a live smallest node.");
-                }
-
-                Value edgeValue{};
-                if (sourceSmallestNode != targetSmallestNode) {
-                    const NodeId lca = tree.lowestCommonAncestor(sourceSmallestNode, targetSmallestNode);
-                    if (lca == InvalidNode || !tree.isAlive(lca)) {
-                        throw std::runtime_error(std::string(context) + " could not find a live LCA for an adjacency edge.");
-                    }
-                    edgeValue = valuation[static_cast<std::size_t>(lca)];
-                    if (levelConvention == HierarchyLevelConvention::PartitionAppearanceLevel) {
-                        edgeValue -= Value{1};
-                    }
-                }
-
-                saliency.sources.push_back(source);
-                saliency.targets.push_back(target);
-                saliency.values.push_back(edgeValue);
-            }
-        }
-
-        return saliency;
+        return computeSaliencyEdgeMapEstablished(tree, adjacency, valuation, levelConvention);
     }
 
     /**
@@ -436,63 +385,14 @@ class HierarchySaliencyMap {
                                           HierarchyValuationPolicy policy = HierarchyValuationPolicy::AllowLevelCollapse,
                                           HierarchyConnectivityPolicy connectivityPolicy = HierarchyConnectivityPolicy::ValidateConnected) {
         constexpr const char* context = "HierarchySaliencyMap::computeCanonicalRankedSaliencyEdgeMap";
-        HierarchySaliencyMapValidation::validateHierarchyValuation(tree, valuation, policy, HierarchyValuationRangePolicy::AllowAnyFinite, context);
         validateTreeAndAdjacency(tree, adjacency, context);
+        HierarchySaliencyMapValidation::validateHierarchyValuationEstablished(tree, valuation, policy,
+            HierarchyValuationRangePolicy::AllowAnyFinite, context);
         if (connectivityPolicy == HierarchyConnectivityPolicy::ValidateConnected) {
-            HierarchySaliencyMapValidation::validateHierarchyConnectivity(tree, adjacency, context);
+            HierarchySaliencyMapValidation::validateHierarchyConnectivityEstablished(tree, adjacency, context);
         }
 
-        EdgeSaliencyMap<int> saliency;
-        saliency.numRows = tree.numRows();
-        saliency.numColumns = tree.numColumns();
-        saliency.adjacencyRadius = adjacency.getRadius();
-
-        struct ProjectedLevel {
-            NodeId source;
-            NodeId target;
-            NodeId lca;
-        };
-        std::vector<ProjectedLevel> projected;
-        std::vector<Value> effectiveValues;
-        bool hasBaseEdge = false;
-        const int numPixels = tree.numPixels();
-        for (NodeId source = 0; source < numPixels; ++source) {
-            const NodeId sourceSmallestNode = tree.smallestNode(source);
-            for (int targetValue : adjacency.getForwardNeighborIndices(source)) {
-                const NodeId target = static_cast<NodeId>(targetValue);
-                const NodeId targetSmallestNode = tree.smallestNode(target);
-                NodeId lca = InvalidNode;
-                if (sourceSmallestNode == targetSmallestNode) {
-                    hasBaseEdge = true;
-                } else {
-                    lca = tree.lowestCommonAncestor(sourceSmallestNode, targetSmallestNode);
-                    if (lca == InvalidNode || !tree.isAlive(lca)) {
-                        throw std::runtime_error(std::string(context) + " could not find a live LCA for an adjacency edge.");
-                    }
-                    effectiveValues.push_back(valuation[static_cast<std::size_t>(lca)]);
-                }
-                projected.push_back(ProjectedLevel{source, target, lca});
-            }
-        }
-
-        std::sort(effectiveValues.begin(), effectiveValues.end());
-        effectiveValues.erase(std::unique(effectiveValues.begin(), effectiveValues.end()), effectiveValues.end());
-        saliency.sources.reserve(projected.size());
-        saliency.targets.reserve(projected.size());
-        saliency.values.reserve(projected.size());
-        const int transitionOffset = hasBaseEdge ? 1 : 0;
-        for (const ProjectedLevel& edge : projected) {
-            int rank = 0;
-            if (edge.lca != InvalidNode) {
-                const Value& value = valuation[static_cast<std::size_t>(edge.lca)];
-                rank = transitionOffset +
-                       static_cast<int>(std::distance(effectiveValues.begin(), std::lower_bound(effectiveValues.begin(), effectiveValues.end(), value)));
-            }
-            saliency.sources.push_back(edge.source);
-            saliency.targets.push_back(edge.target);
-            saliency.values.push_back(rank);
-        }
-        return saliency;
+        return computeCanonicalRankedSaliencyEdgeMapEstablished(tree, adjacency, valuation);
     }
 
     /**
@@ -560,8 +460,11 @@ class HierarchySaliencyMap {
      * @return The computed topological-level edge saliency map with explicit adjacency.
      */
     [[nodiscard]] static EdgeSaliencyMap<int> computeTopologicalLevelEdgeMap(const MorphologicalTree& tree, const RegularGridAdjacency2D& adjacency) {
-        std::vector<int> levels = computeTopologicalLevels(tree);
-        return computeCanonicalRankedSaliencyEdgeMap(tree, adjacency, std::span<const int>(levels), HierarchyValuationPolicy::RequireStrictHierarchy);
+        constexpr const char* context = "HierarchySaliencyMap::computeTopologicalLevelEdgeMap";
+        validateTreeAndAdjacency(tree, adjacency, context);
+        HierarchySaliencyMapValidation::validateHierarchyConnectivityEstablished(tree, adjacency, context);
+        std::vector<int> levels = computeTopologicalLevelsEstablished(tree);
+        return computeCanonicalRankedSaliencyEdgeMapEstablished(tree, adjacency, std::span<const int>(levels));
     }
 
     /**
@@ -584,8 +487,11 @@ class HierarchySaliencyMap {
     template <AltitudeValue T>
     [[nodiscard]] static EdgeSaliencyMap<double> computeNormalizedAltitudeEdgeMap(const ValuedMorphologicalTree<T>& tree,
                                                                                   const RegularGridAdjacency2D& adjacency) {
+        constexpr const char* context = "HierarchySaliencyMap::computeNormalizedAltitudeEdgeMap";
+        validateTreeAndAdjacency(tree.topology(), adjacency, context);
         std::vector<double> scores = HierarchySaliencyMapValidation::computeNormalizedScores(tree);
-        return computeSaliencyEdgeMap(tree.topology(), adjacency, std::span<const double>(scores), HierarchyValuationPolicy::AllowLevelCollapse);
+        HierarchySaliencyMapValidation::validateHierarchyConnectivityEstablished(tree.topology(), adjacency, context);
+        return computeSaliencyEdgeMapEstablished(tree.topology(), adjacency, std::span<const double>(scores), HierarchyLevelConvention::EdgeSaliencyValue);
     }
 
     /**
@@ -596,6 +502,109 @@ class HierarchySaliencyMap {
      */
     template <AltitudeValue T> [[nodiscard]] static EdgeSaliencyMap<double> computeNormalizedAltitudeEdgeMap(const ValuedMorphologicalTree<T>& tree) {
         return computeNormalizedAltitudeEdgeMap(tree, requireStoredAdjacency(tree.topology(), "HierarchySaliencyMap::computeNormalizedAltitudeEdgeMap"));
+    }
+
+  private:
+    /** @brief Computes topological levels from established child relations. */
+    [[nodiscard]] static std::vector<int> computeTopologicalLevelsEstablished(const MorphologicalTree& tree) {
+
+        std::vector<int> levels(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0);
+        for (NodeId nodeId : tree.postOrder()) {
+            int level = 0;
+            for (NodeId childId : detail::TreeKernelAccess::children(tree, nodeId)) {
+                level = std::max(level, levels[static_cast<std::size_t>(childId)] + 1);
+            }
+            levels[static_cast<std::size_t>(nodeId)] = level;
+        }
+        return levels;
+    }
+
+    /** @brief Projects an established hierarchy valuation to adjacency edges. */
+    template <class Value>
+    [[nodiscard]] static EdgeSaliencyMap<Value> computeSaliencyEdgeMapEstablished(const MorphologicalTree& tree,
+        const RegularGridAdjacency2D& adjacency, std::span<const Value> valuation, HierarchyLevelConvention levelConvention) {
+        EdgeSaliencyMap<Value> saliency;
+        saliency.numRows = tree.numRows();
+        saliency.numColumns = tree.numColumns();
+        saliency.adjacencyRadius = adjacency.getRadius();
+
+        const int numPixels = tree.numPixels();
+        for (NodeId source = 0; source < numPixels; ++source) {
+            const NodeId sourceSmallestNode = detail::TreeKernelAccess::smallestNodeMap(tree, source);
+
+            for (int target : detail::CommittedGridAccess::forwardNeighbors(adjacency, source)) {
+                const NodeId targetSmallestNode = detail::TreeKernelAccess::smallestNodeMap(tree, target);
+
+                Value edgeValue{};
+                if (sourceSmallestNode != targetSmallestNode) {
+                    const NodeId lca = detail::TreeKernelAccess::lowestCommonAncestor(tree, sourceSmallestNode, targetSmallestNode);
+                    edgeValue = valuation[static_cast<std::size_t>(lca)];
+                    if (levelConvention == HierarchyLevelConvention::PartitionAppearanceLevel) {
+                        edgeValue -= Value{1};
+                    }
+                }
+
+                saliency.sources.push_back(source);
+                saliency.targets.push_back(target);
+                saliency.values.push_back(edgeValue);
+            }
+        }
+
+        return saliency;
+    }
+
+    /** @brief Ranks effective projected levels from an established hierarchy valuation. */
+    template <class Value>
+    [[nodiscard]] static EdgeSaliencyMap<int> computeCanonicalRankedSaliencyEdgeMapEstablished(const MorphologicalTree& tree,
+        const RegularGridAdjacency2D& adjacency, std::span<const Value> valuation) {
+        EdgeSaliencyMap<int> saliency;
+        saliency.numRows = tree.numRows();
+        saliency.numColumns = tree.numColumns();
+        saliency.adjacencyRadius = adjacency.getRadius();
+
+        struct ProjectedLevel {
+            NodeId source;
+            NodeId target;
+            NodeId lca;
+        };
+        std::vector<ProjectedLevel> projected;
+        std::vector<Value> effectiveValues;
+        bool hasBaseEdge = false;
+        const int numPixels = tree.numPixels();
+        for (NodeId source = 0; source < numPixels; ++source) {
+            const NodeId sourceSmallestNode = detail::TreeKernelAccess::smallestNodeMap(tree, source);
+            for (int targetValue : detail::CommittedGridAccess::forwardNeighbors(adjacency, source)) {
+                const NodeId target = static_cast<NodeId>(targetValue);
+                const NodeId targetSmallestNode = detail::TreeKernelAccess::smallestNodeMap(tree, target);
+                NodeId lca = InvalidNode;
+                if (sourceSmallestNode == targetSmallestNode) {
+                    hasBaseEdge = true;
+                } else {
+                    lca = detail::TreeKernelAccess::lowestCommonAncestor(tree, sourceSmallestNode, targetSmallestNode);
+                    effectiveValues.push_back(valuation[static_cast<std::size_t>(lca)]);
+                }
+                projected.push_back(ProjectedLevel{source, target, lca});
+            }
+        }
+
+        std::sort(effectiveValues.begin(), effectiveValues.end());
+        effectiveValues.erase(std::unique(effectiveValues.begin(), effectiveValues.end()), effectiveValues.end());
+        saliency.sources.reserve(projected.size());
+        saliency.targets.reserve(projected.size());
+        saliency.values.reserve(projected.size());
+        const int transitionOffset = hasBaseEdge ? 1 : 0;
+        for (const ProjectedLevel& edge : projected) {
+            int rank = 0;
+            if (edge.lca != InvalidNode) {
+                const Value& value = valuation[static_cast<std::size_t>(edge.lca)];
+                rank = transitionOffset +
+                       static_cast<int>(std::distance(effectiveValues.begin(), std::lower_bound(effectiveValues.begin(), effectiveValues.end(), value)));
+            }
+            saliency.sources.push_back(edge.source);
+            saliency.targets.push_back(edge.target);
+            saliency.values.push_back(rank);
+        }
+        return saliency;
     }
 };
 

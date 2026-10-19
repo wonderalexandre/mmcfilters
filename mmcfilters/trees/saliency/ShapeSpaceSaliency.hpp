@@ -160,14 +160,6 @@ class ShapeSpaceSaliency {
             throw std::invalid_argument(std::string(context) + " requires a non-empty image/pixel domain.");
         }
 
-        const long long pixelCount = static_cast<long long>(rows) * static_cast<long long>(columns);
-        if (pixelCount != static_cast<long long>(numPixels)) {
-            std::ostringstream oss;
-            oss << context << " requires the tree pixel domain to match the image grid; got " << numPixels << " pixels for a " << rows << "x" << columns
-                << " image domain.";
-            throw std::invalid_argument(oss.str());
-        }
-
         if (adjacency.getNumRows() != rows || adjacency.getNumColumns() != columns) {
             std::ostringstream oss;
             oss << context << " adjacency domain must match the tree image domain; got " << adjacency.getNumRows() << "x" << adjacency.getNumColumns()
@@ -256,9 +248,6 @@ class ShapeSpaceSaliency {
         for (NodeId nodeId : tree.aliveNodeIds()) {
             nodes.push_back(nodeId);
         }
-        if (nodes.empty()) {
-            throw std::invalid_argument(std::string(context) + " requires at least one live node.");
-        }
 
         const int numSlots = tree.numInternalNodeSlots();
         const std::size_t slotCount = static_cast<std::size_t>(numSlots);
@@ -270,7 +259,7 @@ class ShapeSpaceSaliency {
         while (!stack.empty()) {
             const NodeId nodeId = stack.back();
             stack.pop_back();
-            for (NodeId childId : tree.children(nodeId)) {
+            for (NodeId childId : detail::TreeKernelAccess::children(tree, nodeId)) {
                 depth[static_cast<std::size_t>(childId)] = depth[static_cast<std::size_t>(nodeId)] + 1;
                 stack.push_back(childId);
             }
@@ -355,9 +344,9 @@ class ShapeSpaceSaliency {
 
         auto forEachShapeNeighbor = [&](NodeId nodeId, auto&& visitor) {
             if (!tree.isRoot(nodeId)) {
-                visitor(tree.parent(nodeId));
+                visitor(detail::TreeKernelAccess::nodeParent(tree, nodeId));
             }
-            for (NodeId childId : tree.children(nodeId)) {
+            for (NodeId childId : detail::TreeKernelAccess::children(tree, nodeId)) {
                 visitor(childId);
             }
         };
@@ -533,101 +522,7 @@ class ShapeSpaceSaliency {
         validateTreeAndAdjacency(tree, adjacency, context);
         validateNodeBuffer(tree, nodeScores, true, "node-score", context);
 
-        EdgeSaliencyMap<Real> edgeMap;
-        edgeMap.numRows = tree.numRows();
-        edgeMap.numColumns = tree.numColumns();
-        edgeMap.adjacencyRadius = adjacency.getRadius();
-
-        const std::size_t slotCount = static_cast<std::size_t>(tree.numInternalNodeSlots());
-        const std::size_t liftingLevelCount = std::max<std::size_t>(1, static_cast<std::size_t>(std::bit_width(slotCount - 1)));
-
-        std::vector<int> depth(slotCount, -1);
-        std::vector<std::vector<NodeId>> ancestor(liftingLevelCount, std::vector<NodeId>(slotCount, InvalidNode));
-        std::vector<std::vector<Real>> pathMaximum(liftingLevelCount, std::vector<Real>(slotCount, Real{0}));
-
-        std::vector<NodeId> stack{tree.root()};
-        depth[static_cast<std::size_t>(tree.root())] = 0;
-        while (!stack.empty()) {
-            const NodeId nodeId = stack.back();
-            stack.pop_back();
-            const std::size_t nodeIndex = static_cast<std::size_t>(nodeId);
-            ancestor[0][nodeIndex] = tree.parent(nodeId);
-            pathMaximum[0][nodeIndex] = nodeScores[nodeIndex];
-
-            for (NodeId childId : tree.children(nodeId)) {
-                depth[static_cast<std::size_t>(childId)] = depth[nodeIndex] + 1;
-                stack.push_back(childId);
-            }
-        }
-
-        for (std::size_t level = 1; level < liftingLevelCount; ++level) {
-            for (NodeId nodeId : tree.aliveNodeIds()) {
-                const std::size_t nodeIndex = static_cast<std::size_t>(nodeId);
-                const NodeId middle = ancestor[level - 1][nodeIndex];
-                const std::size_t middleIndex = static_cast<std::size_t>(middle);
-                ancestor[level][nodeIndex] = ancestor[level - 1][middleIndex];
-                pathMaximum[level][nodeIndex] = std::max(pathMaximum[level - 1][nodeIndex], pathMaximum[level - 1][middleIndex]);
-            }
-        }
-
-        auto accumulateBranch = [&](NodeId smallestNode, NodeId lca, Real& edgeScore) {
-            const int smallestNodeDepth = depth[static_cast<std::size_t>(smallestNode)];
-            const int lcaDepth = depth[static_cast<std::size_t>(lca)];
-            if (smallestNodeDepth < lcaDepth) {
-                throw std::runtime_error(std::string(context) + " found an LCA below an edge-endpoint smallestNode.");
-            }
-
-            NodeId current = smallestNode;
-            std::size_t remaining = static_cast<std::size_t>(smallestNodeDepth - lcaDepth);
-            std::size_t level = 0;
-            while (remaining != 0) {
-                if ((remaining & std::size_t{1}) != 0) {
-                    const std::size_t currentIndex = static_cast<std::size_t>(current);
-                    edgeScore = std::max(edgeScore, pathMaximum[level][currentIndex]);
-                    current = ancestor[level][currentIndex];
-                }
-                remaining >>= 1;
-                ++level;
-            }
-            if (current != lca) {
-                throw std::runtime_error(std::string(context) + " encountered a branch that does not reach its LCA.");
-            }
-        };
-
-        const int numPixels = tree.numPixels();
-        for (NodeId source = 0; source < numPixels; ++source) {
-            const NodeId sourceSmallestNode = tree.smallestNode(source);
-            if (!tree.isAlive(sourceSmallestNode)) {
-                throw std::runtime_error(std::string(context) + " found a pixel without a live smallest node.");
-            }
-
-            for (int targetValue : adjacency.getForwardNeighborIndices(source)) {
-                const NodeId target = static_cast<NodeId>(targetValue);
-                if (target < 0 || target >= numPixels) {
-                    throw std::runtime_error(std::string(context) + " adjacency produced an endpoint outside the pixel domain.");
-                }
-
-                const NodeId targetSmallestNode = tree.smallestNode(target);
-                if (!tree.isAlive(targetSmallestNode)) {
-                    throw std::runtime_error(std::string(context) + " found a neighbour pixel without a live smallest node.");
-                }
-
-                const NodeId lca = tree.lowestCommonAncestor(sourceSmallestNode, targetSmallestNode);
-                if (lca == InvalidNode || !tree.isAlive(lca)) {
-                    throw std::runtime_error(std::string(context) + " could not find a live LCA for an adjacency edge.");
-                }
-
-                Real edgeScore{0};
-                accumulateBranch(sourceSmallestNode, lca, edgeScore);
-                accumulateBranch(targetSmallestNode, lca, edgeScore);
-
-                edgeMap.sources.push_back(source);
-                edgeMap.targets.push_back(target);
-                edgeMap.values.push_back(edgeScore);
-            }
-        }
-
-        return edgeMap;
+        return projectContourScoresEstablished(tree, nodeScores, adjacency);
     }
 
     /**
@@ -658,7 +553,8 @@ class ShapeSpaceSaliency {
         ShapeSpaceExtinctionResult<Real> extinction = computeExtinctionValues(tree, attribute, polarity);
         result.extrema = std::move(extinction.extrema);
         result.nodeScores = std::move(extinction.nodeScores);
-        result.edgeMap = projectContourScores(tree, std::span<const Real>(result.nodeScores), adjacency);
+        validateTreeAndAdjacency(tree, adjacency, "ShapeSpaceSaliency::compute");
+        result.edgeMap = projectContourScoresEstablished(tree, std::span<const Real>(result.nodeScores), adjacency);
         return result;
     }
 
@@ -675,6 +571,90 @@ class ShapeSpaceSaliency {
                                                                 ShapeSpaceExtremaPolarity polarity) {
         return compute(tree, attribute, polarity, requireStoredAdjacency(tree, "ShapeSpaceSaliency::compute"));
     }
+
+  private:
+    /** @brief Projects finite non-negative scores after tree and adjacency validation. */
+    template <std::floating_point Real>
+    [[nodiscard]] static EdgeSaliencyMap<Real> projectContourScoresEstablished(const MorphologicalTree& tree,
+        std::span<const Real> nodeScores, const RegularGridAdjacency2D& adjacency) {
+        EdgeSaliencyMap<Real> edgeMap;
+        edgeMap.numRows = tree.numRows();
+        edgeMap.numColumns = tree.numColumns();
+        edgeMap.adjacencyRadius = adjacency.getRadius();
+
+        const std::size_t slotCount = static_cast<std::size_t>(tree.numInternalNodeSlots());
+        const std::size_t liftingLevelCount = std::max<std::size_t>(1, static_cast<std::size_t>(std::bit_width(slotCount - 1)));
+
+        std::vector<int> depth(slotCount, -1);
+        std::vector<std::vector<NodeId>> ancestor(liftingLevelCount, std::vector<NodeId>(slotCount, InvalidNode));
+        std::vector<std::vector<Real>> pathMaximum(liftingLevelCount, std::vector<Real>(slotCount, Real{0}));
+
+        std::vector<NodeId> stack{tree.root()};
+        depth[static_cast<std::size_t>(tree.root())] = 0;
+        while (!stack.empty()) {
+            const NodeId nodeId = stack.back();
+            stack.pop_back();
+            const std::size_t nodeIndex = static_cast<std::size_t>(nodeId);
+            ancestor[0][nodeIndex] = detail::TreeKernelAccess::nodeParent(tree, nodeId);
+            pathMaximum[0][nodeIndex] = nodeScores[nodeIndex];
+
+            for (NodeId childId : detail::TreeKernelAccess::children(tree, nodeId)) {
+                depth[static_cast<std::size_t>(childId)] = depth[nodeIndex] + 1;
+                stack.push_back(childId);
+            }
+        }
+
+        for (std::size_t level = 1; level < liftingLevelCount; ++level) {
+            for (NodeId nodeId : tree.aliveNodeIds()) {
+                const std::size_t nodeIndex = static_cast<std::size_t>(nodeId);
+                const NodeId middle = ancestor[level - 1][nodeIndex];
+                const std::size_t middleIndex = static_cast<std::size_t>(middle);
+                ancestor[level][nodeIndex] = ancestor[level - 1][middleIndex];
+                pathMaximum[level][nodeIndex] = std::max(pathMaximum[level - 1][nodeIndex], pathMaximum[level - 1][middleIndex]);
+            }
+        }
+
+        auto accumulateBranch = [&](NodeId smallestNode, NodeId lca, Real& edgeScore) {
+            const int smallestNodeDepth = depth[static_cast<std::size_t>(smallestNode)];
+            const int lcaDepth = depth[static_cast<std::size_t>(lca)];
+            NodeId current = smallestNode;
+            std::size_t remaining = static_cast<std::size_t>(smallestNodeDepth - lcaDepth);
+            std::size_t level = 0;
+            while (remaining != 0) {
+                if ((remaining & std::size_t{1}) != 0) {
+                    const std::size_t currentIndex = static_cast<std::size_t>(current);
+                    edgeScore = std::max(edgeScore, pathMaximum[level][currentIndex]);
+                    current = ancestor[level][currentIndex];
+                }
+                remaining >>= 1;
+                ++level;
+            }
+        };
+
+        const int numPixels = tree.numPixels();
+        for (NodeId source = 0; source < numPixels; ++source) {
+            const NodeId sourceSmallestNode = detail::TreeKernelAccess::smallestNodeMap(tree, source);
+
+            for (int targetValue : detail::CommittedGridAccess::forwardNeighbors(adjacency, source)) {
+                const NodeId target = static_cast<NodeId>(targetValue);
+
+                const NodeId targetSmallestNode = detail::TreeKernelAccess::smallestNodeMap(tree, target);
+
+                const NodeId lca = detail::TreeKernelAccess::lowestCommonAncestor(tree, sourceSmallestNode, targetSmallestNode);
+
+                Real edgeScore{0};
+                accumulateBranch(sourceSmallestNode, lca, edgeScore);
+                accumulateBranch(targetSmallestNode, lca, edgeScore);
+
+                edgeMap.sources.push_back(source);
+                edgeMap.targets.push_back(target);
+                edgeMap.values.push_back(edgeScore);
+            }
+        }
+
+        return edgeMap;
+    }
+
 };
 
 } // namespace mmcfilters

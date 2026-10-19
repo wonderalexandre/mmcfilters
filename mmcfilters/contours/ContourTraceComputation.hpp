@@ -389,7 +389,7 @@ class ContourTraceComputation {
         };
         detail::CommittedTreeAccess::forEachLowestCommonAncestor(
             tree, numAdjacentQueries, lcaQuery,
-            [&](std::size_t queryIndex, NodeId entryNode) {
+            [&](std::size_t queryIndex, NodeId endNodeExclusive) {
                 const auto [firstPixel, secondPixel] = adjacentPixels(queryIndex);
                 if (firstPixel == secondPixel) {
                     return;
@@ -399,15 +399,15 @@ class ContourTraceComputation {
                 const ContourSide secondSide = horizontal ? ContourSide::West : ContourSide::North;
                 const NodeId firstNode = smallestNodes[static_cast<std::size_t>(firstPixel)];
                 const NodeId secondNode = smallestNodes[static_cast<std::size_t>(secondPixel)];
-                if (firstNode != entryNode) {
+                if (firstNode != endNodeExclusive) {
                     const int packedEdge = packEdge(firstPixel, firstSide);
                     additions.push_back({firstNode, packedEdge});
-                    removals.push_back({entryNode, packedEdge});
+                    removals.push_back({endNodeExclusive, packedEdge});
                 }
-                if (secondNode != entryNode) {
+                if (secondNode != endNodeExclusive) {
                     const int packedEdge = packEdge(secondPixel, secondSide);
                     additions.push_back({secondNode, packedEdge});
-                    removals.push_back({entryNode, packedEdge});
+                    removals.push_back({endNodeExclusive, packedEdge});
                 }
             });
         return EdgeDeltas::groupDistinct(numNodes, additions, removals);

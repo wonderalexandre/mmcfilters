@@ -104,7 +104,7 @@ auto image = ImageUInt8::create(4, 4, std::uint8_t{0});
 
 auto maxTree = MorphologicalTreeFactory::createMaxTree(image, 1.5);
 auto minTree = MorphologicalTreeFactory::createMinTree(image, 1.5);
-auto residual = MorphologicalTreeFactory::createExtremumResidualTreeByCTs(
+auto residual = MorphologicalTreeFactory::createExtremumResidualTree(
     image,
     1.5);
 auto treeOfShapes = MorphologicalTreeFactory::createTreeOfShapes(image);
@@ -121,42 +121,6 @@ ValuedMorphologicalTree<float> floatMaxTree =
 Python image factories accept two-dimensional C-contiguous `np.uint8` arrays
 and return `ValuedMorphologicalTree`. See [Python API](python-api.md) for the
 binding-specific contract.
-
-### Extremum residual trees
-
-`createExtremumResidualTreeByCTs` constructs the extremum residual tree from
-synchronized max-tree and min-tree states using one symmetric adjacency.
-The `ByCTs` suffix identifies construction through component trees. The
-corresponding builder is `ExtremumResidualTreeByCTsBuilder`. Its `build(image)`
-method constructs both component trees as temporary state and returns an
-independent `NativeHierarchyOwned<T>` with owned adjacency metadata.
-
-The factory publishes `MorphologicalTreeKind::ExtremumResidualTree`, retains a
-`SharedAdjacencyContext`, and uses `NodeAltitudeOrder::Unconstrained`.
-Its alternating gray-level altitudes are not a monotone hierarchy valuation.
-Use a structural or otherwise non-decreasing node valuation for operations that
-require values to increase toward the root.
-
-An explicit adjacency can replace the radius:
-
-```cpp
-auto adjacency = RegularGridAdjacency2D::fromStructuringElement(
-    rows,
-    columns,
-    offsets);
-auto residual = MorphologicalTreeFactory::createExtremumResidualTreeByCTs(
-    image,
-    adjacency);
-```
-
-Both residual builders use increasing row-major pixel identifiers as the fixed
-spatial order. The self-dual schedule orders candidates by
-`(supportCardinality, spatialMinimum)`. Here, `spatialMinimum` is the smallest
-pixel identifier in the support. Polarity does not affect this order.
-The builder reads each selected support from the proper part of a component-tree
-leaf and follows Algorithm 1 of the paper. Recorded nodes with an undefined
-parent represent the pending supports implicitly; proper-part association lists
-identify their current component-tree locations.
 
 ### Tree-of-shapes policies
 
@@ -194,69 +158,6 @@ auto unpadded = MorphologicalTreeFactory::createTreeOfShapes(image, convention);
 Both padding policies publish the original source pixels as the tree domain and
 attach the original `GridDomain2D`. The immersion grid is not exposed as the
 pixel domain.
-
-### Tree-of-shapes altitude encodings
-
-A complementary-grid immersion floods the interpolated domain over the source
-level set itself, so every construction level is already a source gray level.
-`TopographicAltitudeEncoding::UInt8` publishes those levels unchanged and
-`reconstructFromNodeAltitudes()` returns the source image. The encoding is exact,
-not a quantization: the published hierarchy is the doubled hierarchy with every
-altitude halved, so no parent-child altitude distinction is lost.
-
-A self-dual span immersion propagates from a boundary reference level that, on
-an even boundary, is the mean of the two central boundary values and may
-therefore fall between two source levels. That reference level lives on the
-exterior ring and is the only source of half levels, so the admissible encodings
-depend on the domain extension:
-
-| Immersion | `TopographicDomainExtension` | Admissible encodings |
-| --- | --- | --- |
-| Complementary grid | either | `UInt8`, `ExactDoubled` |
-| Self-dual span | `None` | `UInt8`, `ExactDoubled` |
-| Self-dual span | `ExteriorRing` | `ExactDoubled` only |
-
-Without the exterior ring the reference level is cropped away and no interior
-cell reads it, so every construction level stays on the source lattice and the
-8-bit encoding is exact:
-
-```cpp
-ValuedMorphologicalTree<std::uint8_t> unpaddedSelfDual =
-    MorphologicalTreeFactory::createTreeOfShapes(
-        image,
-        TopographicConvention{SelfDualSpanImmersion{},
-                              TopographicDomainExtension::None,
-                              PixelId{0},
-                              TopographicAltitudeEncoding::UInt8});
-
-ValuedMorphologicalTree<ToSGrayLevel> selfDual =
-    MorphologicalTreeFactory::createTreeOfShapes<ToSGrayLevel>(
-        image, selfDualSpanConvention());
-```
-
-Under `ExactDoubled` a source value `v` is represented by `2 * v`; odd values
-represent half levels, and `reconstructFromNodeAltitudes()` also returns doubled
-values. Half levels are never quantized into `std::uint8_t`, because doing so can
-create equal-altitude parent-child edges and destroy shape polarity.
-
-The published altitude type is a compile-time choice in C++ and must match the
-encoding declared by the convention; `createTreeOfShapes` throws
-`std::invalid_argument` when they disagree. Python selects the instantiation from
-the `altitude_encoding` field at run time.
-
-Every non-root tree-of-shapes node has a polarity derived from these exact
-altitudes:
-
-- `ShapePolarity::Upper` when the node altitude is greater than its parent altitude;
-- `ShapePolarity::Lower` when the node altitude is less than its parent altitude.
-
-The root has no shape polarity. Scalar bitquad materialization uses an explicit
-`BitquadConnectivityPolicy` after hierarchy-independent bitquad-family counts
-have been computed. Under a complementary convention, lower shapes use
-`minAdjacency`, upper shapes use `maxAdjacency`, and the unpolarized root follows
-the policy's explicit root connectivity. The current root projection remains
-8-connected when the two complementary choices differ; this is not inferred by
-classifying the root as an upper or lower shape.
 
 ## Owning tree and view boundary
 
@@ -339,52 +240,6 @@ Topology query names describe the relation they return:
 | inclusive subtree | `subtreeNodes(node)` | `subtree_nodes(node)` |
 | lowest common ancestor | `lowestCommonAncestor(a, b)` | `lowest_common_ancestor(a, b)` |
 | batch of lowest common ancestors | `lowestCommonAncestors(pairs)` | `lowest_common_ancestors(pairs)` |
-
-`ancestors(node)` includes `node` itself and ends at the root. Conversely,
-`descendants(node)` excludes `node`, whereas `subtreeNodes(node)` includes it.
-The subtree range uses pre-order, but callers must rely on the stated relation
-rather than on incidental sibling order unless an algorithm explicitly defines
-that order.
-
-`postOrder()` and `breadthFirstTraversal()` (Python: `post_order` and
-`breadth_first_traversal`) return tree-wide traversal schedules. Post-order
-visits every child before its parent. It can schedule bottom-up aggregation,
-but traversal and aggregation are distinct operations.
-
-`lowestCommonAncestors(pairs)` preserves the order of the input pairs. Invalid,
-dead, or disconnected endpoints produce `InvalidNode` (`-1` in Python), matching
-the scalar query.
-
-The batch operation reuses the tree's Euler tour and range minimum query cache
-when that cache already exists. Without it, depth-first search intervals first
-resolve equal nodes, ancestor pairs, and disconnected nodes. The remaining
-incomparable pairs use either an Euler/RMQ index or iterative offline Tarjan.
-The implementation estimates both storage requirements from the number `N` of
-node slots and the number `Q` of pairs, then chooses the smaller representation.
-Tarjan takes `O((N + Q) alpha(N))` time and `O(N + Q)` temporary storage and does
-not create a persistent LCA cache. The Euler/RMQ representation uses
-`O(N log N)` storage and remains available to later tree queries.
-
-`dfsEntryIndex(node)` and `dfsExitIndex(node)` (Python:
-`dfs_entry_index(node)` and `dfs_exit_index(node)`) are indices in one shared,
-zero-based DFS event sequence. The counter advances when DFS enters a node and
-again when it exits after visiting every descendant. For a tree with
-`numNodes()` live nodes, the combined entry and exit indices form a permutation
-of `[0, 2 * numNodes())`.
-
-The inclusive ancestor relation is characterized by interval containment:
-\f$u\f$ is an ancestor of \f$v\f$ exactly when
-`dfsEntryIndex(u) <= dfsEntryIndex(v)` and
-`dfsExitIndex(u) >= dfsExitIndex(v)`. The number of strict descendants is
-`(dfsExitIndex(node) - dfsEntryIndex(node) - 1) / 2`. These values are event
-indices, not wall-clock timestamps or independent positions in two traversals.
-
-Node IDs and pixel IDs are independent domains. A live node may have an empty
-proper part when its support is supplied by descendants. Every committed live
-node must nevertheless have non-empty node support. Such a tree remains a valid
-`MorphologicalTree`, but it is not a morphological tree of partial partitions;
-use `isTreeOfPartialPartitions()` or `validateTreeOfPartialPartitions()` when
-that stricter specialization is required.
 
 ### Native hierarchy buffers
 

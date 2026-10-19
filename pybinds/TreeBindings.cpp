@@ -1212,7 +1212,7 @@ construction stays on the source lattice, so `UINT8` becomes available:
             [](UInt8InputArray input, double radius) {
                 const double validatedRadius =
                     pybind_utils::requireAdjacencyRadius(radius, "MorphologicalTreeFactory.create_extremum_residual_tree");
-                return wrapPythonValuedTree(MorphologicalTreeFactory::createExtremumResidualTreeByCTs(
+                return wrapPythonValuedTree(MorphologicalTreeFactory::createExtremumResidualTree(
                     imageFromArray(input), validatedRadius));
             },
             "input"_a, "radius"_a = 1.5,
@@ -1220,7 +1220,7 @@ construction stays on the source lattice, so `UINT8` becomes available:
         .def_static(
             "create_extremum_residual_tree",
             [](UInt8InputArray input, RegularGridAdjacency2D adjacency) {
-                return wrapPythonValuedTree(MorphologicalTreeFactory::createExtremumResidualTreeByCTs(
+                return wrapPythonValuedTree(MorphologicalTreeFactory::createExtremumResidualTree(
                     imageFromArray(input), std::move(adjacency)));
             },
             "input"_a, "adjacency"_a,

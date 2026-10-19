@@ -302,7 +302,7 @@ class TreeEditor {
     int unsupportedLeafBalance_ = 0;
     /** @brief Indicates whether incremental validation remains supported. */
     bool incrementalValidationSupported_ = true;
-    /** @brief Indicates whether construction directly established the required invariants. */
+    /** @brief Construction capability establishing primitive preconditions and edit invariants without public input checks. */
     bool invariantsEstablishedByConstruction_ = false;
 
     /**
@@ -734,16 +734,17 @@ class TreeEditor {
      */
     void detach(NodeId nodeId) {
         MorphologicalTree& t = tree();
+        if (invariantsEstablishedByConstruction_) {
+            t.detachNode(nodeId);
+            return;
+        }
         if (!t.isAlive(nodeId)) {
             throw std::invalid_argument("TreeEditor::detach requires a live node.");
         }
         if (t.isRoot(nodeId)) {
             throw std::invalid_argument("TreeEditor::detach cannot detach the connected root.");
         }
-        if (invariantsEstablishedByConstruction_) {
-            t.detachNode(nodeId);
-            return;
-        }
+
         const NodeId oldParent = t.parent(nodeId);
         captureNodeLinkNeighborhood(nodeId);
         touch(nodeId);
@@ -765,6 +766,10 @@ class TreeEditor {
      */
     void reparent(NodeId nodeId, NodeId newParentId) {
         MorphologicalTree& t = tree();
+        if (invariantsEstablishedByConstruction_) {
+            t.moveNode(nodeId, newParentId);
+            return;
+        }
         if (!t.isAlive(nodeId) || !t.isAlive(newParentId)) {
             throw std::invalid_argument("TreeEditor::reparent requires live node ids.");
         }
@@ -774,10 +779,7 @@ class TreeEditor {
         if (nodeId == newParentId) {
             throw std::invalid_argument("TreeEditor::reparent requires distinct node ids.");
         }
-        if (invariantsEstablishedByConstruction_) {
-            t.moveNode(nodeId, newParentId);
-            return;
-        }
+
         const NodeId oldParent = t.parent(nodeId);
         captureNodeLinkNeighborhood(nodeId);
         captureNodeForRollback(newParentId);
@@ -805,6 +807,10 @@ class TreeEditor {
      */
     void attach(NodeId parentId, NodeId detachedNodeId) {
         MorphologicalTree& t = tree();
+        if (invariantsEstablishedByConstruction_) {
+            t.attachNode(parentId, detachedNodeId);
+            return;
+        }
         if (!t.isAlive(parentId) || !t.isAlive(detachedNodeId)) {
             throw std::invalid_argument("TreeEditor::attach requires live node ids.");
         }
@@ -813,10 +819,6 @@ class TreeEditor {
         }
         if (t.parent(detachedNodeId) != detachedNodeId) {
             throw std::invalid_argument("TreeEditor::attach expects a detached self-parented node.");
-        }
-        if (invariantsEstablishedByConstruction_) {
-            t.attachNode(parentId, detachedNodeId);
-            return;
         }
         captureNodeLinkNeighborhood(detachedNodeId);
         captureNodeForRollback(parentId);
@@ -841,15 +843,15 @@ class TreeEditor {
      */
     void moveChildren(NodeId parentId, NodeId sourceId) {
         MorphologicalTree& t = tree();
+        if (invariantsEstablishedByConstruction_) {
+            t.moveChildren(parentId, sourceId);
+            return;
+        }
         if (!t.isAlive(parentId) || !t.isAlive(sourceId)) {
             throw std::invalid_argument("TreeEditor::moveChildren requires live node ids.");
         }
         if (parentId == sourceId) {
             throw std::invalid_argument("TreeEditor::moveChildren requires distinct node ids.");
-        }
-        if (invariantsEstablishedByConstruction_) {
-            t.moveChildren(parentId, sourceId);
-            return;
         }
         captureNodeForRollback(parentId);
         captureNodeForRollback(sourceId);
@@ -877,6 +879,10 @@ class TreeEditor {
      */
     void movePixelToProperPart(NodeId targetNodeId, NodeId sourceNodeId, PixelId pixel) {
         MorphologicalTree& t = tree();
+        if (invariantsEstablishedByConstruction_) {
+            t.movePixelToProperPart(targetNodeId, sourceNodeId, pixel);
+            return;
+        }
         if (!t.isAlive(targetNodeId) || !t.isAlive(sourceNodeId)) {
             throw std::invalid_argument("TreeEditor::movePixelToProperPart requires live node ids.");
         }
@@ -885,10 +891,6 @@ class TreeEditor {
         }
         if (!t.isPixel(pixel)) {
             throw std::invalid_argument("TreeEditor::movePixelToProperPart requires a valid proper-part id.");
-        }
-        if (invariantsEstablishedByConstruction_) {
-            t.movePixelToProperPart(targetNodeId, sourceNodeId, pixel);
-            return;
         }
         captureNodeForRollback(targetNodeId);
         captureNodeForRollback(sourceNodeId);
@@ -912,15 +914,15 @@ class TreeEditor {
      */
     void mergeProperParts(NodeId targetNodeId, NodeId sourceNodeId) {
         MorphologicalTree& t = tree();
+        if (invariantsEstablishedByConstruction_) {
+            t.mergeProperParts(targetNodeId, sourceNodeId);
+            return;
+        }
         if (!t.isAlive(targetNodeId) || !t.isAlive(sourceNodeId)) {
             throw std::invalid_argument("TreeEditor::mergeProperParts requires live node ids.");
         }
         if (targetNodeId == sourceNodeId) {
             throw std::invalid_argument("TreeEditor::mergeProperParts requires distinct source and target nodes.");
-        }
-        if (invariantsEstablishedByConstruction_) {
-            t.mergeProperParts(targetNodeId, sourceNodeId);
-            return;
         }
         captureNodeForRollback(targetNodeId);
         captureNodeForRollback(sourceNodeId);
@@ -945,15 +947,15 @@ class TreeEditor {
      */
     void removeChild(NodeId parentNodeId, NodeId childId, bool releaseNodeFlag) {
         MorphologicalTree& t = tree();
+        if (invariantsEstablishedByConstruction_) {
+            t.removeChild(parentNodeId, childId, releaseNodeFlag);
+            return;
+        }
         if (!t.isAlive(parentNodeId) || !t.isAlive(childId)) {
             throw std::invalid_argument("TreeEditor::removeChild requires live node ids.");
         }
         if (!t.hasChild(parentNodeId, childId)) {
             throw std::invalid_argument("TreeEditor::removeChild requires a direct parent-child relation.");
-        }
-        if (invariantsEstablishedByConstruction_) {
-            t.removeChild(parentNodeId, childId, releaseNodeFlag);
-            return;
         }
         captureNodeLinkNeighborhood(childId);
         captureNodeForRollback(parentNodeId);
@@ -981,6 +983,10 @@ class TreeEditor {
      */
     void releaseNode(NodeId nodeId) {
         MorphologicalTree& t = tree();
+        if (invariantsEstablishedByConstruction_) {
+            t.releaseNode(nodeId);
+            return;
+        }
         if (!t.isAlive(nodeId)) {
             throw std::invalid_argument("TreeEditor::releaseNode requires a live node.");
         }
@@ -989,10 +995,6 @@ class TreeEditor {
         }
         if (t.parent(nodeId) != nodeId) {
             throw std::invalid_argument("TreeEditor::releaseNode expects a detached self-parented node.");
-        }
-        if (invariantsEstablishedByConstruction_) {
-            t.releaseNode(nodeId);
-            return;
         }
         captureNodeForRollback(nodeId);
         const bool willRelease = t.numChildrenByNode_[static_cast<std::size_t>(nodeId)] == 0 && t.properPartCardinalityByNode_[static_cast<std::size_t>(nodeId)] == 0;
@@ -1018,13 +1020,14 @@ class TreeEditor {
      */
     void setRoot(NodeId nodeId) {
         MorphologicalTree& t = tree();
-        if (!t.isAlive(nodeId)) {
-            throw std::invalid_argument("TreeEditor::setRoot requires a live node.");
-        }
         if (invariantsEstablishedByConstruction_) {
             t.setRoot(nodeId);
             return;
         }
+        if (!t.isAlive(nodeId)) {
+            throw std::invalid_argument("TreeEditor::setRoot requires a live node.");
+        }
+
         const NodeId oldRoot = t.root();
         const NodeId oldParent = t.parent(nodeId);
         captureNodeForRollback(oldRoot);

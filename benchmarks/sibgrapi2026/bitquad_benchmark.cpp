@@ -8,7 +8,8 @@
 #include "morphotree/tree/treeOfShapes/tos.hpp"
 
 #include "mmcfilters/attributes/computers/detail/BitquadFiniteWindowComputation.hpp"
-#include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
+#include "mmcfilters/trees/NativeHierarchyOwned.hpp"
+#include "mmcfilters/trees/ValuedMorphologicalTree.hpp"
 #include "mmcfilters/trees/MorphologicalTreeSemantics.hpp"
 #include "mmcfilters/utils/Contract.hpp"
 
@@ -25,8 +26,6 @@
 #include <iostream>
 #include <limits>
 #include <memory>
-#include <optional>
-#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -181,6 +180,20 @@ mt::Box domainOf(const GrayImage& image) {
     return mt::Box::fromSize(mt::I32Point{0, 0}, mt::UI32Point{static_cast<mt::uint32>(image.width), static_cast<mt::uint32>(image.height)});
 }
 
+// Benchmark-only bridge for buffers produced by the unmodified reference builder.
+// The reference establishes the hierarchy invariants; materialization preserves
+// its node identifiers and transfers the buffers without a Higra conversion.
+mf::ValuedMorphologicalTree<std::uint8_t> createFromNativeTopology(
+    std::vector<mf::NodeId>&& parent, std::vector<mf::NodeId>&& smallestNodeMap, std::vector<std::uint8_t>&& altitude,
+    mf::NodeId root, int rows, int columns, mf::MorphologicalTreeKind kind) {
+    auto semantics = mf::makeMorphologicalTreeSemantics(kind);
+    if (kind == mf::MorphologicalTreeKind::MaxTree || kind == mf::MorphologicalTreeKind::MinTree) {
+        semantics.constructionContext = mf::SharedAdjacencyContext{mf::RegularGridAdjacency2D(rows, columns, 1.5)};
+    }
+    return mf::detail::materializeNativeHierarchy(mf::makeNativeHierarchyOwned(
+        std::move(parent), std::move(smallestNodeMap), std::move(altitude), root, mf::GridDomain2D{rows, columns}, std::move(semantics)));
+}
+
 mf::ValuedMorphologicalTree<std::uint8_t> importTree(const ReferenceTree& tree, int rows, int columns, mf::MorphologicalTreeKind kind) {
     const std::size_t numberOfNodes = tree.numberOfNodes();
     const std::size_t numberOfPixels = static_cast<std::size_t>(rows) * static_cast<std::size_t>(columns);
@@ -200,15 +213,8 @@ mf::ValuedMorphologicalTree<std::uint8_t> importTree(const ReferenceTree& tree, 
         smallestNodeMap[pixel] = static_cast<mf::NodeId>(tree.smallComponent(static_cast<mt::uint32>(pixel))->id());
     }
 
-    mf::MorphologicalTreeSemantics semantics;
-    if (kind == mf::MorphologicalTreeKind::MaxTree || kind == mf::MorphologicalTreeKind::MinTree) {
-        semantics = mf::makeMorphologicalTreeSemantics(kind, mf::SharedAdjacencyContext{mf::RegularGridAdjacency2D(rows, columns, 1.5)});
-    } else {
-        semantics = mf::makeMorphologicalTreeSemantics(kind);
-    }
-    return mf::MorphologicalTreeFactory::createFromNativeTopology(
-        std::span<const mf::NodeId>(parent), std::span<const mf::NodeId>(smallestNodeMap), std::span<const std::uint8_t>(altitude),
-        static_cast<mf::NodeId>(tree.root()->id()), rows, columns, std::move(semantics));
+    return createFromNativeTopology(std::move(parent), std::move(smallestNodeMap), std::move(altitude),
+                                    static_cast<mf::NodeId>(tree.root()->id()), rows, columns, kind);
 }
 
 std::array<std::int64_t, 5> familyValues(const mt::Quads& quads) {

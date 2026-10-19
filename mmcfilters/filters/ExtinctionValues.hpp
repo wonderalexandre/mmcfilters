@@ -3,8 +3,7 @@
 #include "../trees/TreeAltitudeAlgorithms.hpp"
 #include "../trees/ValuedMorphologicalTree.hpp"
 #include "../trees/ValuedMorphologicalTreeView.hpp"
-#include "../trees/detail/CommittedTreeAccess.hpp"
-#include "../trees/detail/HierarchyCapabilityValidation.hpp"
+#include "../trees/detail/TreeKernelAccess.hpp"
 #include "../trees/saliency/HierarchySaliencyMapValidation.hpp"
 #include "../trees/saliency/HierarchySaliencyMap.hpp"
 #include "../trees/saliency/HierarchicalWatershedSaliency.hpp"
@@ -373,7 +372,7 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
 
         for (NodeId nodeId : tree.postOrder()) {
             Real& nodeValue = extinctionValueAttribute_[static_cast<std::size_t>(nodeId)];
-            for (NodeId childId : detail::CommittedTreeAccess::children(tree, nodeId)) {
+            for (NodeId childId : detail::TreeKernelAccess::children(tree, nodeId)) {
                 const Real childValue = extinctionValueAttribute_[static_cast<std::size_t>(childId)];
                 if (nodeValue < childValue) {
                     nodeValue = childValue;
@@ -461,7 +460,7 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
         const AltitudeView altitudeView = view();
         for (NodeId nodeId : tree.postOrder()) {
             if (!tree.isRoot(nodeId) && extremumPreservationMask[static_cast<std::size_t>(nodeId)]) {
-                extremumPreservationMask[static_cast<std::size_t>(detail::CommittedTreeAccess::nodeParent(tree, nodeId))] = true;
+                extremumPreservationMask[static_cast<std::size_t>(detail::TreeKernelAccess::nodeParent(tree, nodeId))] = true;
             }
         }
 
@@ -473,15 +472,15 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
             const NodeId nodeId = stack.top();
             stack.pop();
             const T level = altitudeOf(altitudeView, nodeId);
-            for (PixelId pixel : detail::CommittedTreeAccess::properParts(tree, nodeId)) {
+            for (PixelId pixel : detail::TreeKernelAccess::properParts(tree, nodeId)) {
                 imgOutput[pixel] = level;
             }
-            for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, nodeId)) {
+            for (NodeId childNodeId : detail::TreeKernelAccess::children(tree, nodeId)) {
                 if (extremumPreservationMask[static_cast<std::size_t>(childNodeId)]) {
                     stack.push(childNodeId);
                 } else {
-                    for (NodeId subtreeNodeId : detail::CommittedTreeAccess::subtree(tree, childNodeId)) {
-                        for (PixelId pixel : detail::CommittedTreeAccess::properParts(tree, subtreeNodeId)) {
+                    for (NodeId subtreeNodeId : detail::TreeKernelAccess::subtree(tree, childNodeId)) {
+                        for (PixelId pixel : detail::TreeKernelAccess::properParts(tree, subtreeNodeId)) {
                             imgOutput[pixel] = level;
                         }
                     }
@@ -538,11 +537,11 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
         for (NodeId leafNodeId : leaves) {
             Real extinction = dominantExtremumSentinel();
             NodeId cutoffNodeId = leafNodeId;
-            NodeId parentNodeId = detail::CommittedTreeAccess::nodeParent(this->tree, cutoffNodeId);
+            NodeId parentNodeId = detail::TreeKernelAccess::nodeParent(this->tree, cutoffNodeId);
             bool flag = true;
             while (flag && !this->tree.isRoot(cutoffNodeId)) {
-                if (detail::CommittedTreeAccess::numChildren(this->tree, parentNodeId) > 1) {
-                    for (NodeId sonNodeId : detail::CommittedTreeAccess::children(this->tree, parentNodeId)) {
+                if (detail::TreeKernelAccess::numChildren(this->tree, parentNodeId) > 1) {
+                    for (NodeId sonNodeId : detail::TreeKernelAccess::children(this->tree, parentNodeId)) {
                         if (flag) {
                             if (visited[sonNodeId] && sonNodeId != cutoffNodeId && attr[sonNodeId] == attr[cutoffNodeId]) {
                                 flag = false;
@@ -555,7 +554,7 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
                 }
                 if (flag) {
                     cutoffNodeId = parentNodeId;
-                    parentNodeId = detail::CommittedTreeAccess::nodeParent(this->tree, cutoffNodeId);
+                    parentNodeId = detail::TreeKernelAccess::nodeParent(this->tree, cutoffNodeId);
                 }
             }
             if (!this->tree.isRoot(cutoffNodeId)) {
@@ -617,7 +616,7 @@ template <AltitudeValue T, std::floating_point Real = float> class ExtinctionVal
      */
     ExtinctionValues(const AltitudeView& view, const Real* attr) : view_(view), tree(view_.topology()), treeMutationVersion_(tree.getMutationVersion()) {
         view_.requireTopologyUnchanged("ExtinctionValues");
-        detail::validateGlobalMonotoneAltitudeOrder(this->tree, "ExtinctionValues");
+        TreeAltitudeAlgorithms::requireGlobalMonotoneAltitudeOrder(this->tree, "ExtinctionValues");
         initialize(attr);
     }
 

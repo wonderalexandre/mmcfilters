@@ -930,13 +930,13 @@ void requireUniformBackendAndOracles() {
     const std::vector<NodeId> genericParent{0, 0, 0};
     const std::vector<NodeId> genericSmallestNode{1, 1, 2, 2};
     const std::vector<std::uint8_t> genericAltitude{7, 2, 9};
-    auto genericTree = MorphologicalTreeFactory::createFromNativeTopology(
+    auto genericTree = makeValuedHierarchy(
         std::span<const NodeId>(genericParent), std::span<const NodeId>(genericSmallestNode), std::span<const std::uint8_t>(genericAltitude), NodeId{0}, 1, 4,
         MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Unconstrained, NoConstructionContext{}});
     requireProductionMatchesExactOracle(genericTree.topology(), "unconstrained generic tree without construction context");
     requireSingleNodeExactPathMatchesOracle(genericTree.topology(), genericTree.topology().root(), "unconstrained generic tree without construction context");
     requireApproximateSummariesMatchExactSmallGrid(genericTree.topology(), "unconstrained generic tree without construction context");
-    auto transposedGenericTree = MorphologicalTreeFactory::createFromNativeTopology(
+    auto transposedGenericTree = makeValuedHierarchy(
         std::span<const NodeId>(genericParent), std::span<const NodeId>(genericSmallestNode), std::span<const std::uint8_t>(genericAltitude), NodeId{0}, 4, 1,
         MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Unconstrained, NoConstructionContext{}});
     requireProductionMatchesExactOracle(transposedGenericTree.topology(), "single-column unconstrained generic tree");
@@ -946,7 +946,7 @@ void requireUniformBackendAndOracles() {
     const std::vector<NodeId> nonzeroRootParent{2, 2, 2};
     const std::vector<NodeId> nonzeroRootSmallestNode{0, 0, 1, 1};
     const std::vector<std::uint8_t> nonzeroRootAltitude{4, 8, 0};
-    auto nonzeroRootTree = MorphologicalTreeFactory::createFromNativeTopology(
+    auto nonzeroRootTree = makeValuedHierarchy(
         std::span<const NodeId>(nonzeroRootParent), std::span<const NodeId>(nonzeroRootSmallestNode), std::span<const std::uint8_t>(nonzeroRootAltitude),
         NodeId{2}, 1, 4, MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Unconstrained, NoConstructionContext{}});
     requireProductionMatchesExactOracle(nonzeroRootTree.topology(), "generic tree with a nonzero root slot");
@@ -965,7 +965,7 @@ void requireUniformBackendAndOracles() {
         }
     }
     const std::vector<std::uint8_t> ringAltitude{0, 1};
-    auto ringTree = MorphologicalTreeFactory::createFromNativeTopology(
+    auto ringTree = makeValuedHierarchy(
         std::span<const NodeId>(ringParent), std::span<const NodeId>(ringSmallestNode), std::span<const std::uint8_t>(ringAltitude), NodeId{0}, ringRows,
         ringColumns, MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Unconstrained, NoConstructionContext{}});
     requireProductionMatchesExactOracle(ringTree.topology(), "shifted generic ring with a hole");
@@ -976,7 +976,7 @@ void requireUniformBackendAndOracles() {
     const std::vector<NodeId> emptyChainParent{0, 0, 1};
     const std::vector<NodeId> emptyChainSmallestNode{2};
     const std::vector<std::uint8_t> emptyChainAltitude{0, 0, 0};
-    auto emptyProperPartChain = MorphologicalTreeFactory::createFromNativeTopology(
+    auto emptyProperPartChain = makeValuedHierarchy(
         std::span<const NodeId>(emptyChainParent), std::span<const NodeId>(emptyChainSmallestNode), std::span<const std::uint8_t>(emptyChainAltitude),
         NodeId{0}, 1, 1, MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Unconstrained, NoConstructionContext{}});
     requireProductionMatchesExactOracle(emptyProperPartChain.topology(), "generic unary chain with empty proper parts");
@@ -1037,7 +1037,7 @@ void requireDeepSupportBoxIndexIsIterative() {
         parent[static_cast<std::size_t>(node)] = node - 1;
     }
     const std::array<NodeId, 1> smallestNode{numNodes - 1};
-    auto deepTree = MorphologicalTreeFactory::createFromNativeTopology(
+    auto deepTree = makeValuedHierarchy(
         std::span<const NodeId>(parent), std::span<const NodeId>(smallestNode), std::span<const std::uint8_t>(altitude), NodeId{0}, 1, 1,
         MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Unconstrained, NoConstructionContext{}});
 
@@ -1069,7 +1069,7 @@ void requireDeepSharedBoundaryLcaIsIterative() {
     smallestNode.fill(incomparableSibling);
     smallestNode[static_cast<std::size_t>(centerPixel)] = chainLeaf;
     std::vector<std::uint8_t> altitude(static_cast<std::size_t>(numNodes), std::uint8_t{0});
-    auto deepTree = MorphologicalTreeFactory::createFromNativeTopology(
+    auto deepTree = makeValuedHierarchy(
         std::span<const NodeId>(parent), std::span<const NodeId>(smallestNode), std::span<const std::uint8_t>(altitude), NodeId{0}, 3, 3,
         MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Unconstrained, NoConstructionContext{}});
     const MorphologicalTree& tree = deepTree.topology();

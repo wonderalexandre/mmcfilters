@@ -7,7 +7,7 @@
 #include "../distance_transform/NodeSupportBoxIndex.hpp"
 #include "../../../../contours/detail/ContourLifetimeIndex.hpp"
 #include "../../../../trees/MorphologicalTree.hpp"
-#include "../../../../trees/detail/CommittedTreeAccess.hpp"
+#include "../../../../trees/detail/TreeKernelAccess.hpp"
 
 #include <array>
 #include <cstddef>
@@ -357,7 +357,7 @@ template <class PropagationPolicy, class ExecutionPolicy> class BasicMorphologic
                 const std::span<const PixelId> additions = contourLifetimes.establishedAdditions(node);
                 markPixels(additions, additionMarks, tree.numPixels());
                 std::size_t consumedAdditions = 0;
-                for (PixelId pixel : ::mmcfilters::detail::CommittedTreeAccess::properParts(tree, node)) {
+                for (PixelId pixel : ::mmcfilters::detail::TreeKernelAccess::properParts(tree, node)) {
                     transform.addPixelToBinaryImage(pixel);
                     std::uint8_t& mark = additionMarks[static_cast<std::size_t>(pixel)];
                     if (mark != 0) {
@@ -444,8 +444,8 @@ template <class PropagationPolicy, class ExecutionPolicy> class BasicMorphologic
                 if (firstSmallestNode == secondSmallestNode) {
                     continue;
                 }
-                if (!::mmcfilters::detail::CommittedTreeAccess::isAncestor(tree, firstSmallestNode, secondSmallestNode) &&
-                    !::mmcfilters::detail::CommittedTreeAccess::isAncestor(tree, secondSmallestNode, firstSmallestNode)) {
+                if (!::mmcfilters::detail::TreeKernelAccess::isAncestor(tree, firstSmallestNode, secondSmallestNode) &&
+                    !::mmcfilters::detail::TreeKernelAccess::isAncestor(tree, secondSmallestNode, firstSmallestNode)) {
                     return false;
                 }
             }
@@ -471,7 +471,7 @@ template <class PropagationPolicy, class ExecutionPolicy> class BasicMorphologic
         NodeId storageChild = InvalidNode;
         std::size_t largestContour = 0;
         std::size_t combinedSize = contourLifetimes.establishedAdditions(node).size();
-        for (NodeId child : ::mmcfilters::detail::CommittedTreeAccess::children(tree, node)) {
+        for (NodeId child : ::mmcfilters::detail::TreeKernelAccess::children(tree, node)) {
             const auto& childContour = contoursByNode[static_cast<std::size_t>(child)];
             if constexpr (ExecutionPolicy::validateInternalInvariants) {
                 if (!childContour) {
@@ -493,7 +493,7 @@ template <class PropagationPolicy, class ExecutionPolicy> class BasicMorphologic
         }
         nodeContour->reserve(combinedSize);
 
-        for (NodeId child : ::mmcfilters::detail::CommittedTreeAccess::children(tree, node)) {
+        for (NodeId child : ::mmcfilters::detail::TreeKernelAccess::children(tree, node)) {
             if (child == storageChild) {
                 continue;
             }

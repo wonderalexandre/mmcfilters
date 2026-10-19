@@ -3,7 +3,7 @@
 #include "ContourSideAttributeData.hpp"
 #include "../../detail/AttributeKernelSupport.hpp"
 #include "../../../trees/MorphologicalTree.hpp"
-#include "../../../trees/detail/TreeTraversalDetail.hpp"
+#include "../../../trees/detail/TreeKernelAccess.hpp"
 
 #include <concepts>
 #include <cstddef>
@@ -64,7 +64,7 @@ inline void materializeContourSideAttributes(const AttributeComputeContext<Real>
     const int southOffset = request.south ? offsetOf(ContourSideSouth) : 0;
     const auto outputIndex = [&](NodeId node, int offset) { return static_cast<std::size_t>(node * stride + offset); };
 
-    ::mmcfilters::detail::kernel::traversePostOrder(
+    ::mmcfilters::detail::TreeKernelAccess::traversePostOrder(
         context.tree, context.tree.root(), [](NodeId) {}, [](NodeId, NodeId) {},
         [&](NodeId node) {
             const ContourSideCounts& counts = sideCounts[static_cast<std::size_t>(node)];

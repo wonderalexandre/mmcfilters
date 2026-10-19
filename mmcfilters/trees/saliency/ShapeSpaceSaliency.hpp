@@ -4,8 +4,7 @@
 #include "../../utils/RegularGridAdjacency2D.hpp"
 #include "../../utils/Common.hpp"
 #include "../MorphologicalTree.hpp"
-#include "../detail/CommittedTreeAccess.hpp"
-#include "../detail/MorphologicalTreeConstructionContextQueries.hpp"
+#include "../detail/TreeKernelAccess.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -185,7 +184,7 @@ class ShapeSpaceSaliency {
      * @return Mutable reference to the updated object.
      */
     static const RegularGridAdjacency2D& requireStoredAdjacency(const MorphologicalTree& tree, const char* context) {
-        const RegularGridAdjacency2D* adjacency = ::mmcfilters::detail::constructionAdjacency(tree);
+        const RegularGridAdjacency2D* adjacency = tree.constructionAdjacency();
         if (adjacency == nullptr) {
             throw std::invalid_argument(std::string(context) + " requires an attached adjacency relation; pass an explicit adjacency relation instead.");
         }
@@ -277,8 +276,8 @@ class ShapeSpaceSaliency {
             }
         }
 
-        const std::span<const PixelId> smallestSupportPixelByNode = detail::CommittedTreeAccess::smallestNodeSupportPixels(tree);
-        const std::span<const std::int32_t> supportCardinalityByNode = detail::CommittedTreeAccess::nodeSupportCardinalities(tree);
+        const std::span<const PixelId> smallestSupportPixelByNode = detail::TreeKernelAccess::smallestNodeSupportPixels(tree);
+        const std::span<const std::int32_t> supportCardinalityByNode = detail::TreeKernelAccess::nodeSupportCardinalities(tree);
         const auto canonicalShapeSpaceNodePrecedes = [&](NodeId lhs, NodeId rhs) {
             if (lhs == rhs) {
                 return false;

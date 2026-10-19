@@ -4,7 +4,7 @@
 #include "../trees/TreeAltitudeAlgorithms.hpp"
 #include "../trees/ValuedMorphologicalTree.hpp"
 #include "../trees/ValuedMorphologicalTreeView.hpp"
-#include "../trees/detail/CommittedTreeAccess.hpp"
+#include "../trees/detail/TreeKernelAccess.hpp"
 #include "../utils/CommittedImageAccess.hpp"
 #include "../utils/Contract.hpp"
 
@@ -70,7 +70,7 @@ inline void applyDirectReconstruction(ValuedMorphologicalTreeView<T> valuedTree,
     while (!pending.empty()) {
         const NodeId nodeId = pending.top();
         pending.pop();
-        for (NodeId childId : detail::CommittedTreeAccess::children(tree, nodeId)) {
+        for (NodeId childId : detail::TreeKernelAccess::children(tree, nodeId)) {
             reconstructedNodeAltitudes[static_cast<std::size_t>(childId)] =
                 nodePreservationMask[static_cast<std::size_t>(childId)] ? nodeAltitudes[static_cast<std::size_t>(childId)]
                                                                        : reconstructedNodeAltitudes[static_cast<std::size_t>(nodeId)];
@@ -80,7 +80,7 @@ inline void applyDirectReconstruction(ValuedMorphologicalTreeView<T> valuedTree,
 
     T* pixels = output->rawData();
     for (NodeId nodeId : tree.aliveNodeIds()) {
-        for (PixelId pixel : detail::CommittedTreeAccess::properParts(tree, nodeId)) {
+        for (PixelId pixel : detail::TreeKernelAccess::properParts(tree, nodeId)) {
             pixels[pixel] = reconstructedNodeAltitudes[static_cast<std::size_t>(nodeId)];
         }
     }

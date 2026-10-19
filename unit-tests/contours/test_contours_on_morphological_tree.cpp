@@ -146,7 +146,7 @@ void verifyDeepChainTraversal() {
     smallestNodes.fill(stopNode);
     smallestNodes[centerPixel] = chainLeaf;
     const std::vector<uint8_t> altitude(parent.size(), uint8_t{0});
-    const auto valuedTree = MorphologicalTreeFactory::createFromNativeTopology(
+    const auto valuedTree = makeValuedHierarchy(
         std::span<const NodeId>(parent), std::span<const NodeId>(smallestNodes), std::span<const uint8_t>(altitude), NodeId{0}, 3, 3,
         MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Unconstrained, NoConstructionContext{}});
     auto contours = ContourComputation(valuedTree.topology());

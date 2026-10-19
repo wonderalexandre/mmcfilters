@@ -1,10 +1,9 @@
 #pragma once
 
 #include "HierarchySaliencyMap.hpp"
-#include "../MorphologicalTreeFactory.hpp"
+#include "../ValuedMorphologicalTree.hpp"
 #include "../TreeAltitudeAlgorithms.hpp"
 #include "../ValuedMorphologicalTreeView.hpp"
-#include "../detail/HierarchyCapabilityValidation.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -346,8 +345,8 @@ class HierarchicalWatershedSaliency {
         const NodeId root = numVertices == 1 ? NodeId{0} : nextNode - 1;
         MorphologicalTreeSemantics semantics{
             MorphologicalTreeKind::Generic, NodeAltitudeOrder::Unconstrained, SharedAdjacencyContext{adjacency}};
-        return MorphologicalTreeFactory::createFromNativeTopology(std::span<const NodeId>(parent), std::span<const NodeId>(smallestNodeMap),
-                                                                  std::span<const Real>(altitude), root, rows, columns, std::move(semantics));
+        return detail::materializeNativeHierarchy<Real>(makeNativeHierarchyOwned(
+            std::move(parent), std::move(smallestNodeMap), std::move(altitude), root, GridDomain2D{rows, columns}, std::move(semantics)));
     }
 
   public:
@@ -385,9 +384,7 @@ class HierarchicalWatershedSaliency {
         constexpr const char* context = "HierarchicalWatershedSaliency::compute";
         valuedTree.requireTopologyUnchanged(context);
         const MorphologicalTree& tree = valuedTree.topology();
-        detail::validateGlobalMonotoneAltitudeOrder(tree, context);
-        TreeAltitudeAlgorithms::validateFiniteAltitudeValues(valuedTree.nodeAltitudes(), context);
-        TreeAltitudeAlgorithms::validateMonotoneNodeAltitudes(tree, valuedTree.nodeAltitudes());
+        TreeAltitudeAlgorithms::requireGlobalMonotoneAltitudeOrder(tree, context);
         validateLeafExtinctions(tree, leafExtinction, context);
         HierarchySaliencyMapValidation::validateHierarchyConnectivity(tree, adjacency, context);
 

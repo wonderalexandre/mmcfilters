@@ -39,7 +39,7 @@ class ContourTraversal {
         heavyChildByNode_.assign(numSlots, InvalidNode);
         for (NodeId node : tree.postOrder()) {
             std::size_t heavySupportSize = 0;
-            for (NodeId child : ::mmcfilters::detail::CommittedTreeAccess::children(tree, node)) {
+            for (NodeId child : ::mmcfilters::detail::TreeKernelAccess::children(tree, node)) {
                 const std::size_t childSupportSize = supportIndex.establishedSupportInterval(child).size();
                 if (heavyChildByNode_[static_cast<std::size_t>(node)] == InvalidNode || childSupportSize > heavySupportSize) {
                     heavyChildByNode_[static_cast<std::size_t>(node)] = child;
@@ -63,7 +63,7 @@ class ContourTraversal {
             if (heavyChild != InvalidNode) {
                 traversalStack.emplace_back(heavyChild, false);
             }
-            for (NodeId child : ::mmcfilters::detail::CommittedTreeAccess::children(tree, node)) {
+            for (NodeId child : ::mmcfilters::detail::TreeKernelAccess::children(tree, node)) {
                 if (child != heavyChild) {
                     traversalStack.emplace_back(child, false);
                 }
@@ -95,7 +95,7 @@ class ContourTraversal {
         const NodeId node = postOrder_[nextNodeIndex_++];
         const NodeId heavyChild = heavyChildByNode_[static_cast<std::size_t>(node)];
         std::size_t requiredCapacity = contourLifetimes_.establishedAdditions(node).size();
-        for (NodeId child : ::mmcfilters::detail::CommittedTreeAccess::children(tree_, node)) {
+        for (NodeId child : ::mmcfilters::detail::TreeKernelAccess::children(tree_, node)) {
             const auto& childContour = contourByNode_[static_cast<std::size_t>(child)];
             if (!childContour) {
                 throw std::logic_error("Contour traversal found a missing child contour.");
@@ -114,7 +114,7 @@ class ContourTraversal {
             nodeContour->reserve(std::max(requiredCapacity, nodeContour->capacity() * 2));
         }
 
-        for (NodeId child : ::mmcfilters::detail::CommittedTreeAccess::children(tree_, node)) {
+        for (NodeId child : ::mmcfilters::detail::TreeKernelAccess::children(tree_, node)) {
             if (child == heavyChild) {
                 continue;
             }

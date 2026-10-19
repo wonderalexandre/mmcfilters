@@ -3,8 +3,7 @@
 #include "AttributeComputerDomain.hpp"
 #include "AttributeComputerFamily.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
-#include "../../trees/detail/TreeTraversalDetail.hpp"
-#include "../../trees/detail/CommittedTreeAccess.hpp"
+#include "../../trees/detail/TreeKernelAccess.hpp"
 #include "../../trees/TreeAltitudeAlgorithms.hpp"
 #include "../../utils/Altitude.hpp"
 #include "../../utils/Contract.hpp"
@@ -132,7 +131,7 @@ void computeGrayLevelStats(const AltitudeAttributeComputeContext<Real, T>& conte
         subtreeMaxAltitude.assign(context.tree.numInternalNodeSlots(), Real{0});
     }
 
-    ::mmcfilters::detail::kernel::traversePostOrder(
+    ::mmcfilters::detail::TreeKernelAccess::traversePostOrder(
         context.tree, context.tree.root(),
         [&](NodeId nodeId) {
             const NodeId node = detail::grayStatsSlotOf(context.tree, nodeId);
@@ -141,7 +140,7 @@ void computeGrayLevelStats(const AltitudeAttributeComputeContext<Real, T>& conte
             if (request.grayLevelVariance) {
                 const double nodeAltitudeAsDouble = static_cast<double>(nodeAltitude);
                 sumGrayLevelSquare[static_cast<std::size_t>(node)] =
-                    static_cast<double>(::mmcfilters::detail::CommittedTreeAccess::properPartCardinality(context.tree, nodeId)) * nodeAltitudeAsDouble *
+                    static_cast<double>(::mmcfilters::detail::TreeKernelAccess::properPartCardinality(context.tree, nodeId)) * nodeAltitudeAsDouble *
                     nodeAltitudeAsDouble;
             }
             if (request.grayLevelHeight) {

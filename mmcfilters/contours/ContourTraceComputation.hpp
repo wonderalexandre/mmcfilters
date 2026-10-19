@@ -2,8 +2,8 @@
 
 #include "ContourTrace.hpp"
 #include "../trees/ValuedMorphologicalTreeView.hpp"
-#include "../trees/detail/CommittedTreeAccess.hpp"
-#include "../trees/detail/MorphologicalTreeConstructionContextQueries.hpp"
+#include "../trees/detail/TreeKernelAccess.hpp"
+#include "../trees/MorphologicalTree.hpp"
 #include "../utils/Image.hpp"
 #include "detail/ContourBoundaryTracer.hpp"
 #include "detail/ContourEdgeDeltaStore.hpp"
@@ -256,11 +256,11 @@ class ContourTraceComputation {
      * @return Lower-shape and upper-shape foreground connectivity.
      */
     [[nodiscard]] static std::array<ForegroundConnectivity, 2> shapeForegroundConnectivities(const MorphologicalTree& tree) {
-        if (const auto* adjacency = detail::constructionAdjacency(tree)) {
+        if (const auto* adjacency = tree.constructionAdjacency()) {
             const auto connectivity = foregroundConnectivity(*adjacency);
             return {connectivity, connectivity};
         }
-        if (const auto* adjacencies = detail::complementaryAdjacencies(tree)) {
+        if (const auto* adjacencies = tree.complementaryAdjacencies()) {
             return {foregroundConnectivity(adjacencies->minAdjacency), foregroundConnectivity(adjacencies->maxAdjacency)};
         }
         if (const auto* convention = tree.topographicConvention();
@@ -387,7 +387,7 @@ class ContourTraceComputation {
             return std::pair{smallestNodes[static_cast<std::size_t>(firstPixel)],
                              smallestNodes[static_cast<std::size_t>(secondPixel)]};
         };
-        detail::CommittedTreeAccess::forEachLowestCommonAncestor(
+        detail::TreeKernelAccess::forEachLowestCommonAncestor(
             tree, numAdjacentQueries, lcaQuery,
             [&](std::size_t queryIndex, NodeId endNodeExclusive) {
                 const auto [firstPixel, secondPixel] = adjacentPixels(queryIndex);

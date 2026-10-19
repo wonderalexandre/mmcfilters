@@ -35,7 +35,7 @@ ValuedMorphologicalTree<std::uint8_t> makeTwoSingletonHierarchy() {
     const std::vector<NodeId> nodeParent{2, 2, 2};
     const std::vector<NodeId> smallestNodeMap{0, 1};
     const std::vector<std::uint8_t> altitude{2, 1, 0};
-    return MorphologicalTreeFactory::createFromNativeTopology(std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap),
+    return makeValuedHierarchy(std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap),
                                                               std::span<const std::uint8_t>(altitude), 2, 1, 2,
                                                               makeMorphologicalTreeSemantics(
                                                                   MorphologicalTreeKind::MaxTree,
@@ -46,7 +46,7 @@ ValuedMorphologicalTree<std::uint8_t> makeSpatiallyDisconnectedHierarchy() {
     const std::vector<NodeId> nodeParent{1, 1};
     const std::vector<NodeId> smallestNodeMap{0, 1, 0};
     const std::vector<std::uint8_t> altitude{1, 0};
-    return MorphologicalTreeFactory::createFromNativeTopology(std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap),
+    return makeValuedHierarchy(std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap),
                                                               std::span<const std::uint8_t>(altitude), 1, 1, 3,
                                                               makeMorphologicalTreeSemantics(
                                                                   MorphologicalTreeKind::MaxTree,
@@ -57,7 +57,7 @@ ValuedMorphologicalTree<std::uint8_t> makeDirectionalThreePixelTree(bool equival
     const std::vector<NodeId> nodeParent{2, 2, 2};
     const std::vector<NodeId> smallestNodeMap{0, 1, 1};
     const std::vector<std::uint8_t> altitude{0, 20, 10};
-    return MorphologicalTreeFactory::createFromNativeTopology(
+    return makeValuedHierarchy(
         std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap), std::span<const std::uint8_t>(altitude), 2, 1, 3,
         MorphologicalTreeSemantics{
             MorphologicalTreeKind::TreeOfShapes, NodeAltitudeOrder::Unconstrained,
@@ -361,7 +361,7 @@ int main() {
         const long double rootAltitude = 1.0L;
         const long double childAltitude = std::nextafter(rootAltitude, 2.0L);
         const std::vector<long double> altitude{rootAltitude, childAltitude};
-        auto preciseValuedTree = MorphologicalTreeFactory::createFromNativeTopology(std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap),
+        auto preciseValuedTree = makeValuedHierarchy(std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap),
                                                                                   std::span<const long double>(altitude), 0,
                                                                                   makeMorphologicalTreeSemantics(MorphologicalTreeKind::MaxTree));
 

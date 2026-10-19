@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../../../../trees/MorphologicalTree.hpp"
-#include "../../../../trees/detail/CommittedTreeAccess.hpp"
+#include "../../../../trees/detail/TreeKernelAccess.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -32,7 +32,7 @@ class MorphologicalTreeTopologicalLevelIndex {
         int maximumLevel = -1;
         for (NodeId node : tree_.postOrder()) {
             int nodeLevel = 0;
-            for (NodeId child : ::mmcfilters::detail::CommittedTreeAccess::children(tree_, node)) {
+            for (NodeId child : ::mmcfilters::detail::TreeKernelAccess::children(tree_, node)) {
                 const int childLevel = levelByNode_[static_cast<std::size_t>(child)];
                 nodeLevel = std::max(nodeLevel, childLevel + 1);
             }

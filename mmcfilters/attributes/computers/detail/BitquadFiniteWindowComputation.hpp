@@ -2,7 +2,7 @@
 
 #include "BitquadAttributeData.hpp"
 #include "../../../localAttributes/FiniteWindowLocalAttributeComputer.hpp"
-#include "../../../trees/detail/TreeTraversalDetail.hpp"
+#include "../../../trees/detail/TreeKernelAccess.hpp"
 
 #include <array>
 #include <bit>
@@ -194,7 +194,7 @@ inline std::vector<BitquadFamilyCounts> aggregateBitquadFamilyIncrements(const M
     for (const BitquadFamilyIncrement& increment : increments) {
         counts.push_back({increment.q1, increment.q2, increment.qd, increment.q3, increment.q4});
     }
-    ::mmcfilters::detail::kernel::traversePostOrder(
+    ::mmcfilters::detail::TreeKernelAccess::traversePostOrder(
         tree, tree.root(), [](NodeId) {},
         [&](NodeId parent, NodeId child) {
             BitquadFamilyCounts& parentCounts = counts[static_cast<std::size_t>(parent)];
@@ -246,7 +246,7 @@ aggregateNonemptyBitquadStateHistogramIncrements(const MorphologicalTree& tree, 
     for (const NonemptyBitquadStateHistogramIncrement& increment : increments) {
         histograms.push_back({increment.bins});
     }
-    ::mmcfilters::detail::kernel::traversePostOrder(
+    ::mmcfilters::detail::TreeKernelAccess::traversePostOrder(
         tree, tree.root(), [](NodeId) {},
         [&](NodeId parent, NodeId child) {
             auto& parentBins = histograms[static_cast<std::size_t>(parent)].bins;

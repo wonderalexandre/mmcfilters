@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../../trees/MorphologicalTree.hpp"
-#include "../../trees/detail/CommittedTreeAccess.hpp"
+#include "../../trees/detail/TreeKernelAccess.hpp"
 #include "../../utils/Common.hpp"
 
 #include <array>
@@ -94,7 +94,7 @@ class ContourLifetimeIndex {
             }
             return std::pair<NodeId, NodeId>{firstInPreOrder, lastInPreOrder};
         };
-        ::mmcfilters::detail::CommittedTreeAccess::forEachLowestCommonAncestor(
+        ::mmcfilters::detail::TreeKernelAccess::forEachLowestCommonAncestor(
             tree_, numLcaQueries, lcaQuery,
             [&](std::size_t queryIndex, NodeId endNodeExclusive) {
                 lifetimeByPixel_[static_cast<std::size_t>(queryPixel(queryIndex))].endNodeExclusive = endNodeExclusive;
@@ -267,7 +267,7 @@ class ContourLifetimeIndex {
             }
             entryIndexByNode[nodeIndex] = nextPreorderIndex++;
             traversalStack.emplace_back(node, true);
-            for (NodeId child : ::mmcfilters::detail::CommittedTreeAccess::children(tree, node)) {
+            for (NodeId child : ::mmcfilters::detail::TreeKernelAccess::children(tree, node)) {
                 traversalStack.emplace_back(child, false);
             }
         }

@@ -5,8 +5,7 @@
 #include "../trees/TreeAltitudeAlgorithms.hpp"
 #include "../trees/ValuedMorphologicalTree.hpp"
 #include "../trees/ValuedMorphologicalTreeView.hpp"
-#include "../trees/detail/CommittedTreeAccess.hpp"
-#include "../trees/detail/TreeTraversalDetail.hpp"
+#include "../trees/detail/TreeKernelAccess.hpp"
 #include "../utils/CommittedImageAccess.hpp"
 #include "../utils/Contract.hpp"
 #include "AttributeReconstructionFilters.hpp"
@@ -155,7 +154,7 @@ template <AltitudeValue T> class AttributeFilters {
      * @param value Value.
      */
     template <typename TValue> static void writeProperParts(const MorphologicalTree& tree, NodeId nodeId, TValue* output, TValue value) {
-        for (PixelId pixel : detail::CommittedTreeAccess::properParts(tree, nodeId)) {
+        for (PixelId pixel : detail::TreeKernelAccess::properParts(tree, nodeId)) {
             output[pixel] = value;
         }
     }
@@ -173,7 +172,7 @@ template <AltitudeValue T> class AttributeFilters {
      * @param value Value.
      */
     template <typename TValue> static void writeSubtreeProperParts(const MorphologicalTree& tree, NodeId nodeId, TValue* output, TValue value) {
-        for (NodeId subtreeNodeId : detail::CommittedTreeAccess::subtree(tree, nodeId)) {
+        for (NodeId subtreeNodeId : detail::TreeKernelAccess::subtree(tree, nodeId)) {
             writeProperParts(tree, subtreeNodeId, output, value);
         }
     }
@@ -205,7 +204,7 @@ template <AltitudeValue T> class AttributeFilters {
             const NodeId nodeId = stack.top();
             stack.pop();
             writeProperParts(tree, nodeId, imgOutput, altitudeOf(view, nodeId));
-            for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, nodeId)) {
+            for (NodeId childNodeId : detail::TreeKernelAccess::children(tree, nodeId)) {
                 if (nodePreservationMask[static_cast<std::size_t>(childNodeId)]) {
                     stack.push(childNodeId);
                 } else {
@@ -238,7 +237,7 @@ template <AltitudeValue T> class AttributeFilters {
         // which is the opposite of the caller's preservation decision at the leaves
         // before descendant information is merged.
         std::vector<uint8_t> collapsibleRejectedSubtree(tree.numInternalNodeSlots(), false);
-        detail::traversePostOrder(
+        detail::TreeKernelAccess::traversePostOrder(
             tree, tree.root(),
             [&collapsibleRejectedSubtree, &nodePreservationMask](NodeId nodeId) -> void {
                 collapsibleRejectedSubtree[nodeId] = !nodePreservationMask[static_cast<std::size_t>(nodeId)];
@@ -256,7 +255,7 @@ template <AltitudeValue T> class AttributeFilters {
             const NodeId nodeId = stack.top();
             stack.pop();
             writeProperParts(tree, nodeId, imgOutput, altitudeOf(view, nodeId));
-            for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, nodeId)) {
+            for (NodeId childNodeId : detail::TreeKernelAccess::children(tree, nodeId)) {
                 if (!collapsibleRejectedSubtree[childNodeId]) {
                     stack.push(childNodeId);
                 } else {
@@ -294,7 +293,7 @@ template <AltitudeValue T> class AttributeFilters {
             const NodeId nodeId = stack.top();
             stack.pop();
             writeProperParts(tree, nodeId, imgOutput, altitudeOf(view, nodeId));
-            for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, nodeId)) {
+            for (NodeId childNodeId : detail::TreeKernelAccess::children(tree, nodeId)) {
                 if (attribute[childNodeId] > threshold) {
                     stack.push(childNodeId);
                 } else {
@@ -328,7 +327,7 @@ template <AltitudeValue T> class AttributeFilters {
         // direct keep decision. The post-order merge implements the universal
         // quantifier over descendants.
         std::vector<uint8_t> collapsibleRejectedSubtree(tree.numInternalNodeSlots(), false);
-        detail::traversePostOrder(
+        detail::TreeKernelAccess::traversePostOrder(
             tree, tree.root(),
             [&collapsibleRejectedSubtree, attribute, threshold](NodeId nodeId) -> void {
                 if (attribute[nodeId] <= threshold) {
@@ -348,7 +347,7 @@ template <AltitudeValue T> class AttributeFilters {
             const NodeId nodeId = stack.top();
             stack.pop();
             writeProperParts(tree, nodeId, imgOutput, altitudeOf(view, nodeId));
-            for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, nodeId)) {
+            for (NodeId childNodeId : detail::TreeKernelAccess::children(tree, nodeId)) {
                 if (!collapsibleRejectedSubtree[childNodeId]) {
                     stack.push(childNodeId);
                 } else {

@@ -5,7 +5,6 @@
 #include <iostream>
 #include <limits>
 #include <map>
-#include <numeric>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -27,7 +26,7 @@ struct PaperNode {
 // Literal Eqs. (6), (8), (16)-(17): recompute flat zones by BFS after every leveling.
 // No component trees, union-find, or agenda.
 template <class T>
-std::vector<PaperNode> literalPaper(const std::vector<T>& input, const std::vector<std::vector<int>>& neighbors, const std::vector<int>& rank) {
+std::vector<PaperNode> literalPaper(const std::vector<T>& input, const std::vector<std::vector<int>>& neighbors) {
     const int n = static_cast<int>(input.size());
     const Mask full = (Mask{1} << n) - 1;
     auto current = input;
@@ -69,7 +68,7 @@ std::vector<PaperNode> literalPaper(const std::vector<T>& input, const std::vect
             for (int p = 0; p < n; ++p) {
                 if (!(zone & (Mask{1} << p)))
                     continue;
-                spatialRank = std::min(spatialRank, rank[p]);
+                spatialRank = std::min(spatialRank, p);
                 for (int q : neighbors[p]) {
                     if (zone & (Mask{1} << q))
                         continue;
@@ -143,30 +142,23 @@ std::vector<PaperNode> literalPaper(const std::vector<T>& input, const std::vect
 }
 
 std::size_t cases = 0, nodesChecked = 0;
-template <class T> void checkCase(int rows, int columns, const std::vector<T>& values, const RegularGridAdjacency2D& adjacency, const std::vector<int>& order) {
+template <class T> void checkCase(int rows, int columns, const std::vector<T>& values, const RegularGridAdjacency2D& adjacency) {
     const int n = rows * columns;
-    std::vector<int> rank(n);
-    for (int i = 0; i < n; ++i)
-        rank[order[i]] = i;
     std::vector<std::vector<int>> neighbors(n);
     for (int p = 0; p < n; ++p)
         for (int q : adjacency.getNeighborIndices(p))
             neighbors[p].push_back(q);
-    const auto expected = literalPaper(values, neighbors, rank);
+    const auto expected = literalPaper(values, neighbors);
     auto image = Image<T>::create(rows, columns);
     for (int p = 0; p < n; ++p)
         (*image)[p] = values[p];
-    sdrt::ExtremumResidualTreeOptions options{sdrt::SpatialOrder(order)};
-    const auto actual = MorphologicalTreeFactory::createExtremumResidualTreeByCTs(image, adjacency, options);
+    const auto actual = MorphologicalTreeFactory::createExtremumResidualTreeByCTs(image, adjacency);
     const auto& topology = actual.topology();
     topology.validateConnectedRootedTree();
     auto fail = [&](const char* message) {
         std::cerr << "case=" << cases << " size=" << rows << 'x' << columns << " values=";
         for (T value : values)
             std::cerr << double(value) << ',';
-        std::cerr << " order=";
-        for (int p : order)
-            std::cerr << p << ',';
         std::cerr << '\n';
         throw std::runtime_error(message);
     };
@@ -228,11 +220,7 @@ int main() {
                 for (int i = 0; i < n; ++i)
                     count *= 3;
                 for (int variant = 0; variant < 2; ++variant) {
-                    const RegularGridAdjacency2D adjacency(rows, columns, n == 9 && variant == 1 ? 1.5 : 1.0);
-                    std::vector<int> order(n);
-                    std::iota(order.begin(), order.end(), 0);
-                    if (n == 6 && variant == 1)
-                        std::reverse(order.begin(), order.end());
+                    const RegularGridAdjacency2D adjacency(rows, columns, variant == 1 ? 1.5 : 1.0);
                     for (int code = 0; code < count; ++code) {
                         std::vector<std::uint8_t> values(n);
                         int c = code;
@@ -240,16 +228,13 @@ int main() {
                             value = c % 3;
                             c /= 3;
                         }
-                        checkCase(rows, columns, values, adjacency, order);
+                        checkCase(rows, columns, values, adjacency);
                     }
                 }
             }
             std::cout << "exhaustive ternary 2x3 and 3x3: " << cases << " cases passed\n";
             std::mt19937 random(20271004);
             for (int i = 0; i < 256; ++i) {
-                std::vector<int> order(16);
-                std::iota(order.begin(), order.end(), 0);
-                std::shuffle(order.begin(), order.end(), random);
                 const RegularGridAdjacency2D adjacency(4, 4, i % 3 == 0 ? 3.2 : i % 3 == 1 ? 1.0 : 1.5);
                 std::vector<std::int32_t> values(16), inverted(16);
                 std::vector<double> fractional(16);
@@ -258,12 +243,12 @@ int main() {
                     inverted[p] = -values[p];
                     fractional[p] = 0.25 * values[p] - 0.5;
                 }
-                checkCase(4, 4, values, adjacency, order);
-                checkCase(4, 4, inverted, adjacency, order);
-                checkCase(4, 4, fractional, adjacency, order);
+                checkCase(4, 4, values, adjacency);
+                checkCase(4, 4, inverted, adjacency);
+                checkCase(4, 4, fractional, adjacency);
             }
             for (std::int32_t value : {-4, 0, 7})
-                checkCase(1, 1, std::vector<std::int32_t>{value}, RegularGridAdjacency2D(1, 1, 1.0), {0});
+                checkCase(1, 1, std::vector<std::int32_t>{value}, RegularGridAdjacency2D(1, 1, 1.0));
             std::cout << "PASS total=" << cases << " nodes=" << nodesChecked
                       << " (selection sequence, support family, inclusion parents, proper parts, eta, signed delta, two reconstructions)\n";
         }

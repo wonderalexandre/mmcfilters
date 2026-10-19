@@ -1,14 +1,15 @@
 #include "support/TestSupport.hpp"
 
-#include "mmcfilters/trees/TreeOfShapesProducer.hpp"
-#include "mmcfilters/trees/detail/ComponentTreeUnionFind.hpp"
-#include "mmcfilters/trees/detail/CommittedTreeAccess.hpp"
+#include "mmcfilters/trees/TreeOfShapesBuilder.hpp"
+#include "mmcfilters/trees/ComponentTreeBuilder.hpp"
+#include "mmcfilters/trees/detail/TreeKernelAccess.hpp"
 #include "mmcfilters/trees/TreeEditor.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <memory>
 #include <random>
+#include <utility>
 
 using namespace mmcfilters;
 using namespace mmcfilters::unit_tests;
@@ -28,7 +29,7 @@ static void requireSharedLcaMatchesParentPaths(const MorphologicalTree& tree) {
                 }
             }
             requireEqual(tree.lowestCommonAncestor(first, second), expected, "public LCA matches parent-path oracle");
-            requireEqual(detail::CommittedTreeAccess::lowestCommonAncestor(tree, first, second), expected,
+            requireEqual(detail::TreeKernelAccess::lowestCommonAncestor(tree, first, second), expected,
                          "internal LCA matches parent-path oracle");
         }
     }
@@ -51,33 +52,34 @@ int main() {
         auto image = makeComponentTreeFixture();
         RegularGridAdjacency2D adj(4, 4, 1.5);
 
-        detail::ComponentTreeUnionFind maxBuilder(&adj, true);
-        auto [parentMax, orderMax, numNodesMax] = maxBuilder.build(image);
-        requireEqual(numNodesMax, 6, "ComponentTreeUnionFind max numNodes");
-        requireEqual(static_cast<int>(orderMax.size()), 16, "ComponentTreeUnionFind max order size");
-        requireVectorEqual(orderMax, std::vector<int>{15, 8, 12, 13, 2, 3, 7, 11, 0, 1, 4, 5, 6, 9, 10, 14}, "ComponentTreeUnionFind max ordered pixels");
-        requireVectorEqual(parentMax, std::vector<int>{2, 0, 8, 2, 0, 0, 5, 2, 15, 5, 5, 2, 8, 8, 10, 15}, "ComponentTreeUnionFind max parent array");
+        ComponentTreeBuilder maxBuilder(adj, true);
+        auto maxHierarchy = std::move(maxBuilder).build(image);
+        requireEqual(maxHierarchy.root, 0, "ComponentTreeBuilder max root");
+        requireVectorEqual(maxHierarchy.parent, std::vector<NodeId>{0, 0, 1, 2, 3, 4}, "ComponentTreeBuilder max parent array");
+        requireVectorEqual(maxHierarchy.smallestNodeMap, std::vector<NodeId>{3, 3, 2, 2, 3, 4, 4, 2, 1, 4, 5, 2, 1, 1, 5, 0},
+                           "ComponentTreeBuilder max smallest node array");
+        requireVectorEqual(maxHierarchy.nodeAltitudes, std::vector<std::uint8_t>{0, 1, 2, 3, 4, 5}, "ComponentTreeBuilder max altitude array");
 
-        detail::ComponentTreeUnionFind minBuilder(&adj, false);
-        auto [parentMin, orderMin, numNodesMin] = minBuilder.build(image);
-        requireEqual(numNodesMin, 6, "ComponentTreeUnionFind min numNodes");
-        requireVectorEqual(orderMin, std::vector<int>{10, 14, 5, 6, 9, 0, 1, 4, 2, 3, 7, 11, 8, 12, 13, 15}, "ComponentTreeUnionFind min ordered pixels");
-        requireVectorEqual(parentMin, std::vector<int>{5, 0, 0, 2, 0, 10, 5, 2, 0, 5, 10, 2, 8, 8, 10, 2}, "ComponentTreeUnionFind min parent array");
+        ComponentTreeBuilder minBuilder(adj, false);
+        auto minHierarchy = std::move(minBuilder).build(image);
+        requireEqual(minHierarchy.root, 0, "ComponentTreeBuilder min root");
+        requireVectorEqual(minHierarchy.parent, std::vector<NodeId>{0, 0, 1, 2, 2, 3}, "ComponentTreeBuilder min parent array");
+        requireVectorEqual(minHierarchy.smallestNodeMap, std::vector<NodeId>{2, 2, 3, 3, 2, 1, 1, 3, 4, 1, 0, 3, 4, 4, 0, 5},
+                           "ComponentTreeBuilder min smallest node array");
+        requireVectorEqual(minHierarchy.nodeAltitudes, std::vector<std::uint8_t>{5, 4, 3, 2, 1, 0}, "ComponentTreeBuilder min altitude array");
     }
 
     {
         auto image = makeImage(2, 2, {0, 0, 0, 0});
         RegularGridAdjacency2D adj(2, 2, 1.5);
 
-        detail::ComponentTreeUnionFind maxBuilder(&adj, true);
-        auto [parentMax, orderMax, numNodesMax] = maxBuilder.build(image);
-        requireEqual(numNodesMax, 1, "ComponentTreeUnionFind constant max numNodes");
-        requireEqual(static_cast<int>(orderMax.size()), 4, "ComponentTreeUnionFind constant max order size");
-
-        detail::ComponentTreeUnionFind minBuilder(&adj, false);
-        auto [parentMin, orderMin, numNodesMin] = minBuilder.build(image);
-        requireEqual(numNodesMin, 1, "ComponentTreeUnionFind constant min numNodes");
-        requireEqual(static_cast<int>(orderMin.size()), 4, "ComponentTreeUnionFind constant min order size");
+        for (const bool isMaxTree : {true, false}) {
+            auto hierarchy = ComponentTreeBuilder(adj, isMaxTree).build(image);
+            requireEqual(hierarchy.root, 0, "ComponentTreeBuilder constant root");
+            requireVectorEqual(hierarchy.parent, std::vector<NodeId>{0}, "ComponentTreeBuilder constant parent array");
+            requireVectorEqual(hierarchy.smallestNodeMap, std::vector<NodeId>{0, 0, 0, 0}, "ComponentTreeBuilder constant smallest node array");
+            requireVectorEqual(hierarchy.nodeAltitudes, std::vector<std::uint8_t>{0}, "ComponentTreeBuilder constant altitude array");
+        }
 
         auto maxTree = MorphologicalTreeFactory::createMaxTree(image);
         auto minTree = MorphologicalTreeFactory::createMinTree(image);
@@ -107,14 +109,46 @@ int main() {
             (*image)[i] = values[i];
         }
         RegularGridAdjacency2D adj(2, 3, 1.5);
-        detail::ComponentTreeUnionFind maxBuilder(&adj, true);
-        auto ordered = maxBuilder.sort(image);
-        requireEqual(static_cast<int>(ordered.size()), 6, "ComponentTreeUnionFind float sort size");
-        std::vector<float> sortedValues;
-        for (PixelId pixelId : ordered) {
-            sortedValues.push_back((*image)[pixelId]);
+        for (const bool isMaxTree : {true, false}) {
+            auto hierarchy = ComponentTreeBuilder(adj, isMaxTree).build(image);
+            require(isMaxTree ? std::is_sorted(hierarchy.nodeAltitudes.begin(), hierarchy.nodeAltitudes.end())
+                              : std::is_sorted(hierarchy.nodeAltitudes.rbegin(), hierarchy.nodeAltitudes.rend()),
+                    "ComponentTreeBuilder float node order follows its polarity");
+            for (PixelId pixel = 0; pixel < image->getSize(); ++pixel) {
+                requireEqual(hierarchy.nodeAltitudes[hierarchy.smallestNodeMap[pixel]], (*image)[pixel],
+                             "ComponentTreeBuilder float intrinsic attributes reconstruct the source image");
+            }
         }
-        require(std::is_sorted(sortedValues.begin(), sortedValues.end()), "ComponentTreeUnionFind float sort must be nondecreasing for max-tree");
+    }
+
+    for (const bool isMaxTree : {true, false}) {
+        auto image = makeImage(1, 5, {0, 4, 2, 3, 1});
+        auto builder = [isMaxTree] {
+            auto adjacency = RegularGridAdjacency2D::horizontalLine(1, 5, 2);
+            ComponentTreeBuilder ownedBuilder(adjacency, isMaxTree);
+            adjacency = RegularGridAdjacency2D::horizontalLine(1, 5, 1);
+            return ownedBuilder;
+        }();
+        auto hierarchy = [&] {
+            auto movedBuilder = std::move(builder);
+            return std::move(movedBuilder).build(image);
+        }();
+        auto storage = std::move(hierarchy);
+        const auto* context = std::get_if<SharedAdjacencyContext>(&storage.semantics.constructionContext);
+        require(context != nullptr, "native component tree owns its construction adjacency after builder destruction");
+        requireVectorEqual(collectPixelIds(context->adjacency.getNeighborIndices(2)), std::vector<PixelId>{1, 0, 3, 4},
+                           "native component tree retains its original stencil after source replacement and builder move");
+        require(storage.semantics.kind == (isMaxTree ? MorphologicalTreeKind::MaxTree : MorphologicalTreeKind::MinTree),
+                "native component tree retains its polarity");
+        require(storage.gridDomain2D.has_value(), "native component tree retains its grid domain");
+        requireEqual(storage.gridDomain2D->rows, 1, "native component tree grid rows");
+        requireEqual(storage.gridDomain2D->columns, 5, "native component tree grid columns");
+        detail::NativeHierarchyValidation::validateComplete(NativeHierarchyView<std::uint8_t>{
+            storage.parent, storage.smallestNodeMap, storage.nodeAltitudes, storage.root, storage.gridDomain2D, storage.semantics});
+        for (PixelId pixel = 0; pixel < image->getSize(); ++pixel) {
+            requireEqual(storage.nodeAltitudes[static_cast<std::size_t>(storage.smallestNodeMap[static_cast<std::size_t>(pixel)])],
+                         (*image)[pixel], "native component tree reconstructs the source image after ownership transfer");
+        }
     }
 
     {
@@ -125,6 +159,34 @@ int main() {
         requireEqual(tree.topology().numNodes(), 1, "signed-zero plateau node count");
         require(std::signbit(tree.nodeAltitude(tree.topology().root())),
                 "component-tree altitude must retain the first row-major proper-part representation");
+    }
+
+    {
+        // Exhaust all 4^6 images with strict extrema and both representations of zero.
+        const float values[] = {-1.0f, -0.0f, +0.0f, 1.0f};
+        auto image = ImageFloat::create(2, 3);
+        for (int pattern = 0; pattern < 4096; ++pattern) {
+            int encoded = pattern;
+            for (PixelId pixel = 0; pixel < image->getSize(); ++pixel) {
+                (*image)[pixel] = values[encoded % 4];
+                encoded /= 4;
+            }
+            for (const double radius : {1.0, 1.5}) {
+                for (const bool isMaxTree : {true, false}) {
+                    auto hierarchy = ComponentTreeBuilder(RegularGridAdjacency2D(2, 3, radius), isMaxTree).build(image);
+                    std::vector<bool> seen(hierarchy.parent.size(), false);
+                    for (PixelId pixel = 0; pixel < image->getSize(); ++pixel) {
+                        const NodeId node = hierarchy.smallestNodeMap[pixel];
+                        requireEqual(hierarchy.nodeAltitudes[node], (*image)[pixel], "signed-zero image reconstruction");
+                        if (!seen[node]) {
+                            requireEqual(std::signbit(hierarchy.nodeAltitudes[node]), std::signbit((*image)[pixel]),
+                                         "native altitude preserves the first row-major proper-part representation");
+                            seen[node] = true;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     {
@@ -171,30 +233,30 @@ int main() {
                                    1,
                                });
 
-        TreeOfShapesProducer tosBuilder(makeTopographicConvention(image, TestTopographicImmersion::Min4Max8));
+        TreeOfShapesBuilder tosBuilder(makeTopographicConvention(image, TestTopographicImmersion::Min4Max8));
         auto [interpolationMin, interpolationMax, adjacency] = tosBuilder.interpolateImage4c8c(image);
-        requireEqual(static_cast<int>(interpolationMin.size()), 49, "TreeOfShapesProducer interpolate min size");
-        requireEqual(static_cast<int>(interpolationMax.size()), 49, "TreeOfShapesProducer interpolate max size");
-        requireEqual(interpolationMin[ImageUtils::to1D(3, 3, 7)], 3, "TreeOfShapesProducer interpolated center min");
-        requireEqual(interpolationMax[ImageUtils::to1D(3, 3, 7)], 3, "TreeOfShapesProducer interpolated center max");
+        requireEqual(static_cast<int>(interpolationMin.size()), 49, "TreeOfShapesBuilder interpolate min size");
+        requireEqual(static_cast<int>(interpolationMax.size()), 49, "TreeOfShapesBuilder interpolate max size");
+        requireEqual(interpolationMin[ImageUtils::to1D(3, 3, 7)], 3, "TreeOfShapesBuilder interpolated center min");
+        requireEqual(interpolationMax[ImageUtils::to1D(3, 3, 7)], 3, "TreeOfShapesBuilder interpolated center max");
         requireVectorEqual(collectNodeIds(adjacency.getNeighborIndices(ImageUtils::to1D(3, 3, 7))), std::vector<NodeId>{17, 23, 31, 25},
-                           "TreeOfShapesProducer interpolated center adjacency");
+                           "TreeOfShapesBuilder interpolated center adjacency");
 
         auto [imgU, orderInterpolated, _] = tosBuilder.sort(image);
-        requireEqual(static_cast<int>(imgU.size()), 49, "TreeOfShapesProducer sorted interpolation size");
-        requireEqual(static_cast<int>(orderInterpolated.size()), 49, "TreeOfShapesProducer sorted order size");
-        requireEqual(orderInterpolated.front(), 0, "TreeOfShapesProducer sorted first interpolated pixel");
+        requireEqual(static_cast<int>(imgU.size()), 49, "TreeOfShapesBuilder sorted interpolation size");
+        requireEqual(static_cast<int>(orderInterpolated.size()), 49, "TreeOfShapesBuilder sorted order size");
+        requireEqual(orderInterpolated.front(), 0, "TreeOfShapesBuilder sorted first interpolated pixel");
         auto sortedInterpolatedOrder = orderInterpolated;
         std::sort(sortedInterpolatedOrder.begin(), sortedInterpolatedOrder.end());
         for (PixelId pixelId = 0; pixelId < 49; ++pixelId) {
-            requireEqual(sortedInterpolatedOrder[static_cast<std::size_t>(pixelId)], pixelId, "TreeOfShapesProducer sorted order must be a permutation");
+            requireEqual(sortedInterpolatedOrder[static_cast<std::size_t>(pixelId)], pixelId, "TreeOfShapesBuilder sorted order must be a permutation");
         }
 
-        auto result = tosBuilder.build<ToSGrayLevel>(image);
-        requireEqual(static_cast<int>(result.parent.size()), 6, "TreeOfShapesProducer native node count");
-        requireEqual(static_cast<int>(result.smallestNodeMap.size()), 9, "TreeOfShapesProducer native proper-part count");
+        auto result = std::move(tosBuilder).build<ToSGrayLevel>(image);
+        requireEqual(static_cast<int>(result.parent.size()), 6, "TreeOfShapesBuilder native node count");
+        requireEqual(static_cast<int>(result.smallestNodeMap.size()), 9, "TreeOfShapesBuilder native proper-part count");
         for (NodeId smallestNodeId : result.smallestNodeMap) {
-            require(smallestNodeId >= 0 && smallestNodeId < static_cast<NodeId>(result.parent.size()), "TreeOfShapesProducer smallest node must be valid");
+            require(smallestNodeId >= 0 && smallestNodeId < static_cast<NodeId>(result.parent.size()), "TreeOfShapesBuilder smallest node must be valid");
         }
     }
 
@@ -207,7 +269,7 @@ int main() {
                                     4,
                                 });
 
-        TreeOfShapesProducer min4max8(makeTopographicConvention(saddle, TestTopographicImmersion::Min4Max8));
+        TreeOfShapesBuilder min4max8(makeTopographicConvention(saddle, TestTopographicImmersion::Min4Max8));
         auto [min4max8Min, min4max8Max, min4max8Adj] = min4max8.interpolateImage4c8c(saddle);
         const NodeId center = ImageUtils::to1D(2, 2, 5);
         requireEqual(min4max8Min[center], static_cast<uint8_t>(8), "Min4cMax8c saddle center min");
@@ -215,7 +277,7 @@ int main() {
         requireVectorEqual(collectNodeIds(min4max8Adj.getNeighborIndices(center)), std::vector<NodeId>{7, 11, 17, 13, 16, 8},
                            "Min4cMax8c saddle center adjacency");
 
-        TreeOfShapesProducer min8max4(makeTopographicConvention(saddle, TestTopographicImmersion::Min8Max4));
+        TreeOfShapesBuilder min8max4(makeTopographicConvention(saddle, TestTopographicImmersion::Min8Max4));
         auto [min8max4Min, min8max4Max, min8max4Adj] = min8max4.interpolateImage4c8c(saddle);
         requireEqual(min8max4Min[center], static_cast<uint8_t>(0), "Min8cMax4c saddle center min");
         requireEqual(min8max4Max[center], static_cast<uint8_t>(4), "Min8cMax4c saddle center max");
@@ -225,7 +287,7 @@ int main() {
 
     {
         auto halfLevelBoundary = makeImage(1, 2, {0, 1});
-        TreeOfShapesProducer selfDual(makeTopographicConvention(halfLevelBoundary));
+        TreeOfShapesBuilder selfDual(makeTopographicConvention(halfLevelBoundary));
         auto [interpolationMin, interpolationMax, adjacency] = selfDual.interpolateImage(halfLevelBoundary);
         const NodeId outerCorner = ImageUtils::to1D(0, 0, 5);
         const NodeId firstOriginal = ImageUtils::to1D(1, 1, 5);
@@ -246,19 +308,19 @@ int main() {
         requireEqual(orderInterpolated.front(), outerCorner, "SelfDual propagation must start from the outer boundary");
         requireEqual(imgU[outerCorner], static_cast<ToSFloodDepth>(1), "SelfDual propagated boundary level must preserve Z/2 half level");
 
-        TreeOfShapesProducer lowerRightInfinity(makeTopographicConvention(halfLevelBoundary, TestTopographicImmersion::SelfDualSpan,
+        TreeOfShapesBuilder lowerRightInfinity(makeTopographicConvention(halfLevelBoundary, TestTopographicImmersion::SelfDualSpan,
                                                                            TopographicDomainExtension::ExteriorRing, PixelId{14}));
         auto [customImgU, customOrderInterpolated, __] = lowerRightInfinity.sort(halfLevelBoundary);
         const NodeId lowerRightCorner = ImageUtils::to1D(2, 4, 5);
         requireEqual(customOrderInterpolated.front(), lowerRightCorner, "SelfDual propagation must honor a custom infinity pixel");
         requireEqual(customImgU[lowerRightCorner], static_cast<ToSFloodDepth>(1), "SelfDual custom infinity pixel must preserve Z/2 half level");
-        TreeOfShapesProducer internalInfinity(makeTopographicConvention(halfLevelBoundary, TestTopographicImmersion::SelfDualSpan,
+        TreeOfShapesBuilder internalInfinity(makeTopographicConvention(halfLevelBoundary, TestTopographicImmersion::SelfDualSpan,
                                                                          TopographicDomainExtension::ExteriorRing, PixelId{6}));
         auto [internalImgU, internalOrderInterpolated, ___] = internalInfinity.sort(halfLevelBoundary);
         const NodeId firstOriginalSeed = ImageUtils::to1D(1, 1, 5);
         requireEqual(internalOrderInterpolated.front(), firstOriginalSeed, "SelfDual propagation must honor an internal custom infinity pixel");
         requireThrows([&]() {
-            static_cast<void>(TreeOfShapesProducer(makeTopographicConvention(halfLevelBoundary, TestTopographicImmersion::SelfDualSpan,
+            static_cast<void>(TreeOfShapesBuilder(makeTopographicConvention(halfLevelBoundary, TestTopographicImmersion::SelfDualSpan,
                                                                              TopographicDomainExtension::ExteriorRing, PixelId{20}))
                                   .sort(halfLevelBoundary));
         },
@@ -267,10 +329,10 @@ int main() {
 
     {
         auto image = makeImage(1, 2, {0, 1});
-        TreeOfShapesProducer producer(makeTopographicConvention(image, TestTopographicImmersion::SelfDualSpan,
+        TreeOfShapesBuilder producer(makeTopographicConvention(image, TestTopographicImmersion::SelfDualSpan,
                                                                  TopographicDomainExtension::None, PixelId{0}));
         const auto& convention = producer.convention();
-        require(convention.domainExtension == TopographicDomainExtension::None, "TreeOfShapesProducer must retain its domain extension");
+        require(convention.domainExtension == TopographicDomainExtension::None, "TreeOfShapesBuilder must retain its domain extension");
 
         auto [interpolationMin, interpolationMax, adjacency] = producer.interpolateImage(image);
         (void)adjacency;
@@ -285,7 +347,7 @@ int main() {
 
         requireThrows(
             [&]() {
-                TreeOfShapesProducer invalidSeed(makeTopographicConvention(image, TestTopographicImmersion::SelfDualSpan,
+                TreeOfShapesBuilder invalidSeed(makeTopographicConvention(image, TestTopographicImmersion::SelfDualSpan,
                                                                             TopographicDomainExtension::None, PixelId{3}));
                 static_cast<void>(invalidSeed.sort(image));
             },
@@ -302,19 +364,19 @@ int main() {
                                  });
 
         for (TestTopographicImmersion interpolation : {TestTopographicImmersion::SelfDualSpan, TestTopographicImmersion::Min4Max8, TestTopographicImmersion::Min8Max4}) {
-            TreeOfShapesProducer builder(makeTopographicConvention(plateau, interpolation));
-            auto result = builder.build<ToSGrayLevel>(plateau);
+            TreeOfShapesBuilder builder(makeTopographicConvention(plateau, interpolation));
+            auto result = std::move(builder).build<ToSGrayLevel>(plateau);
             int numRoots = 0;
             for (NodeId nodeId = 0; nodeId < static_cast<NodeId>(result.parent.size()); ++nodeId) {
                 const NodeId parent = result.parent[static_cast<std::size_t>(nodeId)];
-                require(parent != InvalidNode, "TreeOfShapesProducer native parent through interpolated plateau must be valid");
+                require(parent != InvalidNode, "TreeOfShapesBuilder native parent through interpolated plateau must be valid");
                 if (parent == nodeId) {
                     ++numRoots;
                 }
             }
-            requireEqual(numRoots, 1, "TreeOfShapesProducer native plateau root count");
-            requireEqual(static_cast<int>(result.smallestNodeMap.size()), 4, "TreeOfShapesProducer native plateau proper-part count");
-            require(result.parent.size() >= 2, "TreeOfShapesProducer native plateau node count");
+            requireEqual(numRoots, 1, "TreeOfShapesBuilder native plateau root count");
+            requireEqual(static_cast<int>(result.smallestNodeMap.size()), 4, "TreeOfShapesBuilder native plateau proper-part count");
+            require(result.parent.size() >= 2, "TreeOfShapesBuilder native plateau node count");
         }
     }
 
@@ -394,7 +456,7 @@ int main() {
         const std::vector<NodeId> nodeParent{0, 0, 0};
         const std::vector<NodeId> smallestNodeMap{1, 1, 2, 2};
         const std::vector<std::uint8_t> altitude{0, 1, 0};
-        auto valuedTree = MorphologicalTreeFactory::createFromNativeTopology(
+        auto valuedTree = makeValuedHierarchy(
             std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap), std::span<const std::uint8_t>(altitude), 0, 2, 2,
             MorphologicalTreeSemantics{
                 MorphologicalTreeKind::TreeOfShapes, NodeAltitudeOrder::Unconstrained,
@@ -423,7 +485,7 @@ int main() {
         const std::vector<NodeId> nodeParent{0, 0, 1};
         const std::vector<NodeId> smallestNodeMap{2};
         const std::vector<std::uint8_t> altitude{0, 1, 2};
-        auto valuedTree = MorphologicalTreeFactory::createFromNativeTopology(
+        auto valuedTree = makeValuedHierarchy(
             std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap), std::span<const std::uint8_t>(altitude), 0, 1, 1,
             MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Increasing, NoConstructionContext{}});
         const MorphologicalTree& tree = valuedTree.topology();
@@ -449,7 +511,7 @@ int main() {
         const std::vector<NodeId> nodeParent{0, 0, 0};
         const std::vector<NodeId> smallestNodeMap{1, 2};
         const std::vector<std::uint8_t> altitude{10, 3, 20};
-        auto valuedTree = MorphologicalTreeFactory::createFromNativeTopology(std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap),
+        auto valuedTree = makeValuedHierarchy(std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap),
                                                                            std::span<const std::uint8_t>(altitude), 0, MorphologicalTreeSemantics{});
         const MorphologicalTree& tree = valuedTree.topology();
 
@@ -508,9 +570,9 @@ int main() {
                 invertedAltitude[static_cast<std::size_t>(nodeId)] = static_cast<std::uint8_t>(255u - value);
             }
 
-            auto valuedTree = MorphologicalTreeFactory::createFromNativeHierarchy(
+            auto valuedTree = makeValuedHierarchy(
                 NativeHierarchyView<std::uint8_t>{nodeParent, smallestNodeMap, altitude, 0, std::nullopt, MorphologicalTreeSemantics{}});
-            auto inverted = MorphologicalTreeFactory::createFromNativeHierarchy(
+            auto inverted = makeValuedHierarchy(
                 NativeHierarchyView<std::uint8_t>{nodeParent, smallestNodeMap, invertedAltitude, 0, std::nullopt, MorphologicalTreeSemantics{}});
 
             const MorphologicalTree& tree = valuedTree.topology();
@@ -537,7 +599,7 @@ int main() {
         const std::vector<NodeId> nodeParent{0, 0};
         const std::vector<NodeId> smallestNodeMap{0, 1};
         const std::vector<std::uint8_t> altitude{0, 1};
-        auto capabilityDriven = MorphologicalTreeFactory::createFromNativeTopology(
+        auto capabilityDriven = makeValuedHierarchy(
             std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap), std::span<const std::uint8_t>(altitude), 0, 1, 2,
             MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Increasing,
                                        SharedAdjacencyContext{RegularGridAdjacency2D(1, 2, 1.5)}});
@@ -549,7 +611,7 @@ int main() {
         if constexpr (contract::validationsEnabled) {
             requireThrows(
                 [&] {
-                    static_cast<void>(MorphologicalTreeFactory::createFromNativeTopology(
+                    static_cast<void>(makeValuedHierarchy(
                         std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap), std::span<const std::uint8_t>(altitude), 0, 1, 2,
                         MorphologicalTreeSemantics{MorphologicalTreeKind::MaxTree, NodeAltitudeOrder::Unconstrained,
                                                    SharedAdjacencyContext{RegularGridAdjacency2D(1, 2, 1.5)}}));
@@ -564,7 +626,7 @@ int main() {
                 const std::vector<NodeId> nodeParent{0, 0};
                 const std::vector<NodeId> smallestNodeMap{1, 2};
                 const std::vector<std::uint8_t> altitude{0, 1};
-                static_cast<void>(MorphologicalTreeFactory::createFromNativeTopology(std::span<const NodeId>(nodeParent),
+                static_cast<void>(makeValuedHierarchy(std::span<const NodeId>(nodeParent),
                                                                                      std::span<const NodeId>(smallestNodeMap),
                                                                                      std::span<const std::uint8_t>(altitude), 0, 1, 2, MorphologicalTreeSemantics{}));
             },
@@ -574,7 +636,7 @@ int main() {
                 const std::vector<NodeId> nodeParent{0, 2, 1};
                 const std::vector<NodeId> smallestNodeMap{1, 2};
                 const std::vector<std::uint8_t> altitude{0, 1, 2};
-                static_cast<void>(MorphologicalTreeFactory::createFromNativeTopology(std::span<const NodeId>(nodeParent),
+                static_cast<void>(makeValuedHierarchy(std::span<const NodeId>(nodeParent),
                                                                                      std::span<const NodeId>(smallestNodeMap),
                                                                                      std::span<const std::uint8_t>(altitude), 0, 1, 2, MorphologicalTreeSemantics{}));
             },
@@ -584,7 +646,7 @@ int main() {
                 const std::vector<NodeId> nodeParent{0, 0};
                 const std::vector<NodeId> smallestNodeMap{0, 1};
                 const std::vector<std::uint8_t> altitude{0};
-                static_cast<void>(MorphologicalTreeFactory::createFromNativeTopology(std::span<const NodeId>(nodeParent),
+                static_cast<void>(makeValuedHierarchy(std::span<const NodeId>(nodeParent),
                                                                                      std::span<const NodeId>(smallestNodeMap),
                                                                                      std::span<const std::uint8_t>(altitude), 0, 1, 2, MorphologicalTreeSemantics{}));
             },
@@ -594,7 +656,7 @@ int main() {
                 const std::vector<NodeId> nodeParent{0, 0};
                 const std::vector<NodeId> smallestNodeMap{0};
                 const std::vector<std::uint8_t> altitude{0, 1};
-                static_cast<void>(MorphologicalTreeFactory::createFromNativeTopology(std::span<const NodeId>(nodeParent),
+                static_cast<void>(makeValuedHierarchy(std::span<const NodeId>(nodeParent),
                                                                                      std::span<const NodeId>(smallestNodeMap),
                                                                                      std::span<const std::uint8_t>(altitude), 0, 1, 1, MorphologicalTreeSemantics{}));
             },
@@ -604,7 +666,7 @@ int main() {
                 const std::vector<NodeId> nodeParent{0, 0};
                 const std::vector<NodeId> smallestNodeMap{0, 1};
                 const std::vector<std::uint8_t> altitude{0, 1};
-                static_cast<void>(MorphologicalTreeFactory::createFromNativeTopology(
+                static_cast<void>(makeValuedHierarchy(
                     std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap), std::span<const std::uint8_t>(altitude), 0,
                     MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Increasing,
                                                SharedAdjacencyContext{RegularGridAdjacency2D(1, 2, 1.5)}}));
@@ -615,7 +677,7 @@ int main() {
                 const std::vector<NodeId> nodeParent{0, 0, 1};
                 const std::vector<NodeId> smallestNodeMap{2};
                 const std::vector<std::uint8_t> altitude{0, 2, 1};
-                static_cast<void>(MorphologicalTreeFactory::createFromNativeTopology(
+                static_cast<void>(makeValuedHierarchy(
                     std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap), std::span<const std::uint8_t>(altitude), 0, 1, 1,
                     MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Increasing, NoConstructionContext{}}));
             },

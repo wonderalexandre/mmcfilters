@@ -81,7 +81,7 @@ void forEachEstablishedContourUpdate(const MorphologicalTree& tree, const NodeSu
     const auto postOrder = traversal.postOrder();
     for (auto nodeIterator = postOrder.rbegin(); nodeIterator != postOrder.rend(); ++nodeIterator) {
         const NodeId node = *nodeIterator;
-        const NodeId parent = ::mmcfilters::detail::CommittedTreeAccess::nodeParent(tree, node);
+        const NodeId parent = ::mmcfilters::detail::TreeKernelAccess::nodeParent(tree, node);
         heavyPathTopByNode[static_cast<std::size_t>(node)] =
             node != tree.root() && traversal.heavyChild(parent) == node ? heavyPathTopByNode[static_cast<std::size_t>(parent)] : node;
     }

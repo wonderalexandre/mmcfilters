@@ -4,7 +4,7 @@
 #include "FiniteWindowLocalEventCompiler.hpp"
 #include "LocalEventModel.hpp"
 #include "../trees/MorphologicalTree.hpp"
-#include "../trees/detail/TreeTraversalDetail.hpp"
+#include "../trees/detail/TreeKernelAccess.hpp"
 #include "../utils/Common.hpp"
 #include "../utils/Contract.hpp"
 
@@ -26,7 +26,7 @@ namespace detail::kernel {
 template <class Value, class Algebra>
     requires EventAlgebra<Algebra, Value>
 inline void aggregateLocalAttributeIncrementValues(const MorphologicalTree& tree, std::span<Value> increments, const Algebra& algebra) {
-    ::mmcfilters::detail::kernel::traversePostOrder(
+    ::mmcfilters::detail::TreeKernelAccess::traversePostOrder(
         tree, tree.root(), [](NodeId) {},
         [&](NodeId parent, NodeId child) { algebra.addAssign(increments[static_cast<std::size_t>(parent)], increments[static_cast<std::size_t>(child)]); },
         [](NodeId) {});
@@ -43,7 +43,7 @@ inline std::vector<NodeAttribute<Value>> aggregateLocalAttributeIncrements(const
         attributes.push_back({increment.node, increment.value});
     }
 
-    ::mmcfilters::detail::kernel::traversePostOrder(
+    ::mmcfilters::detail::TreeKernelAccess::traversePostOrder(
         tree, tree.root(), [](NodeId) {},
         [&](NodeId parent, NodeId child) {
             algebra.addAssign(attributes[static_cast<std::size_t>(parent)].value, attributes[static_cast<std::size_t>(child)].value);

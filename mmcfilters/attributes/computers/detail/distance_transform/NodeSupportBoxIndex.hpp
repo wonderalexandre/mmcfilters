@@ -88,11 +88,11 @@ class NodeSupportBoxIndex : public ::mmcfilters::contours::detail::NodeSupportIn
         const int imageColumns = tree.requireGridDomain2D("NodeSupportBoxIndex").columns;
         for (NodeId node : tree.postOrder()) {
             auto& supportBox = supportBoxByNode_[static_cast<std::size_t>(node)];
-            for (PixelId pixel : ::mmcfilters::detail::CommittedTreeAccess::properParts(tree, node)) {
+            for (PixelId pixel : ::mmcfilters::detail::TreeKernelAccess::properParts(tree, node)) {
                 supportBox.include(pixel, imageColumns);
             }
             if (node != tree.root()) {
-                supportBoxByNode_[static_cast<std::size_t>(::mmcfilters::detail::CommittedTreeAccess::nodeParent(tree, node))].include(supportBox);
+                supportBoxByNode_[static_cast<std::size_t>(::mmcfilters::detail::TreeKernelAccess::nodeParent(tree, node))].include(supportBox);
             }
         }
     }

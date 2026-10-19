@@ -1,214 +1,88 @@
-# Self-dual residual trees: implementation and demonstration guide
+# The Extremum Residual Tree: guide to the DGMM manuscript
 
-This page is the software companion to the paper **“Self-Dual Residual Trees
-by Synchronized Evolution of Component Trees.”** It does not repeat the
-definitions or proofs. Its purpose is to locate the implementations, explain
-how the mathematical objects are represented by `mmcfilters`, and point to the
-executable demonstration.
+This guide accompanies **“The Extremum Residual Tree: A Self-Dual Morphological
+Tree Based on Levelings”**, prepared for submission to DGMM.
 
-## Start here
-
-| Resource | Location | Purpose |
-| --- | --- | --- |
-| Colab/static companion | [`notebooks/Self_Dual_Residual_Trees_Tutorial_Static.ipynb`](https://github.com/wonderalexandre/mmcfilters/blob/main/notebooks/Self_Dual_Residual_Trees_Tutorial_Static.ipynb) | Prints the complete trees with `mtviz.PrintTree` and records four attribute-filter comparisons without widgets or browser callbacks. |
-| Tutorial input | [`dat/hydrant_2_3bit.png`](https://github.com/wonderalexandre/mmcfilters/blob/main/dat/hydrant_2_3bit.png) | 3-bit quantization of the hydrant image used throughout the comparison notebook. |
-| Figure 2 input | [`dat/hydrant.png`](https://github.com/wonderalexandre/mmcfilters/blob/main/dat/hydrant.png) | Original 363x352-pixel grayscale image used by the reproducible notebook experiment. |
-| Public C++ factories | [`mmcfilters/trees/MorphologicalTreeFactory.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/MorphologicalTreeFactory.hpp) | Recommended C++ entry points for unrestricted and saturated residual trees. |
-| Python bindings | [`pybinds/TreeBindings.cpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/pybinds/TreeBindings.cpp) | Exposes the two factories, the spatial order, the self-dual schedule, and the valued-tree query API. |
-| User-facing API notes | [`docs/trees.md`](trees.md) and [`docs/python-api.md`](python-api.md) | Documents input contracts, adjacency choices, tree semantics, attributes, and reconstruction. |
-| Main regression test | [`unit-tests/trees/sdrt/test_min_max_residual_tree_factory.cpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/unit-tests/trees/sdrt/test_min_max_residual_tree_factory.cpp) | Tests reconstruction, self-duality, construction policies, altitude types, edge cases, and custom adjacencies. |
-| Construction benchmark | [`benchmarks/min_max_residual_tree_benchmark.cpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/benchmarks/min_max_residual_tree_benchmark.cpp) | Measures unrestricted and saturated construction on an input image. |
-
-## Public construction API
-
-The public factories first build a max-tree and a min-tree with the same
-symmetric adjacency, then pass both trees to the corresponding synchronized
-builder.
+## Constructing an ext-res-tree
 
 ### Python
+
+Install the library from the repository root:
+
+```bash
+python -m pip install .
+```
+
+Python accepts two-dimensional, C-contiguous `np.uint8` images. This example uses
+the nine-point signal from Figure 1 as a one-row image:
 
 ```python
 import mmcfilters
 import numpy as np
 
-image = np.ascontiguousarray(image, dtype=np.uint8)
-
-unrestricted = (
-    mmcfilters.MorphologicalTreeFactory.create_unrestricted_residual_tree(
-        image,
-        radius=1.0,  # shared 4-adjacency
-    )
+image = np.array([[3, 3, 1, 2, 5, 4, 4, 2, 2]], dtype=np.uint8)
+tree = mmcfilters.MorphologicalTreeFactory.create_extremum_residual_tree(
+    image,
+    radius=1.0,
 )
 
-saturated = (
-    mmcfilters.MorphologicalTreeFactory.create_saturated_residual_tree(
-        image,
-        infinity_pixel=0,
-        radius=1.0,
-    )
-)
-
-assert np.array_equal(unrestricted.reconstruct_from_node_altitudes(), image)
-assert np.array_equal(saturated.reconstruct_from_node_altitudes(), image)
+assert np.array_equal(tree.reconstruct_from_node_altitudes(), image)
 ```
 
-Python accepts two-dimensional, C-contiguous `np.uint8` images. A radius of
-`1.0` selects 4-adjacency and `1.5` selects 8-adjacency. An explicit symmetric
-`RegularGridAdjacency2D` can be supplied instead. Pixel identifiers, including
-`infinity_pixel`, use row-major order.
+A radius of `1.0` gives 4-adjacency on a two-dimensional image and chain adjacency
+on this one-row example. A radius of `1.5` gives 8-adjacency. An explicit symmetric
+`RegularGridAdjacency2D` can also be supplied. See the [Python API guide](python-api.md)
+for the overloads.
 
 ### C++
+
+The corresponding C++ example uses camelCase identifiers:
 
 ```cpp
 #include <mmcfilters/trees/MorphologicalTreeFactory.hpp>
 
-using namespace mmcfilters;
+#include <cassert>
+#include <cstdint>
 
-RegularGridAdjacency2D adjacency(rows, columns, 1.0);
+int main() {
+    using namespace mmcfilters;
 
-auto unrestricted =
-    MorphologicalTreeFactory::createUnrestrictedResidualTree(image, adjacency);
+    auto image = Image<std::uint8_t>::fromRaw(
+        new std::uint8_t[]{3, 3, 1, 2, 5, 4, 4, 2, 2}, 1, 9);
 
-auto saturated =
-    MorphologicalTreeFactory::createSaturatedResidualTree(
-        image, adjacency, PixelId{0});
+    RegularGridAdjacency2D adjacency(1, 9, 1.0);
+    auto tree = MorphologicalTreeFactory::createExtremumResidualTreeByCTs(
+        image, adjacency);
+    auto reconstruction = tree.reconstructFromNodeAltitudes();
+    assert(reconstruction->isEqual(image));
+}
 ```
 
-The returned object is a `ValuedMorphologicalTree<T>`. For a non-root node
-`n`, the implementation exposes the paper notation as follows:
+The image owns the buffer passed to `fromRaw` and releases it with `delete[]`.
+The result is a `ValuedMorphologicalTree<T>`. C++ supports the altitude types
+accepted by the factory; the Python image contract above is more restrictive.
+Both interfaces use increasing row-major pixel identifiers as the fixed spatial
+order for equal-cardinality extrema.
 
-| Paper object | Public query |
+## Algorithm 1 in the implementation
+
+Algorithm 1 maintains a max-tree and a min-tree of the current image. A current
+extremal flat zone is a leaf proper part in one of these trees, as in Eq. (29).
+`ExtremumResidualTreeByCTsBuilder::build(image)` constructs the initial pair as
+temporary state, then repeats the selection, recording, leveling, and
+association updates until the image is constant. It returns an independent
+`NativeHierarchyOwned<T>` with owned adjacency metadata. The factory
+materializes this result as a `ValuedMorphologicalTree<T>`.
+
+| Algorithm 1 | Implementation responsibility |
 | --- | --- |
-| residual support `X_k` | `tree.reconstructNode(n)` or `tree.nodeSupport(n)` |
-| valuation `eta(X_k)` | `tree.nodeAltitude(n)` |
-| parent `parent(X_k)` | `tree.parent(n)` |
-| signed residual `r_k = eta(X_k) - eta(parent(X_k))` | `tree.nodeResidue(n)` |
-| proper part `rho(X_k)` | `tree.properPart(n)` |
-| exact image represented by the valued tree | `tree.reconstructFromNodeAltitudes()` |
+| Line 1: build the initial component trees | `ExtremumResidualTreeByCTsBuilder::build(image)`, using `ComponentTreeBuilder` and the shared native-hierarchy materialization |
+| Lines 2–5: initialize and select the smallest current extremum | `initialize`, `selectSmallestExtremum`, and `prepareExtremum` |
+| Lines 6–11: record the support and attach pending children | `recordSupport` |
+| Line 12: contract the primal leaf and update the dual tree | `levelExtremum`, using [DualMinMaxTreeIncrementalFilterLeaf.hpp](../mmcfilters/trees/detail/DualMinMaxTreeIncrementalFilterLeaf.hpp) |
+| Line 13: update both association relations | `updateAssociations`, using transfers reported by the component-tree updater |
+| Line 14: advance the scale index | The number of recorded nonterminal supports determines the next step |
+| Lines 16–18: add the terminal root and attach remaining supports | `finalizeRoot` |
 
-The project-wide reconstruction baseline is fixed at zero. Therefore the root
-residue equals its node altitude, while every non-root residue uses the
-node-minus-parent difference shown above. The public API has no configurable
-baseline parameter.
-
-Residual-tree altitudes alternate with polarity, so the returned hierarchy has
-`NodeAltitudeOrder::Unconstrained`. Algorithms that require a globally monotone
-altitude must instead use a structural or otherwise increasing node valuation,
-such as support area.
-
-The construction has one canonical `SelfDualResidualSchedule`. Its key is
-`SelfDualResidualKey { supportCardinality, spatialMinimum }`, ordered
-lexicographically. `spatialMinimum` is computed from a total `SpatialOrder`; the
-default is `RowMajorSpatialOrder`. Polarity and altitude never participate in
-the key or break a tie, so contrast inversion preserves the support sequence.
-The former polarity-first experimental policy is not part of the API.
-
-## From the paper to the source code
-
-The production path is split into small components so that selection,
-synchronized evolution, saturation certification, and tree assembly can be
-tested separately.
-
-| Paper operation | Implementation |
-| --- | --- |
-| Construct the initial synchronized `T_max(I^0)` and `T_min(I^0)` | [`MorphologicalTreeFactory.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/MorphologicalTreeFactory.hpp) |
-| Select the construction mode | [`UnrestrictedResidualTreeBuilder.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/UnrestrictedResidualTreeBuilder.hpp) and [`SaturatedResidualTreeBuilder.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/SaturatedResidualTreeBuilder.hpp) |
-| Maintain the current flat zones of `I^k` | [`detail/FlatZonePartition.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/detail/FlatZonePartition.hpp) |
-| Define `SpatialOrder`, `SelfDualResidualKey`, candidates, and immutable events | [`ResidualEvolution.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/ResidualEvolution.hpp) |
-| Maintain `M(I^k)` and apply the canonical key `K_prec` | [`detail/ResidualTreeCandidateAgenda.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/detail/ResidualTreeCandidateAgenda.hpp) |
-| Gather `X_k`, its boundary, and the corresponding primal/dual smallest nodes | [`detail/ResidualTreeCandidatePreparation.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/detail/ResidualTreeCandidatePreparation.hpp) |
-| Evaluate saturated eligibility `chi_sat(X_k)` | [`detail/SaturatedResidualEligibility.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/detail/SaturatedResidualEligibility.hpp), assisted by [`detail/SaturatedDynamicLca.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/detail/SaturatedDynamicLca.hpp) |
-| Move the selected extremum to its first merging level and update both component trees | [`detail/SynchronizedResidualTreeEvolution.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/detail/SynchronizedResidualTreeEvolution.hpp) and [`adjust/DualMinMaxTreeIncrementalFilterLeaf.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/adjust/DualMinMaxTreeIncrementalFilterLeaf.hpp) |
-| Record the selected supports and build the inclusion hierarchy | [`detail/ResidualTreeEventAssembler.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/detail/ResidualTreeEventAssembler.hpp) |
-| Validate smallest-node mapping and exact reconstruction, then materialize the valued tree | [`detail/ResidualTreeMaterialization.hpp`](https://github.com/wonderalexandre/mmcfilters/blob/main/mmcfilters/trees/sdrt/detail/ResidualTreeMaterialization.hpp) |
-
-The common process is `SynchronizedResidualTreeEvolution<T, mode>`. For each
-eligible `ResidualCandidate`, it records an immutable `ResidualEvent` from the
-pre-leveling state: chronological `eventIndex`, `support`, `polarity`,
-`nodeAltitude`, `firstMergingLevel`, and
-`signedResidualValue = nodeAltitude - firstMergingLevel`. Only after that record
-exists does `updateAfterElementaryLeveling` update the primal and dual trees,
-merge current flat zones, and attach the emitted node. The saturated
-specialization adds complement-connectivity certification relative to
-`infinityPixel`; the unrestricted specialization carries no exterior or
-saturation state.
-
-The two residual-tree factories implement the **shared-adjacency** constructions
-of the paper. The complementary-adjacency result that coincides with the tree
-of shapes is a structural theorem under an admissible topographic convention;
-it is not exposed as a third mode of these residual-tree factories. The library
-provides `MorphologicalTreeFactory::createTreeOfShapes` separately, and the
-notebook uses it only for comparison.
-
-## Demonstration notebook
-
-[`Self_Dual_Residual_Trees_Tutorial_Static.ipynb`](https://github.com/wonderalexandre/mmcfilters/blob/main/notebooks/Self_Dual_Residual_Trees_Tutorial_Static.ipynb)
-is the executable Colab/static companion. It:
-
-1. loads the 3-bit quantized grayscale image `dat/hydrant_2_3bit.png`;
-2. builds the default Min4/Max8 tree of shapes and the unrestricted and
-   saturated residual trees with shared 8-adjacency;
-3. compares their node and leaf counts;
-4. prints the complete topology of each hierarchy with `mtviz.PrintTree`;
-5. applies fixed thresholds for `AREA`, `CIRCULARITY`, `INERTIA`, and
-   `MAX_DIST`; and
-6. stores the input and filtered images as static Matplotlib outputs.
-
-The notebook does not duplicate the proofs or implement a second constructor.
-It keeps the distinction between the complementary-adjacency tree of shapes
-and the shared-adjacency residual factories explicit throughout the comparison.
-
-## Running the notebook
-
-From the repository root:
-
-```bash
-python -m pip install .
-python -m pip install -r notebooks/requirements.txt
-python -m jupyter lab notebooks/Self_Dual_Residual_Trees_Tutorial_Static.ipynb
-```
-
-For a headless execution check:
-
-```bash
-mkdir -p build/notebook-runs
-python scripts/validate_notebooks.py
-python -m jupyter nbconvert \
-  --execute \
-  --to notebook \
-  --output-dir build/notebook-runs \
-  notebooks/Self_Dual_Residual_Trees_Tutorial_Static.ipynb
-```
-
-## Tests and benchmark
-
-Configure a development build with the Python bindings, tests, and benchmarks:
-
-```bash
-cmake -S . -B build \
-  -DMMCFILTERS_BUILD_PYTHON=ON \
-  -DMMCFILTERS_BUILD_TESTS=ON \
-  -DMMCFILTERS_BUILD_BENCHMARKS=ON
-cmake --build build --target \
-  unit_min_max_residual_tree_factory \
-  mmcfilters_min_max_residual_tree_benchmark
-```
-
-Run the focused C++ regression test:
-
-```bash
-ctest --test-dir build \
-  -R unit_min_max_residual_tree_factory \
-  --output-on-failure
-```
-
-Run the empirical construction benchmark on a grayscale image:
-
-```bash
-./build/benchmarks/mmcfilters_min_max_residual_tree_benchmark \
-  path/to/image.png 5 both
-```
-
-The benchmark reports median construction time, node counts, and rejected
-extrema. It is an empirical implementation benchmark; it does not add an
-asymptotic complexity claim beyond the paper.
+The algorithm is implemented by one public class,
+[ExtremumResidualTreeByCTsBuilder](../mmcfilters/trees/ExtremumResidualTreeByCTsBuilder.hpp).

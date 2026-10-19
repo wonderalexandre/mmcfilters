@@ -3,7 +3,7 @@
 #include "AttributeNumericPolicy.hpp"
 #include "../../trees/TreeAltitudeAlgorithms.hpp"
 #include "../../trees/ValuedMorphologicalTree.hpp"
-#include "../../trees/detail/CommittedTreeAccess.hpp"
+#include "../../trees/detail/TreeKernelAccess.hpp"
 #include "../../utils/Common.hpp"
 #include "../../utils/Contract.hpp"
 #include "../AttributeNames.hpp"
@@ -403,7 +403,7 @@ namespace detail::kernel {
  * @return Altitude of the smallest node.
  */
 template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, PixelId pixel) {
-    const NodeId smallestNodeId = detail::CommittedTreeAccess::smallestNodeMap(tree, pixel);
+    const NodeId smallestNodeId = detail::TreeKernelAccess::smallestNodeMap(tree, pixel);
     return altitudeView[static_cast<std::size_t>(smallestNodeId)];
 }
 
@@ -421,8 +421,8 @@ template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, 
     TreeAltitudeAlgorithms::validateNodeAltitudeBufferShape(tree, altitudeView);
     MMCFILTERS_CONTRACT_REQUIRE(tree.isPixel(pixel),
                                 throw std::invalid_argument("Unit altitude computation requires a valid proper-part id."));
-    const NodeId smallestNodeId = detail::CommittedTreeAccess::smallestNodeMap(tree, pixel);
-    if (smallestNodeId == InvalidNode || !detail::CommittedTreeAccess::isAlive(tree, smallestNodeId)) {
+    const NodeId smallestNodeId = detail::TreeKernelAccess::smallestNodeMap(tree, pixel);
+    if (smallestNodeId == InvalidNode || !detail::TreeKernelAccess::isAlive(tree, smallestNodeId)) {
         throw std::runtime_error("Unit-attribute computation requires every proper part to have an alive smallest node.");
     }
     return altitudeView[static_cast<std::size_t>(smallestNodeId)];

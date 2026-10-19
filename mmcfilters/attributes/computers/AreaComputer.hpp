@@ -3,8 +3,7 @@
 #include "AttributeComputerDomain.hpp"
 #include "AttributeComputerFamily.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
-#include "../../trees/detail/TreeTraversalDetail.hpp"
-#include "../../trees/detail/CommittedTreeAccess.hpp"
+#include "../../trees/detail/TreeKernelAccess.hpp"
 #include "../../utils/Contract.hpp"
 #include "../../trees/MorphologicalTree.hpp"
 
@@ -31,10 +30,10 @@ template <std::floating_point Real> inline void computeArea(const AttributeCompu
     const int stride = context.attrNames.NUM_ATTRIBUTES;
     const int offset = context.attrNames.indexMap.find(Area)->second;
     auto indexOfArea = [&](NodeId node) { return static_cast<std::size_t>(node * stride + offset); };
-    ::mmcfilters::detail::kernel::traversePostOrder(
+    ::mmcfilters::detail::TreeKernelAccess::traversePostOrder(
         context.tree, context.tree.root(),
         [&](NodeId node) {
-            context.buffer[indexOfArea(node)] = static_cast<Real>(::mmcfilters::detail::CommittedTreeAccess::properPartCardinality(context.tree, node));
+            context.buffer[indexOfArea(node)] = static_cast<Real>(::mmcfilters::detail::TreeKernelAccess::properPartCardinality(context.tree, node));
         },
         [&](NodeId parent, NodeId child) { context.buffer[indexOfArea(parent)] += context.buffer[indexOfArea(child)]; }, [](NodeId) {});
 }

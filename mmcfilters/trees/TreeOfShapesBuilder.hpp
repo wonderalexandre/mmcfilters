@@ -3,7 +3,7 @@
 #include "../utils/Image.hpp"
 #include "../utils/Common.hpp"
 #include "MorphologicalTreeSemantics.hpp"
-#include "detail/NativeHierarchyValidationDetail.hpp"
+#include "NativeHierarchyOwned.hpp"
 
 #include <algorithm>
 #include <array>
@@ -13,6 +13,7 @@
 #include <limits>
 #include <stdexcept>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 namespace mmcfilters {
@@ -110,43 +111,6 @@ template <> struct ToSAltitudeEncodingFor<ToSGrayLevel> {
     static constexpr TopographicAltitudeEncoding declaration = TopographicAltitudeEncoding::ExactDoubled; ///< Matching declaration.
 };
 
-/**
- * @brief Native representation produced by a Tree-of-Shapes producer.
- *
- * Unlike a pixel-parent image, this representation can preserve a virtual root
- * (or another branching projected node) whose direct proper part is empty.
- * Node altitudes are published in the scale declared by the topographic
- * convention: unchanged 8-bit source levels, or exact doubled gray-level units
- * where source levels are even and odd values preserve self-dual half levels.
- *
- * @tparam Altitude Published node-altitude type.
- */
-template <class Altitude> struct TreeOfShapesBuildResult {
-    /// Parent id for every produced internal node.
-    std::vector<NodeId> parent;
-    /// Direct owning node for every original-domain proper part.
-    std::vector<NodeId> smallestNodeMap;
-    /// Encoded altitude for every produced internal node.
-    std::vector<Altitude> nodeAltitudes;
-    /// Root node id in the produced internal-node domain.
-    NodeId root = InvalidNode;
-    /// Number of rows in the original pixel domain.
-    int numRows = 0;
-    /// Number of columns in the original pixel domain.
-    int numColumns = 0;
-
-    /**
-     * @brief Transfers the producer-owned buffers without structural validation.
-     *
-     * @param semantics Hierarchy semantics validated by the operation.
-     * @return The transferred producer-owned buffers.
-     */
-    [[nodiscard]] detail::OwnedNativeHierarchy<Altitude> takeValidatedHierarchy(MorphologicalTreeSemantics semantics) && {
-        return detail::makeOwnedNativeHierarchy<Altitude>(std::move(parent), std::move(smallestNodeMap), std::move(nodeAltitudes), root,
-                                                          GridDomain2D{numRows, numColumns}, std::move(semantics));
-    }
-};
-
 /************************ Tree of Shapes support ************************/
 
 /// @cond INTERNAL
@@ -196,6 +160,9 @@ inline bool operator&(DiagonalConnection a, DiagonalConnection b) { return stati
 
 /**
  * @brief Adaptive adjacency used during 4/8-connected tree-of-shapes construction.
+ *
+ * Stores the connectivity map of [CCG18], Section 3, Figures 7-8.
+ * Bibliographic references are listed in TreeOfShapesBuilder.
  */
 class AdjacencyUC {
   private:
@@ -409,6 +376,12 @@ class AdjacencyUC {
 
 /**
  * @brief Discrete priority queue used during tree-of-shapes construction.
+ *
+ * Interval-clamped insertion follows [GCCN13], Algorithm 2, and [BGN15],
+ * Algorithm 1. This implementation selects the nearest nonempty level,
+ * prefers the lower level on a tie, and uses FIFO order within each level.
+ * These tie-breaking choices are local policies. Bibliographic references
+ * are listed in TreeOfShapesBuilder.
  */
 class PriorityQueueToS {
   private:
@@ -476,7 +449,7 @@ class PriorityQueueToS {
     }
 
     /**
-     * @brief Removes the next element from the circular priority buckets.
+     * @brief Dequeues a pixel at the current or nearest nonempty level.
      *
      * @return Identifier of the removed element.
      */
@@ -518,12 +491,35 @@ class PriorityQueueToS {
 /**
  * @brief Builds trees of shapes (ToS) using a union-find construction.
  *
- * The builder interpolates the input image according to the retained
- * `TopographicConvention`,
- * constructs a max-tree on the interpolated domain, and projects the resulting
- * hierarchy back to the original image domain.
+ * The builder uses interval interpolation, ordered flooding, union-find,
+ * canonicalization, and projection to the original domain [GCCN13].
+ * SelfDualSpan uses the span construction of [BGN15]. Complementary 4/8
+ * conventions use the optimized immersion and max-tree of the order map
+ * described in [CCG18]. The corresponding methods cite sections and algorithms.
+ *
+ * Domain cropping, a configurable infinity pixel, altitude encoding, and
+ * native-array materialization are project options or adaptations. Cropping
+ * the exterior ring or choosing an interior seed differs from the exterior
+ * initialization described in [GCCN13], Section 4.1, and [BGN15], Section 4.2.
+ *
+ * @par Scientific references
+ * - [GCCN13] Thierry Géraud, Edwin Carlinet, Sébastien Crozet, and Laurent
+ *   Najman, "A Quasi-linear Algorithm to Compute the Tree of Shapes of nD
+ *   Images," Mathematical Morphology and Its Applications to Signal and
+ *   Image Processing (ISMM 2013), LNCS 7883, pp. 98-110, Springer, 2013.
+ *   [DOI: 10.1007/978-3-642-38294-9_9](https://doi.org/10.1007/978-3-642-38294-9_9).
+ * - [BGN15] Nicolas Boutry, Thierry Géraud, and Laurent Najman,
+ *   "How to Make nD Functions Digitally Well-Composed in a Self-dual Way,"
+ *   Mathematical Morphology and Its Applications to Signal and Image
+ *   Processing (ISMM 2015), LNCS 9082, pp. 561-572, Springer, 2015.
+ *   [DOI: 10.1007/978-3-319-18720-4_47](https://doi.org/10.1007/978-3-319-18720-4_47).
+ * - [CCG18] Edwin Carlinet, Sébastien Crozet, and Thierry Géraud,
+ *   "The Tree of Shapes Turned into a Max-Tree: A Simple and Efficient
+ *   Linear Algorithm," 2018 IEEE International Conference on Image
+ *   Processing (ICIP), pp. 1488-1492, 2018.
+ *   [DOI: 10.1109/ICIP.2018.8451180](https://doi.org/10.1109/ICIP.2018.8451180).
  */
-class TreeOfShapesProducer {
+class TreeOfShapesBuilder {
   private:
     /** @brief Defines the `AdjacencyUC` alias used by the component. */
     using AdjacencyUC = detail::AdjacencyUC;
@@ -602,7 +598,7 @@ class TreeOfShapesProducer {
     /** @brief Validates convention data whose domain is known only when an image is supplied. @param image Source image defining the domain. */
     void validateConventionForImage(const ImageUInt8Ptr& image) const {
         if (!image) {
-            throw std::invalid_argument("TreeOfShapesProducer requires a non-null image.");
+            throw std::invalid_argument("TreeOfShapesBuilder requires a non-null image.");
         }
         if (const auto* immersion = std::get_if<ComplementaryGridImmersion>(&convention_.immersion)) {
             const auto& adjacencies = immersion->complementaryAdjacencies;
@@ -614,6 +610,25 @@ class TreeOfShapesProducer {
             }
         }
         static_cast<void>(validatedInfinityPixel(interpolatedNumRows(image->getNumRows()), interpolatedNumColumns(image->getNumColumns())));
+    }
+
+    /**
+     * @brief Binds a canonical complementary pairing to the source domain.
+     *
+     * The result retains concrete adjacencies rather than a domain-free pairing.
+     * @param gridDomain Original image dimensions attached to the result.
+     */
+    void resolveTopographicImmersion(GridDomain2D gridDomain) {
+        const auto* canonical = std::get_if<CanonicalComplementaryGridImmersion>(&convention_.immersion);
+        if (canonical == nullptr) {
+            return;
+        }
+        constexpr double connectivity4Radius = 1.0;
+        constexpr double connectivity8Radius = 1.5;
+        const bool min4Max8 = canonical->pairing == ComplementaryPairing::Min4Max8;
+        convention_.immersion = ComplementaryGridImmersion{ComplementaryAdjacencies{
+            RegularGridAdjacency2D(gridDomain.rows, gridDomain.columns, min4Max8 ? connectivity4Radius : connectivity8Radius),
+            RegularGridAdjacency2D(gridDomain.rows, gridDomain.columns, min4Max8 ? connectivity8Radius : connectivity4Radius)}};
     }
 
     /**
@@ -654,7 +669,7 @@ class TreeOfShapesProducer {
      */
     inline int checkedInterpolatedExtent(int extent) const {
         if (extent <= 0) {
-            throw std::invalid_argument("TreeOfShapesProducer requires positive image dimensions.");
+            throw std::invalid_argument("TreeOfShapesBuilder requires positive image dimensions.");
         }
         const std::int64_t interpolated = TopographicInterpolationScale * static_cast<std::int64_t>(extent) + (usesExteriorPadding() ? 1 : -1);
         if (interpolated <= 0 || interpolated > std::numeric_limits<int>::max()) {
@@ -819,7 +834,7 @@ class TreeOfShapesProducer {
      *
      * @param convention Complete topographic convention.
      */
-    explicit TreeOfShapesProducer(TopographicConvention convention = {})
+    explicit TreeOfShapesBuilder(TopographicConvention convention = {})
         : convention_(std::move(convention)), immersionMode_(validateConvention(convention_)) {}
 
     /**
@@ -830,24 +845,28 @@ class TreeOfShapesProducer {
     [[nodiscard]] const TopographicConvention& convention() const noexcept { return convention_; }
 
     /**
-     * @brief Destroys `TreeOfShapesProducer`.
+     * @brief Destroys `TreeOfShapesBuilder`.
      */
-    ~TreeOfShapesProducer() = default;
+    ~TreeOfShapesBuilder() = default;
 
     /// @cond INTERNAL
     /**
-     * @brief Interpolates image.
+     * @brief Builds the self-dual span interpolation.
+     *
+     * Follows ISpan in [BGN15], Section 5.1, Proposition 4 and Figure 2:
+     * source samples remain singletons, inserted samples span neighboring
+     * values, and the exterior ring takes the median of the source boundary.
+     * floodImage() then applies front propagation as in Section 4.2,
+     * Algorithm 1. Spatial subdivision and gray-level scaling are distinct:
+     * this implementation stores twice each gray level to represent half
+     * levels exactly, including a possible half-integer boundary median.
      *
      * @param imgPtr Image data.
-     * @return Values produced by the operation.
+     * @return Lower and upper interval bounds and 4-connected adjacency.
      */
     std::tuple<std::vector<ToSGrayLevel>, std::vector<ToSGrayLevel>, AdjacencyUC> interpolateImage(const ImageUInt8Ptr& imgPtr) const {
-        // Implements the self-dual span-based immersion used by Boutry's PhD
-        // thesis: ISpan(u) followed by front propagation from a median-valued
-        // outer boundary. Internal levels are stored in Z/2 by scaling values
-        // by 2, so odd integers represent half gray levels.
         if (!imgPtr) {
-            throw std::invalid_argument("TreeOfShapesProducer requires a non-null image.");
+            throw std::invalid_argument("TreeOfShapesBuilder requires a non-null image.");
         }
         if (!usesExteriorPadding()) {
             TopographicConvention paddedConvention = convention_;
@@ -857,7 +876,7 @@ class TreeOfShapesProducer {
             // altitude-encoding independent. Declaring the doubled encoding keeps
             // it constructible for a convention whose own encoding is 8-bit.
             paddedConvention.altitudeEncoding = TopographicAltitudeEncoding::ExactDoubled;
-            TreeOfShapesProducer paddedProducer(std::move(paddedConvention));
+            TreeOfShapesBuilder paddedProducer(std::move(paddedConvention));
             auto [paddedMin, paddedMax, paddedAdjacency] = paddedProducer.interpolateImage(imgPtr);
             const int paddedRows = paddedProducer.interpolatedNumRows(imgPtr->getNumRows());
             const int paddedColumns = paddedProducer.interpolatedNumColumns(imgPtr->getNumColumns());
@@ -867,7 +886,7 @@ class TreeOfShapesProducer {
         int numRows = imgPtr->getNumRows();
         int numColumns = imgPtr->getNumColumns();
         if (numRows <= 0 || numColumns <= 0) {
-            throw std::invalid_argument("TreeOfShapesProducer requires a non-empty image.");
+            throw std::invalid_argument("TreeOfShapesBuilder requires a non-empty image.");
         }
         if (numRows == 1 && numColumns == 1) {
             const int interpNumRows = interpolatedNumRows(numRows);
@@ -1001,17 +1020,20 @@ class TreeOfShapesProducer {
     }
 
     /**
-     * @brief Interpolates image4c8c.
+     * @brief Builds the optimized immersion for complementary 4/8 connectivity.
+     *
+     * Follows [CCG18], Section 3, Figures 7-8: interval values and adaptive
+     * diagonal links replace the separate interpolation and immersion steps.
+     * The optimized grid doubles the sampling density along each spatial axis.
+     * Min4Max8 selects the high diagonal at a saddle as in the paper;
+     * Min8Max4 applies the contrast-dual rule with the low diagonal.
      *
      * @param imgPtr Image data.
-     * @return Values produced by the operation.
+     * @return Lower and upper interval bounds and the adaptive adjacency.
      */
     std::tuple<std::vector<ToSGrayLevel>, std::vector<ToSGrayLevel>, AdjacencyUC> interpolateImage4c8c(const ImageUInt8Ptr& imgPtr) const {
-        // Implements the optimized 2D immersion/connectivity-map rules from
-        // Carlinet, Crozet, and Geraud, "The Tree of Shapes Turned into a
-        // Max-Tree: A Simple and Efficient Linear Algorithm", ICIP 2018.
         if (!imgPtr) {
-            throw std::invalid_argument("TreeOfShapesProducer requires a non-null image.");
+            throw std::invalid_argument("TreeOfShapesBuilder requires a non-null image.");
         }
         if (!usesExteriorPadding()) {
             TopographicConvention paddedConvention = convention_;
@@ -1021,7 +1043,7 @@ class TreeOfShapesProducer {
             // altitude-encoding independent. Declaring the doubled encoding keeps
             // it constructible for a convention whose own encoding is 8-bit.
             paddedConvention.altitudeEncoding = TopographicAltitudeEncoding::ExactDoubled;
-            TreeOfShapesProducer paddedProducer(std::move(paddedConvention));
+            TreeOfShapesBuilder paddedProducer(std::move(paddedConvention));
             auto [paddedMin, paddedMax, paddedAdjacency] = paddedProducer.interpolateImage4c8c(imgPtr);
             const int paddedRows = paddedProducer.interpolatedNumRows(imgPtr->getNumRows());
             const int paddedColumns = paddedProducer.interpolatedNumColumns(imgPtr->getNumColumns());
@@ -1031,7 +1053,7 @@ class TreeOfShapesProducer {
         int numRows = imgPtr->getNumRows();
         int numColumns = imgPtr->getNumColumns();
         if (numRows <= 0 || numColumns <= 0) {
-            throw std::invalid_argument("TreeOfShapesProducer requires a non-empty image.");
+            throw std::invalid_argument("TreeOfShapesBuilder requires a non-empty image.");
         }
 
         int interpNumColumns = interpolatedNumColumns(numColumns);
@@ -1204,14 +1226,21 @@ class TreeOfShapesProducer {
 
   private:
     /**
-     * @brief Floods image.
+     * @brief Orders the interpolated domain by interval-constrained flooding.
+     *
+     * Uses the sorting scheme of [GCCN13], Section 4.2, Algorithm 2, and
+     * front propagation of [BGN15], Section 4.2, Algorithm 1. SelfDualSpan
+     * keeps the propagated gray values as treeLevel. Complementary 4/8 modes
+     * instead use Ord from [CCG18], Section 2.2, Figure 6: its counter grows
+     * whenever the flood level changes. grayLevel separately retains the
+     * actual flood values used to publish node altitudes.
      *
      * @param imgPtr Image data.
-     * @return Number of rows in the interpolated domain.
+     * @return Canonicalization levels, gray levels, visit order, and adjacency.
      */
     FloodResult floodImage(const ImageUInt8Ptr& imgPtr) const {
         if (!imgPtr) {
-            throw std::invalid_argument("TreeOfShapesProducer requires a non-null image.");
+            throw std::invalid_argument("TreeOfShapesBuilder requires a non-null image.");
         }
 
         int numRows = imgPtr->getNumRows();
@@ -1225,7 +1254,7 @@ class TreeOfShapesProducer {
 
         std::vector<uint8_t> dejavu(size, 0);
         std::vector<PixelId> imgR(size);           // Ordered pixels.
-        std::vector<ToSFloodDepth> imgU(size);     // Monotone max-tree levels.
+        std::vector<ToSFloodDepth> imgU(size);     // Flood values or order-map levels.
         std::vector<ToSGrayLevel> grayLevel(size); // Actual propagation levels.
 
         PriorityQueueToS queue(connectivityMap ? ToSUInt8Depth : ToSSelfDualDepth); // Priority queue.
@@ -1237,7 +1266,7 @@ class TreeOfShapesProducer {
         int order = 0;
         ToSFloodDepth depth = 0;
         while (!queue.isEmpty()) {
-            const PixelId pixel = queue.priorityPop();      // Pop the element with highest priority.
+            const PixelId pixel = queue.priorityPop();      // Current or nearest queued level.
             int priorityQueue = queue.getCurrentPriority(); // Current priority.
             if (connectivityMap) {
                 if (priorityQueue != priorityQueueOld)
@@ -1268,6 +1297,11 @@ class TreeOfShapesProducer {
 
     /**
      * @brief Builds canonical flood tree.
+     *
+     * Reverse-order union-find and forward canonicalization follow [GCCN13],
+     * Section 2.1, Algorithm 1, and Section 4.3, Algorithm 3. For complementary
+     * 4/8 modes, this builds the max-tree of Ord as in [CCG18], Section 2.3.
+     * The implementation uses path halving without union by rank.
      *
      * @param imgPtr Image data.
      * @return Resulting canonical flood tree.
@@ -1358,7 +1392,7 @@ class TreeOfShapesProducer {
 
   private:
     /**
-     * @brief Builds a native Tree-of-Shapes topology.
+     * @brief Projects the canonical flood tree and materializes the three native arrays.
      *
      * The projection retains every interpolated plateau that owns an original
      * pixel. A plateau without original pixels is retained exactly when it
@@ -1366,20 +1400,24 @@ class TreeOfShapesProducer {
      * unary empty plateaus are contracted while a virtual branching root is
      * represented faithfully with an empty direct proper part.
      *
+     * [GCCN13], Section 4.3, Algorithm 3, provides the un-interpolation step.
+     * The support-based retention rule above is a local projection policy;
+     * the paper describes removing elements outside the original domain.
+     * Dense node IDs, encoded gray-level altitudes, and ownership transfer
+     * into NativeHierarchyOwned belong to the native representation here.
+     *
      * @tparam Altitude Published node-altitude type.
-     * @param imgPtr Image.
-     * @return The resulting native Tree-of-Shapes topology.
+     * @param canonical Canonical flood-tree buffers consumed during projection.
+     * @param gridDomain Original image dimensions attached to the result.
+     * @return Owning hierarchy with encoded altitudes and the resolved topographic convention.
      */
-    template <class Altitude> [[nodiscard]] TreeOfShapesBuildResult<Altitude> buildTreeOfShapes(const ImageUInt8Ptr& imgPtr) const {
-        if (!imgPtr) {
-            throw std::invalid_argument("TreeOfShapesProducer requires a non-null image.");
-        }
-        const int numRows = imgPtr->getNumRows();
-        const int numColumns = imgPtr->getNumColumns();
+    template <class Altitude>
+    [[nodiscard]] NativeHierarchyOwned<Altitude> computeIntrinsicAttributes(CanonicalFloodTree canonical, GridDomain2D gridDomain) {
+        const int numRows = gridDomain.rows;
+        const int numColumns = gridDomain.columns;
         const int numPixels = checkedDomainSize(numRows, numColumns);
         const int interpNumColumns = interpolatedNumColumns(numColumns);
 
-        CanonicalFloodTree canonical = buildCanonicalFloodTree(imgPtr);
         const int numPixelsInterp = static_cast<int>(canonical.parent.size());
         auto sameLevel = [&](PixelId aStar, PixelId bStar) {
             return canonical.treeLevel[static_cast<size_t>(aStar)] == canonical.treeLevel[static_cast<size_t>(bStar)];
@@ -1484,13 +1522,10 @@ class TreeOfShapesProducer {
             }
         }
 
-        TreeOfShapesBuildResult<Altitude> result;
-        result.parent.assign(static_cast<size_t>(numNodes), InvalidNode);
-        result.smallestNodeMap.assign(static_cast<size_t>(numPixels), InvalidNode);
-        result.nodeAltitudes.assign(static_cast<size_t>(numNodes), Altitude{});
-        result.root = nodeIdByRep[static_cast<size_t>(projectedRootRep)];
-        result.numRows = numRows;
-        result.numColumns = numColumns;
+        std::vector<NodeId> nodeParent(static_cast<size_t>(numNodes), InvalidNode);
+        std::vector<NodeId> smallestNode(static_cast<size_t>(numPixels), InvalidNode);
+        std::vector<Altitude> nodeValuation(static_cast<size_t>(numNodes));
+        const NodeId root = nodeIdByRep[static_cast<size_t>(projectedRootRep)];
 
         for (PixelId repStar : canonicalReps) {
             const NodeId nodeId = nodeIdByRep[static_cast<size_t>(repStar)];
@@ -1499,7 +1534,7 @@ class TreeOfShapesProducer {
             }
 
             if (repStar == projectedRootRep) {
-                result.parent[static_cast<size_t>(nodeId)] = nodeId;
+                nodeParent[static_cast<size_t>(nodeId)] = nodeId;
             } else {
                 PixelId ancestorRep = rawParent[static_cast<size_t>(repStar)];
                 while (ancestorRep != InvalidPixel && nodeIdByRep[static_cast<size_t>(ancestorRep)] == InvalidNode) {
@@ -1512,10 +1547,10 @@ class TreeOfShapesProducer {
                 if (ancestorRep == InvalidPixel) {
                     throw std::runtime_error("Tree-of-shapes retained node has no retained parent.");
                 }
-                result.parent[static_cast<size_t>(nodeId)] = nodeIdByRep[static_cast<size_t>(ancestorRep)];
+                nodeParent[static_cast<size_t>(nodeId)] = nodeIdByRep[static_cast<size_t>(ancestorRep)];
             }
 
-            result.nodeAltitudes[static_cast<size_t>(nodeId)] =
+            nodeValuation[static_cast<size_t>(nodeId)] =
                 ToSAltitudeEncodingFor<Altitude>::type::encode(canonical.grayLevel[static_cast<size_t>(repStar)], immersionMode_);
         }
 
@@ -1525,21 +1560,22 @@ class TreeOfShapesProducer {
             if (smallestNodeId == InvalidNode) {
                 throw std::runtime_error("Tree-of-shapes proper part belongs to a contracted node.");
             }
-            result.smallestNodeMap[static_cast<size_t>(elementId)] = smallestNodeId;
+            smallestNode[static_cast<size_t>(elementId)] = smallestNodeId;
         }
         for (NodeId nodeId = 0; nodeId < numNodes; ++nodeId) {
-            const NodeId parentNodeId = result.parent[static_cast<std::size_t>(nodeId)];
-            if (nodeId != result.root &&
-                result.nodeAltitudes[static_cast<std::size_t>(nodeId)] == result.nodeAltitudes[static_cast<std::size_t>(parentNodeId)]) {
+            const NodeId parentNodeId = nodeParent[static_cast<std::size_t>(nodeId)];
+            if (nodeId != root && nodeValuation[static_cast<std::size_t>(nodeId)] == nodeValuation[static_cast<std::size_t>(parentNodeId)]) {
                 throw std::runtime_error("Tree-of-shapes construction produced an equal-altitude parent-child edge.");
             }
         }
-        return result;
+        return makeNativeHierarchyOwned<Altitude>(
+            std::move(nodeParent), std::move(smallestNode), std::move(nodeValuation), root, gridDomain,
+            makeMorphologicalTreeSemantics(MorphologicalTreeKind::TreeOfShapes, std::move(convention_)));
     }
 
   public:
     /**
-     * @brief Builds the hierarchy in the altitude scale declared by the convention.
+     * @brief Builds the native hierarchy in the declared altitude scale, consuming the producer.
      *
      * Under `TopographicAltitudeEncoding::UInt8` the published altitudes are
      * unchanged source gray levels. This encoding is exact for a
@@ -1549,17 +1585,23 @@ class TreeOfShapesProducer {
      * introduced by self-dual interpolation. Neither encoding loses a
      * parent-child altitude distinction to quantization.
      *
+     * The result owns the native arrays and the resolved topographic convention.
+     * Named producers must be passed through `std::move` to transfer ownership.
+     *
      * @tparam Altitude Published node-altitude type, which must match the
      * altitude encoding declared by the convention.
      * @param imgPtr Image.
-     * @return The resulting hierarchy in the declared altitude scale.
+     * @return Owning hierarchy independent of the producer and source image.
      */
-    template <class Altitude = std::uint8_t> [[nodiscard]] TreeOfShapesBuildResult<Altitude> build(const ImageUInt8Ptr& imgPtr) const {
+    template <class Altitude = std::uint8_t> [[nodiscard]] NativeHierarchyOwned<Altitude> build(const ImageUInt8Ptr& imgPtr) && {
         if (convention_.altitudeEncoding != ToSAltitudeEncodingFor<Altitude>::declaration) {
             throw std::invalid_argument("Tree-of-shapes altitude type does not match the altitude encoding declared by the topographic convention.");
         }
         validateConventionForImage(imgPtr);
-        return buildTreeOfShapes<Altitude>(imgPtr);
+        const GridDomain2D gridDomain{imgPtr->getNumRows(), imgPtr->getNumColumns()};
+        resolveTopographicImmersion(gridDomain);
+        auto canonical = buildCanonicalFloodTree(imgPtr);
+        return computeIntrinsicAttributes<Altitude>(std::move(canonical), gridDomain);
     }
 };
 

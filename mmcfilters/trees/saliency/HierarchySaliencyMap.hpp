@@ -5,7 +5,6 @@
 #include "../../utils/Altitude.hpp"
 #include "../../utils/Common.hpp"
 #include "../MorphologicalTree.hpp"
-#include "../detail/MorphologicalTreeConstructionContextQueries.hpp"
 #include "../ValuedMorphologicalTree.hpp"
 
 #include <algorithm>
@@ -150,10 +149,10 @@ class HierarchySaliencyMap {
      * @return Mutable reference to the updated object.
      */
     static RegularGridAdjacency2D requireStoredAdjacency(const MorphologicalTree& tree, const char* context) {
-        if (const RegularGridAdjacency2D* adjacency = ::mmcfilters::detail::constructionAdjacency(tree)) {
+        if (const RegularGridAdjacency2D* adjacency = tree.constructionAdjacency()) {
             return *adjacency;
         }
-        if (const ComplementaryAdjacencies* adjacencies = ::mmcfilters::detail::complementaryAdjacencies(tree)) {
+        if (const ComplementaryAdjacencies* adjacencies = tree.complementaryAdjacencies()) {
             if (sameAdjacencyGraph(adjacencies->minAdjacency, adjacencies->maxAdjacency)) {
                 return adjacencies->minAdjacency;
             }

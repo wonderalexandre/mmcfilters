@@ -8,8 +8,8 @@
 #include "mmcfilters/attributes/computers/detail/BitquadFiniteWindowComputation.hpp"
 #include "mmcfilters/attributes/computers/detail/ContourSideAttributeMaterialization.hpp"
 #include "mmcfilters/attributes/computers/detail/ContourSideFiniteWindowComputation.hpp"
+#include "mmcfilters/attributes/detail/BitquadProjectionAdjacencies.hpp"
 #include "mmcfilters/localAttributes/FiniteWindowLocalAttributeComputer.hpp"
-#include "mmcfilters/trees/detail/MorphologicalTreeConstructionContextQueries.hpp"
 #include "mmcfilters/trees/ValuedMorphologicalTreeView.hpp"
 #include "mmcfilters/utils/Contract.hpp"
 

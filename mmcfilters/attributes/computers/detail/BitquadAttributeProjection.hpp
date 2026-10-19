@@ -5,7 +5,7 @@
 #include "../../detail/AttributeKernelSupport.hpp"
 #include "../../../trees/MorphologicalTree.hpp"
 #include "../../../trees/ValuedMorphologicalTreeView.hpp"
-#include "../../../trees/detail/TreeTraversalDetail.hpp"
+#include "../../../trees/detail/TreeKernelAccess.hpp"
 #include "../../../utils/Contract.hpp"
 
 #include <concepts>
@@ -128,7 +128,7 @@ inline void materializeBitquadAttributes(const AttributeComputeContext<Real>& co
     const int widthAverageOffset = request.widthAverage ? offsetOf(BitquadWidthAverage) : 0;
     const auto outputIndex = [&](NodeId node, int offset) { return static_cast<std::size_t>(node * stride + offset); };
 
-    ::mmcfilters::detail::kernel::traversePostOrder(
+    ::mmcfilters::detail::TreeKernelAccess::traversePostOrder(
         context.tree, context.tree.root(), [](NodeId) {}, [](NodeId, NodeId) {},
         [&](NodeId node) {
             const BitquadScalarCounters counters =

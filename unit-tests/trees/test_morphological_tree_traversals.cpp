@@ -12,7 +12,7 @@ int main() {
         const std::vector<NodeId> parents{0, 0, 0, 0, 1, 1, 2, 2, 3, 3};
         const std::vector<NodeId> smallestNodes{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
         const std::vector<int> altitudes(10, 0);
-        auto valued = MorphologicalTreeFactory::createFromNativeTopology(
+        auto valued = makeValuedHierarchy(
             std::span<const NodeId>(parents), std::span<const NodeId>(smallestNodes), std::span<const int>(altitudes), 0,
             MorphologicalTreeSemantics{});
         const auto& tree = valued.topology();

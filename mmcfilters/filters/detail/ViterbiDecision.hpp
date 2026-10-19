@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../../trees/MorphologicalTree.hpp"
-#include "../../trees/detail/CommittedTreeAccess.hpp"
+#include "../../trees/detail/TreeKernelAccess.hpp"
 #include "../../utils/Common.hpp"
 #include "../../utils/Contract.hpp"
 
@@ -157,7 +157,7 @@ inline std::vector<NodeId> collectTopDownOrder(const MorphologicalTree& tree) {
         stack.pop_back();
         order.push_back(nodeId);
 
-        for (NodeId childNodeId : CommittedTreeAccess::children(tree, nodeId)) {
+        for (NodeId childNodeId : TreeKernelAccess::children(tree, nodeId)) {
             stack.push_back(childNodeId);
         }
     }
@@ -238,7 +238,7 @@ template <std::floating_point Real>
         Real preserve = costs.preserve[index];
         Real remove = costs.remove[index];
 
-        for (NodeId childNodeId : CommittedTreeAccess::children(tree, nodeId)) {
+        for (NodeId childNodeId : TreeKernelAccess::children(tree, nodeId)) {
             const auto childIndex = static_cast<std::size_t>(childNodeId);
             const bool preserveChild = viterbi_decision_detail::choosePreserve(preserveCost[childIndex], removeCost[childIndex], options);
             childPreservedWhenParentPreserved[childIndex] = static_cast<std::uint8_t>(preserveChild);
@@ -258,7 +258,7 @@ template <std::floating_point Real>
         stack.pop_back();
         keep[static_cast<std::size_t>(nodeId)] = preserve;
 
-        for (NodeId childNodeId : CommittedTreeAccess::children(tree, nodeId)) {
+        for (NodeId childNodeId : TreeKernelAccess::children(tree, nodeId)) {
             const auto childIndex = static_cast<std::size_t>(childNodeId);
             const bool preserveChild = preserve && (childPreservedWhenParentPreserved[childIndex] != 0);
             stack.emplace_back(childNodeId, preserveChild);

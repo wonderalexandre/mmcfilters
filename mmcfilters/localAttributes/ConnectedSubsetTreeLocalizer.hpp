@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../trees/MorphologicalTree.hpp"
-#include "../trees/detail/CommittedTreeAccess.hpp"
+#include "../trees/detail/TreeKernelAccess.hpp"
 #include "../utils/Common.hpp"
 
 #include <cstddef>
@@ -28,7 +28,7 @@ namespace detail::kernel {
  * single primitive covers equal, comparable, and cross-branch smallest-node pairs.
  */
 inline NodeId connectedSubsetJoin(const MorphologicalTree& tree, NodeId lhsSmallestNode, NodeId rhsSmallestNode) {
-    return ::mmcfilters::detail::CommittedTreeAccess::lowestCommonAncestor(tree, lhsSmallestNode, rhsSmallestNode);
+    return ::mmcfilters::detail::TreeKernelAccess::lowestCommonAncestor(tree, lhsSmallestNode, rhsSmallestNode);
 }
 
 /** @brief Compatibility spelling for the anchored-entry join of two smallest nodes. */
@@ -38,14 +38,14 @@ inline NodeId anchoredEntryFromSmallestNodes(const MorphologicalTree& tree, Node
 
 /** @brief Locates an absolute sample on the branch of its anchor. */
 inline NodeId anchoredEntry(const MorphologicalTree& tree, PixelId anchorPixel, PixelId samplePixel) {
-    const NodeId anchorSmallestNode = ::mmcfilters::detail::CommittedTreeAccess::smallestNodeMap(tree, anchorPixel);
-    const NodeId sampleSmallestNode = ::mmcfilters::detail::CommittedTreeAccess::smallestNodeMap(tree, samplePixel);
+    const NodeId anchorSmallestNode = ::mmcfilters::detail::TreeKernelAccess::smallestNodeMap(tree, anchorPixel);
+    const NodeId sampleSmallestNode = ::mmcfilters::detail::TreeKernelAccess::smallestNodeMap(tree, samplePixel);
     return connectedSubsetJoin(tree, anchorSmallestNode, sampleSmallestNode);
 }
 
 /** @brief Locates a translated sample, returning `InvalidNode` outside the grid. */
 inline NodeId anchoredEntry(const MorphologicalTree& tree, PixelId anchorPixel, WindowOffset offset) {
-    const GridDomain2D& domain = ::mmcfilters::detail::CommittedTreeAccess::gridDomain2D(tree);
+    const GridDomain2D& domain = ::mmcfilters::detail::TreeKernelAccess::gridDomain2D(tree);
     const int anchorRow = anchorPixel / domain.columns;
     const int anchorColumn = anchorPixel % domain.columns;
     const int sampleRow = anchorRow + offset.rowOffset;

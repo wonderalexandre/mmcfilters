@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../mmcfilters/trees/TreeOfShapesProducer.hpp"
+#include "../mmcfilters/trees/TreeOfShapesBuilder.hpp"
 #include "../mmcfilters/trees/ValuedMorphologicalTree.hpp"
 
 #include <cstdint>

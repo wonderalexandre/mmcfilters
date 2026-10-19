@@ -109,7 +109,7 @@ struct Measurement {
         return MorphologicalTreeFactory::createMinTree(image, adjacency8c);
     case Algorithm::ExtremumResidualTree8c:
         return MorphologicalTreeFactory::createExtremumResidualTreeByCTs(
-            image, adjacency8c, sdrt::ExtremumResidualTreeOptions{});
+            image, adjacency8c);
     }
     throw std::invalid_argument("unsupported benchmark algorithm");
 }

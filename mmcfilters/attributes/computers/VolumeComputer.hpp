@@ -3,8 +3,7 @@
 #include "AttributeComputerDomain.hpp"
 #include "AttributeComputerFamily.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
-#include "../../trees/detail/TreeTraversalDetail.hpp"
-#include "../../trees/detail/CommittedTreeAccess.hpp"
+#include "../../trees/detail/TreeKernelAccess.hpp"
 #include "../../trees/TreeAltitudeAlgorithms.hpp"
 #include "../../utils/Altitude.hpp"
 #include "../../utils/Contract.hpp"
@@ -108,14 +107,14 @@ void computeVolume(const AltitudeAttributeComputeContext<Real, T>& context, cons
     const int areaOffset = areaDependency != nullptr ? areaDependency->attrNames->indexMap.find(Area)->second : 0;
     auto indexOfArea = [&](NodeId node) { return static_cast<std::size_t>(node * areaStride + areaOffset); };
 
-    ::mmcfilters::detail::kernel::traversePostOrder(
+    ::mmcfilters::detail::TreeKernelAccess::traversePostOrder(
         context.tree, context.tree.root(),
         [&](NodeId nodeId) {
             const NodeId node = detail::volumeSlotOf(context.tree, nodeId);
             const T nodeAltitude = context.altitude[static_cast<std::size_t>(nodeId)];
             if (request.volume)
                 context.buffer[indexOfVolume(node)] =
-                    static_cast<Real>(::mmcfilters::detail::CommittedTreeAccess::properPartCardinality(context.tree, nodeId)) * static_cast<Real>(nodeAltitude);
+                    static_cast<Real>(::mmcfilters::detail::TreeKernelAccess::properPartCardinality(context.tree, nodeId)) * static_cast<Real>(nodeAltitude);
             if (request.relative)
                 context.buffer[indexOfRelative(node)] = Real{0};
         },

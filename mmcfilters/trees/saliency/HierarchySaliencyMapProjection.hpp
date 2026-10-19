@@ -2,7 +2,7 @@
 
 #include "HierarchySaliencyMap.hpp"
 #include "../../utils/Image.hpp"
-#include "../detail/MorphologicalTreeConstructionContextQueries.hpp"
+#include "../MorphologicalTree.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -435,7 +435,7 @@ class HierarchySaliencyMapProjection {
      * @return The projected stored-adjacency transition edges onto hierarchy nodes.
      */
     [[nodiscard]] static NodeContourEdgeMap nodeContourEdges(const MorphologicalTree& tree) {
-        const RegularGridAdjacency2D* adjacency = ::mmcfilters::detail::constructionAdjacency(tree);
+        const RegularGridAdjacency2D* adjacency = tree.constructionAdjacency();
         if (adjacency == nullptr) {
             throw std::invalid_argument(
                 "HierarchySaliencyMapProjection::nodeContourEdges requires an attached adjacency relation; pass an explicit adjacency relation instead.");

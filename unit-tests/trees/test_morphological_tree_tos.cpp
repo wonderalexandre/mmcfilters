@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <memory>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 using namespace mmcfilters;
@@ -29,9 +30,87 @@ ImageUInt8Ptr makeImageFromVector(int rows, int columns, const std::vector<uint8
     return image;
 }
 
+template <class Altitude> void requireNativeConventionTransfer() {
+    constexpr auto encoding = ToSAltitudeEncodingFor<Altitude>::declaration;
+    constexpr int scale = encoding == TopographicAltitudeEncoding::UInt8 ? 1 : TopographicInterpolationScale;
+    for (const auto pairing : {ComplementaryPairing::Min4Max8, ComplementaryPairing::Min8Max4}) {
+        for (const auto extension : {TopographicDomainExtension::None, TopographicDomainExtension::ExteriorRing}) {
+            const PixelId infinityPixel = extension == TopographicDomainExtension::None ? 8 : 24;
+            for (const bool explicitAdjacencies : {false, true}) {
+                auto hierarchy = [&] {
+                    auto source = makeImage(2, 2, {0, 1, 2, 3});
+                    TopographicConvention convention{CanonicalComplementaryGridImmersion{pairing}, extension, infinityPixel, encoding};
+                    if (explicitAdjacencies) {
+                        const bool min4Max8 = pairing == ComplementaryPairing::Min4Max8;
+                        convention.immersion = ComplementaryGridImmersion{ComplementaryAdjacencies{
+                            RegularGridAdjacency2D(2, 2, min4Max8 ? 1.0 : 1.5), RegularGridAdjacency2D(2, 2, min4Max8 ? 1.5 : 1.0)}};
+                    }
+                    TreeOfShapesBuilder producer(std::move(convention));
+                    convention = selfDualSpanConvention();
+                    auto result = std::move(producer).build<Altitude>(source);
+                    std::fill_n(source->rawData(), source->getSize(), std::uint8_t{255});
+                    return result;
+                }();
+                const auto storage = std::move(hierarchy);
+                detail::NativeHierarchyValidation::validateComplete(NativeHierarchyView<Altitude>{
+                    storage.parent, storage.smallestNodeMap, storage.nodeAltitudes, storage.root, storage.gridDomain2D, storage.semantics});
+                require(storage.semantics.kind == MorphologicalTreeKind::TreeOfShapes, "native ToS retains its kind");
+                require(storage.semantics.nodeAltitudeOrder == NodeAltitudeOrder::Unconstrained, "native ToS retains unconstrained altitudes");
+                require(storage.gridDomain2D.has_value(), "native ToS retains its source domain");
+                requireEqual(storage.gridDomain2D->rows, 2, "native ToS source rows");
+                requireEqual(storage.gridDomain2D->columns, 2, "native ToS source columns");
+                const auto* convention = std::get_if<TopographicConvention>(&storage.semantics.constructionContext);
+                require(convention != nullptr, "native ToS owns its convention after producer destruction");
+                require(convention->domainExtension == extension, "native ToS retains its domain extension");
+                require(convention->altitudeEncoding == encoding, "native ToS retains its altitude encoding");
+                requireEqual(convention->infinityPixel, infinityPixel, "native ToS retains its infinity pixel");
+                const auto* immersion = std::get_if<ComplementaryGridImmersion>(&convention->immersion);
+                require(immersion != nullptr, "direct producer resolves canonical complementary adjacencies");
+                const auto& adjacencies = immersion->complementaryAdjacencies;
+                const bool min4Max8 = pairing == ComplementaryPairing::Min4Max8;
+                require(min4Max8 ? adjacencies.minAdjacency.is4connectivity() && adjacencies.maxAdjacency.is8connectivity()
+                                : adjacencies.minAdjacency.is8connectivity() && adjacencies.maxAdjacency.is4connectivity(),
+                        "native ToS retains the complementary pairing after convention transfer");
+                for (PixelId pixel = 0; pixel < 4; ++pixel) {
+                    requireEqual(storage.nodeAltitudes[storage.smallestNodeMap[pixel]], scale * pixel,
+                                 "native ToS owns its altitudes after source mutation and destruction");
+                }
+            }
+        }
+    }
+}
+
 } // namespace
 
 int main() {
+    requireNativeConventionTransfer<std::uint8_t>();
+    requireNativeConventionTransfer<ToSGrayLevel>();
+
+    {
+        auto hierarchy = [] {
+            auto source = makeImage(1, 2, {0, 1});
+            TreeOfShapesBuilder producer(selfDualSpanConvention(TopographicDomainExtension::ExteriorRing, PixelId{14}));
+            return std::move(producer).build<ToSGrayLevel>(source);
+        }();
+        const auto storage = std::move(hierarchy);
+        detail::NativeHierarchyValidation::validateComplete(NativeHierarchyView<ToSGrayLevel>{
+            storage.parent, storage.smallestNodeMap, storage.nodeAltitudes, storage.root, storage.gridDomain2D, storage.semantics});
+        const auto* convention = std::get_if<TopographicConvention>(&storage.semantics.constructionContext);
+        require(convention != nullptr && std::holds_alternative<SelfDualSpanImmersion>(convention->immersion),
+                "native ToS owns its self-dual convention after producer destruction");
+        require(convention->domainExtension == TopographicDomainExtension::ExteriorRing, "native self-dual ToS retains its exterior ring");
+        require(convention->altitudeEncoding == TopographicAltitudeEncoding::ExactDoubled, "native self-dual ToS retains exact doubled units");
+        requireEqual(convention->infinityPixel, PixelId{14}, "native self-dual ToS retains its custom infinity pixel");
+        requireEqual(storage.parent.size(), std::size_t{3}, "native self-dual ToS retains a branching virtual root");
+        requireEqual(storage.nodeAltitudes[storage.root], ToSGrayLevel{1}, "native self-dual ToS preserves the half-level root altitude");
+        requireVectorEqual(storage.parent, std::vector<NodeId>{0, 0, 0}, "native self-dual ToS preserves both children of the virtual root");
+        for (PixelId pixel = 0; pixel < 2; ++pixel) {
+            const NodeId owner = storage.smallestNodeMap[pixel];
+            require(owner != storage.root, "native self-dual ToS preserves the empty direct proper part of the root");
+            requireEqual(storage.nodeAltitudes[owner], 2 * pixel, "native self-dual ToS reconstructs exact doubled source levels");
+        }
+    }
+
     auto image = makeImage(3, 3,
                            {
                                1,
@@ -178,11 +257,12 @@ int main() {
             requireVectorEqual(collectImageValues(unpadded.reconstructFromNodeAltitudes()), std::vector<ToSGrayLevel>{0, 4, 2, 4, 2, 0},
                                "exact unpadded ToS reconstruction");
 
-            TreeOfShapesProducer producer(convention);
-            const TreeOfShapesBuildResult<ToSGrayLevel> result = producer.build<ToSGrayLevel>(unpaddedImage);
+            TreeOfShapesBuilder producer(convention);
+            const auto result = std::move(producer).build<ToSGrayLevel>(unpaddedImage);
             requireEqual(result.smallestNodeMap.size(), std::size_t{6}, "unpadded producer publishes only source-domain smallest nodes");
-            requireEqual(result.numRows, 2, "unpadded producer source rows");
-            requireEqual(result.numColumns, 3, "unpadded producer source columns");
+            require(result.gridDomain2D.has_value(), "unpadded producer retains its source domain");
+            requireEqual(result.gridDomain2D->rows, 2, "unpadded producer source rows");
+            requireEqual(result.gridDomain2D->columns, 3, "unpadded producer source columns");
         }
     }
 

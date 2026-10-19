@@ -1,6 +1,6 @@
 #include "support/TestSupport.hpp"
 
-#include "mmcfilters/trees/detail/TreeAttributeSamplingNeighborhood.hpp"
+#include "mmcfilters/trees/detail/TreeNeighborhood.hpp"
 #include "mmcfilters/attributes/computers/GrayLevelStatsComputer.hpp"
 #include "mmcfilters/attributes/computers/VolumeComputer.hpp"
 #include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
@@ -533,12 +533,15 @@ void checkUnsignedResidueDoesNotUnderflow(const ValuedMorphologicalTree<std::uin
     const NodeId parentNodeId = tree.parent(sampleNodeId);
     require(parentNodeId != InvalidNode && parentNodeId != sampleNodeId, "unsigned residue sample must be a non-root node");
 
-    std::vector<std::uint32_t> altitude(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0u);
-    altitude[static_cast<std::size_t>(parentNodeId)] = 10u;
-    altitude[static_cast<std::size_t>(sampleNodeId)] = 3u;
+    auto altitude = makeEquivalentAltitude<std::uint32_t>(valuedTree);
+    for (auto& value : altitude) {
+        value *= 7u;
+    }
 
     const std::span<const std::uint32_t> view(altitude);
-    const AltitudeDifference<std::uint32_t> expectedResidue = -7;
+    const AltitudeDifference<std::uint32_t> expectedResidue = static_cast<std::int64_t>(altitude[static_cast<std::size_t>(sampleNodeId)]) -
+                                                           static_cast<std::int64_t>(altitude[static_cast<std::size_t>(parentNodeId)]);
+    require(expectedResidue < 0, "min-tree unsigned altitude fixture must produce a negative residue");
     requireEqual(TreeAltitudeAlgorithms::nodeResidue(tree, view, sampleNodeId), expectedResidue,
                  "templated nodeResidue must not underflow unsigned altitude subtraction");
 
@@ -600,41 +603,14 @@ template <class T> void checkGenericAltitudeSampling(const ValuedMorphologicalTr
     const auto& tree = valuedTree.topology();
     const std::vector<T> altitude = makeGenericAltitude<T>(valuedTree);
     const std::span<const T> view(altitude);
-    const auto baseline = detail::computeNodeAttributeSamplingNeighborhood(
-        tree, std::span<const std::uint8_t>(valuedTree.nodeAltitudes()), static_cast<AltitudeDifference<std::uint8_t>>(2),
-        NodeAttributeSamplingPolicy::LargestSupportDescendant);
-    const auto fromAltitudeSpan = detail::computeNodeAttributeSamplingNeighborhood(
-        tree, view, static_cast<AltitudeDifference<T>>(2), NodeAttributeSamplingPolicy::LargestSupportDescendant);
+    detail::TreeNeighborhood baseline(tree);
+    baseline.computeByAltitude(valuedTree.nodeAltitudeSpan(), AltitudeDifference<std::uint8_t>{2});
+    detail::TreeNeighborhood fromAltitudeSpan(tree);
+    fromAltitudeSpan.computeByAltitude(view, AltitudeDifference<T>{2});
 
     requireVectorEqual(fromAltitudeSpan.ancestors, baseline.ancestors, label + " generic sampled ancestors");
-    requireVectorEqual(fromAltitudeSpan.representativeDescendants, baseline.representativeDescendants,
+    requireVectorEqual(fromAltitudeSpan.descendants, baseline.descendants,
                        label + " generic representative descendants");
-
-    NodeId sampleNodeId = InvalidNode;
-    for (NodeId nodeId : tree.aliveNodeIds()) {
-        if (baseline.ancestors[static_cast<std::size_t>(nodeId)] != InvalidNode) {
-            sampleNodeId = nodeId;
-            break;
-        }
-    }
-    require(sampleNodeId != InvalidNode, label + " generic sampling fixture needs one ancestor sample");
-    requireEqual(detail::findAncestorByAltitudeDistance(tree, view, sampleNodeId, static_cast<AltitudeDifference<T>>(2)),
-                 baseline.ancestors[static_cast<std::size_t>(sampleNodeId)], label + " generic findAncestorByAltitudeDistance");
-
-    if constexpr (contract::validationsEnabled) {
-        requireThrows<std::runtime_error>(
-            [&]() {
-                const std::vector<T> wrongSize(static_cast<std::size_t>(tree.numInternalNodeSlots() - 1), T{});
-                static_cast<void>(detail::computeNodeAttributeSamplingNeighborhood(
-                    tree, std::span<const T>(wrongSize), static_cast<AltitudeDifference<T>>(2),
-                    NodeAttributeSamplingPolicy::LargestSupportDescendant));
-            },
-            label + " generic sampling must reject wrong altitude size");
-
-        requireThrows<std::invalid_argument>(
-            [&]() { static_cast<void>(detail::findAncestorByAltitudeDistance(tree, view, InvalidNode, static_cast<AltitudeDifference<T>>(2))); },
-            label + " generic sampling must reject invalid node ids");
-    }
 }
 
 template <class T> void checkTypedOwnerSampledAttributeApi(const std::string& label) {
@@ -665,8 +641,8 @@ template <class T> void checkTypedOwnerSampledAttributeApi(const std::string& la
     auto typedMeanGrayLevelSamples = AttributeComputation::computeSampledNodeAttribute(
         typed, MeanGrayLevel, altitudeStep, 1, NodeAttributeSamplingPolicy::LargestSupportDescendant, MissingNodeAttributeSamplePolicy::NotANumber);
     bool foundAncestorSample = false;
-    const auto samplingNeighborhood = detail::computeNodeAttributeSamplingNeighborhood(
-        typed.topology(), typed.nodeAltitudeSpan(), altitudeStep, NodeAttributeSamplingPolicy::LargestSupportDescendant);
+    detail::TreeNeighborhood samplingNeighborhood(typed.topology());
+    samplingNeighborhood.computeByAltitude(typed.nodeAltitudeSpan(), altitudeStep);
     const auto& ancestors = samplingNeighborhood.ancestors;
     for (NodeId nodeId : typed.topology().aliveNodeIds()) {
         requireNear(typedMeanGrayLevelSamples.second[typedMeanGrayLevelSamples.first.linearIndex(nodeId, MeanGrayLevel, 0)],
@@ -948,7 +924,7 @@ int main() {
                  "ValuedMorphologicalTree<std::uint8_t>::asView altitude span size");
     checkValuedMorphologicalTreeViewIncrementalAttributePipeline(*valuedTree);
     checkFloatResidueAndMonotonicity(*valuedTree, sampleNodeId);
-    checkUnsignedResidueDoesNotUnderflow(*valuedTree, sampleNodeId);
+    checkUnsignedResidueDoesNotUnderflow(*minValuedTree, findNonRootResidueSample(*minValuedTree));
     checkFloatHigraExport(*valuedTree);
     checkInt32HigraExport(*valuedTree);
     checkGenericAltitudeSampling<std::int32_t>(*valuedTree, "max-tree int32");

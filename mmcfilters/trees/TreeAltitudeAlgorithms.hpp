@@ -4,7 +4,7 @@
 #include "../utils/Contract.hpp"
 #include "../utils/Image.hpp"
 #include "MorphologicalTree.hpp"
-#include "detail/HigraExportLayoutDetail.hpp"
+#include "detail/HigraHierarchyDetail.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -13,6 +13,7 @@
 #include <span>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -71,6 +72,48 @@ template <class Contribution>
  */
 class TreeAltitudeAlgorithms {
   public:
+    /**
+     * @brief Returns the name of a declared node-altitude order.
+     *
+     * @param order Requested hierarchy ordering convention.
+     * @return Order name.
+     */
+    static const char* nodeAltitudeOrderName(NodeAltitudeOrder order) noexcept {
+        switch (order) {
+        case NodeAltitudeOrder::Increasing:
+            return "Increasing";
+        case NodeAltitudeOrder::Decreasing:
+            return "Decreasing";
+        case NodeAltitudeOrder::Unconstrained:
+            return "Unconstrained";
+        }
+        return "UNKNOWN";
+    }
+
+    /**
+     * @brief Tests whether the topology declares a globally monotone altitude order.
+     *
+     * @param tree Tree topology.
+     * @return True for Increasing or Decreasing, and false for Unconstrained.
+     */
+    static bool hasGlobalMonotoneAltitudeOrder(const MorphologicalTree& tree) noexcept { return tree.nodeAltitudeOrder() != NodeAltitudeOrder::Unconstrained; }
+
+    /**
+     * @brief Requires a declared globally monotone altitude order.
+     *
+     * This constant-time requirement reads metadata without scanning altitude values.
+     * Use `validateMonotoneNodeAltitudes` to check an explicit altitude buffer.
+     *
+     * @param tree Tree topology.
+     * @param context Operation name used in diagnostics.
+     */
+    static void requireGlobalMonotoneAltitudeOrder(const MorphologicalTree& tree, const char* context) {
+        if (!hasGlobalMonotoneAltitudeOrder(tree)) {
+            throw std::invalid_argument(std::string(context) + " requires a globally monotone altitude order; got " + nodeAltitudeOrderName(tree.nodeAltitudeOrder()) +
+                                        ".");
+        }
+    }
+
     /**
      * @brief Validates that an altitude buffer covers the dense internal-node domain.
      *

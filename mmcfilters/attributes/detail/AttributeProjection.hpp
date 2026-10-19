@@ -4,8 +4,8 @@
 #include "../AttributeNames.hpp"
 #include "../AttributeResultTypes.hpp"
 #include "../../trees/MorphologicalTree.hpp"
-#include "../../trees/detail/CommittedTreeAccess.hpp"
-#include "../../trees/detail/HigraExportLayoutDetail.hpp"
+#include "../../trees/detail/TreeKernelAccess.hpp"
+#include "../../trees/detail/HigraHierarchyDetail.hpp"
 #include "../../utils/Altitude.hpp"
 #include "../../utils/Common.hpp"
 #include "../../utils/Contract.hpp"
@@ -272,7 +272,7 @@ inline void copyScalarInternalRowsToPreservedHigra(const MorphologicalTree& tree
                                                    std::span<Real> projected, int outputSize) {
     const int numColumns = attrNames.NUM_ATTRIBUTES;
     for (NodeId nodeId : tree.aliveNodeIds()) {
-        const NodeId outputNodeId = CommittedTreeAccess::higraNodeId(tree, nodeId);
+        const NodeId outputNodeId = TreeKernelAccess::higraNodeId(tree, nodeId);
         if (outputNodeId == InvalidNode || outputNodeId < 0 || outputNodeId >= outputSize) {
             throw std::runtime_error("Cannot project attributes to Higra node-id space: a live node has no valid Higra id.");
         }
@@ -343,7 +343,7 @@ template <std::floating_point Real>
 inline void copySampledInternalRowsToPreservedHigra(const MorphologicalTree& tree, const NodeAttributeSampleLayout& sampleLayout,
                                                     std::span<const Real> nodeValues, std::span<Real> projected, int outputSize) {
     for (NodeId nodeId : tree.aliveNodeIds()) {
-        const NodeId outputNodeId = CommittedTreeAccess::higraNodeId(tree, nodeId);
+        const NodeId outputNodeId = TreeKernelAccess::higraNodeId(tree, nodeId);
         if (outputNodeId == InvalidNode || outputNodeId < 0 || outputNodeId >= outputSize) {
             throw std::runtime_error("Cannot project sampled attributes to Higra node-id space: a live node has no valid Higra id.");
         }
@@ -558,7 +558,7 @@ inline ImagePtr<Real> mapNodeAttributeToImage(const MorphologicalTree& tree, con
     ImagePtr<Real> imgPtr = Image<Real>::create(tree.numRows(), tree.numColumns());
     Real* img = imgPtr->rawData();
     for (int p = 0; p < imgPtr->getSize(); ++p) {
-        const NodeId nodeId = CommittedTreeAccess::smallestNodeMap(tree, p);
+        const NodeId nodeId = TreeKernelAccess::smallestNodeMap(tree, p);
         img[p] = nodeValues[attrNames.linearIndex(nodeId, attribute)];
     }
     return imgPtr;

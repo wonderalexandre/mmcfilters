@@ -3,7 +3,7 @@
 #include "mmcfilters/filters/DepthStableRegionComputer.hpp"
 #include "mmcfilters/filters/MSERComputer.hpp"
 #include "mmcfilters/filters/NodePreservationStability.hpp"
-#include "mmcfilters/trees/detail/TreeStabilityNeighborhood.hpp"
+#include "mmcfilters/trees/detail/TreeNeighborhood.hpp"
 
 #include <cstdint>
 #include <cmath>
@@ -38,7 +38,7 @@ ValuedMorphologicalTree<std::uint8_t> makeSpatialTieFixture(bool smallestSpatial
     const std::vector<NodeId> smallestNodeMap = smallestSpatialSupportUsesLowerNodeId ? std::vector<NodeId>{1, 1, 2, 2}
                                                                                      : std::vector<NodeId>{2, 2, 1, 1};
     const std::vector<std::uint8_t> altitude{0, 1, 1};
-    return MorphologicalTreeFactory::createFromNativeTopology(
+    return makeValuedHierarchy(
         std::span<const NodeId>(parent), std::span<const NodeId>(smallestNodeMap), std::span<const std::uint8_t>(altitude), 0, 1, 4,
         MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Increasing, NoConstructionContext{}});
 }
@@ -49,15 +49,24 @@ void verifyStableTiePolicies() {
         const MorphologicalTree& tree = valuedTree.topology();
         const NodeId expectedRepresentative = tree.smallestNode(PixelId{0});
 
-        const detail::StabilityNeighborhood depthNeighborhood = detail::computeDepthStabilityNeighborhood(tree, 1);
-        requireEqual(depthNeighborhood.descendants[static_cast<std::size_t>(tree.root())], expectedRepresentative,
-                     "depth-stability equal-support tie must use the smallest row-major support pixel");
+        {
+            detail::TreeNeighborhood neighborhood(tree);
+            neighborhood.computeByDepth(1);
+            requireEqual(neighborhood.descendants[static_cast<std::size_t>(tree.root())], expectedRepresentative,
+                         "depth-stability equal-support tie must use the smallest row-major support pixel");
 
-        const detail::StabilityNeighborhood altitudeNeighborhood =
-            detail::computeAltitudeStabilityNeighborhood(tree, std::span<const std::uint8_t>(valuedTree.nodeAltitudes()),
-                                                          AltitudeDifference<std::uint8_t>{1});
-        requireEqual(altitudeNeighborhood.descendants[static_cast<std::size_t>(tree.root())], expectedRepresentative,
-                     "altitude-stability equal-support tie must use the smallest row-major support pixel");
+            neighborhood.computeByAltitude(valuedTree.nodeAltitudeSpan(), AltitudeDifference<std::uint8_t>{1});
+            requireEqual(neighborhood.descendants[static_cast<std::size_t>(tree.root())], expectedRepresentative,
+                         "altitude-stability equal-support tie must use the smallest row-major support pixel");
+
+            const auto* ancestorBuffer = neighborhood.ancestors.data();
+            const auto* descendantBuffer = neighborhood.descendants.data();
+            neighborhood.computeByAltitude(valuedTree.nodeAltitudeSpan(), AltitudeDifference<std::uint8_t>{2});
+            requireVectorEqual(neighborhood.ancestors, {InvalidNode, InvalidNode, InvalidNode}, "reused altitude ancestors must discard old context");
+            requireVectorEqual(neighborhood.descendants, {InvalidNode, InvalidNode, InvalidNode}, "reused altitude descendants must discard old context");
+            require(neighborhood.ancestors.data() == ancestorBuffer && neighborhood.descendants.data() == descendantBuffer,
+                    "repeated altitude computations must reuse both result allocations");
+        }
 
         const NodeId otherRepresentative = expectedRepresentative == NodeId{1} ? NodeId{2} : NodeId{1};
         auto editor = valuedTree.edit();
@@ -65,9 +74,13 @@ void verifyStableTiePolicies() {
         const TreeValidationResult commitResult = editor.validateAndCommit();
         require(commitResult.ok, "support-metadata cache invalidation fixture must remain a valid committed tree");
 
-        const detail::StabilityNeighborhood afterProperPartEdit = detail::computeDepthStabilityNeighborhood(tree, 1);
+        detail::TreeNeighborhood afterProperPartEdit(tree);
+        afterProperPartEdit.computeByDepth(1);
         requireEqual(afterProperPartEdit.descendants[static_cast<std::size_t>(tree.root())], otherRepresentative,
                      "stability descendant selection must refresh cached support metadata after a proper-part edit");
+        afterProperPartEdit.computeByAltitude(valuedTree.nodeAltitudeSpan(), AltitudeDifference<std::uint8_t>{1});
+        requireEqual(afterProperPartEdit.descendants[static_cast<std::size_t>(tree.root())], otherRepresentative,
+                     "altitude stability must use refreshed support metadata after a proper-part edit");
     }
 
     std::vector<float> variation(6, std::numeric_limits<float>::infinity());
@@ -107,6 +120,17 @@ void verifyClassicalMserContracts() {
         requireThrows<std::logic_error>([&]() { static_cast<void>(mser.ancestorInStabilityWindow(0)); }, "MSER ancestor requires computation");
         requireThrows<std::logic_error>([&]() { static_cast<void>(mser.descendantInStabilityWindow(0)); }, "MSER descendant requires computation");
         requireThrows<std::invalid_argument>([&]() { static_cast<void>(mser.computeMSER(0)); }, "MSERComputer must reject a zero altitude-window radius");
+
+        auto floatingImage = Image<float>::create(1, 2);
+        (*floatingImage)[0] = 0.0f;
+        (*floatingImage)[1] = 1.0f;
+        const auto floatingTree = MorphologicalTreeFactory::createMaxTree(floatingImage, 1.0);
+        MSERComputer<float> floatingMser(floatingTree);
+        for (const auto radius : {AltitudeDifference<float>{-1}, std::numeric_limits<AltitudeDifference<float>>::quiet_NaN(),
+                                  std::numeric_limits<AltitudeDifference<float>>::infinity()}) {
+            requireThrows<std::invalid_argument>([&]() { static_cast<void>(floatingMser.computeMSER(radius)); },
+                                                 "MSERComputer must validate floating-point radii before neighborhood computation");
+        }
     }
 
     const std::vector<uint8_t> flags = mser.computeMSER(1);
@@ -167,21 +191,19 @@ void verifyDepthStabilityContracts() {
     const MorphologicalTree& tree = tos.topology();
 
     requireThrows<std::invalid_argument>([&]() { MSERComputer<std::uint8_t> invalid(tos); }, "MSERComputer must reject unconstrained altitude order");
-    if constexpr (contract::validationsEnabled) {
-        requireThrows<std::invalid_argument>([&]() { static_cast<void>(detail::computeDepthStabilityNeighborhood(tree, 0)); },
-                                             "depth stability must reject a zero depth-window radius");
-    }
+    detail::TreeNeighborhood neighborhood(tree);
+    neighborhood.computeByDepth(1);
+    requireVectorEqual(neighborhood.ancestors, {2, 2, 3, InvalidNode}, "ToS depth-1 ancestors");
+    requireVectorEqual(neighborhood.descendants, {InvalidNode, InvalidNode, 1, 2}, "ToS depth-1 descendants");
 
-    const detail::StabilityNeighborhood depth1 = detail::computeDepthStabilityNeighborhood(tree, 1);
-    requireVectorEqual(depth1.ancestors, {2, 2, 3, InvalidNode}, "ToS depth-1 ancestors");
-    requireVectorEqual(depth1.descendants, {InvalidNode, InvalidNode, 1, 2}, "ToS depth-1 descendants");
-
-    const detail::StabilityNeighborhood depth2 = detail::computeDepthStabilityNeighborhood(tree, 2);
-    requireVectorEqual(depth2.ancestors, {3, 3, InvalidNode, InvalidNode}, "ToS depth-2 ancestors");
-    requireVectorEqual(depth2.descendants, {InvalidNode, InvalidNode, InvalidNode, 1}, "ToS depth-2 descendants");
+    neighborhood.computeByDepth(2);
+    requireVectorEqual(neighborhood.ancestors, {3, 3, InvalidNode, InvalidNode}, "ToS depth-2 ancestors");
+    requireVectorEqual(neighborhood.descendants, {InvalidNode, InvalidNode, InvalidNode, 1}, "ToS depth-2 descendants");
 
     DepthStableRegionComputer<float> depthStability(tree);
     if constexpr (contract::validationsEnabled) {
+        requireThrows<std::invalid_argument>([&]() { static_cast<void>(depthStability.computeByDepth(0)); },
+                                             "depth stability must reject a zero depth-window radius");
         requireThrows<std::logic_error>([&]() { static_cast<void>(depthStability.getVariation(0)); }, "depth variation requires computation");
         requireThrows<std::logic_error>([&]() { static_cast<void>(depthStability.getVariations()); }, "depth variation buffer requires computation");
         requireThrows<std::logic_error>([&]() { static_cast<void>(depthStability.numNodes()); }, "depth selected count requires computation");

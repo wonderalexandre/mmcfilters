@@ -1,6 +1,7 @@
 #pragma once
 
 #include "MorphologicalTree.hpp"
+#include "TreeAltitudeAlgorithms.hpp"
 #include "../utils/Altitude.hpp"
 #include "../utils/Contract.hpp"
 
@@ -10,6 +11,8 @@
 
 namespace mmcfilters {
 
+template <AltitudeValue T> class ValuedMorphologicalTree;
+
 /**
  * @brief Non-owning view pairing a topology with an external altitude span.
  *
@@ -17,11 +20,16 @@ namespace mmcfilters {
  * model used by generic-altitude kernels: topology storage stays elsewhere,
  * and node altitudes are borrowed as a contiguous read-only span indexed by the dense
  * internal `NodeId` domain. The caller must keep both the topology and the
- * altitude storage alive for the lifetime of the view. The view intentionally
+ * altitude storage alive and unchanged for the lifetime of the view. Public
+ * constructors validate external altitudes against the declared topology order.
+ * Views returned by `ValuedMorphologicalTree::asView()` reuse the guarantees
+ * maintained by the owner without scanning the altitude buffer. The view intentionally
  * carries no ownership or canonical-tree identity; operations that need owned
  * valued state must receive a `ValuedMorphologicalTree<T>` instead.
  */
 template <AltitudeValue T> class ValuedMorphologicalTreeView {
+    friend class ValuedMorphologicalTree<T>;
+
   private:
     /** @brief Topology. */
     const MorphologicalTree* topology_ = nullptr;
@@ -38,6 +46,13 @@ template <AltitudeValue T> class ValuedMorphologicalTreeView {
                                     throw std::runtime_error("ValuedMorphologicalTreeView altitude size must match the dense internal-node domain."));
     }
 
+    /**
+     * @brief Borrows the established valued state without repeating validation.
+     * @param owner Owner that maintains topology and altitude invariants.
+     */
+    explicit ValuedMorphologicalTreeView(const ValuedMorphologicalTree<T>& owner)
+        : topology_(&owner.topology()), nodeAltitudes_(owner.nodeAltitudeSpan()), topologyMutationVersion_(owner.topology().getMutationVersion()) {}
+
   public:
     /// Altitude scalar type borrowed by this view.
     using AltitudeType = T;
@@ -46,7 +61,8 @@ template <AltitudeValue T> class ValuedMorphologicalTreeView {
      * @brief Builds a view over caller-owned topology and altitude storage.
      *
      * The span must be indexed by the dense internal `NodeId` domain and remain
-     * alive for the full lifetime of the view.
+     * alive and unchanged for the full lifetime of the view. Construction checks
+     * its shape, finite values, and the declared parent-child altitude order.
      *
      * @param topology Tree topology.
      * @param altitude Altitude data indexed by node identifier.
@@ -54,6 +70,8 @@ template <AltitudeValue T> class ValuedMorphologicalTreeView {
     explicit ValuedMorphologicalTreeView(const MorphologicalTree& topology, NodeAltitudeSpan<T> altitude)
         : topology_(&topology), nodeAltitudes_(altitude), topologyMutationVersion_(topology.getMutationVersion()) {
         validateNodeAltitudeBufferShape();
+        TreeAltitudeAlgorithms::validateFiniteAltitudeValues(altitude, "ValuedMorphologicalTreeView");
+        TreeAltitudeAlgorithms::validateMonotoneNodeAltitudes(topology, altitude);
     }
 
     /**
@@ -66,9 +84,7 @@ template <AltitudeValue T> class ValuedMorphologicalTreeView {
      * @param altitude Altitude data indexed by node identifier.
      */
     explicit ValuedMorphologicalTreeView(const MorphologicalTree& topology, const NodeAltitudeBuffer<T>& altitude)
-        : topology_(&topology), nodeAltitudes_(std::span<const T>(altitude)), topologyMutationVersion_(topology.getMutationVersion()) {
-        validateNodeAltitudeBufferShape();
-    }
+        : ValuedMorphologicalTreeView(topology, std::span<const T>(altitude)) {}
 
     /**
      * @brief Rejects temporary altitude buffers that would leave a dangling span.

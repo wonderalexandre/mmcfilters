@@ -48,6 +48,12 @@ Algorithms validate the capabilities they use. A topology/support operation may
 require regular 2D geometry without requiring altitude, construction adjacency,
 or a particular descriptive tree kind.
 
+`MorphologicalTree::constructionAdjacency()` returns the retained shared
+adjacency. `complementaryAdjacencies()` returns the retained minimum/maximum
+adjacencies of a complementary grid immersion. Both methods return pointers to
+const data in the stored construction context, or `nullptr` when the requested
+context is absent.
+
 | Operation | Required capabilities |
 | --- | --- |
 | topology traversal and `AREA` | finite smallest-node mapping |
@@ -121,7 +127,9 @@ binding-specific contract.
 `createExtremumResidualTreeByCTs` constructs the extremum residual tree from
 synchronized max-tree and min-tree states using one symmetric adjacency.
 The `ByCTs` suffix identifies construction through component trees. The
-corresponding builder is `sdrt::ExtremumResidualTreeByCTsBuilder`.
+corresponding builder is `ExtremumResidualTreeByCTsBuilder`. Its `build(image)`
+method constructs both component trees as temporary state and returns an
+independent `NativeHierarchyOwned<T>` with owned adjacency metadata.
 
 The factory publishes `MorphologicalTreeKind::ExtremumResidualTree`, retains a
 `SharedAdjacencyContext`, and uses `NodeAltitudeOrder::Unconstrained`.
@@ -141,23 +149,10 @@ auto residual = MorphologicalTreeFactory::createExtremumResidualTreeByCTs(
     adjacency);
 ```
 
-Use `ExtremumResidualTreeOptions` to configure the spatial order:
-
-```cpp
-#include <mmcfilters/trees/sdrt/ResidualEvolution.hpp>
-
-sdrt::ExtremumResidualTreeOptions extremumOptions;
-extremumOptions.spatialOrder =
-    sdrt::SpatialOrder(std::vector<PixelId>{3, 2, 1, 0});
-auto extremum = MorphologicalTreeFactory::createExtremumResidualTreeByCTs(
-    image,
-    adjacency,
-    extremumOptions);
-
-```
-
-By default, construction uses `RowMajorSpatialOrder`. The self-dual schedule
-orders candidates by `(supportCardinality, spatialMinimum)` and never by polarity.
+Both residual builders use increasing row-major pixel identifiers as the fixed
+spatial order. The self-dual schedule orders candidates by
+`(supportCardinality, spatialMinimum)`. Here, `spatialMinimum` is the smallest
+pixel identifier in the support. Polarity does not affect this order.
 The builder reads each selected support from the proper part of a component-tree
 leaf and follows Algorithm 1 of the paper. Recorded nodes with an undefined
 parent represent the pending supports implicitly; proper-part association lists
@@ -281,15 +276,22 @@ storage:
 
 ```cpp
 const MorphologicalTree& topology = valuedTree.topology();
-std::vector<float> altitude(topology.numInternalNodeSlots(), 0.0f);
+std::vector<float> altitude(valuedTree.nodeAltitudes().begin(),
+                            valuedTree.nodeAltitudes().end());
 
 ValuedMorphologicalTreeView<float> view(topology, altitude);
 auto rootAltitude = view.nodeAltitude(topology.root());
 ```
 
-The caller must keep the topology and altitude storage alive for the lifetime of
-the view. A view captures the topology mutation version and rejects reads after
-the topology changes.
+Public view constructors validate the external buffer shape, finite values, and
+strict parent-child inequalities required by the declared altitude order.
+`Unconstrained` valuations do not require monotonicity. The caller must keep the
+topology and altitude storage alive and unchanged while using the external view.
+A view captures the topology mutation version so consumers can reject stale topology.
+
+`valuedTree.asView()` borrows the owned state through a private construction path
+without scanning the buffer again. The owner maintains its altitude guarantees
+through the altitude setters and the valued-tree editor.
 
 ## Nodes, supports, proper parts, and pixels
 
@@ -384,36 +386,24 @@ node must nevertheless have non-empty node support. Such a tree remains a valid
 use `isTreeOfPartialPartitions()` or `validateTreeOfPartialPartitions()` when
 that stricter specialization is required.
 
-### Native topology import
+### Native hierarchy buffers
 
-Builders that already have node parents and smallest-node mapping can use the
-native representation directly:
+The public hierarchy import entry point is `createFromHigraParent`. Builders and
+internal hierarchy-producing algorithms transfer their native buffers directly
+through internal materialization. There is no public native-buffer import API.
 
-```cpp
-std::vector<NodeId> nodeParent{0, 0, 0};
-std::vector<NodeId> smallestNodeMap{1, 2};
-std::vector<std::uint8_t> altitude{0, 1, 0};
+Both native hierarchy representations are public types in `mmcfilters`:
 
-auto tree = MorphologicalTreeFactory::createFromNativeTopology(
-    std::span<const NodeId>(nodeParent),
-    std::span<const NodeId>(smallestNodeMap),
-    std::span<const std::uint8_t>(altitude),
-    0,
-    MorphologicalTreeSemantics{
-        MorphologicalTreeKind::Generic,
-        NodeAltitudeOrder::Unconstrained,
-        NoAdjacency{}});
-```
+- [`NativeHierarchyView<T>`](../mmcfilters/trees/NativeHierarchyView.hpp) groups
+  borrowed spans for internal conversion and validation. The buffers must remain
+  valid while the view is used. The descriptor is not a public import API.
+- [`NativeHierarchyOwned<T>`](../mmcfilters/trees/NativeHierarchyOwned.hpp) owns
+  the topology and altitude vectors returned by builders. Copies are disabled;
+  moves transfer the buffers and semantic metadata. Materialization consumes
+  these buffers without copying them again.
 
-This overload attaches no coordinate interpretation. Topology/support
-attributes remain available, while reconstruction and geometry-dependent
-attributes reject the missing `GridDomain2D`. An overload with `rows` and
-`columns` attaches a regular 2D domain and requires one smallest-node-map entry
-per grid position.
-
-`NativeHierarchyView<T>` provides the equivalent synchronous C++ import from
-borrowed spans. The factory copies or moves the validated buffers into owning
-tree storage.
+`makeNativeHierarchyOwned` moves existing vectors into the owning representation
+without structural validation. Callers must provide valid hierarchy data.
 
 ## Altitude contract
 
@@ -430,9 +420,12 @@ Accepted altitude types satisfy `AltitudeValue`:
   arithmetic;
 - `bool` is rejected.
 
-Construction and committed edits validate strict parent/child inequalities for
-ordered hierarchies. `NodeAltitudeOrder::Unconstrained` skips only monotonicity validation; buffer
-shape and finite values remain required.
+Builders establish strict parent-child altitude order by construction; internal
+materialization transfers their buffers without repeating validation. Higra imports
+validate external structure and altitudes before materialization.
+Altitude setters and committed edits preserve the declared order, using local
+checks where possible. `NodeAltitudeOrder::Unconstrained` skips only monotonicity
+validation; buffer shape and finite values remain required.
 
 `GrayLevelHeight` is defined for every altitude order as the maximum absolute
 altitude difference between a node and any node in its subtree. On monotone

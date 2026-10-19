@@ -30,11 +30,14 @@ set(MMCFILTERS_PUBLIC_HEADER_ENTRYPOINTS
     ${MMCFILTERS_ROOT}/trees/MorphologicalTreeSemantics.hpp
     ${MMCFILTERS_ROOT}/trees/MorphologicalTree.hpp
     ${MMCFILTERS_ROOT}/trees/MorphologicalTreeFactory.hpp
-    ${MMCFILTERS_ROOT}/trees/NativeHierarchy.hpp
+    ${MMCFILTERS_ROOT}/trees/ComponentTreeBuilder.hpp
+    ${MMCFILTERS_ROOT}/trees/TreeOfShapesBuilder.hpp
+    ${MMCFILTERS_ROOT}/trees/ExtremumResidualTreeByCTsBuilder.hpp
+    ${MMCFILTERS_ROOT}/trees/NativeHierarchyView.hpp
+    ${MMCFILTERS_ROOT}/trees/NativeHierarchyOwned.hpp
     ${MMCFILTERS_ROOT}/trees/ProperPartDomain.hpp
     ${MMCFILTERS_ROOT}/trees/TreeAltitudeAlgorithms.hpp
     ${MMCFILTERS_ROOT}/trees/TreeEditor.hpp
-    ${MMCFILTERS_ROOT}/trees/TreeOfShapesProducer.hpp
     ${MMCFILTERS_ROOT}/trees/ValuedMorphologicalTree.hpp
     ${MMCFILTERS_ROOT}/trees/ValuedMorphologicalTreeView.hpp
     ${MMCFILTERS_ROOT}/trees/adjust/CasfComponentTrees.hpp
@@ -43,8 +46,6 @@ set(MMCFILTERS_PUBLIC_HEADER_ENTRYPOINTS
     ${MMCFILTERS_ROOT}/trees/saliency/HierarchySaliencyMapValidation.hpp
     ${MMCFILTERS_ROOT}/trees/saliency/HierarchicalWatershedSaliency.hpp
     ${MMCFILTERS_ROOT}/trees/saliency/ShapeSpaceSaliency.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/ResidualEvolution.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/ExtremumResidualTreeByCTsBuilder.hpp
     ${MMCFILTERS_ROOT}/utils/Altitude.hpp
     ${MMCFILTERS_ROOT}/utils/Common.hpp
     ${MMCFILTERS_ROOT}/utils/Contract.hpp
@@ -52,9 +53,9 @@ set(MMCFILTERS_PUBLIC_HEADER_ENTRYPOINTS
     ${MMCFILTERS_ROOT}/utils/RegularGridAdjacency2D.hpp
 )
 
-# Explicit installation manifest: stable entry points, their implementation
-# support, and documented opt-in experimental headers. Other unreferenced
-# internal helpers are deliberately absent.
+# Explicit installation manifest: stable entry points and the implementation
+# support required by their header-only definitions. Other unreferenced internal
+# helpers are deliberately absent.
 set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/attributes/AttributeComputation.hpp
     ${MMCFILTERS_ROOT}/attributes/AttributeNames.hpp
@@ -99,6 +100,7 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform_approx/MorphologicalTreePropagationEdgeIndex.hpp
     ${MMCFILTERS_ROOT}/attributes/computers/detail/distance_transform_approx/MorphologicalTreeTopologicalLevelIndex.hpp
     ${MMCFILTERS_ROOT}/attributes/detail/AttributeCapabilityValidation.hpp
+    ${MMCFILTERS_ROOT}/attributes/detail/BitquadProjectionAdjacencies.hpp
     ${MMCFILTERS_ROOT}/attributes/detail/NodeAttributeSampleMaterialization.hpp
     ${MMCFILTERS_ROOT}/attributes/detail/AttributeDependencyCache.hpp
     ${MMCFILTERS_ROOT}/attributes/detail/AttributeFamilyScheduler.hpp
@@ -139,37 +141,29 @@ set(MMCFILTERS_INSTALL_HEADERS
     ${MMCFILTERS_ROOT}/trees/MorphologicalTreeSemantics.hpp
     ${MMCFILTERS_ROOT}/trees/MorphologicalTree.hpp
     ${MMCFILTERS_ROOT}/trees/MorphologicalTreeFactory.hpp
-    ${MMCFILTERS_ROOT}/trees/NativeHierarchy.hpp
+    ${MMCFILTERS_ROOT}/trees/ComponentTreeBuilder.hpp
+    ${MMCFILTERS_ROOT}/trees/TreeOfShapesBuilder.hpp
+    ${MMCFILTERS_ROOT}/trees/ExtremumResidualTreeByCTsBuilder.hpp
+    ${MMCFILTERS_ROOT}/trees/NativeHierarchyView.hpp
+    ${MMCFILTERS_ROOT}/trees/NativeHierarchyOwned.hpp
     ${MMCFILTERS_ROOT}/trees/ProperPartDomain.hpp
     ${MMCFILTERS_ROOT}/trees/TreeAltitudeAlgorithms.hpp
     ${MMCFILTERS_ROOT}/trees/TreeEditor.hpp
-    ${MMCFILTERS_ROOT}/trees/TreeOfShapesProducer.hpp
     ${MMCFILTERS_ROOT}/trees/ValuedMorphologicalTree.hpp
     ${MMCFILTERS_ROOT}/trees/ValuedMorphologicalTreeView.hpp
     ${MMCFILTERS_ROOT}/trees/adjust/CasfComponentTrees.hpp
-    ${MMCFILTERS_ROOT}/trees/adjust/DualMinMaxTreeIncrementalFilterLeaf.hpp
     ${MMCFILTERS_ROOT}/trees/adjust/DualMinMaxTreeIncrementalFilter.hpp
     ${MMCFILTERS_ROOT}/trees/adjust/DynamicTreeAttributeComputer.hpp
-    ${MMCFILTERS_ROOT}/trees/detail/ComponentTreeProducerDetail.hpp
-    ${MMCFILTERS_ROOT}/trees/detail/CommittedTreeAccess.hpp
-    ${MMCFILTERS_ROOT}/trees/detail/MorphologicalTreeConstructionContextQueries.hpp
-    ${MMCFILTERS_ROOT}/trees/detail/ComponentTreeUnionFind.hpp
-    ${MMCFILTERS_ROOT}/trees/detail/HierarchyCapabilityValidation.hpp
-    ${MMCFILTERS_ROOT}/trees/detail/HigraExportLayoutDetail.hpp
-    ${MMCFILTERS_ROOT}/trees/detail/HigraHierarchyAdapterDetail.hpp
-    ${MMCFILTERS_ROOT}/trees/detail/HigraImportLayoutDetail.hpp
+    ${MMCFILTERS_ROOT}/trees/detail/TreeKernelAccess.hpp
+    ${MMCFILTERS_ROOT}/trees/detail/DualMinMaxTreeIncrementalFilterLeaf.hpp
+    ${MMCFILTERS_ROOT}/trees/detail/HigraHierarchyDetail.hpp
     ${MMCFILTERS_ROOT}/trees/detail/MorphologicalTreeConstructionTag.hpp
-    ${MMCFILTERS_ROOT}/trees/detail/NativeHierarchyValidationDetail.hpp
-    ${MMCFILTERS_ROOT}/trees/detail/TreeAttributeSamplingNeighborhood.hpp
-    ${MMCFILTERS_ROOT}/trees/detail/TreeStabilityNeighborhood.hpp
-    ${MMCFILTERS_ROOT}/trees/detail/TreeTraversalDetail.hpp
+    ${MMCFILTERS_ROOT}/trees/detail/TreeNeighborhood.hpp
     ${MMCFILTERS_ROOT}/trees/saliency/HierarchySaliencyMap.hpp
     ${MMCFILTERS_ROOT}/trees/saliency/HierarchySaliencyMapProjection.hpp
     ${MMCFILTERS_ROOT}/trees/saliency/HierarchySaliencyMapValidation.hpp
     ${MMCFILTERS_ROOT}/trees/saliency/HierarchicalWatershedSaliency.hpp
     ${MMCFILTERS_ROOT}/trees/saliency/ShapeSpaceSaliency.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/ResidualEvolution.hpp
-    ${MMCFILTERS_ROOT}/trees/sdrt/ExtremumResidualTreeByCTsBuilder.hpp
     ${MMCFILTERS_ROOT}/utils/Altitude.hpp
     ${MMCFILTERS_ROOT}/utils/Assert.hpp
     ${MMCFILTERS_ROOT}/utils/Common.hpp

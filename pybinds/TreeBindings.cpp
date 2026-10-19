@@ -1070,40 +1070,6 @@ void initMorphologicalTree(py::module_& m) {
         .value("EXTREMUM_RESIDUAL_TREE", MorphologicalTreeKind::ExtremumResidualTree)
         .export_values();
 
-    py::enum_<sdrt::Polarity>(m, "Polarity", py::module_local(false))
-        .value("MAXIMUM", sdrt::Polarity::Maximum)
-        .value("MINIMUM", sdrt::Polarity::Minimum)
-        .export_values();
-
-    py::class_<sdrt::SpatialOrder>(m, "SpatialOrder", py::module_local(false),
-                                   "A total order over one dense pixel domain.")
-        .def(py::init<std::vector<PixelId>>(), "pixels_in_order"_a)
-        .def_property_readonly("is_row_major", &sdrt::SpatialOrder::isRowMajor)
-        .def("precedes", &sdrt::SpatialOrder::precedes, "lhs"_a, "rhs"_a)
-        .def("spatial_minimum", [](const sdrt::SpatialOrder& self, const std::vector<PixelId>& support) {
-            return self.spatialMinimum(support);
-        }, "support"_a);
-
-    py::class_<sdrt::RowMajorSpatialOrder, sdrt::SpatialOrder>(m, "RowMajorSpatialOrder", py::module_local(false),
-                                                                "The default row-major pixel order.")
-        .def(py::init<>());
-
-    py::class_<sdrt::SelfDualResidualKey>(m, "SelfDualResidualKey", py::module_local(false))
-        .def(py::init<std::size_t, PixelId>(), "support_cardinality"_a, "spatial_minimum"_a)
-        .def_readwrite("support_cardinality", &sdrt::SelfDualResidualKey::supportCardinality)
-        .def_readwrite("spatial_minimum", &sdrt::SelfDualResidualKey::spatialMinimum);
-
-    py::class_<sdrt::SelfDualResidualOrder>(m, "SelfDualResidualOrder", py::module_local(false))
-        .def(py::init<sdrt::SpatialOrder>(), "spatial_order"_a = sdrt::RowMajorSpatialOrder{})
-        .def("compare_extremum_keys", &sdrt::SelfDualResidualOrder::compareExtremumKeys, "lhs"_a, "rhs"_a);
-
-    py::class_<sdrt::SelfDualResidualSchedule>(m, "SelfDualResidualSchedule", py::module_local(false))
-        .def(py::init<sdrt::SpatialOrder>(), "spatial_order"_a = sdrt::RowMajorSpatialOrder{})
-        .def("select_smallest_extremum_index", [](const sdrt::SelfDualResidualSchedule& self,
-                                              const std::vector<sdrt::SelfDualResidualKey>& keys) {
-            return self.selectSmallestExtremumIndex(keys);
-        }, "residual_keys"_a);
-
     py::enum_<NodeAltitudeOrder>(m, "NodeAltitudeOrder", py::module_local(false))
         .value("INCREASING", NodeAltitudeOrder::Increasing, "Every child altitude is strictly greater than its parent altitude.")
         .value("DECREASING", NodeAltitudeOrder::Decreasing, "Every child altitude is strictly smaller than its parent altitude.")
@@ -1243,21 +1209,21 @@ construction stays on the source lattice, so `UINT8` becomes available:
             "input"_a, "adjacency"_a, "Create a min-tree with an explicit regular-grid 2D adjacency.")
         .def_static(
             "create_extremum_residual_tree",
-            [](UInt8InputArray input, double radius, sdrt::SpatialOrder spatialOrder) {
+            [](UInt8InputArray input, double radius) {
                 const double validatedRadius =
                     pybind_utils::requireAdjacencyRadius(radius, "MorphologicalTreeFactory.create_extremum_residual_tree");
                 return wrapPythonValuedTree(MorphologicalTreeFactory::createExtremumResidualTreeByCTs(
-                    imageFromArray(input), validatedRadius, sdrt::ExtremumResidualTreeOptions{std::move(spatialOrder)}));
+                    imageFromArray(input), validatedRadius));
             },
-            "input"_a, "radius"_a = 1.5, "spatial_order"_a = sdrt::RowMajorSpatialOrder{},
+            "input"_a, "radius"_a = 1.5,
             "Create the extremum residual tree with synchronized max-tree and min-tree states.")
         .def_static(
             "create_extremum_residual_tree",
-            [](UInt8InputArray input, RegularGridAdjacency2D adjacency, sdrt::SpatialOrder spatialOrder) {
+            [](UInt8InputArray input, RegularGridAdjacency2D adjacency) {
                 return wrapPythonValuedTree(MorphologicalTreeFactory::createExtremumResidualTreeByCTs(
-                    imageFromArray(input), std::move(adjacency), sdrt::ExtremumResidualTreeOptions{std::move(spatialOrder)}));
+                    imageFromArray(input), std::move(adjacency)));
             },
-            "input"_a, "adjacency"_a, "spatial_order"_a = sdrt::RowMajorSpatialOrder{},
+            "input"_a, "adjacency"_a,
             "Create the extremum residual tree with an explicit shared symmetric adjacency.")
         .def_static(
             "create_tree_of_shapes",
@@ -1311,39 +1277,6 @@ The convention fields may be passed directly instead of building a
 
 Passing both a complete convention and individual fields is rejected, so a
 call always has one unambiguous source of truth.)doc")
-        .def_static(
-            "create_from_native_topology",
-            [](const std::vector<NodeId>& parent, const std::vector<NodeId>& smallestNodeMap, py::object nodeAltitudesInput, NodeId root,
-               MorphologicalTreeSemantics semantics) {
-                const std::vector<std::uint8_t> nodeAltitudes =
-                    pythonUInt8AltitudeVector(nodeAltitudesInput, "MorphologicalTreeFactory.create_from_native_topology node_altitudes");
-                return wrapPythonValuedTree(MorphologicalTreeFactory::createFromNativeTopology(
-                    std::span<const NodeId>(parent), std::span<const NodeId>(smallestNodeMap), std::span<const std::uint8_t>(nodeAltitudes), root,
-                    std::move(semantics)));
-            },
-            "parent"_a, "smallest_node_map"_a, "node_altitudes"_a, "root"_a, "semantics"_a,
-            R"doc(Create a morphological tree over an abstract finite pixel domain.
-
-No row/column interpretation is attached. Topological and support-based
-algorithms remain available; image reconstruction and geometric attributes
-require a separate regular 2D domain.)doc")
-        .def_static(
-            "create_from_native_topology",
-            [](const std::vector<NodeId>& parent, const std::vector<NodeId>& smallestNodeMap, py::object nodeAltitudesInput, NodeId root, int rows, int columns,
-               MorphologicalTreeSemantics semantics) {
-                const std::vector<std::uint8_t> nodeAltitudes =
-                    pythonUInt8AltitudeVector(nodeAltitudesInput, "MorphologicalTreeFactory.create_from_native_topology node_altitudes");
-                return wrapPythonValuedTree(MorphologicalTreeFactory::createFromNativeTopology(
-                    std::span<const NodeId>(parent), std::span<const NodeId>(smallestNodeMap), std::span<const std::uint8_t>(nodeAltitudes), root, rows,
-                    columns, std::move(semantics)));
-            },
-            "parent"_a, "smallest_node_map"_a, "node_altitudes"_a, "root"_a, "rows"_a, "columns"_a, "semantics"_a,
-            R"doc(Create a morphological tree from native connected-subset buffers and explicit generic capabilities.
-
-`parent` and `node_altitudes` use the dense internal-node domain.
-`smallest_node_map` uses the row-major pixel domain and must contain
-`rows * columns` entries. Every committed node must have non-empty node
-support, although a node may have an empty proper part.)doc")
         .def_static(
             "create_from_higra_parent",
             [](const std::vector<NodeId>& parent, py::object nodeAltitudesInput, int rows, int columns, MorphologicalTreeKind kind,

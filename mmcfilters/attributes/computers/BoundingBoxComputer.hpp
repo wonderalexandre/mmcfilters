@@ -3,8 +3,7 @@
 #include "AttributeComputerDomain.hpp"
 #include "AttributeComputerFamily.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
-#include "../../trees/detail/TreeTraversalDetail.hpp"
-#include "../../trees/detail/CommittedTreeAccess.hpp"
+#include "../../trees/detail/TreeKernelAccess.hpp"
 #include "../../trees/MorphologicalTree.hpp"
 #include "../../utils/Contract.hpp"
 #include "../../utils/Image.hpp"
@@ -127,16 +126,16 @@ inline void computeBoundingBox(const AttributeComputeContext<Real>& context, con
     auto areaIndex = [&](NodeId node) { return static_cast<std::size_t>(node * areaStride + areaOffset); };
 
     const int numNodes = context.tree.numInternalNodeSlots();
-    const GridDomain2D& domain = ::mmcfilters::detail::CommittedTreeAccess::gridDomain2D(context.tree);
+    const GridDomain2D& domain = ::mmcfilters::detail::TreeKernelAccess::gridDomain2D(context.tree);
     std::vector<int> columnMin(static_cast<std::size_t>(numNodes), domain.columns);
     std::vector<int> columnMax(static_cast<std::size_t>(numNodes), 0);
     std::vector<int> rowMin(static_cast<std::size_t>(numNodes), domain.rows);
     std::vector<int> rowMax(static_cast<std::size_t>(numNodes), 0);
 
-    ::mmcfilters::detail::kernel::traversePostOrder(
+    ::mmcfilters::detail::TreeKernelAccess::traversePostOrder(
         context.tree, context.tree.root(),
         [&](NodeId node) {
-            for (PixelId pixel : ::mmcfilters::detail::CommittedTreeAccess::properParts(context.tree, node)) {
+            for (PixelId pixel : ::mmcfilters::detail::TreeKernelAccess::properParts(context.tree, node)) {
                 const int row = pixel / domain.columns;
                 const int column = pixel % domain.columns;
                 columnMin[static_cast<std::size_t>(node)] = std::min(columnMin[static_cast<std::size_t>(node)], column);

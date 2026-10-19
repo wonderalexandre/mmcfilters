@@ -3,7 +3,7 @@
 #include "ConnectedSubsetTreeLocalizer.hpp"
 #include "LocalEventModel.hpp"
 #include "../trees/MorphologicalTree.hpp"
-#include "../trees/detail/CommittedTreeAccess.hpp"
+#include "../trees/detail/TreeKernelAccess.hpp"
 #include "../utils/Contract.hpp"
 
 #include <algorithm>
@@ -98,7 +98,7 @@ inline OrderedAnchoredEntries orderedAnchoredEntries(const MorphologicalTree& tr
         if (lhs.node == rhs.node) {
             return false;
         }
-        return ::mmcfilters::detail::CommittedTreeAccess::isAncestor(tree, rhs.node, lhs.node);
+        return ::mmcfilters::detail::TreeKernelAccess::isAncestor(tree, rhs.node, lhs.node);
     });
 
     OrderedAnchoredEntries grouped;
@@ -119,7 +119,7 @@ inline std::size_t fillOrderedAnchoredEntries(const MorphologicalTree& tree, con
                                               const ObservationWindow& window, AnchoredEntryScratch& scratch) {
     const int anchorRow = anchorPixel / domain.columns;
     const int anchorColumn = anchorPixel % domain.columns;
-    const NodeId anchorSmallestNode = ::mmcfilters::detail::CommittedTreeAccess::smallestNodeMap(tree, anchorPixel);
+    const NodeId anchorSmallestNode = ::mmcfilters::detail::TreeKernelAccess::smallestNodeMap(tree, anchorPixel);
 
     std::size_t numEntries = 0;
     for (std::size_t coordinate = 0; coordinate < window.size(); ++coordinate) {
@@ -130,7 +130,7 @@ inline std::size_t fillOrderedAnchoredEntries(const MorphologicalTree& tree, con
             continue;
         }
         const PixelId samplePixel = static_cast<PixelId>(sampleRow * domain.columns + sampleColumn);
-        const NodeId sampleSmallestNode = ::mmcfilters::detail::CommittedTreeAccess::smallestNodeMap(tree, samplePixel);
+        const NodeId sampleSmallestNode = ::mmcfilters::detail::TreeKernelAccess::smallestNodeMap(tree, samplePixel);
         scratch[numEntries++] = {connectedSubsetJoin(tree, anchorSmallestNode, sampleSmallestNode), std::uint32_t{1} << coordinate};
     }
 
@@ -138,7 +138,7 @@ inline std::size_t fillOrderedAnchoredEntries(const MorphologicalTree& tree, con
         if (lhs.node == rhs.node) {
             return false;
         }
-        return ::mmcfilters::detail::CommittedTreeAccess::isAncestor(tree, rhs.node, lhs.node);
+        return ::mmcfilters::detail::TreeKernelAccess::isAncestor(tree, rhs.node, lhs.node);
     });
 
     std::size_t numGroupedEntries = 0;
@@ -180,7 +180,7 @@ inline std::vector<EventDelta<typename Decision::Value>> computeEventDeltas(cons
                                                                             const ObservationWindow& window, const Decision& decision,
                                                                             const Algebra& algebra) {
     using Value = typename Decision::Value;
-    const GridDomain2D& domain = ::mmcfilters::detail::CommittedTreeAccess::gridDomain2D(tree);
+    const GridDomain2D& domain = ::mmcfilters::detail::TreeKernelAccess::gridDomain2D(tree);
     AnchoredEntryScratch scratch;
     const std::size_t numEntries = fillOrderedAnchoredEntries(tree, domain, anchorPixel, window, scratch);
     const std::span<const AnchoredEntryMask> entries(scratch.data(), numEntries);
@@ -197,7 +197,7 @@ template <LocalDecision Decision, class Algebra>
 inline void accumulateLocalAttributeIncrementValues(const MorphologicalTree& tree, const ObservationWindow& window, const Decision& decision,
                                                     const Algebra& algebra, std::span<typename Decision::Value> increments) {
     using Value = typename Decision::Value;
-    const GridDomain2D& domain = ::mmcfilters::detail::CommittedTreeAccess::gridDomain2D(tree);
+    const GridDomain2D& domain = ::mmcfilters::detail::TreeKernelAccess::gridDomain2D(tree);
     const int totalPixels = domain.rows * domain.columns;
     AnchoredEntryScratch scratch;
     for (PixelId anchorPixel = 0; anchorPixel < totalPixels; ++anchorPixel) {

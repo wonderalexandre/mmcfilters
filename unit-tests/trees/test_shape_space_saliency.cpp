@@ -67,7 +67,7 @@ RenumberedShapeSpaceTieFixture makeRenumberedShapeSpaceTieFixture(bool spatially
         const std::vector<NodeId> smallestNodeMap{0, 2, 1, 4, 3};
         const std::vector<std::uint8_t> altitude{2, 2, 1, 1, 0};
         return {
-            MorphologicalTreeFactory::createFromNativeTopology(
+            makeValuedHierarchy(
                 std::span<const NodeId>(parent), std::span<const NodeId>(smallestNodeMap), std::span<const std::uint8_t>(altitude), NodeId{4}, 1, 5,
                 MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Increasing, NoConstructionContext{}}),
             {1.0, 1.0, 5.0, 0.0, 10.0}, NodeId{0}, NodeId{1}, NodeId{3}};
@@ -77,7 +77,7 @@ RenumberedShapeSpaceTieFixture makeRenumberedShapeSpaceTieFixture(bool spatially
     const std::vector<NodeId> smallestNodeMap{4, 1, 3, 0, 2};
     const std::vector<std::uint8_t> altitude{0, 1, 1, 2, 2};
     return {
-        MorphologicalTreeFactory::createFromNativeTopology(
+        makeValuedHierarchy(
             std::span<const NodeId>(parent), std::span<const NodeId>(smallestNodeMap), std::span<const std::uint8_t>(altitude), NodeId{0}, 1, 5,
             MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Increasing, NoConstructionContext{}}),
         {10.0, 5.0, 0.0, 1.0, 1.0}, NodeId{4}, NodeId{3}, NodeId{2}};

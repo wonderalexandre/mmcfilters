@@ -4,7 +4,7 @@
 #include "../utils/Common.hpp"
 #include "../trees/ValuedMorphologicalTree.hpp"
 #include "../trees/ValuedMorphologicalTreeView.hpp"
-#include "../trees/detail/CommittedTreeAccess.hpp"
+#include "../trees/detail/TreeKernelAccess.hpp"
 #include "../utils/Contract.hpp"
 #include "DepthStableRegionComputer.hpp"
 #include "MSERComputer.hpp"
@@ -142,7 +142,7 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
      * @param isCalculateResidue Flag controlling is calculate residue.
      */
     void computeUAO(const AltitudeView& view, NodeId currentNodeId, AltitudeDifference<T> altitudeNodeNotInNR, bool qPropag, bool isCalculateResidue) {
-        const NodeId parentNodeId = detail::CommittedTreeAccess::nodeParent(tree, currentNodeId);
+        const NodeId parentNodeId = detail::TreeKernelAccess::nodeParent(tree, currentNodeId);
         const AltitudeDifference<T> altitudeNodeInNR = static_cast<AltitudeDifference<T>>(altitudeOf(view, currentNodeId));
         bool flagPropag = false;
         T contrast = T{};
@@ -170,7 +170,7 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
             }
         }
 
-        for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, currentNodeId)) {
+        for (NodeId childNodeId : detail::TreeKernelAccess::children(tree, currentNodeId)) {
             this->computeUAO(view, childNodeId, altitudeNodeNotInNR, flagPropag, isCalculateResidue);
         }
     }
@@ -193,7 +193,7 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
 
         const NodeId rootNodeId = tree.root();
         const AltitudeDifference<T> level = static_cast<AltitudeDifference<T>>(altitudeOf(altitudeView, rootNodeId));
-        for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, rootNodeId)) {
+        for (NodeId childNodeId : detail::TreeKernelAccess::children(tree, rootNodeId)) {
             computeUAO(altitudeView, childNodeId, level, false, false);
         }
     }
@@ -205,7 +205,7 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
      * @return True when selected for pruning; otherwise false.
      */
     bool isSelectedForPruning(NodeId currentNodeId) const {
-        const NodeId parentNodeId = detail::CommittedTreeAccess::nodeParent(tree, currentNodeId);
+        const NodeId parentNodeId = detail::TreeKernelAccess::nodeParent(tree, currentNodeId);
         if (parentNodeId == InvalidNode) {
             return false;
         }
@@ -228,7 +228,7 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
                 return true;
             }
 
-            for (NodeId childNodeId : detail::CommittedTreeAccess::children(tree, nodeId)) {
+            for (NodeId childNodeId : detail::TreeKernelAccess::children(tree, nodeId)) {
                 if (this->attrs_increasing[childNodeId] == this->attrs_increasing[nodeId]) {
                     stack.push(childNodeId);
                 }
@@ -417,7 +417,7 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
         auto out = imgOut->rawData();
 
         for (int pidx = 0; pidx < size; pidx++) {
-            out[pidx] = this->maxContrastLUT[detail::CommittedTreeAccess::smallestNodeMap(tree, pidx)];
+            out[pidx] = this->maxContrastLUT[detail::TreeKernelAccess::smallestNodeMap(tree, pidx)];
         }
         return imgOut;
     }
@@ -435,7 +435,7 @@ template <AltitudeValue T, std::floating_point Real = float> class UltimateAttri
         auto out = imgOut->rawData();
 
         for (int pidx = 0; pidx < size; pidx++) {
-            out[pidx] = this->associatedIndexLUT[detail::CommittedTreeAccess::smallestNodeMap(tree, pidx)];
+            out[pidx] = this->associatedIndexLUT[detail::TreeKernelAccess::smallestNodeMap(tree, pidx)];
         }
         return imgOut;
     }

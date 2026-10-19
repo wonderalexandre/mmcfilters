@@ -13,8 +13,7 @@ FILE_PATTERNS          = *.hpp *.tpp *.md
 # only by the internal Doxygen target.
 EXCLUDE                = "@MMCFILTERS_DOCS_SOURCE_DIR@/docs/internal" \
                          "@MMCFILTERS_DOCS_SOURCE_DIR@/docs/refactoring" \
-                         "@MMCFILTERS_DOCS_SOURCE_DIR@/mmcfilters/dataStructure" \
-                         "@MMCFILTERS_DOCS_SOURCE_DIR@/mmcfilters/trees/adjust/DualMinMaxTreeIncrementalFilterLeaf.hpp"
+                         "@MMCFILTERS_DOCS_SOURCE_DIR@/mmcfilters/dataStructure"
 EXCLUDE_PATTERNS       = */detail/* */internal/*
 EXCLUDE_SYMBOLS        = mmcfilters::detail::* \
                          mmcfilters::attributes::computers::detail::* \

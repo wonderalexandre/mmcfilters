@@ -1,5 +1,4 @@
-#include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
-#include "mmcfilters/trees/sdrt/ExtremumResidualTreeByCTsBuilder.hpp"
+#include "mmcfilters/trees/ExtremumResidualTreeByCTsBuilder.hpp"
 #include "stb_image.h"
 
 #include <algorithm>
@@ -14,12 +13,11 @@
 #include <vector>
 
 using namespace mmcfilters;
-using namespace mmcfilters::sdrt;
 
 namespace {
 
 using Clock = std::chrono::steady_clock;
-using ExtremumByCTsBuilder = ExtremumResidualTreeByCTsBuilder<std::uint8_t>;
+using ExtremumByCTsBuilder = mmcfilters::ExtremumResidualTreeByCTsBuilder<std::uint8_t>;
 
 struct Options {
     std::string imagePath;
@@ -55,15 +53,9 @@ ImageUInt8Ptr loadImage(const std::string& path) {
     return image;
 }
 
-template <class Builder> void build(Builder& builder, const ImageUInt8Ptr& image, const RegularGridAdjacency2D& adjacency) {
-    auto minTree = MorphologicalTreeFactory::createMinTree(image, adjacency);
-    auto maxTree = MorphologicalTreeFactory::createMaxTree(image, adjacency);
-    builder.build(image, std::move(minTree), std::move(maxTree));
-}
-
 template <class Function> double measureMilliseconds(Function&& function) {
     const auto start = Clock::now();
-    function();
+    const auto hierarchy = function();
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
 }
 
@@ -76,10 +68,10 @@ double median(std::vector<double> values) {
     return (values[middle - 1] + values[middle]) / 2.0;
 }
 
-template <class Builder> bool reconstructs(const Builder& builder, const ImageUInt8Ptr& image) {
+bool reconstructs(const NativeHierarchyOwned<std::uint8_t>& hierarchy, const ImageUInt8Ptr& image) {
     for (PixelId pixel = 0; pixel < image->getSize(); ++pixel) {
-        const NodeId smallestNode = builder.smallestNodeMap()[static_cast<std::size_t>(pixel)];
-        if (builder.nodeAltitudes()[static_cast<std::size_t>(smallestNode)] != (*image)[pixel]) {
+        const NodeId smallestNode = hierarchy.smallestNodeMap[static_cast<std::size_t>(pixel)];
+        if (hierarchy.nodeAltitudes[static_cast<std::size_t>(smallestNode)] != (*image)[pixel]) {
             return false;
         }
     }
@@ -95,22 +87,21 @@ void printDomain(const Options& options, const ImageUInt8Ptr& image, const char*
 }
 
 template <class Builder>
-void runIsolated(const Options& options, const ImageUInt8Ptr& image, const RegularGridAdjacency2D& adjacency,
-                 Builder& builder, const char* mode) {
-    build(builder, image, adjacency);
-    if (!reconstructs(builder, image)) {
+void runIsolated(const Options& options, const ImageUInt8Ptr& image, Builder& builder, const char* mode) {
+    const auto hierarchy = builder.build(image);
+    if (!reconstructs(hierarchy, image)) {
         throw std::runtime_error(std::string(mode) + " min/max mode failed reconstruction");
     }
     std::vector<double> times;
     times.reserve(options.repetitions);
     for (int repetition = 0; repetition < options.repetitions; ++repetition) {
-        times.push_back(measureMilliseconds([&] { build(builder, image, adjacency); }));
+        times.push_back(measureMilliseconds([&] { return builder.build(image); }));
     }
 
     printDomain(options, image, mode);
     std::cout << std::fixed << std::setprecision(3)
               << mode << "_median_ms=" << median(std::move(times)) << '\n'
-              << mode << "_nodes=" << builder.parents().size() << '\n';
+              << mode << "_nodes=" << hierarchy.parent.size() << '\n';
 }
 
 } // namespace
@@ -121,7 +112,7 @@ int main(int argc, char** argv) {
         const auto image = loadImage(options.imagePath);
         const RegularGridAdjacency2D adjacency(image->getNumRows(), image->getNumColumns(), 1.0);
         ExtremumByCTsBuilder builder(adjacency);
-        runIsolated(options, image, adjacency, builder, "extremum");
+        runIsolated(options, image, builder, "extremum");
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "extremum residual tree by CTs benchmark failed: " << error.what() << '\n';

@@ -35,7 +35,7 @@ ValuedMorphologicalTree<std::uint8_t> makeTwoSingletonHierarchy() {
     const std::vector<NodeId> nodeParent{2, 2, 2};
     const std::vector<NodeId> smallestNodeMap{0, 1};
     const std::vector<std::uint8_t> altitude{2, 1, 0};
-    return MorphologicalTreeFactory::createFromNativeTopology(std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap),
+    return makeValuedHierarchy(std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap),
                                                               std::span<const std::uint8_t>(altitude), 2, 1, 2,
                                                               makeMorphologicalTreeSemantics(
                                                                   MorphologicalTreeKind::MaxTree,
@@ -46,7 +46,7 @@ ValuedMorphologicalTree<std::uint8_t> makeSpatiallyDisconnectedHierarchy() {
     const std::vector<NodeId> nodeParent{1, 1};
     const std::vector<NodeId> smallestNodeMap{0, 1, 0};
     const std::vector<std::uint8_t> altitude{1, 0};
-    return MorphologicalTreeFactory::createFromNativeTopology(std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap),
+    return makeValuedHierarchy(std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap),
                                                               std::span<const std::uint8_t>(altitude), 1, 1, 3,
                                                               makeMorphologicalTreeSemantics(
                                                                   MorphologicalTreeKind::MaxTree,
@@ -57,7 +57,7 @@ ValuedMorphologicalTree<std::uint8_t> makeDirectionalThreePixelTree(bool equival
     const std::vector<NodeId> nodeParent{2, 2, 2};
     const std::vector<NodeId> smallestNodeMap{0, 1, 1};
     const std::vector<std::uint8_t> altitude{0, 20, 10};
-    return MorphologicalTreeFactory::createFromNativeTopology(
+    return makeValuedHierarchy(
         std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap), std::span<const std::uint8_t>(altitude), 2, 1, 3,
         MorphologicalTreeSemantics{
             MorphologicalTreeKind::TreeOfShapes, NodeAltitudeOrder::Unconstrained,
@@ -339,7 +339,25 @@ int main() {
         requireThrows<std::invalid_argument>(
             [&] { static_cast<void>(HierarchySaliencyMap::computeEdgeMap(stagedTree, RegularGridAdjacency2D(1, 3, 1.0), [](NodeId node) { return node; })); },
             "LCA edge projection must reject an active staged forest");
+        requireThrows<std::invalid_argument>(
+            [&] { static_cast<void>(HierarchySaliencyMapProjection::nodeContourEdges(stagedTree, RegularGridAdjacency2D(1, 3, 1.0))); },
+            "node-contour projection must reject an active staged forest");
         editor.rollback();
+        requireVectorEqual(HierarchySaliencyMap::computeTopologicalLevelEdgeMap(stagedTree, RegularGridAdjacency2D(1, 3, 1.0)).values,
+            {1, 0}, "rollback restores the committed hierarchy guarantee used by saliency");
+    }
+
+    if constexpr (contract::validationsEnabled) {
+        auto mutableTree = valuedTree.topology().clone();
+        int callbackCount = 0;
+        requireThrows<std::logic_error>(
+            [&] { static_cast<void>(HierarchySaliencyMap::computeEdgeMap(mutableTree, RegularGridAdjacency2D(1, 3, 1.0), [&](NodeId) {
+                ++callbackCount;
+                mutableTree.pruneNode(0);
+                return 1;
+            })); },
+            "edge projection rejects topology mutation by its scorer before reading the next edge");
+        requireEqual(callbackCount, 1, "scorer mutation is detected immediately");
     }
 
     {
@@ -361,7 +379,7 @@ int main() {
         const long double rootAltitude = 1.0L;
         const long double childAltitude = std::nextafter(rootAltitude, 2.0L);
         const std::vector<long double> altitude{rootAltitude, childAltitude};
-        auto preciseValuedTree = MorphologicalTreeFactory::createFromNativeTopology(std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap),
+        auto preciseValuedTree = makeValuedHierarchy(std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap),
                                                                                   std::span<const long double>(altitude), 0,
                                                                                   makeMorphologicalTreeSemantics(MorphologicalTreeKind::MaxTree));
 

@@ -1,5 +1,6 @@
 #include "support/TestSupport.hpp"
 
+#include "mmcfilters/attributes/computers/AttributeComputerRegistry.hpp"
 #include "mmcfilters/attributes/computers/BoundingBoxComputer.hpp"
 #include "mmcfilters/attributes/computers/GrayLevelStatsComputer.hpp"
 #include "mmcfilters/attributes/computers/MaxDistExactComputer.hpp"
@@ -149,11 +150,47 @@ void requireUnitComputersUseProvidedLeafOrder() {
     }
 }
 
+// Unit projection bypasses these boundaries only for buffers it creates itself.
+template <class Computer> void requireUnitComputerInputValidation() {
+    if constexpr (contract::validationsEnabled) {
+        const auto valuedTree = makeValuedComponentTree(makeComponentTreeFixture(), true);
+        const auto& tree = valuedTree->topology();
+        const auto altitude = valuedTree->nodeAltitudeSpan();
+        const std::array<Attribute, 1> requested{Computer::producedAttributes.front()};
+        const auto names = AttributeNames::fromList({requested.front()});
+        std::array<float, 1> values{};
+        const auto compute = [&](std::span<const PixelId> pixels, std::span<float> output, std::span<const std::uint8_t> altitudes) {
+            if constexpr (Computer::domain == AttributeComputerDomain::Altitude) {
+                Computer::computeUnitRows(AltitudeUnitAttributeComputeContext<float, std::uint8_t>{tree, altitudes, pixels, output, names, requested});
+            } else {
+                Computer::computeUnitRows(UnitAttributeComputeContext<float>{tree, pixels, output, names, requested});
+            }
+        };
+        const std::array<PixelId, 1> valid{0};
+        for (PixelId invalid : {PixelId{-1}, tree.numPixels()}) {
+            const std::array<PixelId, 1> pixels{invalid};
+            requireThrows<std::invalid_argument>([&] { compute(pixels, values, altitude); },
+                std::string(Computer::familyName) + " public unit computation rejects invalid pixels");
+        }
+        requireThrows<std::invalid_argument>([&] { compute(valid, {}, altitude); },
+            std::string(Computer::familyName) + " public unit computation rejects a short output buffer");
+        if constexpr (Computer::domain == AttributeComputerDomain::Altitude) {
+            requireThrows<std::runtime_error>([&] { compute(valid, values, altitude.first(altitude.size() - 1)); },
+                std::string(Computer::familyName) + " public unit computation rejects a short altitude buffer");
+        }
+    }
+}
+
+template <class... Computers> void requireAllUnitComputerInputValidation(std::tuple<Computers...>) {
+    (requireUnitComputerInputValidation<Computers>(), ...);
+}
+
 } // namespace
 
 int main() {
     requireExportedHigraUnitProjectionMatchesOnePixelOracle(1.0);
     requireExportedHigraUnitProjectionMatchesOnePixelOracle(1.5);
     requireUnitComputersUseProvidedLeafOrder();
+    requireAllUnitComputerInputValidation(RegisteredAttributeComputers{});
     return 0;
 }

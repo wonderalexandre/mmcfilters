@@ -100,20 +100,6 @@ def main() -> int:
     require(hasattr(mmcfilters, "__version__"), "package import must expose __version__")
     require(hasattr(mmcfilters, "ValuedMorphologicalTree"), "package import must expose ValuedMorphologicalTree")
     require(hasattr(mmcfilters, "MorphologicalTreeKind"), "package import must expose MorphologicalTreeKind")
-    require(hasattr(mmcfilters, "SpatialOrder"), "package import must expose SpatialOrder")
-    require(hasattr(mmcfilters, "RowMajorSpatialOrder"), "package import must expose RowMajorSpatialOrder")
-    require(hasattr(mmcfilters, "SelfDualResidualKey"), "package import must expose SelfDualResidualKey")
-    require(hasattr(mmcfilters, "SelfDualResidualSchedule"), "package import must expose SelfDualResidualSchedule")
-    schedule = mmcfilters.SelfDualResidualSchedule(mmcfilters.SpatialOrder([3, 2, 1, 0]))
-    keys = [
-        mmcfilters.SelfDualResidualKey(2, 1),
-        mmcfilters.SelfDualResidualKey(1, 2),
-        mmcfilters.SelfDualResidualKey(1, 3),
-    ]
-    require(schedule.select_smallest_extremum_index(keys) == 2, "Python residual schedule must use the configured spatial order")
-    order = mmcfilters.SelfDualResidualOrder(mmcfilters.SpatialOrder([3, 2, 1, 0]))
-    require(order.compare_extremum_keys(keys[2], keys[1]), "Python extremum-key comparison must respect the spatial order")
-    require(not order.compare_extremum_keys(keys[1], keys[1]), "Python extremum-key comparison must be strict")
     require(hasattr(mmcfilters, "MorphologicalTreeSemantics"), "package import must expose MorphologicalTreeSemantics")
     require(hasattr(mmcfilters, "NodeAltitudeOrder"), "package import must expose NodeAltitudeOrder")
     require(hasattr(mmcfilters, "SharedAdjacencyContext"), "package import must expose SharedAdjacencyContext")
@@ -184,11 +170,12 @@ def main() -> int:
         "create_min_tree",
         "create_extremum_residual_tree",
         "create_tree_of_shapes",
-        "create_from_native_topology",
         "create_from_higra_parent",
     ):
         require(hasattr(mmcfilters.MorphologicalTreeFactory, canonical_factory), f"missing canonical Python factory {canonical_factory}")
     for legacy_factory in (
+        "create_from_native_topology",
+        "create_from_native_hierarchy",
         "createMaxTree",
         "createMinTree",
         "create_extremum_residual_tree_by_cts",
@@ -244,11 +231,6 @@ def main() -> int:
         image,
         radius=1.0,
     )
-    custom_order_residual_tree = mmcfilters.MorphologicalTreeFactory.create_extremum_residual_tree(
-        image,
-        radius=1.0,
-        spatial_order=mmcfilters.SpatialOrder(list(reversed(range(image.size)))),
-    )
     residual_adjacency = mmcfilters.RegularGridAdjacency2D(*image.shape, 1.0)
     for reference, explicit_tree in (
         (residual_tree, mmcfilters.MorphologicalTreeFactory.create_extremum_residual_tree(image, residual_adjacency)),
@@ -267,10 +249,6 @@ def main() -> int:
         residual_tree.kind
         == mmcfilters.MorphologicalTreeKind.EXTREMUM_RESIDUAL_TREE,
         "factory extremum residual-tree type",
-    )
-    require(
-        np.array_equal(custom_order_residual_tree.reconstruct_from_node_altitudes(), image),
-        "custom spatial order must preserve exact residual reconstruction",
     )
     require(
         residual_tree.node_altitude_order == mmcfilters.NodeAltitudeOrder.UNCONSTRAINED,
@@ -1282,193 +1260,29 @@ def main() -> int:
         virtual_root_tos.node_altitude(virtual_root) != virtual_root_tos.node_altitude(lower_shape),
         "virtual-root ToS must not contain an equal-altitude lower edge",
     )
-    native_partial_partition = (
-        mmcfilters.MorphologicalTreeFactory.create_from_native_topology(
-            [0, 0, 0],
-            [1, 1, 2, 2],
-            np.array([0, 1, 0], dtype=np.uint8),
-            0,
-            2,
-            2,
-            semantics=mmcfilters.MorphologicalTreeSemantics(
-                kind=mmcfilters.MorphologicalTreeKind.TREE_OF_SHAPES,
-                construction_context=mmcfilters.TopographicConvention(
-                    mmcfilters.ComplementaryGridImmersion(
-                        mmcfilters.ComplementaryAdjacencies(
-                            mmcfilters.RegularGridAdjacency2D(2, 2, 1.0),
-                            mmcfilters.RegularGridAdjacency2D(2, 2, 1.5),
-                        )
-                    )
-                ),
-            ),
+    imported_generic = mmcfilters.MorphologicalTreeFactory.create_from_higra_parent(
+        [3, 4, 2, 2, 2],
+        np.array([3, 20, 10, 3, 20], dtype=np.uint8),
+        1, 2, mmcfilters.MorphologicalTreeKind.GENERIC,
+    )
+    require(imported_generic.kind == mmcfilters.MorphologicalTreeKind.GENERIC, "Higra generic kind")
+    require(imported_generic.node_altitude_order == mmcfilters.NodeAltitudeOrder.UNCONSTRAINED, "Higra generic altitude order")
+    require(imported_generic.proper_part_cardinality(0) == 0, "Higra root may have an empty proper part")
+    require(imported_generic.reconstruct_from_node_altitudes().tolist() == [[3, 20]], "Higra generic reconstruction")
+    generic_gray_height = mmcfilters.Attribute.compute_single_attribute(imported_generic, mmcfilters.Attribute.GRAY_LEVEL_HEIGHT)
+    require(generic_gray_height.tolist() == [10.0, 0.0, 0.0], "Higra unconstrained gray-level height")
+    require_raises(
+        lambda: mmcfilters.MorphologicalTreeFactory.create_from_higra_parent(
+            [3, 4, 2, 4, 3], np.array([3, 20, 10, 3, 20], dtype=np.uint8), 1, 2, mmcfilters.MorphologicalTreeKind.GENERIC),
+        "Higra import must reject disconnected cycles",
+    )
+    for invalid_altitude in ([1, 0, 0, 2], [1, 0, 0, 0]):
+        require_raises(
+            lambda: mmcfilters.MorphologicalTreeFactory.create_from_higra_parent(
+                [3, 2, 2, 2], np.array(invalid_altitude, dtype=np.uint8), 1, 1,
+                mmcfilters.MorphologicalTreeKind.MAX_TREE, radius=1.5),
+            "Higra import enforces strict max-tree altitude order",
         )
-    )
-    require(
-        native_partial_partition.proper_part_cardinality(0) == 0,
-        "generic native partial-partition root may have no direct proper part",
-    )
-    require(
-        native_partial_partition.num_children(0) == 2,
-        "generic native partial-partition root children",
-    )
-    require(
-        isinstance(native_partial_partition.topographic_convention, mmcfilters.TopographicConvention),
-        "native partial-partition topographic convention",
-    )
-    require(
-        native_partial_partition.topographic_convention.immersion.complementary_adjacencies.min_adjacency.size == 5,
-        "native partial-partition minimum adjacency",
-    )
-    require(
-        native_partial_partition.topographic_convention.immersion.complementary_adjacencies.max_adjacency.size == 9,
-        "native partial-partition maximum adjacency",
-    )
-    require(
-        native_partial_partition.reconstruct_from_node_altitudes().tolist()
-        == [[1, 1], [0, 0]],
-        "generic native partial-partition reconstruction",
-    )
-    generic_semantics = mmcfilters.MorphologicalTreeSemantics(
-        node_altitude_order=mmcfilters.NodeAltitudeOrder.INCREASING,
-    )
-    generic_tree = mmcfilters.MorphologicalTreeFactory.create_from_native_topology(
-        parent=[0, 0, 1],
-        smallest_node_map=[2],
-        node_altitudes=np.array([0, 1, 2], dtype=np.uint8),
-        root=0,
-        rows=1,
-        columns=1,
-        semantics=generic_semantics,
-    )
-    require(
-        generic_tree.kind == mmcfilters.MorphologicalTreeKind.GENERIC,
-        "generic native tree descriptive kind",
-    )
-    require(
-        generic_tree.node_altitude_order
-        == mmcfilters.NodeAltitudeOrder.INCREASING,
-        "generic native tree altitude order",
-    )
-    require(
-        isinstance(generic_tree.construction_context, mmcfilters.NoConstructionContext),
-        "generic native tree records no construction context",
-    )
-    require(
-        generic_tree.has_grid_domain_2d
-        and generic_tree.grid_domain_2d.rows == 1
-        and generic_tree.grid_domain_2d.columns == 1,
-        "generic native tree explicit 2D domain",
-    )
-    require(
-        generic_tree.has_empty_proper_part(0)
-        and generic_tree.has_empty_proper_part(1)
-        and not generic_tree.has_empty_proper_part(2),
-        "generic native tree structural-node derivation",
-    )
-    require(
-        not generic_tree.is_tree_of_partial_partitions(),
-        "generic tree with empty proper parts is not a tree of partial partitions",
-    )
-    require_raises(
-        generic_tree.validate_tree_of_partial_partitions,
-        "tree-of-partial-partitions validation must reject empty proper parts",
-    )
-    for node_id in generic_tree.alive_node_ids:
-        require(
-            len(list(generic_tree.node_support(node_id))) > 0,
-            "every committed generic node must have non-empty subtree support",
-        )
-    abstract_tree = mmcfilters.MorphologicalTreeFactory.create_from_native_topology(
-        [0, 0, 0],
-        [1, 2],
-        np.array([10, 3, 20], dtype=np.uint8),
-        0,
-        semantics=mmcfilters.MorphologicalTreeSemantics(),
-    )
-    require(
-        abstract_tree.has_grid_domain_2d is False,
-        "abstract pixel domain must not invent grid metadata",
-    )
-    require(
-        abstract_tree.grid_domain_2d is None,
-        "abstract pixel domain optional grid",
-    )
-    require(
-        abstract_tree.kind
-        == mmcfilters.MorphologicalTreeKind.GENERIC,
-        "canonical descriptive-kind property",
-    )
-    abstract_area = mmcfilters.Attribute.compute_single_attribute(
-        abstract_tree,
-        mmcfilters.Attribute.AREA,
-    )
-    require(
-        int(abstract_area[0]) == 2,
-        "support attributes must work on an abstract pixel domain",
-    )
-    abstract_gray_height = mmcfilters.Attribute.compute_single_attribute(
-        abstract_tree,
-        mmcfilters.Attribute.GRAY_LEVEL_HEIGHT,
-    )
-    require(
-        abstract_gray_height.tolist() == [10.0, 0.0, 0.0],
-        "unconstrained GRAY_LEVEL_HEIGHT must use both subtree extrema",
-    )
-    require_raises(
-        lambda: abstract_tree.reconstruct_from_node_altitudes(),
-        "abstract pixel domain must reject image reconstruction",
-    )
-    require_raises(
-        lambda: mmcfilters.Attribute.compute_single_attribute(
-            abstract_tree,
-            mmcfilters.Attribute.BOUNDING_BOX_WIDTH,
-        ),
-        "abstract pixel domain must reject geometric attributes",
-    )
-    require_raises(
-        lambda: abstract_tree.num_rows,
-        "abstract pixel domain must not expose invented rows",
-    )
-    require_raises(
-        lambda: mmcfilters.MorphologicalTreeFactory.create_from_native_topology(
-            [0, 0],
-            [0],
-            np.array([0, 1], dtype=np.uint8),
-            0,
-            1,
-            1,
-            semantics=mmcfilters.MorphologicalTreeSemantics(),
-        ),
-        "native factory must reject an attached leaf with empty subtree support",
-    )
-    require_raises(
-        lambda: mmcfilters.MorphologicalTreeFactory.create_from_native_topology(
-            [0, 0, 1],
-            [2],
-            np.array([0, 2, 1], dtype=np.uint8),
-            0,
-            1,
-            1,
-            semantics=mmcfilters.MorphologicalTreeSemantics(
-                node_altitude_order=mmcfilters.NodeAltitudeOrder.INCREASING,
-            ),
-        ),
-        "native factory altitude must satisfy the declared generic order",
-    )
-    require_raises(
-        lambda: mmcfilters.MorphologicalTreeFactory.create_from_native_topology(
-            [0, 0, 1],
-            [2],
-            np.array([0, 1, 1], dtype=np.uint8),
-            0,
-            1,
-            1,
-            semantics=mmcfilters.MorphologicalTreeSemantics(
-                node_altitude_order=mmcfilters.NodeAltitudeOrder.INCREASING,
-            ),
-        ),
-        "native factory altitude must reject equality in a strict order",
-    )
     boundary_infinity_tos = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(
         np.array([[0, 1]], dtype=np.uint8),
         self_dual_convention(infinity_pixel=14),

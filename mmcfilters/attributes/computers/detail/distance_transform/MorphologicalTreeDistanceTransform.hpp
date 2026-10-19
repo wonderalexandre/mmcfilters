@@ -118,7 +118,7 @@ class MorphologicalTreeDistanceTransform {
      */
     template <class Consumer> static void forNode(const MorphologicalTree& tree, NodeId node, Consumer&& consumer) {
         const NodeSupportBoxIndex supportIndex(tree);
-        const GridDomain2D& domain = ::mmcfilters::detail::CommittedTreeAccess::gridDomain2D(tree);
+        const GridDomain2D& domain = ::mmcfilters::detail::TreeKernelAccess::gridDomain2D(tree);
         if (!tree.isAlive(node)) {
             throw std::out_of_range("Single-node distance-transform computation requires a live node id.");
         }
@@ -155,7 +155,7 @@ class MorphologicalTreeDistanceTransform {
      */
     template <class Consumer> static void forEachNode(const MorphologicalTree& tree, Consumer&& consumer) {
         NodeSupportBoxIndex supportIndex(tree);
-        const GridDomain2D& domain = ::mmcfilters::detail::CommittedTreeAccess::gridDomain2D(tree);
+        const GridDomain2D& domain = ::mmcfilters::detail::TreeKernelAccess::gridDomain2D(tree);
         ExactSquaredEuclideanDistanceTransform2D transform(1, 1);
         std::vector<PixelId> localContourPixels;
         std::vector<PixelId> localAdditionPixels;

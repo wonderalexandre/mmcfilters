@@ -5,7 +5,7 @@
 
 #include "../mmcfilters/trees/ValuedMorphologicalTree.hpp"
 #include "../mmcfilters/trees/adjust/CasfComponentTrees.hpp"
-#include "../mmcfilters/trees/detail/MorphologicalTreeConstructionContextQueries.hpp"
+#include "../mmcfilters/trees/MorphologicalTree.hpp"
 #include "../mmcfilters/trees/adjust/DualMinMaxTreeIncrementalFilter.hpp"
 #include "../mmcfilters/utils/RegularGridAdjacency2D.hpp"
 #include "../mmcfilters/utils/Common.hpp"
@@ -57,8 +57,8 @@ class DualMinMaxTreeIncrementalFilterPybind {
 
     static RegularGridAdjacency2D makeAdjacency(const ValuedMorphologicalTree<std::uint8_t>& minTree,
                                                 const ValuedMorphologicalTree<std::uint8_t>& maxTree) {
-        const RegularGridAdjacency2D* minAdjacency = mmcfilters::detail::constructionAdjacency(minTree.topology());
-        const RegularGridAdjacency2D* maxAdjacency = mmcfilters::detail::constructionAdjacency(maxTree.topology());
+        const RegularGridAdjacency2D* minAdjacency = minTree.topology().constructionAdjacency();
+        const RegularGridAdjacency2D* maxAdjacency = maxTree.topology().constructionAdjacency();
         if (minAdjacency == nullptr || maxAdjacency == nullptr) {
             throw std::invalid_argument("DualMinMaxTreeIncrementalFilter requires valuedTree component trees with adjacency information.");
         }

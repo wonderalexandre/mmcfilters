@@ -13,13 +13,15 @@
 namespace mmcfilters::detail {
 
 /**
- * @brief Direct reads over a committed tree inside established kernels.
+ * @brief Internal tree access and structural operations for established kernels.
  *
- * Public tree accessors remain defensive.  This facade is deliberately kept
- * in `detail` and may only be used when a dominating public boundary or a
- * construction invariant already established the node/pixel domain.
+ * This facade requires a committed topology and valid node/pixel identifiers,
+ * established by the calling boundary or a construction invariant. It provides
+ * direct reads, structural queries, and traversals without repeating caller
+ * contract validation. Traversal callbacks must preserve the topology.
+ * Public tree accessors remain defensive; this facade stays in `detail`.
  */
-class CommittedTreeAccess {
+class TreeKernelAccess {
   private:
     /**
      * @brief Materializes reusable support metadata when committed-tree versions changed.
@@ -100,9 +102,44 @@ class CommittedTreeAccess {
     /** @brief Reads the parent of an established node. @param tree Committed tree. @param nodeId Established node id. @return Parent node id. */
     [[nodiscard]] static NodeId nodeParent(const MorphologicalTree& tree, NodeId nodeId) noexcept { return tree.nodeParent_[static_cast<std::size_t>(nodeId)]; }
 
+    /** @brief Reads the first child of an established node. @param tree Established tree state. @param nodeId Established node id. @return First child or InvalidNode. */
+    [[nodiscard]] static NodeId firstChild(const MorphologicalTree& tree, NodeId nodeId) noexcept { return tree.firstChild_[static_cast<std::size_t>(nodeId)]; }
+
+    /** @brief Reads the next sibling of an established node. @param tree Established tree state. @param nodeId Established node id. @return Next sibling or InvalidNode. */
+    [[nodiscard]] static NodeId nextSibling(const MorphologicalTree& tree, NodeId nodeId) noexcept { return tree.nextSibling_[static_cast<std::size_t>(nodeId)]; }
+
     /** @brief Iterates children of an established node. @param tree Committed tree. @param nodeId Established node id. @return Child range. */
     [[nodiscard]] static MorphologicalTree::ChildrenRange children(const MorphologicalTree& tree, NodeId nodeId) {
         return MorphologicalTree::ChildrenRange(&tree, tree.firstChild_[static_cast<std::size_t>(nodeId)], tree.topologyVersion_);
+    }
+
+    /**
+     * @brief Runs a depth-first post-order traversal over an established tree.
+     *
+     * @details
+     * Callers establish a committed topology and a live root before entering this
+     * kernel. Callbacks must preserve the topology. The hooks run before visiting
+     * children, after each completed child, and after all children have been merged.
+     *
+     * Child access through `TreeKernelAccess` skips node-id validation. The
+     * shared child iterators retain topology-version assertions when assertions
+     * are enabled, independently of the CHECKED/UNCHECKED contract mode.
+     *
+     * @param tree Established tree topology.
+     * @param rootNodeId Established live traversal root.
+     * @param preProcessing Callback invoked before visiting the children of a node.
+     * @param mergeProcessing Callback invoked after completing one child.
+     * @param postProcessing Callback invoked after all children are merged.
+     */
+    template <class PreProcessing, class MergeProcessing, class PostProcessing>
+    static void traversePostOrder(const MorphologicalTree& tree, NodeId rootNodeId, PreProcessing&& preProcessing, MergeProcessing&& mergeProcessing,
+                                  PostProcessing&& postProcessing) {
+        preProcessing(rootNodeId);
+        for (NodeId childNodeId : TreeKernelAccess::children(tree, rootNodeId)) {
+            traversePostOrder(tree, childNodeId, preProcessing, mergeProcessing, postProcessing);
+            mergeProcessing(rootNodeId, childNodeId);
+        }
+        postProcessing(rootNodeId);
     }
 
     /** @brief Iterates pixels in an established node's proper part. @param tree Committed tree. @param nodeId Established node id. @return Proper-part range. */

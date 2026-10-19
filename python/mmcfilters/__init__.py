@@ -13,8 +13,6 @@ Factory constructors return `ValuedMorphologicalTree`:
 - `MorphologicalTreeFactory.create_min_tree(image)`
 - `MorphologicalTreeFactory.create_extremum_residual_tree(image)`
 - `MorphologicalTreeFactory.create_tree_of_shapes(image)`
-- `MorphologicalTreeFactory.create_from_native_topology(parent, smallest_node_map, node_altitudes, root, semantics)`
-- `MorphologicalTreeFactory.create_from_native_topology(parent, smallest_node_map, node_altitudes, root, rows, columns, semantics)`
 - `MorphologicalTreeFactory.create_from_higra_parent(parent, node_altitudes, rows, columns, MorphologicalTreeKind.MAX_TREE)`
 
 Images passed to Python factories must be 2D C-contiguous `np.uint8` arrays.
@@ -136,12 +134,6 @@ EdgeToPixelReducer = _native.EdgeToPixelReducer
 HierarchyLevelConvention = _native.HierarchyLevelConvention
 NodeIdSpace = _native.NodeIdSpace
 MorphologicalTreeKind = _native.MorphologicalTreeKind
-Polarity = _native.Polarity
-SpatialOrder = _native.SpatialOrder
-RowMajorSpatialOrder = _native.RowMajorSpatialOrder
-SelfDualResidualKey = _native.SelfDualResidualKey
-SelfDualResidualOrder = _native.SelfDualResidualOrder
-SelfDualResidualSchedule = _native.SelfDualResidualSchedule
 NodeAltitudeOrder = _native.NodeAltitudeOrder
 GridDomain2D = _native.GridDomain2D
 MorphologicalTreeSemantics = _native.MorphologicalTreeSemantics
@@ -209,12 +201,6 @@ __all__ = [
     "HierarchyLevelConvention",
     "NodeIdSpace",
     "MorphologicalTreeKind",
-    "Polarity",
-    "SpatialOrder",
-    "RowMajorSpatialOrder",
-    "SelfDualResidualKey",
-    "SelfDualResidualOrder",
-    "SelfDualResidualSchedule",
     "NodeAltitudeOrder",
     "GridDomain2D",
     "MorphologicalTreeSemantics",

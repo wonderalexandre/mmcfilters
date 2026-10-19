@@ -3,8 +3,7 @@
 #include "AttributeComputerDomain.hpp"
 #include "AttributeComputerFamily.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
-#include "../../trees/detail/CommittedTreeAccess.hpp"
-#include "../../trees/detail/TreeTraversalDetail.hpp"
+#include "../../trees/detail/TreeKernelAccess.hpp"
 #include "../../trees/MorphologicalTree.hpp"
 #include "../../utils/Contract.hpp"
 
@@ -166,14 +165,14 @@ inline void computeCentralMoments(const AttributeComputeContext<Real>& context, 
     const int rawInertiaOffset = request.rawInertia ? offsetOf(RawInertia) : 0;
     const auto outputIndex = [&](NodeId node, int offset) { return static_cast<std::size_t>(node * stride + offset); };
 
-    const GridDomain2D& domain = ::mmcfilters::detail::CommittedTreeAccess::gridDomain2D(context.tree);
+    const GridDomain2D& domain = ::mmcfilters::detail::TreeKernelAccess::gridDomain2D(context.tree);
     std::vector<RawMoments> raw(static_cast<std::size_t>(context.tree.numInternalNodeSlots()));
-    ::mmcfilters::detail::kernel::traversePostOrder(
+    ::mmcfilters::detail::TreeKernelAccess::traversePostOrder(
         context.tree, context.tree.root(),
         [&](NodeId node) {
             RawMoments& moments = raw[static_cast<std::size_t>(node)];
             moments = RawMoments{};
-            for (PixelId pixel : ::mmcfilters::detail::CommittedTreeAccess::properParts(context.tree, node)) {
+            for (PixelId pixel : ::mmcfilters::detail::TreeKernelAccess::properParts(context.tree, node)) {
                 const Real x = static_cast<Real>(pixel % domain.columns);
                 const Real y = static_cast<Real>(pixel / domain.columns);
                 const Real x2 = x * x;
@@ -264,7 +263,7 @@ inline void computeHuMoments(const AttributeComputeContext<Real>& context, const
         return ::mmcfilters::attributes::numeric::safeDivide(moment, std::pow(area, static_cast<Real>(p + q + 2) / Real{2}));
     };
 
-    ::mmcfilters::detail::kernel::traversePostOrder(
+    ::mmcfilters::detail::TreeKernelAccess::traversePostOrder(
         context.tree, context.tree.root(), [](NodeId) {}, [](NodeId, NodeId) {},
         [&](NodeId node) {
             const Real area = areaDependency.buffer[areaIndex(node)];
@@ -337,7 +336,7 @@ inline void computeMomentDerived(const AttributeComputeContext<Real>& context, c
     const int areaOffset = areaDependency.attrNames->indexMap.find(Area)->second;
     const auto areaIndex = [&](NodeId node) { return static_cast<std::size_t>(node * areaStride + areaOffset); };
 
-    ::mmcfilters::detail::kernel::traversePostOrder(
+    ::mmcfilters::detail::TreeKernelAccess::traversePostOrder(
         context.tree, context.tree.root(), [](NodeId) {}, [](NodeId, NodeId) {},
         [&](NodeId node) {
             const Real mu20 = momentDependency.buffer[momentIndex(node, mu20Offset)];
@@ -477,6 +476,20 @@ class CentralMomentsComputer {
      */
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
         requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
+        computeUnitRowsEstablished(context);
+    }
+
+  private:
+    /**
+     * @brief Grants unit projection access to established family computation.
+     * @tparam Computer Registered attribute family.
+     * @tparam Context Topology-only or altitude-aware unit context.
+     * @param context Established unit-row storage.
+     */
+    template <class Computer, class Context> friend void mmcfilters::detail::kernel::computeUnitRows(const Context& context);
+
+    /** @brief Computes unit rows without revalidating established pixels or buffers. @param context Established unit-row storage. */
+    template <std::floating_point Real> static void computeUnitRowsEstablished(const UnitAttributeComputeContext<Real>& context) {
         constexpr std::array<Attribute, 8> zeroAttributes{CentralMoment20, CentralMoment02, CentralMoment11, CentralMoment30,
                                                           CentralMoment03, CentralMoment21, CentralMoment12, RawInertia};
         for (const Attribute attribute : zeroAttributes) {
@@ -562,6 +575,20 @@ class HuMomentsComputer {
      */
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
         requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
+        computeUnitRowsEstablished(context);
+    }
+
+  private:
+    /**
+     * @brief Grants unit projection access to established family computation.
+     * @tparam Computer Registered attribute family.
+     * @tparam Context Topology-only or altitude-aware unit context.
+     * @param context Established unit-row storage.
+     */
+    template <class Computer, class Context> friend void mmcfilters::detail::kernel::computeUnitRows(const Context& context);
+
+    /** @brief Computes unit rows without revalidating established pixels or buffers. @param context Established unit-row storage. */
+    template <std::floating_point Real> static void computeUnitRowsEstablished(const UnitAttributeComputeContext<Real>& context) {
         constexpr std::array<Attribute, 7> zeroAttributes{HuMoment1, HuMoment2, HuMoment3, HuMoment4, HuMoment5, HuMoment6, HuMoment7};
         for (const Attribute attribute : zeroAttributes) {
             if (!requestsAttribute(context.requestedAttributes, attribute)) {
@@ -662,6 +689,20 @@ class MomentBasedAttributeComputer {
      */
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
         requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
+        computeUnitRowsEstablished(context);
+    }
+
+  private:
+    /**
+     * @brief Grants unit projection access to established family computation.
+     * @tparam Computer Registered attribute family.
+     * @tparam Context Topology-only or altitude-aware unit context.
+     * @param context Established unit-row storage.
+     */
+    template <class Computer, class Context> friend void mmcfilters::detail::kernel::computeUnitRows(const Context& context);
+
+    /** @brief Computes unit rows without revalidating established pixels or buffers. @param context Established unit-row storage. */
+    template <std::floating_point Real> static void computeUnitRowsEstablished(const UnitAttributeComputeContext<Real>& context) {
         constexpr std::array<Attribute, 8> zeroAttributes{Compactness,      Eccentricity, LengthMajorAxis, LengthMinorAxis,
                                                           AxisOrientation, Inertia,      Circularity, AxisOrientationSigned};
         for (const Attribute attribute : zeroAttributes) {

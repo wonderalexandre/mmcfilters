@@ -3,7 +3,7 @@
 #include "ContourSideAttributeData.hpp"
 #include "../../detail/AttributeKernelSupport.hpp"
 #include "../../../trees/MorphologicalTree.hpp"
-#include "../../../trees/detail/TreeTraversalDetail.hpp"
+#include "../../../trees/detail/TreeKernelAccess.hpp"
 
 #include <concepts>
 #include <cstddef>
@@ -64,7 +64,7 @@ inline void materializeContourSideAttributes(const AttributeComputeContext<Real>
     const int southOffset = request.south ? offsetOf(ContourSideSouth) : 0;
     const auto outputIndex = [&](NodeId node, int offset) { return static_cast<std::size_t>(node * stride + offset); };
 
-    ::mmcfilters::detail::kernel::traversePostOrder(
+    ::mmcfilters::detail::TreeKernelAccess::traversePostOrder(
         context.tree, context.tree.root(), [](NodeId) {}, [](NodeId, NodeId) {},
         [&](NodeId node) {
             const ContourSideCounts& counts = sideCounts[static_cast<std::size_t>(node)];
@@ -133,16 +133,14 @@ class ContourSideAttributeMaterialization {
      * A one-pixel unit support contributes one contour pixel and four exposed
      * sides, one in each cardinal direction.
      *
-     * @param tree Tree topology.
      * @param unitPixels Proper-part data.
      * @param buffer Buffer read or written by the operation.
      * @param attrNames Layout that maps attributes to buffer columns.
      * @param requestedAttributes Attributes requested for materialization.
      */
     template <std::floating_point Real>
-    static void materializeUnitContourSideAttributes(const MorphologicalTree& tree, std::span<const PixelId> unitPixels, std::span<Real> buffer,
+    static void materializeUnitContourSideAttributes(std::span<const PixelId> unitPixels, std::span<Real> buffer,
                                                      const AttributeNames& attrNames, std::span<const Attribute> requestedAttributes) {
-        requireUnitAttributeBufferShape(tree, unitPixels, buffer, attrNames);
 
         const bool computeContourPixels = requestsAttribute(requestedAttributes, ContourPixels);
         const bool computeContourPerimeter = requestsAttribute(requestedAttributes, ContourPerimeter);

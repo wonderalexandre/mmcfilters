@@ -18,8 +18,32 @@
 #include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
 #include "mmcfilters/trees/TreeAltitudeAlgorithms.hpp"
 #include "mmcfilters/trees/ValuedMorphologicalTree.hpp"
+#include "mmcfilters/trees/detail/HigraHierarchyDetail.hpp"
 
 namespace mmcfilters::unit_tests {
+
+/** @brief Materializes synthetic test fixtures through the internal construction path. */
+template <AltitudeValue T> ValuedMorphologicalTree<T> makeValuedHierarchy(NativeHierarchyView<T> hierarchy) {
+    detail::NativeHierarchyValidation::validateComplete(hierarchy);
+    return detail::materializeNativeHierarchy<T>(makeNativeHierarchyOwned(
+        std::vector<NodeId>(hierarchy.parent.begin(), hierarchy.parent.end()),
+        std::vector<NodeId>(hierarchy.smallestNodeMap.begin(), hierarchy.smallestNodeMap.end()),
+        std::vector<T>(hierarchy.nodeAltitudes.begin(), hierarchy.nodeAltitudes.end()), hierarchy.root, hierarchy.gridDomain2D,
+        std::move(hierarchy.semantics)));
+}
+
+template <AltitudeValue T>
+ValuedMorphologicalTree<T> makeValuedHierarchy(std::span<const NodeId> parent, std::span<const NodeId> smallestNodeMap,
+                                               std::span<const T> altitude, NodeId root, MorphologicalTreeSemantics semantics) {
+    return makeValuedHierarchy(NativeHierarchyView<T>{parent, smallestNodeMap, altitude, root, std::nullopt, std::move(semantics)});
+}
+
+template <AltitudeValue T>
+ValuedMorphologicalTree<T> makeValuedHierarchy(std::span<const NodeId> parent, std::span<const NodeId> smallestNodeMap,
+                                               std::span<const T> altitude, NodeId root, int rows, int columns,
+                                               MorphologicalTreeSemantics semantics) {
+    return makeValuedHierarchy(NativeHierarchyView<T>{parent, smallestNodeMap, altitude, root, GridDomain2D{rows, columns}, std::move(semantics)});
+}
 
 inline void require(bool condition, const std::string& message) {
     if (!condition) {

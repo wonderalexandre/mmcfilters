@@ -34,8 +34,7 @@ void addConstructionScenarios(Context& context, std::vector<ScenarioResult>& res
                                       });
     addTreeConstruction<std::uint8_t>(context, results, "self_dual_residual_unrestricted", [&] {
         return MorphologicalTreeFactory::createExtremumResidualTreeByCTs(
-            context.imageUInt8, context.adjacency,
-            sdrt::ExtremumResidualTreeOptions{});
+            context.imageUInt8, context.adjacency);
     });
     addTreeConstruction<std::int32_t>(context, results, "max_tree_int32", [&] { return MorphologicalTreeFactory::createMaxTree(context.imageInt32, 1.5); });
     addTreeConstruction<float>(context, results, "max_tree_float", [&] { return MorphologicalTreeFactory::createMaxTree(context.imageFloat, 1.5); });

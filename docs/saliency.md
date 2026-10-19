@@ -161,8 +161,8 @@ objects reject use after topology mutation.
   input attribute may be negative, but projected scores must be finite and
   non-negative.
 
-Invalid domains, disconnected supports, stale topology, invalid LCAs, negative
-formal values, and non-finite values are rejected.
+Invalid domains, disconnected supports, stale topology, negative formal values,
+and non-finite values are rejected.
 
 ## Determinism
 

@@ -1,8 +1,8 @@
 #pragma once
 
+#include "../../detail/BitquadProjectionAdjacencies.hpp"
 #include "../../../trees/MorphologicalTree.hpp"
 #include "../../../trees/TreeAltitudeAlgorithms.hpp"
-#include "../../../trees/detail/MorphologicalTreeConstructionContextQueries.hpp"
 
 #include <optional>
 #include <span>
@@ -87,7 +87,7 @@ inline BitquadConnectivity bitquadConnectivity(const RegularGridAdjacency2D& adj
  * @return Explicit root/lower/upper bitquad connectivity policy.
  */
 inline BitquadConnectivityPolicy makeBitquadConnectivityPolicy(const MorphologicalTree& tree, bool nodeAltitudesAvailable) {
-    if (const RegularGridAdjacency2D* adjacency = ::mmcfilters::detail::constructionAdjacency(tree)) {
+    if (const RegularGridAdjacency2D* adjacency = tree.constructionAdjacency()) {
         const BitquadConnectivity connectivity = bitquadConnectivity(*adjacency);
         return {connectivity, connectivity, connectivity, false};
     }

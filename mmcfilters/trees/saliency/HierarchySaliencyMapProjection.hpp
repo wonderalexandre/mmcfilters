@@ -2,7 +2,7 @@
 
 #include "HierarchySaliencyMap.hpp"
 #include "../../utils/Image.hpp"
-#include "../detail/MorphologicalTreeConstructionContextQueries.hpp"
+#include "../MorphologicalTree.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -236,9 +236,7 @@ class HierarchySaliencyMapProjection {
      * @param context Operation name used in diagnostics.
      */
     static void validateTreeAndAdjacency(const MorphologicalTree& tree, const RegularGridAdjacency2D& adjacency, const char* context) {
-        if (tree.root() == InvalidNode) {
-            throw std::invalid_argument(std::string(context) + " requires a non-empty rooted tree.");
-        }
+        detail::requireCommittedRootedHierarchy(tree, context);
         if (tree.numRows() <= 0 || tree.numColumns() <= 0 || tree.numPixels() <= 0) {
             throw std::invalid_argument(std::string(context) + " requires a non-empty image/pixel domain.");
         }
@@ -263,9 +261,6 @@ class HierarchySaliencyMapProjection {
         contours.offsets.assign(static_cast<std::size_t>(contours.numNodeSlots) + 1, 0);
 
         for (NodeId nodeId : flat.nodes) {
-            if (nodeId < 0 || nodeId >= contours.numNodeSlots) {
-                throw std::runtime_error("HierarchySaliencyMapProjection::computeIncrementalNodeContours found an LCA outside the dense node-id domain.");
-            }
             ++contours.offsets[static_cast<std::size_t>(nodeId) + 1];
         }
         std::partial_sum(contours.offsets.begin(), contours.offsets.end(), contours.offsets.begin());
@@ -401,24 +396,15 @@ class HierarchySaliencyMapProjection {
 
         const int numPixels = tree.numPixels();
         for (NodeId source = 0; source < numPixels; ++source) {
-            const NodeId sourceSmallestNode = tree.smallestNode(source);
-            if (!tree.isAlive(sourceSmallestNode)) {
-                throw std::runtime_error(std::string(context) + " found a pixel without a live smallest node.");
-            }
+            const NodeId sourceSmallestNode = detail::TreeKernelAccess::smallestNodeMap(tree, source);
 
-            for (int target : adjacency.getForwardNeighborIndices(source)) {
-                const NodeId targetSmallestNode = tree.smallestNode(target);
-                if (!tree.isAlive(targetSmallestNode)) {
-                    throw std::runtime_error(std::string(context) + " found a neighbour pixel without a live smallest node.");
-                }
+            for (int target : detail::CommittedGridAccess::forwardNeighbors(adjacency, source)) {
+                const NodeId targetSmallestNode = detail::TreeKernelAccess::smallestNodeMap(tree, target);
                 if (sourceSmallestNode == targetSmallestNode) {
                     continue;
                 }
 
-                const NodeId lca = tree.lowestCommonAncestor(sourceSmallestNode, targetSmallestNode);
-                if (lca == InvalidNode || !tree.isAlive(lca)) {
-                    throw std::runtime_error(std::string(context) + " could not find a live LCA for an adjacency edge.");
-                }
+                const NodeId lca = detail::TreeKernelAccess::lowestCommonAncestor(tree, sourceSmallestNode, targetSmallestNode);
 
                 contours.sources.push_back(source);
                 contours.targets.push_back(target);
@@ -435,7 +421,7 @@ class HierarchySaliencyMapProjection {
      * @return The projected stored-adjacency transition edges onto hierarchy nodes.
      */
     [[nodiscard]] static NodeContourEdgeMap nodeContourEdges(const MorphologicalTree& tree) {
-        const RegularGridAdjacency2D* adjacency = ::mmcfilters::detail::constructionAdjacency(tree);
+        const RegularGridAdjacency2D* adjacency = tree.constructionAdjacency();
         if (adjacency == nullptr) {
             throw std::invalid_argument(
                 "HierarchySaliencyMapProjection::nodeContourEdges requires an attached adjacency relation; pass an explicit adjacency relation instead.");

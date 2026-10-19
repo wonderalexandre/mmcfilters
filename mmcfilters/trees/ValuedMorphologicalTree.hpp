@@ -4,6 +4,7 @@
 #include "TreeAltitudeAlgorithms.hpp"
 #include "TreeEditor.hpp"
 #include "ValuedMorphologicalTreeView.hpp"
+#include "NativeHierarchyOwned.hpp"
 #include "../utils/Contract.hpp"
 #include "../utils/Image.hpp"
 
@@ -55,33 +56,6 @@ template <AltitudeValue T> class ValuedMorphologicalTree {
     MorphologicalTree tree_;
     /** @brief Altitude. */
     NodeAltitudeBuffer nodeAltitudes_;
-
-    /**
-     * @brief Copies an altitude buffer already indexed by internal node slots.
-     *
-     * @param altitudeValues Altitude or level.
-     */
-    void assignInternalNodeAltitudes(std::span<const T> altitudeValues) {
-        if (altitudeValues.size() != static_cast<size_t>(tree_.numInternalNodeSlots())) {
-            throw std::invalid_argument("Internal altitude buffer size must match the dense internal-node domain.");
-        }
-        TreeAltitudeAlgorithms::validateFiniteAltitudeValues(altitudeValues, "ValuedMorphologicalTree internal altitude input");
-        nodeAltitudes_.assign(altitudeValues.begin(), altitudeValues.end());
-    }
-
-    /**
-     * @brief Takes ownership of an altitude buffer already indexed by internal
-     * node slots.
-     *
-     * @param altitudeValues Altitude or level.
-     */
-    void assignInternalNodeAltitudes(NodeAltitudeBuffer&& altitudeValues) {
-        if (altitudeValues.size() != static_cast<size_t>(tree_.numInternalNodeSlots())) {
-            throw std::invalid_argument("Internal altitude buffer size must match the dense internal-node domain.");
-        }
-        TreeAltitudeAlgorithms::validateFiniteAltitudeValues(std::span<const T>(altitudeValues), "ValuedMorphologicalTree internal altitude input");
-        nodeAltitudes_ = std::move(altitudeValues);
-    }
 
     /**
      * @brief Returns whether this tree kind has no global monotone altitude order.
@@ -179,17 +153,16 @@ template <AltitudeValue T> class ValuedMorphologicalTree {
     }
 
     /**
-     * @brief Consumes a producer-owned altitude buffer in the internal node-id
-     * domain.
+     * @brief Consumes established topology and altitude buffers without revalidation.
+     *
+     * Builders establish these invariants by construction. Import boundaries
+     * validate external data before entering this tagged constructor.
      *
      * @param topology Tree topology.
      * @param altitude Altitude data indexed by node identifier.
      */
-    ValuedMorphologicalTree(detail::MorphologicalTreeConstructionTag, MorphologicalTree&& topology, NodeAltitudeBuffer&& altitude) : tree_(std::move(topology)) {
-        assignInternalNodeAltitudes(std::move(altitude));
-        validateNodeAltitudeBufferShape();
-        validateMonotoneNodeAltitudes();
-    }
+    ValuedMorphologicalTree(detail::MorphologicalTreeConstructionTag, MorphologicalTree&& topology, NodeAltitudeBuffer&& altitude)
+        : tree_(std::move(topology)), nodeAltitudes_(std::move(altitude)) {}
 
     /**
      * @brief Checks that the altitude buffer covers the dense internal-node domain.
@@ -222,11 +195,11 @@ template <AltitudeValue T> class ValuedMorphologicalTree {
     [[nodiscard]] NodeAltitudeSpan<T> nodeAltitudeSpan() const noexcept { return std::span<const T>(nodeAltitudes_); }
 
     /**
-     * @brief Creates a non-owning valued-tree view over this owner.
+     * @brief Creates a non-owning view using the established altitude guarantees of this owner.
      *
      * @return The created non-owning valued-tree view over this owner.
      */
-    [[nodiscard]] ValuedMorphologicalTreeView<T> asView() const { return ValuedMorphologicalTreeView<T>(tree_, nodeAltitudeSpan()); }
+    [[nodiscard]] ValuedMorphologicalTreeView<T> asView() const { return ValuedMorphologicalTreeView<T>(*this); }
 
     /**
      * @brief Replaces the owned altitude buffer after full validation.
@@ -781,6 +754,36 @@ template <AltitudeValue T> class ValuedMorphologicalTreeEditor {
 };
 
 namespace detail {
+
+/**
+ * @brief Materializes validated native buffers without copying them or repeating complete structural validation.
+ *
+ * Builders establish structural validity during construction. External imports
+ * complete structural and altitude validation before reaching this function. The private construction
+ * tag is created here; callers use this internal function only after establishing
+ * all topology and altitude invariants.
+ *
+ * @param hierarchy Owned topology, valuation, domain, and semantics.
+ * @param preservedExternalNodeIdOffset Original Higra node-id offset, when present.
+ * @param versionPolicy Initial mutation-version policy.
+ * @return Valued-tree owner consuming the native buffers.
+ */
+template <AltitudeValue T>
+[[nodiscard]] ValuedMorphologicalTree<T> materializeNativeHierarchy(NativeHierarchyOwned<T>&& hierarchy,
+                                                                  std::optional<NodeId> preservedExternalNodeIdOffset,
+                                                                  MaterializedVersionPolicy versionPolicy) {
+    const MorphologicalTreeConstructionTag tag{};
+    const std::size_t numNodes = hierarchy.parent.size();
+    MorphologicalTree topology(tag, std::move(hierarchy.parent), std::move(hierarchy.smallestNodeMap), hierarchy.root, hierarchy.gridDomain2D,
+                               std::move(hierarchy.semantics));
+    if (versionPolicy == MaterializedVersionPolicy::PreserveLinkedConstruction) {
+        topology.mutationVersion_ = numNodes + 1;
+    }
+    if (preservedExternalNodeIdOffset) {
+        topology.preserveExternalNodeIdOffset(*preservedExternalNodeIdOffset);
+    }
+    return ValuedMorphologicalTree<T>(tag, std::move(topology), std::move(hierarchy.nodeAltitudes));
+}
 
 /**
  * @brief Internal entrypoint for algorithms that establish every edit

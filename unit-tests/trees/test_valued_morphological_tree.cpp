@@ -1,5 +1,5 @@
 #include "support/TestSupport.hpp"
-#include "mmcfilters/trees/detail/TreeAttributeSamplingNeighborhood.hpp"
+#include "mmcfilters/trees/detail/TreeNeighborhood.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -55,7 +55,123 @@ AttributeNames makeDenseAttributeNames(const std::vector<Attribute>& attributes)
     return AttributeNames(std::move(offsets));
 }
 
+template <AltitudeValue T>
+void checkHigraExportOrdering(NodeAltitudeOrder order, const std::vector<T>& altitude, const std::vector<NodeId>& expectedParent,
+                             const std::vector<T>& expectedAltitude, const std::vector<float>& expectedColumns, bool removeNode = false) {
+    // Internal ids differ from traversal order. Equal-altitude leaves belong to
+    // different branches, and the root and branch nodes have empty proper parts.
+    const std::vector<NodeId> nodeParent{4, 0, 4, 0, 4, 2, 2};
+    const std::vector<NodeId> smallestNodeMap{1, 3, 5, 6};
+    auto tree = makeValuedHierarchy(
+        std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap), std::span<const T>(altitude), 4, 1, 4,
+        MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, order, NoConstructionContext{}});
+    if (removeNode) {
+        tree.mergeNodeIntoParent(3);
+        requireEqual(tree.topology().numInternalNodeSlots(), 7, "Higra export fixture retains a dead node slot");
+        requireEqual(tree.topology().numNodes(), 6, "Higra export fixture removes one live node");
+    }
+
+    const auto [parent, exportedAltitude] = tree.exportHigraHierarchy();
+    requireVectorEqual(parent, expectedParent, "Higra export preserves exact parent ids");
+    requireVectorEqual(exportedAltitude, expectedAltitude, "Higra export preserves exact altitude rows");
+
+    // Spatial values distinguish equal-altitude leaves even when their areas match.
+    const auto [names, columns] = AttributeComputation::computeSingleAttribute<float>(tree, BoxColumnMin);
+    const auto projected = AttributeComputation::projectNodeValuesToExportedHigra(tree, names, columns);
+    requireVectorEqual(projected, expectedColumns, "Higra attribute projection follows the exact exported ids");
+}
+
+void checkAltitudeValidationBoundaries() {
+    const std::vector<NodeId> parent{0, 0, 1};
+    const std::vector<NodeId> smallestNodeMap{2};
+    for (const auto order : {NodeAltitudeOrder::Increasing, NodeAltitudeOrder::Decreasing, NodeAltitudeOrder::Unconstrained}) {
+        const std::vector<float> altitude = order == NodeAltitudeOrder::Increasing ? std::vector<float>{0, 1, 2}
+                                          : order == NodeAltitudeOrder::Decreasing ? std::vector<float>{2, 1, 0}
+                                                                                  : std::vector<float>{1, 3, 2};
+        const MorphologicalTreeSemantics semantics{MorphologicalTreeKind::Generic, order, NoConstructionContext{}};
+        auto import = [&](const std::vector<float>& values) {
+            return makeValuedHierarchy(
+                std::span<const NodeId>(parent), std::span<const NodeId>(smallestNodeMap), std::span<const float>(values), 0, 1, 1, semantics);
+        };
+        auto owner = import(altitude);
+        const auto ownerView = owner.asView();
+        require(ownerView.nodeAltitudes().data() == owner.nodeAltitudeSpan().data(), "asView borrows the established owned altitude buffer");
+        const ValuedMorphologicalTreeView<float> vectorView(owner.topology(), altitude);
+        const ValuedMorphologicalTreeView<float> spanView(owner.topology(), std::span<const float>(altitude));
+        require(vectorView.nodeAltitudes().data() == altitude.data(), "external vector view borrows without copying");
+        require(spanView.nodeAltitudes().data() == altitude.data(), "external span view borrows without copying");
+
+        if (order != NodeAltitudeOrder::Unconstrained) {
+            const std::vector<float> inverted{altitude[2], altitude[1], altitude[0]};
+            const std::vector<float> equal(3, 1.0f);
+            for (const auto& invalid : {inverted, equal}) {
+                requireThrows<std::runtime_error>([&] { static_cast<void>(import(invalid)); }, "native import enforces declared altitude order");
+                requireThrows<std::runtime_error>(
+                    [&] { static_cast<void>(ValuedMorphologicalTreeView<float>(owner.topology(), invalid)); },
+                    "external vector view enforces declared altitude order");
+                requireThrows<std::runtime_error>(
+                    [&] { static_cast<void>(ValuedMorphologicalTreeView<float>(owner.topology(), std::span<const float>(invalid))); },
+                    "external span view enforces declared altitude order");
+            }
+        }
+
+        for (const float invalidValue : {std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity(),
+                                         -std::numeric_limits<float>::infinity()}) {
+            auto invalid = altitude;
+            invalid[1] = invalidValue;
+            requireThrows<std::invalid_argument>([&] { static_cast<void>(import(invalid)); }, "native import rejects non-finite altitudes");
+            if constexpr (contract::validationsEnabled) {
+                requireThrows<std::invalid_argument>(
+                    [&] { static_cast<void>(ValuedMorphologicalTreeView<float>(owner.topology(), invalid)); },
+                    "external view rejects non-finite altitudes including unconstrained valuations");
+            }
+        }
+    }
+}
+
 int main() {
+    checkAltitudeValidationBoundaries();
+    {
+        const std::vector<NodeId> orderedParent{4, 6, 5, 7, 8, 9, 8, 9, 10, 10, 10};
+        const std::vector<float> orderedColumns{0, 1, 2, 3, 0, 2, 1, 3, 0, 2, 0};
+        checkHigraExportOrdering<std::uint8_t>(NodeAltitudeOrder::Increasing, {4, 8, 2, 6, 0, 8, 6}, orderedParent,
+                                             {8, 6, 8, 6, 8, 8, 6, 6, 4, 2, 0}, orderedColumns);
+        checkHigraExportOrdering<std::uint8_t>(NodeAltitudeOrder::Decreasing, {6, 2, 8, 4, 10, 2, 4}, orderedParent,
+                                             {2, 4, 2, 4, 2, 2, 4, 4, 6, 8, 10}, orderedColumns);
+        checkHigraExportOrdering<float>(NodeAltitudeOrder::Increasing, {4.25f, 8.25f, 2.25f, 6.25f, 0.25f, 8.25f, 6.25f}, orderedParent,
+                                       {8.25f, 6.25f, 8.25f, 6.25f, 8.25f, 8.25f, 6.25f, 6.25f, 4.25f, 2.25f, 0.25f}, orderedColumns);
+        checkHigraExportOrdering<std::uint8_t>(NodeAltitudeOrder::Unconstrained, {10, 0, 10, 20, 10, 20, 0},
+                                             {4, 5, 7, 8, 6, 6, 10, 9, 9, 10, 10}, {0, 20, 20, 0, 0, 20, 10, 20, 0, 10, 10},
+                                             {0, 1, 2, 3, 0, 1, 0, 2, 3, 2, 0});
+        checkHigraExportOrdering<std::uint8_t>(NodeAltitudeOrder::Increasing, {4, 8, 2, 6, 0, 8, 6},
+                                             {4, 7, 5, 6, 7, 8, 8, 9, 9, 9}, {8, 4, 8, 6, 8, 8, 6, 4, 2, 0},
+                                             {0, 1, 2, 3, 0, 2, 3, 0, 2, 0}, true);
+    }
+
+    {
+        const std::vector<NodeId> nodeParent{4, 0, 4, 0, 4, 2, 2};
+        const std::vector<NodeId> smallestNodeMap{1, 3, 5, 6};
+        const std::vector<float> altitude{4, 8, 2, 6, 0, 8, 6};
+        const auto tree = makeValuedHierarchy(
+            std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap), std::span<const float>(altitude), 4, 1, 4,
+            MorphologicalTreeSemantics{MorphologicalTreeKind::Generic, NodeAltitudeOrder::Increasing, NoConstructionContext{}});
+        // Raw altitude-span export preserves post-order ties. Ordered views
+        // reject equal parent-child values at the input boundary.
+        const std::vector<float> equalAltitude(7, 7.0f);
+        const auto [parent, exportedAltitude] = TreeAltitudeAlgorithms::exportHigraHierarchy(tree.topology(), std::span<const float>(equalAltitude));
+        requireVectorEqual(parent, {4, 5, 7, 8, 6, 6, 10, 9, 9, 10, 10}, "borrowed altitude export preserves post-order ties");
+        requireVectorEqual(exportedAltitude, std::vector<float>(11, 7.0f), "borrowed altitude export preserves equal values");
+        const auto [names, columns] = AttributeComputation::computeSingleAttribute<float>(tree, BoxColumnMin);
+        requireThrows<std::runtime_error>([&] { static_cast<void>(ValuedMorphologicalTreeView<float>(tree.topology(), equalAltitude)); },
+                                          "ordered external view must reject equal parent-child altitudes");
+        const auto unconstrained = makeValuedHierarchy(
+            std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap), std::span<const float>(equalAltitude), 4, 1, 4,
+            MorphologicalTreeSemantics{});
+        const ValuedMorphologicalTreeView<float> view(unconstrained.topology(), equalAltitude);
+        const auto projected = AttributeComputation::projectNodeValuesToExportedHigra(view, names, columns);
+        requireVectorEqual(projected, {0, 1, 2, 3, 0, 1, 0, 2, 3, 2, 0}, "borrowed altitude projection preserves post-order ties");
+    }
+
     {
         auto image = makeComponentTreeFixture();
         auto valuedTree = makeValuedComponentTree(image, true);
@@ -188,12 +304,11 @@ int main() {
     {
         auto valuedTree = makeValuedComponentTree(makeComponentTreeFixture(), true);
 
-        const auto neighborhood = detail::computeNodeAttributeSamplingNeighborhood(
-            valuedTree->topology(), std::span<const std::uint8_t>(valuedTree->nodeAltitudes()), static_cast<AltitudeDifference<std::uint8_t>>(2),
-            NodeAttributeSamplingPolicy::LargestSupportDescendant);
+        detail::TreeNeighborhood neighborhood(valuedTree->topology());
+        neighborhood.computeByAltitude(valuedTree->nodeAltitudeSpan(), AltitudeDifference<std::uint8_t>{2});
         requireVectorEqual(neighborhood.ancestors, {InvalidNode, InvalidNode, 0, 1, 2, 3},
                            "valuedTree level-based ancestors must use the external altitude buffer");
-        requireVectorEqual(neighborhood.representativeDescendants, {2, 3, 4, 5, InvalidNode, InvalidNode},
+        requireVectorEqual(neighborhood.descendants, {2, 3, 4, 5, InvalidNode, InvalidNode},
                            "valuedTree representative descendants must use the external altitude buffer");
     }
 
@@ -370,7 +485,7 @@ int main() {
         const std::vector<NodeId> nodeParent{2, 2, 2};
         const std::vector<NodeId> smallestNodeMap{0, 1};
         const std::vector<std::uint8_t> altitude{0, 20, 10};
-        auto mixedPolarity = MorphologicalTreeFactory::createFromNativeTopology(
+        auto mixedPolarity = makeValuedHierarchy(
             std::span<const NodeId>(nodeParent), std::span<const NodeId>(smallestNodeMap), std::span<const std::uint8_t>(altitude), 2, 1, 2,
             MorphologicalTreeSemantics{MorphologicalTreeKind::TreeOfShapes, NodeAltitudeOrder::Unconstrained, NoConstructionContext{}});
 

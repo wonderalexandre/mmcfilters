@@ -1,28 +1,10 @@
 #pragma once
 
-#include "../MorphologicalTree.hpp"
+#include "../../trees/MorphologicalTree.hpp"
 
 #include <optional>
 
 namespace mmcfilters::detail {
-
-/** @brief Returns the adjacency explicitly retained by a shared construction context. */
-inline const RegularGridAdjacency2D* constructionAdjacency(const MorphologicalTree& tree) noexcept {
-    if (const auto* context = tree.sharedAdjacencyContext()) {
-        return &context->adjacency;
-    }
-    return nullptr;
-}
-
-/** @brief Returns explicitly retained complementary topographic adjacencies, or `nullptr`. */
-inline const ComplementaryAdjacencies* complementaryAdjacencies(const MorphologicalTree& tree) noexcept {
-    const TopographicConvention* convention = tree.topographicConvention();
-    if (convention == nullptr) {
-        return nullptr;
-    }
-    const auto* immersion = std::get_if<ComplementaryGridImmersion>(&convention->immersion);
-    return immersion ? &immersion->complementaryAdjacencies : nullptr;
-}
 
 /**
  * @brief Materializes the two adjacencies used by the current bitquad scalar projection.
@@ -33,7 +15,7 @@ inline const ComplementaryAdjacencies* complementaryAdjacencies(const Morphologi
  * those derived relations as construction metadata.
  */
 inline std::optional<ComplementaryAdjacencies> currentBitquadProjectionAdjacencies(const MorphologicalTree& tree) {
-    if (const auto* adjacencies = complementaryAdjacencies(tree)) {
+    if (const auto* adjacencies = tree.complementaryAdjacencies()) {
         return *adjacencies;
     }
     const TopographicConvention* convention = tree.topographicConvention();

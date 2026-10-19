@@ -8,7 +8,7 @@
  * Public callers should use `AttributeComputation::computeSampledNodeAttribute(...)`.
  */
 
-#include "../../trees/detail/TreeAttributeSamplingNeighborhood.hpp"
+#include "../../trees/detail/TreeNeighborhood.hpp"
 #include "AttributeProjection.hpp"
 #include "../AttributeResultTypes.hpp"
 #include "../../trees/MorphologicalTree.hpp"
@@ -24,10 +24,38 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 namespace mmcfilters::detail {
+
+/**
+ * @brief Rejects a zero, negative, or non-finite altitude step at the sampling boundary.
+ * @param altitudeStep Requested altitude distance.
+ * @param context Diagnostic operation name.
+ */
+template <AltitudeValue T> inline void validatePositiveAltitudeStep(AltitudeDifference<T> altitudeStep, const char* context) {
+    if constexpr (std::is_floating_point_v<AltitudeDifference<T>>) {
+        MMCFILTERS_CONTRACT_REQUIRE(std::isfinite(altitudeStep),
+                                    throw std::invalid_argument(std::string(context) + " requires a finite altitude step."));
+    }
+    MMCFILTERS_CONTRACT_REQUIRE(altitudeStep > AltitudeDifference<T>{},
+                                throw std::invalid_argument(std::string(context) + " requires a positive altitude step."));
+}
+
+/**
+ * @brief Rejects unsupported representative-descendant policies at the sampling boundary.
+ * @param samplingPolicy Requested representative-descendant policy.
+ */
+inline void validateNodeAttributeSamplingPolicy(NodeAttributeSamplingPolicy samplingPolicy) {
+    switch (samplingPolicy) {
+    case NodeAttributeSamplingPolicy::LargestSupportDescendant:
+        return;
+    default:
+        throw std::invalid_argument("Unknown node-attribute sampling policy.");
+    }
+}
 
 /**
  * @brief Rejects a negative ancestor/descendant sampling radius.
@@ -91,17 +119,6 @@ materializeNodeAttributeSamples(const MorphologicalTree& tree, std::span<const T
     std::vector<std::uint8_t> samplePresent(outputSize, std::uint8_t{0});
     const auto aliveNodes = tree.aliveNodeIds();
 
-    NodeSupportSamplingMetadata supportMetadata;
-    NodeAttributeSamplingNeighborhood neighborhood;
-    if (samplingRadius > 0) {
-        validateGlobalMonotoneAltitudeOrder(tree, "computeSampledNodeAttribute");
-        supportMetadata = computeNodeSupportSamplingMetadata(tree);
-        neighborhood = {
-            std::vector<NodeId>(static_cast<std::size_t>(numSlots), InvalidNode),
-            std::vector<NodeId>(static_cast<std::size_t>(numSlots), InvalidNode),
-        };
-    }
-
     for (NodeId nodeId : aliveNodes) {
         const int outputIndex = sampleLayout.linearIndex(nodeId, attribute, 0);
         const int baseIndex = baseLayout.linearIndex(nodeId, attribute);
@@ -109,26 +126,30 @@ materializeNodeAttributeSamples(const MorphologicalTree& tree, std::span<const T
         samplePresent[static_cast<std::size_t>(outputIndex)] = std::uint8_t{1};
     }
 
-    for (int sampleDistance = 1; sampleDistance <= samplingRadius; ++sampleDistance) {
-        const AltitudeDifference<T> altitudeDistance = altitudeStep * static_cast<AltitudeDifference<T>>(sampleDistance);
-        validatePositiveAltitudeStep<T>(altitudeDistance, "computeSampledNodeAttribute");
-        kernel::fillNodeAttributeSamplingNeighborhood(tree, aliveNodes, altitude, altitudeDistance, supportMetadata, neighborhood);
+    if (samplingRadius > 0) {
+        TreeAltitudeAlgorithms::requireGlobalMonotoneAltitudeOrder(tree, "computeSampledNodeAttribute");
+        TreeNeighborhood neighborhood(tree);
+        for (int sampleDistance = 1; sampleDistance <= samplingRadius; ++sampleDistance) {
+            const AltitudeDifference<T> altitudeDistance = altitudeStep * static_cast<AltitudeDifference<T>>(sampleDistance);
+            validatePositiveAltitudeStep<T>(altitudeDistance, "computeSampledNodeAttribute");
+            neighborhood.computeByAltitude(altitude, altitudeDistance);
 
-        for (NodeId nodeId : aliveNodes) {
-            const NodeId ancestor = neighborhood.ancestors[static_cast<std::size_t>(nodeId)];
-            if (ancestor != InvalidNode) {
-                const int outputIndex = sampleLayout.linearIndex(nodeId, attribute, -sampleDistance);
-                const int baseIndex = baseLayout.linearIndex(ancestor, attribute);
-                sampledValues[static_cast<std::size_t>(outputIndex)] = baseValues[static_cast<std::size_t>(baseIndex)];
-                samplePresent[static_cast<std::size_t>(outputIndex)] = std::uint8_t{1};
-            }
+            for (NodeId nodeId : aliveNodes) {
+                const NodeId ancestor = neighborhood.ancestors[static_cast<std::size_t>(nodeId)];
+                if (ancestor != InvalidNode) {
+                    const int outputIndex = sampleLayout.linearIndex(nodeId, attribute, -sampleDistance);
+                    const int baseIndex = baseLayout.linearIndex(ancestor, attribute);
+                    sampledValues[static_cast<std::size_t>(outputIndex)] = baseValues[static_cast<std::size_t>(baseIndex)];
+                    samplePresent[static_cast<std::size_t>(outputIndex)] = std::uint8_t{1};
+                }
 
-            const NodeId descendant = neighborhood.representativeDescendants[static_cast<std::size_t>(nodeId)];
-            if (descendant != InvalidNode) {
-                const int outputIndex = sampleLayout.linearIndex(nodeId, attribute, sampleDistance);
-                const int baseIndex = baseLayout.linearIndex(descendant, attribute);
-                sampledValues[static_cast<std::size_t>(outputIndex)] = baseValues[static_cast<std::size_t>(baseIndex)];
-                samplePresent[static_cast<std::size_t>(outputIndex)] = std::uint8_t{1};
+                const NodeId descendant = neighborhood.descendants[static_cast<std::size_t>(nodeId)];
+                if (descendant != InvalidNode) {
+                    const int outputIndex = sampleLayout.linearIndex(nodeId, attribute, sampleDistance);
+                    const int baseIndex = baseLayout.linearIndex(descendant, attribute);
+                    sampledValues[static_cast<std::size_t>(outputIndex)] = baseValues[static_cast<std::size_t>(baseIndex)];
+                    samplePresent[static_cast<std::size_t>(outputIndex)] = std::uint8_t{1};
+                }
             }
         }
     }

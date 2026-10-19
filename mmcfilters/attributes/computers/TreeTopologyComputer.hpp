@@ -3,8 +3,7 @@
 #include "AttributeComputerDomain.hpp"
 #include "AttributeComputerFamily.hpp"
 #include "../detail/AttributeKernelSupport.hpp"
-#include "../../trees/detail/CommittedTreeAccess.hpp"
-#include "../../trees/detail/TreeTraversalDetail.hpp"
+#include "../../trees/detail/TreeKernelAccess.hpp"
 #include "../../trees/MorphologicalTree.hpp"
 #include "../../utils/Contract.hpp"
 
@@ -113,12 +112,12 @@ inline void computeTreeTopology(const AttributeComputeContext<Real>& context, co
     };
 
     const NodeId root = context.tree.root();
-    ::mmcfilters::detail::kernel::traversePostOrder(
+    ::mmcfilters::detail::TreeKernelAccess::traversePostOrder(
         context.tree, root,
         [&](NodeId node) {
             const bool isRoot = node == root;
-            const NodeId parent = isRoot ? InvalidNode : ::mmcfilters::detail::CommittedTreeAccess::nodeParent(context.tree, node);
-            const int numChildren = ::mmcfilters::detail::CommittedTreeAccess::numChildren(context.tree, node);
+            const NodeId parent = isRoot ? InvalidNode : ::mmcfilters::detail::TreeKernelAccess::nodeParent(context.tree, node);
+            const int numChildren = ::mmcfilters::detail::TreeKernelAccess::numChildren(context.tree, node);
             const bool isLeaf = numChildren == 0;
 
             if (request.depth) {
@@ -140,7 +139,7 @@ inline void computeTreeTopology(const AttributeComputeContext<Real>& context, co
                 context.buffer[outputIndex(node, numChildrenOffset)] = static_cast<Real>(numChildren);
             if (request.numSiblings)
                 context.buffer[outputIndex(node, numSiblingsOffset)] =
-                    isRoot ? Real{0} : static_cast<Real>(::mmcfilters::detail::CommittedTreeAccess::numChildren(context.tree, parent) - 1);
+                    isRoot ? Real{0} : static_cast<Real>(::mmcfilters::detail::TreeKernelAccess::numChildren(context.tree, parent) - 1);
             if (request.leafRatio)
                 context.buffer[outputIndex(node, leafRatioOffset)] = Real{0};
             if (request.balance) {
@@ -168,7 +167,7 @@ inline void computeTreeTopology(const AttributeComputeContext<Real>& context, co
             }
         },
         [&](NodeId node) {
-            const int numChildren = ::mmcfilters::detail::CommittedTreeAccess::numChildren(context.tree, node);
+            const int numChildren = ::mmcfilters::detail::TreeKernelAccess::numChildren(context.tree, node);
             if (request.leafRatio) {
                 const Real descendantCount = numDescendantsAt(node);
                 context.buffer[outputIndex(node, leafRatioOffset)] =
@@ -271,13 +270,25 @@ class TreeTopologyComputer {
      * @param context Operation context or diagnostic label.
      */
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
-        const MorphologicalTree& tree = context.tree;
+        requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
+        computeUnitRowsEstablished(context);
+    }
+
+  private:
+    /**
+     * @brief Grants unit projection access to established family computation.
+     * @tparam Computer Registered attribute family.
+     * @tparam Context Topology-only or altitude-aware unit context.
+     * @param context Established unit-row storage.
+     */
+    template <class Computer, class Context> friend void mmcfilters::detail::kernel::computeUnitRows(const Context& context);
+
+    /** @brief Computes unit rows without revalidating established pixels or buffers. @param context Established unit-row storage. */
+    template <std::floating_point Real> static void computeUnitRowsEstablished(const UnitAttributeComputeContext<Real>& context) {
         std::span<const PixelId> unitPixels = context.unitPixels;
         std::span<Real> buffer = context.buffer;
         const AttributeNames& attrNames = context.attrNames;
         std::span<const Attribute> requestedAttributes = context.requestedAttributes;
-
-        requireUnitAttributeBufferShape(tree, unitPixels, buffer, attrNames);
 
         const bool computeHeight = requestsAttribute(requestedAttributes, SubtreeHeight);
         const bool computeDepth = requestsAttribute(requestedAttributes, DepthNode);

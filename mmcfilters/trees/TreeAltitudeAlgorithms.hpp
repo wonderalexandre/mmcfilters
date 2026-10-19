@@ -4,7 +4,8 @@
 #include "../utils/Contract.hpp"
 #include "../utils/Image.hpp"
 #include "MorphologicalTree.hpp"
-#include "detail/HigraExportLayoutDetail.hpp"
+#include "detail/HigraHierarchyDetail.hpp"
+#include "detail/TreeKernelAccess.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -13,6 +14,7 @@
 #include <span>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -20,6 +22,40 @@
 namespace mmcfilters {
 
 namespace detail::tree_altitude {
+
+template <class Contribution> inline void requireFiniteNodeContribution(Contribution contribution, const char* context) {
+    if constexpr (std::is_floating_point_v<Contribution>) {
+        MMCFILTERS_CONTRACT_REQUIRE(std::isfinite(contribution),
+                                    throw std::invalid_argument(std::string(context) + " requires finite nodeContributions."));
+    }
+}
+
+/** @brief Reconstructs from a committed tree and a dense, finite contribution buffer established by the caller. */
+template <class Contribution>
+    requires(std::is_arithmetic_v<Contribution> && !std::is_same_v<std::remove_cv_t<Contribution>, bool>)
+[[nodiscard]] std::vector<Contribution> reconstructNodeContributionValuesEstablished(const MorphologicalTree& tree,
+                                                                                      std::span<const Contribution> nodeContributions) {
+    std::vector<Contribution> accumulated(static_cast<std::size_t>(tree.numInternalNodeSlots()), Contribution{});
+    const NodeId root = tree.root();
+    accumulated[static_cast<std::size_t>(root)] = nodeContributions[static_cast<std::size_t>(root)];
+
+    std::vector<NodeId> pending{root};
+    while (!pending.empty()) {
+        const NodeId nodeId = pending.back();
+        pending.pop_back();
+        for (NodeId childId : TreeKernelAccess::children(tree, nodeId)) {
+            accumulated[static_cast<std::size_t>(childId)] =
+                accumulated[static_cast<std::size_t>(nodeId)] + nodeContributions[static_cast<std::size_t>(childId)];
+            pending.push_back(childId);
+        }
+    }
+
+    std::vector<Contribution> pixels(static_cast<std::size_t>(tree.numPixels()), Contribution{});
+    for (PixelId pixel = 0; pixel < tree.numPixels(); ++pixel) {
+        pixels[static_cast<std::size_t>(pixel)] = accumulated[static_cast<std::size_t>(TreeKernelAccess::smallestNodeMap(tree, pixel))];
+    }
+    return pixels;
+}
 
 template <class Contribution>
     requires(std::is_arithmetic_v<Contribution> && !std::is_same_v<std::remove_cv_t<Contribution>, bool>)
@@ -32,32 +68,10 @@ template <class Contribution>
         throw std::invalid_argument(std::string(context) + " nodeContributions size must match the internal node slot count."));
     if constexpr (std::is_floating_point_v<Contribution> && contract::validationsEnabled) {
         for (Contribution contribution : nodeContributions) {
-            if (!std::isfinite(contribution)) {
-                throw std::invalid_argument(std::string(context) + " requires finite nodeContributions.");
-            }
+            requireFiniteNodeContribution(contribution, context);
         }
     }
-
-    std::vector<Contribution> accumulated(static_cast<std::size_t>(tree.numInternalNodeSlots()), Contribution{});
-    const NodeId root = tree.root();
-    accumulated[static_cast<std::size_t>(root)] = nodeContributions[static_cast<std::size_t>(root)];
-
-    std::vector<NodeId> pending{root};
-    while (!pending.empty()) {
-        const NodeId nodeId = pending.back();
-        pending.pop_back();
-        for (NodeId childId : tree.children(nodeId)) {
-            accumulated[static_cast<std::size_t>(childId)] =
-                accumulated[static_cast<std::size_t>(nodeId)] + nodeContributions[static_cast<std::size_t>(childId)];
-            pending.push_back(childId);
-        }
-    }
-
-    std::vector<Contribution> pixels(static_cast<std::size_t>(tree.numPixels()), Contribution{});
-    for (PixelId pixel = 0; pixel < tree.numPixels(); ++pixel) {
-        pixels[static_cast<std::size_t>(pixel)] = accumulated[static_cast<std::size_t>(tree.smallestNode(pixel))];
-    }
-    return pixels;
+    return reconstructNodeContributionValuesEstablished(tree, nodeContributions);
 }
 
 } // namespace detail::tree_altitude
@@ -71,6 +85,48 @@ template <class Contribution>
  */
 class TreeAltitudeAlgorithms {
   public:
+    /**
+     * @brief Returns the name of a declared node-altitude order.
+     *
+     * @param order Requested hierarchy ordering convention.
+     * @return Order name.
+     */
+    static const char* nodeAltitudeOrderName(NodeAltitudeOrder order) noexcept {
+        switch (order) {
+        case NodeAltitudeOrder::Increasing:
+            return "Increasing";
+        case NodeAltitudeOrder::Decreasing:
+            return "Decreasing";
+        case NodeAltitudeOrder::Unconstrained:
+            return "Unconstrained";
+        }
+        return "UNKNOWN";
+    }
+
+    /**
+     * @brief Tests whether the topology declares a globally monotone altitude order.
+     *
+     * @param tree Tree topology.
+     * @return True for Increasing or Decreasing, and false for Unconstrained.
+     */
+    static bool hasGlobalMonotoneAltitudeOrder(const MorphologicalTree& tree) noexcept { return tree.nodeAltitudeOrder() != NodeAltitudeOrder::Unconstrained; }
+
+    /**
+     * @brief Requires a declared globally monotone altitude order.
+     *
+     * This constant-time requirement reads metadata without scanning altitude values.
+     * Use `validateMonotoneNodeAltitudes` to check an explicit altitude buffer.
+     *
+     * @param tree Tree topology.
+     * @param context Operation name used in diagnostics.
+     */
+    static void requireGlobalMonotoneAltitudeOrder(const MorphologicalTree& tree, const char* context) {
+        if (!hasGlobalMonotoneAltitudeOrder(tree)) {
+            throw std::invalid_argument(std::string(context) + " requires a globally monotone altitude order; got " + nodeAltitudeOrderName(tree.nodeAltitudeOrder()) +
+                                        ".");
+        }
+    }
+
     /**
      * @brief Validates that an altitude buffer covers the dense internal-node domain.
      *

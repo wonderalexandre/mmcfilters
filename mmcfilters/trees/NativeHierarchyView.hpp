@@ -11,12 +11,12 @@
 namespace mmcfilters {
 
 /**
- * @brief Typed non-owning output contract shared by native hierarchy producers.
+ * @brief View of borrowed native hierarchy buffers for internal conversion and validation.
  *
- * Builders may use any internal algorithm. At the factory boundary they expose
- * the same independent node, pixel, and altitude domains plus optional
- * interpretation capabilities. Materialization copies these synchronous views
- * into the owning valued tree.
+ * The three spans borrow node-parent, pixel-owner, and node-altitude buffers.
+ * Those buffers must remain valid while a consumer uses the view. Domain and
+ * semantic metadata are stored by value. This descriptor does not provide a
+ * public import entry point; external hierarchy import uses the Higra format.
  */
 template <AltitudeValue T> struct NativeHierarchyView {
     /// Parent id for every internal-node slot.

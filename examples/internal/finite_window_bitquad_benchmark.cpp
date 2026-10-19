@@ -13,10 +13,10 @@
 #include "mmcfilters/attributes/computers/BitquadAttributeComputer.hpp"
 #include "mmcfilters/attributes/computers/detail/BitquadFiniteWindowComputation.hpp"
 #include "mmcfilters/attributes/computers/detail/ContourSideFiniteWindowComputation.hpp"
+#include "mmcfilters/attributes/detail/BitquadProjectionAdjacencies.hpp"
 #include "mmcfilters/trees/MorphologicalTree.hpp"
 #include "mmcfilters/trees/MorphologicalTreeFactory.hpp"
 #include "mmcfilters/trees/ValuedMorphologicalTree.hpp"
-#include "mmcfilters/trees/detail/MorphologicalTreeConstructionContextQueries.hpp"
 #include "stb_image.h"
 
 #include <algorithm>

@@ -6,7 +6,7 @@
 #include "detail/BitquadAttributeProjection.hpp"
 #include "detail/BitquadFiniteWindowComputation.hpp"
 #include "../../trees/TreeAltitudeAlgorithms.hpp"
-#include "../../trees/detail/MorphologicalTreeConstructionContextQueries.hpp"
+#include "../../trees/MorphologicalTree.hpp"
 #include "../../utils/Contract.hpp"
 
 #include <array>
@@ -145,7 +145,21 @@ class BitquadAttributeComputer {
      */
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
         requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
-        const RegularGridAdjacency2D* adjacency = ::mmcfilters::detail::constructionAdjacency(context.tree);
+        computeUnitRowsEstablished(context);
+    }
+
+  private:
+    /**
+     * @brief Grants unit projection access to established family computation.
+     * @tparam Computer Registered attribute family.
+     * @tparam Context Topology-only or altitude-aware unit context.
+     * @param context Established unit-row storage.
+     */
+    template <class Computer, class Context> friend void mmcfilters::detail::kernel::computeUnitRows(const Context& context);
+
+    /** @brief Computes unit rows without revalidating established pixels or buffers. @param context Established unit-row storage. */
+    template <std::floating_point Real> static void computeUnitRowsEstablished(const UnitAttributeComputeContext<Real>& context) {
+        const RegularGridAdjacency2D* adjacency = context.tree.constructionAdjacency();
         if (adjacency == nullptr) {
             throw std::invalid_argument("Bitquad attributes require an adjacency relation.");
         }

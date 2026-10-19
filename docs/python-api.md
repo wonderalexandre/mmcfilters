@@ -97,29 +97,28 @@ and individual fields to the factory is rejected.
 
 Combining the self-dual span with `EXTERIOR_RING` and `UINT8` is rejected.
 
-Residual-tree factories accept a custom `SpatialOrder`. See
+Residual-tree factories use a fixed row-major spatial order. See
 [Self-dual residual trees](self-dual-residual-trees.md) for scheduling and
 construction policies.
 
-### Native hierarchies
+### Hierarchy import
 
-A hierarchy over an abstract finite pixel set does not require `rows` or
-`columns`:
+Higra parent/altitude arrays are the only supported public hierarchy import
+format. Supply the image dimensions and the declared tree kind:
 
 ```python
-semantics = mmcfilters.MorphologicalTreeSemantics()
-abstract_tree = mmcfilters.MorphologicalTreeFactory.create_from_native_topology(
-    parent=[0, 0, 0],
-    smallest_node_map=[1, 2],
-    node_altitudes=np.array([10, 3, 20], dtype=np.uint8),
-    root=0,
-    semantics=semantics,
+tree = mmcfilters.MorphologicalTreeFactory.create_from_higra_parent(
+    parent=[3, 4, 2, 2, 2],
+    node_altitudes=np.array([3, 20, 10, 3, 20], dtype=np.uint8),
+    rows=1,
+    columns=2,
+    kind=mmcfilters.MorphologicalTreeKind.GENERIC,
 )
-assert not abstract_tree.has_grid_domain_2d
+assert tree.reconstruct_from_node_altitudes().tolist() == [[3, 20]]
 ```
 
-Pass `rows`, `columns`, and `semantics` to attach a regular 2D layout. Geometry does
-not change the topology or smallest-node mapping.
+Max-tree and min-tree imports also require an adjacency radius. Imported
+hierarchies have the supplied regular 2D domain.
 
 Tree-of-shapes semantics retain a `TopographicConvention`. A complementary
 immersion carries `ComplementaryAdjacencies(min_adjacency, max_adjacency)`;

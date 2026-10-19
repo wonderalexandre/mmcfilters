@@ -84,14 +84,16 @@ Every condition belongs to one of the following categories:
 ### Validation-free execution cores
 
 Validation-free cores live in `detail::kernel` and keep short operation names
-such as `computeArea`, `filterDirect`, or `traversePostOrder`. Public functions
+such as `computeArea` or `filterDirect`. Public functions
 retain their existing names and validate before entering a kernel. Code named
 `Impl` does not implicitly receive this guarantee.
 
 Kernels use established spans and the narrow
-`CommittedTreeAccess`/`CommittedImageAccess` facades for primitive tree and
+`TreeKernelAccess`/`CommittedImageAccess` facades for primitive tree and
 image access. Helpers outside `detail::kernel` may also use those facades after
 their own dominating boundary has established the same domain.
+`TreeKernelAccess::traversePostOrder` provides the shared traversal with
+callbacks under this established-domain contract.
 
 For example, an MSER computation validates the altitude buffer, window radius, and
 hierarchy capability once. Its ancestor search then reads altitude slots and

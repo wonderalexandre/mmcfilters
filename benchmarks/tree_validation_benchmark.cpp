@@ -68,33 +68,13 @@ HigraFixture makeHigraFixture(const Fixture& native) {
 
 double milliseconds(Clock::time_point start, Clock::time_point finish) { return std::chrono::duration<double, std::milli>(finish - start).count(); }
 
-void runCase(const char* shape, int numNodes, int commits, bool branching) {
-    Fixture fixture = makeFixture(numNodes, branching);
-
-    const auto constructionStart = Clock::now();
-    auto valuedTree = MorphologicalTreeFactory::createFromNativeHierarchy(
-        NativeHierarchyView<std::uint8_t>{fixture.parent, fixture.smallestNodeMap, fixture.altitude, 0, std::nullopt, MorphologicalTreeSemantics{}});
-    const auto constructionFinish = Clock::now();
-
-    const auto commitStart = Clock::now();
-    for (int iteration = 0; iteration < commits; ++iteration) {
-        auto editor = valuedTree.edit();
-        editor.commit();
-    }
-    const auto commitFinish = Clock::now();
-
-    std::cout << shape << ',' << numNodes << ',' << fixture.smallestNodeMap.size() << ',' << commits << ',' << milliseconds(constructionStart, constructionFinish) << ','
-              << milliseconds(commitStart, commitFinish) << '\n';
-}
-
 void runHigraCase(const char* shape, int numNodes, int commits, bool branching) {
     const Fixture native = makeFixture(numNodes, branching);
     const HigraFixture fixture = makeHigraFixture(native);
 
     const auto constructionStart = Clock::now();
     auto valuedTree = MorphologicalTreeFactory::createFromHigraParent(std::span<const NodeId>(fixture.parent), std::span<const std::uint8_t>(fixture.altitude), 1,
-                                                                    fixture.numPixels, MorphologicalTreeKind::MaxTree,
-                                                                    RegularGridAdjacency2D(1, fixture.numPixels, 1.5));
+                                                                    fixture.numPixels, MorphologicalTreeKind::Generic);
     const auto constructionFinish = Clock::now();
 
     const auto commitStart = Clock::now();
@@ -121,8 +101,6 @@ int main(int argc, char** argv) {
 
     std::cout << "shape,num_nodes,num_proper_parts,"
                  "commits,construction_ms,commits_ms\n";
-    runCase("deep", numNodes, commits, false);
-    runCase("branching", numNodes, commits, true);
     runHigraCase("higra-deep", numNodes, commits, false);
     runHigraCase("higra-branching", numNodes, commits, true);
     return EXIT_SUCCESS;

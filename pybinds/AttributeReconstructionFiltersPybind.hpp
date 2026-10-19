@@ -91,12 +91,10 @@ class SubtractiveAttributeFilterPybind {
             using Altitude = typename Tree::AltitudeType;
             using OutputValue = AltitudeDifference<Altitude>;
             const auto valuedTreeView = native->asView();
-            valuedTreeView.requireTopologyUnchanged("SubtractiveAttributeFilter.apply_subtractive_attribute_filter");
             const std::vector<OutputValue> nodeContributions =
                 detail::attribute_filtering::computeGatedNodeContributions(valuedTreeView, nodePreservationMask);
-            std::vector<OutputValue> pixels = detail::tree_altitude::reconstructNodeContributionValues(
-                native->topology(), std::span<const OutputValue>(nodeContributions),
-                "SubtractiveAttributeFilter.apply_subtractive_attribute_filter");
+            std::vector<OutputValue> pixels = detail::tree_altitude::reconstructNodeContributionValuesEstablished(
+                native->topology(), std::span<const OutputValue>(nodeContributions));
             return pybind_utils::toNumpyOwned2D(std::move(pixels), native->topology().numRows(), native->topology().numColumns());
         });
     }

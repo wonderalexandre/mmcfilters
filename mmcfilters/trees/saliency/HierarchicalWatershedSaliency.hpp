@@ -1,10 +1,9 @@
 #pragma once
 
 #include "HierarchySaliencyMap.hpp"
-#include "../MorphologicalTreeFactory.hpp"
+#include "../ValuedMorphologicalTree.hpp"
 #include "../TreeAltitudeAlgorithms.hpp"
 #include "../ValuedMorphologicalTreeView.hpp"
-#include "../detail/HierarchyCapabilityValidation.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -190,27 +189,21 @@ class HierarchicalWatershedSaliency {
      * @tparam T Altitude scalar type.
      * @param valuedTree Immutable topology/altitude view of the component tree.
      * @param adjacency Connected graph defined on the tree pixel domain.
-     * @param context Operation name included in validation errors.
      * @return Forward-enumerated graph edges sorted for the first Kruskal pass.
-     * @throws std::runtime_error If an endpoint-smallest-node pair has no live LCA.
      */
     template <AltitudeValue T>
-    static std::vector<OrderedGraphEdge<T>> collectOrderedGraphEdges(const ValuedMorphologicalTreeView<T>& valuedTree, const RegularGridAdjacency2D& adjacency,
-                                                                     const char* context) {
+    static std::vector<OrderedGraphEdge<T>> collectOrderedGraphEdges(const ValuedMorphologicalTreeView<T>& valuedTree, const RegularGridAdjacency2D& adjacency) {
         const MorphologicalTree& tree = valuedTree.topology();
         std::vector<OrderedGraphEdge<T>> edges;
         std::size_t order = 0;
         for (NodeId source = 0; source < tree.numPixels(); ++source) {
-            const NodeId sourceSmallestNode = tree.smallestNode(source);
-            for (int targetValue : adjacency.getForwardNeighborIndices(source)) {
+            const NodeId sourceSmallestNode = detail::TreeKernelAccess::smallestNodeMap(tree, source);
+            for (int targetValue : detail::CommittedGridAccess::forwardNeighbors(adjacency, source)) {
                 const NodeId target = static_cast<NodeId>(targetValue);
-                const NodeId targetSmallestNode = tree.smallestNode(target);
+                const NodeId targetSmallestNode = detail::TreeKernelAccess::smallestNodeMap(tree, target);
                 const bool finestRegionEdge = sourceSmallestNode == targetSmallestNode;
-                const NodeId lca = finestRegionEdge ? sourceSmallestNode : tree.lowestCommonAncestor(sourceSmallestNode, targetSmallestNode);
-                if (lca == InvalidNode || !tree.isAlive(lca)) {
-                    throw std::runtime_error(std::string(context) + " could not find a live LCA for an adjacency edge.");
-                }
-                edges.push_back(OrderedGraphEdge<T>{source, target, lca, valuedTree.nodeAltitude(lca), finestRegionEdge, order++});
+                const NodeId lca = finestRegionEdge ? sourceSmallestNode : detail::TreeKernelAccess::lowestCommonAncestor(tree, sourceSmallestNode, targetSmallestNode);
+                edges.push_back(OrderedGraphEdge<T>{source, target, lca, valuedTree.nodeAltitudes()[static_cast<std::size_t>(lca)], finestRegionEdge, order++});
             }
         }
         const NodeAltitudeOrder nodeAltitudeOrder = tree.nodeAltitudeOrder();
@@ -224,12 +217,11 @@ class HierarchicalWatershedSaliency {
      * @tparam T Altitude scalar type.
      * @param orderedEdges Graph edges in component-hierarchy order.
      * @param numVertices Number of pixels in the graph.
-     * @param context Operation name included in validation errors.
      * @return The `numVertices - 1` selected MST edges in Kruskal order.
      * @throws std::invalid_argument If the projection graph is disconnected.
      */
     template <AltitudeValue T>
-    static std::vector<OrderedGraphEdge<T>> selectMinimumSpanningTree(std::vector<OrderedGraphEdge<T>> orderedEdges, int numVertices, const char* context) {
+    static std::vector<OrderedGraphEdge<T>> selectMinimumSpanningTree(std::vector<OrderedGraphEdge<T>> orderedEdges, int numVertices) {
         DisjointSet components(numVertices);
         std::vector<OrderedGraphEdge<T>> mst;
         mst.reserve(static_cast<std::size_t>(std::max(0, numVertices - 1)));
@@ -242,9 +234,6 @@ class HierarchicalWatershedSaliency {
             if (mst.size() == static_cast<std::size_t>(numVertices - 1)) {
                 break;
             }
-        }
-        if (numVertices > 0 && mst.size() != static_cast<std::size_t>(numVertices - 1)) {
-            throw std::invalid_argument(std::string(context) + " requires a connected projection graph.");
         }
         return mst;
     }
@@ -261,7 +250,6 @@ class HierarchicalWatershedSaliency {
      * @param mst MST edges in altitude-ordered Kruskal order.
      * @param leafExtinction Dense extinction slots indexed by internal node id.
      * @return MST edges paired with their persistence values.
-     * @throws std::invalid_argument If a component-tree leaf has an empty proper part.
      */
     template <AltitudeValue T, std::floating_point Real>
     static std::vector<PersistenceEdge<T, Real>> assignPersistence(const MorphologicalTree& tree, const std::vector<OrderedGraphEdge<T>>& mst,
@@ -269,11 +257,8 @@ class HierarchicalWatershedSaliency {
         const int numVertices = tree.numPixels();
         std::vector<Real> componentExtinction(static_cast<std::size_t>(numVertices), Real{0});
         for (NodeId leaf : tree.leaves()) {
-            const auto properParts = tree.properPart(leaf);
+            const auto properParts = detail::TreeKernelAccess::properParts(tree, leaf);
             const auto it = properParts.begin();
-            if (it == properParts.end()) {
-                throw std::invalid_argument("HierarchicalWatershedSaliency requires every component-tree leaf to own a proper part.");
-            }
             componentExtinction[static_cast<std::size_t>(*it)] = leafExtinction[static_cast<std::size_t>(leaf)];
         }
 
@@ -346,8 +331,8 @@ class HierarchicalWatershedSaliency {
         const NodeId root = numVertices == 1 ? NodeId{0} : nextNode - 1;
         MorphologicalTreeSemantics semantics{
             MorphologicalTreeKind::Generic, NodeAltitudeOrder::Unconstrained, SharedAdjacencyContext{adjacency}};
-        return MorphologicalTreeFactory::createFromNativeTopology(std::span<const NodeId>(parent), std::span<const NodeId>(smallestNodeMap),
-                                                                  std::span<const Real>(altitude), root, rows, columns, std::move(semantics));
+        return detail::materializeNativeHierarchy<Real>(makeNativeHierarchyOwned(
+            std::move(parent), std::move(smallestNodeMap), std::move(altitude), root, GridDomain2D{rows, columns}, std::move(semantics)));
     }
 
   public:
@@ -385,15 +370,13 @@ class HierarchicalWatershedSaliency {
         constexpr const char* context = "HierarchicalWatershedSaliency::compute";
         valuedTree.requireTopologyUnchanged(context);
         const MorphologicalTree& tree = valuedTree.topology();
-        detail::validateGlobalMonotoneAltitudeOrder(tree, context);
-        TreeAltitudeAlgorithms::validateFiniteAltitudeValues(valuedTree.nodeAltitudes(), context);
-        TreeAltitudeAlgorithms::validateMonotoneNodeAltitudes(tree, valuedTree.nodeAltitudes());
+        TreeAltitudeAlgorithms::requireGlobalMonotoneAltitudeOrder(tree, context);
         validateLeafExtinctions(tree, leafExtinction, context);
         HierarchySaliencyMapValidation::validateHierarchyConnectivity(tree, adjacency, context);
 
         const int numVertices = tree.numPixels();
-        auto graphEdges = collectOrderedGraphEdges(valuedTree, adjacency, context);
-        auto mst = selectMinimumSpanningTree(std::move(graphEdges), numVertices, context);
+        auto graphEdges = collectOrderedGraphEdges(valuedTree, adjacency);
+        auto mst = selectMinimumSpanningTree(std::move(graphEdges), numVertices);
         auto persistenceEdges = assignPersistence(tree, mst, leafExtinction);
         auto dendrogram = buildPersistenceDendrogram(std::move(persistenceEdges), tree.numRows(), tree.numColumns(), adjacency);
         return HierarchySaliencyMap::computeSaliencyEdgeMap(dendrogram.topology(), adjacency, dendrogram.nodeAltitudeSpan(),

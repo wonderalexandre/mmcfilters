@@ -1,8 +1,7 @@
 #pragma once
 
 #include "../attributes/AttributeComputation.hpp"
-#include "../trees/detail/TreeStabilityNeighborhood.hpp"
-#include "../trees/detail/HierarchyCapabilityValidation.hpp"
+#include "../trees/detail/TreeNeighborhood.hpp"
 #include "../trees/MorphologicalTree.hpp"
 #include "../trees/TreeAltitudeAlgorithms.hpp"
 #include "../trees/ValuedMorphologicalTree.hpp"
@@ -18,6 +17,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -128,7 +128,7 @@ template <AltitudeValue T, std::floating_point Real = float> class MSERComputer 
           ownedAttrMser_(std::move(ownedAttr)), maxVariation(Real{10}), minAttr(Real{0}),
           maxAttr(static_cast<Real>(this->tree.numColumns() * this->tree.numRows())) {
         TreeAltitudeAlgorithms::validateNodeAltitudeBufferShape(this->tree, std::span<const T>(this->altitude_));
-        detail::validateGlobalMonotoneAltitudeOrder(this->tree, "MSERComputer");
+        TreeAltitudeAlgorithms::requireGlobalMonotoneAltitudeOrder(this->tree, "MSERComputer");
     }
 
   public:
@@ -188,8 +188,14 @@ template <AltitudeValue T, std::floating_point Real = float> class MSERComputer 
      *
      */
     [[nodiscard]] std::vector<uint8_t> computeMSER(AltitudeDifference<T> altitudeWindowRadius) {
-        detail::StabilityNeighborhood neighborhood =
-            detail::computeAltitudeStabilityNeighborhood(tree, std::span<const T>(altitude_), altitudeWindowRadius);
+        if constexpr (std::is_floating_point_v<AltitudeDifference<T>>) {
+            MMCFILTERS_CONTRACT_REQUIRE(std::isfinite(altitudeWindowRadius),
+                                        throw std::invalid_argument("MSERComputer requires a finite altitude window radius."));
+        }
+        MMCFILTERS_CONTRACT_REQUIRE(altitudeWindowRadius > AltitudeDifference<T>{},
+                                    throw std::invalid_argument("MSERComputer requires a positive altitude window radius."));
+        detail::TreeNeighborhood neighborhood(tree);
+        neighborhood.computeByAltitude(std::span<const T>(altitude_), altitudeWindowRadius);
         this->ancestors = std::move(neighborhood.ancestors);
         this->descendants = std::move(neighborhood.descendants);
 

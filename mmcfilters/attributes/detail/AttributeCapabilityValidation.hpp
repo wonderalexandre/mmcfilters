@@ -1,8 +1,8 @@
 #pragma once
 
 #include "../AttributeRegistry.hpp"
+#include "BitquadProjectionAdjacencies.hpp"
 #include "../../trees/MorphologicalTree.hpp"
-#include "../../trees/detail/MorphologicalTreeConstructionContextQueries.hpp"
 
 #include <span>
 #include <stdexcept>
@@ -43,7 +43,7 @@ inline void validateAttributeCapabilities(const MorphologicalTree& tree, std::sp
         if (requirements.monotoneAltitudeOrder && tree.nodeAltitudeOrder() == NodeAltitudeOrder::Unconstrained) {
             throw std::invalid_argument(prefix + "a globally monotone altitude order is required.");
         }
-        const RegularGridAdjacency2D* constructionAdjacency = ::mmcfilters::detail::constructionAdjacency(tree);
+        const RegularGridAdjacency2D* constructionAdjacency = tree.constructionAdjacency();
         const auto projectionAdjacencies = currentBitquadProjectionAdjacencies(tree);
         if (requirements.adjacency == attributes::registry::AttributeAdjacencyRequirement::Uniform && constructionAdjacency == nullptr) {
             throw std::invalid_argument(prefix + "a shared construction adjacency is required.");

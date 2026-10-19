@@ -30,9 +30,13 @@
 
 namespace mmcfilters {
 
+template <AltitudeValue T> class ValuedMorphologicalTree;
+template <class T> struct NativeHierarchyOwned;
+
 namespace detail {
-class CommittedTreeAccess;
-}
+class TreeKernelAccess;
+
+} // namespace detail
 
 /**
  * @brief Selects the node-id domain used by attribute buffers exposed to callers.
@@ -114,7 +118,19 @@ class MorphologicalTree {
   private:
     friend class TreeEditor;
     friend class MorphologicalTreeFactory;
-    friend class detail::CommittedTreeAccess;
+    friend class detail::TreeKernelAccess;
+    /**
+     * @brief Allows the native hierarchy materializer to initialize owned topology buffers and construction metadata.
+     * @tparam T Node-altitude type.
+     * @param hierarchy Owned hierarchy transferred into the valued tree.
+     * @param preservedExternalNodeIdOffset Original Higra node-id offset, when present.
+     * @param versionPolicy Initial mutation-version policy.
+     * @return Valued tree owning the transferred hierarchy.
+     */
+    template <AltitudeValue T>
+    friend ValuedMorphologicalTree<T> detail::materializeNativeHierarchy(NativeHierarchyOwned<T>&& hierarchy,
+                                                                       std::optional<NodeId> preservedExternalNodeIdOffset,
+                                                                       detail::MaterializedVersionPolicy versionPolicy);
 
     class LCAEulerRMQ; // Forward declaration for the LCA cache implementation.
 
@@ -1219,7 +1235,7 @@ class MorphologicalTree {
      * @param releaseNodeFlag Flag controlling release node flag.
      */
     inline void removeChild(NodeId parentNodeId, NodeId childId, bool releaseNodeFlag) {
-        if (!isAlive(parentNodeId) || !isAlive(childId) || !hasChild(parentNodeId, childId)) {
+        if (!isAlive(parentNodeId) || !isAlive(childId) || nodeParent_[static_cast<std::size_t>(childId)] != parentNodeId) {
             return;
         }
         const NodeId parentSlotId = parentNodeId;
@@ -2155,9 +2171,33 @@ class MorphologicalTree {
         return std::get_if<SharedAdjacencyContext>(&semantics_.constructionContext);
     }
 
+    /**
+     * @brief Returns the adjacency retained by a shared construction context.
+     * @return Borrowed adjacency, or `nullptr` when no shared-adjacency context is stored.
+     */
+    inline const RegularGridAdjacency2D* constructionAdjacency() const noexcept {
+        if (const auto* context = sharedAdjacencyContext()) {
+            return &context->adjacency;
+        }
+        return nullptr;
+    }
+
     /** @brief Returns the topographic convention, or `nullptr`. @return Stored convention when its variant is active. */
     inline const TopographicConvention* topographicConvention() const noexcept {
         return std::get_if<TopographicConvention>(&semantics_.constructionContext);
+    }
+
+    /**
+     * @brief Returns the complementary adjacencies explicitly retained by a topographic immersion.
+     * @return Borrowed adjacencies, or `nullptr` when no complementary grid immersion is stored.
+     */
+    inline const ComplementaryAdjacencies* complementaryAdjacencies() const noexcept {
+        const TopographicConvention* convention = topographicConvention();
+        if (convention == nullptr) {
+            return nullptr;
+        }
+        const auto* immersion = std::get_if<ComplementaryGridImmersion>(&convention->immersion);
+        return immersion ? &immersion->complementaryAdjacencies : nullptr;
     }
 
     /**

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../attributes/AttributeComputation.hpp"
-#include "../trees/detail/TreeStabilityNeighborhood.hpp"
+#include "../trees/detail/TreeNeighborhood.hpp"
 #include "../trees/MorphologicalTree.hpp"
 #include "../utils/Common.hpp"
 #include "../utils/Contract.hpp"
@@ -28,7 +28,7 @@ namespace mmcfilters {
  * - the descendant is selected among nodes exactly `depthWindowRadius` child links
  *   below the node;
  * - when several descendants exist, the largest-area one is selected, with ties
- *   resolved by the smallest `NodeId`;
+ *   resolved by the smallest row-major pixel in the support;
  * - altitude is never read.
  *
  * The variation value uses the same area-variation form as MSER:
@@ -153,7 +153,10 @@ template <std::floating_point Real = float> class DepthStableRegionComputer {
      * @return The computed stable-region indicator vector.
      */
     [[nodiscard]] std::vector<uint8_t> computeByDepth(int depthWindowRadius) {
-        detail::StabilityNeighborhood neighborhood = detail::computeDepthStabilityNeighborhood(this->tree, depthWindowRadius);
+        MMCFILTERS_CONTRACT_REQUIRE(depthWindowRadius > 0,
+                                    throw std::invalid_argument("DepthStableRegionComputer requires a positive depth window radius."));
+        detail::TreeNeighborhood neighborhood(this->tree);
+        neighborhood.computeByDepth(depthWindowRadius);
         this->ancestors = std::move(neighborhood.ancestors);
         this->descendants = std::move(neighborhood.descendants);
 

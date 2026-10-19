@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../../../../trees/MorphologicalTree.hpp"
-#include "../../../../trees/detail/CommittedTreeAccess.hpp"
+#include "../../../../trees/detail/TreeKernelAccess.hpp"
 #include "../../../../utils/Common.hpp"
 
 #include <array>
@@ -100,7 +100,7 @@ class MorphologicalTreePropagationEdgeIndex {
                 const NodeId firstOwner = owners[static_cast<std::size_t>(pixel)];
                 const NodeId secondOwner = owners[static_cast<std::size_t>(neighbour)];
                 const NodeId activationNode =
-                    ::mmcfilters::detail::CommittedTreeAccess::lowestCommonAncestor(tree_, firstOwner, secondOwner);
+                    ::mmcfilters::detail::TreeKernelAccess::lowestCommonAncestor(tree_, firstOwner, secondOwner);
                 pending.push_back({{pixel, neighbour, directionBit(rowOffset, columnOffset),
                                     directionBit(-rowOffset, -columnOffset)},
                                    activationNode});

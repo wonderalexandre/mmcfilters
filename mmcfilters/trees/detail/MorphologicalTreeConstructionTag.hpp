@@ -1,10 +1,31 @@
 #pragma once
 
+#include "../../utils/Altitude.hpp"
+#include "../../utils/Common.hpp"
+
+#include <optional>
+
 namespace mmcfilters {
 
-class MorphologicalTreeFactory;
+template <AltitudeValue T> class ValuedMorphologicalTree;
+template <class T> struct NativeHierarchyOwned;
 
 namespace detail {
+
+/**
+ * @brief Selects the initial mutation token for a materialized hierarchy.
+ *
+ * Component trees and Higra imports use `numNodes + 1` to account for storage
+ * initialization, non-root links, and finalization. The token is assigned once
+ * after bulk materialization.
+ */
+enum class MaterializedVersionPolicy { CanonicalNative, PreserveLinkedConstruction };
+
+template <AltitudeValue T>
+[[nodiscard]] ValuedMorphologicalTree<T>
+materializeNativeHierarchy(NativeHierarchyOwned<T>&& hierarchy,
+                           std::optional<NodeId> preservedExternalNodeIdOffset = std::nullopt,
+                           MaterializedVersionPolicy versionPolicy = MaterializedVersionPolicy::CanonicalNative);
 
 /**
  * @brief Capability token for internal tree construction entry points.
@@ -33,11 +54,12 @@ class MorphologicalTreeConstructionTag {
 
   private:
     /**
-     * @brief Private default construction keeps tag creation inside the factory.
+     * @brief Restricts tag creation to the internal native-buffer materializer.
      */
     constexpr MorphologicalTreeConstructionTag() noexcept = default;
 
-    friend class ::mmcfilters::MorphologicalTreeFactory;
+    template <AltitudeValue T>
+    friend ValuedMorphologicalTree<T> materializeNativeHierarchy(NativeHierarchyOwned<T>&&, std::optional<NodeId>, MaterializedVersionPolicy);
 };
 
 } // namespace detail

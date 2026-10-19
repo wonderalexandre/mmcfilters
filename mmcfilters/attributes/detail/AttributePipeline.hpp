@@ -232,8 +232,9 @@ inline ComputedAttributeData<Real> materializeAttributesWithoutAltitude(const Mo
                                                                         NodeIdSpace outputSpace) {
     const std::vector<Attribute> requestedAttributes = expandAttributePipelineAttributes(attributes);
     const std::span<const Attribute> requestedSpan(requestedAttributes);
+    // Scientific capabilities are required even when caller-contract diagnostics are disabled.
+    validateAttributeCapabilities(tree, requestedSpan, false, "AttributeComputation");
     MMCFILTERS_CONTRACT_CHECKED_ONLY(tree.requireNotEditing("AttributeComputation::computeAttributes");
-                                     validateAttributeCapabilities(tree, requestedSpan, false, "AttributeComputation");
                                      if (containsAltitudeDependentAttribute(requestedSpan)) {
                                          throw std::invalid_argument(
                                              "Requested attributes require altitude data. Use a ValuedMorphologicalTree<T>, ValuedMorphologicalTreeView, or the overload "

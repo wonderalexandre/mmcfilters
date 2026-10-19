@@ -283,6 +283,15 @@ class GrayLevelStatsComputer {
     template <std::floating_point Real, AltitudeValue T> static void computeUnitRows(const AltitudeUnitAttributeComputeContext<Real, T>& context) {
         requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
         TreeAltitudeAlgorithms::validateNodeAltitudeBufferShape(context.tree, context.altitude);
+        computeUnitRowsEstablished(context);
+    }
+
+  private:
+    /** @brief Grants unit projection access to established family computation. */
+    template <class Computer, class Context> friend void ::mmcfilters::detail::kernel::computeUnitRows(const Context&);
+
+    /** @brief Computes unit rows without revalidating established pixels or buffers. @param context Established unit-row storage. */
+    template <std::floating_point Real, AltitudeValue T> static void computeUnitRowsEstablished(const AltitudeUnitAttributeComputeContext<Real, T>& context) {
 
         const detail::GrayLevelStatsRequest request = detail::GrayLevelStatsRequest::from(context.requestedAttributes);
         if (!request.any()) {

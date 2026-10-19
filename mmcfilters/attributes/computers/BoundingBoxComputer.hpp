@@ -265,6 +265,15 @@ class BoundingBoxComputer {
      */
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
         requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
+        computeUnitRowsEstablished(context);
+    }
+
+  private:
+    /** @brief Grants unit projection access to established family computation. */
+    template <class Computer, class Context> friend void ::mmcfilters::detail::kernel::computeUnitRows(const Context&);
+
+    /** @brief Computes unit rows without revalidating established pixels or buffers. @param context Established unit-row storage. */
+    template <std::floating_point Real> static void computeUnitRowsEstablished(const UnitAttributeComputeContext<Real>& context) {
 
         const detail::BoundingBoxRequest request = detail::BoundingBoxRequest::from(context.requestedAttributes);
         if (!request.any()) {

@@ -63,7 +63,7 @@ template <class Computer, std::floating_point Real>
 inline void computeUnitAttributeWithComputer(const MorphologicalTree& tree, std::span<const PixelId> unitPixels, std::span<Real> unitValues,
                                              const AttributeNames& attrNames, Attribute attribute) {
     const std::array<Attribute, 1> requested{attribute};
-    Computer::computeUnitRows(UnitAttributeComputeContext<Real>{tree, unitPixels, unitValues, attrNames, std::span<const Attribute>(requested)});
+    kernel::computeUnitRows<Computer>(UnitAttributeComputeContext<Real>{tree, unitPixels, unitValues, attrNames, std::span<const Attribute>(requested)});
 }
 
 /**
@@ -158,7 +158,7 @@ template <class Computer, std::floating_point Real, AltitudeValue T>
 inline bool tryComputeAltitudeUnitAttributeWithComputer(const AltitudeUnitAttributeComputeContext<Real, T>& context, Attribute attribute) {
     if constexpr (Computer::domain == attributes::computers::AttributeComputerDomain::Altitude) {
         if (attributes::computers::producesAttribute<Computer>(attribute)) {
-            Computer::computeUnitRows(context);
+            kernel::computeUnitRows<Computer>(context);
             return true;
         }
     }

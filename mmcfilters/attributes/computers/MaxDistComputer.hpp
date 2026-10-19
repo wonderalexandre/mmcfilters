@@ -435,6 +435,15 @@ class MaxDistComputer {
     /** @brief Materializes approximate unit-support values. @tparam Real Output scalar type. @param context Established unit-row context. */
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
         requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
+        computeUnitRowsEstablished(context);
+    }
+
+  private:
+    /** @brief Grants unit projection access to established family computation. */
+    template <class Computer, class Context> friend void ::mmcfilters::detail::kernel::computeUnitRows(const Context&);
+
+    /** @brief Computes unit rows without revalidating established pixels or buffers. @param context Established unit-row storage. */
+    template <std::floating_point Real> static void computeUnitRowsEstablished(const UnitAttributeComputeContext<Real>& context) {
         const int numColumns = context.tree.numColumns();
         for (NodeId leafIndex = 0; leafIndex < static_cast<NodeId>(context.unitPixels.size()); ++leafIndex) {
             const PixelId pixel = context.unitPixels[static_cast<std::size_t>(leafIndex)];

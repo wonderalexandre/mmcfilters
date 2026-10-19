@@ -476,6 +476,15 @@ class CentralMomentsComputer {
      */
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
         requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
+        computeUnitRowsEstablished(context);
+    }
+
+  private:
+    /** @brief Grants unit projection access to established family computation. */
+    template <class Computer, class Context> friend void ::mmcfilters::detail::kernel::computeUnitRows(const Context&);
+
+    /** @brief Computes unit rows without revalidating established pixels or buffers. @param context Established unit-row storage. */
+    template <std::floating_point Real> static void computeUnitRowsEstablished(const UnitAttributeComputeContext<Real>& context) {
         constexpr std::array<Attribute, 8> zeroAttributes{CentralMoment20, CentralMoment02, CentralMoment11, CentralMoment30,
                                                           CentralMoment03, CentralMoment21, CentralMoment12, RawInertia};
         for (const Attribute attribute : zeroAttributes) {
@@ -561,6 +570,15 @@ class HuMomentsComputer {
      */
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
         requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
+        computeUnitRowsEstablished(context);
+    }
+
+  private:
+    /** @brief Grants unit projection access to established family computation. */
+    template <class Computer, class Context> friend void ::mmcfilters::detail::kernel::computeUnitRows(const Context&);
+
+    /** @brief Computes unit rows without revalidating established pixels or buffers. @param context Established unit-row storage. */
+    template <std::floating_point Real> static void computeUnitRowsEstablished(const UnitAttributeComputeContext<Real>& context) {
         constexpr std::array<Attribute, 7> zeroAttributes{HuMoment1, HuMoment2, HuMoment3, HuMoment4, HuMoment5, HuMoment6, HuMoment7};
         for (const Attribute attribute : zeroAttributes) {
             if (!requestsAttribute(context.requestedAttributes, attribute)) {
@@ -661,6 +679,15 @@ class MomentBasedAttributeComputer {
      */
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
         requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
+        computeUnitRowsEstablished(context);
+    }
+
+  private:
+    /** @brief Grants unit projection access to established family computation. */
+    template <class Computer, class Context> friend void ::mmcfilters::detail::kernel::computeUnitRows(const Context&);
+
+    /** @brief Computes unit rows without revalidating established pixels or buffers. @param context Established unit-row storage. */
+    template <std::floating_point Real> static void computeUnitRowsEstablished(const UnitAttributeComputeContext<Real>& context) {
         constexpr std::array<Attribute, 8> zeroAttributes{Compactness,      Eccentricity, LengthMajorAxis, LengthMinorAxis,
                                                           AxisOrientation, Inertia,      Circularity, AxisOrientationSigned};
         for (const Attribute attribute : zeroAttributes) {

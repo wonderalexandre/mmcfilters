@@ -301,6 +301,16 @@ template <std::floating_point Real, AltitudeValue T> struct AltitudeUnitAttribut
 template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, PixelId pixel);
 
 namespace detail::kernel {
+/**
+ * @brief Projects unit rows after pixel ids, output storage, and altitude spans are established.
+ * @tparam Computer Registered attribute family.
+ * @tparam Context Topology-only or altitude-aware unit context.
+ * @param context Internally allocated output and established row-major pixel order.
+ */
+template <class Computer, class Context> inline void computeUnitRows(const Context& context) {
+    Computer::computeUnitRowsEstablished(context);
+}
+
 template <AltitudeValue T> inline T unitAltitude(const MorphologicalTree& tree, std::span<const T> altitudeView, PixelId pixel);
 }
 

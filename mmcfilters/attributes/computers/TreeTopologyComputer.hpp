@@ -270,13 +270,20 @@ class TreeTopologyComputer {
      * @param context Operation context or diagnostic label.
      */
     template <std::floating_point Real> static void computeUnitRows(const UnitAttributeComputeContext<Real>& context) {
-        const MorphologicalTree& tree = context.tree;
+        requireUnitAttributeBufferShape(context.tree, context.unitPixels, context.buffer, context.attrNames);
+        computeUnitRowsEstablished(context);
+    }
+
+  private:
+    /** @brief Grants unit projection access to established family computation. */
+    template <class Computer, class Context> friend void ::mmcfilters::detail::kernel::computeUnitRows(const Context&);
+
+    /** @brief Computes unit rows without revalidating established pixels or buffers. @param context Established unit-row storage. */
+    template <std::floating_point Real> static void computeUnitRowsEstablished(const UnitAttributeComputeContext<Real>& context) {
         std::span<const PixelId> unitPixels = context.unitPixels;
         std::span<Real> buffer = context.buffer;
         const AttributeNames& attrNames = context.attrNames;
         std::span<const Attribute> requestedAttributes = context.requestedAttributes;
-
-        requireUnitAttributeBufferShape(tree, unitPixels, buffer, attrNames);
 
         const bool computeHeight = requestsAttribute(requestedAttributes, SubtreeHeight);
         const bool computeDepth = requestsAttribute(requestedAttributes, DepthNode);

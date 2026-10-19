@@ -119,9 +119,18 @@ class MorphologicalTree {
     friend class TreeEditor;
     friend class MorphologicalTreeFactory;
     friend class detail::TreeKernelAccess;
+    /**
+     * @brief Allows the native hierarchy materializer to initialize owned topology buffers and construction metadata.
+     * @tparam T Node-altitude type.
+     * @param hierarchy Owned hierarchy transferred into the valued tree.
+     * @param preservedExternalNodeIdOffset Original Higra node-id offset, when present.
+     * @param versionPolicy Initial mutation-version policy.
+     * @return Valued tree owning the transferred hierarchy.
+     */
     template <AltitudeValue T>
-    friend ValuedMorphologicalTree<T> detail::materializeNativeHierarchy(NativeHierarchyOwned<T>&&,
-                                                                       std::optional<NodeId>, detail::MaterializedVersionPolicy);
+    friend ValuedMorphologicalTree<T> detail::materializeNativeHierarchy(NativeHierarchyOwned<T>&& hierarchy,
+                                                                       std::optional<NodeId> preservedExternalNodeIdOffset,
+                                                                       detail::MaterializedVersionPolicy versionPolicy);
 
     class LCAEulerRMQ; // Forward declaration for the LCA cache implementation.
 

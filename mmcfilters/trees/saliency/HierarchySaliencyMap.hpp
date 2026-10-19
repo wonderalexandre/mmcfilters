@@ -505,7 +505,11 @@ class HierarchySaliencyMap {
     }
 
   private:
-    /** @brief Computes topological levels from established child relations. */
+    /**
+     * @brief Computes topological levels from established child relations.
+     * @param tree Committed rooted tree.
+     * @return Topological levels indexed by internal node slot.
+     */
     [[nodiscard]] static std::vector<int> computeTopologicalLevelsEstablished(const MorphologicalTree& tree) {
 
         std::vector<int> levels(static_cast<std::size_t>(tree.numInternalNodeSlots()), 0);
@@ -519,7 +523,15 @@ class HierarchySaliencyMap {
         return levels;
     }
 
-    /** @brief Projects an established hierarchy valuation to adjacency edges. */
+    /**
+     * @brief Projects an established hierarchy valuation to adjacency edges.
+     * @tparam Value Hierarchy valuation type.
+     * @param tree Committed rooted tree.
+     * @param adjacency Validated adjacency over the tree image domain.
+     * @param valuation Validated valuation indexed by internal node slot.
+     * @param levelConvention Convention used to assign edge levels.
+     * @return Saliency values on forward adjacency edges.
+     */
     template <class Value>
     [[nodiscard]] static EdgeSaliencyMap<Value> computeSaliencyEdgeMapEstablished(const MorphologicalTree& tree,
         const RegularGridAdjacency2D& adjacency, std::span<const Value> valuation, HierarchyLevelConvention levelConvention) {
@@ -553,7 +565,14 @@ class HierarchySaliencyMap {
         return saliency;
     }
 
-    /** @brief Ranks effective projected levels from an established hierarchy valuation. */
+    /**
+     * @brief Ranks effective projected levels from an established hierarchy valuation.
+     * @tparam Value Hierarchy valuation type.
+     * @param tree Committed rooted tree.
+     * @param adjacency Validated adjacency over the tree image domain.
+     * @param valuation Validated valuation indexed by internal node slot.
+     * @return Canonical saliency ranks on forward adjacency edges.
+     */
     template <class Value>
     [[nodiscard]] static EdgeSaliencyMap<int> computeCanonicalRankedSaliencyEdgeMapEstablished(const MorphologicalTree& tree,
         const RegularGridAdjacency2D& adjacency, std::span<const Value> valuation) {

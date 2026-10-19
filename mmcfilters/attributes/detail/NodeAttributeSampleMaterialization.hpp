@@ -44,7 +44,10 @@ template <AltitudeValue T> inline void validatePositiveAltitudeStep(AltitudeDiff
                                 throw std::invalid_argument(std::string(context) + " requires a positive altitude step."));
 }
 
-/** @brief Rejects unsupported representative-descendant policies at the sampling boundary. */
+/**
+ * @brief Rejects unsupported representative-descendant policies at the sampling boundary.
+ * @param samplingPolicy Requested representative-descendant policy.
+ */
 inline void validateNodeAttributeSamplingPolicy(NodeAttributeSamplingPolicy samplingPolicy) {
     switch (samplingPolicy) {
     case NodeAttributeSamplingPolicy::LargestSupportDescendant:

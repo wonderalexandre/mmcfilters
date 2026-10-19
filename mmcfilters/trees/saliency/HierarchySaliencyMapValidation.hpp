@@ -305,7 +305,12 @@ class HierarchySaliencyMapValidation {
     }
 
   private:
-    /** @brief Checks spatial support connectivity after the tree and grid domains are established. */
+    /**
+     * @brief Checks spatial support connectivity after the tree and grid domains are established.
+     * @param tree Committed rooted tree.
+     * @param adjacency Validated adjacency over the tree image domain.
+     * @param context Operation name used in diagnostics.
+     */
     static void validateHierarchyConnectivityEstablished(const MorphologicalTree& tree, const RegularGridAdjacency2D& adjacency, const char* context) {
         const int numPixels = tree.numPixels();
         struct DomainDisjointSet {
@@ -389,7 +394,15 @@ class HierarchySaliencyMapValidation {
         }
     }
 
-    /** @brief Validates an external valuation over an established committed topology. */
+    /**
+     * @brief Validates an external valuation over an established committed topology.
+     * @tparam Value Hierarchy valuation type.
+     * @param tree Committed rooted tree.
+     * @param valuation External valuation indexed by internal node slot.
+     * @param policy Required parent-child valuation order.
+     * @param rangePolicy Allowed valuation range.
+     * @param context Operation name used in diagnostics.
+     */
     template <class Value>
     static void validateHierarchyValuationEstablished(const MorphologicalTree& tree, std::span<const Value> valuation,
                                                        HierarchyValuationPolicy policy, HierarchyValuationRangePolicy rangePolicy, const char* context) {
@@ -421,7 +434,13 @@ class HierarchySaliencyMapValidation {
         }
     }
 
-    /** @brief Normalizes an established finite ordered valuation without revalidating it. */
+    /**
+     * @brief Normalizes an established finite ordered valuation without revalidating it.
+     * @tparam Value Hierarchy valuation type.
+     * @param tree Committed rooted tree.
+     * @param valuation Validated valuation indexed by internal node slot.
+     * @return Scores in [0, 1], or zero for a constant valuation.
+     */
     template <class Value>
     [[nodiscard]] static std::vector<double> normalizeHierarchyValuation(const MorphologicalTree& tree, std::span<const Value> valuation) {
         using BareValue = std::remove_cv_t<Value>;

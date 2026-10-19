@@ -121,8 +121,13 @@ class FilledShapeAttributeComputer {
     }
 
   private:
-    /** @brief Grants unit projection access to established family computation. */
-    template <class Computer, class Context> friend void ::mmcfilters::detail::kernel::computeUnitRows(const Context&);
+    /**
+     * @brief Grants unit projection access to established family computation.
+     * @tparam Computer Registered attribute family.
+     * @tparam Context Topology-only or altitude-aware unit context.
+     * @param context Established unit-row storage.
+     */
+    template <class Computer, class Context> friend void mmcfilters::detail::kernel::computeUnitRows(const Context& context);
 
     /** @brief Computes unit rows without revalidating established pixels or buffers. @param context Established unit-row storage. */
     template <std::floating_point Real> static void computeUnitRowsEstablished(const UnitAttributeComputeContext<Real>& context) {

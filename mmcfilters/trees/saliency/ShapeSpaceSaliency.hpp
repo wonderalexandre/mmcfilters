@@ -573,7 +573,14 @@ class ShapeSpaceSaliency {
     }
 
   private:
-    /** @brief Projects finite non-negative scores after tree and adjacency validation. */
+    /**
+     * @brief Projects finite non-negative scores after tree and adjacency validation.
+     * @tparam Real Floating-point score type.
+     * @param tree Committed rooted tree.
+     * @param nodeScores Validated contour scores indexed by internal node slot.
+     * @param adjacency Validated adjacency over the tree image domain.
+     * @return Saliency values obtained from contour scores on forward adjacency edges.
+     */
     template <std::floating_point Real>
     [[nodiscard]] static EdgeSaliencyMap<Real> projectContourScoresEstablished(const MorphologicalTree& tree,
         std::span<const Real> nodeScores, const RegularGridAdjacency2D& adjacency) {

@@ -26,7 +26,7 @@ void initRegularGridAdjacency2D(py::module_& m) {
 
     py::class_<RegularGridAdjacency2D>(m, "RegularGridAdjacency2D", py::module_local(false),
                                        "Reusable regular-grid 2D adjacency with row-major index iteration.")
-        .def(py::init<int, int, double>(), "rows"_a, "columns"_a, "radius"_a, "Create an adjacency relation for a regular 2D grid domain.")
+        .def(py::init<int, int, double>(), "rows"_a, "columns"_a, "radius"_a, "Create a regular-grid adjacency with a finite radius of at least 1.0.")
         .def_static(
             "from_structuring_element",
             [](int rows, int columns, const std::vector<std::pair<int, int>>& offsets) {
@@ -37,7 +37,7 @@ void initRegularGridAdjacency2D(py::module_& m) {
                 }
                 return RegularGridAdjacency2D::fromStructuringElement(rows, columns, converted);
             },
-            "rows"_a, "columns"_a, "offsets"_a, "Create undirected adjacency from symmetric (row, column) offsets.")
+            "rows"_a, "columns"_a, "offsets"_a, "Create connected grid-domain adjacency from symmetric (row, column) offsets.")
         .def_static("rectangular", &RegularGridAdjacency2D::rectangular, "rows"_a, "columns"_a, "row_radius"_a, "column_radius"_a,
                     "Create a centered rectangular adjacency.")
         .def_static("line", &RegularGridAdjacency2D::line, "rows"_a, "columns"_a, "row_extent"_a, "column_extent"_a, "Create a centered digital-line adjacency.")

@@ -318,6 +318,14 @@ def main() -> int:
         ),
         "asymmetric structuring element must be rejected",
     )
+    require_raises(
+        lambda: mmcfilters.RegularGridAdjacency2D(2, 3, 0.5),
+        "radius below one must be rejected during adjacency construction",
+    )
+    require_raises(
+        lambda: mmcfilters.RegularGridAdjacency2D.from_structuring_element(2, 3, [(0, 0)]),
+        "disconnected structuring element must be rejected during adjacency construction",
+    )
     require(valued_max_tree.reconstruct_from_node_altitudes().tolist() == valued_tree.reconstruct_from_node_altitudes().tolist(), "valued_tree createMaxTree reconstruction")
     require(valued_max_tree.kind == mmcfilters.MorphologicalTreeKind.MAX_TREE, "valued_tree createMaxTree tree type")
     require(valued_min_tree.kind == mmcfilters.MorphologicalTreeKind.MIN_TREE, "valued_tree createMinTree tree type")

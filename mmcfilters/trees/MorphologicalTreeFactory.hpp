@@ -62,34 +62,6 @@ class MorphologicalTreeFactory {
     }
 
     /**
-     * @brief Validates that a component-tree grid adjacency is connected.
-     * @param adjacency Input grid adjacency.
-     */
-    static void validateConnectedComponentTreeAdjacency(const RegularGridAdjacency2D& adjacency) {
-        const int numPixels = adjacency.getNumRows() * adjacency.getNumColumns();
-        std::vector<std::uint8_t> visited(static_cast<std::size_t>(numPixels), 0);
-        std::vector<PixelId> pending;
-        pending.reserve(static_cast<std::size_t>(numPixels));
-        pending.push_back(0);
-        visited[0] = 1;
-        int reached = 0;
-        while (!pending.empty()) {
-            const PixelId pixel = pending.back();
-            pending.pop_back();
-            ++reached;
-            for (PixelId neighbor : adjacency.getNeighborIndices(pixel)) {
-                if (visited[static_cast<std::size_t>(neighbor)] == 0) {
-                    visited[static_cast<std::size_t>(neighbor)] = 1;
-                    pending.push_back(neighbor);
-                }
-            }
-        }
-        if (reached != numPixels) {
-            throw std::invalid_argument("Component-tree adjacency must induce one connected image-domain graph.");
-        }
-    }
-
-    /**
      * @brief Validates tree of shapes image.
      *
      * @param img Image.
@@ -120,8 +92,6 @@ class MorphologicalTreeFactory {
     template <AltitudeValue T> [[nodiscard]] static ValuedMorphologicalTree<T> createMaxTree(ImagePtr<T> img, double radius = 1.5) {
         validateComponentTreeImage(img, "MorphologicalTreeFactory::createMaxTree");
         RegularGridAdjacency2D adjacency(img->getNumRows(), img->getNumColumns(), radius);
-        MMCFILTERS_CONTRACT_REQUIRE(img->getSize() == 1 || radius >= 1.0,
-                                    throw std::invalid_argument("Component-tree adjacency must induce one connected image-domain graph."));
         return detail::materializeNativeHierarchy<T>(
             ComponentTreeBuilder(std::move(adjacency), true).build(img), std::nullopt,
             detail::MaterializedVersionPolicy::PreserveLinkedConstruction);
@@ -141,7 +111,6 @@ class MorphologicalTreeFactory {
         validateComponentTreeImage(img, "MorphologicalTreeFactory::createMaxTree");
         MMCFILTERS_CONTRACT_REQUIRE(adjacency.getNumRows() == img->getNumRows() && adjacency.getNumColumns() == img->getNumColumns(),
                                     throw std::invalid_argument("Component-tree adjacency domain must match the input image domain."));
-        MMCFILTERS_CONTRACT_CHECKED_ONLY(validateConnectedComponentTreeAdjacency(adjacency));
         return detail::materializeNativeHierarchy<T>(
             ComponentTreeBuilder(std::move(adjacency), true).build(img), std::nullopt,
             detail::MaterializedVersionPolicy::PreserveLinkedConstruction);
@@ -163,8 +132,6 @@ class MorphologicalTreeFactory {
     template <AltitudeValue T> [[nodiscard]] static ValuedMorphologicalTree<T> createMinTree(ImagePtr<T> img, double radius = 1.5) {
         validateComponentTreeImage(img, "MorphologicalTreeFactory::createMinTree");
         RegularGridAdjacency2D adjacency(img->getNumRows(), img->getNumColumns(), radius);
-        MMCFILTERS_CONTRACT_REQUIRE(img->getSize() == 1 || radius >= 1.0,
-                                    throw std::invalid_argument("Component-tree adjacency must induce one connected image-domain graph."));
         return detail::materializeNativeHierarchy<T>(
             ComponentTreeBuilder(std::move(adjacency), false).build(img), std::nullopt,
             detail::MaterializedVersionPolicy::PreserveLinkedConstruction);
@@ -181,7 +148,6 @@ class MorphologicalTreeFactory {
         validateComponentTreeImage(img, "MorphologicalTreeFactory::createMinTree");
         MMCFILTERS_CONTRACT_REQUIRE(adjacency.getNumRows() == img->getNumRows() && adjacency.getNumColumns() == img->getNumColumns(),
                                     throw std::invalid_argument("Component-tree adjacency domain must match the input image domain."));
-        MMCFILTERS_CONTRACT_CHECKED_ONLY(validateConnectedComponentTreeAdjacency(adjacency));
         return detail::materializeNativeHierarchy<T>(
             ComponentTreeBuilder(std::move(adjacency), false).build(img), std::nullopt,
             detail::MaterializedVersionPolicy::PreserveLinkedConstruction);
@@ -218,8 +184,8 @@ class MorphologicalTreeFactory {
      * selected by the self-dual residual schedule. Both component trees use the
      * same symmetric connected adjacency.
      *
-     * @param img Image processed by the operation.
-     * @param adjacency Adjacency relation.
+     * @param img Non-null, nonempty image with finite altitude values.
+     * @param adjacency Connected adjacency matching the image domain.
      * @return An extremum residual tree over `adjacency`.
      */
     template <AltitudeValue T>
@@ -232,17 +198,13 @@ class MorphologicalTreeFactory {
     /**
      * @brief Builds the extremum residual tree with a radius adjacency.
      *
-     * @param img Image processed by the operation.
-     * @param radius Radius of the regular-grid adjacency.
+     * @param img Non-null, nonempty image with finite altitude values.
+     * @param radius Radius inducing a connected adjacency on the image domain.
      * @return An extremum residual tree using the radius adjacency.
      */
     template <AltitudeValue T>
     [[nodiscard]] static ValuedMorphologicalTree<T>
     createExtremumResidualTreeByCTs(ImagePtr<T> img, double radius = 1.5) {
-        if (!img) {
-            throw std::invalid_argument("MorphologicalTreeFactory::createExtremumResidualTreeByCTs requires a non-null image.");
-        }
-        // The builder validates image values and the resolved graph once.
         RegularGridAdjacency2D adjacency(img->getNumRows(), img->getNumColumns(), radius);
         return createExtremumResidualTreeByCTs(std::move(img), std::move(adjacency));
     }

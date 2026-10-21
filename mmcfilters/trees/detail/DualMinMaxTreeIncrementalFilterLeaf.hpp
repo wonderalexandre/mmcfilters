@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -23,32 +24,24 @@
 namespace mmcfilters::detail {
 
 /**
- * @brief Internal component-tree leaf updater for ExtremumResidualTreeByCTsBuilder.
+ * @brief Internal leaf updater for ExtremumResidualTreeByCTsBuilder, adapted from MorphoTreeAdjust.
  *
- * Adapted from the MorphoTreeAdjust DualMinMaxTreeIncrementalFilterLeaf.
- * One operation levels a live non-root primal leaf, updates the dual component
- * tree to represent the same image, and contracts the primal leaf. The builder
- * supplies the nonempty leaf support and the unique dual node whose proper part
- * contains that support.
- * An optional whole-part certificate enables a bulk proper-part transfer.
+ * One update levels a non-root primal leaf, updates the dual tree to represent the same image, and contracts the primal leaf.
+ * The builder supplies its nonempty support and the unique dual proper part containing it. A whole-part certificate enables a bulk transfer.
+ * Both borrowed trees and the adjacency must have matching domains and established node and pixel identifiers.
  *
- * Boundary contacts seed dual ancestor paths. Nodes in the affected altitude
- * interval are grouped into buckets, merged level by level, and reattached at
- * the primal parent level. Empty donor nodes are then contracted. Dense buckets
- * serve small integral altitude types; sparse buckets support wider and
- * floating-point types without quantization.
+ * Boundary contacts seed dual ancestor paths. A sweep merges buckets in descending altitude order for a max-tree and ascending order for a min-tree.
+ * The support moves at the primal parent altitude. Merge donors are released immediately; the original dual proper-part node is contracted
+ * when the merged branch is reattached if its proper part became empty.
  *
- * The builder owns both trees and the adjacency and establishes their matching
- * domains and all node/pixel preconditions. This class borrows them and does not
- * validate caller input. Tests of liveness during the sweep skip nodes consumed
- * by earlier merges. Reads follow the same path in CHECKED and UNCHECKED.
- * Established valued-tree edit sessions publish through the generic move-only
- * proof protocol; assertion-enabled builds retain the complete edit oracle.
+ * Small integral altitude types use dense buckets; other types use sparse buckets without quantization.
+ * Component minima include descendants. They are initialized once and combined in constant time per merge or attachment.
+ * Partial proper-part moves to descendants preserve the minimum of the source component.
  *
- * The reported candidate nodes refresh the builder agenda. Proper-part
- * transfers and the final dual node update its residual-support associations.
+ * Candidate nodes, whole proper-part transfers, and the final dual node let the builder update its agenda and pending supports.
+ * Established edit sessions use the same kernel reads in CHECKED and UNCHECKED builds; assertion-enabled builds retain the complete edit oracle.
  */
-template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
+template <AltitudeValue T> class DualMinMaxTreeIncrementalFilterLeaf {
   public:
     /** One complete dual proper-part transfer, in execution order. */
     struct ProperPartTransfer {
@@ -56,622 +49,61 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
         NodeId target; ///< Dual node receiving that proper part.
     };
 
-  private:
-    /** @brief Defines the `tree_t` alias used by the component. */
-    using tree_t = ValuedMorphologicalTree<altitude_t>;
-    /** @brief Defines the `editor_t` alias used by the component. */
-    using editor_t = ValuedMorphologicalTreeEditor<altitude_t>;
-    /** Direct reads after the builder established node and pixel domains. */
-    using TreeAccess = mmcfilters::detail::TreeKernelAccess;
+    /**
+     * @brief Borrows a fixed min-tree, max-tree, and adjacency over the same image domain.
+     * @param minTree Mutable min-tree owned by the caller.
+     * @param maxTree Mutable max-tree owned by the caller.
+     * @param adjacency Connected adjacency matching both tree domains.
+     */
+    DualMinMaxTreeIncrementalFilterLeaf(ValuedMorphologicalTree<T>* minTree, ValuedMorphologicalTree<T>* maxTree, const RegularGridAdjacency2D& adjacency)
+        : minTree_(minTree), maxTree_(maxTree), adjacency_(&adjacency),
+          collectedNodeMarks_(static_cast<std::size_t>(std::max(minTree->topology().numInternalNodeSlots(), maxTree->topology().numInternalNodeSlots()))),
+          minTreeMinPixels_(initializeComponentMinPixels(minTree->topology())), maxTreeMinPixels_(initializeComponentMinPixels(maxTree->topology())) {}
 
     /**
-     * @brief Decides whether altitude buckets can be represented by a dense array.
+     * @brief Prunes one certified max-tree leaf without rediscovering its workset.
      *
-     * MorphoTreeAdjust assumes an 8-bit non-negative altitude domain and uses one
-     * vector per possible level. In mmcfilters, the altitude type can vary, so this helper
-     * keeps that dense backend only for small integral domains and falls back to a
-     * sparse map for wider or non-integral altitude types.
+     * The support and certificates describe the current leaf and min-tree.
+     * They are consumed synchronously before the primal leaf is pruned.
      *
-     * @return True when the documented condition holds; otherwise false.
+     * @param primalLeafNode Live attached non-root leaf with a nonempty proper part.
+     * @param selectedSupport Nonempty selected leaf support supplied by the builder.
+     * @param dualProperPartNode Unique live dual node whose proper part contains the support.
+     * @param wholeDualProperPartNode Dual node whose entire proper part is selected, or InvalidNode.
      */
-    static constexpr bool usesDenseLevels() {
-        if constexpr (std::is_integral_v<altitude_t> && !std::is_same_v<std::remove_cv_t<altitude_t>, bool>) {
-            using unsigned_altitude_t = std::make_unsigned_t<altitude_t>;
-            return std::numeric_limits<unsigned_altitude_t>::digits <= MMCFILTERS_COMPONENT_TREE_ADJUSTMENT_DENSE_MAX_BITS;
-        } else {
-            return false;
-        }
-    }
-
-    /** @brief Indicates whether altitude levels use the dense lookup representation. */
-    static constexpr bool use_dense_levels = usesDenseLevels();
-
-    /**
-     * @brief Per-update collection of dual-tree nodes grouped by altitude.
-     *
-     * This mirrors `MergedNodesCollection` in MorphoTreeAdjust: during
-     * one leaf update, adjacent seed components are climbed toward `nodeCa`, and
-     * the nodes that must be merged are placed in altitude buckets. The sweep then
-     * consumes those buckets in descending order for max-tree updates and ascending
-     * order for min-tree updates.
-     *
-     * The collection also stores frontier nodes outside the `[a, b]` interval.
-     * Those frontier nodes are not merged, but must be reattached to the union node
-     * created at level `b` so the dual tree remains connected.
-     * The ancestor traversal deduplicates nodes before inserting them here.
-     */
-    class MergedNodesCollection {
-      private:
-        /**
-         * @brief Selects dense or sparse bucket storage for the configured altitude type.
-         */
-        template <bool dense, typename AltitudeType> struct StorageSelector;
-
-        /**
-         * @brief Dense storage: one bucket for each representable altitude value.
-         */
-        template <typename AltitudeType> struct StorageSelector<true, AltitudeType> {
-            /** @brief Domain size. */
-            static constexpr std::size_t domain_size = static_cast<std::size_t>(static_cast<long long>(std::numeric_limits<AltitudeType>::max()) -
-                                                                                static_cast<long long>(std::numeric_limits<AltitudeType>::lowest()) + 1);
-            /** @brief Defines the `type` alias used by the component. */
-            using type = std::array<std::vector<NodeId>, domain_size>;
-        };
-
-        /**
-         * @brief Sparse storage used when the altitude domain is too large to index directly.
-         */
-        template <typename AltitudeType> struct StorageSelector<false, AltitudeType> {
-            /** @brief Defines the `type` alias used by the component. */
-            using type = std::map<AltitudeType, std::vector<NodeId>>;
-        };
-
-        /** @brief Defines the `storage_t` alias used by the component. */
-        using storage_t = typename StorageSelector<use_dense_levels, altitude_t>::type;
-
-        /** @brief Merge buckets keyed by altitude level. */
-        storage_t mergeNodesByLevelStorage_;
-
-        /** @brief Levels that currently have non-empty merge buckets in this update. */
-        std::vector<altitude_t> mergeLevels_;
-
-        /** @brief Boundary nodes outside the merge interval that must be reattached at `b`. */
-        std::vector<NodeId> frontierNodesAboveB_;
-
-        /** @brief Cursor into `mergeLevels_` while the level sweep is running. */
-        int currentMergeLevelIndex_ = 0;
-
-        /** @brief Direction flag: max-tree sweeps high-to-low, min-tree sweeps low-to-high. */
-        bool isMaxtree_ = false;
-
-      public:
-        /**
-         * @brief Converts an altitude value into an array index for dense storage.
-         *
-         * @param level Altitude level.
-         * @return The converted altitude value into an array index for dense storage.
-         */
-        static std::size_t denseBucketIndex(altitude_t level) {
-            if constexpr (std::is_signed_v<altitude_t>) {
-                return static_cast<std::size_t>(static_cast<long long>(level) - static_cast<long long>(std::numeric_limits<altitude_t>::lowest()));
-            } else {
-                return static_cast<std::size_t>(level);
-            }
-        }
-
-        /**
-         * @brief Converts a dense bucket index back to the corresponding altitude value.
-         *
-         * @param index Zero-based index.
-         * @return The converted dense bucket index back to the corresponding altitude value.
-         */
-        static altitude_t levelFromDenseBucketIndex(std::size_t index) {
-            if constexpr (std::is_signed_v<altitude_t>) {
-                return static_cast<altitude_t>(static_cast<long long>(index) + static_cast<long long>(std::numeric_limits<altitude_t>::lowest()));
-            } else {
-                return static_cast<altitude_t>(index);
-            }
-        }
-
-        /**
-         * @brief Clears transient state and sets the sweep direction for the next step.
-         *
-         * @param isMaxtree Flag controlling is maxtree.
-         */
-        void resetCollection(bool isMaxtree) {
-            isMaxtree_ = isMaxtree;
-            for (altitude_t level : mergeLevels_) {
-                if constexpr (use_dense_levels) {
-                    mergeNodesByLevelStorage_[denseBucketIndex(level)].clear();
-                } else {
-                    auto it = mergeNodesByLevelStorage_.find(level);
-                    if (it != mergeNodesByLevelStorage_.end()) {
-                        it->second.clear();
-                    }
-                }
-            }
-            mergeLevels_.clear();
-            frontierNodesAboveB_.clear();
-            currentMergeLevelIndex_ = 0;
-        }
-
-        /**
-         * @brief Returns the merge bucket for `level`, creating it for sparse storage.
-         *
-         * @param level Altitude level.
-         * @return The merge bucket for level, creating it for sparse storage.
-         */
-        std::vector<NodeId>& getMergedNodes(const altitude_t& level) {
-            if constexpr (use_dense_levels) {
-                return mergeNodesByLevelStorage_[denseBucketIndex(level)];
-            } else {
-                return mergeNodesByLevelStorage_[level];
-            }
-        }
-
-        /**
-         * @brief Exposes frontier nodes outside the merge interval.
-         *
-         * @return Mutable reference to the updated object.
-         */
-        std::vector<NodeId>& getFrontierNodesAboveB() { return frontierNodesAboveB_; }
-
-        /**
-         * @brief Adds a frontier node already deduplicated by the ancestor traversal.
-         *
-         * @param nodeId Dense internal node identifier.
-         */
-        void addFrontierNodeAboveB(NodeId nodeId) { frontierNodesAboveB_.push_back(nodeId); }
-
-        /**
-         * @brief Adds `nodeId` to the merge bucket matching its current altitude.
-         *
-         * The ancestor traversal has already deduplicated `nodeId`.
-         *
-         * @param tree Tree topology.
-         * @param nodeId Dense internal node identifier.
-         */
-        void addMergeNode(const tree_t& tree, NodeId nodeId) {
-            auto& bucket = getMergedNodes(tree.nodeAltitudes()[static_cast<std::size_t>(nodeId)]);
-            bucket.push_back(nodeId);
-        }
-
-        /**
-         * @brief Materializes non-empty levels and returns the first level to sweep.
-         *
-         * @return The materialized non-empty levels and returns the first level to sweep.
-         */
-        altitude_t firstMergeLevel() {
-            mergeLevels_.clear();
-            if constexpr (use_dense_levels) {
-                for (std::size_t i = 0; i < mergeNodesByLevelStorage_.size(); ++i) {
-                    if (!mergeNodesByLevelStorage_[i].empty()) {
-                        mergeLevels_.push_back(levelFromDenseBucketIndex(i));
-                    }
-                }
-            } else {
-                mergeLevels_.reserve(mergeNodesByLevelStorage_.size());
-                for (const auto& entry : mergeNodesByLevelStorage_) {
-                    if (!entry.second.empty()) {
-                        mergeLevels_.push_back(entry.first);
-                    }
-                }
-            }
-
-            if (mergeLevels_.empty()) {
-                return altitude_t{};
-            }
-
-            currentMergeLevelIndex_ = isMaxtree_ ? static_cast<int>(mergeLevels_.size()) - 1 : 0;
-            return mergeLevels_[static_cast<std::size_t>(currentMergeLevelIndex_)];
-        }
-
-        /**
-         * @brief Tests whether the level sweep cursor still points to a valid level.
-         *
-         * @return True if the level sweep cursor still points to a valid level; otherwise false.
-         */
-        bool hasMergeLevel() const {
-            return !mergeLevels_.empty() && currentMergeLevelIndex_ >= 0 && currentMergeLevelIndex_ < static_cast<int>(mergeLevels_.size());
-        }
-
-        /**
-         * @brief Advances the sweep cursor according to the tree polarity.
-         *
-         * @return Next merge level in the polarity-ordered sweep.
-         */
-        altitude_t nextMergeLevel() {
-            currentMergeLevelIndex_ = isMaxtree_ ? currentMergeLevelIndex_ - 1 : currentMergeLevelIndex_ + 1;
-            if (!hasMergeLevel()) {
-                return altitude_t{};
-            }
-            return mergeLevels_[static_cast<std::size_t>(currentMergeLevelIndex_)];
-        }
-    };
-
-    /** @brief Mutable min-tree owned by the caller. */
-    tree_t* mintree_ = nullptr;
-
-    /** @brief Mutable max-tree owned by the caller. */
-    tree_t* maxtree_ = nullptr;
-
-    /** @brief Shared pixel adjacency used to find dual neighbors of the removed leaf support. */
-    const RegularGridAdjacency2D* graph_ = nullptr;
-
-    /** @brief Merge buckets, adjacency seeds, and frontiers for the current leaf step. */
-    MergedNodesCollection mergeNodesByLevel_;
-
-    /** @brief Marks empty dual-tree nodes that should be contracted after the sweep. */
-    GenerationStampSet removedMarks_;
-
-    /** @brief Empty marked nodes whose absorption is deferred until local reattachments finish. */
-    std::vector<NodeId> removedNodesPendingAbsorption_;
-
-    /** @brief Deduplicates adjacency seeds and ancestors before collection insertion. */
-    GenerationStampSet climbedNodeMarks_;
-
-    /** @brief Dual-tree nodes that became candidate-relevant in the last update. */
-    std::vector<NodeId> lastCandidateNodes_;
-
-    /** Complete proper-part transfers needed to update support associations. */
-    std::vector<ProperPartTransfer> lastProperPartTransfers_;
-
-    /** Dual proper part containing the complete selected support after the last update. */
-    NodeId lastSelectedSupportNode_ = InvalidNode;
-
-    /**
-     * @brief Returns the read-only topology view associated with a valued tree.
-     *
-     * @param tree Tree topology.
-     * @return The read-only topology view associated with a valued tree.
-     */
-    static const MorphologicalTree& topologyOf(const tree_t* tree) {
-        return tree->topology();
+    void pruneMaxLeafAndUpdateMinTree(NodeId primalLeafNode, std::span<const PixelId> selectedSupport, NodeId dualProperPartNode,
+                                      NodeId wholeDualProperPartNode) {
+        updateDualTree(minTree_, primalLeafNode, selectedSupport, dualProperPartNode, wholeDualProperPartNode);
+        prunePrimalLeaf(*maxTree_, primalLeafNode);
     }
 
     /**
-     * @brief Returns the current altitude of one tree node.
+     * @brief Prunes one certified min-tree leaf without rediscovering its workset.
      *
-     * @param tree Tree topology.
-     * @param nodeId Dense internal node identifier.
-     * @return The current altitude of one tree node.
+     * @param primalLeafNode Live attached non-root leaf with a nonempty proper part.
+     * @param selectedSupport Nonempty selected leaf support supplied by the builder.
+     * @param dualProperPartNode Unique live dual node whose proper part contains the support.
+     * @param wholeDualProperPartNode Dual node whose entire proper part is selected, or InvalidNode.
      */
-    static altitude_t nodeAltitude(const tree_t* tree, NodeId nodeId) noexcept {
-        return tree->nodeAltitudes()[static_cast<std::size_t>(nodeId)];
+    void pruneMinLeafAndUpdateMaxTree(NodeId primalLeafNode, std::span<const PixelId> selectedSupport, NodeId dualProperPartNode,
+                                      NodeId wholeDualProperPartNode) {
+        updateDualTree(maxTree_, primalLeafNode, selectedSupport, dualProperPartNode, wholeDualProperPartNode);
+        prunePrimalLeaf(*minTree_, primalLeafNode);
     }
 
     /**
-     * @brief Returns the primal tree for an update whose dual tree has polarity `isMaxtree`.
-     *
-     * @param isMaxtree Flag controlling is maxtree.
-     * @return The primal tree for an update whose dual tree has polarity isMaxtree.
+     * @brief Reads the minimum pixel in a current component, including descendants.
+     * @param tree One of the two component trees borrowed by this updater.
+     * @param node Live node identifier in that tree.
+     * @return Minimum row-major pixel; for a leaf, also the minimum of its proper part.
      */
-    tree_t* getPrimalTree(bool isMaxtree) { return isMaxtree ? mintree_ : maxtree_; }
-
-    /**
-     * @brief Clears all per-step marks and scratch buffers before a leaf update.
-     *
-     * @param isMaxtree Flag controlling is maxtree.
-     */
-    void initializeUpdateStepState(bool isMaxtree) {
-        mergeNodesByLevel_.resetCollection(isMaxtree);
-        removedMarks_.resetAll();
-        removedNodesPendingAbsorption_.clear();
-        climbedNodeMarks_.resetAll();
-        lastCandidateNodes_.clear();
-        lastProperPartTransfers_.clear();
-        lastSelectedSupportNode_ = InvalidNode;
+    [[nodiscard]] PixelId minPixel(const ValuedMorphologicalTree<T>& tree, NodeId node) const noexcept {
+        return (&tree == maxTree_ ? maxTreeMinPixels_ : minTreeMinPixels_)[node];
     }
 
     /**
-     * @brief Detaches a live non-root node from its parent without releasing it.
-     *
-     * This mirrors the efficient editor usage in `DualMinMaxTreeIncrementalFilter`:
-     * when the caller only needs a temporary detached subtree, `editor.detach`
-     * avoids the parent/child relation check required by `removeChild`.
-     *
-     * @param topology Tree topology.
-     * @param editor Active tree editor.
-     * @param nodeId Dense internal node identifier.
-     */
-    void detachIfNonRoot(const MorphologicalTree& topology, editor_t& editor, NodeId nodeId) {
-        if (topology.isRoot(nodeId)) {
-            return;
-        }
-        editor.detach(nodeId);
-    }
-
-    /**
-     * @brief Detaches a node from its current parent and optionally releases it.
-     *
-     * Non-release detaches use the lighter `TreeEditor::detach` path. Release
-     * operations keep using `removeChild(..., true)` because they must return the
-     * now-empty node slot to the free list of the tree.
-     *
-     * @param tree Tree topology.
-     * @param editor Active tree editor.
-     * @param nodeId Dense internal node identifier.
-     * @param releaseNode Node identifier.
-     */
-    void disconnect(tree_t* tree, editor_t& editor, NodeId nodeId, bool releaseNode) {
-        const MorphologicalTree& topology = topologyOf(tree);
-        if (!releaseNode) {
-            detachIfNonRoot(topology, editor, nodeId);
-            return;
-        }
-        if (topology.isRoot(nodeId)) {
-            return;
-        }
-
-        const NodeId parentId = TreeAccess::nodeParent(topology, nodeId);
-        if (parentId == InvalidNode || parentId == nodeId) {
-            return;
-        }
-        editor.removeChild(parentId, nodeId, releaseNode);
-    }
-
-    /**
-     * @brief Moves every child and every direct proper part from `childId` to `parentId`.
-     *
-     * After this operation, `childId` is structurally empty but still attached
-     * until the caller explicitly disconnects or releases it.
-     *
-     * @param tree Tree topology.
-     * @param editor Active tree editor.
-     * @param parentId Identifier of the parent node.
-     * @param childId Identifier of the child node.
-     */
-    void mergedParentAndChildren(tree_t* tree, editor_t& editor, NodeId parentId, NodeId childId) {
-        const MorphologicalTree& topology = topologyOf(tree);
-        editor.moveChildren(parentId, childId);
-        if (TreeAccess::properPartCardinality(topology, childId) > 0) {
-            lastProperPartTransfers_.push_back({childId, parentId});
-            if (lastSelectedSupportNode_ == childId) {
-                lastSelectedSupportNode_ = parentId;
-            }
-        }
-        editor.mergeProperParts(parentId, childId);
-    }
-
-    /**
-     * @brief Moves the selected support `C` to the current union node.
-     *
-     * The support is represented by the direct proper parts of `leafId` in the
-     * primal tree. Each pixel is looked up in the dual tree and moved from its
-     * current smallest node to `unionNode`. Donor nodes that become empty are marked for
-     * deferred absorption; if the emptied donor is `nodeCa`, the caller must handle
-     * the special replacement/root cases after the sweep.
-     *
-     * @param dualTree Dual tree.
-     * @param editor Active tree editor.
-     * @param unionNode Node identifier.
-     * @param support Direct proper-part support of the selected primal leaf.
-     * @param nodeCa Unique dual node whose proper part contains the selected support.
-     * @param nodeCaRemoved Whether the common-ancestor node was removed.
-     * @param certifiedWholeSupportSmallestNode Optional certified smallest node of the complete
-     *        support, enabling one bulk proper-part transfer.
-     */
-    void moveSelectedProperPartsToNode(tree_t* dualTree, editor_t& editor, NodeId unionNode, std::span<const PixelId> support, NodeId nodeCa,
-                                       bool& nodeCaRemoved, NodeId certifiedWholeSupportSmallestNode) {
-        const MorphologicalTree& dualTopology = topologyOf(dualTree);
-        lastSelectedSupportNode_ = unionNode;
-        if (certifiedWholeSupportSmallestNode != InvalidNode && certifiedWholeSupportSmallestNode != unionNode) {
-            lastProperPartTransfers_.push_back({certifiedWholeSupportSmallestNode, unionNode});
-            editor.mergeProperParts(unionNode, certifiedWholeSupportSmallestNode);
-            if (TreeAccess::properPartCardinality(dualTopology, certifiedWholeSupportSmallestNode) == 0 &&
-                !removedMarks_.isMarked(static_cast<std::size_t>(certifiedWholeSupportSmallestNode))) {
-                removedMarks_.mark(static_cast<std::size_t>(certifiedWholeSupportSmallestNode));
-                removedNodesPendingAbsorption_.push_back(certifiedWholeSupportSmallestNode);
-                if (certifiedWholeSupportSmallestNode == nodeCa) {
-                    nodeCaRemoved = true;
-                }
-            }
-            return;
-        }
-        for (PixelId pixelId : support) {
-            const NodeId smallestNodeId = TreeAccess::smallestNodeMap(dualTopology, pixelId);
-            if (smallestNodeId == unionNode) {
-                continue;
-            }
-
-            editor.movePixelToProperPart(unionNode, smallestNodeId, pixelId);
-            if (TreeAccess::properPartCardinality(dualTopology, smallestNodeId) == 0 && !removedMarks_.isMarked(static_cast<std::size_t>(smallestNodeId))) {
-                removedMarks_.mark(static_cast<std::size_t>(smallestNodeId));
-                removedNodesPendingAbsorption_.push_back(smallestNodeId);
-                if (smallestNodeId == nodeCa) {
-                    nodeCaRemoved = true;
-                }
-            }
-        }
-    }
-
-    /**
-     * @brief Tests whether a marked empty node is still alive and safe to absorb.
-     *
-     * @param tree Tree topology.
-     * @param nodeId Dense internal node identifier.
-     * @return True if a marked empty node is still alive and safe to absorb; otherwise false.
-     */
-    bool canAbsorbRemovedNode(tree_t* tree, NodeId nodeId) const {
-        return nodeId != InvalidNode && TreeAccess::isAlive(topologyOf(tree), nodeId) &&
-               removedMarks_.isMarked(static_cast<std::size_t>(nodeId)) && TreeAccess::properPartCardinality(topologyOf(tree), nodeId) == 0;
-    }
-
-    /**
-     * @brief Contracts an empty root by promoting its altitude-compatible child.
-     *
-     * If a removed node is currently the root, its children cannot simply be moved
-     * to a parent. The child with the extremal altitude for the dual tree polarity
-     * becomes the new root and all other children are reattached below it.
-     *
-     * @param tree Tree topology.
-     * @param editor Active tree editor.
-     * @param removedNodeId Node identifier.
-     */
-    void absorbRemovedRootNode(tree_t* tree, editor_t& editor, NodeId removedNodeId) {
-        const bool isMaxtree = tree == maxtree_;
-        const MorphologicalTree& topology = topologyOf(tree);
-        const NodeId firstChild = TreeAccess::firstChild(topology, removedNodeId);
-        if (firstChild == InvalidNode) {
-            return;
-        }
-
-        NodeId newRoot = firstChild;
-        for (NodeId childId = firstChild; childId != InvalidNode; childId = TreeAccess::nextSibling(topology, childId)) {
-            if ((isMaxtree && nodeAltitude(tree, childId) < nodeAltitude(tree, newRoot)) ||
-                (!isMaxtree && nodeAltitude(tree, childId) > nodeAltitude(tree, newRoot))) {
-                newRoot = childId;
-            }
-        }
-
-        for (NodeId childId = firstChild; childId != InvalidNode;) {
-            const NodeId nextChildId = TreeAccess::nextSibling(topology, childId);
-            if (childId != newRoot && TreeAccess::nodeParent(topology, childId) != newRoot) {
-                detachIfNonRoot(topology, editor, childId);
-                editor.attach(newRoot, childId);
-            }
-            childId = nextChildId;
-        }
-        editor.setRoot(newRoot);
-        editor.releaseNode(removedNodeId);
-    }
-
-    /**
-     * @brief Contracts one empty non-root node into its current parent.
-     *
-     * Children and direct proper parts of the node are first moved to the parent,
-     * then the empty node is released. If the parent becomes empty as a result of
-     * the merge, the parent is marked so the post-order absorption pass can keep
-     * contracting upward.
-     *
-     * @param tree Tree topology.
-     * @param editor Active tree editor.
-     * @param removedNodeId Node identifier.
-     * @return The surviving parent empty non-root node into its current parent.
-     */
-    NodeId absorbRemovedNonRootNode(tree_t* tree, editor_t& editor, NodeId removedNodeId) {
-        const MorphologicalTree& topology = topologyOf(tree);
-        const NodeId parentId = TreeAccess::nodeParent(topology, removedNodeId);
-        if (parentId == removedNodeId) {
-            return InvalidNode;
-        }
-
-        mergedParentAndChildren(tree, editor, parentId, removedNodeId);
-        disconnect(tree, editor, removedNodeId, true);
-
-        if (TreeAccess::properPartCardinality(topology, parentId) == 0) {
-            removedMarks_.mark(static_cast<std::size_t>(parentId));
-            return parentId;
-        }
-
-        return InvalidNode;
-    }
-
-    /**
-     * @brief Contracts all empty nodes accumulated during the current update.
-     *
-     * The pass is iterative post-order. Children are considered before the marked
-     * node itself so moving children/proper parts never leaves dangling links in
-     * the connected component. Newly emptied parents are pushed back on the stack.
-     *
-     * @param tree Tree topology.
-     * @param editor Active tree editor.
-     * @param removedNodeIds Node identifier.
-     */
-    void absorbRemovedNodes(tree_t* tree, editor_t& editor, const std::vector<NodeId>& removedNodeIds) {
-        struct Frame {
-            NodeId nodeId = InvalidNode;
-            NodeId nextChildId = InvalidNode;
-        };
-
-        if (removedNodeIds.empty()) {
-            return;
-        }
-
-        std::vector<Frame> stack;
-        stack.reserve(std::max<std::size_t>(64, removedNodeIds.size()));
-        const auto makeFrame = [tree](NodeId nodeId) {
-            if (!TreeAccess::isAlive(topologyOf(tree), nodeId)) {
-                return Frame{nodeId, InvalidNode};
-            }
-            return Frame{nodeId, TreeAccess::firstChild(topologyOf(tree), nodeId)};
-        };
-
-        for (auto it = removedNodeIds.rbegin(); it != removedNodeIds.rend(); ++it) {
-            if (*it != InvalidNode) {
-                stack.push_back(makeFrame(*it));
-            }
-        }
-
-        while (!stack.empty()) {
-            Frame& frame = stack.back();
-            NodeId currentNodeId = InvalidNode;
-
-            if (!canAbsorbRemovedNode(tree, frame.nodeId)) {
-                stack.pop_back();
-            } else if (frame.nextChildId != InvalidNode) {
-                const NodeId childId = frame.nextChildId;
-                frame.nextChildId = TreeAccess::nextSibling(topologyOf(tree), childId);
-                stack.push_back(makeFrame(childId));
-            } else {
-                currentNodeId = frame.nodeId;
-                stack.pop_back();
-            }
-
-            if (canAbsorbRemovedNode(tree, currentNodeId)) {
-                if (topologyOf(tree).isRoot(currentNodeId)) {
-                    absorbRemovedRootNode(tree, editor, currentNodeId);
-                } else {
-                    const NodeId parentId = absorbRemovedNonRootNode(tree, editor, currentNodeId);
-                    if (parentId != InvalidNode) {
-                        stack.push_back(makeFrame(parentId));
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * @brief Contracts an established primal leaf through the existing edit primitives.
-     * @param tree Primal tree containing an attached non-root leaf.
-     * @param leafId Live leaf whose support is transferred to its parent.
-     */
-    static void pruneLeaf(tree_t& tree, NodeId leafId) {
-        const NodeId parent = TreeAccess::nodeParent(tree.topology(), leafId);
-        auto editor = mmcfilters::detail::beginEstablishedValuedEdit(tree);
-        editor.mergeProperParts(parent, leafId);
-        editor.removeChild(parent, leafId, true);
-        auto proof = editor.proveIncremental();
-        editor.commit(std::move(proof));
-    }
-
-  public:
-    /**
-     * @brief Builds the leaf adjuster over a fixed valuedTree min-tree / max-tree pair.
-     *
-     * The adjuster does not own the trees or the adjacency relation. Prune
-     * methods always operate on this same pair; they do not rebind trees per call.
-     * Both trees must represent the same image domain and must use node ids from
-     * the internal dense node-id space of this repository.
-     *
-     * @param minTree Min-tree.
-     * @param maxTree Max-tree.
-     * @param graph Region or adjacency graph.
-     */
-    DualMinMaxTreeIncrementalFilterLeaf(tree_t* minTree, tree_t* maxTree, const RegularGridAdjacency2D& graph)
-        : mintree_(minTree), maxtree_(maxTree), graph_(&graph),
-          removedMarks_(static_cast<std::size_t>(std::max(minTree->topology().numInternalNodeSlots(), maxTree->topology().numInternalNodeSlots()))),
-          climbedNodeMarks_(static_cast<std::size_t>(std::max(minTree->topology().numInternalNodeSlots(), maxTree->topology().numInternalNodeSlots()))) {}
-
-    /**
-     * @brief Returns dual-tree nodes that may affect the candidate agenda of the builder.
-     *
-     * SDRT construction uses this after each leaf prune to refresh only affected
-     * dual candidates. The vector is cleared at the beginning of each update and
-     * receives the union node created at every consumed merge level, matching the
-     * MorphoTreeAdjust leaf-builder behavior.
-     *
-     * @return Dual-tree nodes that may affect the candidate agenda of the builder.
+     * @brief Returns dual nodes whose leaf status or selection key may have changed.
+     * Each consumed merge level contributes its union node. The buffer is cleared at the next update.
      */
     const std::vector<NodeId>& getLastCandidateNodes() const { return lastCandidateNodes_; }
 
@@ -689,272 +121,505 @@ template <AltitudeValue altitude_t> class DualMinMaxTreeIncrementalFilterLeaf {
 
   private:
     /**
-     * @brief Builds merge buckets and frontiers for one removed leaf.
-     *
-     * Starting from the supplied primal leaf support `C`, the method scans its
-     * graph neighbors and maps them to their smallest nodes in `dualTree`.
-     * Neighbors mapped to `nodeCa` are skipped: the complete support lies in that
-     * proper part, and the merge sweep excludes the altitude of `nodeCa`.
-     * This avoids a pixel-mark buffer and a separate pass over `C`. Other dual
-     * nodes seed ancestor paths in the altitude interval governed by `nodeCa` and `b`.
-     * Each accepted node is marked before insertion. The dual tree is unchanged
-     * during collection, so one mark set suffices for both seeds and ancestors.
-     *
-     * Nodes whose level is inside the merge side of the interval are inserted in
-     * `mergeNodesByLevel_`. Boundary nodes outside the merge side are recorded as
-     * frontiers and later attached to the union node created at level `b`.
-     *
-     * @param dualTree Dual tree.
-     * @param support Direct proper-part support of the selected primal leaf.
-     * @param nodeCa Unique dual node whose proper part contains the selected support.
-     * @param b Primal parent altitude reached by this leveling.
-     * @param isMaxtree Flag controlling is maxtree.
+     * @brief Uses dense buckets only when the integral altitude domain fits the configured bit limit.
      */
-    void buildMergedAndNestedCollections(tree_t* dualTree, std::span<const PixelId> support, NodeId nodeCa, altitude_t b, bool isMaxtree) {
-        const MorphologicalTree& dualTopology = topologyOf(dualTree);
-        const altitude_t altitudeCa = nodeAltitude(dualTree, nodeCa);
-
-        const auto addAdjacentNode = [&](NodeId nodeQ) {
-            NodeId n = nodeQ;
-            while (!climbedNodeMarks_.isMarked(static_cast<std::size_t>(n))) {
-                const altitude_t levelCurrent = nodeAltitude(dualTree, n);
-                if (!((isMaxtree && levelCurrent >= altitudeCa) || (!isMaxtree && levelCurrent <= altitudeCa))) {
-                    break;
-                }
-
-                climbedNodeMarks_.mark(static_cast<std::size_t>(n));
-
-                if ((isMaxtree && levelCurrent <= b) || (!isMaxtree && levelCurrent >= b)) {
-                    mergeNodesByLevel_.addMergeNode(*dualTree, n);
-                } else {
-                    NodeId parentId = TreeAccess::nodeParent(dualTopology, n);
-                    if (parentId == n) {
-                        parentId = InvalidNode;
-                    }
-                    if (!(parentId != InvalidNode &&
-                          ((isMaxtree && nodeAltitude(dualTree, parentId) > b) || (!isMaxtree && nodeAltitude(dualTree, parentId) < b)))) {
-                        mergeNodesByLevel_.addFrontierNodeAboveB(n);
-                    }
-                }
-
-                const NodeId parentId = TreeAccess::nodeParent(dualTopology, n);
-                if (parentId == n) {
-                    break;
-                }
-                n = parentId;
-            }
-        };
-
-        for (PixelId pixel : support) {
-            for (PixelId neighbor : mmcfilters::detail::CommittedGridAccess::neighbors(*graph_, pixel)) {
-                const NodeId nodeQ = TreeAccess::smallestNodeMap(dualTopology, neighbor);
-                if (nodeQ != nodeCa) {
-                    addAdjacentNode(nodeQ);
-                }
-            }
+    static constexpr bool usesDenseBuckets() {
+        if constexpr (std::is_integral_v<T> && !std::is_same_v<std::remove_cv_t<T>, bool>) {
+            return std::numeric_limits<std::make_unsigned_t<T>>::digits <= MMCFILTERS_COMPONENT_TREE_ADJUSTMENT_DENSE_MAX_BITS;
+        } else {
+            return false;
         }
     }
 
     /**
-     * @brief Updates the dual tree for the selected primal leaf leveling.
-     *
-     * This is the algorithmic core of leaf mode. The method:
-     *
-     * - identifies the parent level `b` of the primal leaf;
-     * - uses the supplied dual node `nodeCa` whose proper part contains the leaf support;
-     * - builds merge buckets/frontiers for the affected dual region;
-     * - sweeps altitude levels toward `nodeCa`, merging same-level nodes;
-     * - moves the leaf support to the union node at level `b`;
-     * - reattaches frontiers and previous-level union nodes;
-     * - handles the cases where `nodeCa` becomes empty or the root changes;
-     * - contracts all empty donor nodes collected during the update.
-     *
-     * The caller is responsible for pruning `leafId` from the primal tree after
-     * this dual update completes.
-     *
-     * @param dualTree Dual tree.
-     * @param leafId Live attached non-root leaf with a nonempty proper part.
-     * @param support Nonempty proper-part support supplied by the builder.
-     * @param nodeCa Unique live dual node whose proper part contains the supplied support.
-     * @param certifiedWholeSupportSmallestNode Optional certified smallest node of the complete
-     *        support, enabling one bulk proper-part transfer.
+     * @brief Groups affected dual nodes by altitude and records the frontier to reattach.
+     * Ancestor traversal deduplicates nodes before insertion. The sweep visits active buckets in tree order;
+     * frontier nodes lie outside the merge interval and attach at the primal parent altitude.
      */
-    void updateTree(tree_t* dualTree, NodeId leafId, std::span<const PixelId> support, NodeId nodeCa,
-                    NodeId certifiedWholeSupportSmallestNode) {
-        const bool isMaxtree = dualTree == maxtree_;
-        initializeUpdateStepState(isMaxtree);
-        tree_t* primalTree = getPrimalTree(isMaxtree);
-        const MorphologicalTree& dualTopology = topologyOf(dualTree);
-        const MorphologicalTree& primalTopology = topologyOf(primalTree);
+    class DualMergeRegion {
+        /**
+         * @brief Selects dense or sparse bucket storage for the configured altitude type.
+         */
+        template <bool dense, typename Altitude> struct BucketStorage;
 
-        const NodeId leafParent = TreeAccess::nodeParent(primalTopology, leafId);
-        const altitude_t b = nodeAltitude(primalTree, leafParent);
-        const altitude_t altitudeCa = nodeAltitude(dualTree, nodeCa);
-        lastSelectedSupportNode_ = nodeCa;
-        buildMergedAndNestedCollections(dualTree, support, nodeCa, b, isMaxtree);
+        /**
+         * @brief Dense storage: one bucket for each representable altitude value.
+         */
+        template <typename Altitude> struct BucketStorage<true, Altitude> {
+            /** @brief Number of representable altitude values. */
+            static constexpr std::size_t numAltitudes = static_cast<std::size_t>(static_cast<long long>(std::numeric_limits<Altitude>::max()) -
+                                                                                 static_cast<long long>(std::numeric_limits<Altitude>::lowest()) + 1);
+            using type = std::array<std::vector<NodeId>, numAltitudes>;
+        };
 
-        editor_t editor = mmcfilters::detail::beginEstablishedValuedEdit(*dualTree);
-        altitude_t mergeLevel = mergeNodesByLevel_.firstMergeLevel();
-        NodeId unionNode = InvalidNode;
-        NodeId previousUnionNode = InvalidNode;
-        bool nodeCaRemoved = false;
+        /**
+         * @brief Sparse storage used when the altitude domain is too large to index directly.
+         */
+        template <typename Altitude> struct BucketStorage<false, Altitude> {
+            using type = std::map<Altitude, std::vector<NodeId>>;
+        };
 
-        while (mergeNodesByLevel_.hasMergeLevel() && ((isMaxtree && mergeLevel > altitudeCa) || (!isMaxtree && mergeLevel < altitudeCa))) {
-            auto& mergeNodesAtLevel = mergeNodesByLevel_.getMergedNodes(mergeLevel);
-            unionNode = InvalidNode;
+        /** @brief Merge buckets indexed by altitude. */
+        typename BucketStorage<usesDenseBuckets(), T>::type nodesByAltitude_;
 
-            for (auto nodeId : mergeNodesAtLevel) {
-                if (!TreeAccess::isAlive(dualTopology, nodeId)) {
-                    continue;
-                }
-                if (unionNode == InvalidNode || nodeId < unionNode) {
-                    unionNode = nodeId;
-                }
+        /** @brief Altitudes with nonempty merge buckets in this update. */
+        std::vector<T> activeAltitudes_;
+
+        /** @brief Boundary nodes to reattach at the primal parent altitude. */
+        std::vector<NodeId> frontierNodes_;
+
+        /** @brief Cursor into activeAltitudes_ during the sweep. */
+        int currentAltitudeIndex_ = 0;
+
+        /** @brief Direction flag: max-tree sweeps high-to-low, min-tree sweeps low-to-high. */
+        bool isMaxTree_ = false;
+
+        /**
+         * @brief Maps an altitude to a dense index, offsetting signed domains by their lowest value.
+         */
+        static std::size_t denseBucketIndex(T altitude) {
+            if constexpr (std::is_signed_v<T>) {
+                return static_cast<std::size_t>(static_cast<long long>(altitude) - static_cast<long long>(std::numeric_limits<T>::lowest()));
+            } else {
+                return static_cast<std::size_t>(altitude);
             }
-
-            for (auto nodeId : mergeNodesAtLevel) {
-                if (!TreeAccess::isAlive(dualTopology, nodeId)) {
-                    continue;
-                }
-
-                if (nodeId == unionNode) {
-                    disconnect(dualTree, editor, unionNode, false);
-                    continue;
-                }
-
-                if (unionNode == InvalidNode) {
-                    continue;
-                }
-
-                mergedParentAndChildren(dualTree, editor, unionNode, nodeId);
-                disconnect(dualTree, editor, nodeId, true);
-            }
-
-            if (unionNode == InvalidNode) {
-                mergeLevel = mergeNodesByLevel_.nextMergeLevel();
-                unionNode = previousUnionNode;
-                continue;
-            }
-
-            lastCandidateNodes_.push_back(unionNode);
-
-            if (mergeLevel == b) {
-                moveSelectedProperPartsToNode(dualTree, editor, unionNode, support, nodeCa, nodeCaRemoved, certifiedWholeSupportSmallestNode);
-
-                for (auto nodeId : mergeNodesByLevel_.getFrontierNodesAboveB()) {
-                    if (!TreeAccess::isAlive(dualTopology, nodeId)) {
-                        continue;
-                    }
-                    disconnect(dualTree, editor, nodeId, false);
-                    editor.attach(unionNode, nodeId);
-                }
-            }
-
-            if (previousUnionNode != InvalidNode && TreeAccess::isAlive(dualTopology, previousUnionNode) && TreeAccess::nodeParent(dualTopology, previousUnionNode) != unionNode) {
-                if (!dualTopology.isRoot(previousUnionNode)) {
-                    disconnect(dualTree, editor, previousUnionNode, false);
-                }
-                editor.attach(unionNode, previousUnionNode);
-            }
-
-            previousUnionNode = unionNode;
-            mergeLevel = mergeNodesByLevel_.nextMergeLevel();
         }
 
-        const NodeId finalUnionNode = previousUnionNode;
-        if (finalUnionNode == InvalidNode || !TreeAccess::isAlive(dualTopology, finalUnionNode)) {
-            auto proof = editor.proveIncremental();
-            editor.commit(std::move(proof));
+        /**
+         * @brief Recovers the altitude represented by a dense bucket index.
+         */
+        static T altitudeFromDenseBucketIndex(std::size_t index) {
+            if constexpr (std::is_signed_v<T>) {
+                return static_cast<T>(static_cast<long long>(index) + static_cast<long long>(std::numeric_limits<T>::lowest()));
+            } else {
+                return static_cast<T>(index);
+            }
+        }
+
+      public:
+        /**
+         * @brief Clears the previous active buckets and sets the sweep direction.
+         * @param dualIsMaxTree Whether the dual tree requires a descending altitude sweep.
+         */
+        void reset(bool dualIsMaxTree) {
+            isMaxTree_ = dualIsMaxTree;
+            for (T altitude : activeAltitudes_) {
+                if constexpr (usesDenseBuckets()) {
+                    nodesByAltitude_[denseBucketIndex(altitude)].clear();
+                } else {
+                    // Active levels are keys retained by the sparse storage.
+                    nodesByAltitude_.find(altitude)->second.clear();
+                }
+            }
+            activeAltitudes_.clear();
+            frontierNodes_.clear();
+            currentAltitudeIndex_ = 0;
+        }
+
+        /**
+         * @brief Returns the bucket at the given altitude, creating it for sparse storage.
+         */
+        std::vector<NodeId>& nodesAtAltitude(const T& altitude) {
+            if constexpr (usesDenseBuckets()) {
+                return nodesByAltitude_[denseBucketIndex(altitude)];
+            } else {
+                return nodesByAltitude_[altitude];
+            }
+        }
+
+        /**
+         * @brief Returns the frontier nodes to reattach at the primal parent altitude.
+         */
+        const std::vector<NodeId>& frontierNodes() const { return frontierNodes_; }
+
+        /**
+         * @brief Records a frontier node already deduplicated by the ancestor traversal.
+         */
+        void addFrontierNode(NodeId node) { frontierNodes_.push_back(node); }
+
+        /**
+         * @brief Adds a deduplicated dual node to the bucket at its current altitude.
+         */
+        void addMergeNode(const ValuedMorphologicalTree<T>& tree, NodeId node) {
+            auto& bucket = nodesAtAltitude(tree.nodeAltitudes()[static_cast<std::size_t>(node)]);
+            bucket.push_back(node);
+        }
+
+        /**
+         * @brief Collects active levels and positions the sweep cursor.
+         */
+        void prepareSweep() {
+            activeAltitudes_.clear();
+            if constexpr (usesDenseBuckets()) {
+                for (std::size_t bucketIndex = 0; bucketIndex < nodesByAltitude_.size(); ++bucketIndex) {
+                    if (!nodesByAltitude_[bucketIndex].empty()) {
+                        activeAltitudes_.push_back(altitudeFromDenseBucketIndex(bucketIndex));
+                    }
+                }
+            } else {
+                activeAltitudes_.reserve(nodesByAltitude_.size());
+                for (const auto& entry : nodesByAltitude_) {
+                    if (!entry.second.empty()) {
+                        activeAltitudes_.push_back(entry.first);
+                    }
+                }
+            }
+
+            currentAltitudeIndex_ = isMaxTree_ ? static_cast<int>(activeAltitudes_.size()) - 1 : 0;
+        }
+
+        /**
+         * @brief Tests whether the sweep cursor identifies an active altitude.
+         */
+        bool hasCurrentAltitude() const { return currentAltitudeIndex_ >= 0 && static_cast<std::size_t>(currentAltitudeIndex_) < activeAltitudes_.size(); }
+
+        /** @brief Reads the altitude at the current sweep position. */
+        T currentAltitude() const { return activeAltitudes_[static_cast<std::size_t>(currentAltitudeIndex_)]; }
+
+        /** @brief Advances the sweep cursor according to the tree polarity. */
+        void advance() { currentAltitudeIndex_ += isMaxTree_ ? -1 : 1; }
+    };
+
+    /** @brief Mutable min-tree owned by the caller. */
+    ValuedMorphologicalTree<T>* minTree_ = nullptr;
+
+    /** @brief Mutable max-tree owned by the caller. */
+    ValuedMorphologicalTree<T>* maxTree_ = nullptr;
+
+    /** @brief Shared pixel adjacency used to find dual neighbors of the removed leaf support. */
+    const RegularGridAdjacency2D* adjacency_ = nullptr;
+
+    /** @brief Merge buckets and frontier nodes for the current dual update. */
+    DualMergeRegion dualMergeRegion_;
+
+    /** @brief Deduplicates adjacency seeds and ancestors before collection insertion. */
+    GenerationStampSet collectedNodeMarks_;
+
+    /** @brief Minimum row-major pixel in each current min-tree component, including descendants. */
+    std::vector<PixelId> minTreeMinPixels_;
+
+    /** @brief Minimum row-major pixel in each current max-tree component, including descendants. */
+    std::vector<PixelId> maxTreeMinPixels_;
+
+    /** @brief Dual nodes whose leaf status or selection key may have changed. */
+    std::vector<NodeId> lastCandidateNodes_;
+
+    /** Complete proper-part transfers needed to update the pending support indices. */
+    std::vector<ProperPartTransfer> lastProperPartTransfers_;
+
+    /** Dual proper part containing the complete selected support after the last update. */
+    NodeId lastSelectedSupportNode_ = InvalidNode;
+
+    /**
+     * @brief Initializes component minima in row-major order, assigning each component once.
+     * @param topology Component tree over the nonempty row-major image domain.
+     * @return Minimum pixel for every live component, indexed by node slot.
+     */
+    static std::vector<PixelId> initializeComponentMinPixels(const MorphologicalTree& topology) {
+        std::vector<PixelId> minPixels(topology.numInternalNodeSlots(), InvalidPixel);
+        minPixels[topology.root()] = 0;
+        if (topology.numNodes() == 1)
+            return minPixels;
+        for (PixelId pixel = 0; pixel < topology.numPixels(); ++pixel) {
+            NodeId node = TreeKernelAccess::smallestNodeMap(topology, pixel);
+            // The first pixel reaching a component is its minimum. A previously
+            // assigned component also has previously assigned ancestors.
+            while (minPixels[node] == InvalidPixel) {
+                minPixels[node] = pixel;
+                node = TreeKernelAccess::nodeParent(topology, node);
+            }
+        }
+        return minPixels;
+    }
+
+    /**
+     * @brief Reads the altitude of an established live node.
+     */
+    static T nodeAltitude(const ValuedMorphologicalTree<T>* tree, NodeId node) noexcept { return tree->nodeAltitudes()[static_cast<std::size_t>(node)]; }
+
+    /** @brief Reads the topology of a borrowed component tree. */
+    static const MorphologicalTree& topologyOf(const ValuedMorphologicalTree<T>* tree) { return tree->topology(); }
+
+    /** @brief Selects the primal tree from the polarity of the dual tree. */
+    ValuedMorphologicalTree<T>* primalTreeFor(bool dualIsMaxTree) { return dualIsMaxTree ? minTree_ : maxTree_; }
+
+    /** @brief Clears the previous update results and scratch state. */
+    void resetUpdateState(bool dualIsMaxTree) {
+        dualMergeRegion_.reset(dualIsMaxTree);
+        collectedNodeMarks_.resetAll();
+        lastCandidateNodes_.clear();
+        lastProperPartTransfers_.clear();
+        lastSelectedSupportNode_ = InvalidNode;
+    }
+
+    /**
+     * @brief Releases an attached non-root node after its contents have been transferred.
+     * @param topology Current topology with established node slots.
+     * @param editor Active tree editor.
+     * @param node Live, attached, empty non-root node.
+     */
+    static void releaseEmptyNode(const MorphologicalTree& topology, ValuedMorphologicalTreeEditor<T>& editor, NodeId node) {
+        const NodeId parentNode = TreeKernelAccess::nodeParent(topology, node);
+        assert(node != topology.root() && parentNode != InvalidNode && parentNode != node);
+        editor.removeChild(parentNode, node, true);
+    }
+
+    /**
+     * @brief Moves the children of sourceNode under targetNode, leaving targetNode itself in place.
+     * @param topology Current topology with established node slots.
+     * @param editor Active tree editor.
+     * @param sourceNode Node whose child list is traversed.
+     * @param targetNode Live destination, which may itself be a child of sourceNode.
+     */
+    static void reattachChildren(const MorphologicalTree& topology, ValuedMorphologicalTreeEditor<T>& editor, NodeId sourceNode, NodeId targetNode) {
+        for (NodeId childNode = TreeKernelAccess::firstChild(topology, sourceNode); childNode != InvalidNode;) {
+            const NodeId nextChildNode = TreeKernelAccess::nextSibling(topology, childNode);
+            if (childNode != targetNode) {
+                editor.detach(childNode);
+                editor.attach(targetNode, childNode);
+            }
+            childNode = nextChildNode;
+        }
+    }
+
+    /**
+     * @brief Moves every child and the complete proper part from a donor to the union node.
+     *
+     * The donor remains attached and empty until the caller releases it.
+     *
+     * @param editor Active tree editor.
+     * @param unionNode Live union node at the current merge level.
+     * @param donorNode Live donor from the same bucket, with a nonempty proper part.
+     */
+    void mergeDonorIntoUnion(ValuedMorphologicalTreeEditor<T>& editor, NodeId unionNode, NodeId donorNode) {
+        editor.moveChildren(unionNode, donorNode);
+        lastProperPartTransfers_.push_back({donorNode, unionNode});
+        editor.mergeProperParts(unionNode, donorNode);
+    }
+
+    /**
+     * @brief Moves the selected support from its established dual proper part to the union node.
+     *
+     * The sweep excludes the altitude of dualProperPartNode, so its pixels still belong to
+     * dualProperPartNode when the target level is reached. Only this proper part can become
+     * empty. Its contraction is handled when the updated branch is reattached.
+     *
+     * @param dualTree Dual tree.
+     * @param editor Active tree editor.
+     * @param unionNode Union node at the primal parent altitude.
+     * @param support Nonempty selected support contained in the proper part of dualProperPartNode.
+     * @param dualProperPartNode Established dual proper-part node containing the support.
+     * @param wholeDualProperPartNode dualProperPartNode when its complete proper part is selected, or InvalidNode.
+     * @return Whether the dual proper part became empty.
+     */
+    bool moveSelectedSupport(ValuedMorphologicalTree<T>* dualTree, ValuedMorphologicalTreeEditor<T>& editor, NodeId unionNode, std::span<const PixelId> support,
+                             NodeId dualProperPartNode, NodeId wholeDualProperPartNode) {
+        lastSelectedSupportNode_ = unionNode;
+        assert(unionNode != dualProperPartNode);
+        if (wholeDualProperPartNode != InvalidNode) {
+            assert(wholeDualProperPartNode == dualProperPartNode);
+            lastProperPartTransfers_.push_back({dualProperPartNode, unionNode});
+            editor.mergeProperParts(unionNode, dualProperPartNode);
+            return true;
+        }
+        for (PixelId pixelId : support) {
+            editor.movePixelToProperPart(unionNode, dualProperPartNode, pixelId);
+        }
+        return TreeKernelAccess::properPartCardinality(topologyOf(dualTree), dualProperPartNode) == 0;
+    }
+
+    /**
+     * @brief Reattaches the detached updated branch and contracts its empty dual proper-part node.
+     * @param dualTree Dual tree after the merge-level sweep.
+     * @param editor Active tree editor.
+     * @param dualProperPartNode Original dual proper-part node containing the selected support.
+     * @param finalUnionNode Live union node left detached by the last active merge level.
+     * @param dualProperPartEmptied Whether moving the support emptied dualProperPartNode.
+     */
+    void reattachMergedBranch(ValuedMorphologicalTree<T>* dualTree, ValuedMorphologicalTreeEditor<T>& editor, NodeId dualProperPartNode, NodeId finalUnionNode,
+                              bool dualProperPartEmptied) {
+        const MorphologicalTree& topology = topologyOf(dualTree);
+        auto& componentMinPixels = dualTree == maxTree_ ? maxTreeMinPixels_ : minTreeMinPixels_;
+        assert(TreeKernelAccess::nodeParent(topology, finalUnionNode) == finalUnionNode);
+        if (!dualProperPartEmptied) {
+            editor.attach(dualProperPartNode, finalUnionNode);
+            return;
+        }
+        if (dualProperPartNode != topology.root()) {
+            editor.attach(TreeKernelAccess::nodeParent(topology, dualProperPartNode), finalUnionNode);
+            reattachChildren(topology, editor, dualProperPartNode, finalUnionNode);
+            componentMinPixels[finalUnionNode] = std::min(componentMinPixels[finalUnionNode], componentMinPixels[dualProperPartNode]);
+            releaseEmptyNode(topology, editor, dualProperPartNode);
             return;
         }
 
-        if (nodeCaRemoved) {
-            if (!dualTopology.isRoot(nodeCa)) {
-                const NodeId parentIdNodeCa = TreeAccess::nodeParent(dualTopology, nodeCa);
-                if (!dualTopology.isRoot(finalUnionNode)) {
-                    disconnect(dualTree, editor, finalUnionNode, false);
-                }
-                editor.attach(parentIdNodeCa, finalUnionNode);
-
-                for (NodeId n = TreeAccess::firstChild(dualTopology, nodeCa); n != InvalidNode;) {
-                    const NodeId next = TreeAccess::nextSibling(dualTopology, n);
-                    if (n != finalUnionNode && TreeAccess::nodeParent(dualTopology, n) != finalUnionNode) {
-                        detachIfNonRoot(dualTopology, editor, n);
-                        editor.attach(finalUnionNode, n);
-                    }
-                    n = next;
-                }
-
-                disconnect(dualTree, editor, nodeCa, true);
-            } else {
-                NodeId newRoot = finalUnionNode;
-                for (NodeId n = TreeAccess::firstChild(dualTopology, nodeCa); n != InvalidNode; n = TreeAccess::nextSibling(dualTopology, n)) {
-                    if ((isMaxtree && nodeAltitude(dualTree, n) < nodeAltitude(dualTree, newRoot)) ||
-                        (!isMaxtree && nodeAltitude(dualTree, n) > nodeAltitude(dualTree, newRoot))) {
-                        newRoot = n;
-                    }
-                }
-
-                if (newRoot != finalUnionNode) {
-                    if (!dualTopology.isRoot(finalUnionNode)) {
-                        disconnect(dualTree, editor, finalUnionNode, false);
-                    }
-                    editor.attach(newRoot, finalUnionNode);
-                }
-
-                for (NodeId n = TreeAccess::firstChild(dualTopology, nodeCa); n != InvalidNode;) {
-                    const NodeId next = TreeAccess::nextSibling(dualTopology, n);
-                    if (n != newRoot && TreeAccess::nodeParent(dualTopology, n) != newRoot) {
-                        detachIfNonRoot(dualTopology, editor, n);
-                        editor.attach(newRoot, n);
-                    }
-                    n = next;
-                }
-                editor.setRoot(newRoot);
-                editor.releaseNode(nodeCa);
+        const bool dualIsMaxTree = dualTree == maxTree_;
+        NodeId newRoot = finalUnionNode;
+        for (NodeId childNode = TreeKernelAccess::firstChild(topology, dualProperPartNode); childNode != InvalidNode;
+             childNode = TreeKernelAccess::nextSibling(topology, childNode)) {
+            if (dualIsMaxTree ? nodeAltitude(dualTree, childNode) < nodeAltitude(dualTree, newRoot)
+                              : nodeAltitude(dualTree, childNode) > nodeAltitude(dualTree, newRoot)) {
+                newRoot = childNode;
             }
-        } else if (finalUnionNode != nodeCa) {
-            if (!dualTopology.isRoot(finalUnionNode)) {
-                disconnect(dualTree, editor, finalUnionNode, false);
-            }
-            editor.attach(nodeCa, finalUnionNode);
         }
+        if (newRoot != finalUnionNode) {
+            editor.attach(newRoot, finalUnionNode);
+        }
+        reattachChildren(topology, editor, dualProperPartNode, newRoot);
+        componentMinPixels[newRoot] = componentMinPixels[dualProperPartNode];
+        editor.setRoot(newRoot);
+        editor.releaseNode(dualProperPartNode);
+    }
 
-        absorbRemovedNodes(dualTree, editor, removedNodesPendingAbsorption_);
+    /**
+     * @brief Contracts an established primal leaf through the existing edit primitives.
+     * The component of its parent is unchanged, so its stored minimum remains valid.
+     * @param tree Primal tree containing an attached non-root leaf.
+     * @param primalLeafNode Live leaf whose support is transferred to its parent.
+     */
+    static void prunePrimalLeaf(ValuedMorphologicalTree<T>& tree, NodeId primalLeafNode) {
+        const NodeId parent = TreeKernelAccess::nodeParent(tree.topology(), primalLeafNode);
+        auto editor = mmcfilters::detail::beginEstablishedValuedEdit(tree);
+        editor.mergeProperParts(parent, primalLeafNode);
+        editor.removeChild(parent, primalLeafNode, true);
         auto proof = editor.proveIncremental();
         editor.commit(std::move(proof));
     }
 
-  public:
     /**
-     * @brief Prunes one certified max-tree leaf without rediscovering its workset.
+     * @brief Collects dual merge buckets and frontier nodes from the selected support boundary.
+     * Neighbors in dualProperPartNode are skipped because its altitude is excluded from the merge sweep.
+     * Other neighbors seed ancestor paths. A generation mark deduplicates seeds and ancestors before insertion.
+     * The dual tree remains unchanged during collection.
      *
-     * The support and certificates describe the current leaf and min-tree.
-     * They are consumed synchronously before the primal leaf is pruned.
-     *
-     * @param leafId Live attached non-root leaf with a nonempty proper part.
-     * @param certifiedSupport Nonempty selected leaf support supplied by the builder.
-     * @param certifiedNodeCa Unique live dual node whose proper part contains the support.
-     * @param certifiedWholeSupportSmallestNode Dual node whose entire proper part is selected, or InvalidNode.
+     * @param dualTree Dual tree before the update.
+     * @param support Nonempty proper part of the selected primal leaf.
+     * @param dualProperPartNode Unique dual proper part containing the support.
+     * @param targetAltitude Primal parent altitude reached by this leveling.
+     * @param dualIsMaxTree Whether the dual tree is a max-tree.
      */
-    void pruneMaxLeafAndUpdateMinTree(NodeId leafId, std::span<const PixelId> certifiedSupport, NodeId certifiedNodeCa,
-                                     NodeId certifiedWholeSupportSmallestNode) {
-        updateTree(mintree_, leafId, certifiedSupport, certifiedNodeCa, certifiedWholeSupportSmallestNode);
-        pruneLeaf(*maxtree_, leafId);
+    void collectDualMergeRegion(ValuedMorphologicalTree<T>* dualTree, std::span<const PixelId> support, NodeId dualProperPartNode, T targetAltitude,
+                                bool dualIsMaxTree) {
+        const MorphologicalTree& dualTopology = topologyOf(dualTree);
+        const T dualProperPartAltitude = nodeAltitude(dualTree, dualProperPartNode);
+
+        const auto collectAncestorPath = [&](NodeId seedNode) {
+            NodeId ancestorNode = seedNode;
+            while (!collectedNodeMarks_.isMarked(static_cast<std::size_t>(ancestorNode))) {
+                const T currentAltitude = nodeAltitude(dualTree, ancestorNode);
+                if (!((dualIsMaxTree && currentAltitude >= dualProperPartAltitude) || (!dualIsMaxTree && currentAltitude <= dualProperPartAltitude))) {
+                    break;
+                }
+
+                collectedNodeMarks_.mark(static_cast<std::size_t>(ancestorNode));
+
+                const NodeId parentNode = TreeKernelAccess::nodeParent(dualTopology, ancestorNode);
+                if (dualIsMaxTree ? currentAltitude <= targetAltitude : currentAltitude >= targetAltitude) {
+                    dualMergeRegion_.addMergeNode(*dualTree, ancestorNode);
+                } else {
+                    if (parentNode == ancestorNode ||
+                        !(dualIsMaxTree ? nodeAltitude(dualTree, parentNode) > targetAltitude : nodeAltitude(dualTree, parentNode) < targetAltitude)) {
+                        dualMergeRegion_.addFrontierNode(ancestorNode);
+                    }
+                }
+
+                if (parentNode == ancestorNode) {
+                    break;
+                }
+                ancestorNode = parentNode;
+            }
+        };
+
+        for (PixelId pixel : support) {
+            for (PixelId neighbor : mmcfilters::detail::CommittedGridAccess::neighbors(*adjacency_, pixel)) {
+                const NodeId adjacentNode = TreeKernelAccess::smallestNodeMap(dualTopology, neighbor);
+                if (adjacentNode != dualProperPartNode) {
+                    collectAncestorPath(adjacentNode);
+                }
+            }
+        }
     }
 
     /**
-     * @brief Prunes one certified min-tree leaf without rediscovering its workset.
+     * @brief Merges the affected dual region and moves the selected support to the primal parent altitude.
+     * At each altitude, the smallest node identifier represents the union. Frontiers attach at the target altitude;
+     * each later union receives the previous one. The final branch is reattached before publishing the edit.
+     * The caller contracts the primal leaf after this update.
      *
-     * @param leafId Live attached non-root leaf with a nonempty proper part.
-     * @param certifiedSupport Nonempty selected leaf support supplied by the builder.
-     * @param certifiedNodeCa Unique live dual node whose proper part contains the support.
-     * @param certifiedWholeSupportSmallestNode Dual node whose entire proper part is selected, or InvalidNode.
+     * @param dualTree Dual tree to update.
+     * @param primalLeafNode Live attached non-root primal leaf.
+     * @param support Nonempty selected leaf support supplied by the builder.
+     * @param dualProperPartNode Unique live dual proper part containing the support.
+     * @param wholeDualProperPartNode dualProperPartNode when its complete proper part is selected, or InvalidNode.
      */
-    void pruneMinLeafAndUpdateMaxTree(NodeId leafId, std::span<const PixelId> certifiedSupport, NodeId certifiedNodeCa,
-                                     NodeId certifiedWholeSupportSmallestNode) {
-        updateTree(maxtree_, leafId, certifiedSupport, certifiedNodeCa, certifiedWholeSupportSmallestNode);
-        pruneLeaf(*mintree_, leafId);
+    void updateDualTree(ValuedMorphologicalTree<T>* dualTree, NodeId primalLeafNode, std::span<const PixelId> support, NodeId dualProperPartNode,
+                        NodeId wholeDualProperPartNode) {
+        const bool dualIsMaxTree = dualTree == maxTree_;
+        resetUpdateState(dualIsMaxTree);
+        ValuedMorphologicalTree<T>* primalTree = primalTreeFor(dualIsMaxTree);
+        const MorphologicalTree& dualTopology = topologyOf(dualTree);
+        const MorphologicalTree& primalTopology = topologyOf(primalTree);
+        auto& componentMinPixels = dualIsMaxTree ? maxTreeMinPixels_ : minTreeMinPixels_;
+
+        const NodeId primalParentNode = TreeKernelAccess::nodeParent(primalTopology, primalLeafNode);
+        const T targetAltitude = nodeAltitude(primalTree, primalParentNode);
+        const T dualProperPartAltitude = nodeAltitude(dualTree, dualProperPartNode);
+        lastSelectedSupportNode_ = dualProperPartNode;
+        collectDualMergeRegion(dualTree, support, dualProperPartNode, targetAltitude, dualIsMaxTree);
+
+        ValuedMorphologicalTreeEditor<T> editor = mmcfilters::detail::beginEstablishedValuedEdit(*dualTree);
+        NodeId previousUnionNode = InvalidNode;
+        bool dualProperPartEmptied = false;
+
+        for (dualMergeRegion_.prepareSweep(); dualMergeRegion_.hasCurrentAltitude(); dualMergeRegion_.advance()) {
+            const T mergeAltitude = dualMergeRegion_.currentAltitude();
+            if (!(dualIsMaxTree ? mergeAltitude > dualProperPartAltitude : mergeAltitude < dualProperPartAltitude)) {
+                break;
+            }
+            const auto& nodesAtMergeAltitude = dualMergeRegion_.nodesAtAltitude(mergeAltitude);
+            // Active buckets are nonempty; each collected node occurs in exactly one bucket.
+            const NodeId unionNode = *std::min_element(nodesAtMergeAltitude.begin(), nodesAtMergeAltitude.end());
+            PixelId unionMinPixel = componentMinPixels[unionNode];
+            for (NodeId mergeNode : nodesAtMergeAltitude) {
+                assert(TreeKernelAccess::isAlive(dualTopology, mergeNode));
+                if (mergeNode == unionNode) {
+                    // The strict altitude interval excludes the dual root.
+                    editor.detach(unionNode);
+                } else {
+                    assert(TreeKernelAccess::properPartCardinality(dualTopology, mergeNode) > 0 && lastSelectedSupportNode_ != mergeNode);
+                    mergeDonorIntoUnion(editor, unionNode, mergeNode);
+                    unionMinPixel = std::min(unionMinPixel, componentMinPixels[mergeNode]);
+                    releaseEmptyNode(dualTopology, editor, mergeNode);
+                }
+            }
+            lastCandidateNodes_.push_back(unionNode);
+
+            if (mergeAltitude == targetAltitude) {
+                dualProperPartEmptied = moveSelectedSupport(dualTree, editor, unionNode, support, dualProperPartNode, wholeDualProperPartNode);
+                unionMinPixel = std::min(unionMinPixel, minPixel(*primalTree, primalLeafNode));
+                for (NodeId frontierNode : dualMergeRegion_.frontierNodes()) {
+                    // Frontier altitudes lie outside the merge interval.
+                    assert(TreeKernelAccess::isAlive(dualTopology, frontierNode) && frontierNode != dualTopology.root());
+                    editor.detach(frontierNode);
+                    editor.attach(unionNode, frontierNode);
+                    unionMinPixel = std::min(unionMinPixel, componentMinPixels[frontierNode]);
+                }
+            }
+
+            // Each union stays detached until it is attached below the next level.
+            if (previousUnionNode != InvalidNode) {
+                editor.attach(unionNode, previousUnionNode);
+                unionMinPixel = std::min(unionMinPixel, componentMinPixels[previousUnionNode]);
+            }
+            componentMinPixels[unionNode] = unionMinPixel;
+            previousUnionNode = unionNode;
+        }
+
+        if (previousUnionNode != InvalidNode) {
+            reattachMergedBranch(dualTree, editor, dualProperPartNode, previousUnionNode, dualProperPartEmptied);
+        }
+        auto proof = editor.proveIncremental();
+        editor.commit(std::move(proof));
     }
 };
 

@@ -37,6 +37,17 @@ void testRadiusStencilOrderAndBounds() {
     }
 }
 
+void testRadiusConstructionInvariants() {
+    for (double radius : {-1.0, 0.0, 0.5, std::nextafter(1.0, 0.0)}) {
+        requireThrowsContaining<std::invalid_argument>([&] { (void)RegularGridAdjacency2D(2, 3, radius); }, "at least 1.0",
+                                                       "radius below one is rejected during adjacency construction");
+        requireThrowsContaining<std::invalid_argument>([&] { (void)RegularGridAdjacency2D(1, 1, radius); }, "at least 1.0",
+                                                       "singleton radius follows the same lower bound");
+    }
+    const RegularGridAdjacency2D minimumRadius(2, 3, 1.0);
+    require(minimumRadius.is4connectivity(), "unit radius remains valid");
+}
+
 void testNestedAndInterleavedTraversal() {
     const RegularGridAdjacency2D adjacency(3, 3, 1.5);
     const auto outer = adjacency.getNeighborIndices(4);
@@ -84,8 +95,8 @@ void testStructuringElementFactories() {
     const auto vertical = RegularGridAdjacency2D::verticalLine(5, 1, 2);
     requireVectorEqual(collectNodeIds(vertical.getNeighborIndices(2)), std::vector<NodeId>{1, 0, 3, 4}, "vertical line");
 
-    const auto diagonal = RegularGridAdjacency2D::line(7, 7, 2, 1);
-    requireVectorEqual(collectNodeIds(diagonal.getNeighborIndices(24)), std::vector<NodeId>{16, 9, 32, 39}, "oriented digital line");
+    requireThrowsContaining<std::invalid_argument>([] { (void)RegularGridAdjacency2D::line(7, 7, 2, 1); }, "connected",
+                                                   "oriented digital line cannot connect the full 2D domain");
 }
 
 void testStructuringElementValidation() {
@@ -100,6 +111,28 @@ void testStructuringElementValidation() {
     const std::array<GridOffset2D, 2> duplicateOrigin{{{0, 0}, {0, 0}}};
     requireThrowsContaining<std::invalid_argument>([&] { (void)RegularGridAdjacency2D::fromStructuringElement(3, 3, duplicateOrigin); }, "duplicate",
                                                    "duplicate structuring-element offset");
+}
+
+void testStructuringElementConnectivity() {
+    const std::array<GridOffset2D, 1> originOnly{{{0, 0}}};
+    requireThrowsContaining<std::invalid_argument>([&] { (void)RegularGridAdjacency2D::fromStructuringElement(2, 3, originOnly); }, "connected",
+                                                   "origin-only stencil disconnects a nonsingleton domain");
+    const auto singleton = RegularGridAdjacency2D::fromStructuringElement(1, 1, originOnly);
+    requireEqual(singleton.getSize(), 1, "origin-only singleton domain is connected");
+
+    requireThrowsContaining<std::invalid_argument>([] { (void)RegularGridAdjacency2D::horizontalLine(2, 3, 1); }, "connected",
+                                                   "horizontal stencil cannot connect different rows");
+    requireThrowsContaining<std::invalid_argument>([] { (void)RegularGridAdjacency2D::verticalLine(3, 2, 1); }, "connected",
+                                                   "vertical stencil cannot connect different columns");
+    requireThrowsContaining<std::invalid_argument>([&] { (void)RegularGridAdjacency2D::fromStructuringElement(0, 3, originOnly); }, "nonempty",
+                                                   "connected structuring-element adjacency requires a nonempty domain");
+
+    // Connectivity depends on the finite domain, including for stencils without unit steps.
+    const std::array<GridOffset2D, 5> jumps{{{0, 0}, {0, -2}, {0, 2}, {0, -3}, {0, 3}}};
+    const auto connectedJumps = RegularGridAdjacency2D::fromStructuringElement(1, 4, jumps);
+    requireVectorEqual(collectNodeIds(connectedJumps.getNeighborIndices(0)), std::vector<NodeId>{2, 3}, "connected nonunit stencil");
+    requireThrowsContaining<std::invalid_argument>([&] { (void)RegularGridAdjacency2D::fromStructuringElement(1, 3, jumps); }, "connected",
+                                                   "the same nonunit stencil disconnects a smaller domain");
 }
 
 void testComponentTreeUsesExplicitAdjacency() {
@@ -156,9 +189,11 @@ void testCanonicalCustomStencilIsEquivalent() {
 
 int main() {
     testRadiusStencilOrderAndBounds();
+    testRadiusConstructionInvariants();
     testNestedAndInterleavedTraversal();
     testStructuringElementFactories();
     testStructuringElementValidation();
+    testStructuringElementConnectivity();
     testComponentTreeUsesExplicitAdjacency();
     testCanonicalCustomStencilIsEquivalent();
     return 0;

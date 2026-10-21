@@ -98,7 +98,7 @@ and individual fields to the factory is rejected.
 Combining the self-dual span with `EXTERIOR_RING` and `UINT8` is rejected.
 
 Residual-tree factories use a fixed row-major spatial order. See
-[Self-dual residual trees](self-dual-residual-trees.md) for scheduling and
+[Self-dual residual trees](dgmm2027/README.md) for scheduling and
 construction policies.
 
 ### Hierarchy import

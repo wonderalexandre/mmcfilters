@@ -51,6 +51,9 @@ enum class RegularGridAdjacencyShape { EuclideanDisk, StructuringElement };
  * 2D image grid. The immutable stencil can be traversed either fully or in
  * forward-only mode, which exposes only one directed half of the neighbourhood
  * and is therefore convenient when unique undirected edges are needed.
+ * Radius construction requires a finite radius of at least 1.0. Structuring
+ * elements must induce a connected graph on their nonempty finite grid domain.
+ * Construction establishes these invariants once in both contract modes.
  *
  * Coordinates use `(row, column)` order. Linear grid indices use
  * `row * numColumns + column`. Each traversal range owns its cursor state,
@@ -88,7 +91,12 @@ class RegularGridAdjacency2D {
      * @param columns Number of columns in the domain.
      */
     static void requireDomainDimensions(int rows, int columns) {
-        MMCFILTERS_CONTRACT_REQUIRE(rows >= 0 && columns >= 0, throw std::invalid_argument("RegularGridAdjacency2D grid dimensions must be non-negative."));
+        if (rows < 0 || columns < 0) {
+            throw std::invalid_argument("RegularGridAdjacency2D grid dimensions must be non-negative.");
+        }
+        if (static_cast<std::int64_t>(rows) * columns > std::numeric_limits<PixelId>::max()) {
+            throw std::overflow_error("RegularGridAdjacency2D grid dimensions exceed the supported pixel-indexed size.");
+        }
     }
 
     /**
@@ -101,9 +109,9 @@ class RegularGridAdjacency2D {
     static double checkedRadiusParameters(int rows, int columns, double radius) {
         requireDomainDimensions(rows, columns);
         const double maxSafeRadius = (std::sqrt(static_cast<double>(std::numeric_limits<int>::max())) - 1.0) / 2.0;
-        MMCFILTERS_CONTRACT_REQUIRE(
-            std::isfinite(radius) && radius >= 0.0 && radius <= maxSafeRadius,
-            throw std::invalid_argument("RegularGridAdjacency2D radius must be finite, non-negative, and representable by the integer stencil."));
+        if (!std::isfinite(radius) || radius < 1.0 || radius > maxSafeRadius) {
+            throw std::invalid_argument("RegularGridAdjacency2D radius must be finite, at least 1.0, and representable by the integer stencil.");
+        }
         return radius;
     }
 
@@ -121,6 +129,37 @@ class RegularGridAdjacency2D {
             }
         }
         return false;
+    }
+
+    /** @brief Establishes connectivity of the finite grid for a constructed structuring-element stencil. */
+    void requireConnectedDomain() const {
+        if (numRows == 0 || numColumns == 0) {
+            throw std::invalid_argument("A structuring-element adjacency requires a nonempty connected grid domain.");
+        }
+        // Unit steps connect every row and column without a graph traversal.
+        if ((numRows == 1 || containsOffset(1, 0)) && (numColumns == 1 || containsOffset(0, 1))) {
+            return;
+        }
+
+        const auto numPixels = static_cast<std::size_t>(numRows) * static_cast<std::size_t>(numColumns);
+        std::vector<std::uint8_t> visited(numPixels, 0);
+        std::vector<PixelId> pending{0};
+        visited[0] = 1;
+        std::size_t reached = 1;
+        while (!pending.empty()) {
+            const PixelId pixel = pending.back();
+            pending.pop_back();
+            for (PixelId neighbor : NeighborIndexRange(*this, pixel / numColumns, pixel % numColumns)) {
+                if (!visited[static_cast<std::size_t>(neighbor)]) {
+                    visited[static_cast<std::size_t>(neighbor)] = 1;
+                    ++reached;
+                    pending.push_back(neighbor);
+                }
+            }
+        }
+        if (reached != numPixels) {
+            throw std::invalid_argument("A structuring-element adjacency must induce one connected grid-domain graph.");
+        }
     }
 
     /**
@@ -240,6 +279,7 @@ class RegularGridAdjacency2D {
         }
         radius = std::sqrt(radius2);
         buildForwardOffsetIndices();
+        requireConnectedDomain();
     }
 
     /**
@@ -268,7 +308,7 @@ class RegularGridAdjacency2D {
      *
      * @param numRows Number of grid rows.
      * @param numColumns Number of grid columns.
-     * @param radius Radius of the neighbourhood stencil. `1.0` gives 4-connectivity
+     * @param radius Finite radius of at least 1.0. `1.0` gives 4-connectivity
      * and `1.5` gives 8-connectivity on the integer grid.
      */
     RegularGridAdjacency2D(int numRows, int numColumns, double radius) {
@@ -393,6 +433,8 @@ class RegularGridAdjacency2D {
      * its opposite `(-dr, -dc)`. This undirectedness contract is required by
      * algorithms that traverse each grid edge once through
      * `getForwardNeighborIndices()`.
+     * The offsets must connect the complete nonempty grid domain. This is
+     * established once during construction, including for rectangular and line stencils.
      *
      * @param numRows Number of rows in the domain.
      * @param numColumns Number of columns in the domain.

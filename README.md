@@ -24,8 +24,8 @@ will often be the better choice.
 
 ## Main capabilities
 
-- construction of max-trees, min-trees, trees of shapes, and self-dual
-  residual trees;
+- construction of max-trees, min-trees, trees of shapes, and the extremum
+  residual tree (ext-res-tree);
 - generic rooted hierarchies with safe local and staged edits;
 - a broad catalog of node attributes organized into gray-level, shape, moment,
   boundary, and tree-topology groups;
@@ -125,6 +125,7 @@ reconstructed_image = tree.reconstruct_from_node_altitudes()
 ### Reproducibility
 
 - [SIBGRAPI 2026 — Unifying Local Attribute Computation on Component Trees and the Tree of Shapes](docs/sibgrapi2026/README.md)
+- [DGMM 2027 — The Extremum Residual Tree: A Self-Dual Morphological Tree Based on Levelings](docs/dgmm2027/README.md)
 
 ### References
 

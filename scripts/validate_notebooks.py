@@ -15,11 +15,11 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOK_DIRECTORY = REPOSITORY_ROOT / "notebooks"
 
 EXPECTED_NOTEBOOKS = (
+    "Attribute_Filtering_Illustration_ExtResTree_ToS.ipynb",
     "Attribute_Filters.ipynb",
     "Comparative_Morphological_Tree_Filtering.ipynb",
     "Higra_Attribute_Interoperability.ipynb",
     "MaxDistExample.ipynb",
-    "Self_Dual_Residual_Trees_Tutorial_Static.ipynb",
     "SimpleExamples.ipynb",
     "ToS_Contour_Example.ipynb",
     "UAO_Examples.ipynb",
@@ -47,6 +47,9 @@ PORTUGUESE_PROSE = re.compile(
 )
 DIRECT_IMPORT = re.compile(r"(?:^|\n)\s*import\s+mmcfilters(?:\s|$)")
 FROM_IMPORT = re.compile(r"(?:^|\n)\s*from\s+mmcfilters(?:\.|\s)")
+DEPENDENCY_INSTALLATION = (
+    "%pip install mmcfilters morphotreeviz matplotlib opencv-python-headless"
+)
 
 
 def output_text(cell: nbformat.NotebookNode) -> str:
@@ -75,14 +78,26 @@ def validate_notebook(path: Path) -> list[str]:
         errors.append("the notebook has no non-empty code cell")
         return errors
 
-    if not DIRECT_IMPORT.search(code_cells[0].source):
-        errors.append("the first code cell must contain direct `import mmcfilters`")
+    installation_cell = (
+        code_cells[0]
+        if code_cells[0].source.strip() == DEPENDENCY_INSTALLATION
+        else None
+    )
+    import_cells = code_cells[1:] if installation_cell is not None else code_cells
+    if not import_cells or not DIRECT_IMPORT.search(import_cells[0].source):
+        errors.append(
+            "the first code cell after optional dependency installation "
+            "must contain direct `import mmcfilters`"
+        )
 
-    counts = [cell.execution_count for cell in code_cells]
+    execution_cells = code_cells
+    if installation_cell is not None and installation_cell.execution_count is None:
+        execution_cells = code_cells[1:]
+    counts = [cell.execution_count for cell in execution_cells]
     if any(count is not None for count in counts):
         if any(count is None for count in counts):
             errors.append("stored execution counts must cover every non-empty code cell")
-        elif counts != list(range(1, len(code_cells) + 1)):
+        elif counts != list(range(1, len(counts) + 1)):
             errors.append("stored execution counts must be sequential 1..N")
 
     for index, cell in enumerate(notebook.cells):
@@ -94,7 +109,8 @@ def validate_notebook(path: Path) -> list[str]:
             for output in cell.get("outputs", []):
                 if output.get("output_type") == "error":
                     errors.append(f"cell {index}: committed error output")
-        if FORBIDDEN_CONTENT.search(content):
+        # Pip output may include installation paths from the current environment.
+        if cell is not installation_cell and FORBIDDEN_CONTENT.search(content):
             errors.append(f"cell {index}: loader, install, import-hook, or absolute-path content")
         if PORTUGUESE_PROSE.search(content):
             errors.append(f"cell {index}: Portuguese reader-facing prose or labels")

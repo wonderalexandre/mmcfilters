@@ -50,6 +50,11 @@ FROM_IMPORT = re.compile(r"(?:^|\n)\s*from\s+mmcfilters(?:\.|\s)")
 DEPENDENCY_INSTALLATION = (
     "%pip install mmcfilters morphotreeviz matplotlib opencv-python-headless"
 )
+COLAB_BADGE = re.compile(
+    r'<a href="https://colab\.research\.google\.com/github/[^"\s]+" target="_parent">\s*'
+    r'<img src="https://colab\.research\.google\.com/assets/colab-badge\.svg" '
+    r'alt="Open In Colab"\s*/>\s*</a>'
+)
 
 
 def output_text(cell: nbformat.NotebookNode) -> str:
@@ -64,10 +69,18 @@ def validate_notebook(path: Path) -> list[str]:
     except Exception as error:  # noqa: BLE001 - aggregate all validation failures
         return [f"invalid nbformat: {error}"]
 
-    if not notebook.cells or notebook.cells[0].cell_type != "markdown":
-        errors.append("the first cell must be a Markdown title/overview")
-    elif not notebook.cells[0].source.lstrip().startswith("# "):
-        errors.append("the first Markdown cell must start with a level-one title")
+    # Colab can insert its launch badge before the notebook title.
+    title_index = 0
+    if (
+        notebook.cells
+        and notebook.cells[0].cell_type == "markdown"
+        and COLAB_BADGE.fullmatch(notebook.cells[0].source.strip())
+    ):
+        title_index = 1
+    if len(notebook.cells) <= title_index or notebook.cells[title_index].cell_type != "markdown":
+        errors.append("the notebook must begin with a Markdown title/overview after an optional Colab badge")
+    elif not notebook.cells[title_index].source.lstrip().startswith("# "):
+        errors.append("the Markdown title cell must start with a level-one title")
 
     code_cells = [
         cell

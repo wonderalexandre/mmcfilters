@@ -68,13 +68,14 @@ context is absent.
 ### Regular-grid adjacency
 
 On a 2D square grid, `radius=1.0` selects 4-connectivity and `radius=1.5`
-selects 8-connectivity. `RegularGridAdjacency2D` also supports centered
+selects 8-connectivity. Radius construction requires a finite radius of at least
+`1.0`. `RegularGridAdjacency2D` also supports centered
 rectangles, digital lines, and symmetric structuring elements:
 
 ```cpp
 const RegularGridAdjacency2D disk(rows, columns, 1.5);
 auto rectangle = RegularGridAdjacency2D::rectangular(rows, columns, 1, 2);
-auto horizontal = RegularGridAdjacency2D::horizontalLine(rows, columns, 3);
+auto horizontal = RegularGridAdjacency2D::horizontalLine(1, columns, 3);
 
 std::array<GridOffset2D, 5> cross{{
     {0, 0}, {-1, 0}, {0, -1}, {0, 1}, {1, 0}
@@ -86,8 +87,11 @@ auto custom = RegularGridAdjacency2D::fromStructuringElement(
 ```
 
 An adjacency-inducing structuring element must contain the origin exactly once
-and be centrally symmetric. A component-tree adjacency must also connect its
-finite image domain. Traversal ranges own their cursors, so nested and
+and be centrally symmetric. It must connect its complete nonempty finite grid
+domain. A horizontal line therefore requires a single-row domain, and a vertical
+line requires a single-column domain. Adjacency construction establishes these
+properties once in both contract modes; tree builders and factories reuse them.
+Traversal ranges own their cursors, so nested and
 interleaved iteration over the same relation is safe.
 
 ## Construction
@@ -104,9 +108,7 @@ auto image = ImageUInt8::create(4, 4, std::uint8_t{0});
 
 auto maxTree = MorphologicalTreeFactory::createMaxTree(image, 1.5);
 auto minTree = MorphologicalTreeFactory::createMinTree(image, 1.5);
-auto residual = MorphologicalTreeFactory::createExtremumResidualTree(
-    image,
-    1.5);
+auto extTree = MorphologicalTreeFactory::createExtremumResidualTree(image, 1.5);
 auto treeOfShapes = MorphologicalTreeFactory::createTreeOfShapes(image);
 ```
 
@@ -275,7 +277,7 @@ Accepted altitude types satisfy `AltitudeValue`:
   arithmetic;
 - `bool` is rejected.
 
-Builders establish strict parent-child altitude order by construction; internal
+Builders establish their declared altitude order by construction; internal
 materialization transfers their buffers without repeating validation. Higra imports
 validate external structure and altitudes before materialization.
 Altitude setters and committed edits preserve the declared order, using local
@@ -295,7 +297,7 @@ node `n`, `nodeResidue(n)` is
 public API.
 
 With this convention, summing node residues along the path from the root to a
-node telescopes to that node's altitude. Assigning the resulting altitude to
+node telescopes to the altitude of that node. Assigning the resulting altitude to
 each pixel through its smallest node therefore reconstructs the image represented
 by the valued tree. `reconstructFromNodeAltitudes()` performs the equivalent
 direct reconstruction from the stored node altitudes.

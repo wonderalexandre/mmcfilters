@@ -125,7 +125,7 @@ reconstructed_image = tree.reconstruct_from_node_altitudes()
 ### Reproducibility
 
 - [SIBGRAPI 2026 — Unifying Local Attribute Computation on Component Trees and the Tree of Shapes](docs/sibgrapi2026/README.md)
-- [DGMM 2027 — The Extremum Residual Tree: A Self-Dual Morphological Tree Based on Levelings](docs/dgmm2027/README.md)
+- [DGMM 2027 — The Extremum Residual Tree: A Self-Dual Morphological Tree Based on Levelings](https://github.com/wonderalexandre/mmcfilters/tree/r2/docs/dgmm2027)
 
 ### References
 

@@ -104,6 +104,7 @@ template <AltitudeValue T> class DualMinMaxTreeIncrementalFilterLeaf {
     /**
      * @brief Returns dual nodes whose leaf status or selection key may have changed.
      * Each consumed merge level contributes its union node. The buffer is cleared at the next update.
+     * @return Borrowed candidate nodes, valid until the next update.
      */
     const std::vector<NodeId>& getLastCandidateNodes() const { return lastCandidateNodes_; }
 
@@ -122,6 +123,7 @@ template <AltitudeValue T> class DualMinMaxTreeIncrementalFilterLeaf {
   private:
     /**
      * @brief Uses dense buckets only when the integral altitude domain fits the configured bit limit.
+     * @return Whether the altitude type supports dense bucket storage.
      */
     static constexpr bool usesDenseBuckets() {
         if constexpr (std::is_integral_v<T> && !std::is_same_v<std::remove_cv_t<T>, bool>) {
@@ -149,6 +151,7 @@ template <AltitudeValue T> class DualMinMaxTreeIncrementalFilterLeaf {
             /** @brief Number of representable altitude values. */
             static constexpr std::size_t numAltitudes = static_cast<std::size_t>(static_cast<long long>(std::numeric_limits<Altitude>::max()) -
                                                                                  static_cast<long long>(std::numeric_limits<Altitude>::lowest()) + 1);
+            /** @brief Dense merge buckets indexed by altitude. */
             using type = std::array<std::vector<NodeId>, numAltitudes>;
         };
 
@@ -156,6 +159,7 @@ template <AltitudeValue T> class DualMinMaxTreeIncrementalFilterLeaf {
          * @brief Sparse storage used when the altitude domain is too large to index directly.
          */
         template <typename Altitude> struct BucketStorage<false, Altitude> {
+            /** @brief Sparse merge buckets keyed by altitude. */
             using type = std::map<Altitude, std::vector<NodeId>>;
         };
 
@@ -176,6 +180,8 @@ template <AltitudeValue T> class DualMinMaxTreeIncrementalFilterLeaf {
 
         /**
          * @brief Maps an altitude to a dense index, offsetting signed domains by their lowest value.
+         * @param altitude Representable altitude value.
+         * @return Index of the corresponding dense bucket.
          */
         static std::size_t denseBucketIndex(T altitude) {
             if constexpr (std::is_signed_v<T>) {
@@ -187,6 +193,8 @@ template <AltitudeValue T> class DualMinMaxTreeIncrementalFilterLeaf {
 
         /**
          * @brief Recovers the altitude represented by a dense bucket index.
+         * @param index Valid index in the dense bucket storage.
+         * @return Altitude represented by the bucket.
          */
         static T altitudeFromDenseBucketIndex(std::size_t index) {
             if constexpr (std::is_signed_v<T>) {
@@ -218,6 +226,8 @@ template <AltitudeValue T> class DualMinMaxTreeIncrementalFilterLeaf {
 
         /**
          * @brief Returns the bucket at the given altitude, creating it for sparse storage.
+         * @param altitude Altitude of the merge bucket.
+         * @return Mutable node list for that altitude.
          */
         std::vector<NodeId>& nodesAtAltitude(const T& altitude) {
             if constexpr (usesDenseBuckets()) {
@@ -229,16 +239,20 @@ template <AltitudeValue T> class DualMinMaxTreeIncrementalFilterLeaf {
 
         /**
          * @brief Returns the frontier nodes to reattach at the primal parent altitude.
+         * @return Borrowed frontier nodes for the current update.
          */
         const std::vector<NodeId>& frontierNodes() const { return frontierNodes_; }
 
         /**
          * @brief Records a frontier node already deduplicated by the ancestor traversal.
+         * @param node Dual node outside the merge interval.
          */
         void addFrontierNode(NodeId node) { frontierNodes_.push_back(node); }
 
         /**
          * @brief Adds a deduplicated dual node to the bucket at its current altitude.
+         * @param tree Dual tree containing the node.
+         * @param node Live dual node in the merge interval.
          */
         void addMergeNode(const ValuedMorphologicalTree<T>& tree, NodeId node) {
             auto& bucket = nodesAtAltitude(tree.nodeAltitudes()[static_cast<std::size_t>(node)]);
@@ -270,10 +284,14 @@ template <AltitudeValue T> class DualMinMaxTreeIncrementalFilterLeaf {
 
         /**
          * @brief Tests whether the sweep cursor identifies an active altitude.
+         * @return Whether the current sweep position is valid.
          */
         bool hasCurrentAltitude() const { return currentAltitudeIndex_ >= 0 && static_cast<std::size_t>(currentAltitudeIndex_) < activeAltitudes_.size(); }
 
-        /** @brief Reads the altitude at the current sweep position. */
+        /**
+         * @brief Reads the altitude at the current sweep position.
+         * @return Altitude of the current active bucket.
+         */
         T currentAltitude() const { return activeAltitudes_[static_cast<std::size_t>(currentAltitudeIndex_)]; }
 
         /** @brief Advances the sweep cursor according to the tree polarity. */
@@ -334,16 +352,30 @@ template <AltitudeValue T> class DualMinMaxTreeIncrementalFilterLeaf {
 
     /**
      * @brief Reads the altitude of an established live node.
+     * @param tree Component tree containing the node.
+     * @param node Live node identifier in that tree.
+     * @return Stored node altitude.
      */
     static T nodeAltitude(const ValuedMorphologicalTree<T>* tree, NodeId node) noexcept { return tree->nodeAltitudes()[static_cast<std::size_t>(node)]; }
 
-    /** @brief Reads the topology of a borrowed component tree. */
+    /**
+     * @brief Reads the topology of a borrowed component tree.
+     * @param tree Borrowed component tree.
+     * @return Topology retained by the tree.
+     */
     static const MorphologicalTree& topologyOf(const ValuedMorphologicalTree<T>* tree) { return tree->topology(); }
 
-    /** @brief Selects the primal tree from the polarity of the dual tree. */
+    /**
+     * @brief Selects the primal tree from the polarity of the dual tree.
+     * @param dualIsMaxTree Whether the dual tree is the max-tree.
+     * @return Mutable component tree with the opposite polarity.
+     */
     ValuedMorphologicalTree<T>* primalTreeFor(bool dualIsMaxTree) { return dualIsMaxTree ? minTree_ : maxTree_; }
 
-    /** @brief Clears the previous update results and scratch state. */
+    /**
+     * @brief Clears the previous update results and scratch state.
+     * @param dualIsMaxTree Whether the next update modifies the max-tree.
+     */
     void resetUpdateState(bool dualIsMaxTree) {
         dualMergeRegion_.reset(dualIsMaxTree);
         collectedNodeMarks_.resetAll();

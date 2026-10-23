@@ -47,8 +47,8 @@ PORTUGUESE_PROSE = re.compile(
 )
 DIRECT_IMPORT = re.compile(r"(?:^|\n)\s*import\s+mmcfilters(?:\s|$)")
 FROM_IMPORT = re.compile(r"(?:^|\n)\s*from\s+mmcfilters(?:\.|\s)")
-DEPENDENCY_INSTALLATION = (
-    "%pip install mmcfilters morphotreeviz matplotlib opencv-python-headless"
+DEPENDENCY_INSTALLATION = re.compile(
+    r"%pip[ \t]+install[ \t]+mmcfilters(?:[ \t]+[A-Za-z0-9_.-]+)*"
 )
 COLAB_BADGE = re.compile(
     r'<a href="https://colab\.research\.google\.com/github/[^"\s]+" target="_parent">\s*'
@@ -93,7 +93,7 @@ def validate_notebook(path: Path) -> list[str]:
 
     installation_cell = (
         code_cells[0]
-        if code_cells[0].source.strip() == DEPENDENCY_INSTALLATION
+        if DEPENDENCY_INSTALLATION.fullmatch(code_cells[0].source.strip())
         else None
     )
     import_cells = code_cells[1:] if installation_cell is not None else code_cells

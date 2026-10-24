@@ -95,8 +95,8 @@ before passing it to a filter.
   altitude.
 
 Both pruning rules visit the root regardless of its preservation decision.
-Attribute overloads preserve a node when `attribute[node] > threshold`; equality
-rejects it. Soft subtractive filtering accepts a floating-point `Real` score
+Attribute overloads preserve a node when `attribute[node] >= threshold`; equality
+preserves it, matching `computeNodePreservationMask`. Soft subtractive filtering accepts a floating-point `Real` score
 buffer and returns an image of the same type, including `double`.
 
 `NodePreservationMask` uses `true` for preservation. `NodePruningMask` uses

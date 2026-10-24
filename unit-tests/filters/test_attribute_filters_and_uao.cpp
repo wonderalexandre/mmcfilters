@@ -181,12 +181,26 @@ int main() {
         attr = {1.0f, 1.0f, 1.0f};
         costs = detail::makeThresholdViterbiCosts(chain.topology(), attr.data(), 1.0f);
         keep = detail::computeViterbiPreservationDecisions(chain.topology(), costs);
-        require(!keep[0] && !keep[1] && keep[2], "Viterbi default tie-break must prefer removal except at the forced root");
+        require(keep[0] && keep[1] && keep[2], "Viterbi default tie-break must preserve ties, matching attribute >= threshold");
 
-        detail::ViterbiDecisionOptions preserveTies;
-        preserveTies.tieBreak = detail::ViterbiTieBreak::PreferPreserve;
-        keep = detail::computeViterbiPreservationDecisions(chain.topology(), costs, preserveTies);
-        require(keep[0] && keep[1] && keep[2], "Viterbi preserve tie-break must keep the full chain");
+        detail::ViterbiDecisionOptions removeTies;
+        removeTies.tieBreak = detail::ViterbiTieBreak::PreferRemove;
+        keep = detail::computeViterbiPreservationDecisions(chain.topology(), costs, removeTies);
+        require(!keep[0] && !keep[1] && keep[2], "Viterbi remove tie-break must prefer removal except at the forced root");
+
+        // No attribute equals the threshold. At the middle node, preserving
+        // the two-node subtree costs 1, and removing it also costs 1.
+        attr = {2.0f, 0.0f, 3.0f};
+        costs = detail::makeThresholdViterbiCosts(chain.topology(), attr.data(), 1.0f);
+        keep = detail::computeViterbiPreservationDecisions(chain.topology(), costs);
+        require(keep[0] && keep[1] && keep[2], "Viterbi default tie-break must preserve equal accumulated costs without threshold equality");
+        requireVectorEqual(collectImageValues(filters.filteringByViterbiRule(attr.data(), 1.0f)), std::vector<std::uint8_t>{5},
+                           "Viterbi accumulated-cost tie must preserve the branch in public filtering");
+
+        keep = detail::computeViterbiPreservationDecisions(chain.topology(), costs, removeTies);
+        require(!keep[0] && !keep[1] && keep[2], "Viterbi remove tie-break must reject the branch on equal accumulated costs");
+        requireVectorEqual(collectImageValues(applyDirectAttributeFilter(chain, NodePreservationMask(keep))), std::vector<std::uint8_t>{0},
+                           "Viterbi accumulated-cost tie with explicit removal must reconstruct at the root level");
 
         if constexpr (contract::validationsEnabled) {
             std::vector<float> nanAttr = {1.0f, std::numeric_limits<float>::quiet_NaN(), 1.0f};
@@ -497,7 +511,7 @@ int main() {
         for (float threshold : {1.0f, 2.0f, 3.0f, 4.0f}) {
             std::vector<bool> keepByAttribute(valuedTree->topology().numInternalNodeSlots(), false);
             for (NodeId nodeId : valuedTree->topology().aliveNodeIds()) {
-                keepByAttribute[nodeId] = attr[static_cast<std::size_t>(nodeId)] > threshold;
+                keepByAttribute[nodeId] = attr[static_cast<std::size_t>(nodeId)] >= threshold;
             }
             const NodePreservationMask keepByAttributeMask(keepByAttribute);
 

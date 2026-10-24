@@ -218,7 +218,14 @@ Returned images are 2D NumPy arrays on the original image domain.)doc")
             [](AttributeFiltersPybind& self, py::array attr, const ExtinctionSelectionPolicyPybind& selection, ExtinctionContourScorePolicy scorePolicy) {
                 return self.contourMapByExtinctionValue(std::move(attr), selection, scorePolicy);
             },
-            "attr"_a, "selection"_a, "score_policy"_a, "Build a contour-valued image from extinction values.");
+            "attr"_a, "selection"_a, "score_policy"_a, "Build a contour-valued image from extinction values.")
+        .def(
+            "contour_map_by_extinction",
+            [](AttributeFiltersPybind& self, const py::object& attr, const ExtinctionSelectionPolicyPybind& selection,
+               ExtinctionContourScorePolicy scorePolicy) {
+                return self.contourMapByExtinctionValue(attribute_computation::attributeBufferFor(self.treeOwner(), attr), selection, scorePolicy);
+            },
+            "attr"_a, "selection"_a, "score_policy"_a, "Accepts an `Attribute` value or its symbolic name and computes the buffer internally.");
 }
 
 /**
@@ -235,13 +242,6 @@ C-contiguous, and indexed by dense internal `NodeId`. Without an explicit
 attribute, the helper computes topology-only AREA internally. The reported
 numeric score is variation; lower finite values are more stable. Result getters
 require a successful `compute_by_depth` call.)doc")
-        .def(
-            "contour_map_by_extinction",
-            [](AttributeFiltersPybind& self, const py::object& attr, const ExtinctionSelectionPolicyPybind& selection,
-               ExtinctionContourScorePolicy scorePolicy) {
-                return self.contourMapByExtinctionValue(attribute_computation::attributeBufferFor(self.treeOwner(), attr), selection, scorePolicy);
-            },
-            "attr"_a, "selection"_a, "score_policy"_a, "Accepts an `Attribute` value or its symbolic name and computes the buffer internally.")
         .def(py::init<std::shared_ptr<PythonValuedMorphologicalTree>>(), "tree"_a, "Create a depth-stability helper using topology-only AREA.")
         .def(py::init<std::shared_ptr<PythonValuedMorphologicalTree>, py::array>(), "tree"_a, "attribute"_a,
              "Create a depth-stability helper from a node-indexed increasing attribute buffer.")

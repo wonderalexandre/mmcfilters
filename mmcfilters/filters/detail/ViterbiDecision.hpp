@@ -22,10 +22,9 @@ namespace mmcfilters::detail {
  * @brief Tie-breaking policy used when preserving and removing a node have the same Viterbi cost.
  *
  * The default used by `AttributeFilters::filteringByViterbiRule` is
- * `PreferRemove`. With the threshold cost model in this file, equal costs happen
- * exactly at `attribute[node] == threshold`; preferring remove keeps the public
- * behavior aligned with the strict `attribute > threshold` convention already
- * used by the pruning attribute overloads.
+ * `PreferPreserve`. The decision compares accumulated subtree costs, which can
+ * be equal even when no node attribute equals the threshold. On equal costs,
+ * preservation is preferred without changing the minimum objective value.
  */
 enum class ViterbiTieBreak {
     PreferRemove,
@@ -37,7 +36,7 @@ enum class ViterbiTieBreak {
  */
 struct ViterbiDecisionOptions {
     /** @brief Tie break. */
-    ViterbiTieBreak tieBreak = ViterbiTieBreak::PreferRemove;
+    ViterbiTieBreak tieBreak = ViterbiTieBreak::PreferPreserve;
 };
 
 /**
@@ -175,8 +174,9 @@ inline std::vector<NodeId> collectTopDownOrder(const MorphologicalTree& tree) {
  * - preserving a node costs `max(0, threshold - attribute[node])`;
  * - removing a node costs `max(0, attribute[node] - threshold)`.
  *
- * Large attribute values therefore favor preservation, small values favor
- * removal, and exact threshold ties are left to `ViterbiDecisionOptions`.
+ * Large attribute values therefore favor preservation and small values favor
+ * removal. Both unary costs are zero when `attribute[node] == threshold`.
+ * `ViterbiDecisionOptions` resolves ties between accumulated subtree costs.
  *
  * @param tree Tree topology.
  * @param attribute Attribute requested by the operation.

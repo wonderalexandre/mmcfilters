@@ -58,9 +58,10 @@ namespace mmcfilters {
  * - pruning-max rule: only subtrees whose nodes are all rejected are cut, and
  *   such subtrees are painted at the rejected subtree root level.
  *
- * Pruning-min accepts a node when its attribute is greater than the threshold;
- * pruning-max marks a node as rejected when its attribute is less than or equal
- * to the threshold. Both rules always visit the root. Each visited node writes
+ * Pruning-min accepts a node when its attribute is greater than or equal to the
+ * threshold; pruning-max marks a node as rejected when its attribute is less
+ * than the threshold. This is the same inclusive rule used by
+ * `computeNodePreservationMask`. Both rules always visit the root. Each visited node writes
  * its own altitude to its proper part; a collapsed subtree receives the altitude
  * selected by the rule above. Returned images own their storage and have the
  * tree's grid dimensions. Overloads taking an output image require those same
@@ -183,7 +184,7 @@ template <AltitudeValue T> class AttributeFilters {
      * The convention used here is ancestor-level pruning: once a child branch is
      * rejected, the whole branch is painted at the current accepted node altitude
      * and no deeper descendants are evaluated. This matches the attribute
-     * overload where `nodePreservationMask[node] == (attribute[node] > threshold)`.
+     * overload where `nodePreservationMask[node] == (attribute[node] >= threshold)`.
      *
      * @param view Tree view.
      * @param nodePreservationMask Decisions indexed by internal NodeId, with
@@ -268,15 +269,15 @@ template <AltitudeValue T> class AttributeFilters {
     /**
      * @brief Pruning-min reconstruction from a node attribute threshold.
      *
-     * Nodes with `attribute > threshold` stay traversable. Rejected child
+     * Nodes with `attribute >= threshold` stay traversable. Rejected child
      * branches are reconstructed at the current node altitude, which makes this
-     * overload equivalent to passing `attribute[node] > threshold` to the
+     * overload equivalent to passing `attribute[node] >= threshold` to the
      * node-preservation-mask overload.
      *
      * @param view Tree view.
      * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
      * least `numInternalNodeSlots()` readable entries.
-     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param threshold Pruning cutoff; values equal to it are preserved.
      * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>
@@ -294,7 +295,7 @@ template <AltitudeValue T> class AttributeFilters {
             stack.pop();
             writeProperParts(tree, nodeId, imgOutput, altitudeOf(view, nodeId));
             for (NodeId childNodeId : detail::TreeKernelAccess::children(tree, nodeId)) {
-                if (attribute[childNodeId] > threshold) {
+                if (attribute[childNodeId] >= threshold) {
                     stack.push(childNodeId);
                 } else {
                     writeSubtreeProperParts(tree, childNodeId, imgOutput, altitudeOf(view, nodeId));
@@ -313,7 +314,7 @@ template <AltitudeValue T> class AttributeFilters {
      * @param view Tree view.
      * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
      * least `numInternalNodeSlots()` readable entries.
-     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param threshold Pruning cutoff; values equal to it are preserved.
      * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>
@@ -330,7 +331,7 @@ template <AltitudeValue T> class AttributeFilters {
         detail::TreeKernelAccess::traversePostOrder(
             tree, tree.root(),
             [&collapsibleRejectedSubtree, attribute, threshold](NodeId nodeId) -> void {
-                if (attribute[nodeId] <= threshold) {
+                if (attribute[nodeId] < threshold) {
                     collapsibleRejectedSubtree[nodeId] = true;
                 }
             },
@@ -391,13 +392,13 @@ template <AltitudeValue T> class AttributeFilters {
     /**
      * @brief Applies pruning-min filtering from an attribute buffer.
      *
-     * Nodes with attribute values above `threshold` remain traversable; rejected
+     * Nodes with attribute values at or above `threshold` remain traversable; rejected
      * subtrees are reconstructed at the ancestor level selected by the pruning-min
      * rule.
      *
      * @param attr Non-null attribute buffer indexed by internal NodeId, with at
      * least `numInternalNodeSlots()` readable entries.
-     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param threshold Pruning cutoff; values equal to it are preserved.
      * @return Independently allocated image with the tree's grid dimensions.
      */
     template <std::floating_point Real> [[nodiscard]] ImagePtr<T> filteringByPruningMin(const std::shared_ptr<Real[]>& attr, Real threshold) {
@@ -409,7 +410,7 @@ template <AltitudeValue T> class AttributeFilters {
      *
      * @param attr Non-null attribute buffer indexed by internal NodeId, with at
      * least `numInternalNodeSlots()` readable entries.
-     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param threshold Pruning cutoff; values equal to it are preserved.
      * @return Independently allocated image with the tree's grid dimensions.
      */
     template <std::floating_point Real> [[nodiscard]] ImagePtr<T> filteringByPruningMin(const Real* attr, Real threshold) {
@@ -421,12 +422,12 @@ template <AltitudeValue T> class AttributeFilters {
     /**
      * @brief Applies pruning-max filtering from an attribute buffer.
      *
-     * Nodes with attribute values above `threshold` are kept, and fully rejected
+     * Nodes with attribute values at or above `threshold` are kept, and fully rejected
      * subtrees are reconstructed at their own subtree levels.
      *
      * @param attr Non-null attribute buffer indexed by internal NodeId, with at
      * least `numInternalNodeSlots()` readable entries.
-     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param threshold Pruning cutoff; values equal to it are preserved.
      * @return Independently allocated image with the tree's grid dimensions.
      */
     template <std::floating_point Real> [[nodiscard]] ImagePtr<T> filteringByPruningMax(const std::shared_ptr<Real[]>& attr, Real threshold) {
@@ -438,7 +439,7 @@ template <AltitudeValue T> class AttributeFilters {
      *
      * @param attr Non-null attribute buffer indexed by internal NodeId, with at
      * least `numInternalNodeSlots()` readable entries.
-     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param threshold Pruning cutoff; values equal to it are preserved.
      * @return Independently allocated image with the tree's grid dimensions.
      */
     template <std::floating_point Real> [[nodiscard]] ImagePtr<T> filteringByPruningMax(const Real* attr, Real threshold) {
@@ -552,7 +553,7 @@ template <AltitudeValue T> class AttributeFilters {
      * @param valuedTree Valued tree.
      * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
      * least `numInternalNodeSlots()` readable entries.
-     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param threshold Pruning cutoff; values equal to it are preserved.
      * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>
@@ -566,7 +567,7 @@ template <AltitudeValue T> class AttributeFilters {
      * @param valuedTree Valued tree.
      * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
      * least `numInternalNodeSlots()` readable entries.
-     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param threshold Pruning cutoff; values equal to it are preserved.
      * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>
@@ -581,7 +582,7 @@ template <AltitudeValue T> class AttributeFilters {
      * @param valuedTree Valued tree.
      * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
      * least `numInternalNodeSlots()` readable entries.
-     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param threshold Pruning cutoff; values equal to it are preserved.
      * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>
@@ -595,7 +596,7 @@ template <AltitudeValue T> class AttributeFilters {
      * @param valuedTree Valued tree.
      * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
      * least `numInternalNodeSlots()` readable entries.
-     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param threshold Pruning cutoff; values equal to it are preserved.
      * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>
@@ -609,7 +610,7 @@ template <AltitudeValue T> class AttributeFilters {
      * @param valuedTree Valued tree.
      * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
      * least `numInternalNodeSlots()` readable entries.
-     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param threshold Pruning cutoff; values equal to it are preserved.
      * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>
@@ -623,7 +624,7 @@ template <AltitudeValue T> class AttributeFilters {
      * @param valuedTree Valued tree.
      * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
      * least `numInternalNodeSlots()` readable entries.
-     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param threshold Pruning cutoff; values equal to it are preserved.
      * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>
@@ -638,7 +639,7 @@ template <AltitudeValue T> class AttributeFilters {
      * @param valuedTree Valued tree.
      * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
      * least `numInternalNodeSlots()` readable entries.
-     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param threshold Pruning cutoff; values equal to it are preserved.
      * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>
@@ -652,7 +653,7 @@ template <AltitudeValue T> class AttributeFilters {
      * @param valuedTree Valued tree.
      * @param attribute Non-null attribute buffer indexed by internal NodeId, with at
      * least `numInternalNodeSlots()` readable entries.
-     * @param threshold Pruning cutoff; values equal to it are rejected.
+     * @param threshold Pruning cutoff; values equal to it are preserved.
      * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
     template <std::floating_point Real>

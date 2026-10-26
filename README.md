@@ -121,6 +121,7 @@ reconstructed_image = tree.reconstruct_from_node_altitudes()
 | Edit a tree safely | [Editing API](https://wonderalexandre.github.io/mmcfilters/md_docs_2editing-api.html) |
 | Extract pixel contours or geometric traces | [Pixel contours](https://wonderalexandre.github.io/mmcfilters/md_docs_2contours.html) and [contour traces](https://wonderalexandre.github.io/mmcfilters/md_docs_2contour-traces.html) |
 | Import from or export to Higra | [Higra interoperability](https://wonderalexandre.github.io/mmcfilters/md_docs_2higra-interoperability.html) |
+| Run examples in Google Colab | [Notebook index](https://github.com/wonderalexandre/mmcfilters/blob/main/notebooks/README.md) |
 
 ### Reproducibility
 

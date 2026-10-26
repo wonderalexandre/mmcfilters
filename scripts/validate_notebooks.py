@@ -51,7 +51,7 @@ DEPENDENCY_INSTALLATION = re.compile(
     r"%pip[ \t]+install[ \t]+mmcfilters(?:[ \t]+[A-Za-z0-9_.-]+)*"
 )
 COLAB_BADGE = re.compile(
-    r'<a href="https://colab\.research\.google\.com/github/[^"\s]+" target="_parent">\s*'
+    r'<a href="(?P<url>https://colab\.research\.google\.com/github/[^"\s]+)" target="_parent">\s*'
     r'<img src="https://colab\.research\.google\.com/assets/colab-badge\.svg" '
     r'alt="Open In Colab"\s*/>\s*</a>'
 )
@@ -69,16 +69,23 @@ def validate_notebook(path: Path) -> list[str]:
     except Exception as error:  # noqa: BLE001 - aggregate all validation failures
         return [f"invalid nbformat: {error}"]
 
-    # Colab can insert its launch badge before the notebook title.
+    # Each maintained notebook links to its own current GitHub source in Colab.
     title_index = 0
-    if (
-        notebook.cells
-        and notebook.cells[0].cell_type == "markdown"
-        and COLAB_BADGE.fullmatch(notebook.cells[0].source.strip())
-    ):
+    badge = None
+    if notebook.cells and notebook.cells[0].cell_type == "markdown":
+        badge = COLAB_BADGE.fullmatch(notebook.cells[0].source.strip())
+    if badge:
         title_index = 1
+        expected_url = (
+            "https://colab.research.google.com/github/"
+            f"wonderalexandre/mmcfilters/blob/main/notebooks/{path.name}"
+        )
+        if badge.group("url") != expected_url:
+            errors.append("the Colab badge must link to this notebook on main")
+    else:
+        errors.append("the notebook must begin with an Open In Colab badge")
     if len(notebook.cells) <= title_index or notebook.cells[title_index].cell_type != "markdown":
-        errors.append("the notebook must begin with a Markdown title/overview after an optional Colab badge")
+        errors.append("the notebook must have a Markdown title/overview after the Colab badge")
     elif not notebook.cells[title_index].source.lstrip().startswith("# "):
         errors.append("the Markdown title cell must start with a level-one title")
 

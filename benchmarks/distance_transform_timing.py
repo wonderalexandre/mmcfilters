@@ -156,12 +156,12 @@ def cpu_name() -> str:
 def discover_requests() -> tuple[dict[str, Any], dict[str, list[str]]]:
     tiny = np.arange(12 * 16, dtype=np.uint8).reshape(12, 16)
     tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(tiny, radius=1.5)
-    approximate_layout, _ = mmcfilters.Attribute.compute_topology_attributes(
+    approximate_layout, _ = mmcfilters.Attribute.compute(
         tree,
         [mmcfilters.Attribute.Group.DIST_TRANSF],
         dtype=np.float32,
     )
-    exact_layout, _ = mmcfilters.Attribute.compute_topology_attributes(
+    exact_layout, _ = mmcfilters.Attribute.compute(
         tree,
         [mmcfilters.Attribute.Group.DIST_TRANSF_EXACT],
         dtype=np.float32,
@@ -195,7 +195,7 @@ def warm_up(tree_kinds: list[str], modes: list[str], requests: dict[str, Any], r
     for tree_kind in tree_kinds:
         tree = build_tree(image, tree_kind, radius)
         for mode in modes:
-            mmcfilters.Attribute.compute_topology_attributes(tree, requests[mode], dtype=np.float32)
+            mmcfilters.Attribute.compute(tree, requests[mode], dtype=np.float32)
 
 
 def result_checksum(mode: str, layout: Any, values: np.ndarray, expected_names: list[str]) -> str:
@@ -444,7 +444,7 @@ def build_report(
         f"- Trees: `{', '.join(metadata['configuration']['tree_kinds'])}`; tree construction is reported separately.",
         *tos_protocol,
         f"- Contract mode: `{metadata['configuration']['contract_mode']}`; the runner rejects a module with a different mode.",
-        "- Timed call: public `compute_topology_attributes(..., dtype=float32)` over an established tree.",
+        "- Timed call: public `compute(..., dtype=float32)` over an established tree.",
         "- Modes: `DIST_TRANSF` (29 approximate attributes), `DIST_TRANSF_EXACT` (29 exact attributes), `MAX_DIST`, and `MAX_DIST_EXACT`.",
         "- Every complete result matrix is hashed after the timed region.",
         f"- Repetitions per image/tree/mode: {metadata['configuration']['repetitions']}; mode order is deterministically balanced.",
@@ -672,7 +672,7 @@ def main() -> int:
                             continue
                         gc.collect()
                         start = time.perf_counter_ns()
-                        layout, values = mmcfilters.Attribute.compute_topology_attributes(
+                        layout, values = mmcfilters.Attribute.compute(
                             tree,
                             requests[mode],
                             dtype=np.float32,

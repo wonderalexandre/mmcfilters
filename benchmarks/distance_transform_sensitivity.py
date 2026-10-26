@@ -679,7 +679,7 @@ def main() -> int:
             build_seconds = time.perf_counter() - build_start
 
             compute_start = time.perf_counter()
-            layout, values = mmcfilters.Attribute.compute_topology_attributes(
+            layout, values = mmcfilters.Attribute.compute(
                 tree,
                 [mmcfilters.Attribute.Group.DIST_TRANSF, mmcfilters.Attribute.Group.DIST_TRANSF_EXACT, mmcfilters.Attribute.AREA],
                 dtype=np.float64,

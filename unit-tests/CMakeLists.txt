@@ -294,6 +294,13 @@ if(TARGET mmcfilters)
     )
 
     add_test(
+        NAME unit_python_attribute_compute
+        COMMAND ${MMCFILTERS_PYTHON_TEST_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/python/test_python_attribute_compute.py
+            ${CMAKE_BINARY_DIR}
+    )
+
+    add_test(
         NAME unit_python_attribute_numeric_validation
         COMMAND ${CMAKE_COMMAND} -E env
             "MMCFILTERS_TEST_DATA_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../dat"

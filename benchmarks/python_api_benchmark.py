@@ -151,7 +151,7 @@ def group_requests(profile: str) -> list[tuple[str, Any]]:
 
 def pipeline_area_direct(image: np.ndarray) -> tuple[Any, Any, np.ndarray, np.ndarray]:
     tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image, radius=1.5)
-    names, attributes = mmcfilters.Attribute.compute_attributes(tree, [mmcfilters.Attribute.Group.SHAPE])
+    names, attributes = mmcfilters.Attribute.compute(tree, [mmcfilters.Attribute.Group.SHAPE])
     area = attributes[:, names["AREA"]]
     preservationDecisions = (area >= image.size / 16.0).tolist()
     preservationDecisions[tree.root] = True
@@ -186,7 +186,7 @@ def casf_area_thresholds(image: np.ndarray, quantiles: tuple[float, float, float
         mmcfilters.MorphologicalTreeFactory.create_max_tree(image, radius=1.5),
     )
     for tree in trees:
-        area = mmcfilters.Attribute.compute_single_attribute(tree, mmcfilters.Attribute.AREA, dtype=np.float64)
+        area = mmcfilters.Attribute.compute(tree, mmcfilters.Attribute.AREA, dtype=np.float64)
         root = tree.root
         values.extend(float(area[node]) for node in tree.alive_node_ids if node != root)
     if not values:
@@ -216,7 +216,7 @@ def run(options: argparse.Namespace) -> list[Scenario]:
             benchmark(
                 f"python.attributes.established_input.scalar_{attribute_name.lower()}",
                 options.repetitions,
-                lambda attribute=attribute: mmcfilters.Attribute.compute_single_attribute(tree, attribute, dtype=np.float64),
+                lambda attribute=attribute: mmcfilters.Attribute.compute(tree, attribute, dtype=np.float64),
                 array_checksum,
             )
         )
@@ -225,17 +225,17 @@ def run(options: argparse.Namespace) -> list[Scenario]:
         grouped = benchmark(
             f"python.attribute_groups.established_input.{group_name}",
             options.repetitions,
-            lambda group=group: mmcfilters.Attribute.compute_attributes(tree, [group], dtype=np.float64),
+            lambda group=group: mmcfilters.Attribute.compute(tree, [group], dtype=np.float64),
             lambda result: canonical_attributes_checksum(result[0], result[1]),
         )
         scenarios.append(grouped)
         if options.profile != "smoke":
-            layout, _ = mmcfilters.Attribute.compute_attributes(tree, [group], dtype=np.float64)
+            layout, _ = mmcfilters.Attribute.compute(tree, [group], dtype=np.float64)
             names = list(layout)
 
             def sequential(names: list[str] = names) -> tuple[list[str], np.ndarray]:
                 columns = [
-                    mmcfilters.Attribute.compute_single_attribute(tree, getattr(mmcfilters.Attribute, name), dtype=np.float64)
+                    mmcfilters.Attribute.compute(tree, getattr(mmcfilters.Attribute, name), dtype=np.float64)
                     for name in names
                 ]
                 return names, np.column_stack(columns)
@@ -250,7 +250,7 @@ def run(options: argparse.Namespace) -> list[Scenario]:
                 raise RuntimeError(f"grouped and sequential Python results differ for {group_name}")
             scenarios.append(scalar)
 
-    area = mmcfilters.Attribute.compute_single_attribute(tree, mmcfilters.Attribute.AREA, dtype=np.float64)
+    area = mmcfilters.Attribute.compute(tree, mmcfilters.Attribute.AREA, dtype=np.float64)
     scenarios.append(
         benchmark(
             "python.filters.established_input.pruning_max_area",

@@ -97,11 +97,11 @@ smallest = tree.smallest_node(pixel)
 support_pixels = list(tree.node_support(smallest))
 component_mask = tree.reconstruct_node(smallest)
 
-area = mmcfilters.Attribute.compute_single_topology_attribute(
+area = mmcfilters.Attribute.compute(
     tree,
     mmcfilters.Attribute.AREA,
 )
-max_dist = mmcfilters.Attribute.compute_single_attribute(
+max_dist = mmcfilters.Attribute.compute(
     tree,
     mmcfilters.Attribute.MAX_DIST,
 )

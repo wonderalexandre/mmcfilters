@@ -252,11 +252,11 @@ type in C++ when the contrast range requires it.
 Python uses the same dense-buffer contracts:
 
 ```python
-area = mmcfilters.Attribute.compute_single_topology_attribute(
+area = mmcfilters.Attribute.compute(
     tree,
     mmcfilters.Attribute.AREA,
 )
-box_height = mmcfilters.Attribute.compute_single_topology_attribute(
+box_height = mmcfilters.Attribute.compute(
     tree,
     mmcfilters.Attribute.BOUNDING_BOX_HEIGHT,
 )

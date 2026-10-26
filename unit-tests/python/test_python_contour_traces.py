@@ -90,7 +90,7 @@ def main() -> int:
         dtype=np.uint8,
     )
     tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image)
-    area = mmcfilters.Attribute.compute_single_topology_attribute(tree, mmcfilters.Attribute.AREA)
+    area = mmcfilters.Attribute.compute(tree, mmcfilters.Attribute.AREA)
     ring_nodes = [node for node, value in enumerate(area.tolist()) if int(value) == 8]
     require(len(ring_nodes) == 1, "ring fixture must expose one area-8 node")
 
@@ -147,7 +147,7 @@ def main() -> int:
     image = np.array([[1, 0, 2], [0, 2, 0], [0, 0, 0]], dtype=np.uint8)
     for radius, expected in ((1.0, [(16, 14)]), (1.5, [(4, -2), (12, 16)])):
         tree = mmcfilters.MorphologicalTreeFactory.create_min_tree(image, radius)
-        area = mmcfilters.Attribute.compute_single_topology_attribute(tree, mmcfilters.Attribute.AREA)
+        area = mmcfilters.Attribute.compute(tree, mmcfilters.Attribute.AREA)
         node = next(node for node, value in enumerate(area.tolist()) if int(value) == 7)
         trace = mmcfilters.ContourTraceComputation(tree).trace(node)
         actual = sorted((boundary.edge_count, boundary.doubled_signed_area) for boundary in trace.boundaries())
@@ -157,7 +157,7 @@ def main() -> int:
     image = np.ones((5, 5), dtype=np.uint8)
     image[1, 1] = image[2, 2] = 2
     tree = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(image)
-    area = mmcfilters.Attribute.compute_single_topology_attribute(tree, mmcfilters.Attribute.AREA)
+    area = mmcfilters.Attribute.compute(tree, mmcfilters.Attribute.AREA)
     node = next(node for node, value in enumerate(area.tolist()) if int(value) == 2)
     trace = mmcfilters.ContourTraceComputation(tree).trace(node)
     boundaries = trace.boundaries()

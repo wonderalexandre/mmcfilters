@@ -161,18 +161,23 @@ auto exported = AttributeComputation::projectNodeValuesToExportedHigra(
 
 ## Python surface
 
-Python uses the same valued-tree and topology/support distinction:
+Python selects the computation path from the registered attribute requirements:
 
 ```python
-gray_level_height_by_node = mmcfilters.Attribute.compute_single_attribute(
+gray_level_height_by_node = mmcfilters.Attribute.compute(
     valued_tree,
     mmcfilters.Attribute.GRAY_LEVEL_HEIGHT,
 )
-area_by_node = mmcfilters.Attribute.compute_single_topology_attribute(
+area_by_node = mmcfilters.Attribute.compute(
     valued_tree,
     mmcfilters.Attribute.AREA,
 )
 ```
+
+`Attribute.compute` returns a 1D array for one scalar attribute. A group or
+iterable returns `(layout, values)` with a 2D array. Requests that require no
+altitude use the topology/support path; other requests use the altitude-aware
+path. This is the only Python entry point for these computations.
 
 See [Python API](python-api.md) for NumPy layouts, dtypes, symbolic names,
 sampling, and buffer requirements.

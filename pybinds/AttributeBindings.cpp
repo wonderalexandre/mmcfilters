@@ -51,57 +51,26 @@ the selected `NodeIdSpace`. Methods returning several attributes return
 `values` is a 2D floating-point array with one row per output node. The optional
 `dtype` keyword accepts `np.float32` or `np.float64` and defaults to
 `np.float32`; it controls only the returned NumPy buffer dtype.)doc")
-            .def_static(
-                "compute_attributes",
-                [](std::shared_ptr<PythonValuedMorphologicalTree> tree, const py::object& attributes, NodeIdSpace outputSpace, py::object dtype) {
-                    return attribute_computation::computeAttributesFromList(std::move(tree), attribute_computation::resolveAttributeOrGroupList(attributes),
-                                                                            outputSpace, std::move(dtype));
-                },
-                py::arg("tree"), py::arg("attributes"), py::arg("output_space") = NodeIdSpace::MorphologicalTree, py::kw_only(), py::arg("dtype") = py::none(),
-                R"doc(Compute one or more altitude-dependent attributes.
+            .def_static("compute", &attribute_computation::compute,
+                        py::arg("tree").none(false), py::arg("attributes"), py::arg("output_space") = NodeIdSpace::MorphologicalTree,
+                        py::kw_only(), py::arg("dtype") = py::none(),
+                        R"doc(Compute attributes with automatic selection of the topology or altitude-aware path.
 
 Parameters:
     tree: `ValuedMorphologicalTree`.
-    attributes: Sequence of `Attribute` or `Attribute.Group` values.
+    attributes: One `Attribute` or `Attribute.Group`, or an iterable of them.
+        Stable symbolic names are also accepted.
     output_space: Node-id domain of the returned rows.
-    dtype: Returned attribute value dtype, either `np.float32` or `np.float64`.
+    dtype: Returned NumPy storage type, `np.float32` (default) or `np.float64`.
 
 Returns:
-    `(layout, values)` where `values.shape == (num_output_nodes, len(layout))`
-    and `values.dtype` matches `dtype`.)doc")
-            .def_static(
-                "compute_topology_attributes",
-                [](std::shared_ptr<PythonValuedMorphologicalTree> tree, const py::object& attributes, NodeIdSpace outputSpace, py::object dtype) {
-                    return attribute_computation::computeTopologyAttributesFromList(
-                        std::move(tree), attribute_computation::resolveAttributeOrGroupList(attributes), outputSpace, std::move(dtype));
-                },
-                py::arg("tree"), py::arg("attributes"), py::arg("output_space") = NodeIdSpace::MorphologicalTree, py::kw_only(), py::arg("dtype") = py::none(),
-                R"doc(Compute topology/support-only attributes from a valued tree.
+    A 1D array for a scalar attribute value or name. A group or iterable returns
+    `(layout, values)`, with `values.shape == (num_output_nodes, len(layout))`,
+    including a sequence containing only one attribute. Groups expand to their
+    scalar members; duplicate attributes share one column in canonical order.
 
-The valued tree is accepted for convenience, but altitude-dependent
-attributes must use `compute_attributes` or `compute_single_attribute`.)doc")
-            .def_static("compute_single_attribute",
-                        [](std::shared_ptr<PythonValuedMorphologicalTree> tree, const py::object& attribute, NodeIdSpace outputSpace, py::object dtype) {
-                            return attribute_computation::computeSingleAttribute(std::move(tree), attribute_computation::resolveAttribute(attribute),
-                                                                                 outputSpace, std::move(dtype));
-                        },
-                        py::arg("tree"), py::arg("attribute"), py::arg("output_space") = NodeIdSpace::MorphologicalTree, py::kw_only(),
-                        py::arg("dtype") = py::none(),
-                        R"doc(Compute one altitude-dependent attribute.
-
-Returns a 1D array indexed by `output_space`. `dtype` controls the returned
-buffer dtype and accepts `np.float32` or `np.float64`; the default is
-`np.float32`.)doc")
-            .def_static("compute_single_topology_attribute",
-                        [](std::shared_ptr<PythonValuedMorphologicalTree> tree, const py::object& attribute, NodeIdSpace outputSpace, py::object dtype) {
-                            return attribute_computation::computeSingleTopologyAttribute(std::move(tree), attribute_computation::resolveAttribute(attribute),
-                                                                                        outputSpace, std::move(dtype));
-                        },
-                        py::arg("tree"), py::arg("attribute"), py::arg("output_space") = NodeIdSpace::MorphologicalTree, py::kw_only(),
-                        py::arg("dtype") = py::none(),
-                        R"doc(Compute one topology/support-only attribute from a valued tree.
-
-Returns a 1D floating-point array indexed by `output_space`.)doc")
+The registry selects the topology path when no requested attribute requires
+altitude. Otherwise the request uses the altitude-aware path.)doc")
             .def_static("compute_sampled_node_attribute",
                         [](std::shared_ptr<PythonValuedMorphologicalTree> tree, const py::object& attribute, std::int64_t altitudeStep, int samplingRadius,
                            NodeAttributeSamplingPolicy samplingPolicy, MissingNodeAttributeSamplePolicy missingSamplePolicy, NodeIdSpace outputSpace,

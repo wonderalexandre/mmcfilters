@@ -78,12 +78,10 @@ altitude order before publishing changes; the C++ `Unchecked` setters and
 editor sessions are intentionally not part of the Python API.
 
 Attribute computation is centered on `Attribute`:
-- `Attribute.compute_single_attribute(valued_tree, attr)` and
-  `Attribute.compute_attributes(valued_tree, attrs)` require a
-  `ValuedMorphologicalTree`;
-- `Attribute.compute_single_topology_attribute(tree_or_valued_tree, attr)` and
-  `Attribute.compute_topology_attributes(tree_or_valued_tree, attrs)` are the
-  explicit topology/support-only entry points;
+- `Attribute.compute(tree, attributes, output_space=NodeIdSpace.MORPHOLOGICAL_TREE,
+  dtype=np.float32)` selects the topology or altitude-aware path from the
+  registry requirements. A scalar value or name returns a 1D array; a group or
+  iterable returns `(layout, values)` with a 2D array;
 - `Attribute.compute_sampled_node_attribute(...)` uses
   `NodeAttributeSamplingPolicy` and `MissingNodeAttributeSamplePolicy` for
   altitude-based ancestor/current/representative-descendant samples.

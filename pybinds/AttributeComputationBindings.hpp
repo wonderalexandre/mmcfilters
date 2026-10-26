@@ -3,6 +3,7 @@
 #include "PythonValuedMorphologicalTree.hpp"
 #include "../mmcfilters/attributes/AttributeComputation.hpp"
 #include "../mmcfilters/attributes/AttributeRegistry.hpp"
+#include "../mmcfilters/attributes/detail/AttributeRequestUtils.hpp"
 #include "../mmcfilters/trees/ValuedMorphologicalTree.hpp"
 #include "PybindConversions.hpp"
 
@@ -20,6 +21,7 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mmcfilters::pybindings::attribute_computation {
@@ -506,6 +508,37 @@ inline std::pair<py::dict, py::array> computeTopologyAttributesFromList(std::sha
                                                                         NodeIdSpace outputSpace = NodeIdSpace::MorphologicalTree,
                                                                         py::object dtype = py::none()) {
     return tree->visit([&](const auto& concreteTree) { return computeTopologyAttributesFromListImpl(concreteTree, attributes, outputSpace, dtype); });
+}
+
+/**
+ * @brief Computes scalar, group, or batch requests using their altitude requirements.
+ *
+ * @param tree Valued tree supplying topology and altitude data.
+ * @param attributes One attribute or group, or an iterable of either; symbolic names are accepted.
+ * @param outputSpace Node-id domain used to index the output.
+ * @param dtype Requested NumPy floating-point type.
+ * @return A 1D array for a scalar request, or a layout and 2D array for a group or iterable.
+ */
+inline py::object compute(std::shared_ptr<PythonValuedMorphologicalTree> tree, const py::object& attributes,
+                          NodeIdSpace outputSpace = NodeIdSpace::MorphologicalTree, py::object dtype = py::none()) {
+    const bool singleRequest = py::isinstance<py::str>(attributes) || py::isinstance<Attribute>(attributes) || py::isinstance<AttributeGroup>(attributes);
+    const auto requests = resolveAttributeOrGroupList(singleRequest ? py::object(py::make_tuple(attributes)) : attributes);
+    const bool topologyOnly = mmcfilters::detail::requestContainsOnlyAttributes(requests, [](Attribute attribute) {
+        return !attributes::registry::capabilityRequirements(attribute).altitude;
+    });
+
+    if (singleRequest && std::holds_alternative<Attribute>(requests.front())) {
+        const auto attribute = std::get<Attribute>(requests.front());
+        if (topologyOnly) {
+            return computeSingleTopologyAttribute(std::move(tree), attribute, outputSpace, std::move(dtype));
+        }
+        return computeSingleAttribute(std::move(tree), attribute, outputSpace, std::move(dtype));
+    }
+
+    if (topologyOnly) {
+        return py::cast(computeTopologyAttributesFromList(std::move(tree), requests, outputSpace, std::move(dtype)));
+    }
+    return py::cast(computeAttributesFromList(std::move(tree), requests, outputSpace, std::move(dtype)));
 }
 
 /**

@@ -16,7 +16,7 @@ def main() -> None:
     )
 
     tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image, radius=1.5)
-    area = mmcfilters.Attribute.compute_single_topology_attribute(
+    area = mmcfilters.Attribute.compute(
         tree,
         mmcfilters.Attribute.AREA,
     )

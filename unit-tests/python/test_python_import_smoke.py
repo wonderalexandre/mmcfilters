@@ -140,39 +140,36 @@ def main() -> int:
         )
     require(not hasattr(mmcfilters, "BitquadDeltas"), "package must not expose internal BitquadDeltas")
 
-    area = mmcfilters.Attribute.compute_single_attribute(tree, mmcfilters.Attribute.AREA)
+    area = mmcfilters.Attribute.compute(tree, mmcfilters.Attribute.AREA)
     require(area.shape[0] == tree.num_internal_node_slots, "single attribute smoke shape")
 
-    topology_area = mmcfilters.Attribute.compute_single_topology_attribute(tree, mmcfilters.Attribute.AREA)
-    require(topology_area.shape[0] == tree.num_internal_node_slots, "single topology attribute smoke shape")
-    topology_names, topology_attrs = mmcfilters.Attribute.compute_topology_attributes(
+    topology_names, topology_attrs = mmcfilters.Attribute.compute(
         tree,
         [mmcfilters.Attribute.AREA, mmcfilters.Attribute.BOUNDING_BOX_WIDTH],
     )
     require("AREA" in topology_names, "topology attribute facade must include AREA")
     require("BOUNDING_BOX_WIDTH" in topology_names, "topology attribute facade must include BOUNDING_BOX_WIDTH")
     require(topology_attrs.shape == (tree.num_internal_node_slots, len(topology_names)), "topology attributes smoke shape")
-    raw_inertia = mmcfilters.Attribute.compute_single_topology_attribute(tree, mmcfilters.Attribute.RAW_INERTIA)
+    raw_inertia = mmcfilters.Attribute.compute(tree, mmcfilters.Attribute.RAW_INERTIA)
     require(raw_inertia.shape[0] == tree.num_internal_node_slots, "RAW_INERTIA topology smoke shape")
     require(float(raw_inertia[tree.root]) >= 0.0, "RAW_INERTIA root value must be non-negative")
-    require_raises(
-        lambda: mmcfilters.Attribute.compute_single_topology_attribute(tree, mmcfilters.Attribute.MEAN_GRAY_LEVEL),
-        "topology attribute facade must reject altitude-dependent attributes",
-    )
+    mean_gray_level = mmcfilters.Attribute.compute(tree, mmcfilters.Attribute.MEAN_GRAY_LEVEL)
+    require(mean_gray_level.shape == (tree.num_internal_node_slots,), "altitude-dependent attribute smoke shape")
+    require(np.isfinite(mean_gray_level).all(), "altitude-dependent attribute must be finite")
 
-    gray_names, gray_attrs = mmcfilters.Attribute.compute_attributes(tree, [mmcfilters.Attribute.Group.GRAY_LEVEL])
+    gray_names, gray_attrs = mmcfilters.Attribute.compute(tree, [mmcfilters.Attribute.Group.GRAY_LEVEL])
     require("VOLUME" in gray_names, "Attribute.Group.GRAY_LEVEL must include VOLUME")
     require("GRAY_LEVEL_VARIANCE" in gray_names, "Attribute.Group.GRAY_LEVEL must include GRAY_LEVEL_VARIANCE")
     require(gray_attrs.shape == (tree.num_internal_node_slots, len(gray_names)), "Attribute.Group.GRAY_LEVEL smoke shape")
 
-    moment_names, moment_attrs = mmcfilters.Attribute.compute_topology_attributes(
+    moment_names, moment_attrs = mmcfilters.Attribute.compute(
         tree,
         [mmcfilters.Attribute.Group.MOMENTS],
     )
     require("RAW_INERTIA" in moment_names, "Attribute.Group.MOMENTS must include RAW_INERTIA")
     require(moment_attrs.shape == (tree.num_internal_node_slots, len(moment_names)), "Attribute.Group.MOMENTS smoke shape")
 
-    boundary_names, boundary_attrs = mmcfilters.Attribute.compute_topology_attributes(
+    boundary_names, boundary_attrs = mmcfilters.Attribute.compute(
         tree,
         [mmcfilters.Attribute.Group.BOUNDARY],
     )
@@ -184,7 +181,7 @@ def main() -> int:
         "Attribute.Group.BOUNDARY topology smoke shape",
     )
 
-    shape_names, shape_attrs = mmcfilters.Attribute.compute_attributes(
+    shape_names, shape_attrs = mmcfilters.Attribute.compute(
         tree,
         [mmcfilters.Attribute.Group.SHAPE],
     )
@@ -200,7 +197,7 @@ def main() -> int:
         "Attribute.Group.SHAPE smoke shape",
     )
 
-    distance_names, distance_attrs = mmcfilters.Attribute.compute_topology_attributes(
+    distance_names, distance_attrs = mmcfilters.Attribute.compute(
         tree,
         [mmcfilters.Attribute.Group.DIST_TRANSF],
     )
@@ -221,7 +218,7 @@ def main() -> int:
         distance_attrs.shape == (tree.num_internal_node_slots, len(distance_names)),
         "Attribute.Group.DIST_TRANSF topology smoke shape",
     )
-    string_distance_names, string_distance_attrs = mmcfilters.Attribute.compute_topology_attributes(
+    string_distance_names, string_distance_attrs = mmcfilters.Attribute.compute(
         tree,
         ["DIST_TRANSF"],
     )
@@ -230,7 +227,7 @@ def main() -> int:
         np.array_equal(string_distance_attrs, distance_attrs, equal_nan=True),
         "concise string DIST_TRANSF request must preserve group values",
     )
-    exact_distance_names, exact_distance_attrs = mmcfilters.Attribute.compute_topology_attributes(
+    exact_distance_names, exact_distance_attrs = mmcfilters.Attribute.compute(
         tree,
         [mmcfilters.Attribute.Group.DIST_TRANSF_EXACT],
     )
@@ -242,11 +239,11 @@ def main() -> int:
         exact_distance_attrs.shape == (tree.num_internal_node_slots, len(exact_distance_names)),
         "Attribute.Group.DIST_TRANSF_EXACT topology smoke shape",
     )
-    string_exact_names, string_exact_attrs = mmcfilters.Attribute.compute_topology_attributes(tree, ["DIST_TRANSF_EXACT"])
+    string_exact_names, string_exact_attrs = mmcfilters.Attribute.compute(tree, ["DIST_TRANSF_EXACT"])
     require(string_exact_names == exact_distance_names, "concise DIST_TRANSF_EXACT request must preserve layout")
     require(np.array_equal(string_exact_attrs, exact_distance_attrs, equal_nan=True), "concise DIST_TRANSF_EXACT must preserve values")
 
-    names, attrs = mmcfilters.Attribute.compute_attributes(tree, [mmcfilters.Attribute.ALL])
+    names, attrs = mmcfilters.Attribute.compute(tree, [mmcfilters.Attribute.ALL])
     require("AREA" in names, "Attribute.ALL must include AREA")
     require("DIST_SQUARED_MEAN_EXACT" in names, "Attribute.ALL must include DIST_SQUARED_MEAN_EXACT")
     require("DIST_SQUARED_MEAN" in names, "Attribute.ALL must include DIST_SQUARED_MEAN")

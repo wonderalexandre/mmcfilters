@@ -394,7 +394,7 @@ def main() -> int:
     require(tree.leaves == [5], "leaf NodeIds")
     require(tree.num_leaf_nodes == len(tree.leaves), "leaf cardinality")
     require(tree.children(3) == [4], "children by NodeId")
-    require(int(mmcfilters.Attribute.compute_single_attribute(tree, mmcfilters.Attribute.AREA)[3]) == 8, "node area by attribute computer")
+    require(int(mmcfilters.Attribute.compute(tree, mmcfilters.Attribute.AREA)[3]) == 8, "node area by attribute computer")
     require(mmcfilters.Attribute.describe(mmcfilters.Attribute.AREA).startswith("Area:"), "attribute description by pybind")
     require(tree.num_descendants(2) == 3, "descendants count by NodeId")
     require(tree.num_siblings(4) == 0, "siblings count by NodeId")
@@ -583,9 +583,9 @@ def main() -> int:
     )
     valued_tree_area_mapping = mmcfilters.Attribute.compute_attribute_mapping(valued_tree, mmcfilters.Attribute.AREA)
     require(np.array_equal(valued_tree_area_mapping, area_mapping), "valued_tree area mapping by pybind")
-    area_attr = mmcfilters.Attribute.compute_single_attribute(tree, mmcfilters.Attribute.AREA)
+    area_attr = mmcfilters.Attribute.compute(tree, mmcfilters.Attribute.AREA)
     require(area_attr.tolist() == [16.0, 15.0, 12.0, 8.0, 5.0, 2.0], "exact AREA attribute by NodeId")
-    valued_tree_area_attribute = mmcfilters.Attribute.compute_single_attribute(valued_tree, mmcfilters.Attribute.AREA)
+    valued_tree_area_attribute = mmcfilters.Attribute.compute(valued_tree, mmcfilters.Attribute.AREA)
     require(valued_tree_area_attribute.tolist() == area_attr.tolist(), "valued_tree exact AREA attribute by NodeId")
     default_sample_layout, default_sample_values = mmcfilters.Attribute.compute_sampled_node_attribute(
         valued_tree, mmcfilters.Attribute.AREA, 1, 1
@@ -656,7 +656,7 @@ def main() -> int:
         lambda: mmcfilters.Attribute.compute_sampled_node_attribute(valued_tree, mmcfilters.Attribute.AREA, 0, 1),
         "altitude_step must be positive",
     )
-    names, attrs = mmcfilters.Attribute.compute_attributes(
+    names, attrs = mmcfilters.Attribute.compute(
         valued_tree,
         [mmcfilters.Attribute.AREA, mmcfilters.Attribute.VOLUME, mmcfilters.Attribute.RELATIVE_VOLUME],
     )
@@ -667,7 +667,7 @@ def main() -> int:
     require(int(attrs[3, names["RELATIVE_VOLUME"]]) == 22, "combined RELATIVE_VOLUME attribute node 3")
     require(hasattr(mmcfilters.Attribute, "CONTOUR_PIXELS"), "Python Attribute must expose CONTOUR_PIXELS")
     require(hasattr(mmcfilters.Attribute, "CONTOUR_PERIMETER"), "Python Attribute must expose CONTOUR_PERIMETER")
-    contour_names, contour_attrs = mmcfilters.Attribute.compute_attributes(
+    contour_names, contour_attrs = mmcfilters.Attribute.compute(
         valued_tree,
         [
             mmcfilters.Attribute.CONTOUR_PIXELS,
@@ -683,7 +683,7 @@ def main() -> int:
     require(int(contour_attrs[0, contour_names["CONTOUR_PIXELS"]]) == 12, "root CONTOUR_PIXELS")
     require(int(contour_attrs[0, contour_names["CONTOUR_PERIMETER"]]) == 16, "root CONTOUR_PERIMETER")
     require(int(contour_attrs[0, contour_names["CONTOUR_SIDE_NORTH"]]) == 4, "root CONTOUR_SIDE_NORTH")
-    contour_perimeter = mmcfilters.Attribute.compute_single_attribute(valued_tree, mmcfilters.Attribute.CONTOUR_PERIMETER)
+    contour_perimeter = mmcfilters.Attribute.compute(valued_tree, mmcfilters.Attribute.CONTOUR_PERIMETER)
     require(int(contour_perimeter[0]) == 16, "single CONTOUR_PERIMETER by Python binding")
     exported_contour_perimeter = valued_tree.project_node_values_to_exported_higra(
         contour_perimeter,
@@ -696,14 +696,14 @@ def main() -> int:
         int(exported_contour_perimeter[contour_export_root]) == 16,
         "internal root CONTOUR_PERIMETER in exported Higra layout",
     )
-    all_names, all_attrs = mmcfilters.Attribute.compute_attributes(valued_tree, [mmcfilters.Attribute.ALL])
+    all_names, all_attrs = mmcfilters.Attribute.compute(valued_tree, [mmcfilters.Attribute.ALL])
     require("CONTOUR_PIXELS" in all_names, "Attribute.ALL must include CONTOUR_PIXELS")
     require("CONTOUR_SIDE_SOUTH" in all_names, "Attribute.ALL must include CONTOUR_SIDE_SOUTH")
     require(all_attrs.shape[1] == len(all_names), "Attribute.ALL column count must match names")
     require(int(all_attrs[0, all_names["CONTOUR_PERIMETER"]]) == 16, "Attribute.ALL root CONTOUR_PERIMETER")
 
     require(not hasattr(mmcfilters, "BitquadDeltas"), "Python package must not expose internal BitquadDeltas")
-    boundary_names, boundary_attrs = mmcfilters.Attribute.compute_topology_attributes(
+    boundary_names, boundary_attrs = mmcfilters.Attribute.compute(
         valued_tree,
         [mmcfilters.Attribute.Group.BOUNDARY],
     )
@@ -725,7 +725,7 @@ def main() -> int:
     require_raises(lambda: sparse_valued_tree_for_sampling.set_node_altitude(4, 7), "dead-slot valued_tree setNodeAltitude must throw")
     require_raises(lambda: sparse.merge_node_into_parent(4), "dead-slot mergeNodeIntoParent must throw")
     require_raises(lambda: sparse.prune_node(4), "dead-slot pruneNode must throw")
-    sparse_area = mmcfilters.Attribute.compute_single_attribute(sparse, mmcfilters.Attribute.AREA)
+    sparse_area = mmcfilters.Attribute.compute(sparse, mmcfilters.Attribute.AREA)
     require(sparse_area.shape == (sparse.num_internal_node_slots,), "single attribute shape must follow internal slots")
     require(int(sparse_area[5]) == 2, "single attribute must preserve sparse slot values")
     sparse_sample_layout, sparse_samples = mmcfilters.Attribute.compute_sampled_node_attribute(
@@ -743,7 +743,7 @@ def main() -> int:
     require(np.isnan(sparse_samples[5, sparse_sample_layout["AREA_DESCENDANT_1"]]), "sparse leaf missing descendant")
     sparse_valued_tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image)
     sparse_valued_tree.merge_node_into_parent(4)
-    sparse_names, sparse_attrs = mmcfilters.Attribute.compute_attributes(
+    sparse_names, sparse_attrs = mmcfilters.Attribute.compute(
         sparse_valued_tree, [mmcfilters.Attribute.AREA, mmcfilters.Attribute.VOLUME]
     )
     require(sparse_attrs.shape == (sparse.num_internal_node_slots, 2), "combined attribute shape must follow internal slots")
@@ -759,32 +759,32 @@ def main() -> int:
         radius=1.5,
     )
     exported_area = valued_tree.project_node_values_to_exported_higra(valued_tree_area_attribute, mmcfilters.Attribute.AREA)
-    roundtrip_exported_area = mmcfilters.Attribute.compute_single_attribute(
+    roundtrip_exported_area = mmcfilters.Attribute.compute(
         exported_roundtrip,
         mmcfilters.Attribute.AREA,
         mmcfilters.NodeIdSpace.HIGRA,
     )
     require(exported_area.shape == (len(exported_parent),), "exported-Higra projection shape")
     require(np.array_equal(exported_area, roundtrip_exported_area, equal_nan=True), "exported-Higra projection must match import projection")
-    valued_tree_max_dist_attribute = mmcfilters.Attribute.compute_single_attribute(valued_tree, mmcfilters.Attribute.MAX_DIST)
-    topology_max_dist_attribute = mmcfilters.Attribute.compute_single_topology_attribute(valued_tree, mmcfilters.Attribute.MAX_DIST)
+    valued_tree_max_dist_attribute = mmcfilters.Attribute.compute(valued_tree, mmcfilters.Attribute.MAX_DIST)
+    max_dist_layout, max_dist_values = mmcfilters.Attribute.compute(valued_tree, [mmcfilters.Attribute.MAX_DIST])
     require(
-        np.array_equal(valued_tree_max_dist_attribute, topology_max_dist_attribute, equal_nan=True),
-        "Python MAX_DIST must use the same topology-only computation through valued and topology entry points",
+        np.array_equal(valued_tree_max_dist_attribute, max_dist_values[:, max_dist_layout["MAX_DIST"]], equal_nan=True),
+        "Python MAX_DIST scalar and batch results must agree",
     )
-    valued_tree_max_dist_exact = mmcfilters.Attribute.compute_single_attribute(
+    valued_tree_max_dist_exact = mmcfilters.Attribute.compute(
         valued_tree, mmcfilters.Attribute.MAX_DIST_EXACT
     )
-    topology_max_dist_exact = mmcfilters.Attribute.compute_single_topology_attribute(
-        valued_tree, mmcfilters.Attribute.MAX_DIST_EXACT
+    max_dist_exact_layout, max_dist_exact_values = mmcfilters.Attribute.compute(
+        valued_tree, [mmcfilters.Attribute.MAX_DIST_EXACT]
     )
     require(
         np.array_equal(
             valued_tree_max_dist_exact,
-            topology_max_dist_exact,
+            max_dist_exact_values[:, max_dist_exact_layout["MAX_DIST_EXACT"]],
             equal_nan=True,
         ),
-        "Python MAX_DIST_EXACT must use the same topology-only computation through valued and topology entry points",
+        "Python MAX_DIST_EXACT scalar and batch results must agree",
     )
     exported_area_and_max_dist = valued_tree.project_node_values_to_exported_higra(
         np.stack([valued_tree_area_attribute, valued_tree_max_dist_attribute], axis=1),
@@ -943,7 +943,7 @@ def main() -> int:
     require(from_higra.higra_node_id(3) == valued_tree.num_pixels + 3, "slot->Higra mapping")
     require(not hasattr(from_higra, "hasHigraNodeIdMapping"), "Higra mapping predicate must not be public")
     require(not hasattr(from_higra, "getNodeIdFromHigra"), "Higra reverse mapping must not be public")
-    higra_area = mmcfilters.Attribute.compute_single_attribute(
+    higra_area = mmcfilters.Attribute.compute(
         from_higra,
         mmcfilters.Attribute.AREA,
         mmcfilters.NodeIdSpace.HIGRA,
@@ -962,7 +962,7 @@ def main() -> int:
     require(higra_samples.shape == (from_higra.num_higra_nodes, 3), "Higra-projected sampled attribute shape")
     require(int(higra_samples[valued_tree.num_pixels + 3, higra_sample_layout["AREA"]]) == 8, "Higra-projected current-node sample")
     require(np.array_equal(higra_samples[5], np.ones(3)), "Higra-projected leaf ids must receive unit AREA samples")
-    higra_names, higra_attrs = mmcfilters.Attribute.compute_attributes(
+    higra_names, higra_attrs = mmcfilters.Attribute.compute(
         from_higra,
         [mmcfilters.Attribute.AREA, mmcfilters.Attribute.VOLUME],
         mmcfilters.NodeIdSpace.HIGRA,
@@ -1028,7 +1028,7 @@ def main() -> int:
     require(rebuilt.parent(0) == 0, "Higra topology import root parent must point to itself")
     require(rebuilt.ancestors(5) == [5, 4, 3, 2, 1, 0], "Higra topology import path to root")
     require(rebuilt.path_between_nodes(5, 2) == [5, 4, 3, 2], "Higra topology import path between nodes")
-    require(int(mmcfilters.Attribute.compute_single_attribute(rebuilt, mmcfilters.Attribute.AREA)[3]) == 8, "Higra topology import area")
+    require(int(mmcfilters.Attribute.compute(rebuilt, mmcfilters.Attribute.AREA)[3]) == 8, "Higra topology import area")
 
     attr = np.arange(tree.num_nodes, dtype=np.float32)
     ext_values = mmcfilters.ExtinctionValues(tree, attr).get_regional_extrema()
@@ -1202,22 +1202,22 @@ def main() -> int:
     inverse_pairing_adjacencies = inverse_pairing_tos.topographic_convention.immersion.complementary_adjacencies
     require(inverse_pairing_adjacencies.min_adjacency.size == 9, "resolved MIN8_MAX4 minimum adjacency must be 8-connected")
     require(inverse_pairing_adjacencies.max_adjacency.size == 5, "resolved MIN8_MAX4 maximum adjacency must be 4-connected")
-    tos_boundary_names, tos_boundary_attrs = mmcfilters.Attribute.compute_attributes(
+    tos_boundary_names, tos_boundary_attrs = mmcfilters.Attribute.compute(
         valued_tree_of_shapes, [mmcfilters.Attribute.Group.BOUNDARY]
     )
-    tos_topology_boundary_names, tos_topology_boundary_attrs = mmcfilters.Attribute.compute_topology_attributes(
-        valued_tree_of_shapes, [mmcfilters.Attribute.Group.BOUNDARY]
+    tos_group_boundary_names, tos_group_boundary_attrs = mmcfilters.Attribute.compute(
+        valued_tree_of_shapes, mmcfilters.Attribute.Group.BOUNDARY
     )
-    require("BITQUAD_AREA" in tos_boundary_names, "valued_tree ToS BOUNDARY group must expose Bitquad through compute_attributes")
+    require("BITQUAD_AREA" in tos_boundary_names, "valued_tree ToS BOUNDARY group must expose Bitquad through compute")
     require("CONTOUR_SIDE_SOUTH" in tos_boundary_names, "valued_tree ToS BOUNDARY group must expose contour sides")
-    require(tos_boundary_names == tos_topology_boundary_names, "valued_tree ToS topology BOUNDARY names must match the full pipeline")
+    require(tos_boundary_names == tos_group_boundary_names, "ToS BOUNDARY group and iterable layouts must agree")
     require(
         tos_boundary_attrs.shape == (valued_tree_of_shapes.num_internal_node_slots, len(tos_boundary_names)),
         "valued_tree ToS BOUNDARY shape must use internal node-id space",
     )
     require(
-        np.allclose(tos_boundary_attrs, tos_topology_boundary_attrs, equal_nan=True),
-        "valued_tree ToS topology BOUNDARY route must match the full pipeline",
+        np.allclose(tos_boundary_attrs, tos_group_boundary_attrs, equal_nan=True),
+        "ToS BOUNDARY group and iterable values must agree",
     )
     tos_min8_max4 = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(
         np.array([[1, 2], [3, 0]], dtype=np.uint8),
@@ -1277,7 +1277,7 @@ def main() -> int:
     require(imported_generic.node_altitude_order == mmcfilters.NodeAltitudeOrder.UNCONSTRAINED, "Higra generic altitude order")
     require(imported_generic.proper_part_cardinality(0) == 0, "Higra root may have an empty proper part")
     require(imported_generic.reconstruct_from_node_altitudes().tolist() == [[3, 20]], "Higra generic reconstruction")
-    generic_gray_height = mmcfilters.Attribute.compute_single_attribute(imported_generic, mmcfilters.Attribute.GRAY_LEVEL_HEIGHT)
+    generic_gray_height = mmcfilters.Attribute.compute(imported_generic, mmcfilters.Attribute.GRAY_LEVEL_HEIGHT)
     require(generic_gray_height.tolist() == [10.0, 0.0, 0.0], "Higra unconstrained gray-level height")
     require_raises(
         lambda: mmcfilters.MorphologicalTreeFactory.create_from_higra_parent(
@@ -1327,30 +1327,23 @@ def main() -> int:
     concise_tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image, radius=1.5)
     require(
         np.array_equal(
-            mmcfilters.Attribute.compute_single_attribute(concise_tree, "AREA"),
-            mmcfilters.Attribute.compute_single_attribute(concise_tree, mmcfilters.Attribute.AREA),
+            mmcfilters.Attribute.compute(concise_tree, "AREA"),
+            mmcfilters.Attribute.compute(concise_tree, mmcfilters.Attribute.AREA),
         ),
         "symbolic attribute name must match the enum value",
     )
-    require(
-        np.array_equal(
-            mmcfilters.Attribute.compute_single_topology_attribute(concise_tree, "AREA"),
-            mmcfilters.Attribute.compute_single_topology_attribute(concise_tree, mmcfilters.Attribute.AREA),
-        ),
-        "symbolic name must match the enum value for topology attributes",
-    )
-    named_layout, named_values = mmcfilters.Attribute.compute_attributes(concise_tree, ["AREA", "VOLUME"])
-    typed_layout, typed_values = mmcfilters.Attribute.compute_attributes(
+    named_layout, named_values = mmcfilters.Attribute.compute(concise_tree, ["AREA", "VOLUME"])
+    typed_layout, typed_values = mmcfilters.Attribute.compute(
         concise_tree, [mmcfilters.Attribute.AREA, mmcfilters.Attribute.VOLUME]
     )
     require(list(named_layout) == list(typed_layout), "symbolic attribute list must produce the same layout")
     require(np.array_equal(named_values, typed_values), "symbolic attribute list must produce the same values")
 
     # Group names and mixed sequences are accepted too.
-    group_layout, _ = mmcfilters.Attribute.compute_attributes(concise_tree, ["BOUNDARY"])
-    typed_group_layout, _ = mmcfilters.Attribute.compute_attributes(concise_tree, [mmcfilters.Attribute.Group.BOUNDARY])
+    group_layout, _ = mmcfilters.Attribute.compute(concise_tree, ["BOUNDARY"])
+    typed_group_layout, _ = mmcfilters.Attribute.compute(concise_tree, [mmcfilters.Attribute.Group.BOUNDARY])
     require(list(group_layout) == list(typed_group_layout), "symbolic group name must match the enum group")
-    mixed_layout, _ = mmcfilters.Attribute.compute_attributes(concise_tree, [mmcfilters.Attribute.AREA, "VOLUME"])
+    mixed_layout, _ = mmcfilters.Attribute.compute(concise_tree, [mmcfilters.Attribute.AREA, "VOLUME"])
     require(list(mixed_layout) == ["AREA", "VOLUME"], "mixed enum and symbolic sequences must be accepted")
 
     require(
@@ -1370,9 +1363,8 @@ def main() -> int:
     )
 
     # Matching is exact, and a rejected name reports the near matches.
-    require_raises(lambda: mmcfilters.Attribute.compute_single_attribute(concise_tree, "area"), "symbolic names must be case sensitive")
-    require_raises(lambda: mmcfilters.Attribute.compute_single_attribute(concise_tree, "NOT_AN_ATTRIBUTE"), "unknown names must be rejected")
-    require_raises(lambda: mmcfilters.Attribute.compute_attributes(concise_tree, "AREA"), "a bare str must not stand in for a sequence")
+    require_raises(lambda: mmcfilters.Attribute.compute(concise_tree, "area"), "symbolic names must be case sensitive")
+    require_raises(lambda: mmcfilters.Attribute.compute(concise_tree, "NOT_AN_ATTRIBUTE"), "unknown names must be rejected")
 
     # The self-dual span convention is available as a single call.
     require(

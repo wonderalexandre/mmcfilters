@@ -175,8 +175,8 @@ def main() -> int:
     require(mmcfilters.to_node_preservation_mask(prune_none_mask).to_list() == keep_all, "explicit pruning-to-preservation conversion")
     require(np.array_equal(valued_tree_filters.filtering_by_pruning_min(keep_all_mask), valued_tree_reconstruction), "valued_tree AttributeFilters pruning min keep-all mask")
     require(np.array_equal(valued_tree_filters.filtering_by_pruning_max(keep_all_mask), valued_tree_reconstruction), "valued_tree AttributeFilters pruning max keep-all mask")
-    valued_tree_box_height = mmcfilters.Attribute.compute_single_attribute(valued_tree, mmcfilters.Attribute.BOUNDING_BOX_HEIGHT)
-    valued_tree_box_height64 = mmcfilters.Attribute.compute_single_attribute(valued_tree, mmcfilters.Attribute.BOUNDING_BOX_HEIGHT, dtype=np.float64)
+    valued_tree_box_height = mmcfilters.Attribute.compute(valued_tree, mmcfilters.Attribute.BOUNDING_BOX_HEIGHT)
+    valued_tree_box_height64 = mmcfilters.Attribute.compute(valued_tree, mmcfilters.Attribute.BOUNDING_BOX_HEIGHT, dtype=np.float64)
     require(valued_tree_box_height.dtype == np.float32, "default filter attribute dtype")
     require(valued_tree_box_height64.dtype == np.float64, "float64 filter attribute dtype")
     require(np.array_equal(valued_tree_filters.filtering_by_pruning_min(valued_tree_box_height, 1.0), valued_tree_reconstruction), "valued_tree AttributeFilters pruning min keep-all attribute")
@@ -288,8 +288,8 @@ def main() -> int:
         "Python AttributeFilters Viterbi branch",
     )
 
-    valued_tree_gray_level_height = mmcfilters.Attribute.compute_single_attribute(valued_tree, mmcfilters.Attribute.GRAY_LEVEL_HEIGHT)
-    valued_tree_gray_level_height64 = mmcfilters.Attribute.compute_single_attribute(valued_tree, mmcfilters.Attribute.GRAY_LEVEL_HEIGHT, dtype=np.float64)
+    valued_tree_gray_level_height = mmcfilters.Attribute.compute(valued_tree, mmcfilters.Attribute.GRAY_LEVEL_HEIGHT)
+    valued_tree_gray_level_height64 = mmcfilters.Attribute.compute(valued_tree, mmcfilters.Attribute.GRAY_LEVEL_HEIGHT, dtype=np.float64)
     keep_all_policy = mmcfilters.ExtinctionSelectionPolicy.by_top_k(1024)
     keep_one_policy = mmcfilters.ExtinctionSelectionPolicy.by_top_k(1)
     rank_contours = mmcfilters.ExtinctionContourScorePolicy.RANK_SCORE
@@ -327,7 +327,7 @@ def main() -> int:
     require(valued_tree_uao64.get_max_contrast_image().shape == (4, 4), "valued_tree UltimateAttributeOpening float64 depth stability execute shape")
 
     tos = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(image)
-    tos_area = mmcfilters.Attribute.compute_single_topology_attribute(tos, mmcfilters.Attribute.AREA)
+    tos_area = mmcfilters.Attribute.compute(tos, mmcfilters.Attribute.AREA)
     tos_keep_all = [True] * tos.num_internal_node_slots
     tos_depth_adjusted = mmcfilters.adjust_node_preservation_mask_by_depth_stability(
         tos,
@@ -391,7 +391,7 @@ def main() -> int:
     )
     nonsquare = np.array([[3, 3, 2], [1, 4, 5]], dtype=np.uint8)
     nonsquare_valued_tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(nonsquare)
-    nonsquare_box_height = mmcfilters.Attribute.compute_single_attribute(nonsquare_valued_tree, mmcfilters.Attribute.BOUNDING_BOX_HEIGHT)
+    nonsquare_box_height = mmcfilters.Attribute.compute(nonsquare_valued_tree, mmcfilters.Attribute.BOUNDING_BOX_HEIGHT)
     nonsquare_uao = mmcfilters.UltimateAttributeOpening(nonsquare_valued_tree, nonsquare_box_height)
     nonsquare_uao.execute(int(nonsquare_valued_tree.num_rows))
     require(nonsquare_uao.get_max_contrast_image().shape == (2, 3), "non-square UltimateAttributeOpening max contrast shape")
@@ -473,7 +473,7 @@ def main() -> int:
 
     stale_valued_tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image)
     stale_keep_all = [True] * stale_valued_tree.num_internal_node_slots
-    stale_attribute = mmcfilters.Attribute.compute_single_attribute(stale_valued_tree, mmcfilters.Attribute.GRAY_LEVEL_HEIGHT)
+    stale_attribute = mmcfilters.Attribute.compute(stale_valued_tree, mmcfilters.Attribute.GRAY_LEVEL_HEIGHT)
     stale_filter = mmcfilters.DirectAttributeFilter(stale_valued_tree)
     stale_subtractive = mmcfilters.SubtractiveAttributeFilter(stale_valued_tree)
     stale_soft = mmcfilters.SoftSubtractiveAttributeFilter(stale_valued_tree)
@@ -573,8 +573,8 @@ def main() -> int:
     # topology entry point implied by the attribute.
     concise_tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image, radius=1.5)
     concise_filters = mmcfilters.AttributeFilters(concise_tree)
-    topology_area = mmcfilters.Attribute.compute_single_topology_attribute(concise_tree, "AREA", dtype=np.float64)
-    valued_volume = mmcfilters.Attribute.compute_single_attribute(concise_tree, "VOLUME", dtype=np.float64)
+    topology_area = mmcfilters.Attribute.compute(concise_tree, "AREA", dtype=np.float64)
+    valued_volume = mmcfilters.Attribute.compute(concise_tree, "VOLUME", dtype=np.float64)
 
     for name, buffer in (("AREA", topology_area), ("VOLUME", valued_volume)):
         require(
@@ -617,7 +617,7 @@ def main() -> int:
     # The buffer and mask forms must keep working unchanged.
     require(
         concise_filters.filtering_by_pruning_min(
-            mmcfilters.Attribute.compute_single_topology_attribute(concise_tree, "AREA", dtype=np.float32), 2.0
+            mmcfilters.Attribute.compute(concise_tree, "AREA", dtype=np.float32), 2.0
         ).shape
         == image.shape,
         "float32 attribute buffers must still be accepted",

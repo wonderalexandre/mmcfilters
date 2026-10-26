@@ -57,13 +57,13 @@ def verify_signed_orientations(mmcfilters):
                                else mmcfilters.MorphologicalTreeFactory.create_min_tree)
                     tree = factory(image if maximum else 1 - image, radius)
                     for dtype in (np.float32, np.float64):
-                        names, values = attribute.compute_attributes(tree, requested, dtype=dtype)
+                        names, values = attribute.compute(tree, requested, dtype=dtype)
                         for signed, unsigned, group in ((requested[0], requested[1], attribute.Group.MOMENTS),
                                                         (requested[2], requested[3], attribute.Group.FILLED_SHAPE)):
-                            scalar = attribute.compute_single_attribute(tree, getattr(attribute, signed), dtype=dtype)
+                            scalar = attribute.compute(tree, getattr(attribute, signed), dtype=dtype)
                             np.testing.assert_array_equal(scalar, values[:, names[signed]])
                             np.testing.assert_array_equal(np.abs(scalar), values[:, names[unsigned]])
-                            group_names, group_values = attribute.compute_attributes(tree, [group], dtype=dtype)
+                            group_names, group_values = attribute.compute(tree, [group], dtype=dtype)
                             np.testing.assert_array_equal(scalar, group_values[:, group_names[signed]])
                             exported = tree.project_node_values_to_exported_higra(scalar, getattr(attribute, signed))
                             np.testing.assert_array_equal(exported[:image.size], 0)
@@ -74,7 +74,7 @@ def verify_signed_orientations(mmcfilters):
                                 np.testing.assert_allclose(values[node, names[name]], angle(support), atol=1e-5, rtol=0)
     # The off-center hole tilts the support axis, but cannot tilt the filled rectangle.
     tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(hole, 1.0)
-    names, values = attribute.compute_attributes(tree, requested, dtype=np.float64)
+    names, values = attribute.compute(tree, requested, dtype=np.float64)
     node = next(node for node in tree.alive_node_ids if tree.node_altitude(node) == 1)
     assert abs(values[node, names[requested[0]]]) > 1
     assert values[node, names[requested[2]]] == 0
@@ -96,15 +96,15 @@ def main():
         "FILLED_COMPACTNESS", "FILLED_CIRCULARITY", "FILLED_AXIS_ORIENTATION_SIGNED",
     ]
     for dtype in (np.float32, np.float64):
-        names, values = attribute.compute_attributes(tree, [attribute.Group.FILLED_SHAPE], dtype=dtype)
+        names, values = attribute.compute(tree, [attribute.Group.FILLED_SHAPE], dtype=dtype)
         assert list(names) == expected_names
         assert values.dtype == dtype
-        string_names, string_values = attribute.compute_attributes(tree, ["FILLED_SHAPE"], dtype=dtype)
+        string_names, string_values = attribute.compute(tree, ["FILLED_SHAPE"], dtype=dtype)
         assert names == string_names
         np.testing.assert_array_equal(values, string_values)
         for name in expected_names:
             scalar = getattr(attribute, name)
-            single = attribute.compute_single_attribute(tree, scalar, dtype=dtype)
+            single = attribute.compute(tree, scalar, dtype=dtype)
             np.testing.assert_array_equal(single, values[:, names[name]])
             exported = tree.project_node_values_to_exported_higra(single, scalar)
             unit = np.zeros(25, dtype=dtype)
@@ -120,13 +120,13 @@ def main():
         np.testing.assert_array_equal(values[:, names["FILLED_CENTROID_COLUMN"]], 2)
         np.testing.assert_allclose(values[:, names["FILLED_COMPACTNESS"]], 1 / (8 * np.pi), rtol=1e-6)
         np.testing.assert_array_equal(values[:, names["FILLED_CIRCULARITY"]], 1)
-        support_area = attribute.compute_single_attribute(tree, attribute.AREA, dtype=dtype)
+        support_area = attribute.compute(tree, attribute.AREA, dtype=dtype)
         ring = np.flatnonzero(support_area == 24)[0]
         np.testing.assert_allclose(values[ring, names["HOLE_AREA_FRACTION"]], 1 / 25, rtol=1e-6)
         np.testing.assert_allclose(values[ring, names["FILLED_CENTROID_DISPLACEMENT_NORMALIZED"]],
                                    np.sqrt(2) / (24 * 5), rtol=1e-6)
         for group in (attribute.Group.SHAPE, attribute.Group.MOMENTS, attribute.Group.BOUNDARY):
-            other_names, _ = attribute.compute_attributes(tree, [group], dtype=dtype)
+            other_names, _ = attribute.compute(tree, [group], dtype=dtype)
             assert not set(expected_names).intersection(other_names)
     requirements = attribute.requirements(attribute.FILLED_AREA)
     assert requirements["grid_domain_2d"]

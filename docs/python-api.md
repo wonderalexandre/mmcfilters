@@ -180,12 +180,24 @@ and derived-state lifetime.
 
 ## Attributes
 
-Use valued-tree entry points when an attribute may read node altitude and
-topology/support entry points otherwise. Single-attribute methods return a 1D
-array; multi-attribute methods return `(layout, values)`, where `layout` maps
-names to columns. `dtype` accepts `np.float32` or `np.float64` and defaults to
-`np.float32`. Both dtypes use the same internal `double` computation pipeline;
-the result is converted to the requested NumPy storage.
+Use `Attribute.compute(tree, attributes, output_space=NodeIdSpace.MORPHOLOGICAL_TREE,
+*, dtype=np.float32)` for automatic selection of the computation path. The tree
+is a `ValuedMorphologicalTree`. The registry selects the topology/support path
+when no requested attribute requires altitude; otherwise the request uses the
+altitude-aware path. Other capability requirements are still validated.
+
+A scalar attribute value or name returns a 1D array. A group or iterable returns
+`(layout, values)`, where `layout` maps names to columns and `values` is 2D. A
+one-element sequence keeps the column dimension. Groups expand to their scalar
+members, and repeated attributes share one column in canonical scalar-enumerator
+order. An empty sequence returns an empty layout and an array with zero columns.
+
+Rows follow `output_space`, which defaults to dense internal node slots,
+including dead slots after edits. Returned arrays own their values and remain
+valid after the tree changes or is released. `dtype` accepts `np.float32` or
+`np.float64` and defaults to `np.float32`. Both dtypes use the same internal
+`double` computation pipeline; the result is converted to the requested NumPy
+storage.
 
 Every method that accepts an `Attribute` or `Attribute.Group` also accepts its
 stable symbolic name as a string. The accepted names are exactly the ones that
@@ -193,8 +205,8 @@ stable symbolic name as a string. The accepted names are exactly the ones that
 vocabulary:
 
 ```python
-area = mmcfilters.Attribute.compute_single_attribute(max_tree, "AREA")
-layout, values = mmcfilters.Attribute.compute_attributes(
+area = mmcfilters.Attribute.compute(max_tree, "AREA")
+layout, values = mmcfilters.Attribute.compute(
     max_tree,
     ["AREA", "VOLUME", "BOUNDARY"],
 )
@@ -205,17 +217,17 @@ case-sensitive. An unknown name raises `ValueError` and reports the closest
 known names.
 
 ```python
-area = mmcfilters.Attribute.compute_single_topology_attribute(
+area = mmcfilters.Attribute.compute(
     max_tree,
     mmcfilters.Attribute.AREA,
 )
 altitude = max_tree.node_altitude(node_id)
-gray_level_height = mmcfilters.Attribute.compute_single_attribute(
+gray_level_height = mmcfilters.Attribute.compute(
     max_tree,
     mmcfilters.Attribute.GRAY_LEVEL_HEIGHT,
 )
 
-layout, values = mmcfilters.Attribute.compute_attributes(
+layout, values = mmcfilters.Attribute.compute(
     max_tree,
     [
         mmcfilters.Attribute.AREA,
@@ -234,9 +246,9 @@ Groups expand to stable scalar sets:
 
 ```python
 boundary_layout, boundary_values = (
-    mmcfilters.Attribute.compute_topology_attributes(
+    mmcfilters.Attribute.compute(
         max_tree,
-        [mmcfilters.Attribute.Group.BOUNDARY],
+        mmcfilters.Attribute.Group.BOUNDARY,
     )
 )
 ```
@@ -303,7 +315,7 @@ topology mutation.
 ```python
 filters = mmcfilters.AttributeFilters(max_tree)
 
-box_height = mmcfilters.Attribute.compute_single_topology_attribute(
+box_height = mmcfilters.Attribute.compute(
     max_tree,
     mmcfilters.Attribute.BOUNDING_BOX_HEIGHT,
 )
@@ -438,7 +450,7 @@ roundtrip = mmcfilters.MorphologicalTreeFactory.create_from_higra_parent(
     mmcfilters.MorphologicalTreeKind.MAX_TREE,
     radius=1.5,
 )
-area_in_higra_space = mmcfilters.Attribute.compute_single_attribute(
+area_in_higra_space = mmcfilters.Attribute.compute(
     roundtrip,
     mmcfilters.Attribute.AREA,
     mmcfilters.NodeIdSpace.HIGRA,

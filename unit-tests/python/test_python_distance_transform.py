@@ -167,7 +167,7 @@ def main() -> int:
                     f"{hierarchy_name} profile support count for node {node_id}",
                 )
 
-    exact_names, exact_values = mmcfilters.Attribute.compute_topology_attributes(
+    exact_names, exact_values = mmcfilters.Attribute.compute(
         tree,
         [
             mmcfilters.Attribute.MAX_DIST_EXACT,

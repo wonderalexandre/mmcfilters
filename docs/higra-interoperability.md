@@ -180,7 +180,7 @@ const std::vector<float>& values = computed.values();
 ```
 
 ```python
-area_in_imported_space = mmcfilters.Attribute.compute_single_attribute(
+area_in_imported_space = mmcfilters.Attribute.compute(
     tree,
     mmcfilters.Attribute.AREA,
     mmcfilters.NodeIdSpace.HIGRA,
@@ -239,7 +239,7 @@ std::vector<float> exportedValues =
 Python exposes the same operation on `ValuedMorphologicalTree`:
 
 ```python
-layout, values = mmcfilters.Attribute.compute_attributes(
+layout, values = mmcfilters.Attribute.compute(
     tree,
     [mmcfilters.Attribute.AREA, mmcfilters.Attribute.MAX_DIST],
 )
@@ -253,7 +253,7 @@ exported_values = tree.project_node_values_to_exported_higra(
 For a single attribute:
 
 ```python
-area = mmcfilters.Attribute.compute_single_attribute(
+area = mmcfilters.Attribute.compute(
     tree,
     mmcfilters.Attribute.AREA,
 )
@@ -304,11 +304,11 @@ roundtrip = mmcfilters.MorphologicalTreeFactory.create_from_higra_parent(
 )
 
 area_exported = tree.project_node_values_to_exported_higra(
-    mmcfilters.Attribute.compute_single_attribute(tree, mmcfilters.Attribute.AREA),
+    mmcfilters.Attribute.compute(tree, mmcfilters.Attribute.AREA),
     mmcfilters.Attribute.AREA,
 )
 
-area_imported_space = mmcfilters.Attribute.compute_single_attribute(
+area_imported_space = mmcfilters.Attribute.compute(
     roundtrip,
     mmcfilters.Attribute.AREA,
     mmcfilters.NodeIdSpace.HIGRA,

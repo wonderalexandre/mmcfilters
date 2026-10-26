@@ -115,9 +115,9 @@ jobs:
           tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image)
           assert tree.reconstruct_from_node_altitudes().shape == image.shape
           assert hasattr(mmcfilters, "Attribute")
-          area = mmcfilters.Attribute.compute_single_topology_attribute(tree, mmcfilters.Attribute.AREA)
+          area = mmcfilters.Attribute.compute(tree, mmcfilters.Attribute.AREA)
           assert area.shape[0] == tree.num_internal_node_slots
-          names, attrs = mmcfilters.Attribute.compute_attributes(tree, [mmcfilters.Attribute.Group.ALL])
+          names, attrs = mmcfilters.Attribute.compute(tree, [mmcfilters.Attribute.Group.ALL])
           assert "CONTOUR_PIXELS" in names
           assert "CONTOUR_SIDE_SOUTH" in names
           assert attrs.shape[1] == len(names)

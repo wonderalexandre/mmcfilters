@@ -19,6 +19,7 @@ concurrency:
 jobs:
   validate-version:
     name: Validate release version
+    if: github.repository != 'wonderalexandre/mmcfilters-dev'
     runs-on: ubuntu-latest
     outputs:
       package-version: ${{ steps.version.outputs.package-version }}

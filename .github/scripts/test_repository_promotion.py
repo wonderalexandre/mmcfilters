@@ -1,14 +1,18 @@
 """Exercise publication with real local Git repositories and an in-memory GitHub API."""
 
 import copy
+from contextlib import redirect_stdout
+import io
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 from repository_promotion import (
     Git, GitHub, PRIVATE, PUBLIC, PROMOTION_PREFIX, SYNC_BRANCH, PromotionError,
-    command, metadata, promote, promotion_body, synchronize,
+    command, main, metadata, promote, promotion_body, synchronize,
 )
 
 
@@ -372,6 +376,51 @@ class MetadataTests(unittest.TestCase):
                 page = int(parse_qs(urlsplit(path).query)["page"][0])
                 return list(range((page - 1) * 100, min(page * 100, 207)))
         self.assertEqual(PagedGitHub().pages("repos/test/example/pulls"), list(range(207)))
+
+
+class PublicControllerTests(unittest.TestCase):
+    def test_all_dispatches_target_public_actions(self):
+        class RecordingGitHub(GitHub):
+            def __init__(self):
+                self.calls = []
+
+            def api(self, path, method="GET", data=None):
+                self.calls.append((path, method, data))
+
+        github = RecordingGitHub()
+        github.resume_queue()
+        github.request_sync()
+        self.assertEqual(github.calls, [
+            (f"repos/{PUBLIC}/dispatches", "POST", {"event_type": "resume-promotion"}),
+            (f"repos/{PUBLIC}/dispatches", "POST", {"event_type": "sync-private"}),
+        ])
+
+    def test_private_execution_is_rejected_before_accessing_git(self):
+        for mode in ("promote", "sync"):
+            with self.subTest(mode=mode), \
+                    patch.dict(os.environ, {"GITHUB_REPOSITORY": PRIVATE}), \
+                    patch("sys.argv", ["repository_promotion.py", mode]), \
+                    patch("repository_promotion.Git") as git:
+                with self.assertRaisesRegex(PromotionError, "must run in the public"):
+                    main()
+                git.assert_not_called()
+
+    def test_both_operations_execute_from_public(self):
+        for mode, operation in (("promote", "promote"), ("sync", "synchronize")):
+            with self.subTest(mode=mode), \
+                    patch.dict(os.environ, {"GITHUB_REPOSITORY": PUBLIC,
+                                            "GITHUB_STEP_SUMMARY": ""}), \
+                    patch("sys.argv", ["repository_promotion.py", mode]), \
+                    patch("repository_promotion.Git") as git_type, \
+                    patch("repository_promotion.GitHub") as github_type, \
+                    patch("repository_promotion." + operation, return_value="finished") as run, \
+                    redirect_stdout(io.StringIO()):
+                git = git_type.return_value
+                git.text.return_value = ""
+                git.fetch_main.side_effect = ["private-tip", "public-tip"]
+                main()
+                run.assert_called_once_with(git, github_type.return_value,
+                                            "private-tip", "public-tip")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Check the workflow exception and the required aggregate CI result."""
+"""Check public validation, promotion triggers and the aggregate CI result."""
 
 import copy
 import json
@@ -49,55 +49,25 @@ class CiPolicyTests(unittest.TestCase):
     def setUpClass(cls):
         cls.ci = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]
         cls.condition = cls.ci["repository-promotion"]["if"]
-        cls.sync = {
-            "github": {
-                "event_name": "pull_request",
-                "repository": "wonderalexandre/mmcfilters-dev",
-                "event": {
-                    "pull_request": {
-                        "base": {"ref": "main"},
-                        "head": {
-                            "ref": "sync/public-main",
-                            "repo": {"full_name": "wonderalexandre/mmcfilters-dev"},
-                        },
-                        "user": {"login": "mmcfilters-repository-promotion[bot]"},
-                        "changed_files": 0,
-                    }
-                },
-            }
-        }
 
-    def test_only_trusted_content_free_sync_skips_validation(self):
-        self.assertFalse(should_validate(self.condition, self.sync))
-        cases = [
-            ("github.repository", "wonderalexandre/mmcfilters"),
-            ("github.event.pull_request.base.ref", "other-base"),
-            ("github.event.pull_request.head.ref", "feature"),
-            ("github.event.pull_request.head.repo.full_name", "other/fork"),
-            ("github.event.pull_request.user.login", "wonderalexandre"),
-            ("github.event.pull_request.changed_files", 1),
-            ("github.event.pull_request.changed_files", None),
-            ("github.event.pull_request.changed_files", "0"),
-            ("github.event.pull_request.changed_files", False),
-        ]
-        for path, value in cases:
-            with self.subTest(path=path, value=value):
-                context = copy.deepcopy(self.sync)
-                parent, key = path.rsplit(".", 1)
-                lookup(context, parent)[key] = value
-                self.assertTrue(should_validate(self.condition, context))
+    def test_private_validation_never_allocates_runners(self):
+        for event in ("pull_request", "push", "schedule", "workflow_dispatch"):
+            for changed_files in (0, 1, None):
+                with self.subTest(event=event, changed_files=changed_files):
+                    context = {"github": {
+                        "repository": "wonderalexandre/mmcfilters-dev",
+                        "event_name": event,
+                        "event": {"pull_request": {"changed_files": changed_files}},
+                    }}
+                    self.assertFalse(should_validate(self.condition, context))
 
-    def test_missing_changed_files_runs_validation(self):
-        context = copy.deepcopy(self.sync)
-        del context["github"]["event"]["pull_request"]["changed_files"]
-        self.assertTrue(should_validate(self.condition, context))
-
-    def test_non_pr_events_run_validation_without_pr_payload(self):
-        for event in ("push", "schedule", "workflow_dispatch"):
-            with self.subTest(event=event):
-                self.assertTrue(should_validate(
-                    self.condition, {"github": {"event_name": event}}
-                ))
+    def test_public_and_fork_validation_remain_enabled(self):
+        for repository in ("wonderalexandre/mmcfilters", "someone/mmcfilters", None):
+            for event in ("pull_request", "push", "schedule", "workflow_dispatch"):
+                with self.subTest(repository=repository, event=event):
+                    self.assertTrue(should_validate(self.condition, {"github": {
+                        "repository": repository, "event_name": event,
+                    }}))
 
     def test_all_validation_jobs_share_policy_and_feed_result(self):
         gate = self.ci["ci-result"]
@@ -114,6 +84,36 @@ class CiPolicyTests(unittest.TestCase):
                               ("package.yml", "build-distributions")):
             workflow = yaml.safe_load((WORKFLOWS / filename).read_text())
             self.assertEqual(workflow["jobs"][job]["if"], self.condition)
+
+    def test_release_builds_depend_on_the_repository_guard(self):
+        release = yaml.safe_load((WORKFLOWS / "release.yml").read_text())["jobs"]
+        self.assertEqual(release["validate-version"]["if"], self.condition)
+        for name, job in release.items():
+            if name == "validate-version":
+                continue
+            with self.subTest(job=name):
+                needs = job["needs"]
+                self.assertIn("validate-version", [needs] if isinstance(needs, str) else needs)
+                self.assertNotIn("always()", job.get("if", ""))
+
+    def test_promotion_is_polled_and_dispatched_only_in_public(self):
+        promote = yaml.safe_load((WORKFLOWS / "promote-public.yml").read_text())
+        sync = yaml.safe_load((WORKFLOWS / "sync-private.yml").read_text())
+        # PyYAML uses YAML 1.1, where an unquoted "on" key is a boolean.
+        triggers = promote.get("on", promote.get(True))
+        self.assertEqual(set(triggers), {"schedule", "repository_dispatch", "workflow_dispatch"})
+        self.assertEqual(triggers["schedule"], [{"cron": "7,22,37,52 * * * *"}])
+        self.assertEqual(triggers["repository_dispatch"]["types"], ["resume-promotion"])
+        expected = ("github.repository == 'wonderalexandre/mmcfilters' && "
+                    "vars.PROMOTION_ENABLED == 'true'")
+        for workflow, job in ((promote, "promote"), (sync, "synchronize")):
+            self.assertEqual(workflow["jobs"][job]["if"], expected)
+            checkout = next(step for step in workflow["jobs"][job]["steps"]
+                            if step.get("uses", "").startswith("actions/checkout@"))
+            self.assertEqual(checkout["with"]["ref"], "main")
+            self.assertFalse(checkout["with"]["persist-credentials"])
+        self.assertEqual(promote["concurrency"], sync["concurrency"])
+        self.assertFalse(promote["concurrency"]["cancel-in-progress"])
 
     def test_aggregate_result_requires_every_job_to_succeed(self):
         gate = self.ci["ci-result"]

@@ -68,7 +68,7 @@ class GitHub:
         self.api(f"repos/{PUBLIC}/dispatches", "POST", {"event_type": "sync-private"})
 
     def resume_queue(self):
-        self.api(f"repos/{PRIVATE}/dispatches", "POST", {"event_type": "resume-promotion"})
+        self.api(f"repos/{PUBLIC}/dispatches", "POST", {"event_type": "resume-promotion"})
 
 
 class Git:
@@ -303,9 +303,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("promote", "sync"))
     args = parser.parse_args()
-    expected_repo = PRIVATE if args.mode == "promote" else PUBLIC
-    if os.environ.get("GITHUB_REPOSITORY") != expected_repo:
-        raise PromotionError("This operation is restricted to its configured repository.")
+    if os.environ.get("GITHUB_REPOSITORY") != PUBLIC:
+        raise PromotionError("Repository automation must run in the public repository.")
     git, github = Git(), GitHub()
     if git.text("status", "--porcelain", "--untracked-files=no"):
         raise PromotionError("The automation checkout must be clean.")

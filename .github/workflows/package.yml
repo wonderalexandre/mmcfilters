@@ -16,6 +16,14 @@ concurrency:
 jobs:
   build-distributions:
     name: Build Python distributions
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.repository != 'wonderalexandre/mmcfilters-dev' ||
+      github.event.pull_request.base.ref != 'main' ||
+      github.event.pull_request.head.ref != 'sync/public-main' ||
+      github.event.pull_request.head.repo.full_name != github.repository ||
+      github.event.pull_request.user.login != 'mmcfilters-repository-promotion[bot]' ||
+      toJSON(github.event.pull_request.changed_files) != '0'
     runs-on: ubuntu-latest
     timeout-minutes: 45
 

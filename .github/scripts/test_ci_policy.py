@@ -101,13 +101,24 @@ class CiPolicyTests(unittest.TestCase):
         sync = yaml.safe_load((WORKFLOWS / "sync-private.yml").read_text())
         # PyYAML uses YAML 1.1, where an unquoted "on" key is a boolean.
         triggers = promote.get("on", promote.get(True))
-        self.assertEqual(set(triggers), {"schedule", "repository_dispatch", "workflow_dispatch"})
+        self.assertEqual(set(triggers), {"schedule", "repository_dispatch", "workflow_dispatch",
+                                         "pull_request_target"})
         self.assertEqual(triggers["schedule"], [{"cron": "7,22,37,52 * * * *"}])
         self.assertEqual(triggers["repository_dispatch"]["types"], ["resume-promotion"])
+        self.assertEqual(triggers["pull_request_target"], {
+            "types": ["opened", "reopened", "synchronize"], "branches": ["main"],
+        })
         expected = ("github.repository == 'wonderalexandre/mmcfilters' && "
                     "vars.PROMOTION_ENABLED == 'true'")
         for workflow, job in ((promote, "promote"), (sync, "synchronize")):
-            self.assertEqual(workflow["jobs"][job]["if"], expected)
+            condition = " ".join(workflow["jobs"][job]["if"].split())
+            if job == "promote":
+                self.assertEqual(condition, expected + " && "
+                    "(github.event_name != 'pull_request_target' || "
+                    "(github.event.pull_request.head.repo.full_name == github.repository && "
+                    "startsWith(github.event.pull_request.head.ref, 'promotion/private-pr-')))")
+            else:
+                self.assertEqual(condition, expected)
             checkout = next(step for step in workflow["jobs"][job]["steps"]
                             if step.get("uses", "").startswith("actions/checkout@"))
             self.assertEqual(checkout["with"]["ref"], "main")

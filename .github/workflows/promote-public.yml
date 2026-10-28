@@ -1,6 +1,9 @@
 name: Publish approved private PRs
 
 on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+    branches: [main]
   schedule:
     - cron: "7,22,37,52 * * * *"
   repository_dispatch:
@@ -18,7 +21,10 @@ jobs:
   promote:
     if: >-
       github.repository == 'wonderalexandre/mmcfilters' &&
-      vars.PROMOTION_ENABLED == 'true'
+      vars.PROMOTION_ENABLED == 'true' &&
+      (github.event_name != 'pull_request_target' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        startsWith(github.event.pull_request.head.ref, 'promotion/private-pr-')))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -37,6 +43,8 @@ jobs:
           permission-workflows: write
 
       - name: Check out trusted automation
+        # pull_request_target always executes the controller from public main.
+        # Never check out or run code from the event PR with the repository token.
         uses: actions/checkout@v6
         with:
           ref: main

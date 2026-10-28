@@ -58,11 +58,16 @@ class GitHub:
         return rows[0] if rows else None
 
     def auto_merge(self, repo, pull, method):
-        if not pull.get("auto_merge"):
-            command([
-                "gh", "pr", "merge", str(pull["number"]), "--repo", repo,
-                "--auto", "--" + method, "--match-head-commit", pull["head"]["sha"],
-            ])
+        args = ["gh", "pr", "merge", str(pull["number"]), "--repo", repo,
+                "--" + method, "--match-head-commit", pull["head"]["sha"]]
+        if repo == PUBLIC:
+            if pull.get("auto_merge"):
+                return
+            args.append("--auto")
+        elif repo != PRIVATE or pull["head"]["ref"] != SYNC_BRANCH or method != "merge":
+            raise PromotionError("Only the reserved private synchronization PR can merge directly.")
+        # Private returns have no required CI; GitHub rejects --auto when already clean.
+        command(args)
 
     def request_sync(self):
         self.api(f"repos/{PUBLIC}/dispatches", "POST", {"event_type": "sync-private"})

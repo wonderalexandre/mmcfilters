@@ -379,6 +379,39 @@ class MetadataTests(unittest.TestCase):
 
 
 class PublicControllerTests(unittest.TestCase):
+    def test_public_merge_waits_for_checks(self):
+        pull = dict(number=1, head=dict(ref=PROMOTION_PREFIX + "4", sha="a" * 40))
+        with patch("repository_promotion.command") as run:
+            GitHub().auto_merge(PUBLIC, pull, "squash")
+            self.assertEqual(run.call_args.args[0], [
+                "gh", "pr", "merge", "1", "--repo", PUBLIC, "--squash",
+                "--match-head-commit", "a" * 40, "--auto",
+            ])
+            run.reset_mock()
+            pull["auto_merge"] = {"merge_method": "SQUASH"}
+            GitHub().auto_merge(PUBLIC, pull, "squash")
+            run.assert_not_called()
+
+    def test_private_sync_merges_without_enabling_auto_merge(self):
+        pull = dict(number=5, head=dict(ref=SYNC_BRANCH, sha="b" * 40))
+        with patch("repository_promotion.command") as run:
+            GitHub().auto_merge(PRIVATE, pull, "merge")
+            self.assertEqual(run.call_args.args[0], [
+                "gh", "pr", "merge", "5", "--repo", PRIVATE, "--merge",
+                "--match-head-commit", "b" * 40,
+            ])
+
+    def test_direct_merge_is_restricted_to_private_sync(self):
+        for repo, branch, method in ((PRIVATE, "feature", "merge"),
+                                     (PRIVATE, SYNC_BRANCH, "squash"),
+                                     ("other/repository", SYNC_BRANCH, "merge")):
+            with self.subTest(repo=repo, branch=branch, method=method), \
+                    patch("repository_promotion.command") as run:
+                pull = dict(number=1, head=dict(ref=branch, sha="c" * 40))
+                with self.assertRaisesRegex(PromotionError, "Only the reserved"):
+                    GitHub().auto_merge(repo, pull, method)
+                run.assert_not_called()
+
     def test_all_dispatches_target_public_actions(self):
         class RecordingGitHub(GitHub):
             def __init__(self):

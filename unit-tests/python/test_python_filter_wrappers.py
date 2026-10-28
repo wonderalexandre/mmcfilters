@@ -50,6 +50,22 @@ def require_raises(fn, message: str):
     raise RuntimeError(message)
 
 
+def require_type_error(fn, message):
+    try:
+        fn()
+    except TypeError:
+        return
+    raise RuntimeError(message)
+
+
+def require_value_error(fn, message):
+    try:
+        fn()
+    except ValueError:
+        return
+    raise RuntimeError(message)
+
+
 def require_radius_rejected(fn, radius: float, context: str):
     if not np.isfinite(radius):
         expected_reason = "radius must be finite"
@@ -125,35 +141,32 @@ def main() -> int:
     )
 
     keep_all = [True] * valued_tree.num_internal_node_slots
-    keep_all_mask = mmcfilters.NodePreservationMask(keep_all)
-    direct_filter = mmcfilters.DirectAttributeFilter(valued_tree)
-    subtractive_filter = mmcfilters.SubtractiveAttributeFilter(valued_tree)
-    soft_subtractive_filter = mmcfilters.SoftSubtractiveAttributeFilter(valued_tree)
+    keep_all_mask = np.asarray(keep_all, dtype=np.bool_)
     valued_tree_filters = mmcfilters.AttributeFilters(valued_tree)
     require(
-        np.array_equal(direct_filter.apply_direct_attribute_filter(keep_all_mask), valued_tree_reconstruction),
-        "valued_tree DirectAttributeFilter keep-all",
+        np.array_equal(valued_tree_filters.filtering_by_direct_rule(keep_all_mask), valued_tree_reconstruction),
+        "valued_tree direct rule keep-all",
     )
     require(
         np.array_equal(
-            subtractive_filter.apply_subtractive_attribute_filter(keep_all_mask),
+            valued_tree_filters.filtering_by_subtractive_rule(keep_all_mask),
             valued_tree_reconstruction.astype(np.int64),
         ),
-        "valued_tree SubtractiveAttributeFilter keep-all",
+        "valued_tree subtractive rule keep-all",
     )
     require(
         np.array_equal(
-            soft_subtractive_filter.apply_soft_subtractive_attribute_filter(
+            valued_tree_filters.filtering_by_soft_subtractive_rule(
                 np.ones(valued_tree.num_internal_node_slots, dtype=np.float32)
             ),
             valued_tree_reconstruction.astype(np.float32),
         ),
-        "valued_tree SoftSubtractiveAttributeFilter unit scores",
+        "valued_tree soft subtractive rule unit scores",
     )
-    reject_all_mask = mmcfilters.NodePreservationMask([False] * valued_tree.num_internal_node_slots)
+    reject_all_mask = np.asarray([False] * valued_tree.num_internal_node_slots, dtype=np.bool_)
     require(
         np.array_equal(
-            subtractive_filter.apply_subtractive_attribute_filter(reject_all_mask),
+            valued_tree_filters.filtering_by_subtractive_rule(reject_all_mask),
             np.zeros_like(valued_tree_reconstruction, dtype=np.int64),
         ),
         "all-false subtractive mask must produce zero",
@@ -161,7 +174,7 @@ def main() -> int:
     zero_scores = np.zeros(valued_tree.num_internal_node_slots, dtype=np.float64)
     require(
         np.array_equal(
-            soft_subtractive_filter.apply_soft_subtractive_attribute_filter(zero_scores),
+            valued_tree_filters.filtering_by_soft_subtractive_rule(zero_scores),
             np.zeros_like(valued_tree_reconstruction, dtype=np.float64),
         ),
         "all-zero soft subtractive scores must produce zero",
@@ -170,61 +183,61 @@ def main() -> int:
         np.array_equal(valued_tree.reconstruct_from_node_contributions(zero_scores), np.zeros_like(valued_tree_reconstruction, dtype=np.float64)),
         "general zero-baseline node-contribution reconstruction",
     )
-    prune_none_mask = mmcfilters.to_node_pruning_mask(keep_all_mask)
-    require(prune_none_mask.to_list() == [False] * valued_tree.num_internal_node_slots, "explicit preservation-to-pruning conversion")
-    require(mmcfilters.to_node_preservation_mask(prune_none_mask).to_list() == keep_all, "explicit pruning-to-preservation conversion")
-    require(np.array_equal(valued_tree_filters.filtering_by_pruning_min(keep_all_mask), valued_tree_reconstruction), "valued_tree AttributeFilters pruning min keep-all mask")
-    require(np.array_equal(valued_tree_filters.filtering_by_pruning_max(keep_all_mask), valued_tree_reconstruction), "valued_tree AttributeFilters pruning max keep-all mask")
+    prune_none_mask = ~keep_all_mask
+    require(not prune_none_mask.any(), "complement uses pruning polarity")
+    require(np.array_equal(~prune_none_mask, keep_all_mask), "double complement restores preservation decisions")
+    require(np.array_equal(valued_tree_filters.filtering_by_pruning_min_rule(keep_all_mask), valued_tree_reconstruction), "valued_tree AttributeFilters pruning min keep-all mask")
+    require(np.array_equal(valued_tree_filters.filtering_by_pruning_max_rule(keep_all_mask), valued_tree_reconstruction), "valued_tree AttributeFilters pruning max keep-all mask")
     valued_tree_box_height = mmcfilters.Attribute.compute(valued_tree, mmcfilters.Attribute.BOUNDING_BOX_HEIGHT)
     valued_tree_box_height64 = mmcfilters.Attribute.compute(valued_tree, mmcfilters.Attribute.BOUNDING_BOX_HEIGHT, dtype=np.float64)
     require(valued_tree_box_height.dtype == np.float32, "default filter attribute dtype")
     require(valued_tree_box_height64.dtype == np.float64, "float64 filter attribute dtype")
-    require(np.array_equal(valued_tree_filters.filtering_by_pruning_min(valued_tree_box_height, 1.0), valued_tree_reconstruction), "valued_tree AttributeFilters pruning min keep-all attribute")
-    require(np.array_equal(valued_tree_filters.filtering_by_pruning_max(valued_tree_box_height, 1.0), valued_tree_reconstruction), "valued_tree AttributeFilters pruning max keep-all attribute")
-    require(np.array_equal(valued_tree_filters.filtering_by_pruning_min(valued_tree_box_height64, 1.0), valued_tree_reconstruction), "valued_tree AttributeFilters pruning min float64 attribute")
-    require(np.array_equal(valued_tree_filters.filtering_by_pruning_max(valued_tree_box_height64, 1.0), valued_tree_reconstruction), "valued_tree AttributeFilters pruning max float64 attribute")
-    require_raises(lambda: valued_tree_filters.filtering_by_pruning_min(np.array([1.0], dtype=np.float32), 1.0), "valued_tree filtering_by_pruning_min must reject short attribute buffer")
+    require(np.array_equal(valued_tree_filters.filtering_by_pruning_min_rule(attribute=valued_tree_box_height, threshold=1.0), valued_tree_reconstruction), "valued_tree AttributeFilters pruning min keep-all attribute")
+    require(np.array_equal(valued_tree_filters.filtering_by_pruning_max_rule(attribute=valued_tree_box_height, threshold=1.0), valued_tree_reconstruction), "valued_tree AttributeFilters pruning max keep-all attribute")
+    require(np.array_equal(valued_tree_filters.filtering_by_pruning_min_rule(valued_tree_box_height64, 1.0), valued_tree_reconstruction), "valued_tree AttributeFilters pruning min float64 attribute")
+    require(np.array_equal(valued_tree_filters.filtering_by_pruning_max_rule(valued_tree_box_height64, 1.0), valued_tree_reconstruction), "valued_tree AttributeFilters pruning max float64 attribute")
+    require_raises(lambda: valued_tree_filters.filtering_by_pruning_min_rule(np.array([1.0], dtype=np.float32), 1.0), "valued_tree filtering_by_pruning_min_rule must reject short attribute buffer")
     require_raises(
-        lambda: direct_filter.apply_direct_attribute_filter(mmcfilters.NodePreservationMask([True])),
-        "DirectAttributeFilter must reject a short preservation mask",
+        lambda: valued_tree_filters.filtering_by_direct_rule(np.asarray([True], dtype=np.bool_)),
+        "direct rule must reject a short preservation mask",
     )
     require_raises(
-        lambda: subtractive_filter.apply_subtractive_attribute_filter(mmcfilters.NodePreservationMask([True])),
-        "SubtractiveAttributeFilter must reject a short preservation mask",
+        lambda: valued_tree_filters.filtering_by_subtractive_rule(np.asarray([True], dtype=np.bool_)),
+        "subtractive rule must reject a short preservation mask",
     )
     reject_root = keep_all.copy()
     reject_root[valued_tree.root] = False
-    require_raises(
-        lambda: direct_filter.apply_direct_attribute_filter(mmcfilters.NodePreservationMask(reject_root)),
-        "DirectAttributeFilter must reject root suppression",
+    require(
+        np.array_equal(valued_tree_filters.filtering_by_direct_rule(np.asarray(reject_root, dtype=np.bool_)), valued_tree_reconstruction),
+        "direct rule must retain the root altitude when its mask decision is false",
     )
     require_raises(
-        lambda: soft_subtractive_filter.apply_soft_subtractive_attribute_filter(
+        lambda: valued_tree_filters.filtering_by_soft_subtractive_rule(
             np.full(valued_tree.num_internal_node_slots, np.nan, dtype=np.float32)
         ),
-        "SoftSubtractiveAttributeFilter must reject NaN scores",
+        "soft subtractive rule must reject NaN scores",
     )
     require_raises(
-        lambda: soft_subtractive_filter.apply_soft_subtractive_attribute_filter(
+        lambda: valued_tree_filters.filtering_by_soft_subtractive_rule(
             np.full(valued_tree.num_internal_node_slots, -0.01, dtype=np.float32)
         ),
-        "SoftSubtractiveAttributeFilter must reject scores below zero",
+        "soft subtractive rule must reject scores below zero",
     )
     require_raises(
-        lambda: soft_subtractive_filter.apply_soft_subtractive_attribute_filter(
+        lambda: valued_tree_filters.filtering_by_soft_subtractive_rule(
             np.full(valued_tree.num_internal_node_slots, 1.01, dtype=np.float64)
         ),
-        "SoftSubtractiveAttributeFilter must reject scores above one",
+        "soft subtractive rule must reject scores above one",
     )
     for dtype in (np.float32, np.float64):
-        require_raises(lambda: soft_subtractive_filter.apply(np.ones(1, dtype=dtype)),
+        require_raises(lambda: valued_tree_filters.filtering_by_soft_subtractive_rule(np.ones(1, dtype=dtype)),
                        "Soft reconstruction rejects a short score buffer")
         for invalid in (np.nan, np.inf, -np.inf):
             contributions = np.zeros(valued_tree.num_internal_node_slots, dtype=dtype)
             contributions[valued_tree.root] = invalid
             require_raises(lambda: valued_tree.reconstruct_from_node_contributions(contributions),
                            "Public reconstruction rejects non-finite external contributions")
-    valued_tree_all_preserved = mmcfilters.NodePreservationMask(keep_all)
+    valued_tree_all_preserved = np.asarray(keep_all, dtype=np.bool_)
     altitude_adjusted = mmcfilters.adjust_node_preservation_mask_by_altitude_stability(
         valued_tree,
         valued_tree_all_preserved,
@@ -237,11 +250,11 @@ def main() -> int:
         2,
         mmcfilters.IncompleteStabilityWindowPolicy.PRESERVE_INPUT_DECISION,
     )
-    require(altitude_adjusted.to_list() == keep_all, "altitude stability preserves an all-preserved input mask")
-    require(depth_adjusted.to_list() == keep_all, "depth stability preserves an all-preserved input mask")
-    threshold_mask = mmcfilters.compute_node_preservation_mask(valued_tree_box_height, 1.0)
-    require(isinstance(threshold_mask, mmcfilters.NodePreservationMask), "thresholding returns NodePreservationMask")
-    require(threshold_mask.to_list() == keep_all, "thresholding uses preservation polarity")
+    require(altitude_adjusted.tolist() == keep_all, "altitude stability preserves an all-preserved input mask")
+    require(depth_adjusted.tolist() == keep_all, "depth stability preserves an all-preserved input mask")
+    threshold_mask = (valued_tree_box_height >= 1.0)
+    require(isinstance(threshold_mask, np.ndarray) and threshold_mask.dtype == np.bool_, "thresholding returns a Boolean NumPy array")
+    require(threshold_mask.tolist() == keep_all, "thresholding uses preservation polarity")
 
     viterbi_chain = mmcfilters.MorphologicalTreeFactory.create_from_higra_parent(
         [1, 2, 3, 3],
@@ -255,7 +268,7 @@ def main() -> int:
     chain_remove_attr = np.array([1.1, 0.0, 2.0], dtype=np.float32)
     chain_preserve_attr = np.array([10.0, 0.9, 2.0], dtype=np.float64)
     require(
-        np.array_equal(viterbi_chain_filters.filtering_by_viterbi_rule(chain_remove_attr, 1.0), np.array([[0]], dtype=np.uint8)),
+        np.array_equal(viterbi_chain_filters.filtering_by_viterbi_rule(attribute=chain_remove_attr, threshold=1.0), np.array([[0]], dtype=np.uint8)),
         "Python AttributeFilters Viterbi chain remove",
     )
     require(
@@ -293,22 +306,22 @@ def main() -> int:
     keep_all_policy = mmcfilters.ExtinctionSelectionPolicy.by_top_k(1024)
     keep_one_policy = mmcfilters.ExtinctionSelectionPolicy.by_top_k(1)
     rank_contours = mmcfilters.ExtinctionContourScorePolicy.RANK_SCORE
-    require(np.array_equal(valued_tree_filters.filtering_by_extinction(valued_tree_gray_level_height, keep_all_policy), valued_tree_reconstruction), "valued_tree AttributeFilters extinction filtering keep-all")
-    require(np.array_equal(valued_tree_filters.filtering_by_extinction(valued_tree_gray_level_height64, keep_all_policy), valued_tree_reconstruction), "valued_tree AttributeFilters extinction filtering float64")
-    require(valued_tree_filters.contour_map_by_extinction(valued_tree_gray_level_height, keep_all_policy, rank_contours).shape == (4, 4), "valued_tree AttributeFilters extinction contour shape")
+    require(np.array_equal(valued_tree_filters.filtering_by_extinction_rule(attribute=valued_tree_gray_level_height, selection=keep_all_policy), valued_tree_reconstruction), "valued_tree AttributeFilters extinction filtering keep-all")
+    require(np.array_equal(valued_tree_filters.filtering_by_extinction_rule(valued_tree_gray_level_height64, keep_all_policy), valued_tree_reconstruction), "valued_tree AttributeFilters extinction filtering float64")
+    require(valued_tree_filters.contour_map_by_extinction(attribute=valued_tree_gray_level_height, selection=keep_all_policy, score_policy=rank_contours).shape == (4, 4), "valued_tree AttributeFilters extinction contour shape")
     saliency64 = valued_tree_filters.contour_map_by_extinction(valued_tree_gray_level_height64, keep_all_policy, rank_contours)
     require(saliency64.shape == (4, 4), "valued_tree AttributeFilters extinction float64 saliency shape")
     require(saliency64.dtype == np.float64, "valued_tree AttributeFilters extinction float64 saliency dtype")
-    require_raises(lambda: valued_tree_filters.filtering_by_extinction(np.array([1.0], dtype=np.float32), keep_one_policy), "valued_tree filtering_by_extinction must reject short attribute buffer")
+    require_raises(lambda: valued_tree_filters.filtering_by_extinction_rule(np.array([1.0], dtype=np.float32), keep_one_policy), "valued_tree filtering_by_extinction_rule must reject short attribute buffer")
     require_raises(lambda: valued_tree_filters.contour_map_by_extinction(np.array([1.0], dtype=np.float32), keep_one_policy, rank_contours), "valued_tree contour_map_by_extinction must reject short attribute buffer")
-    require_raises(lambda: valued_tree_filters.filtering_by_extinction(valued_tree_gray_level_height, mmcfilters.ExtinctionSelectionPolicy.by_top_k(-1)), "valued_tree filtering_by_extinction must reject negative keep count")
+    require_raises(lambda: valued_tree_filters.filtering_by_extinction_rule(valued_tree_gray_level_height, mmcfilters.ExtinctionSelectionPolicy.by_top_k(-1)), "valued_tree filtering_by_extinction_rule must reject negative keep count")
     require_raises(lambda: valued_tree_filters.contour_map_by_extinction(valued_tree_gray_level_height, mmcfilters.ExtinctionSelectionPolicy.by_top_k(-1), rank_contours), "valued_tree contour_map_by_extinction must reject negative keep count")
     require(
         not hasattr(mmcfilters, "AttributeOpeningPrimitivesFamily"),
         "AttributeOpeningPrimitivesFamily must not be exported in the Python API",
     )
 
-    valued_tree_uao = mmcfilters.UltimateAttributeOpening(valued_tree, valued_tree_box_height)
+    valued_tree_uao = mmcfilters.UltimateAttributeOpening(valued_tree, attribute=valued_tree_box_height)
     valued_tree_uao64 = mmcfilters.UltimateAttributeOpening(valued_tree, valued_tree_box_height64)
     valued_tree_uao.execute(int(valued_tree.num_rows))
     valued_tree_uao64.execute(float(valued_tree.num_rows))
@@ -331,14 +344,14 @@ def main() -> int:
     tos_keep_all = [True] * tos.num_internal_node_slots
     tos_depth_adjusted = mmcfilters.adjust_node_preservation_mask_by_depth_stability(
         tos,
-        mmcfilters.NodePreservationMask(tos_keep_all),
+        np.asarray(tos_keep_all, dtype=np.bool_),
         1,
     )
-    require(tos_depth_adjusted.to_list() == tos_keep_all, "ToS depth stability preserves an all-preserved input mask")
+    require(tos_depth_adjusted.tolist() == tos_keep_all, "ToS depth stability preserves an all-preserved input mask")
     require_raises(
         lambda: mmcfilters.adjust_node_preservation_mask_by_altitude_stability(
             tos,
-            mmcfilters.NodePreservationMask(tos_keep_all),
+            np.asarray(tos_keep_all, dtype=np.bool_),
             1,
         ),
         "ToS altitude stability must reject unconstrained altitude order",
@@ -380,7 +393,7 @@ def main() -> int:
     depth_computer64.compute_by_depth(1)
     require(depth_computer64.get_variations().dtype == np.float64, "DepthStableRegionComputer float64 variation dtype")
     require_raises(lambda: mmcfilters.ExtinctionValues(tos, tos_area), "ToS ExtinctionValues must be rejected")
-    require_raises(lambda: tos_filters.filtering_by_extinction(tos_area, keep_one_policy), "ToS AttributeFilters extinction filtering must be rejected")
+    require_raises(lambda: tos_filters.filtering_by_extinction_rule(tos_area, keep_one_policy), "ToS AttributeFilters extinction filtering must be rejected")
     tos_uao = mmcfilters.UltimateAttributeOpening(tos, tos_area)
     require_raises(lambda: tos_uao.execute_with_mser(int(tos.num_rows), 1), "ToS UltimateAttributeOpening must reject altitude MSER")
     tos_uao.execute_with_depth_stability(int(tos.num_rows), 1)
@@ -414,7 +427,7 @@ def main() -> int:
         "valued_tree ExtinctionValues threshold at dominant extinction keeps strongest extremum",
     )
     require(
-        np.array_equal(valued_tree_filters.filtering_by_extinction(valued_tree_gray_level_height, dominant_policy), valued_tree_extinction.filtering(keep_one_policy)),
+        np.array_equal(valued_tree_filters.filtering_by_extinction_rule(valued_tree_gray_level_height, dominant_policy), valued_tree_extinction.filtering(keep_one_policy)),
         "valued_tree AttributeFilters threshold extinction filtering",
     )
     require(valued_tree_extinction.contour_map(keep_all_policy, rank_contours).shape == (4, 4), "valued_tree ExtinctionValues contour shape")
@@ -434,13 +447,13 @@ def main() -> int:
     formal_extinction_map = valued_tree_extinction.compute_formal_saliency_edge_map(ranked=True)
     monotone_extinction_map = valued_tree_extinction.compute_monotone_extinction_projection(ranked=True)
     direct_extinction_map = mmcfilters.HierarchySaliencyMap.compute_canonical_ranked_saliency_edge_map(valued_tree, extinction_attribute)
-    require(np.array_equal(monotone_extinction_map["sources"], direct_extinction_map["sources"]), "valued_tree monotone extinction projection sources")
-    require(np.array_equal(monotone_extinction_map["targets"], direct_extinction_map["targets"]), "valued_tree monotone extinction projection targets")
-    require(np.array_equal(monotone_extinction_map["values"], direct_extinction_map["values"]), "valued_tree monotone extinction projection values")
-    require(np.all(formal_extinction_map["values"] >= 0), "valued_tree persistence saliency ranks are non-negative")
+    require(np.array_equal(monotone_extinction_map.sources, direct_extinction_map.sources), "valued_tree monotone extinction projection sources")
+    require(np.array_equal(monotone_extinction_map.targets, direct_extinction_map.targets), "valued_tree monotone extinction projection targets")
+    require(np.array_equal(monotone_extinction_map.values, direct_extinction_map.values), "valued_tree monotone extinction projection values")
+    require(np.all(formal_extinction_map.values >= 0), "valued_tree persistence saliency ranks are non-negative")
     formal_extinction64_map = valued_tree_extinction64.compute_formal_saliency_edge_map(radius=1.5)
-    require(formal_extinction64_map["values"].dtype == np.float64, "valued_tree formal extinction saliency float64 dtype")
-    require(abs(formal_extinction64_map["adjacency_radius"] - 1.5) < 1e-12, "valued_tree formal extinction explicit radius")
+    require(formal_extinction64_map.values.dtype == np.float64, "valued_tree formal extinction saliency float64 dtype")
+    require(abs(formal_extinction64_map.adjacency_radius - 1.5) < 1e-12, "valued_tree formal extinction explicit radius")
     for radius in invalid_radii:
         require_radius_rejected(
             lambda invalid_radius: valued_tree_extinction.compute_formal_saliency_edge_map(
@@ -460,34 +473,45 @@ def main() -> int:
         )
     require_raises(lambda: valued_tree_extinction.filtering(mmcfilters.ExtinctionSelectionPolicy.by_top_k(-1)), "valued_tree ExtinctionValues filtering must reject negative keep count")
     require_raises(lambda: valued_tree_extinction.filtering(mmcfilters.ExtinctionSelectionPolicy.by_threshold(np.nan)), "valued_tree ExtinctionValues threshold filtering must reject NaN")
-    require_raises(lambda: valued_tree_filters.filtering_by_extinction(valued_tree_gray_level_height, mmcfilters.ExtinctionSelectionPolicy.by_threshold(np.nan)), "valued_tree AttributeFilters threshold extinction filtering must reject NaN")
+    require_raises(lambda: valued_tree_filters.filtering_by_extinction_rule(valued_tree_gray_level_height, mmcfilters.ExtinctionSelectionPolicy.by_threshold(np.nan)), "valued_tree AttributeFilters threshold extinction filtering must reject NaN")
     require_raises(lambda: valued_tree_extinction.contour_map(mmcfilters.ExtinctionSelectionPolicy.by_top_k(-1), rank_contours), "valued_tree ExtinctionValues contour must reject negative keep count")
     require_raises(
         lambda: mmcfilters.ExtinctionValues(valued_tree, np.array([1.0], dtype=np.float32)),
         "valued_tree ExtinctionValues must reject short attribute buffer",
     )
     require_raises(
-        lambda: valued_tree_filters.filtering_by_extinction(np.array([1.0], dtype=np.float32), dominant_policy),
+        lambda: valued_tree_filters.filtering_by_extinction_rule(np.array([1.0], dtype=np.float32), dominant_policy),
         "valued_tree AttributeFilters threshold extinction filtering must reject short attribute buffer",
     )
 
     stale_valued_tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image)
     stale_keep_all = [True] * stale_valued_tree.num_internal_node_slots
     stale_attribute = mmcfilters.Attribute.compute(stale_valued_tree, mmcfilters.Attribute.GRAY_LEVEL_HEIGHT)
-    stale_filter = mmcfilters.DirectAttributeFilter(stale_valued_tree)
-    stale_subtractive = mmcfilters.SubtractiveAttributeFilter(stale_valued_tree)
-    stale_soft = mmcfilters.SoftSubtractiveAttributeFilter(stale_valued_tree)
+    stale_filter = mmcfilters.AttributeFilters(stale_valued_tree)
     stale_extinction = mmcfilters.ExtinctionValues(stale_valued_tree, stale_attribute)
     stale_uao = mmcfilters.UltimateAttributeOpening(stale_valued_tree, stale_attribute)
     stale_valued_tree.merge_node_into_parent(4)
     require_raises(
-        lambda: stale_filter.apply_direct_attribute_filter(mmcfilters.NodePreservationMask(stale_keep_all)),
-        "DirectAttributeFilter must reject use after topology mutation",
+        lambda: stale_filter.filtering_by_direct_rule(np.asarray(stale_keep_all, dtype=np.bool_)),
+        "direct rule must reject use after topology mutation",
     )
-    require_raises(lambda: stale_subtractive.apply(mmcfilters.NodePreservationMask(stale_keep_all)),
-                   "SubtractiveAttributeFilter must reject use after topology mutation")
-    require_raises(lambda: stale_soft.apply(np.ones(len(stale_keep_all), dtype=np.float32)),
-                   "SoftSubtractiveAttributeFilter must reject use after topology mutation")
+    require_raises(lambda: stale_filter.filtering_by_subtractive_rule(np.asarray(stale_keep_all, dtype=np.bool_)),
+                   "subtractive rule must reject use after topology mutation")
+    require_raises(lambda: stale_filter.filtering_by_soft_subtractive_rule(np.ones(len(stale_keep_all), dtype=np.float32)),
+                   "soft subtractive rule must reject use after topology mutation")
+    for operation in (
+        lambda: stale_filter.filtering_by_pruning_min_rule(np.asarray(stale_keep_all, dtype=np.bool_)),
+        lambda: stale_filter.filtering_by_pruning_max_rule(stale_attribute, 1.0),
+        lambda: stale_filter.filtering_by_viterbi_rule(stale_attribute, 1.0),
+        lambda: stale_filter.filtering_by_extinction_rule(stale_attribute, keep_all_policy),
+        lambda: stale_filter.contour_map_by_extinction(stale_attribute, keep_all_policy, rank_contours),
+    ):
+        try:
+            operation()
+        except RuntimeError:
+            pass
+        else:
+            raise RuntimeError("Every AttributeFilters operation must reject a stale topology snapshot")
     require_raises(lambda: stale_extinction.filtering(keep_all_policy), "ExtinctionValues must reject filtering after topology mutation")
     require_raises(lambda: stale_extinction.contour_map(keep_all_policy, rank_contours), "ExtinctionValues must reject contour after topology mutation")
     require_raises(lambda: stale_extinction.get_extinction_value_attribute(), "ExtinctionValues must reject extinction attribute after topology mutation")
@@ -568,93 +592,153 @@ def main() -> int:
     require(adjust.min_tree.reconstruct_from_node_altitudes().shape == image.shape, "adjust min_tree property after min prune")
     require(adjust.max_tree.reconstruct_from_node_altitudes().shape == image.shape, "adjust max_tree property after min prune")
 
-    # Concise filter call forms. Passing the attribute itself must reproduce the
-    # buffer the caller would have computed, including the valued versus
-    # topology entry point implied by the attribute.
+    # Attribute calculation is explicit. Filter methods and constructors reject
+    # names and enums instead of recomputing attributes internally.
     concise_tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image, radius=1.5)
     concise_filters = mmcfilters.AttributeFilters(concise_tree)
     topology_area = mmcfilters.Attribute.compute(concise_tree, "AREA", dtype=np.float64)
-    valued_volume = mmcfilters.Attribute.compute(concise_tree, "VOLUME", dtype=np.float64)
-
-    for name, buffer in (("AREA", topology_area), ("VOLUME", valued_volume)):
-        require(
-            np.array_equal(
-                concise_filters.filtering_by_pruning_min(name, 2.0),
-                concise_filters.filtering_by_pruning_min(buffer, 2.0),
-            ),
-            f"pruning-min by attribute name must match the buffer form for {name}",
-        )
-    require(
-        np.array_equal(
-            concise_filters.filtering_by_pruning_min(mmcfilters.Attribute.AREA, 2.0),
-            concise_filters.filtering_by_pruning_min(topology_area, 2.0),
-        ),
-        "pruning-min by Attribute value must match the buffer form",
-    )
-    require(
-        np.array_equal(
-            concise_filters.filtering_by_pruning_max("AREA", 2.0),
-            concise_filters.filtering_by_pruning_max(topology_area, 2.0),
-        ),
-        "pruning-max by attribute name must match the buffer form",
-    )
-    require(
-        np.array_equal(
-            concise_filters.filtering_by_viterbi_rule("AREA", 2.0),
-            concise_filters.filtering_by_viterbi_rule(topology_area, 2.0),
-        ),
-        "viterbi filtering by attribute name must match the buffer form",
-    )
     selection = mmcfilters.ExtinctionSelectionPolicy.by_top_k(2)
-    require(
-        np.array_equal(
-            concise_filters.filtering_by_extinction("AREA", selection),
-            concise_filters.filtering_by_extinction(topology_area, selection),
-        ),
-        "extinction filtering by attribute name must match the buffer form",
-    )
+    for request in ("AREA", mmcfilters.Attribute.AREA):
+        for method in (
+            concise_filters.filtering_by_pruning_min_rule,
+            concise_filters.filtering_by_pruning_max_rule,
+            concise_filters.filtering_by_viterbi_rule,
+        ):
+            require_type_error(lambda: method(request, 2.0), "filters require explicit attribute arrays")
+        require_type_error(lambda: concise_filters.filtering_by_extinction_rule(request, selection),
+                           "extinction filter requires an explicit attribute array")
+        require_type_error(lambda: concise_filters.contour_map_by_extinction(request, selection, rank_contours),
+                           "extinction contours require an explicit attribute array")
+        for constructor in (mmcfilters.ExtinctionValues, mmcfilters.UltimateAttributeOpening,
+                            mmcfilters.DepthStableRegionComputer):
+            require_type_error(lambda: constructor(concise_tree, request), "constructors reject implicit attribute computation")
 
-    # The buffer and mask forms must keep working unchanged.
-    require(
-        concise_filters.filtering_by_pruning_min(
-            mmcfilters.Attribute.compute(concise_tree, "AREA", dtype=np.float32), 2.0
-        ).shape
-        == image.shape,
-        "float32 attribute buffers must still be accepted",
-    )
-    require(
-        concise_filters.filtering_by_pruning_min(mmcfilters.compute_node_preservation_mask(topology_area, 2.0)).shape == image.shape,
-        "explicit preservation masks must still be accepted",
-    )
+    # The direct rule anchors the image at the root altitude without changing
+    # the Boolean criterion, including for read-only masks and singleton trees.
+    for factory in (mmcfilters.MorphologicalTreeFactory.create_max_tree,
+                    mmcfilters.MorphologicalTreeFactory.create_min_tree,
+                    mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes):
+        for root_image in (np.array([[2, 7], [4, 3]], dtype=np.uint8), np.array([[7]], dtype=np.uint8)):
+            root_tree = factory(root_image)
+            root_filter = mmcfilters.AttributeFilters(root_tree)
+            root_level = root_tree.node_altitude(root_tree.root)
+            all_false = np.zeros(root_tree.num_internal_node_slots, dtype=np.bool_)
+            all_false.flags.writeable = False
+            require(np.array_equal(root_filter.filtering_by_direct_rule(all_false), np.full(root_image.shape, root_level)),
+                    "all-false direct masks reconstruct the root level")
+            require(not all_false.any(), "direct reconstruction must not force the root decision in the input array")
+            mixed = np.arange(root_tree.num_internal_node_slots) % 2 == 0
+            mixed[root_tree.root] = False
+            original = mixed.copy()
+            mixed.flags.writeable = False
+            preserved_root = mixed.copy()
+            preserved_root[root_tree.root] = True
+            require(np.array_equal(root_filter.filtering_by_direct_rule(mixed), root_filter.filtering_by_direct_rule(preserved_root)),
+                    "mixed direct masks must ignore only the root decision")
+            require(np.array_equal(mixed, original), "read-only mixed decisions must remain unchanged")
+            require(np.array_equal(root_filter.filtering_by_subtractive_rule(all_false), np.zeros(root_image.shape)),
+                    "subtractive masks must still gate the root residue")
+            for dtype in (np.float32, np.float64):
+                soft = root_filter.filtering_by_soft_subtractive_rule(mixed.astype(dtype))
+                hard = root_filter.filtering_by_subtractive_rule(mixed)
+                require(soft.dtype == dtype and np.array_equal(soft, hard),
+                        "binary soft scores must match the subtractive rule for every tree family and score dtype")
 
-    # Constructors accept the attribute as well.
-    named_extinction = mmcfilters.ExtinctionValues(concise_tree, "AREA")
-    buffered_extinction = mmcfilters.ExtinctionValues(concise_tree, topology_area)
-    require(
-        np.array_equal(named_extinction.get_extinction_value_attribute(), buffered_extinction.get_extinction_value_attribute()),
-        "ExtinctionValues by attribute name must match the buffer form",
-    )
-    named_uao = mmcfilters.UltimateAttributeOpening(concise_tree, "AREA")
-    buffered_uao = mmcfilters.UltimateAttributeOpening(concise_tree, topology_area)
-    named_uao.execute(3.0)
-    buffered_uao.execute(3.0)
-    require(
-        np.array_equal(named_uao.get_max_contrast_image(), buffered_uao.get_max_contrast_image()),
-        "UltimateAttributeOpening by attribute name must match the buffer form",
-    )
+    # NumPy masks use the inclusive threshold rule on max-trees, min-trees,
+    # and trees of shapes, for both supported attribute dtypes.
+    for factory in (mmcfilters.MorphologicalTreeFactory.create_max_tree,
+                    mmcfilters.MorphologicalTreeFactory.create_min_tree,
+                    mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes):
+        mask_tree = factory(image)
+        mask_filters = mmcfilters.AttributeFilters(mask_tree)
+        for dtype in (np.float32, np.float64):
+            area = mmcfilters.Attribute.compute(mask_tree, "AREA", dtype=dtype)
+            for threshold in (1.0, 2.0, 5.0, float(area.max()) + 1):
+                mask = area >= threshold
+                original = mask.copy()
+                mask.flags.writeable = False
+                for method in (mask_filters.filtering_by_pruning_min_rule, mask_filters.filtering_by_pruning_max_rule):
+                    require(np.array_equal(method(mask), method(area, threshold)),
+                            "Boolean masks and threshold buffers must produce identical pruning results")
+                require(np.array_equal(mask, original), "filters must not modify the borrowed input mask")
 
-    # The reconstruction filters expose a short apply alias.
-    preservation = mmcfilters.compute_node_preservation_mask(topology_area, 2.0)
-    for filter_type, explicit in (
-        (mmcfilters.DirectAttributeFilter, "apply_direct_attribute_filter"),
-        (mmcfilters.SubtractiveAttributeFilter, "apply_subtractive_attribute_filter"),
-    ):
-        instance = filter_type(concise_tree)
-        require(
-            np.array_equal(instance.apply(preservation), getattr(instance, explicit)(preservation)),
-            f"{filter_type.__name__}.apply must match {explicit}",
-        )
+    # All mask consumers validate dtype, rank, contiguity, and dense slot count.
+    n = concise_tree.num_internal_node_slots
+    consumers = (
+        concise_filters.filtering_by_direct_rule,
+        concise_filters.filtering_by_subtractive_rule,
+        concise_filters.filtering_by_pruning_min_rule,
+        concise_filters.filtering_by_pruning_max_rule,
+        lambda mask: mmcfilters.adjust_node_preservation_mask_by_altitude_stability(concise_tree, mask, 1),
+        lambda mask: mmcfilters.adjust_node_preservation_mask_by_depth_stability(concise_tree, mask, 1),
+    )
+    for consumer in consumers:
+        for invalid in (np.ones(n, dtype=np.uint8), np.ones(n, dtype=np.float32),
+                        np.ones((n, 1), dtype=np.bool_), np.array(True),
+                        np.ones(n + 1, dtype=np.bool_), np.ones(n - 1, dtype=np.bool_),
+                        np.ones(2 * n, dtype=np.bool_)[::2], np.ones(n, dtype=np.bool_)[::-1]):
+            require_value_error(lambda: consumer(invalid), "invalid preservation arrays must be rejected")
+        for invalid in ([True] * n, None):
+            require_type_error(lambda: consumer(invalid), "mask consumers require NumPy arrays without implicit conversion")
+        readonly = np.ones(n + 2, dtype=np.bool_)[1:-1]
+        readonly.flags.writeable = False
+        consumer(readonly)
+        noncanonical = np.full(n, 2, dtype=np.uint8).view(np.bool_)
+        require(np.array_equal(consumer(noncanonical), consumer(np.ones(n, dtype=np.bool_))),
+                "nonzero NumPy Boolean storage bytes must all mean preserve")
+
+    # Stability returns independently owned Boolean arrays that can go straight
+    # into reconstruction, without wrapper types or conversions.
+    preservation = topology_area >= 2.0
+    for adjust in (mmcfilters.adjust_node_preservation_mask_by_altitude_stability,
+                   mmcfilters.adjust_node_preservation_mask_by_depth_stability):
+        adjusted = adjust(concise_tree, preservation, 1)
+        require(adjusted.dtype == np.bool_ and adjusted.shape == preservation.shape,
+                "stability returns dense Boolean arrays")
+        require(adjusted.flags.c_contiguous and not np.shares_memory(adjusted, preservation),
+                "stability results own independent contiguous storage")
+        require(concise_filters.filtering_by_pruning_min_rule(adjusted).shape == image.shape,
+                "stability masks can be used directly by filters")
+
+    # Dead slots remain part of the buffer layout, but cannot affect an image.
+    edited_tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image)
+    edited_tree.merge_node_into_parent(4)
+    edited_filters = mmcfilters.AttributeFilters(edited_tree)
+    mask = np.ones(edited_tree.num_internal_node_slots, dtype=np.bool_)
+    mask_with_dead_rejected = mask.copy()
+    alive = np.zeros_like(mask)
+    alive[edited_tree.alive_node_ids] = True
+    require(not alive.all(), "edited fixture must contain dead slots")
+    mask_with_dead_rejected[~alive] = False
+    for method in (edited_filters.filtering_by_pruning_min_rule, edited_filters.filtering_by_pruning_max_rule,
+                   edited_filters.filtering_by_direct_rule,
+                   edited_filters.filtering_by_subtractive_rule):
+        require(np.array_equal(method(mask), method(mask_with_dead_rejected)), "dead-slot decisions do not change reconstruction")
+        require_value_error(lambda: method(mask[alive]), "compact live-node masks cannot replace dense slot arrays")
+
     require(not hasattr(mmcfilters, "HardSubtractiveAttributeFilter"), "the renamed filter must not keep its former name")
+
+    # One retained tree owner serves all rules, even after the Python tree
+    # variable is released. Alternating rules must not retain prior decisions.
+    owner_tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image)
+    owner_area = mmcfilters.Attribute.compute(owner_tree, "AREA")
+    owned_filters = mmcfilters.AttributeFilters(owner_tree)
+    owner_mask = np.ones(owner_tree.num_internal_node_slots, dtype=np.bool_)
+    owner_scores = owner_mask.astype(np.float64)
+    del owner_tree
+    gc.collect()
+    for result in (
+        owned_filters.filtering_by_direct_rule(owner_mask),
+        owned_filters.filtering_by_subtractive_rule(owner_mask),
+        owned_filters.filtering_by_soft_subtractive_rule(owner_scores),
+        owned_filters.filtering_by_pruning_min_rule(owner_mask),
+        owned_filters.filtering_by_pruning_max_rule(owner_area, 0.0),
+        owned_filters.filtering_by_viterbi_rule(owner_area, 0.0),
+        owned_filters.filtering_by_extinction_rule(owner_area, keep_all_policy),
+    ):
+        require(np.array_equal(result, image), "One AttributeFilters object must preserve the owner and serve every rule")
+    require(owned_filters.filtering_by_soft_subtractive_rule(owner_scores).dtype == np.float64,
+            "the soft rule must preserve the score dtype")
 
     print("python filter wrappers ok")
     return 0

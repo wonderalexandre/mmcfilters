@@ -41,6 +41,12 @@ def safe_static_attribute(owner: object, name: str) -> object:
         return object()
 
 
+def has_attr_parameter(name: str, value: object) -> bool:
+    """Check binding signatures without matching parameter names in prose."""
+    signature = re.compile(rf"^(?:\d+\.\s+)?{re.escape(name)}\(.*\battr\s*:", re.MULTILINE)
+    return signature.search(inspect.getdoc(value) or "") is not None
+
+
 def collect_nonconforming(module: types.ModuleType) -> set[str]:
     failures: set[str] = set()
     exported = getattr(module, "__all__", [name for name in dir(module) if is_public(name)])
@@ -51,13 +57,17 @@ def collect_nonconforming(module: types.ModuleType) -> set[str]:
         if not module_name_conforms(name, value):
             failures.add(name)
         if not isinstance(value, type):
+            if has_attr_parameter(name, value):
+                failures.add(f"{name}(attr)")
             continue
         for member in dir(value):
-            if not is_public(member):
+            if not is_public(member) and member != "__init__":
                 continue
             member_value = safe_static_attribute(value, member)
-            if not member_name_conforms(member, member_value):
+            if is_public(member) and not member_name_conforms(member, member_value):
                 failures.add(f"{name}.{member}")
+            if has_attr_parameter(member, member_value):
+                failures.add(f"{name}.{member}(attr)")
     return failures
 
 

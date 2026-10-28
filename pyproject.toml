@@ -92,6 +92,7 @@ exclude = [
   "/dat/**",
   "/dist/**",
   "/docs/refactoring/**",
+  "/docs/guides_to_be_validated/**",
   "/notebooks/**",
   "/python/mmcfilters/__pycache__/**",
   "/python/mmcfilters/**/*.py[cod]",

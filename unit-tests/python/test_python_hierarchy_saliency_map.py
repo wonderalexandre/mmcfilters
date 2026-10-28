@@ -71,7 +71,7 @@ def require_radius_rejected(fn, radius: float, context: str):
 
 
 def qfz_labels(edge_map, threshold):
-    num_vertices = edge_map["num_rows"] * edge_map["num_columns"]
+    num_vertices = edge_map.num_rows * edge_map.num_columns
     parent = list(range(num_vertices))
 
     def find_root(node):
@@ -84,7 +84,7 @@ def qfz_labels(edge_map, threshold):
             node = nxt
         return root
 
-    for source, target, value in zip(edge_map["sources"], edge_map["targets"], edge_map["values"]):
+    for source, target, value in zip(edge_map.sources, edge_map.targets, edge_map.values):
         if value < threshold:
             source_root = find_root(int(source))
             target_root = find_root(int(target))
@@ -120,12 +120,167 @@ def make_three_pixel_min_tree(mmcfilters):
     )
 
 
+def check_edge_result_storage(mmcfilters):
+    import gc
+
+    tree = make_three_pixel_tree(mmcfilters, mmcfilters.MorphologicalTreeKind.MAX_TREE)
+    maps = (
+        mmcfilters.HierarchySaliencyMap.compute_topological_level_edge_map(tree),
+        mmcfilters.HierarchySaliencyMap.compute_saliency_edge_map(
+            tree, np.array([10, 20, 30], dtype=np.float32)),
+        mmcfilters.HierarchySaliencyMap.compute_normalized_altitude_edge_map(tree),
+    )
+    snapshots = []
+    for edge_map, dtype in zip(maps, (np.int32, np.float32, np.float64)):
+        require(isinstance(edge_map, mmcfilters.EdgeMap), "saliency producers return EdgeMap")
+        require(edge_map.values.dtype == dtype, "EdgeMap retains the native numeric dtype")
+        require(len(edge_map) == 2, "EdgeMap length counts graph edges")
+        arrays = (edge_map.sources, edge_map.targets, edge_map.values)
+        for name, values in zip(("sources", "targets", "values"), arrays):
+            require(values.ndim == 1 and values.flags.c_contiguous, "edge buffers are contiguous 1D arrays")
+            require(not values.flags.writeable and values.base is edge_map, "edge buffers retain their immutable owner")
+            require(np.shares_memory(values, getattr(edge_map, name)), "repeated queries share the owned buffer")
+            require_raises(lambda: values.__setitem__(0, 99), "edge buffers reject writes")
+            require_raises(lambda: values.setflags(write=True), "edge buffer writes cannot be re-enabled")
+        require_raises(lambda: setattr(edge_map, "num_rows", 99), "edge domain metadata is read-only")
+        copied = edge_map.values.copy()
+        copied[:] = -99
+        require(np.all(edge_map.values >= 0), "editing an explicit copy does not alter the edge map")
+        np.testing.assert_array_equal(edge_map.to_pixel_image(), edge_map.to_pixel_image(mmcfilters.EdgeToPixelReducer.MAX))
+        # Equality at the threshold must retain the corresponding contour edge.
+        contours = edge_map.threshold(float(edge_map.values[0]))
+        require(isinstance(contours, mmcfilters.EdgeContours), "threshold returns an owned edge set")
+        np.testing.assert_array_equal(contours.sources, [0])
+        np.testing.assert_array_equal(contours.targets, [1])
+        require(len(contours) == 1, "threshold includes an edge equal to the threshold")
+        for name in ("sources", "targets"):
+            values = getattr(contours, name)
+            require(not values.flags.writeable and values.base is contours, "contour views retain their immutable owner")
+            require(np.shares_memory(values, getattr(contours, name)), "contour access does not copy")
+            require_raises(lambda: values.setflags(write=True), "contour buffer writes cannot be re-enabled")
+        empty = edge_map.threshold(float(edge_map.values.max()) + 1)
+        require(len(empty) == 0 and empty.sources.dtype == np.int32, "empty cuts retain endpoint dtype")
+        require(empty.sources.base is empty and not empty.sources.flags.writeable, "empty cuts retain their owner")
+        snapshots.append((arrays, tuple(values.copy() for values in arrays), edge_map.to_pixel_image()))
+
+    tree.merge_node_into_parent(tree.leaves[0])
+    for edge_map, (arrays, expected, image) in zip(maps, snapshots):
+        for values, original in zip(arrays, expected):
+            np.testing.assert_array_equal(values, original)
+        np.testing.assert_array_equal(edge_map.to_pixel_image(), image)
+    retained_contour = contours.sources
+    del tree, maps, edge_map, arrays, contours, values
+    gc.collect()
+    for arrays, expected, _ in snapshots:
+        for values, original in zip(arrays, expected):
+            np.testing.assert_array_equal(values, original)
+    np.testing.assert_array_equal(retained_contour, [0])
+
+    singleton = mmcfilters.MorphologicalTreeFactory.create_max_tree(np.array([[7]], dtype=np.uint8))
+    empty_map = mmcfilters.HierarchySaliencyMap.compute_topological_level_edge_map(singleton)
+    require(len(empty_map) == 0, "a one-pixel graph has no edges")
+    for values in (empty_map.sources, empty_map.targets, empty_map.values):
+        require(values.shape == (0,) and values.base is empty_map and not values.flags.writeable,
+                "empty edge views retain rank, immutability, and ownership")
+    np.testing.assert_array_equal(empty_map.to_pixel_image(), [[0]])
+    require(len(empty_map.threshold(0)) == 0, "threshold handles an empty graph")
+    require(not hasattr(mmcfilters.HierarchySaliencyMapProjection, "edge_map_to_pixel_image"),
+            "edge-map display operations belong to EdgeMap")
+    require(not hasattr(mmcfilters.HierarchySaliencyMapProjection, "threshold_cut"),
+            "edge-map cuts belong to EdgeMap")
+
+
+def check_incremental_result_storage(mmcfilters):
+    import gc
+
+    tree = make_three_pixel_tree(mmcfilters, mmcfilters.MorphologicalTreeKind.MAX_TREE)
+    node_edges = mmcfilters.HierarchySaliencyMapProjection.node_contour_edges(tree)
+    contours = mmcfilters.HierarchySaliencyMapProjection.compute_incremental_node_contours(tree)
+    require(isinstance(node_edges, mmcfilters.NodeContourEdges), "transition edges have a typed result")
+    require(isinstance(contours, mmcfilters.IncrementalNodeContours), "incremental contours have a typed result")
+    require(len(node_edges) == len(contours) == 1, "contour result lengths count stored edges")
+    np.testing.assert_array_equal(contours.offsets, [0, 0, 0, 1])
+    np.testing.assert_array_equal(node_edges.nodes, [2])
+    retained = []
+    for owner, names in ((node_edges, ("sources", "targets", "nodes")),
+                         (contours, ("sources", "targets", "offsets"))):
+        require(owner.num_rows == 1 and owner.num_columns == 3, "typed contour results preserve the image domain")
+        require(owner.adjacency_radius == 1.0, "typed contour results preserve the source adjacency")
+        require_raises(lambda: setattr(owner, "adjacency_radius", 2), "contour metadata is read-only")
+        for name in names:
+            values = getattr(owner, name)
+            expected_dtype = np.uintp if name == "offsets" else np.int32
+            require(values.dtype == expected_dtype and values.ndim == 1, "contour views preserve buffer dtype and rank")
+            require(not values.flags.writeable and values.base is owner, "contour views retain their immutable owner")
+            require(np.shares_memory(values, getattr(owner, name)), "contour access reuses the native buffer")
+            require_raises(lambda: values.__setitem__(0, 99), "contour views reject writes")
+            require_raises(lambda: values.setflags(write=True), "contour writes cannot be re-enabled")
+            retained.append((values, values.copy()))
+
+    for dtype in (np.float32, np.float64):
+        scores = np.array([10, 20, 30], dtype=dtype)
+        projected = contours.project_node_valuation(scores)
+        require(projected.values.dtype == dtype, "incremental projection retains valuation precision")
+        np.testing.assert_array_equal(projected.values, [30])
+        np.testing.assert_array_equal(projected.sources, [0])
+        selected = contours.threshold_by_node_valuation(scores, 30)
+        require(isinstance(selected, mmcfilters.EdgeContours), "incremental cuts return EdgeContours")
+        np.testing.assert_array_equal(selected.sources, [0])
+        require(len(contours.threshold_by_node_valuation(scores, 31)) == 0, "incremental cut selects by >= threshold")
+        scores[:] = -1
+        np.testing.assert_array_equal(projected.values, [30])
+        require(len(contours.threshold_by_node_valuation(scores, 0)) == 0, "new calls use the supplied valuation")
+
+    for invalid in (np.array([10, 20], dtype=np.float32), np.array([10, 20, 30], dtype=np.int32),
+                    np.ones((3, 1), dtype=np.float64), np.ones(4, dtype=np.float64)):
+        require_raises(lambda: contours.project_node_valuation(invalid), "projection validates valuation dtype, rank, and length")
+        require_raises(lambda: contours.threshold_by_node_valuation(invalid, 0), "cuts validate valuation dtype, rank, and length")
+
+    tree.merge_node_into_parent(tree.leaves[0])
+    np.testing.assert_array_equal(contours.project_node_valuation(np.array([10, 20, 30], dtype=np.float64)).values, [30])
+    del tree, node_edges, contours, owner, values
+    gc.collect()
+    for values, expected in retained:
+        np.testing.assert_array_equal(values, expected)
+
+    singleton = mmcfilters.MorphologicalTreeFactory.create_max_tree(np.array([[7]], dtype=np.uint8))
+    empty = mmcfilters.HierarchySaliencyMapProjection.compute_incremental_node_contours(singleton)
+    empty_nodes = mmcfilters.HierarchySaliencyMapProjection.node_contour_edges(singleton)
+    require(len(empty) == len(empty_nodes) == 0, "one-pixel images have no transition contours")
+    np.testing.assert_array_equal(empty.offsets, [0, 0])
+    for owner, name in ((empty, "sources"), (empty, "targets"), (empty_nodes, "nodes")):
+        values = getattr(owner, name)
+        require(values.shape == (0,) and values.base is owner and not values.flags.writeable,
+                "empty contour views retain rank, ownership, and immutability")
+    require(len(empty.project_node_valuation(np.array([1], dtype=np.float32))) == 0, "empty contour projection")
+    require(len(empty.threshold_by_node_valuation(np.array([1], dtype=np.float64), 1)) == 0, "empty contour cut")
+
+    sparse = mmcfilters.MorphologicalTreeFactory.create_max_tree(np.array([[3, 3, 2, 2], [3, 4, 4, 2],
+                                                                         [1, 4, 5, 2], [1, 1, 5, 0]], dtype=np.uint8))
+    sparse.merge_node_into_parent(4)
+    sparse_contours = mmcfilters.HierarchySaliencyMapProjection.compute_incremental_node_contours(sparse)
+    require(sparse_contours.num_node_slots == sparse.num_internal_node_slots, "contour slices retain the complete node-slot domain")
+    require(sparse_contours.offsets.size == sparse.num_internal_node_slots + 1, "offsets include inactive node slots")
+    require(sparse_contours.offsets[4] == sparse_contours.offsets[5], "inactive node slots own no contour edges")
+    projected = sparse_contours.project_node_valuation(np.arange(sparse.num_internal_node_slots, dtype=np.float64))
+    np.testing.assert_array_equal(projected.sources, sparse_contours.sources)
+    for node in sparse.alive_node_ids:
+        begin, end = sparse_contours.offsets[node:node + 2]
+        np.testing.assert_array_equal(projected.values[begin:end], np.full(end - begin, node))
+    require(not hasattr(mmcfilters.HierarchySaliencyMapProjection, "project_node_valuation"),
+            "projection operations belong to IncrementalNodeContours")
+    require(not hasattr(mmcfilters.HierarchySaliencyMapProjection, "threshold_by_node_valuation"),
+            "incremental cuts belong to IncrementalNodeContours")
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: test_python_hierarchy_saliency_map.py <build-dir>")
 
     build_dir = pathlib.Path(sys.argv[1]).resolve()
     mmcfilters = load_native_module(build_dir)
+    check_edge_result_storage(mmcfilters)
+    check_incremental_result_storage(mmcfilters)
 
     def complementary_convention(rows, columns, min_radius, max_radius):
         return mmcfilters.TopographicConvention(
@@ -228,11 +383,11 @@ def main() -> int:
 
     mmcfilters.HierarchySaliencyMapValidation.validate_hierarchy_valuation(valued_tree, scores32, strict=True)
     formal_score_map32 = mmcfilters.HierarchySaliencyMap.compute_saliency_edge_map(valued_tree, scores32, strict=True)
-    require(formal_score_map32["values"].dtype == np.float32, "formal saliency float32 dtype")
-    require(np.array_equal(formal_score_map32["values"], np.array([30.0, 0.0], dtype=np.float32)), "formal saliency float32 values")
+    require(formal_score_map32.values.dtype == np.float32, "formal saliency float32 dtype")
+    require(np.array_equal(formal_score_map32.values, np.array([30.0, 0.0], dtype=np.float32)), "formal saliency float32 values")
 
     topological_map = mmcfilters.HierarchySaliencyMap.compute_topological_level_edge_map(valued_tree)
-    require(np.array_equal(topological_map["values"], np.array([1, 0], dtype=topological_map["values"].dtype)), "topological edge map values")
+    require(np.array_equal(topological_map.values, np.array([1, 0], dtype=topological_map.values.dtype)), "topological edge map values")
     require(np.array_equal(qfz_labels(topological_map, 0), np.array([0, 1, 2], dtype=np.int32)), "qfz lambda 0 partition")
     require(np.array_equal(qfz_labels(topological_map, 1), np.array([0, 1, 1], dtype=np.int32)), "qfz lambda 1 partition")
     require(np.array_equal(qfz_labels(topological_map, 2), np.array([0, 0, 0], dtype=np.int32)), "qfz lambda 2 partition")
@@ -247,14 +402,14 @@ def main() -> int:
         ranked_scores,
         strict=True,
     )
-    require(np.array_equal(ranked_map["values"], np.array([2, 0], dtype=ranked_map["values"].dtype)), "ranked valuation saliency values")
+    require(np.array_equal(ranked_map.values, np.array([2, 0], dtype=ranked_map.values.dtype)), "ranked valuation saliency values")
     canonical_ranked_map = mmcfilters.HierarchySaliencyMap.compute_canonical_ranked_saliency_edge_map(
         valued_tree,
         scores32,
         strict=True,
     )
     require(
-        np.array_equal(canonical_ranked_map["values"], np.array([1, 0], dtype=canonical_ranked_map["values"].dtype)),
+        np.array_equal(canonical_ranked_map.values, np.array([1, 0], dtype=canonical_ranked_map.values.dtype)),
         "canonical rank uses effective edge levels",
     )
     appearance_levels = np.array([1, 1, 2], dtype=np.int32)
@@ -265,7 +420,7 @@ def main() -> int:
         level_convention=mmcfilters.HierarchyLevelConvention.PARTITION_APPEARANCE_LEVEL,
     )
     require(
-        np.array_equal(appearance_map["values"], np.array([1, 0], dtype=appearance_map["values"].dtype)),
+        np.array_equal(appearance_map.values, np.array([1, 0], dtype=appearance_map.values.dtype)),
         "partition appearance convention applies level(LCA)-1",
     )
     mmcfilters.HierarchySaliencyMapValidation.validate_hierarchy_connectivity(valued_tree)
@@ -278,7 +433,7 @@ def main() -> int:
         strict=True,
     )
     require(
-        np.array_equal(adapter_map["values"], appearance_map["values"]),
+        np.array_equal(adapter_map.values, appearance_map.values),
         "component-tree adapter applies level(LCA)-1",
     )
 
@@ -323,60 +478,58 @@ def main() -> int:
     )
 
     normalized_max = mmcfilters.HierarchySaliencyMap.compute_normalized_altitude_edge_map(valued_tree)
-    require(normalized_max["values"].dtype == np.float64, "normalized max-tree edge map dtype")
-    require(np.allclose(normalized_max["values"], np.array([1.0, 0.0], dtype=np.float64)), "normalized max-tree edge map values")
+    require(normalized_max.values.dtype == np.float64, "normalized max-tree edge map dtype")
+    require(np.allclose(normalized_max.values, np.array([1.0, 0.0], dtype=np.float64)), "normalized max-tree edge map values")
 
-    max_pixels = mmcfilters.HierarchySaliencyMapProjection.edge_map_to_pixel_image(
-        normalized_max,
+    max_pixels = normalized_max.to_pixel_image(
         mmcfilters.EdgeToPixelReducer.MAX,
     )
     require(np.allclose(max_pixels, np.array([[1.0, 1.0, 0.0]], dtype=np.float64)), "edge-to-pixel max projection")
-    mean_pixels = mmcfilters.HierarchySaliencyMapProjection.edge_map_to_pixel_image(
-        normalized_max,
+    mean_pixels = normalized_max.to_pixel_image(
         mmcfilters.EdgeToPixelReducer.MEAN,
     )
     require(np.allclose(mean_pixels, np.array([[1.0, 0.5, 0.0]], dtype=np.float64)), "edge-to-pixel mean projection")
 
-    high_cut = mmcfilters.HierarchySaliencyMapProjection.threshold_cut(normalized_max, 0.5)
-    require(high_cut["num_rows"] == 1, "high-threshold contour rows")
-    require(high_cut["num_columns"] == 3, "high-threshold contour columns")
-    require(abs(high_cut["adjacency_radius"] - 1.0) < 1e-12, "high-threshold contour radius")
-    require(np.array_equal(high_cut["sources"], np.array([0], dtype=high_cut["sources"].dtype)), "high-threshold contour sources")
-    require(np.array_equal(high_cut["targets"], np.array([1], dtype=high_cut["targets"].dtype)), "high-threshold contour targets")
+    high_cut = normalized_max.threshold(0.5)
+    require(high_cut.num_rows == 1, "high-threshold contour rows")
+    require(high_cut.num_columns == 3, "high-threshold contour columns")
+    require(abs(high_cut.adjacency_radius - 1.0) < 1e-12, "high-threshold contour radius")
+    require(np.array_equal(high_cut.sources, np.array([0], dtype=high_cut.sources.dtype)), "high-threshold contour sources")
+    require(np.array_equal(high_cut.targets, np.array([1], dtype=high_cut.targets.dtype)), "high-threshold contour targets")
 
-    low_cut = mmcfilters.HierarchySaliencyMapProjection.threshold_cut(normalized_max, 0.199)
-    require(np.array_equal(low_cut["sources"], np.array([0], dtype=low_cut["sources"].dtype)), "low-threshold contour sources")
-    require(np.array_equal(low_cut["targets"], np.array([1], dtype=low_cut["targets"].dtype)), "low-threshold contour targets")
+    low_cut = normalized_max.threshold(0.199)
+    require(np.array_equal(low_cut.sources, np.array([0], dtype=low_cut.sources.dtype)), "low-threshold contour sources")
+    require(np.array_equal(low_cut.targets, np.array([1], dtype=low_cut.targets.dtype)), "low-threshold contour targets")
 
     node_contours = mmcfilters.HierarchySaliencyMapProjection.node_contour_edges(valued_tree)
-    require(np.array_equal(node_contours["sources"], np.array([0], dtype=node_contours["sources"].dtype)), "node contour sources")
-    require(np.array_equal(node_contours["targets"], np.array([1], dtype=node_contours["targets"].dtype)), "node contour targets")
-    require(np.array_equal(node_contours["nodes"], np.array([2], dtype=node_contours["nodes"].dtype)), "node contour LCA nodes")
+    require(np.array_equal(node_contours.sources, np.array([0], dtype=node_contours.sources.dtype)), "node contour sources")
+    require(np.array_equal(node_contours.targets, np.array([1], dtype=node_contours.targets.dtype)), "node contour targets")
+    require(np.array_equal(node_contours.nodes, np.array([2], dtype=node_contours.nodes.dtype)), "node contour LCA nodes")
 
     incremental_contours = mmcfilters.HierarchySaliencyMapProjection.compute_incremental_node_contours(valued_tree)
-    require(incremental_contours["num_rows"] == 1, "incremental contour rows")
-    require(incremental_contours["num_columns"] == 3, "incremental contour columns")
-    require(incremental_contours["num_node_slots"] == valued_tree.num_internal_node_slots, "incremental contour node slots")
+    require(incremental_contours.num_rows == 1, "incremental contour rows")
+    require(incremental_contours.num_columns == 3, "incremental contour columns")
+    require(incremental_contours.num_node_slots == valued_tree.num_internal_node_slots, "incremental contour node slots")
     require(
-        np.array_equal(incremental_contours["offsets"], np.array([0, 0, 0, 1], dtype=incremental_contours["offsets"].dtype)),
+        np.array_equal(incremental_contours.offsets, np.array([0, 0, 0, 1], dtype=incremental_contours.offsets.dtype)),
         "incremental contour offsets",
     )
-    require(np.array_equal(incremental_contours["sources"], np.array([0], dtype=incremental_contours["sources"].dtype)), "incremental contour sources")
-    require(np.array_equal(incremental_contours["targets"], np.array([1], dtype=incremental_contours["targets"].dtype)), "incremental contour targets")
+    require(np.array_equal(incremental_contours.sources, np.array([0], dtype=incremental_contours.sources.dtype)), "incremental contour sources")
+    require(np.array_equal(incremental_contours.targets, np.array([1], dtype=incremental_contours.targets.dtype)), "incremental contour targets")
 
-    projected_scores = mmcfilters.HierarchySaliencyMapProjection.project_node_valuation(incremental_contours, scores32)
-    require(projected_scores["values"].dtype == np.float32, "incremental projected score dtype")
-    require(np.array_equal(projected_scores["sources"], np.array([0], dtype=projected_scores["sources"].dtype)), "incremental projected score sources")
-    require(np.array_equal(projected_scores["targets"], np.array([1], dtype=projected_scores["targets"].dtype)), "incremental projected score targets")
-    require(np.array_equal(projected_scores["values"], np.array([30.0], dtype=np.float32)), "incremental projected score values")
+    projected_scores = incremental_contours.project_node_valuation(scores32)
+    require(projected_scores.values.dtype == np.float32, "incremental projected score dtype")
+    require(np.array_equal(projected_scores.sources, np.array([0], dtype=projected_scores.sources.dtype)), "incremental projected score sources")
+    require(np.array_equal(projected_scores.targets, np.array([1], dtype=projected_scores.targets.dtype)), "incremental projected score targets")
+    require(np.array_equal(projected_scores.values, np.array([30.0], dtype=np.float32)), "incremental projected score values")
 
-    score_cut = mmcfilters.HierarchySaliencyMapProjection.threshold_by_node_valuation(incremental_contours, scores32, 25.0)
-    require(np.array_equal(score_cut["sources"], np.array([0], dtype=score_cut["sources"].dtype)), "incremental score-cut sources")
-    require(np.array_equal(score_cut["targets"], np.array([1], dtype=score_cut["targets"].dtype)), "incremental score-cut targets")
+    score_cut = incremental_contours.threshold_by_node_valuation(scores32, 25.0)
+    require(np.array_equal(score_cut.sources, np.array([0], dtype=score_cut.sources.dtype)), "incremental score-cut sources")
+    require(np.array_equal(score_cut.targets, np.array([1], dtype=score_cut.targets.dtype)), "incremental score-cut targets")
 
     min_valued_tree = make_three_pixel_min_tree(mmcfilters)
     normalized_min = mmcfilters.HierarchySaliencyMap.compute_normalized_altitude_edge_map(min_valued_tree)
-    require(np.allclose(normalized_min["values"], np.array([1.0, 0.0], dtype=np.float64)), "normalized min-tree edge map values")
+    require(np.allclose(normalized_min.values, np.array([1.0, 0.0], dtype=np.float64)), "normalized min-tree edge map values")
 
     no_adjacency = make_three_pixel_tree(
         mmcfilters,
@@ -394,16 +547,16 @@ def main() -> int:
         radius=1.0,
         strict=True,
     )
-    require(np.array_equal(tos_formal["values"], np.array([1.0, 0.0], dtype=np.float32)), "tree-of-shapes formal saliency values")
+    require(np.array_equal(tos_formal.values, np.array([1.0, 0.0], dtype=np.float32)), "tree-of-shapes formal saliency values")
     contour_fallback = mmcfilters.HierarchySaliencyMapProjection.node_contour_edges(no_adjacency, radius=1.0)
-    require(np.array_equal(contour_fallback["nodes"], np.array([2], dtype=contour_fallback["nodes"].dtype)), "explicit radius contour fallback nodes")
+    require(np.array_equal(contour_fallback.nodes, np.array([2], dtype=contour_fallback.nodes.dtype)), "explicit radius contour fallback nodes")
     incremental_fallback = mmcfilters.HierarchySaliencyMapProjection.compute_incremental_node_contours(no_adjacency, radius=1.0)
     require(
-        np.array_equal(incremental_fallback["offsets"], np.array([0, 0, 0, 1], dtype=incremental_fallback["offsets"].dtype)),
+        np.array_equal(incremental_fallback.offsets, np.array([0, 0, 0, 1], dtype=incremental_fallback.offsets.dtype)),
         "explicit radius incremental contour fallback offsets",
     )
     topological_fallback = mmcfilters.HierarchySaliencyMap.compute_topological_level_edge_map(no_adjacency, radius=1.0)
-    require(np.array_equal(topological_fallback["values"], np.array([1, 0], dtype=topological_fallback["values"].dtype)), "explicit radius topological fallback values")
+    require(np.array_equal(topological_fallback.values, np.array([1, 0], dtype=topological_fallback.values.dtype)), "explicit radius topological fallback values")
     require_raises(
         lambda: mmcfilters.HierarchySaliencyMap.compute_normalized_altitude_edge_map(no_adjacency, radius=1.0),
         "normalized altitude edge map must reject trees without max/min polarity",
@@ -426,7 +579,7 @@ def main() -> int:
         self_dual_tos
     )
     require(
-        self_dual_stored_map["values"].size > 0,
+        self_dual_stored_map.values.size > 0,
         "equal directional ToS stencils must define one stored saliency graph",
     )
 
@@ -443,7 +596,7 @@ def main() -> int:
         radius=1.0,
     )
     require(
-        asymmetric_explicit_map["values"].size > 0,
+        asymmetric_explicit_map.values.size > 0,
         "an explicit radius must resolve directional ToS graph ambiguity",
     )
 

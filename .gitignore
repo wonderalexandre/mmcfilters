@@ -26,6 +26,7 @@ notebooks/.virtual_documents/*
 /benchmarks/results/
 /docs/benchmarks/
 /docs/refactoring/
+/docs/guides_to_be_validated/
 /tests/build
 /tests/build
 mmcfilters.cpython-312-darwin.so

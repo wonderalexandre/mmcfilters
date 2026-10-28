@@ -314,7 +314,6 @@ rollback, valued-tree edits, and Python exposure.
 
 - [Attributes](attributes.md): topology/support and altitude-aware computation.
 - [Filters](filters.md): reconstruction from dense node buffers.
-- [Saliency maps](saliency.md): hierarchy and shape-space projections.
 - [Higra interoperability](higra-interoperability.md): imported and exported
   node domains.
 - [Editing API](editing-api.md): committed and staged mutation.

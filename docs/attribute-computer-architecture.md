@@ -105,8 +105,7 @@ descendant selection. See [Attributes](attributes.md) for sampling semantics.
 Concrete families may introduce providers, reducers, caches, or specialized
 traversals behind the common computer contract. Those mechanisms remain
 implementation details and must not create an alternate public orchestration
-path. See [Distance-transform architecture](distance-transform-architecture.md)
-for the exact and approximate distance-field backends.
+path.
 
 ## Contexts and concepts
 

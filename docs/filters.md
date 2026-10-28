@@ -80,7 +80,7 @@ before passing it to a filter.
 
 - **Direct:** `DirectAttributeFilter` accepts a `NodePreservationMask`; preserved
   nodes use their altitude and rejected nodes inherit the reconstructed parent
-  altitude. The root must be preserved.
+  altitude. The root altitude is always retained, regardless of its mask decision.
 - **Subtractive:** `SubtractiveAttributeFilter` independently gates
   every zero-baseline node residue, including the root residue, with a
   `NodePreservationMask`. Integral-altitude trees produce a signed image.
@@ -207,8 +207,7 @@ auto rankedEdgeMap = extinction.computeRankedFormalSaliencyEdgeMap();
 auto directProjection = extinction.computeMonotoneExtinctionProjection();
 ```
 
-See [Saliency maps](saliency.md) for the distinction between persistence and
-direct hierarchy projection. `ShapeSpaceSaliency` is the appropriate operator
+`ShapeSpaceSaliency` is the appropriate operator
 when extinction must be computed from an arbitrary attribute over the tree-node
 graph.
 
@@ -263,10 +262,9 @@ box_height = mmcfilters.Attribute.compute(
 
 filters = mmcfilters.AttributeFilters(tree)
 decisions = area >= 4.0
-decisions[tree.root] = True
-keep = mmcfilters.NodePreservationMask(decisions)
-direct = mmcfilters.DirectAttributeFilter(tree).apply(keep)
-pruned = filters.filtering_by_pruning_min(box_height, 2.0)
+keep = decisions
+direct = filters.filtering_by_direct_rule(keep)
+pruned = filters.filtering_by_pruning_min_rule(box_height, 2.0)
 
 extinction = mmcfilters.ExtinctionValues(tree, area)
 strongest = mmcfilters.ExtinctionSelectionPolicy.by_top_k(8)
@@ -276,25 +274,20 @@ uao = mmcfilters.UltimateAttributeOpening(tree, box_height)
 uao.execute(maximum_attribute_threshold=image.shape[0])
 ```
 
-`mmcfilters.compute_node_preservation_mask(area, 4.0)` builds the same mask from
-the inclusive `>=` rule when no per-node adjustment is needed.
+Python preservation masks are 1D C-contiguous `np.bool_` arrays with length
+`tree.num_internal_node_slots`; `True` means preserve. Use `area >= 4.0` for
+the inclusive threshold rule.
 
-An operator may also receive the attribute itself, as an `Attribute` value or its
-symbolic name, and compute the buffer internally. The declared capability
-requirements select the valued or the topology entry point, so the result matches
-the buffer the caller would have computed:
+Operators receive computed attribute buffers. Compute the attribute explicitly
+with `Attribute.compute`:
 
 ```python
-pruned = filters.filtering_by_pruning_min("BOUNDING_BOX_HEIGHT", 2.0)
-extinction = mmcfilters.ExtinctionValues(tree, "AREA")
-uao = mmcfilters.UltimateAttributeOpening(tree, "BOUNDING_BOX_HEIGHT")
+pruned = filters.filtering_by_pruning_min_rule(box_height, 2.0)
+extinction = mmcfilters.ExtinctionValues(tree, area)
+uao = mmcfilters.UltimateAttributeOpening(tree, box_height)
 ```
 
-Pass the buffer instead when it is reused across several thresholds, which avoids
-recomputing it per call.
-
-The three reconstruction filters expose `apply(...)` as a short alias of their
-explicit method name.
+Reuse the buffer across several thresholds to avoid recomputing it per call.
 
 See [Python API](python-api.md) for array and dtype requirements.
 
@@ -309,5 +302,4 @@ public reads explicitly.
 
 - [Morphological trees](trees.md): smallest-node mapping, `NodeId`, altitude, and mutation.
 - [Attributes](attributes.md): dense node-indexed input buffers.
-- [Saliency maps](saliency.md): edge-indexed hierarchy operators.
 - [Editing API](editing-api.md): mutation and derived-state lifetime.

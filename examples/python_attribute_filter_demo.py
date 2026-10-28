@@ -22,12 +22,10 @@ def main() -> None:
     )
     filters = mmcfilters.AttributeFilters(tree)
 
-    keep_large_decisions = (area >= 4.0).tolist()
-    keep_large_decisions[tree.root] = True
-    keep_large = mmcfilters.NodePreservationMask(keep_large_decisions)
-    direct = mmcfilters.DirectAttributeFilter(tree).apply_direct_attribute_filter(keep_large)
-    pruning_min = filters.filtering_by_pruning_min(area, 4.0)
-    pruning_max = filters.filtering_by_pruning_max(area, 4.0)
+    keep_large = area >= 4.0
+    direct = filters.filtering_by_direct_rule(keep_large)
+    pruning_min = filters.filtering_by_pruning_min_rule(area, 4.0)
+    pruning_max = filters.filtering_by_pruning_max_rule(area, 4.0)
 
     print("Direct filter:\n", direct)
     print("Pruning-min rule:\n", pruning_min)

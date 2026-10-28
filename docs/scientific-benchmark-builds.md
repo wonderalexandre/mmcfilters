@@ -54,9 +54,6 @@ These commands assume a single-configuration generator such as Makefiles or Ninj
 For a multi-configuration generator, select Release with `--config Release` on
 both build commands and run the executables from that configuration.
 
-The complete API benchmark suite and its reproducible execution protocol are
-documented in the
-[Scientific API benchmark suite](https://github.com/wonderalexandre/mmcfilters/blob/main/benchmarks/README.md).
 Named, checksum-pinned workloads are provided in the
 [`scientific-api.ini` manifest](https://github.com/wonderalexandre/mmcfilters/blob/main/benchmarks/workloads/scientific-api.ini).
 

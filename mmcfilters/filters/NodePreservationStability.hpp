@@ -42,16 +42,17 @@ template <class AttributeValue>
 
 namespace detail::node_preservation_stability {
 
-inline void requireNodePreservationMaskShape(const MorphologicalTree& tree, const NodePreservationMask& nodePreservationMask,
+template <detail::NodePreservationDecisions Mask>
+inline void requireNodePreservationMaskShape(const MorphologicalTree& tree, const Mask& nodePreservationMask,
                                              const char* context) {
     MMCFILTERS_CONTRACT_REQUIRE(
         nodePreservationMask.size() == static_cast<std::size_t>(tree.numInternalNodeSlots()),
         throw std::invalid_argument(std::string(context) + " nodePreservationMask size must match the internal node slot count."));
 }
 
-template <std::floating_point Real, class StabilityComputer>
+template <std::floating_point Real, class StabilityComputer, detail::NodePreservationDecisions Mask>
 [[nodiscard]] NodePreservationMask adjustNodePreservationMask(const MorphologicalTree& tree,
-                                                              const NodePreservationMask& nodePreservationMask,
+                                                              const Mask& nodePreservationMask,
                                                               StabilityComputer& stabilityComputer,
                                                               IncompleteStabilityWindowPolicy incompleteWindowPolicy,
                                                               const char* context) {
@@ -87,9 +88,9 @@ template <std::floating_point Real, class StabilityComputer>
  *
  * The valued tree must declare a globally monotone altitude order.
  */
-template <AltitudeValue T>
+template <AltitudeValue T, detail::NodePreservationDecisions Mask>
 [[nodiscard]] NodePreservationMask adjustNodePreservationMaskByAltitudeStability(
-    const ValuedMorphologicalTree<T>& valuedTree, const NodePreservationMask& nodePreservationMask,
+    const ValuedMorphologicalTree<T>& valuedTree, const Mask& nodePreservationMask,
     AltitudeDifference<T> altitudeWindowRadius,
     IncompleteStabilityWindowPolicy incompleteWindowPolicy = IncompleteStabilityWindowPolicy::PreserveInputDecision) {
     MSERComputer<T> stabilityComputer(valuedTree);
@@ -100,8 +101,9 @@ template <AltitudeValue T>
 }
 
 /** @brief Relocates input rejections using an edge-count stability window. */
+template <detail::NodePreservationDecisions Mask>
 [[nodiscard]] inline NodePreservationMask adjustNodePreservationMaskByDepthStability(
-    const MorphologicalTree& tree, const NodePreservationMask& nodePreservationMask, int depthWindowRadius,
+    const MorphologicalTree& tree, const Mask& nodePreservationMask, int depthWindowRadius,
     IncompleteStabilityWindowPolicy incompleteWindowPolicy = IncompleteStabilityWindowPolicy::PreserveInputDecision) {
     DepthStableRegionComputer<float> stabilityComputer(tree);
     (void)stabilityComputer.computeByDepth(depthWindowRadius);
@@ -111,9 +113,9 @@ template <AltitudeValue T>
 }
 
 /** @brief Valued-tree convenience overload for topology-only depth stability. */
-template <AltitudeValue T>
+template <AltitudeValue T, detail::NodePreservationDecisions Mask>
 [[nodiscard]] inline NodePreservationMask adjustNodePreservationMaskByDepthStability(
-    const ValuedMorphologicalTree<T>& valuedTree, const NodePreservationMask& nodePreservationMask, int depthWindowRadius,
+    const ValuedMorphologicalTree<T>& valuedTree, const Mask& nodePreservationMask, int depthWindowRadius,
     IncompleteStabilityWindowPolicy incompleteWindowPolicy = IncompleteStabilityWindowPolicy::PreserveInputDecision) {
     return adjustNodePreservationMaskByDepthStability(valuedTree.topology(), nodePreservationMask, depthWindowRadius,
                                                       incompleteWindowPolicy);

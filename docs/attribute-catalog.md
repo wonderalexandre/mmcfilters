@@ -7,9 +7,7 @@ layouts, and Python, for example `"AREA"` and `mmcfilters.Attribute.AREA`.
 
 Every listed attribute produces one value per node in the returned
 `AttributeNames` layout. For usage patterns and output-space rules, see
-[Attributes](attributes.md). Family-specific mathematical conventions are kept
-in focused guides such as
-[Distance-transform attributes](distance-transform.md).
+[Attributes](attributes.md).
 
 The `Contract` column classifies the input required by the attribute:
 

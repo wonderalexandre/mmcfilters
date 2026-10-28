@@ -152,6 +152,10 @@ for node_id in max_tree.alive_node_ids:
     exit_index = max_tree.dfs_exit_index(node_id)
 ```
 
+Identifier collections returned by tree queries are owned, 1D `np.int32` arrays.
+`max_tree.parents` has one entry per internal slot: the root points to itself and
+dead slots contain `-1`. These arrays are snapshots; query again after tree edits.
+
 The DFS entry and exit indices belong to one interleaved event sequence. They
 characterize the node interval, so
 `num_descendants(node_id) == (exit_index - entry_index - 1) // 2`.
@@ -276,8 +280,7 @@ root_survival = profiles.survival_profile(max_tree.root)
 ```
 
 The methods are topology-only even though Python receives the public
-`ValuedMorphologicalTree` wrapper. Definitions, units, and execution scope are
-documented in [Distance-transform attributes](distance-transform.md).
+`ValuedMorphologicalTree` wrapper.
 
 Altitude-based node-attribute sampling returns current-node, ancestor, and
 representative-descendant columns. Missing values use a typed policy:
@@ -319,16 +322,12 @@ box_height = mmcfilters.Attribute.compute(
     max_tree,
     mmcfilters.Attribute.BOUNDING_BOX_HEIGHT,
 )
-keep_large = mmcfilters.compute_node_preservation_mask(area, 4.0)
+keep_large = area >= 4.0
 
-direct = mmcfilters.DirectAttributeFilter(max_tree).apply_direct_attribute_filter(
-    keep_large,
-)
-subtractive = mmcfilters.SubtractiveAttributeFilter(
-    max_tree,
-).apply_subtractive_attribute_filter(keep_large)
-pruned_min = filters.filtering_by_pruning_min(box_height, 2.0)
-pruned_max = filters.filtering_by_pruning_max(box_height, 2.0)
+direct = filters.filtering_by_direct_rule(keep_large)
+subtractive = filters.filtering_by_subtractive_rule(keep_large)
+pruned_min = filters.filtering_by_pruning_min_rule(attribute=box_height, threshold=2.0)
+pruned_max = filters.filtering_by_pruning_max_rule(attribute=box_height, threshold=2.0)
 altitude_adjusted = mmcfilters.adjust_node_preservation_mask_by_altitude_stability(
     max_tree,
     keep_large,
@@ -360,7 +359,7 @@ extinction = mmcfilters.ExtinctionValues(max_tree, area)
 strongest = mmcfilters.ExtinctionSelectionPolicy.by_top_k(8)
 filtered = extinction.filtering(strongest)
 
-uao = mmcfilters.UltimateAttributeOpening(max_tree, box_height)
+uao = mmcfilters.UltimateAttributeOpening(max_tree, attribute=box_height)
 uao.execute(maximum_attribute_threshold=image.shape[0])
 max_contrast = uao.get_max_contrast_image()
 associated = uao.get_associated_image()
@@ -391,10 +390,19 @@ shape_space = mmcfilters.ShapeSpaceSaliency.compute(
 )
 ```
 
-Edge-map dictionaries contain `sources`, `targets`, `values`, `num_rows`,
-`num_columns`, and `adjacency_radius`. Cuts and display projections are provided by
-`HierarchySaliencyMapProjection`. See [Saliency maps](saliency.md) for operator
-definitions and preconditions.
+Edge maps return an `EdgeMap` with read-only NumPy views `sources`, `targets`,
+and `values`, plus `num_rows`, `num_columns`, and `adjacency_radius`. The object
+owns the buffers independently of the tree; views keep them alive. Use
+`edge_map.to_pixel_image()` for display and `edge_map.threshold(t)` to select
+contour edges with value `>= t`, returned as `EdgeContours`. Use `.copy()` to
+obtain a writable array.
+
+`node_contour_edges()` returns `NodeContourEdges`; `compute_incremental_node_contours()`
+returns `IncrementalNodeContours`, with `contours.project_node_valuation(values)` and
+`contours.threshold_by_node_valuation(values, t)`. Their arrays are read-only views.
+Xu returns `ShapeSpaceExtinctionResult` or `ShapeSpaceSaliencyResult`, exposing
+`.extrema` (a tuple of immutable records), `.node_scores`, and `.edge_map` for
+the complete result. These results own their buffers independently of the tree.
 
 ## Contours
 

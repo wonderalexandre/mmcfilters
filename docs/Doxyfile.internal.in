@@ -13,9 +13,10 @@ USE_MDFILE_AS_MAINPAGE = "@MMCFILTERS_DOCS_SOURCE_DIR@/README.md"
 
 RECURSIVE              = YES
 FILE_PATTERNS          = *.hpp *.tpp *.cpp *.md
-EXCLUDE                = "@MMCFILTERS_DOCS_SOURCE_DIR@/docs/refactoring"
+EXCLUDE                = "@MMCFILTERS_DOCS_SOURCE_DIR@/docs/refactoring" \
+                         "@MMCFILTERS_DOCS_SOURCE_DIR@/docs/guides_to_be_validated"
 # Distance-transform kernels and test oracles are implementation machinery,
-# documented at subsystem level in docs/distance-transform-architecture.md.
+# documented at subsystem level rather than as public interfaces.
 # Keep them out of the member-by-member contributor API audit.
 EXCLUDE_PATTERNS       = */attributes/computers/detail/distance_transform/* \
                          */attributes/computers/detail/distance_transform_approx/* \

@@ -31,6 +31,15 @@ concurrency:
 jobs:
   repository-promotion:
     name: Repository promotion tests
+    # Only the App-created, content-free return PR can skip validation.
+    if: &run_full_validation >-
+      github.event_name != 'pull_request' ||
+      github.repository != 'wonderalexandre/mmcfilters-dev' ||
+      github.event.pull_request.base.ref != 'main' ||
+      github.event.pull_request.head.ref != 'sync/public-main' ||
+      github.event.pull_request.head.repo.full_name != github.repository ||
+      github.event.pull_request.user.login != 'mmcfilters-repository-promotion[bot]' ||
+      toJSON(github.event.pull_request.changed_files) != '0'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -41,11 +50,15 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Test publication and synchronization
+      - name: Install workflow test dependencies
+        run: python -m pip install "PyYAML>=6,<7"
+
+      - name: Test workflow policy, publication and synchronization
         run: python -m unittest discover -s .github/scripts -p 'test_*.py' -v
 
   cmake:
     name: CMake (${{ matrix.os }})
+    if: *run_full_validation
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -93,6 +106,7 @@ jobs:
 
   python-matrix:
     name: Python ${{ matrix.python-version }} (${{ matrix.os }})
+    if: *run_full_validation
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -144,6 +158,7 @@ jobs:
 
   cpp-only:
     name: C++ Only (${{ matrix.os }})
+    if: *run_full_validation
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -191,6 +206,7 @@ jobs:
 
   scientific-benchmark-smoke:
     name: Scientific benchmark smoke (CHECKED/UNCHECKED)
+    if: *run_full_validation
     runs-on: ubuntu-latest
 
     steps:
@@ -265,6 +281,7 @@ jobs:
 
   sanitizers:
     name: Sanitizers (ubuntu-latest)
+    if: *run_full_validation
     runs-on: ubuntu-latest
 
     steps:
@@ -302,6 +319,7 @@ jobs:
 
   notebooks:
     name: Notebooks (${{ github.event_name == 'workflow_dispatch' && inputs.notebook_profile || 'full' }})
+    if: *run_full_validation
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -333,3 +351,41 @@ jobs:
       - name: Execute full notebook suite
         if: github.event_name != 'workflow_dispatch' || inputs.notebook_profile == 'full'
         run: python scripts/execute_notebooks.py --profile full
+
+  ci-result:
+    name: CI result
+    needs:
+      - repository-promotion
+      - cmake
+      - python-matrix
+      - cpp-only
+      - scientific-benchmark-smoke
+      - sanitizers
+      - notebooks
+    # Run after failed/cancelled dependencies, but use no runner for an empty sync.
+    if: >-
+      always() && (
+        github.event_name != 'pull_request' ||
+        github.repository != 'wonderalexandre/mmcfilters-dev' ||
+        github.event.pull_request.base.ref != 'main' ||
+        github.event.pull_request.head.ref != 'sync/public-main' ||
+        github.event.pull_request.head.repo.full_name != github.repository ||
+        github.event.pull_request.user.login != 'mmcfilters-repository-promotion[bot]' ||
+        toJSON(github.event.pull_request.changed_files) != '0'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every validation job to succeed
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+
+          jobs = json.loads(os.environ["CI_NEEDS"])
+          if not jobs or any(job["result"] != "success" for job in jobs.values()):
+              raise SystemExit(f"Required CI jobs did not all succeed: {jobs}")
+          print("All required CI jobs succeeded.")
+          PYTHON

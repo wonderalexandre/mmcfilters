@@ -1,9 +1,8 @@
 name: Publish approved private PRs
 
 on:
-  pull_request_target:
-    branches: [main]
-    types: [closed]
+  schedule:
+    - cron: "7,22,37,52 * * * *"
   repository_dispatch:
     types: [resume-promotion]
   workflow_dispatch:
@@ -12,15 +11,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: private-public-promotion
+  group: repository-promotion-and-synchronization
   cancel-in-progress: false
 
 jobs:
   promote:
     if: >-
-      github.repository == 'wonderalexandre/mmcfilters-dev' &&
-      vars.PROMOTION_ENABLED == 'true' &&
-      (github.event_name != 'pull_request_target' || github.event.pull_request.merged == true)
+      github.repository == 'wonderalexandre/mmcfilters' &&
+      vars.PROMOTION_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

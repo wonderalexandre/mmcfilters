@@ -31,15 +31,9 @@ concurrency:
 jobs:
   repository-promotion:
     name: Repository promotion tests
-    # Only the App-created, content-free return PR can skip validation.
+    # Private development uses local tests; hosted validation runs in public.
     if: &run_full_validation >-
-      github.event_name != 'pull_request' ||
-      github.repository != 'wonderalexandre/mmcfilters-dev' ||
-      github.event.pull_request.base.ref != 'main' ||
-      github.event.pull_request.head.ref != 'sync/public-main' ||
-      github.event.pull_request.head.repo.full_name != github.repository ||
-      github.event.pull_request.user.login != 'mmcfilters-repository-promotion[bot]' ||
-      toJSON(github.event.pull_request.changed_files) != '0'
+      github.repository != 'wonderalexandre/mmcfilters-dev'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -362,16 +356,10 @@ jobs:
       - scientific-benchmark-smoke
       - sanitizers
       - notebooks
-    # Run after failed/cancelled dependencies, but use no runner for an empty sync.
+    # Reject failed or cancelled validation while using no private runners.
     if: >-
       always() && (
-        github.event_name != 'pull_request' ||
-        github.repository != 'wonderalexandre/mmcfilters-dev' ||
-        github.event.pull_request.base.ref != 'main' ||
-        github.event.pull_request.head.ref != 'sync/public-main' ||
-        github.event.pull_request.head.repo.full_name != github.repository ||
-        github.event.pull_request.user.login != 'mmcfilters-repository-promotion[bot]' ||
-        toJSON(github.event.pull_request.changed_files) != '0'
+        github.repository != 'wonderalexandre/mmcfilters-dev'
       )
     runs-on: ubuntu-latest
     timeout-minutes: 5

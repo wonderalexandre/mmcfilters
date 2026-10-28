@@ -29,6 +29,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  repository-promotion:
+    name: Repository promotion tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Test publication and synchronization
+        run: python -m unittest discover -s .github/scripts -p 'test_*.py' -v
+
   cmake:
     name: CMake (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

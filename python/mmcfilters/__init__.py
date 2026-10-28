@@ -4,6 +4,7 @@ Preferred usage is the NodeId-based tree query API:
 - `root`
 - `alive_node_ids`
 - `children`
+- `parents`
 - `proper_part`
 - `node_support`
 - `smallest_node`
@@ -37,10 +38,10 @@ Valued-tree helpers live on `ValuedMorphologicalTree`:
 - `valued_tree.reconstruct_from_node_altitudes()`
 - `valued_tree.reconstruct_from_node_contributions(node_contributions)`
 
-Direct and subtractive reconstruction are separate filter families:
-- `DirectAttributeFilter(tree).apply_direct_attribute_filter(NodePreservationMask(...))`
-- `SubtractiveAttributeFilter(tree).apply_subtractive_attribute_filter(NodePreservationMask(...))`
-- `SoftSubtractiveAttributeFilter(tree).apply_soft_subtractive_attribute_filter(node_preservation_scores)`
+Filtering rules are available on `AttributeFilters(tree)`:
+- `AttributeFilters(tree).filtering_by_direct_rule(mask)`
+- `AttributeFilters(tree).filtering_by_subtractive_rule(mask)`
+- `AttributeFilters(tree).filtering_by_soft_subtractive_rule(node_preservation_scores)`
 
 Hierarchy edge saliency maps live on `HierarchySaliencyMap`:
 - `HierarchySaliencyMap.compute_saliency_edge_map(valued_tree, valuation, radius=None, strict=False, level_convention=..., validate_connectivity=True)`
@@ -59,13 +60,13 @@ Hierarchy saliency valuation helpers live on `HierarchySaliencyMapValidation`:
 - `HierarchySaliencyMapValidation.rank_hierarchy_valuation(valued_tree, valuation, strict=False)`
 - `HierarchySaliencyMapValidation.compute_normalized_scores(valued_tree, valuation, strict=False, nonnegative=False)`
 
-Hierarchy saliency projections live on `HierarchySaliencyMapProjection`:
-- `HierarchySaliencyMapProjection.edge_map_to_pixel_image(edge_map, reducer=EdgeToPixelReducer.MAX)`
-- `HierarchySaliencyMapProjection.threshold_cut(edge_map, threshold)`
+Edge-map operations and hierarchy saliency projections:
+- `EdgeMap.to_pixel_image(reducer=EdgeToPixelReducer.MAX)`
+- `EdgeMap.threshold(threshold)` returns `EdgeContours`
 - `HierarchySaliencyMapProjection.node_contour_edges(valued_tree)`
 - `HierarchySaliencyMapProjection.compute_incremental_node_contours(valued_tree)`
-- `HierarchySaliencyMapProjection.project_node_valuation(contours, node_valuation)`
-- `HierarchySaliencyMapProjection.threshold_by_node_valuation(contours, node_valuation, threshold)`
+- `IncrementalNodeContours.project_node_valuation(node_valuation)`
+- `IncrementalNodeContours.threshold_by_node_valuation(node_valuation, threshold)`
 
 Xu shape-space extinction saliency lives on the separate `ShapeSpaceSaliency`
 API:
@@ -128,6 +129,13 @@ HierarchySaliencyMapProjection = _native.HierarchySaliencyMapProjection
 ComponentTreePartitionHierarchyAdapter = _native.ComponentTreePartitionHierarchyAdapter
 ShapeSpaceExtremaPolarity = _native.ShapeSpaceExtremaPolarity
 ShapeSpaceSaliency = _native.ShapeSpaceSaliency
+EdgeMap = _native.EdgeMap
+EdgeContours = _native.EdgeContours
+NodeContourEdges = _native.NodeContourEdges
+IncrementalNodeContours = _native.IncrementalNodeContours
+ShapeSpaceExtremum = _native.ShapeSpaceExtremum
+ShapeSpaceExtinctionResult = _native.ShapeSpaceExtinctionResult
+ShapeSpaceSaliencyResult = _native.ShapeSpaceSaliencyResult
 EdgeToPixelReducer = _native.EdgeToPixelReducer
 HierarchyLevelConvention = _native.HierarchyLevelConvention
 NodeIdSpace = _native.NodeIdSpace
@@ -149,19 +157,11 @@ self_dual_span_convention = _native.self_dual_span_convention
 RegularGridAdjacency2D = _native.RegularGridAdjacency2D
 RegularGridAdjacencyShape = _native.RegularGridAdjacencyShape
 AttributeFilters = _native.AttributeFilters
-NodePreservationMask = _native.NodePreservationMask
-NodePruningMask = _native.NodePruningMask
-to_node_pruning_mask = _native.to_node_pruning_mask
-to_node_preservation_mask = _native.to_node_preservation_mask
 IncompleteStabilityWindowPolicy = _native.IncompleteStabilityWindowPolicy
-compute_node_preservation_mask = _native.compute_node_preservation_mask
 adjust_node_preservation_mask_by_altitude_stability = _native.adjust_node_preservation_mask_by_altitude_stability
 adjust_node_preservation_mask_by_depth_stability = _native.adjust_node_preservation_mask_by_depth_stability
 DirectReconstruction = _native.DirectReconstruction
 SubtractiveResidueModulation = _native.SubtractiveResidueModulation
-DirectAttributeFilter = _native.DirectAttributeFilter
-SubtractiveAttributeFilter = _native.SubtractiveAttributeFilter
-SoftSubtractiveAttributeFilter = _native.SoftSubtractiveAttributeFilter
 DepthStableRegionComputer = _native.DepthStableRegionComputer
 UltimateAttributeOpening = _native.UltimateAttributeOpening
 Attribute = _native.Attribute
@@ -195,6 +195,13 @@ __all__ = [
     "ComponentTreePartitionHierarchyAdapter",
     "ShapeSpaceExtremaPolarity",
     "ShapeSpaceSaliency",
+    "EdgeMap",
+    "EdgeContours",
+    "NodeContourEdges",
+    "IncrementalNodeContours",
+    "ShapeSpaceExtremum",
+    "ShapeSpaceExtinctionResult",
+    "ShapeSpaceSaliencyResult",
     "EdgeToPixelReducer",
     "HierarchyLevelConvention",
     "NodeIdSpace",
@@ -216,19 +223,11 @@ __all__ = [
     "RegularGridAdjacency2D",
     "RegularGridAdjacencyShape",
     "AttributeFilters",
-    "NodePreservationMask",
-    "NodePruningMask",
-    "to_node_pruning_mask",
-    "to_node_preservation_mask",
     "IncompleteStabilityWindowPolicy",
-    "compute_node_preservation_mask",
     "adjust_node_preservation_mask_by_altitude_stability",
     "adjust_node_preservation_mask_by_depth_stability",
     "DirectReconstruction",
     "SubtractiveResidueModulation",
-    "DirectAttributeFilter",
-    "SubtractiveAttributeFilter",
-    "SoftSubtractiveAttributeFilter",
     "DepthStableRegionComputer",
     "Attribute",
     "DistanceTransformAccuracy",

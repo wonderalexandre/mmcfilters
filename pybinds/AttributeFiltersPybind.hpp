@@ -7,7 +7,9 @@
 #include "PythonValuedMorphologicalTree.hpp"
 
 #include <concepts>
+#include <cstddef>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -26,6 +28,7 @@ namespace mmcfilters {
 class AttributeFiltersPybind {
     /** @brief References the valued-tree owner used by the component. */
     std::shared_ptr<pybindings::PythonValuedMorphologicalTree> valuedTreeOwner_;
+    std::size_t topologyMutationVersion_; ///< Topology version shared by every filtering rule.
     /** @brief Runtime storage for the supported altitude specializations. */
     using FilterStorage =
         std::variant<std::unique_ptr<AttributeFilters<std::uint8_t>>, std::unique_ptr<AttributeFilters<ToSGrayLevel>>>;
@@ -61,16 +64,34 @@ class AttributeFiltersPybind {
      */
     const MorphologicalTree& topology() const noexcept { return valuedTreeOwner_->topology(); }
 
+    /** @brief Rejects every rule after a topology edit. @param context Public operation name. */
+    void requireStableTree(const char* context) const { topology().requireMutationVersion(topologyMutationVersion_, context); }
+
+    /**
+     * @brief Applies soft subtractive reconstruction for one score dtype.
+     * @tparam Real Floating-point score and output type.
+     * @param scores Dense one-dimensional NumPy preservation scores.
+     * @return Reconstructed NumPy image with dtype Real.
+     */
+    template <std::floating_point Real> py::array filteringBySoftSubtractiveRuleTyped(py::array scores) {
+        auto typed = pybind_utils::requireNodeAttributeArray<Real>(std::move(scores), topology(), "node_preservation_scores");
+        const std::span<const Real> values(static_cast<const Real*>(typed.request().ptr), static_cast<std::size_t>(topology().numInternalNodeSlots()));
+        return valuedTreeOwner_->visit([&](const auto& native) -> py::array {
+            using Tree = typename std::remove_cvref_t<decltype(native)>::element_type;
+            using Altitude = typename Tree::AltitudeType;
+            return pybind_utils::toNumpy(SoftSubtractiveAttributeFilter<Altitude, Real>(*native).applySoftSubtractiveAttributeFilter(values));
+        });
+    }
 
     /**
      * @brief Applies by pruning min typed.
      *
-     * @param attr Attribute requested by the operation.
+     * @param attribute Attribute requested by the operation.
      * @param threshold Threshold applied by the operation.
      * @return Image or array produced by the operation.
      */
-    template <std::floating_point Real> py::array filteringByPruningMinTyped(py::array attr, Real threshold) {
-        auto typed = pybind_utils::requireNodeAttributeArray<Real>(std::move(attr), topology());
+    template <std::floating_point Real> py::array filteringByPruningMinTyped(py::array attribute, Real threshold) {
+        auto typed = pybind_utils::requireNodeAttributeArray<Real>(std::move(attribute), topology(), "attribute");
         const auto* values = static_cast<const Real*>(typed.request().ptr);
         return withFilters([&](auto& filters) -> py::array { return pybind_utils::toNumpy(filters.filteringByPruningMin(values, threshold)); });
     }
@@ -78,12 +99,12 @@ class AttributeFiltersPybind {
     /**
      * @brief Applies by pruning max typed.
      *
-     * @param attr Attribute requested by the operation.
+     * @param attribute Attribute requested by the operation.
      * @param threshold Threshold applied by the operation.
      * @return Image or array produced by the operation.
      */
-    template <std::floating_point Real> py::array filteringByPruningMaxTyped(py::array attr, Real threshold) {
-        auto typed = pybind_utils::requireNodeAttributeArray<Real>(std::move(attr), topology());
+    template <std::floating_point Real> py::array filteringByPruningMaxTyped(py::array attribute, Real threshold) {
+        auto typed = pybind_utils::requireNodeAttributeArray<Real>(std::move(attribute), topology(), "attribute");
         const auto* values = static_cast<const Real*>(typed.request().ptr);
         return withFilters([&](auto& filters) -> py::array { return pybind_utils::toNumpy(filters.filteringByPruningMax(values, threshold)); });
     }
@@ -91,12 +112,12 @@ class AttributeFiltersPybind {
     /**
      * @brief Applies by viterbi rule typed.
      *
-     * @param attr Attribute requested by the operation.
+     * @param attribute Attribute requested by the operation.
      * @param threshold Threshold applied by the operation.
      * @return Image or array produced by the operation.
      */
-    template <std::floating_point Real> py::array filteringByViterbiRuleTyped(py::array attr, Real threshold) {
-        auto typed = pybind_utils::requireNodeAttributeArray<Real>(std::move(attr), topology());
+    template <std::floating_point Real> py::array filteringByViterbiRuleTyped(py::array attribute, Real threshold) {
+        auto typed = pybind_utils::requireNodeAttributeArray<Real>(std::move(attribute), topology(), "attribute");
         const py::buffer_info buffer = typed.request();
         return withFilters([&](auto& filters) -> py::array {
             return pybind_utils::toNumpy(filters.filteringByViterbiRule(static_cast<const Real*>(buffer.ptr), threshold));
@@ -106,12 +127,12 @@ class AttributeFiltersPybind {
     /**
      * @brief Applies by extinction value typed.
      *
-     * @param attr Attribute requested by the operation.
+     * @param attribute Attribute requested by the operation.
      * @param selection Policy used to select extrema from the ranked candidates.
      * @return Image or array produced by the operation.
      */
-    template <std::floating_point Real> py::array filteringByExtinctionValueTyped(py::array attr, const ExtinctionSelectionPolicyPybind& selection) {
-        auto typed = pybind_utils::requireNodeAttributeArray<Real>(std::move(attr), topology());
+    template <std::floating_point Real> py::array filteringByExtinctionValueTyped(py::array attribute, const ExtinctionSelectionPolicyPybind& selection) {
+        auto typed = pybind_utils::requireNodeAttributeArray<Real>(std::move(attribute), topology(), "attribute");
         const auto* values = static_cast<const Real*>(typed.request().ptr);
         return valuedTreeOwner_->visit([&](const auto& concreteTree) -> py::array {
             using Tree = typename std::remove_cvref_t<decltype(concreteTree)>::element_type;
@@ -124,14 +145,14 @@ class AttributeFiltersPybind {
     /**
      * @brief Returns map by extinction value typed.
      *
-     * @param attr Attribute requested by the operation.
+     * @param attribute Attribute requested by the operation.
      * @param selection Policy used to select extrema from the ranked candidates.
      * @param scorePolicy Policy used to score and rank candidate extrema.
      * @return Map by extinction value typed.
      */
     template <std::floating_point Real>
-    py::array contourMapByExtinctionValueTyped(py::array attr, const ExtinctionSelectionPolicyPybind& selection, ExtinctionContourScorePolicy scorePolicy) {
-        auto typed = pybind_utils::requireNodeAttributeArray<Real>(std::move(attr), topology());
+    py::array contourMapByExtinctionValueTyped(py::array attribute, const ExtinctionSelectionPolicyPybind& selection, ExtinctionContourScorePolicy scorePolicy) {
+        auto typed = pybind_utils::requireNodeAttributeArray<Real>(std::move(attribute), topology(), "attribute");
         const auto* values = static_cast<const Real*>(typed.request().ptr);
         return valuedTreeOwner_->visit([&](const auto& concreteTree) -> py::array {
             using Tree = typename std::remove_cvref_t<decltype(concreteTree)>::element_type;
@@ -141,70 +162,104 @@ class AttributeFiltersPybind {
         });
     }
 
-    /**
-     * @brief Validates a node-preservation mask against the active tree.
-     *
-     * @param nodePreservationMask Per-node decisions where true preserves a node.
-     * @param tree Tree topology.
-     * @param argumentName Argument name included in validation error messages.
-     */
-    static void requireNodePreservationMask(const NodePreservationMask& nodePreservationMask, const MorphologicalTree& tree,
-                                            std::string_view argumentName = "node_preservation_mask") {
-        pybind_utils::requireVectorSize(nodePreservationMask.decisions(), static_cast<std::size_t>(tree.numInternalNodeSlots()), argumentName);
-    }
-
   public:
-    /** @brief Returns the retained valued-tree owner. @return Shared owner of the filtered tree. */
-    [[nodiscard]] std::shared_ptr<pybindings::PythonValuedMorphologicalTree> treeOwner() const noexcept { return valuedTreeOwner_; }
-
     /**
      * @brief Constructs `AttributeFiltersPybind` from the supplied inputs.
      *
      * @param valuedTree Valued tree.
      */
     explicit AttributeFiltersPybind(std::shared_ptr<pybindings::PythonValuedMorphologicalTree> valuedTree)
-        : valuedTreeOwner_(requireOwner(std::move(valuedTree))), filters_(makeFilters(*valuedTreeOwner_)) {}
+        : valuedTreeOwner_(requireOwner(std::move(valuedTree))), topologyMutationVersion_(topology().getMutationVersion()),
+          filters_(makeFilters(*valuedTreeOwner_)) {}
+
+    /**
+     * @brief Applies direct reconstruction with an implicit root reference.
+     * @param nodePreservationMask Boolean NumPy preservation decisions.
+     * @return Reconstructed image in the tree altitude dtype.
+     */
+    py::array filteringByDirectRule(py::array nodePreservationMask) {
+        requireStableTree("AttributeFilters.filtering_by_direct_rule");
+        const auto decisions = pybind_utils::requireNodePreservationArray(nodePreservationMask, topology());
+        return valuedTreeOwner_->visit([&](const auto& native) -> py::array {
+            using Tree = typename std::remove_cvref_t<decltype(native)>::element_type;
+            using Altitude = typename Tree::AltitudeType;
+            return pybind_utils::toNumpy(DirectAttributeFilter<Altitude>(*native).applyDirectAttributeFilter(decisions));
+        });
+    }
+
+    /**
+     * @brief Applies subtractive reconstruction from Boolean decisions.
+     * @param nodePreservationMask Boolean NumPy preservation decisions.
+     * @return Reconstructed image in the signed altitude-difference dtype.
+     */
+    py::array filteringBySubtractiveRule(py::array nodePreservationMask) {
+        requireStableTree("AttributeFilters.filtering_by_subtractive_rule");
+        const auto decisions = pybind_utils::requireNodePreservationArray(nodePreservationMask, topology());
+        return valuedTreeOwner_->visit([&](const auto& native) -> py::array {
+            using Tree = typename std::remove_cvref_t<decltype(native)>::element_type;
+            using OutputValue = AltitudeDifference<typename Tree::AltitudeType>;
+            const auto contributions = detail::attribute_filtering::computeGatedNodeContributions(native->asView(), decisions);
+            auto pixels = detail::tree_altitude::reconstructNodeContributionValuesEstablished(native->topology(), std::span<const OutputValue>(contributions));
+            return pybind_utils::toNumpyOwned2D(std::move(pixels), topology().numRows(), topology().numColumns());
+        });
+    }
+
+    /**
+     * @brief Applies soft subtractive reconstruction from scores in [0, 1].
+     * @param nodePreservationScores Dense float32 or float64 preservation scores.
+     * @return Reconstructed image with the input floating-point dtype.
+     */
+    py::array filteringBySoftSubtractiveRule(py::array nodePreservationScores) {
+        requireStableTree("AttributeFilters.filtering_by_soft_subtractive_rule");
+        if (pybind_utils::parseFloatingArrayDType(nodePreservationScores, "node_preservation_scores") == pybind_utils::FloatingDType::Float64) {
+            return filteringBySoftSubtractiveRuleTyped<double>(std::move(nodePreservationScores));
+        }
+        return filteringBySoftSubtractiveRuleTyped<float>(std::move(nodePreservationScores));
+    }
 
     /**
      * @brief Applies by pruning min.
      *
-     * @param attr Attribute requested by the operation.
+     * @param attribute Attribute requested by the operation.
      * @param threshold Threshold applied by the operation.
      * @return Image or array produced by the operation.
      */
-    py::array filteringByPruningMin(py::array attr, double threshold) {
-        if (pybind_utils::parseFloatingArrayDType(attr, "attr") == pybind_utils::FloatingDType::Float64) {
-            return filteringByPruningMinTyped<double>(std::move(attr), threshold);
+    py::array filteringByPruningMin(py::array attribute, double threshold) {
+        requireStableTree("AttributeFilters.filtering_by_pruning_min_rule");
+        if (pybind_utils::parseFloatingArrayDType(attribute, "attribute") == pybind_utils::FloatingDType::Float64) {
+            return filteringByPruningMinTyped<double>(std::move(attribute), threshold);
         }
-        return filteringByPruningMinTyped<float>(std::move(attr), static_cast<float>(threshold));
+        return filteringByPruningMinTyped<float>(std::move(attribute), static_cast<float>(threshold));
     }
 
     /**
      * @brief Applies by pruning max.
      *
-     * @param attr Attribute requested by the operation.
+     * @param attribute Attribute requested by the operation.
      * @param threshold Threshold applied by the operation.
      * @return Image or array produced by the operation.
      */
-    py::array filteringByPruningMax(py::array attr, double threshold) {
-        if (pybind_utils::parseFloatingArrayDType(attr, "attr") == pybind_utils::FloatingDType::Float64) {
-            return filteringByPruningMaxTyped<double>(std::move(attr), threshold);
+    py::array filteringByPruningMax(py::array attribute, double threshold) {
+        requireStableTree("AttributeFilters.filtering_by_pruning_max_rule");
+        if (pybind_utils::parseFloatingArrayDType(attribute, "attribute") == pybind_utils::FloatingDType::Float64) {
+            return filteringByPruningMaxTyped<double>(std::move(attribute), threshold);
         }
-        return filteringByPruningMaxTyped<float>(std::move(attr), static_cast<float>(threshold));
+        return filteringByPruningMaxTyped<float>(std::move(attribute), static_cast<float>(threshold));
     }
 
     /**
      * @brief Applies by viterbi rule.
      *
-     * @param attr Attribute requested by the operation.
+     * @param attribute Attribute requested by the operation.
      * @param threshold Threshold applied by the operation.
      * @return Image or array produced by the operation.
      */
-    py::array filteringByViterbiRule(py::array attr, double threshold) {
-        if (pybind_utils::parseFloatingArrayDType(attr, "attr") == pybind_utils::FloatingDType::Float64) {
-            return filteringByViterbiRuleTyped<double>(std::move(attr), threshold);
+    py::array filteringByViterbiRule(py::array attribute, double threshold) {
+        requireStableTree("AttributeFilters.filtering_by_viterbi_rule");
+        if (pybind_utils::parseFloatingArrayDType(attribute, "attribute") == pybind_utils::FloatingDType::Float64) {
+            return filteringByViterbiRuleTyped<double>(std::move(attribute), threshold);
         }
-        return filteringByViterbiRuleTyped<float>(std::move(attr), static_cast<float>(threshold));
+        return filteringByViterbiRuleTyped<float>(std::move(attribute), static_cast<float>(threshold));
     }
 
     /**
@@ -213,9 +268,10 @@ class AttributeFiltersPybind {
      * @param nodePreservationMask Per-node decisions where true preserves a node.
      * @return Image or array produced by the operation.
      */
-    py::array filteringByPruningMin(const NodePreservationMask& nodePreservationMask) {
-        requireNodePreservationMask(nodePreservationMask, topology());
-        return withFilters([&](auto& filters) -> py::array { return pybind_utils::toNumpy(filters.filteringByPruningMin(nodePreservationMask)); });
+    py::array filteringByPruningMin(py::array nodePreservationMask) {
+        requireStableTree("AttributeFilters.filtering_by_pruning_min_rule");
+        const auto decisions = pybind_utils::requireNodePreservationArray(nodePreservationMask, topology());
+        return withFilters([&](auto& filters) -> py::array { return pybind_utils::toNumpy(filters.filteringByPruningMin(decisions)); });
     }
 
     /**
@@ -224,38 +280,41 @@ class AttributeFiltersPybind {
      * @param nodePreservationMask Per-node decisions where true preserves a node.
      * @return Image or array produced by the operation.
      */
-    py::array filteringByPruningMax(const NodePreservationMask& nodePreservationMask) {
-        requireNodePreservationMask(nodePreservationMask, topology());
-        return withFilters([&](auto& filters) -> py::array { return pybind_utils::toNumpy(filters.filteringByPruningMax(nodePreservationMask)); });
+    py::array filteringByPruningMax(py::array nodePreservationMask) {
+        requireStableTree("AttributeFilters.filtering_by_pruning_max_rule");
+        const auto decisions = pybind_utils::requireNodePreservationArray(nodePreservationMask, topology());
+        return withFilters([&](auto& filters) -> py::array { return pybind_utils::toNumpy(filters.filteringByPruningMax(decisions)); });
     }
 
     /**
      * @brief Applies by extinction value.
      *
-     * @param attr Attribute requested by the operation.
+     * @param attribute Attribute requested by the operation.
      * @param selection Policy used to select extrema from the ranked candidates.
      * @return Image or array produced by the operation.
      */
-    py::array filteringByExtinctionValue(py::array attr, const ExtinctionSelectionPolicyPybind& selection) {
-        if (pybind_utils::parseFloatingArrayDType(attr, "attr") == pybind_utils::FloatingDType::Float64) {
-            return filteringByExtinctionValueTyped<double>(std::move(attr), selection);
+    py::array filteringByExtinctionValue(py::array attribute, const ExtinctionSelectionPolicyPybind& selection) {
+        requireStableTree("AttributeFilters.filtering_by_extinction_rule");
+        if (pybind_utils::parseFloatingArrayDType(attribute, "attribute") == pybind_utils::FloatingDType::Float64) {
+            return filteringByExtinctionValueTyped<double>(std::move(attribute), selection);
         }
-        return filteringByExtinctionValueTyped<float>(std::move(attr), selection);
+        return filteringByExtinctionValueTyped<float>(std::move(attribute), selection);
     }
 
     /**
      * @brief Returns map by extinction value.
      *
-     * @param attr Attribute requested by the operation.
+     * @param attribute Attribute requested by the operation.
      * @param selection Policy used to select extrema from the ranked candidates.
      * @param scorePolicy Policy used to score and rank candidate extrema.
      * @return Map by extinction value.
      */
-    py::array contourMapByExtinctionValue(py::array attr, const ExtinctionSelectionPolicyPybind& selection, ExtinctionContourScorePolicy scorePolicy) {
-        if (pybind_utils::parseFloatingArrayDType(attr, "attr") == pybind_utils::FloatingDType::Float64) {
-            return contourMapByExtinctionValueTyped<double>(std::move(attr), selection, scorePolicy);
+    py::array contourMapByExtinctionValue(py::array attribute, const ExtinctionSelectionPolicyPybind& selection, ExtinctionContourScorePolicy scorePolicy) {
+        requireStableTree("AttributeFilters.contour_map_by_extinction");
+        if (pybind_utils::parseFloatingArrayDType(attribute, "attribute") == pybind_utils::FloatingDType::Float64) {
+            return contourMapByExtinctionValueTyped<double>(std::move(attribute), selection, scorePolicy);
         }
-        return contourMapByExtinctionValueTyped<float>(std::move(attr), selection, scorePolicy);
+        return contourMapByExtinctionValueTyped<float>(std::move(attribute), selection, scorePolicy);
     }
 };
 

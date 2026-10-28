@@ -2,6 +2,7 @@
 
 #include "../mmcfilters/filters/ExtinctionValues.hpp"
 #include "PybindConversions.hpp"
+#include "EdgeMapPybind.hpp"
 #include "PythonValuedMorphologicalTree.hpp"
 
 #include <pybind11/pybind11.h>
@@ -95,24 +96,6 @@ class ExtinctionValuesPybind {
     static ExtinctionValues<Altitude, Real> makeExtinction(ValuedMorphologicalTree<Altitude>& valuedTree, py::array attribute) {
         auto typed = pybind_utils::requireNodeAttributeArray<Real>(std::move(attribute), valuedTree.topology(), "attribute");
         return ExtinctionValues<Altitude, Real>(valuedTree, static_cast<const Real*>(typed.request().ptr));
-    }
-
-    /**
-     * @brief Converts an edge-indexed saliency map to a Python dictionary.
-     *
-     * @param edgeMap Saliency values indexed by graph edge.
-     * @return Dictionary containing the edge map values and grid metadata.
-     */
-    template <class Value> static py::dict edgeSaliencyMapToDict(EdgeSaliencyMap<Value>&& edgeMap) {
-        const int numEdges = static_cast<int>(edgeMap.values.size());
-        py::dict result;
-        result["num_rows"] = edgeMap.numRows;
-        result["num_columns"] = edgeMap.numColumns;
-        result["adjacency_radius"] = edgeMap.adjacencyRadius;
-        result["sources"] = pybind_utils::toNumpyOwned(std::move(edgeMap.sources), numEdges);
-        result["targets"] = pybind_utils::toNumpyOwned(std::move(edgeMap.targets), numEdges);
-        result["values"] = pybind_utils::toNumpyOwned(std::move(edgeMap.values), numEdges);
-        return result;
     }
 
     /**
@@ -217,7 +200,7 @@ class ExtinctionValuesPybind {
      * @param ranked Ranked extrema from which the selection is produced.
      * @return Computed formal saliency edge map.
      */
-    py::dict computeFormalSaliencyEdgeMap(std::optional<double> radius = std::nullopt, bool ranked = false) {
+    pybindings::EdgeMapPybind computeFormalSaliencyEdgeMap(std::optional<double> radius = std::nullopt, bool ranked = false) {
         const MorphologicalTree& tree = valuedTreeOwner_->topology();
         std::optional<RegularGridAdjacency2D> adjacency;
         if (radius.has_value()) {
@@ -226,18 +209,18 @@ class ExtinctionValuesPybind {
         }
 
         return std::visit(
-            [&](auto& extinction) -> py::dict {
+            [&](auto& extinction) -> pybindings::EdgeMapPybind {
                 if (ranked) {
                     if (adjacency.has_value()) {
-                        return edgeSaliencyMapToDict(extinction.computeRankedFormalSaliencyEdgeMap(*adjacency));
+                        return pybindings::EdgeMapPybind(extinction.computeRankedFormalSaliencyEdgeMap(*adjacency));
                     }
-                    return edgeSaliencyMapToDict(extinction.computeRankedFormalSaliencyEdgeMap());
+                    return pybindings::EdgeMapPybind(extinction.computeRankedFormalSaliencyEdgeMap());
                 }
 
                 if (adjacency.has_value()) {
-                    return edgeSaliencyMapToDict(extinction.computeFormalSaliencyEdgeMap(*adjacency));
+                    return pybindings::EdgeMapPybind(extinction.computeFormalSaliencyEdgeMap(*adjacency));
                 }
-                return edgeSaliencyMapToDict(extinction.computeFormalSaliencyEdgeMap());
+                return pybindings::EdgeMapPybind(extinction.computeFormalSaliencyEdgeMap());
             },
             extinction_);
     }
@@ -249,9 +232,9 @@ class ExtinctionValuesPybind {
      * tree must carry one unambiguous stored adjacency.
      * @param ranked Whether to return dense effective-edge ranks instead of raw
      * extinction values.
-     * @return Python dictionary containing the edge domain and projected values.
+     * @return Owned edge map containing the edge domain and projected values.
      */
-    py::dict computeMonotoneExtinctionProjection(std::optional<double> radius = std::nullopt, bool ranked = false) {
+    pybindings::EdgeMapPybind computeMonotoneExtinctionProjection(std::optional<double> radius = std::nullopt, bool ranked = false) {
         const MorphologicalTree& tree = valuedTreeOwner_->topology();
         std::optional<RegularGridAdjacency2D> adjacency;
         if (radius.has_value()) {
@@ -260,17 +243,17 @@ class ExtinctionValuesPybind {
         }
 
         return std::visit(
-            [&](auto& extinction) -> py::dict {
+            [&](auto& extinction) -> pybindings::EdgeMapPybind {
                 if (ranked) {
                     if (adjacency.has_value()) {
-                        return edgeSaliencyMapToDict(extinction.computeRankedMonotoneExtinctionProjection(*adjacency));
+                        return pybindings::EdgeMapPybind(extinction.computeRankedMonotoneExtinctionProjection(*adjacency));
                     }
-                    return edgeSaliencyMapToDict(extinction.computeRankedMonotoneExtinctionProjection());
+                    return pybindings::EdgeMapPybind(extinction.computeRankedMonotoneExtinctionProjection());
                 }
                 if (adjacency.has_value()) {
-                    return edgeSaliencyMapToDict(extinction.computeMonotoneExtinctionProjection(*adjacency));
+                    return pybindings::EdgeMapPybind(extinction.computeMonotoneExtinctionProjection(*adjacency));
                 }
-                return edgeSaliencyMapToDict(extinction.computeMonotoneExtinctionProjection());
+                return pybindings::EdgeMapPybind(extinction.computeMonotoneExtinctionProjection());
             },
             extinction_);
     }

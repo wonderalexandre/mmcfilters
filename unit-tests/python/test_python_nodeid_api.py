@@ -68,6 +68,96 @@ def build_higra_hierarchy(tree_like):
     return higra_parent, higra_altitude
 
 
+def query_id_arrays(tree):
+    root = tree.root
+    leaf = tree.leaves[0]
+    return {
+        "alive_node_ids": tree.alive_node_ids,
+        "leaves": tree.leaves,
+        "children": tree.children(root),
+        "proper_part": tree.proper_part(root),
+        "post_order": tree.post_order(),
+        "breadth_first_traversal": tree.breadth_first_traversal(),
+        "ancestors": tree.ancestors(leaf),
+        "lowest_common_ancestors": tree.lowest_common_ancestors([(root, leaf), (-1, root)]),
+        "path_between_nodes": tree.path_between_nodes(leaf, root),
+        "subtree_nodes": tree.subtree_nodes(root),
+        "descendants": tree.descendants(root),
+        "smallest_node_map": tree.smallest_node_map,
+        "parents": tree.parents,
+    }
+
+
+def check_owned_query_arrays(mmcfilters, image):
+    import gc
+
+    factories = (
+        mmcfilters.MorphologicalTreeFactory.create_max_tree,
+        mmcfilters.MorphologicalTreeFactory.create_min_tree,
+        mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes,
+        mmcfilters.MorphologicalTreeFactory.create_extremum_residual_tree,
+    )
+    for factory in factories:
+        for edit in ("merge_node_into_parent", "prune_node"):
+            tree = factory(image)
+            snapshots = query_id_arrays(tree)
+            expected = {name: values.copy() for name, values in snapshots.items()}
+            independent = query_id_arrays(tree)
+            for name, values in snapshots.items():
+                require(isinstance(values, np.ndarray), f"{name} returns a NumPy array")
+                require(values.dtype == np.int32 and values.ndim == 1, f"{name} uses one-dimensional int32 storage")
+                require(values.flags.owndata and values.flags.c_contiguous and values.base is None,
+                        f"{name} owns its contiguous NumPy storage")
+                require(not np.shares_memory(values, independent[name]), f"{name} queries return independent snapshots")
+                independent[name][:] = -99
+                np.testing.assert_array_equal(query_id_arrays(tree)[name], expected[name])
+
+            parents = snapshots["parents"]
+            require(parents.shape == (tree.num_internal_node_slots,), "parents covers every internal node slot")
+            require(parents[tree.root] == tree.root, "the root is its own parent in the parent array")
+            for node in tree.alive_node_ids:
+                require(parents[node] == tree.parent(node), "parent array agrees with the scalar parent query")
+            np.testing.assert_array_equal(snapshots["smallest_node_map"],
+                                          [tree.smallest_node(pixel) for pixel in range(tree.num_pixels)])
+            np.testing.assert_array_equal(tree.post_order(root_node_id=tree.root), snapshots["post_order"])
+            np.testing.assert_array_equal(tree.breadth_first_traversal(root_node_id=tree.root), snapshots["breadth_first_traversal"])
+
+            removed = tree.leaves[0]
+            require(removed != tree.root, "the edit fixture needs a non-root leaf")
+            getattr(tree, edit)(removed)
+            fresh_parents = tree.parents
+            require(fresh_parents[removed] == -1, "dead slots use -1 in the parent snapshot")
+            live = np.zeros(tree.num_internal_node_slots, dtype=np.bool_)
+            live[tree.alive_node_ids] = True
+            require(np.all(fresh_parents[~live] == -1), "all inactive slots use the invalid-node sentinel")
+            for node in tree.alive_node_ids:
+                require(fresh_parents[node] == tree.parent(node), "new queries reflect the edited topology")
+            for name, values in snapshots.items():
+                np.testing.assert_array_equal(values, expected[name])
+            del tree
+            gc.collect()
+            for name, values in snapshots.items():
+                np.testing.assert_array_equal(values, expected[name])
+
+    singleton = mmcfilters.MorphologicalTreeFactory.create_max_tree(np.array([[7]], dtype=np.uint8))
+    np.testing.assert_array_equal(singleton.parents, [singleton.root])
+    for values in (singleton.children(singleton.root), singleton.descendants(singleton.root),
+                   singleton.lowest_common_ancestors([])):
+        require(values.shape == (0,) and values.dtype == np.int32 and values.flags.owndata,
+                "empty ID results retain their dtype, rank, and ownership")
+
+    source = mmcfilters.MorphologicalTreeFactory.create_max_tree(image)
+    parent, altitude = source.export_higra_hierarchy()
+    imported = mmcfilters.MorphologicalTreeFactory.create_from_higra_parent(
+        parent, altitude, source.num_rows, source.num_columns, source.kind, radius=1.5,
+    )
+    np.testing.assert_array_equal(imported.parents,
+                                  [imported.parent(node) for node in range(imported.num_internal_node_slots)])
+    np.testing.assert_array_equal(imported.smallest_node_map,
+                                  [imported.smallest_node(pixel) for pixel in range(imported.num_pixels)])
+    np.testing.assert_array_equal(imported.reconstruct_from_node_altitudes(), image)
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         raise SystemExit("usage: test_python_nodeid_api.py <build-dir>")
@@ -222,6 +312,7 @@ def main() -> int:
         "createMaxTree must reject non-contiguous uint8 arrays",
     )
 
+    check_owned_query_arrays(mmcfilters, image)
     valued_tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(image)
     # Valued trees expose the public NodeId topology query API in Python.
     tree = valued_tree
@@ -242,7 +333,7 @@ def main() -> int:
             "explicit residual adjacency preserves parent relations",
         )
         require(np.array_equal(explicit_tree.reconstruct_from_node_altitudes(), image), "explicit residual adjacency reconstructs the image")
-    require(valued_max_tree.alive_node_ids == tree.alive_node_ids, "factory max-tree must expose the expected topology")
+    require(np.array_equal(valued_max_tree.alive_node_ids, tree.alive_node_ids), "factory max-tree must expose the expected topology")
     require(valued_max_tree.kind == mmcfilters.MorphologicalTreeKind.MAX_TREE, "factory max-tree tree type")
     require(valued_min_tree.kind == mmcfilters.MorphologicalTreeKind.MIN_TREE, "factory min-tree tree type")
     require(
@@ -354,7 +445,7 @@ def main() -> int:
     require(not callable(tree.root), "root is a property")
     require(isinstance(tree.shared_adjacency_context, mmcfilters.SharedAdjacencyContext), "max-tree should expose shared-adjacency context")
     require(tree.parent(0) == 0, "root parent must point to itself")
-    require(tree.alive_node_ids == [0, 1, 2, 3, 4, 5], "alive NodeIds")
+    require(np.array_equal(tree.alive_node_ids, [0, 1, 2, 3, 4, 5]), "alive NodeIds")
     require(tree.num_nodes == len(tree.alive_node_ids), "alive node cardinality")
     contours = mmcfilters.ContourComputation(tree)
     leaf_id = tree.leaves[0]
@@ -391,26 +482,26 @@ def main() -> int:
     gc.collect()
     require(len(list(detached)) == 2, "iterator owns its Python source lifetime")
     require_raises(lambda: contours.contour(-1), "on-demand query rejects invalid NodeId")
-    require(tree.leaves == [5], "leaf NodeIds")
+    require(np.array_equal(tree.leaves, [5]), "leaf NodeIds")
     require(tree.num_leaf_nodes == len(tree.leaves), "leaf cardinality")
-    require(tree.children(3) == [4], "children by NodeId")
+    require(np.array_equal(tree.children(3), [4]), "children by NodeId")
     require(int(mmcfilters.Attribute.compute(tree, mmcfilters.Attribute.AREA)[3]) == 8, "node area by attribute computer")
     require(mmcfilters.Attribute.describe(mmcfilters.Attribute.AREA).startswith("Area:"), "attribute description by pybind")
     require(tree.num_descendants(2) == 3, "descendants count by NodeId")
     require(tree.num_siblings(4) == 0, "siblings count by NodeId")
-    require(tree.ancestors(5) == [5, 4, 3, 2, 1, 0], "ancestors include self and end at root")
-    require(tree.ancestors(tree.root) == [tree.root], "root ancestor chain contains only self")
-    require(tree.descendants(2) == [3, 4, 5], "descendants are strict")
-    require(tree.subtree_nodes(2) == [2, 3, 4, 5], "subtree nodes include the queried node")
-    require(tree.post_order() == [5, 4, 3, 2, 1, 0], "post-order traversal schedule")
-    require(tree.breadth_first_traversal() == [0, 1, 2, 3, 4, 5], "breadth-first traversal")
+    require(np.array_equal(tree.ancestors(5), [5, 4, 3, 2, 1, 0]), "ancestors include self and end at root")
+    require(np.array_equal(tree.ancestors(tree.root), [tree.root]), "root ancestor chain contains only self")
+    require(np.array_equal(tree.descendants(2), [3, 4, 5]), "descendants are strict")
+    require(np.array_equal(tree.subtree_nodes(2), [2, 3, 4, 5]), "subtree nodes include the queried node")
+    require(np.array_equal(tree.post_order(), [5, 4, 3, 2, 1, 0]), "post-order traversal schedule")
+    require(np.array_equal(tree.breadth_first_traversal(), [0, 1, 2, 3, 4, 5]), "breadth-first traversal")
     require(tree.lowest_common_ancestor(5, 2) == 2, "lowest common ancestor")
     require(
-        tree.lowest_common_ancestors([(5, 2), (4, 5), (tree.root, 5), (-1, 2)]) == [2, 4, tree.root, -1],
+        np.array_equal(tree.lowest_common_ancestors([(5, 2), (4, 5), (tree.root, 5), (-1, 2)]), [2, 4, tree.root, -1]),
         "batched lowest common ancestors preserve query order",
     )
-    require(sorted(tree.alive_node_ids, key=tree.dfs_entry_index) == tree.subtree_nodes(tree.root), "DFS entry order equals pre-order")
-    require(sorted(tree.alive_node_ids, key=tree.dfs_exit_index) == tree.post_order(), "DFS exit order equals post-order")
+    require(np.array_equal(sorted(tree.alive_node_ids, key=tree.dfs_entry_index), tree.subtree_nodes(tree.root)), "DFS entry order equals pre-order")
+    require(np.array_equal(sorted(tree.alive_node_ids, key=tree.dfs_exit_index), tree.post_order()), "DFS exit order equals post-order")
     dfs_event_indices = [index for node in tree.alive_node_ids for index in (tree.dfs_entry_index(node), tree.dfs_exit_index(node))]
     require(sorted(dfs_event_indices) == list(range(2 * tree.num_nodes)), "DFS entry and exit indices form one event sequence")
     require(tree.dfs_entry_index(tree.root) == 0, "root DFS entry index")
@@ -421,7 +512,7 @@ def main() -> int:
         require(entry_index < exit_index, "DFS entry precedes exit")
         require(tree.num_descendants(node) == (exit_index - entry_index - 1) // 2, "descendant count from DFS interval")
     require(tree.proper_part_cardinality(3) == 3, "direct proper-part count by NodeId")
-    require(tree.proper_part(3) == [0, 1, 4], "direct proper parts by NodeId")
+    require(np.array_equal(tree.proper_part(3), [0, 1, 4]), "direct proper parts by NodeId")
     require(list(tree.node_support(3)) == [0, 1, 4, 5, 6, 9, 10, 14], "connected component iterator by NodeId")
     require(tree.is_tree_of_partial_partitions(), "component tree must be a tree of partial partitions")
     tree.validate_tree_of_partial_partitions()
@@ -442,7 +533,7 @@ def main() -> int:
     require(int(tree.reconstruct_node(3).sum()) == 255 * 8, "node reconstruction by NodeId")
     require(valued_tree.root == tree.root, "valued_tree root")
     require(not callable(valued_tree.root), "valued_tree root is a property")
-    require(valued_tree.alive_node_ids == tree.alive_node_ids, "valued_tree alive NodeIds")
+    require(np.array_equal(valued_tree.alive_node_ids, tree.alive_node_ids), "valued_tree alive NodeIds")
     require(valued_tree.num_nodes == len(valued_tree.alive_node_ids), "valued_tree alive-node cardinality")
     require(valued_tree.node_altitude(0) == 0, "valued_tree root altitude")
     require(valued_tree.node_altitude(5) == 5, "valued_tree nodeAltitude")
@@ -1022,12 +1113,12 @@ def main() -> int:
         1.5,
     )
     require(rebuilt.root == 0, "Higra topology import root alias")
-    require(rebuilt.alive_node_ids == [0, 1, 2, 3, 4, 5], "Higra topology import alive NodeIds")
-    require(rebuilt.children(3) == [4], "Higra topology import children")
+    require(np.array_equal(rebuilt.alive_node_ids, [0, 1, 2, 3, 4, 5]), "Higra topology import alive NodeIds")
+    require(np.array_equal(rebuilt.children(3), [4]), "Higra topology import children")
     require(rebuilt.smallest_node(10) == 5, "Higra topology import smallest node")
     require(rebuilt.parent(0) == 0, "Higra topology import root parent must point to itself")
-    require(rebuilt.ancestors(5) == [5, 4, 3, 2, 1, 0], "Higra topology import path to root")
-    require(rebuilt.path_between_nodes(5, 2) == [5, 4, 3, 2], "Higra topology import path between nodes")
+    require(np.array_equal(rebuilt.ancestors(5), [5, 4, 3, 2, 1, 0]), "Higra topology import path to root")
+    require(np.array_equal(rebuilt.path_between_nodes(5, 2), [5, 4, 3, 2]), "Higra topology import path between nodes")
     require(int(mmcfilters.Attribute.compute(rebuilt, mmcfilters.Attribute.AREA)[3]) == 8, "Higra topology import area")
 
     attr = np.arange(tree.num_nodes, dtype=np.float32)
@@ -1039,7 +1130,7 @@ def main() -> int:
     require(hasattr(contours, "__iter__"), "contours are directly iterable")
     require(tree.root == tree.root, "root property should expose a NodeId, not a legacy node handle")
     require(not hasattr(tree, "listNodes"), "legacy listNodes handle API should be removed")
-    require(tree.leaves == [5], "leaves is the canonical structural query")
+    require(np.array_equal(tree.leaves, [5]), "leaves is the canonical structural query")
     require(hasattr(valued_tree, "reconstruct_from_node_altitudes"), "reconstruct_from_node_altitudes should live on ValuedMorphologicalTree")
     require(not hasattr(valued_tree, "reconstructFromNodeAltitudes"), "legacy reconstructFromNodeAltitudes should be removed")
     require(not hasattr(mmcfilters.ValuedMorphologicalTree, "createFromHigra"), "legacy valued_tree Higra import alias should be removed")

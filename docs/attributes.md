@@ -67,9 +67,7 @@ foreground 4-connected contours. They do not require altitude or
 construction-adjacency metadata, and their descriptive tree kind is irrelevant.
 
 Family-specific names, formulas, units, tie rules, and group membership are
-documented in the [Attribute catalog](attribute-catalog.md) and the relevant
-subsystem guide, such as
-[Distance-transform attributes](distance-transform.md).
+documented in the [Attribute catalog](attribute-catalog.md).
 
 ## Common C++ usage patterns
 
@@ -250,8 +248,6 @@ API mode:
 
 - [Attribute catalog](attribute-catalog.md): public scalar attributes, groups,
   and input contracts.
-- [Distance-transform attributes](distance-transform.md): exact/approximate
-  scalar contracts and units.
 - [Attribute computer architecture](attribute-computer-architecture.md):
   contributor guide for adding or changing attribute computers.
 - [Finite-window local-attribute C++ extension](finite-window-local-attributes.md):

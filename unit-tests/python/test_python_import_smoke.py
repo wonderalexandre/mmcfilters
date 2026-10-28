@@ -48,21 +48,25 @@ def main() -> int:
 
     require(tree.reconstruct_from_node_altitudes().shape == image.shape, "factory max-tree smoke")
     for public_name in (
-        "NodePreservationMask",
-        "NodePruningMask",
         "DirectReconstruction",
         "SubtractiveResidueModulation",
-        "DirectAttributeFilter",
-        "SubtractiveAttributeFilter",
-        "SoftSubtractiveAttributeFilter",
         "IncompleteStabilityWindowPolicy",
-        "compute_node_preservation_mask",
         "adjust_node_preservation_mask_by_altitude_stability",
         "adjust_node_preservation_mask_by_depth_stability",
-        "to_node_pruning_mask",
-        "to_node_preservation_mask",
     ):
         require(hasattr(mmcfilters, public_name), f"package must expose {public_name}")
+    for removed_name in ("NodePreservationMask", "NodePruningMask", "to_node_pruning_mask",
+                         "to_node_preservation_mask", "compute_node_preservation_mask"):
+        require(not hasattr(mmcfilters, removed_name), f"{removed_name} is replaced by NumPy Boolean operations")
+    for removed_name in ("DirectAttributeFilter", "SubtractiveAttributeFilter", "SoftSubtractiveAttributeFilter"):
+        require(not hasattr(mmcfilters, removed_name), f"{removed_name} is exposed through AttributeFilters rules")
+        require(not hasattr(mmcfilters._native, removed_name), f"native module must not register {removed_name}")
+    for method in ("filtering_by_direct_rule", "filtering_by_subtractive_rule", "filtering_by_soft_subtractive_rule",
+                   "filtering_by_pruning_min_rule", "filtering_by_pruning_max_rule", "filtering_by_viterbi_rule",
+                   "filtering_by_extinction_rule"):
+        require(hasattr(mmcfilters.AttributeFilters, method), f"AttributeFilters must expose {method}")
+    for removed_method in ("filtering_by_pruning_min", "filtering_by_pruning_max", "filtering_by_extinction", "apply"):
+        require(not hasattr(mmcfilters.AttributeFilters, removed_method), f"obsolete alias {removed_method} must not be exposed")
     require(hasattr(tree, "reconstruct_from_node_contributions"), "valued tree must expose contribution reconstruction")
     require(hasattr(mmcfilters, "Attribute"), "package must expose Attribute")
     require(

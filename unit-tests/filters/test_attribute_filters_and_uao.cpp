@@ -137,6 +137,8 @@ void checkReconstructionNumericValidation() {
     }
 
     const auto singleton = MorphologicalTreeFactory::createMaxTree(Image<double>::create(1, 1, std::numeric_limits<double>::max()));
+    requireVectorEqual(collectImageValues(applyDirectAttributeFilter(singleton, NodePreservationMask(1, false))),
+                       std::vector<double>{std::numeric_limits<double>::max()}, "Direct reconstruction must retain a rejected singleton root");
     const std::vector<double> doubleScores(1, 1.0);
     requireVectorEqual(collectImageValues(applySoftSubtractiveAttributeFilter(singleton, std::span<const double>(doubleScores))),
                        std::vector<double>{std::numeric_limits<double>::max()}, "Soft reconstruction must preserve a finite double contribution");
@@ -239,6 +241,34 @@ int main() {
         SubtractiveAttributeFilter<std::uint8_t> subtractiveFilter(*valuedTree);
         SoftSubtractiveAttributeFilter<std::uint8_t, float> softSubtractiveFilter(*valuedTree);
 
+        std::vector<bool> rejectRoot = keepAll;
+        rejectRoot[static_cast<std::size_t>(valuedTree->topology().root())] = false;
+        const NodePreservationMask rejectRootMask(rejectRoot);
+        requireVectorEqual(collectImageValues(directFilter.applyDirectAttributeFilter(rejectRootMask)), collectImageValues(reconstruction),
+                           "Direct reconstruction must ignore the root mask decision");
+        requireVectorEqual(rejectRootMask.decisions(), rejectRoot, "Direct reconstruction must not modify the input mask");
+        requireVectorEqual(collectImageValues(directFilter.applyDirectAttributeFilter(NodePreservationMask(keepAll.size(), false))),
+                           std::vector<std::uint8_t>(static_cast<std::size_t>(image->getSize()), valuedTree->nodeAltitude(valuedTree->topology().root())),
+                           "All-false direct decisions must reconstruct the root altitude");
+
+        // Borrowed Boolean buffers use the same kernels as owning C++ masks.
+        auto borrowedDecisions = std::make_unique<bool[]>(keepAll.size());
+        std::vector<bool> mixedDecisions(keepAll.size(), false);
+        for (std::size_t index = 0; index < keepAll.size(); ++index) {
+            mixedDecisions[index] = index % 2 == 0;
+            borrowedDecisions[index] = mixedDecisions[index];
+        }
+        const std::span<const bool> borrowedMask(borrowedDecisions.get(), keepAll.size());
+        const NodePreservationMask owningMask(mixedDecisions);
+        requireVectorEqual(collectImageValues(directFilter.applyDirectAttributeFilter(borrowedMask)),
+                           collectImageValues(directFilter.applyDirectAttributeFilter(owningMask)), "borrowed direct mask");
+        requireVectorEqual(collectImageValues(subtractiveFilter.applySubtractiveAttributeFilter(borrowedMask)),
+                           collectImageValues(subtractiveFilter.applySubtractiveAttributeFilter(owningMask)), "borrowed subtractive mask");
+        requireVectorEqual(collectImageValues(valuedTreeFilters.filteringByPruningMin(borrowedMask)),
+                           collectImageValues(valuedTreeFilters.filteringByPruningMin(owningMask)), "borrowed pruning-min mask");
+        requireVectorEqual(collectImageValues(valuedTreeFilters.filteringByPruningMax(borrowedMask)),
+                           collectImageValues(valuedTreeFilters.filteringByPruningMax(owningMask)), "borrowed pruning-max mask");
+
         const NodePruningMask pruneNoneMask = toNodePruningMask(keepAllMask);
         const NodePreservationMask roundTripMask = toNodePreservationMask(pruneNoneMask);
         for (std::size_t index = 0; index < keepAll.size(); ++index) {
@@ -256,13 +286,6 @@ int main() {
                                                      "SubtractiveAttributeFilter must reject a short node preservation mask");
                 requireThrows<std::invalid_argument>([&]() { static_cast<void>(softSubtractiveFilter.applySoftSubtractiveAttributeFilter(shortScores)); },
                                                      "SoftSubtractiveAttributeFilter must reject a short score buffer");
-
-                NodePreservationMask rejectRootMask(keepAll);
-                std::vector<bool> rejectRoot = keepAll;
-                rejectRoot[static_cast<std::size_t>(valuedTree->topology().root())] = false;
-                rejectRootMask = NodePreservationMask(std::move(rejectRoot));
-                requireThrows<std::invalid_argument>([&]() { static_cast<void>(directFilter.applyDirectAttributeFilter(rejectRootMask)); },
-                                                     "DirectAttributeFilter must reject a mask that rejects the root");
 
                 std::vector<float> invalidScores(keepAll.size(), 1.0f);
                 invalidScores.front() = std::numeric_limits<float>::quiet_NaN();

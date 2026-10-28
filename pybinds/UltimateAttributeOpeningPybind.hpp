@@ -27,12 +27,12 @@ class UltimateAttributeOpeningPybind {
      * @brief Creates an ultimate-attribute-opening computer for the runtime attribute type.
      *
      * @param valuedTree Valued tree.
-     * @param attr Attribute requested by the operation.
+     * @param attribute Attribute requested by the operation.
      * @return Ultimate-attribute-opening computer variant for the array element type.
      */
     template <std::floating_point Real, AltitudeValue Altitude>
-    static UltimateAttributeOpening<Altitude, Real> makeUao(ValuedMorphologicalTree<Altitude>& valuedTree, py::array attr) {
-        auto typed = pybind_utils::requireNodeAttributeArray<Real>(std::move(attr), valuedTree.topology());
+    static UltimateAttributeOpening<Altitude, Real> makeUao(ValuedMorphologicalTree<Altitude>& valuedTree, py::array attribute) {
+        auto typed = pybind_utils::requireNodeAttributeArray<Real>(std::move(attribute), valuedTree.topology(), "attribute");
         return UltimateAttributeOpening<Altitude, Real>(valuedTree, static_cast<const Real*>(typed.request().ptr));
     }
 
@@ -40,14 +40,14 @@ class UltimateAttributeOpeningPybind {
      * @brief Creates an ultimate-attribute-opening computer for the runtime attribute type.
      *
      * @param valuedTree Valued tree.
-     * @param attr Attribute requested by the operation.
+     * @param attribute Attribute requested by the operation.
      * @return Ultimate-attribute-opening computer variant for the array element type.
      */
-    static UaoStorage makeUao(pybindings::PythonValuedMorphologicalTree& valuedTree, py::array attr) {
-        if (pybind_utils::parseFloatingArrayDType(attr, "attr") == pybind_utils::FloatingDType::Float64) {
-            return valuedTree.visit([&](auto& concreteTree) -> UaoStorage { return makeUao<double>(*concreteTree, std::move(attr)); });
+    static UaoStorage makeUao(pybindings::PythonValuedMorphologicalTree& valuedTree, py::array attribute) {
+        if (pybind_utils::parseFloatingArrayDType(attribute, "attribute") == pybind_utils::FloatingDType::Float64) {
+            return valuedTree.visit([&](auto& concreteTree) -> UaoStorage { return makeUao<double>(*concreteTree, std::move(attribute)); });
         }
-        return valuedTree.visit([&](auto& concreteTree) -> UaoStorage { return makeUao<float>(*concreteTree, std::move(attr)); });
+        return valuedTree.visit([&](auto& concreteTree) -> UaoStorage { return makeUao<float>(*concreteTree, std::move(attribute)); });
     }
 
   public:
@@ -55,10 +55,10 @@ class UltimateAttributeOpeningPybind {
      * @brief Constructs `UltimateAttributeOpeningPybind` from the supplied inputs.
      *
      * @param valuedTree Valued tree.
-     * @param attr Attribute requested by the operation.
+     * @param attribute Attribute requested by the operation.
      */
-    UltimateAttributeOpeningPybind(std::shared_ptr<pybindings::PythonValuedMorphologicalTree> valuedTree, py::array attr)
-        : valuedTreeOwner_(std::move(valuedTree)), attributeOwner_(std::move(attr)), uao_(makeUao(*valuedTreeOwner_, attributeOwner_)) {}
+    UltimateAttributeOpeningPybind(std::shared_ptr<pybindings::PythonValuedMorphologicalTree> valuedTree, py::array attribute)
+        : valuedTreeOwner_(std::move(valuedTree)), attributeOwner_(std::move(attribute)), uao_(makeUao(*valuedTreeOwner_, attributeOwner_)) {}
 
     /**
      * @brief Executes the ultimate attribute opening up to an attribute threshold.

@@ -28,7 +28,8 @@ struct SubtractiveResidueModulation {};
 
 namespace detail::attribute_filtering {
 
-inline void requireNodePreservationMaskShape(const MorphologicalTree& tree, const NodePreservationMask& nodePreservationMask, const char* context) {
+template <detail::NodePreservationDecisions Mask>
+inline void requireNodePreservationMaskShape(const MorphologicalTree& tree, const Mask& nodePreservationMask, const char* context) {
     MMCFILTERS_CONTRACT_REQUIRE(
         nodePreservationMask.size() == static_cast<std::size_t>(tree.numInternalNodeSlots()),
         throw std::invalid_argument(std::string(context) + " nodePreservationMask size must match the internal node slot count."));
@@ -49,16 +50,14 @@ inline void requireNodePreservationScores(const MorphologicalTree& tree, std::sp
     }
 }
 
-template <AltitudeValue T>
+template <AltitudeValue T, detail::NodePreservationDecisions Mask>
 [[nodiscard]] inline ImagePtr<T> applyDirectReconstruction(ValuedMorphologicalTreeView<T> valuedTree,
-                                                         const NodePreservationMask& nodePreservationMask) {
+                                                         const Mask& nodePreservationMask) {
     const char* context = "DirectAttributeFilter::applyDirectAttributeFilter";
     valuedTree.requireTopologyUnchanged(context);
     const MorphologicalTree& tree = valuedTree.topology();
     tree.requireNotEditing(context);
     requireNodePreservationMaskShape(tree, nodePreservationMask, context);
-    MMCFILTERS_CONTRACT_REQUIRE(nodePreservationMask[static_cast<std::size_t>(tree.root())],
-                                throw std::invalid_argument(std::string(context) + " requires the root node to be preserved."));
     const std::span<const T> nodeAltitudes = valuedTree.nodeAltitudes();
     std::vector<T> reconstructedNodeAltitudes(static_cast<std::size_t>(tree.numInternalNodeSlots()), T{});
     const NodeId root = tree.root();
@@ -108,9 +107,9 @@ template <class Contribution>
     return output;
 }
 
-template <AltitudeValue T>
+template <AltitudeValue T, detail::NodePreservationDecisions Mask>
 [[nodiscard]] inline std::vector<AltitudeDifference<T>> computeGatedNodeContributions(
-    ValuedMorphologicalTreeView<T> valuedTree, const NodePreservationMask& nodePreservationMask) {
+    ValuedMorphologicalTreeView<T> valuedTree, const Mask& nodePreservationMask) {
     const char* context = "SubtractiveAttributeFilter::applySubtractiveAttributeFilter";
     const MorphologicalTree& tree = valuedTree.topology();
     tree.requireNotEditing(context);
@@ -173,10 +172,12 @@ template <AltitudeValue T> class DirectAttributeFilter {
 
     /**
      * @brief Applies direct reconstruction under node-preservation decisions.
+     * The root altitude is always retained, regardless of its mask decision.
      * @param nodePreservationMask Dense mask where `true` preserves the node altitude.
      * @return Reconstructed image in the original altitude type.
      */
-    [[nodiscard]] ImagePtr<T> applyDirectAttributeFilter(const NodePreservationMask& nodePreservationMask) const {
+    template <detail::NodePreservationDecisions Mask>
+    [[nodiscard]] ImagePtr<T> applyDirectAttributeFilter(const Mask& nodePreservationMask) const {
         return detail::attribute_filtering::applyDirectReconstruction(valuedTree_, nodePreservationMask);
     }
 };
@@ -213,7 +214,8 @@ template <AltitudeValue T> class SubtractiveAttributeFilter {
      * @param nodePreservationMask Dense mask where `true` retains the node residue.
      * @return Zero-baseline subtractive reconstruction in the signed difference type.
      */
-    [[nodiscard]] ImagePtr<OutputValue> applySubtractiveAttributeFilter(const NodePreservationMask& nodePreservationMask) const {
+    template <detail::NodePreservationDecisions Mask>
+    [[nodiscard]] ImagePtr<OutputValue> applySubtractiveAttributeFilter(const Mask& nodePreservationMask) const {
         valuedTree_.requireTopologyUnchanged("SubtractiveAttributeFilter::applySubtractiveAttributeFilter");
         const std::vector<OutputValue> nodeContributions = detail::attribute_filtering::computeGatedNodeContributions(valuedTree_, nodePreservationMask);
         return detail::attribute_filtering::reconstructNodeContributionsEstablished(
@@ -259,27 +261,27 @@ template <AltitudeValue T, std::floating_point Real = float> class SoftSubtracti
     }
 };
 
-template <AltitudeValue T>
+template <AltitudeValue T, detail::NodePreservationDecisions Mask>
 [[nodiscard]] inline ImagePtr<T> applyDirectAttributeFilter(ValuedMorphologicalTreeView<T> valuedTree,
-                                                            const NodePreservationMask& nodePreservationMask) {
+                                                            const Mask& nodePreservationMask) {
     return DirectAttributeFilter<T>(valuedTree).applyDirectAttributeFilter(nodePreservationMask);
 }
 
-template <AltitudeValue T>
+template <AltitudeValue T, detail::NodePreservationDecisions Mask>
 [[nodiscard]] inline ImagePtr<T> applyDirectAttributeFilter(const ValuedMorphologicalTree<T>& valuedTree,
-                                                            const NodePreservationMask& nodePreservationMask) {
+                                                            const Mask& nodePreservationMask) {
     return DirectAttributeFilter<T>(valuedTree).applyDirectAttributeFilter(nodePreservationMask);
 }
 
-template <AltitudeValue T>
+template <AltitudeValue T, detail::NodePreservationDecisions Mask>
 [[nodiscard]] inline ImagePtr<AltitudeDifference<T>> applySubtractiveAttributeFilter(
-    ValuedMorphologicalTreeView<T> valuedTree, const NodePreservationMask& nodePreservationMask) {
+    ValuedMorphologicalTreeView<T> valuedTree, const Mask& nodePreservationMask) {
     return SubtractiveAttributeFilter<T>(valuedTree).applySubtractiveAttributeFilter(nodePreservationMask);
 }
 
-template <AltitudeValue T>
+template <AltitudeValue T, detail::NodePreservationDecisions Mask>
 [[nodiscard]] inline ImagePtr<AltitudeDifference<T>> applySubtractiveAttributeFilter(
-    const ValuedMorphologicalTree<T>& valuedTree, const NodePreservationMask& nodePreservationMask) {
+    const ValuedMorphologicalTree<T>& valuedTree, const Mask& nodePreservationMask) {
     return SubtractiveAttributeFilter<T>(valuedTree).applySubtractiveAttributeFilter(nodePreservationMask);
 }
 

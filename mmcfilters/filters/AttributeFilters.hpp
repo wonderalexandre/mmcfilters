@@ -114,7 +114,8 @@ template <AltitudeValue T> class AttributeFilters {
      * @param nodePreservationMask Mask whose length must match the internal node slot count.
      * @param context Operation name used in diagnostics.
      */
-    static void requireNodePreservationMaskSize(const MorphologicalTree& tree, const NodePreservationMask& nodePreservationMask,
+    template <detail::NodePreservationDecisions Mask>
+    static void requireNodePreservationMaskSize(const MorphologicalTree& tree, const Mask& nodePreservationMask,
                                                 const char* context) {
         MMCFILTERS_CONTRACT_REQUIRE(nodePreservationMask.size() == static_cast<std::size_t>(tree.numInternalNodeSlots()),
                                     throw std::invalid_argument(std::string(context) +
@@ -191,7 +192,8 @@ template <AltitudeValue T> class AttributeFilters {
      * exactly `numInternalNodeSlots()` entries; true accepts a node.
      * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
-    static void filteringByPruningMinMaskImpl(AltitudeView view, const NodePreservationMask& nodePreservationMask, ImagePtr<T> imgOutputPtr) {
+    template <detail::NodePreservationDecisions Mask>
+    static void filteringByPruningMinMaskImpl(AltitudeView view, const Mask& nodePreservationMask, ImagePtr<T> imgOutputPtr) {
         const char* context = "AttributeFilters::filteringByPruningMin";
         view.requireTopologyUnchanged(context);
         const MorphologicalTree& tree = view.topology();
@@ -228,7 +230,8 @@ template <AltitudeValue T> class AttributeFilters {
      * exactly `numInternalNodeSlots()` entries; true accepts a node.
      * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
-    static void filteringByPruningMaxMaskImpl(AltitudeView view, const NodePreservationMask& nodePreservationMask, ImagePtr<T> imgOutputPtr) {
+    template <detail::NodePreservationDecisions Mask>
+    static void filteringByPruningMaxMaskImpl(AltitudeView view, const Mask& nodePreservationMask, ImagePtr<T> imgOutputPtr) {
         const char* context = "AttributeFilters::filteringByPruningMax";
         view.requireTopologyUnchanged(context);
         const MorphologicalTree& tree = view.topology();
@@ -476,7 +479,8 @@ template <AltitudeValue T> class AttributeFilters {
      * exactly `numInternalNodeSlots()` entries; true accepts a node.
      * @return Independently allocated image with the tree's grid dimensions.
      */
-    [[nodiscard]] ImagePtr<T> filteringByPruningMin(const NodePreservationMask& nodePreservationMask) {
+    template <detail::NodePreservationDecisions Mask>
+    [[nodiscard]] ImagePtr<T> filteringByPruningMin(const Mask& nodePreservationMask) {
         ImagePtr<T> imgOutput = Image<T>::create(this->tree.numRows(), this->tree.numColumns());
         filteringByPruningMinMaskImpl(view(), nodePreservationMask, imgOutput);
         return imgOutput;
@@ -489,7 +493,8 @@ template <AltitudeValue T> class AttributeFilters {
      * exactly `numInternalNodeSlots()` entries; true accepts a node.
      * @return Independently allocated image with the tree's grid dimensions.
      */
-    [[nodiscard]] ImagePtr<T> filteringByPruningMax(const NodePreservationMask& nodePreservationMask) {
+    template <detail::NodePreservationDecisions Mask>
+    [[nodiscard]] ImagePtr<T> filteringByPruningMax(const Mask& nodePreservationMask) {
         ImagePtr<T> imgOutput = Image<T>::create(this->tree.numRows(), this->tree.numColumns());
         filteringByPruningMaxMaskImpl(view(), nodePreservationMask, imgOutput);
         return imgOutput;
@@ -503,7 +508,8 @@ template <AltitudeValue T> class AttributeFilters {
      * exactly `numInternalNodeSlots()` entries; true accepts a node.
      * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
-    static void filteringByPruningMin(const ValuedMorphologicalTreeView<T>& valuedTree, const NodePreservationMask& nodePreservationMask,
+    template <detail::NodePreservationDecisions Mask>
+    static void filteringByPruningMin(const ValuedMorphologicalTreeView<T>& valuedTree, const Mask& nodePreservationMask,
                                       ImagePtr<T> imgOutputPtr) {
         filteringByPruningMinMaskImpl(valuedTree, nodePreservationMask, imgOutputPtr);
     }
@@ -516,7 +522,8 @@ template <AltitudeValue T> class AttributeFilters {
      * exactly `numInternalNodeSlots()` entries; true accepts a node.
      * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
-    static void filteringByPruningMin(const ValuedMorphologicalTree<T>& valuedTree, const NodePreservationMask& nodePreservationMask,
+    template <detail::NodePreservationDecisions Mask>
+    static void filteringByPruningMin(const ValuedMorphologicalTree<T>& valuedTree, const Mask& nodePreservationMask,
                                       ImagePtr<T> imgOutputPtr) {
         filteringByPruningMin(valuedTree.asView(), nodePreservationMask, imgOutputPtr);
     }
@@ -529,7 +536,8 @@ template <AltitudeValue T> class AttributeFilters {
      * exactly `numInternalNodeSlots()` entries; true accepts a node.
      * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
-    static void filteringByPruningMax(const ValuedMorphologicalTreeView<T>& valuedTree, const NodePreservationMask& nodePreservationMask,
+    template <detail::NodePreservationDecisions Mask>
+    static void filteringByPruningMax(const ValuedMorphologicalTreeView<T>& valuedTree, const Mask& nodePreservationMask,
                                       ImagePtr<T> imgOutputPtr) {
         filteringByPruningMaxMaskImpl(valuedTree, nodePreservationMask, imgOutputPtr);
     }
@@ -542,7 +550,8 @@ template <AltitudeValue T> class AttributeFilters {
      * exactly `numInternalNodeSlots()` entries; true accepts a node.
      * @param imgOutputPtr Non-null output image with the tree's grid dimensions.
      */
-    static void filteringByPruningMax(const ValuedMorphologicalTree<T>& valuedTree, const NodePreservationMask& nodePreservationMask,
+    template <detail::NodePreservationDecisions Mask>
+    static void filteringByPruningMax(const ValuedMorphologicalTree<T>& valuedTree, const Mask& nodePreservationMask,
                                       ImagePtr<T> imgOutputPtr) {
         filteringByPruningMax(valuedTree.asView(), nodePreservationMask, imgOutputPtr);
     }

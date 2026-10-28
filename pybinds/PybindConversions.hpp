@@ -10,6 +10,7 @@
 #include <cmath>
 #include <concepts>
 #include <limits>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <sstream>
@@ -19,6 +20,30 @@
 namespace mmcfilters::pybind_utils {
 
 namespace py = pybind11;
+
+/**
+ * @brief Borrows dense Boolean preservation decisions without copying the array.
+ * @param array One-dimensional, C-contiguous NumPy Boolean array retained by the caller.
+ * @param tree Tree defining the internal node-slot domain.
+ * @return Read-only decisions valid while the caller retains the array.
+ */
+inline std::span<const unsigned char> requireNodePreservationArray(const py::array& array, const MorphologicalTree& tree) {
+    if (!array.dtype().is(py::dtype::of<bool>())) {
+        throw std::invalid_argument("node_preservation_mask must have dtype np.bool_.");
+    }
+    if (array.ndim() != 1) {
+        throw std::invalid_argument("node_preservation_mask must be a 1D array.");
+    }
+    if (!(array.flags() & py::array::c_style)) {
+        throw std::invalid_argument("node_preservation_mask must be C-contiguous.");
+    }
+    if (array.shape(0) != tree.numInternalNodeSlots()) {
+        throw std::invalid_argument("node_preservation_mask size must match the internal node slot count.");
+    }
+    // NumPy treats every nonzero Boolean storage byte as true. Read bytes rather
+    // than C++ bool objects, whose representation need not accept those values.
+    return {static_cast<const unsigned char*>(array.data()), static_cast<std::size_t>(array.shape(0))};
+}
 
 /**
  * @brief Functions for converting between C++ buffers/images and NumPy arrays.

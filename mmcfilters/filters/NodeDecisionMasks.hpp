@@ -1,6 +1,9 @@
 #pragma once
 
 #include <cstddef>
+#include <concepts>
+#include <span>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -49,6 +52,16 @@ class NodePreservationMask {
     /** @brief Returns all preservation decisions. @return Read-only dense decision buffer. */
     [[nodiscard]] const std::vector<bool>& decisions() const noexcept { return decisions_; }
 };
+
+namespace detail {
+
+/** @brief Preservation decisions owned by C++ or borrowed from a Boolean buffer. */
+template <class Mask>
+concept NodePreservationDecisions = std::same_as<std::remove_cvref_t<Mask>, NodePreservationMask> ||
+                                    std::same_as<std::remove_cvref_t<Mask>, std::span<const bool>> ||
+                                    std::same_as<std::remove_cvref_t<Mask>, std::span<const unsigned char>>;
+
+} // namespace detail
 
 /**
  * @brief Dense Boolean decisions where true means prune the node.

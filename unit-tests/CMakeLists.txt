@@ -93,6 +93,10 @@ mmcfilters_add_unit_test(unit_morphological_tree_traversals
     trees/test_morphological_tree_traversals.cpp
 )
 
+mmcfilters_add_unit_test(unit_tree_kernel_traversal
+    trees/test_tree_kernel_traversal.cpp
+)
+
 mmcfilters_add_unit_test(unit_morphological_tree_tos
     trees/test_morphological_tree_tos.cpp
 )
@@ -171,6 +175,10 @@ mmcfilters_add_unit_test(unit_attribute_plumbing
 
 mmcfilters_add_unit_test(unit_public_attribute_api
     attributes/test_public_attribute_api.cpp
+)
+
+mmcfilters_add_unit_test(unit_gray_level_variance
+    attributes/test_gray_level_variance.cpp
 )
 
 mmcfilters_add_unit_test(unit_attribute_unit_values

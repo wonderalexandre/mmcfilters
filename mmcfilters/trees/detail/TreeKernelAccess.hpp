@@ -3,6 +3,8 @@
 #include "../MorphologicalTree.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -121,8 +123,9 @@ class TreeKernelAccess {
      * kernel. Callbacks must preserve the topology. The hooks run before visiting
      * children, after each completed child, and after all children have been merged.
      *
-     * Child access through `TreeKernelAccess` skips node-id validation. The
-     * shared child iterators retain topology-version assertions when assertions
+     * A fixed ancestor cache reduces scattered parent reads on shallow paths.
+     * Deeper paths use parent links, so auxiliary storage stays constant.
+     * Topology-version assertions remain active when assertions
      * are enabled, independently of the CHECKED/UNCHECKED contract mode.
      *
      * @param tree Established tree topology.
@@ -134,12 +137,40 @@ class TreeKernelAccess {
     template <class PreProcessing, class MergeProcessing, class PostProcessing>
     static void traversePostOrder(const MorphologicalTree& tree, NodeId rootNodeId, PreProcessing&& preProcessing, MergeProcessing&& mergeProcessing,
                                   PostProcessing&& postProcessing) {
-        preProcessing(rootNodeId);
-        for (NodeId childNodeId : TreeKernelAccess::children(tree, rootNodeId)) {
-            traversePostOrder(tree, childNodeId, preProcessing, mergeProcessing, postProcessing);
-            mergeProcessing(rootNodeId, childNodeId);
+        [[maybe_unused]] const auto topologyVersion = tree.topologyVersion_;
+        std::array<NodeId, 4096> ancestors;
+        std::size_t depth = 0;
+        NodeId node = rootNodeId;
+        for (;;) {
+            preProcessing(node);
+            assert(tree.topologyVersion_ == topologyVersion);
+            const NodeId child = firstChild(tree, node);
+            if (child != InvalidNode) {
+                if (depth < ancestors.size()) {
+                    ancestors[depth] = node;
+                }
+                ++depth;
+                node = child;
+                continue;
+            }
+            for (;;) {
+                postProcessing(node);
+                assert(tree.topologyVersion_ == topologyVersion);
+                if (depth == 0) {
+                    return;
+                }
+                const NodeId parent = depth <= ancestors.size() ? ancestors[depth - 1] : nodeParent(tree, node);
+                mergeProcessing(parent, node);
+                assert(tree.topologyVersion_ == topologyVersion);
+                const NodeId sibling = nextSibling(tree, node);
+                if (sibling != InvalidNode) {
+                    node = sibling;
+                    break;
+                }
+                node = parent;
+                --depth;
+            }
         }
-        postProcessing(rootNodeId);
     }
 
     /** @brief Iterates pixels in an established node's proper part. @param tree Committed tree. @param nodeId Established node id. @return Proper-part range. */

@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <span>
 #include <stdexcept>
 #include <string_view>
@@ -120,9 +121,13 @@ void computeGrayLevelStats(const AltitudeAttributeComputeContext<Real, T>& conte
     auto indexOfVolume = [&](NodeId node) { return static_cast<std::size_t>(node * volumeStride + volumeOffset); };
     auto indexOfArea = [&](NodeId node) { return static_cast<std::size_t>(node * areaStride + areaOffset); };
 
-    std::vector<double> sumGrayLevelSquare;
+    std::vector<std::uint32_t> varianceCount;
+    std::vector<double> varianceMean;
+    std::vector<double> varianceM2;
     if (request.grayLevelVariance) {
-        sumGrayLevelSquare.assign(context.tree.numInternalNodeSlots(), 0.0);
+        varianceCount.resize(context.tree.numInternalNodeSlots());
+        varianceMean.resize(context.tree.numInternalNodeSlots());
+        varianceM2.assign(context.tree.numInternalNodeSlots(), 0.0);
     }
     std::vector<Real> subtreeMinAltitude;
     std::vector<Real> subtreeMaxAltitude;
@@ -138,10 +143,9 @@ void computeGrayLevelStats(const AltitudeAttributeComputeContext<Real, T>& conte
             const T nodeAltitude = context.altitude[static_cast<std::size_t>(nodeId)];
             const Real nodeAltitudeAsReal = static_cast<Real>(nodeAltitude);
             if (request.grayLevelVariance) {
-                const double nodeAltitudeAsDouble = static_cast<double>(nodeAltitude);
-                sumGrayLevelSquare[static_cast<std::size_t>(node)] =
-                    static_cast<double>(::mmcfilters::detail::TreeKernelAccess::properPartCardinality(context.tree, nodeId)) * nodeAltitudeAsDouble *
-                    nodeAltitudeAsDouble;
+                const auto count = static_cast<std::uint32_t>(::mmcfilters::detail::TreeKernelAccess::properPartCardinality(context.tree, nodeId));
+                varianceCount[node] = count;
+                varianceMean[node] = count == 0 ? 0.0 : static_cast<double>(nodeAltitude);
             }
             if (request.grayLevelHeight) {
                 subtreeMinAltitude[node] = nodeAltitudeAsReal;
@@ -151,8 +155,20 @@ void computeGrayLevelStats(const AltitudeAttributeComputeContext<Real, T>& conte
         [&](NodeId parentNodeId, NodeId childNodeId) {
             const NodeId parent = detail::grayStatsSlotOf(context.tree, parentNodeId);
             const NodeId child = detail::grayStatsSlotOf(context.tree, childNodeId);
-            if (request.grayLevelVariance)
-                sumGrayLevelSquare[parent] += sumGrayLevelSquare[child];
+            if (request.grayLevelVariance && varianceCount[child] != 0) {
+                const auto parentCount = varianceCount[parent];
+                const auto childCount = varianceCount[child];
+                if (parentCount == 0) {
+                    varianceMean[parent] = varianceMean[child];
+                    varianceM2[parent] = varianceM2[child];
+                } else {
+                    const double delta = varianceMean[child] - varianceMean[parent];
+                    const double childWeight = static_cast<double>(childCount) / static_cast<double>(parentCount + childCount);
+                    varianceMean[parent] = std::lerp(varianceMean[parent], varianceMean[child], childWeight);
+                    varianceM2[parent] += varianceM2[child] + delta * delta * (static_cast<double>(parentCount) * childWeight);
+                }
+                varianceCount[parent] = parentCount + childCount;
+            }
             if (request.grayLevelHeight) {
                 subtreeMinAltitude[parent] = std::min(subtreeMinAltitude[parent], subtreeMinAltitude[child]);
                 subtreeMaxAltitude[parent] = std::max(subtreeMaxAltitude[parent], subtreeMaxAltitude[child]);
@@ -165,11 +181,9 @@ void computeGrayLevelStats(const AltitudeAttributeComputeContext<Real, T>& conte
                 context.buffer[indexOfMean(node)] =
                     ::mmcfilters::attributes::numeric::safeDivide(volumeDependency->buffer[indexOfVolume(node)], area);
             if (request.grayLevelVariance) {
-                Real meanGrayLevel = ::mmcfilters::attributes::numeric::safeDivide(volumeDependency->buffer[indexOfVolume(node)], area);
-                double meanGrayLevelSquare =
-                    ::mmcfilters::attributes::numeric::safeDivide(sumGrayLevelSquare[static_cast<std::size_t>(node)], static_cast<double>(area));
-                Real var = static_cast<Real>(meanGrayLevelSquare - (static_cast<double>(meanGrayLevel) * static_cast<double>(meanGrayLevel)));
-                context.buffer[indexOfVariance(node)] = ::mmcfilters::attributes::numeric::clampNonNegative(var);
+                context.buffer[indexOfVariance(node)] = varianceCount[node] == 0
+                    ? Real{0}
+                    : static_cast<Real>(varianceM2[node] / static_cast<double>(varianceCount[node]));
             }
             if (request.grayLevelHeight) {
                 const Real nodeAltitude = static_cast<Real>(context.altitude[static_cast<std::size_t>(nodeId)]);
@@ -218,8 +232,9 @@ inline void validateGrayLevelStatsContext(const AltitudeAttributeComputeContext<
  *   and any node in its subtree.
  *
  * `MeanGrayLevel` is obtained from `VOLUME / AREA`, while
- * `GrayLevelVariance` additionally requires the accumulated sum of squared grey
- * levels over the subtree support. `GrayLevelHeight` propagates both the minimum
+ * `GrayLevelVariance` combines integer counts, means, and centered sums of
+ * squares over child supports. This avoids subtracting two large raw moments.
+ * `GrayLevelHeight` propagates both the minimum
  * and maximum subtree altitudes and measures the farthest endpoint from the
  * current node.
  *

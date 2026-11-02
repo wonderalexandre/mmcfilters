@@ -92,7 +92,8 @@ Distance-transform fields and profiles are explicit topology-only results:
 - `DistanceTransform.compute_profiles(valued_tree, accuracy="exact")`
 
 Depth-stability helpers expose topological depth windows through
-`DepthStableRegionComputer.compute_by_depth(depth_window_radius)` and report variation
+`DepthStableRegionComputer.compute_by_depth(depth_window_radius)`, which returns a
+Boolean node mask accepted by the `AttributeFilters` rules, and report variation
 scores with `get_variation`/`get_variations`. Result getters raise until the first
 successful `compute_by_depth` call.
 
@@ -160,8 +161,6 @@ AttributeFilters = _native.AttributeFilters
 IncompleteStabilityWindowPolicy = _native.IncompleteStabilityWindowPolicy
 adjust_node_preservation_mask_by_altitude_stability = _native.adjust_node_preservation_mask_by_altitude_stability
 adjust_node_preservation_mask_by_depth_stability = _native.adjust_node_preservation_mask_by_depth_stability
-DirectReconstruction = _native.DirectReconstruction
-SubtractiveResidueModulation = _native.SubtractiveResidueModulation
 DepthStableRegionComputer = _native.DepthStableRegionComputer
 UltimateAttributeOpening = _native.UltimateAttributeOpening
 Attribute = _native.Attribute
@@ -226,8 +225,6 @@ __all__ = [
     "IncompleteStabilityWindowPolicy",
     "adjust_node_preservation_mask_by_altitude_stability",
     "adjust_node_preservation_mask_by_depth_stability",
-    "DirectReconstruction",
-    "SubtractiveResidueModulation",
     "DepthStableRegionComputer",
     "Attribute",
     "DistanceTransformAccuracy",

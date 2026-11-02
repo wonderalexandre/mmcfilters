@@ -347,9 +347,12 @@ needed directly:
 depth = mmcfilters.DepthStableRegionComputer(max_tree)
 depth_mask = depth.compute_by_depth(depth_window_radius=2)
 depth_variation = depth.get_variations()
+depth_filtered = filters.filtering_by_direct_rule(depth_mask)
 ```
 
-Its result getters raise `RuntimeError` until `compute_by_depth` succeeds.
+`compute_by_depth` returns a Boolean node mask, so the preservation-mask
+filtering rules accept it directly. Its result getters raise `RuntimeError`
+until `compute_by_depth` succeeds.
 
 Extinction selection and Ultimate Attribute Opening (UAO) use the same dense
 attribute-buffer convention:

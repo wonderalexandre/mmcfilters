@@ -341,6 +341,7 @@ def main() -> int:
 
     tos = mmcfilters.MorphologicalTreeFactory.create_tree_of_shapes(image)
     tos_area = mmcfilters.Attribute.compute(tos, mmcfilters.Attribute.AREA)
+    tos_filters = mmcfilters.AttributeFilters(tos)
     tos_keep_all = [True] * tos.num_internal_node_slots
     tos_depth_adjusted = mmcfilters.adjust_node_preservation_mask_by_depth_stability(
         tos,
@@ -374,7 +375,12 @@ def main() -> int:
     )
     depth_mask = depth_computer.compute_by_depth(1)
     require(depth_mask.shape == (tos.num_internal_node_slots,), "DepthStableRegionComputer mask shape")
-    require(depth_mask.dtype == np.uint8, "DepthStableRegionComputer mask dtype")
+    require(depth_mask.dtype == np.bool_, "DepthStableRegionComputer mask dtype")
+    require(int(np.count_nonzero(depth_mask)) == depth_computer.num_nodes(), "DepthStableRegionComputer mask matches selected count")
+    require(
+        tos_filters.filtering_by_direct_rule(depth_mask).shape == image.shape,
+        "DepthStableRegionComputer mask is accepted by preservation-mask filtering rules",
+    )
     depth_variations = depth_computer.get_variations()
     require(depth_variations.shape == (tos.num_internal_node_slots,), "DepthStableRegionComputer variation shape")
     require(depth_variations.dtype == np.float32, "DepthStableRegionComputer default variation dtype")
@@ -392,8 +398,35 @@ def main() -> int:
     depth_computer64 = mmcfilters.DepthStableRegionComputer(tos, tos_area.astype(np.float64))
     depth_computer64.compute_by_depth(1)
     require(depth_computer64.get_variations().dtype == np.float64, "DepthStableRegionComputer float64 variation dtype")
-    require_raises(lambda: mmcfilters.ExtinctionValues(tos, tos_area), "ToS ExtinctionValues must be rejected")
-    require_raises(lambda: tos_filters.filtering_by_extinction_rule(tos_area, keep_one_policy), "ToS AttributeFilters extinction filtering must be rejected")
+
+    depth_image = np.array([[0, 0, 1, 1, 1, 1, 1, 1, 2, 3, 4, 4, 5, 5]], dtype=np.uint8)
+    depth_tree = mmcfilters.MorphologicalTreeFactory.create_max_tree(depth_image)
+    depth_area = mmcfilters.Attribute.compute(depth_tree, mmcfilters.Attribute.AREA)
+    # The level-3 node has area 5 and variation (6 - 4) / 5 = 0.4, a strict local minimum.
+    expected_depth_mask = depth_tree.node_altitudes == 3
+    expected_depth_filtered = np.array([[0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3, 3]], dtype=np.uint8)
+    depth_filters = mmcfilters.AttributeFilters(depth_tree)
+    for attribute_dtype in (None, np.float32, np.float64):
+        selected_depth_computer = (
+            mmcfilters.DepthStableRegionComputer(depth_tree)
+            if attribute_dtype is None
+            else mmcfilters.DepthStableRegionComputer(depth_tree, depth_area.astype(attribute_dtype))
+        )
+        selected_depth_mask = selected_depth_computer.compute_by_depth(1)
+        context = f"DepthStableRegionComputer nonempty selection ({attribute_dtype})"
+        require(selected_depth_mask.dtype == np.bool_, f"{context} must return a Boolean mask")
+        require(selected_depth_computer.num_nodes() == 1, f"{context} must select exactly one node")
+        require(np.array_equal(selected_depth_mask, expected_depth_mask), f"{context} must select only the level-3 node")
+        require(
+            np.array_equal(depth_filters.filtering_by_direct_rule(selected_depth_mask), expected_depth_filtered),
+            f"{context} must reconstruct the expected image",
+        )
+
+    require_value_error(lambda: mmcfilters.ExtinctionValues(tos, tos_area), "ToS ExtinctionValues must raise ValueError")
+    require_value_error(
+        lambda: tos_filters.filtering_by_extinction_rule(tos_area, keep_one_policy),
+        "ToS AttributeFilters extinction filtering must raise ValueError",
+    )
     tos_uao = mmcfilters.UltimateAttributeOpening(tos, tos_area)
     require_raises(lambda: tos_uao.execute_with_mser(int(tos.num_rows), 1), "ToS UltimateAttributeOpening must reject altitude MSER")
     tos_uao.execute_with_depth_stability(int(tos.num_rows), 1)

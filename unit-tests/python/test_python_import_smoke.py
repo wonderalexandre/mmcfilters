@@ -48,8 +48,6 @@ def main() -> int:
 
     require(tree.reconstruct_from_node_altitudes().shape == image.shape, "factory max-tree smoke")
     for public_name in (
-        "DirectReconstruction",
-        "SubtractiveResidueModulation",
         "IncompleteStabilityWindowPolicy",
         "adjust_node_preservation_mask_by_altitude_stability",
         "adjust_node_preservation_mask_by_depth_stability",
@@ -58,7 +56,8 @@ def main() -> int:
     for removed_name in ("NodePreservationMask", "NodePruningMask", "to_node_pruning_mask",
                          "to_node_preservation_mask", "compute_node_preservation_mask"):
         require(not hasattr(mmcfilters, removed_name), f"{removed_name} is replaced by NumPy Boolean operations")
-    for removed_name in ("DirectAttributeFilter", "SubtractiveAttributeFilter", "SoftSubtractiveAttributeFilter"):
+    for removed_name in ("DirectAttributeFilter", "SubtractiveAttributeFilter", "SoftSubtractiveAttributeFilter",
+                         "DirectReconstruction", "SubtractiveResidueModulation"):
         require(not hasattr(mmcfilters, removed_name), f"{removed_name} is exposed through AttributeFilters rules")
         require(not hasattr(mmcfilters._native, removed_name), f"native module must not register {removed_name}")
     for method in ("filtering_by_direct_rule", "filtering_by_subtractive_rule", "filtering_by_soft_subtractive_rule",

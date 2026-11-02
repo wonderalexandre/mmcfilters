@@ -103,9 +103,6 @@ void initAttributeFilters(py::module_& m) {
           "incomplete_window_policy"_a = IncompleteStabilityWindowPolicy::PreserveInputDecision,
           "Relocate input rejections using a topology-only edge-count stability window.");
 
-    py::class_<DirectReconstruction>(m, "DirectReconstruction", py::module_local(false)).def(py::init<>());
-    py::class_<SubtractiveResidueModulation>(m, "SubtractiveResidueModulation", py::module_local(false)).def(py::init<>());
-
     py::class_<AttributeFiltersPybind>(m, "AttributeFilters", py::module_local(false),
                                        R"doc(Attribute-based filtering operators over a valued morphological tree.
 
@@ -167,7 +164,8 @@ require a successful `compute_by_depth` call.)doc")
         .def(py::init<std::shared_ptr<PythonValuedMorphologicalTree>>(), "tree"_a, "Create a depth-stability helper using topology-only AREA.")
         .def(py::init<std::shared_ptr<PythonValuedMorphologicalTree>, py::array>(), "tree"_a, "attribute"_a.noconvert(),
              "Create a depth-stability helper from a node-indexed increasing attribute buffer.")
-        .def("compute_by_depth", &DepthStableRegionComputerPybind::computeByDepth, "depth_window_radius"_a, "Return a dense uint8 mask of strict local variation minima.")
+        .def("compute_by_depth", &DepthStableRegionComputerPybind::computeByDepth, "depth_window_radius"_a,
+             "Return a dense Boolean node mask of strict local variation minima.")
         .def("get_variation", &DepthStableRegionComputerPybind::getVariation, "node_id"_a, "Return the variation score for one node after `compute_by_depth`.")
         .def("get_variations", &DepthStableRegionComputerPybind::getVariations, "Return the dense variation array after `compute_by_depth`.")
         .def("node_with_minimum_variation_in_window", &DepthStableRegionComputerPybind::nodeWithMinimumVariationInWindow, "node_id"_a,

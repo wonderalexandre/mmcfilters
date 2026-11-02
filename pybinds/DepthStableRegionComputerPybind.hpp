@@ -79,14 +79,18 @@ class DepthStableRegionComputerPybind {
      * @brief Computes by depth.
      *
      * @param depthWindowRadius Topological-depth radius of the stability window.
-     * @return Computed by depth.
+     * @return Owned Boolean node mask accepted by the preservation-mask filtering rules.
      */
-    py::array_t<std::uint8_t> computeByDepth(int depthWindowRadius) {
+    py::array_t<bool> computeByDepth(int depthWindowRadius) {
         return std::visit(
-            [depthWindowRadius](auto& computer) -> py::array_t<std::uint8_t> {
-                std::vector<std::uint8_t> selected = computer.computeByDepth(depthWindowRadius);
-                const int size = static_cast<int>(selected.size());
-                return pybind_utils::toNumpyOwned(std::move(selected), size);
+            [depthWindowRadius](auto& computer) -> py::array_t<bool> {
+                const std::vector<std::uint8_t> selected = computer.computeByDepth(depthWindowRadius);
+                py::array_t<bool> mask(static_cast<py::ssize_t>(selected.size()));
+                bool* decisions = mask.mutable_data();
+                for (std::size_t index = 0; index < selected.size(); ++index) {
+                    decisions[index] = selected[index] != 0;
+                }
+                return mask;
             },
             computer_);
     }

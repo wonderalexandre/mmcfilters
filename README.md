@@ -37,8 +37,8 @@ will often be the better choice.
 
 ## Requirements
 
-- Python 3.9–3.14 for the distributed Python package;
-- NumPy 1.23 or newer;
+- Python 3.12–3.14 for the distributed Python package;
+- NumPy 1.26 or newer;
 - a C++20 compiler and CMake 3.20 or newer for source builds.
 
 ## Installation

@@ -113,9 +113,9 @@ jobs:
           - macos-15-intel
           - windows-latest
         python-version:
-          - "3.9"
           - "3.12"
           - "3.13"
+          - "3.14"
 
     steps:
       - name: Check out repository

@@ -241,10 +241,13 @@ jobs:
                   )
                   metadata = zf.read(metadata_name).decode()
 
-              requirements = Parser().parsestr(metadata).get_all("Requires-Dist") or []
+              wheel_metadata = Parser().parsestr(metadata)
+              if wheel_metadata.get("Requires-Python") != ">=3.12":
+                  raise SystemExit(f"{wheel.name} must require Python 3.12 or newer")
+              requirements = wheel_metadata.get_all("Requires-Dist") or []
               if not any(value.startswith("numpy") for value in requirements):
                   raise SystemExit(f"{wheel.name} is missing NumPy dependency")
-              if "numpy<2" in metadata or "numpy>=1.23,<2" in metadata:
+              if "numpy<2" in metadata or "numpy>=1.26,<2" in metadata:
                   raise SystemExit(f"{wheel.name} forces NumPy below 2")
               if "Provides-Extra: notebooks" in metadata:
                   raise SystemExit(
